@@ -143,6 +143,14 @@ function useStableList(value: string[]): string[] {
  * sidebar surface reads it there: identity travels as a search param, and the
  * URL is the one answer every window agrees on.
  *
+ * **`/` is deliberately NOT a room target here**, even though it draws #team.
+ * This value is the sidebar's notion of what is open, and it feeds far more than
+ * a row tint: the scroll anchor, the working rollup, and which rows Today
+ * gathers all read it. Making Home answer "the #team room" pinned #team into
+ * Today and moved the anchor on every visit to the dashboard — a large behaviour
+ * change smuggled in behind a highlight. The highlight is handled on its own,
+ * next to the row that needs it (`SidebarChrome`'s `activeRoomId`).
+ *
  * @param roomKindOf - Resolves a room id to its kind, from the room list.
  */
 function useActiveTarget(
@@ -163,7 +171,8 @@ function useActiveTarget(
   // click on the thread — and the anchor, the active tint and the scroll would
   // all land on a different row from the one pressed. `?thread=` is the ROOT
   // ENTRY a thread hangs off, which is also what keys the row (`rowKey`).
-  const rootEntryId = pathname === '/channels' ? (search.thread ?? null) : null;
+  // `?thread=` is spelled the same on both routes and means the same thing.
+  const rootEntryId = pathname === '/channels' || pathname === '/' ? (search.thread ?? null) : null;
   const roomKind = roomId === null ? null : roomKindOf(roomId);
   return useMemo(() => {
     if (sessionId !== null) return { kind: 'session', sessionId, agentPath: cwd ?? '', cwd };

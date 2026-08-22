@@ -33,8 +33,8 @@ vi.mock('@/layers/features/top-nav', () => ({
 
 // The two per-surface extras. Both are wired to real queries and have their own
 // suites; what this file is about is WHICH surface gets them and where they land.
-vi.mock('../ui/HomeMembersChip', () => ({
-  HomeMembersChip: () => <span data-testid="home-members-chip" />,
+vi.mock('../ui/HomeRoomChips', () => ({
+  HomeRoomChips: () => <span data-testid="home-members-chip" />,
 }));
 vi.mock('../ui/NewTaskAction', () => ({
   NewTaskAction: () => <button type="button">New Task</button>,

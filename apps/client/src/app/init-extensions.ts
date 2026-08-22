@@ -7,6 +7,7 @@ import {
   Puzzle,
   SquareTerminal,
   User,
+  Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { getPlatform } from '@/layers/shared/lib';
@@ -20,6 +21,7 @@ import {
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
 import { PROFILE_PANEL_ID } from '@/layers/features/profile';
+import { ROOM_PANEL_ID, routeShowsRoom } from '@/layers/features/room-management';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 
 /**
@@ -164,6 +166,32 @@ export function registerRightPanelTabs(register: RegisterFn): void {
       import('@/layers/widgets/pulse').then((m) => ({ default: m.PulsePanel }))
     ),
     priority: 5,
+  });
+
+  // Room management as a right-panel contribution (lazy-loaded) — the roster,
+  // the topic, and how loud each agent is, beside the room they belong to (spec
+  // `one-bar-header` §3.6). It replaces the modal room sheet: every door that
+  // used to raise one now calls `openRoomPanel`.
+  //
+  // Visible on the two routes that show a room, and contextual, so the
+  // container's auto-select opens straight onto it there while Pulse stays one
+  // press away in the strip.
+  //
+  // **Priority 8, below Profile's 10 and above Pulse's 5.** Auto-select takes
+  // the first contextual tab in strip order, and Profile is visible off
+  // `/session` as soon as anybody has opened one this session — so at 10 or more
+  // this tab would lose the room routes to a profile the reader opened an hour
+  // ago. Pulse is still leftmost, which is the only thing the ≥10 convention
+  // recorded in this file was protecting.
+  register('right-panel', {
+    id: ROOM_PANEL_ID,
+    title: 'Room',
+    icon: Users,
+    component: lazy(() =>
+      import('@/layers/features/room-management').then((m) => ({ default: m.RoomPanel }))
+    ),
+    visibleWhen: ({ pathname }) => routeShowsRoom(pathname),
+    priority: 8,
   });
 
   // The profile's docked home as a right-panel contribution (lazy-loaded) — the

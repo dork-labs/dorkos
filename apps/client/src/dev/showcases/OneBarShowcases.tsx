@@ -1,16 +1,24 @@
+import { useEffect } from 'react';
 import { Plus } from 'lucide-react';
-import { Badge, BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
+import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
+import { PRESENCE_TTL_MS, useRoomWorkingStore } from '@/layers/entities/room';
 import { SystemHealthDot } from '@/layers/features/top-nav';
 import {
   OneBar,
   BarTitle,
   BarMembersChip,
+  ChannelsBar,
   TitleBar,
   OneBarProvider,
   BarFixedCluster,
+  TeamHeader,
+  TEAM_VIEW_TABS,
   SessionHeader,
   type OneBarRouteState,
 } from '@/layers/widgets/one-bar';
+import type { TeamViewMode } from '@/layers/shared/lib';
+import { ARCHIVED_ROOM, BRIDGED_CHANNEL_ROOM, CHANNEL_ROOM, DM_ROOM } from './rooms-showcase-data';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -23,14 +31,18 @@ const HOME_TABS: BarTab[] = [
   { id: 'workspaces', label: 'Workspaces', to: '/workspaces' },
 ];
 
-/** The five team views, which is enough labels to overflow a phone. */
-const TEAM_TABS: BarTab[] = [
-  { id: 'cards', label: 'Cards', to: '/team' },
-  { id: 'table', label: 'Table', to: '/team' },
-  { id: 'topology', label: 'Topology', to: '/team' },
-  { id: 'denied', label: 'Denied', to: '/team' },
-  { id: 'access', label: 'Access', to: '/team' },
-];
+/**
+ * The five team views, which is enough labels to overflow a phone — the REAL
+ * tabs `/team` ships, not a copy of them, so a view added to the bar shows up
+ * here without anyone remembering to mirror it.
+ */
+const TEAM_TABS: readonly BarTab[] = TEAM_VIEW_TABS;
+
+/** Every view, so the strip can be seen with each one marked in turn. */
+const TEAM_VIEW_MODES: TeamViewMode[] = ['cards', 'table', 'topology', 'denied', 'access'];
+
+/** The width a phone gives the bar. */
+const PHONE_WIDTH = 390;
 
 const LONG_ROOM_NAME = 'Priya, Kai, Ikechi and 47 others about the quarterly migration plan';
 
@@ -72,7 +84,7 @@ const QUIET_BAR_STATE: OneBarRouteState = {
   originLabel: undefined,
   sessionTitle: undefined,
   sessionDirectoryName: undefined,
-  roomTitle: null,
+  room: null,
   teamViewMode: 'cards',
 };
 
@@ -102,6 +114,78 @@ function SessionBarDemo({ width, state }: { width?: number; state: Partial<OneBa
     <OneBarProvider value={{ ...QUIET_BAR_STATE, ...state }}>
       <BarFrame {...(width === undefined ? {} : { width })}>
         <SessionHeader />
+      </BarFrame>
+    </OneBarProvider>
+  );
+}
+
+/**
+ * The mid-run rooms, each with an id of its own.
+ *
+ * **Separate rooms, not a `working` prop on the shared one.** The working count
+ * lives in a store keyed by ROOM ID, exactly as the live fan-out keys it — so a
+ * showcase that seeded a count for `CHANNEL_ROOM` lit every other bar built from
+ * `CHANNEL_ROOM` on the page too, and the quiet bars above stopped being quiet.
+ * Distinct ids keep each demo's state its own.
+ */
+const BUSY_ROOM: RoomWithRoster = { ...CHANNEL_ROOM, id: 'room-busy' };
+const BUSY_PHONE_ROOM: RoomWithRoster = { ...CHANNEL_ROOM, id: 'room-busy-phone' };
+
+/** A room whose name and topic are both longer than any bar can hold. */
+const WORDY_ROOM: RoomWithRoster = {
+  ...CHANNEL_ROOM,
+  id: 'room-wordy',
+  slug: 'quarterly-migration-planning-and-rollout',
+  title: 'quarterly-migration-planning-and-rollout',
+  topic: 'Everything about moving the last three services off the old cluster before the freeze',
+};
+
+/**
+ * One real {@link ChannelsBar}, for one room, at one width.
+ *
+ * The bar reads its room from `OneBarProvider` exactly as the shell supplies it,
+ * so what renders here is the component the route mounts rather than a mock of
+ * its shape.
+ *
+ * **`working` seeds the live presence store**, which is the only honest way to
+ * show the mid-run state: the count comes from the same store the real fan-out
+ * writes to, so the chip and the Stop beside it are the real ones behaving the
+ * real way. The store is keyed by ROOM ID, so a busy demo must use a room id no
+ * quiet demo shares — see {@link BUSY_ROOM}.
+ */
+function ChannelBarFrame({
+  room,
+  working = 0,
+  width,
+}: {
+  room: RoomWithRoster;
+  working?: number;
+  width?: number;
+}) {
+  useEffect(() => {
+    if (working === 0) {
+      useRoomWorkingStore.getState().observe({ roomId: room.id, working: 0 });
+      return;
+    }
+    // **Restated on a timer, because a count nobody restates is treated as a
+    // crashed server.** A working count above zero ages out after
+    // `PRESENCE_TTL_MS` and becomes a zero — that is the real fan-out's crash
+    // story, and this store is the real store. Seeding once meant the mid-run
+    // showcases quietly went idle thirty seconds after the page loaded, so
+    // anyone who left `/dev/one-bar` open and came back was looking at a demo
+    // that contradicted its own label. Re-observing inside the TTL is exactly
+    // what a live server does, so the showcase stays lit for the same reason a
+    // real busy room does.
+    const restate = () => useRoomWorkingStore.getState().observe({ roomId: room.id, working });
+    restate();
+    const timer = setInterval(restate, PRESENCE_TTL_MS / 3);
+    return () => clearInterval(timer);
+  }, [room.id, working]);
+
+  return (
+    <OneBarProvider value={{ ...QUIET_BAR_STATE, room }}>
+      <BarFrame width={width}>
+        <ChannelsBar />
       </BarFrame>
     </OneBarProvider>
   );
@@ -217,25 +301,54 @@ export function OneBarShowcases() {
           </BarFrame>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Chips and actions — a room bar's shape (phase R1)</ShowcaseLabel>
+        <ShowcaseLabel>
+          The channel bar — the room&apos;s only masthead now. Name, topic, and the chips that say
+          what is true of it
+        </ShowcaseLabel>
         <ShowcaseDemo>
-          <BarFrame>
-            <OneBar
-              identity={<BarTitle>#general</BarTitle>}
-              chips={
-                <>
-                  <Badge variant="secondary">Archived</Badge>
-                  <Badge variant="outline">2 working</Badge>
-                </>
-              }
-              actions={
-                <Button variant="outline" size="xs">
-                  <Plus />
-                  New Agent
-                </Button>
-              }
-            />
-          </BarFrame>
+          <ChannelBarFrame room={CHANNEL_ROOM} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A direct message — no `#`, and the name is whatever the conversation was opened as
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={DM_ROOM} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          An archived room says so, and a bridged one says what it can see
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={ARCHIVED_ROOM} />
+        </ShowcaseDemo>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={BRIDGED_CHANNEL_ROOM} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Mid-run: the working count and Stop light up in space that was already theirs, so nothing
+          beside them moves (I3). Compare the room name&apos;s position with the quiet bar above
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={BUSY_ROOM} working={3} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A long name and a long topic at 420px — the topic goes first, then the name ellipsizes,
+          and the cluster never shrinks (I2)
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={WORDY_ROOM} width={420} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The channel bar in a 390px-wide frame. Note what this CANNOT show: hiding the topic and
+          dropping Stop&apos;s label are `sm:` rules, which answer to the VIEWPORT, not to this box
+          — so on a real phone this row is narrower still. Resize the window to see it
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={BUSY_PHONE_ROOM} working={2} width={390} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>
@@ -417,6 +530,75 @@ export function OneBarShowcases() {
               density="row"
             />
           </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Team Bar"
+        description="The real /team bar: a title, the five views as one scrolling strip, and the way to add an agent. The pill row and the phone's Select collapse are gone — every view is reachable at every width, by scrolling rather than by being conditionally re-offered."
+      >
+        <ShowcaseLabel>
+          Desktop — three ways to read the roster, a rule, then the two rules surfaces
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            {/* Every TeamHeader on this page needs its OWN indicator id: a
+                `layoutId` is global to `motion`, so a shared one makes all eight
+                underlines the same element and animates them onto one box. */}
+            <TeamHeader indicatorLayoutId="playground-team-desktop" />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          At 390px — the strip scrolls, and the end fade says the rules surfaces are still back
+          there
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={PHONE_WIDTH}>
+            <TeamHeader indicatorLayoutId="playground-team-phone" />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Each view marked in turn — the strip reads its active tab off the URL, so this is what
+          `?view=` looks like from the bar
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-col gap-2">
+            {TEAM_VIEW_MODES.map((mode) => (
+              <OneBarProvider key={mode} value={{ ...QUIET_BAR_STATE, teamViewMode: mode }}>
+                <BarFrame>
+                  <TeamHeader indicatorLayoutId={`playground-team-${mode}`} />
+                </BarFrame>
+              </OneBarProvider>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The phone's action — `New Agent` becomes a labelled `+`. This one is composed by hand
+          because the collapse follows the VIEWPORT (`useIsMobile`), not the frame: narrow the
+          browser to see the bar above do it for real.
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={PHONE_WIDTH}>
+            <OneBar
+              identity={<BarTitle>Team</BarTitle>}
+              fill={
+                <BarTabStrip
+                  tabs={TEAM_TABS}
+                  activeTabId="cards"
+                  label="Team views, phone"
+                  indicatorLayoutId="playground-team-tabs-phone"
+                />
+              }
+              actions={
+                <Button variant="outline" size="xs" aria-label="New Agent">
+                  <Plus />
+                </Button>
+              }
+            />
+          </BarFrame>
         </ShowcaseDemo>
       </PlaygroundSection>
     </OneBarProvider>
