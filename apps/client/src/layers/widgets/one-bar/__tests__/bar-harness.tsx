@@ -5,8 +5,11 @@ import { OneBarProvider, type OneBarRouteState } from '../model/one-bar-context'
 /** A bar state with nothing open — each suite overrides only what it asserts on. */
 export const emptyBarState: OneBarRouteState = {
   agentName: undefined,
+  agentVisual: undefined,
   origin: undefined,
   originLabel: undefined,
+  sessionTitle: undefined,
+  sessionDirectoryName: undefined,
   roomTitle: null,
   teamViewMode: 'cards',
 };

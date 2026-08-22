@@ -78,6 +78,12 @@ const ALLOWED_VALUE_IMPORTS = [
   // looks like rather than a door onto the transport. The barrel itself stays
   // banned.
   '@/layers/shared/lib/overnight-boundary',
+  // The last segment of a path, which names an agent row after its folder when
+  // nothing has given it a display name. Kept off the `shared/lib` barrel for
+  // the same reason as the boundary above — it imports NOTHING — and shared
+  // rather than copied so the session bar's directory fallback and these rows
+  // are one function, not two that agree today.
+  '@/layers/shared/lib/basename',
   // Relative siblings inside the model itself.
   /^\.{1,2}\//,
 ];
