@@ -9,8 +9,11 @@
  *
  * @module dev/showcases/InboxShowcases
  */
+import { useCallback, useState } from 'react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { InboxRow } from '@/layers/features/inbox';
+import { InboxRow, InboxGroupRow, groupActivityRows } from '@/layers/features/inbox';
+import type { AgentVisualSource } from '@/layers/entities/agent';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -81,6 +84,96 @@ const ROWS: NotificationDTO[] = [
     body: 'You were on 0.60.2.',
     createdAt: minutesAgo(1_400),
     readAt: minutesAgo(1_390),
+  },
+  {
+    id: '01JZB0000000000000000006',
+    kind: 'dm.received',
+    tier: 'notable',
+    subject: { type: 'room', id: 'room-1' },
+    agentId: 'shadow-fox',
+    title: 'shadow-fox messaged you',
+    body: 'Can you take a look at the deploy?',
+    createdAt: minutesAgo(6),
+  },
+];
+
+/**
+ * The roster this showcase pretends to hold, keyed by the `agentId`s above.
+ *
+ * `dorkbot` and `tangerines` resolve; `shadow-fox` deliberately does not —
+ * the third row's own point is the fallback, so leaving it out of this map
+ * IS the fixture. Carries `name` too, not just the face fields
+ * `AgentVisualSource` needs, so {@link getAgentDisplayName} — the same
+ * resolver `InboxList` calls on the real roster — has something to read.
+ */
+const AGENTS: Record<string, AgentVisualSource & { name: string }> = {
+  dorkbot: { id: 'dorkbot', color: '#f97316', icon: '🤖', name: 'DorkBot' },
+  tangerines: { id: 'tangerines', color: '#f59e0b', icon: '🍊', name: 'tangerines' },
+};
+
+/**
+ * Resolve a face the same way `InboxList` resolves one off the real roster:
+ * `undefined` for "no id to look up", `null` for "looked, not found" — never
+ * `''` standing in for a miss, which would key `AGENTS['']` instead of
+ * naming the miss explicitly (review round 1).
+ *
+ * @param agentId - The notification's own `agentId`, if it has one.
+ */
+function resolveShowcaseAgent(agentId: string | undefined) {
+  return agentId === undefined ? undefined : (AGENTS[agentId] ?? null);
+}
+
+/** Three of DorkBot's runs in a row — long enough to collapse. */
+const BURST_ROWS: NotificationDTO[] = [
+  {
+    id: '01JZB0000000000000000010',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-1' },
+    agentId: 'dorkbot',
+    title: 'Nightly sweep finished',
+    createdAt: minutesAgo(5),
+  },
+  {
+    id: '01JZB0000000000000000011',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-2' },
+    agentId: 'dorkbot',
+    title: 'Nightly sweep finished',
+    createdAt: minutesAgo(65),
+  },
+  {
+    id: '01JZB0000000000000000012',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-3' },
+    agentId: 'dorkbot',
+    title: 'Nightly sweep finished',
+    createdAt: minutesAgo(125),
+    readAt: minutesAgo(120),
+  },
+];
+
+/** Two of the same run — one short of the threshold, so it stays flat. */
+const PAIR_ROWS: NotificationDTO[] = [
+  {
+    id: '01JZB0000000000000000020',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-4' },
+    agentId: 'tangerines',
+    title: 'Weekly digest finished',
+    createdAt: minutesAgo(8),
+  },
+  {
+    id: '01JZB0000000000000000021',
+    kind: 'run.completed',
+    tier: 'quiet',
+    subject: { type: 'run', id: 'run-5' },
+    agentId: 'tangerines',
+    title: 'Weekly digest finished',
+    createdAt: minutesAgo(70),
   },
 ];
 
@@ -174,19 +267,102 @@ function BellStatesShowcase() {
   );
 }
 
-/** The rows behind the bell, at the width the popover gives them. */
+/**
+ * The rows behind the bell, at the width the popover gives them.
+ *
+ * The two grouped demos below own a real `expanded` Set, exactly the shape
+ * `InboxList` keeps — `InboxGroupRow` no longer has state of its own to
+ * fake this with, so clicking a header here genuinely expands it rather than
+ * standing frozen.
+ */
 function InboxRowsShowcase() {
+  const burstItems = groupActivityRows(BURST_ROWS);
+  const pairItems = groupActivityRows(PAIR_ROWS);
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   return (
     <PlaygroundSection
       title="Inbox rows"
       description="What happened, newest first. Unread carries a dot rather than a colour — the row's own tone already says how loud the event was, and two scales fighting for one line is how neither gets read."
     >
-      <ShowcaseLabel>A mixed page: unread above, read below</ShowcaseLabel>
+      <ShowcaseLabel>
+        A mixed page: faces where an agent resolved, the kind glyph where one did not (shadow-fox)
+        or where the tone is loud enough to keep it (the failed run)
+      </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
           {ROWS.map((row) => (
-            <InboxRow key={row.id} notification={row} onOpen={() => {}} />
+            <InboxRow
+              key={row.id}
+              notification={row}
+              agent={resolveShowcaseAgent(row.agentId)}
+              onOpen={() => {}}
+            />
           ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A burst of three, collapsed — click to expand; expanding never marks anything read
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          {burstItems.map((item) =>
+            item.type === 'group' ? (
+              <InboxGroupRow
+                key={item.id}
+                group={item}
+                agent={resolveShowcaseAgent(item.agentId)}
+                agentName={getAgentDisplayName(AGENTS[item.agentId])}
+                expanded={expandedGroups.has(item.stateKey)}
+                onToggleExpanded={() => toggleGroup(item.stateKey)}
+                onOpenNotification={() => {}}
+              />
+            ) : (
+              <InboxRow
+                key={item.notification.id}
+                notification={item.notification}
+                agent={resolveShowcaseAgent(item.notification.agentId)}
+                onOpen={() => {}}
+              />
+            )
+          )}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Two in a row stays flat — the coalescing threshold is three</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          {pairItems.map((item) =>
+            item.type === 'group' ? (
+              <InboxGroupRow
+                key={item.id}
+                group={item}
+                agent={resolveShowcaseAgent(item.agentId)}
+                agentName={getAgentDisplayName(AGENTS[item.agentId])}
+                expanded={expandedGroups.has(item.stateKey)}
+                onToggleExpanded={() => toggleGroup(item.stateKey)}
+                onOpenNotification={() => {}}
+              />
+            ) : (
+              <InboxRow
+                key={item.notification.id}
+                notification={item.notification}
+                agent={resolveShowcaseAgent(item.notification.agentId)}
+                onOpen={() => {}}
+              />
+            )
+          )}
         </div>
       </ShowcaseDemo>
 

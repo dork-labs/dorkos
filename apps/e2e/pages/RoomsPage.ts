@@ -306,9 +306,13 @@ export class RoomsPage {
     return this.page.getByRole('listbox', { name: 'Agents' }).getByRole('option');
   }
 
-  /** The picker's action, whose label says whether it will open a group. */
+  /**
+   * The picker's action, whose label says where pressing it lands: one agent
+   * opens that agent's session, two or more start a group message
+   * (`sidebar-simplification` D2).
+   */
   get startConversationButton(): Locator {
-    return this.page.getByRole('button', { name: /^Start (group )?conversation$/ });
+    return this.page.getByRole('button', { name: /^(Start group message|Open session with .+)$/ });
   }
 
   /**

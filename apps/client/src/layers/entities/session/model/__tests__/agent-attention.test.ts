@@ -137,6 +137,60 @@ describe('deriveAttention', () => {
     const lastActivityAt = now - ATTENTION_THRESHOLDS.inactiveAfterMs - 1;
     expect(deriveAttention({ liveKinds: [], lastActivityAt, now })).toBe('inactive');
   });
+
+  // ── The viewer's own visit (spec `sidebar-simplification` D3) ──
+  //
+  // An agent is also a project. One you opened on Tuesday to read is not
+  // dormant however long it has been since it RAN, so the week is measured from
+  // the later of the two instants. It only ever holds an agent back from
+  // `inactive`: opening a page is not the agent working, and a green "active"
+  // earned by your own click would be a lie about somebody else.
+
+  it('keeps an agent out of inactive when the viewer opened it inside the window', () => {
+    // Re-seed by dropping `lastInteractionAt` from the `Math.max` in
+    // `deriveAttention` and this is the only case that goes red.
+    expect(
+      deriveAttention({
+        liveKinds: [],
+        lastActivityAt: now - ATTENTION_THRESHOLDS.inactiveAfterMs - 1,
+        lastInteractionAt: now - ATTENTION_THRESHOLDS.inactiveAfterMs + 1,
+        now,
+      })
+    ).toBe('idle');
+  });
+
+  it('lets it go inactive once the visit is outside the window too', () => {
+    expect(
+      deriveAttention({
+        liveKinds: [],
+        lastActivityAt: now - ATTENTION_THRESHOLDS.inactiveAfterMs - 1,
+        lastInteractionAt: now - ATTENTION_THRESHOLDS.inactiveAfterMs - 1,
+        now,
+      })
+    ).toBe('inactive');
+  });
+
+  it('never lets a visit alone read as active — that word is about the agent', () => {
+    expect(
+      deriveAttention({
+        liveKinds: [],
+        lastActivityAt: now - ATTENTION_THRESHOLDS.inactiveAfterMs - 1,
+        lastInteractionAt: now - 1_000,
+        now,
+      })
+    ).toBe('idle');
+  });
+
+  it('leaves an agent that never ran reading fresh, visit or no visit', () => {
+    expect(
+      deriveAttention({
+        liveKinds: [],
+        lastActivityAt: null,
+        lastInteractionAt: now - 1_000,
+        now,
+      })
+    ).toBe('fresh');
+  });
 });
 
 describe('foldLiveKindsByPath', () => {

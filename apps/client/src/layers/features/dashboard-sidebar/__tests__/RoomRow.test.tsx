@@ -256,12 +256,12 @@ describe('RoomRow menus', () => {
 
   it('writes the ellipsis onto exactly the items that open something', () => {
     renderRow(channel());
-    // "Move to group" is a submenu trigger. It reads as a `menuitem` like the
+    // "Move to section" is a submenu trigger. It reads as a `menuitem` like the
     // rest, and takes no ellipsis: opening a submenu is not the row asking you
     // for anything, it is one more level of the same menu.
     expect(itemLabels(openDropdown())).toEqual([
       'Mute channel',
-      'Move to group',
+      'Move to section',
       'Add agents…',
       'Members…',
       'Rename…',
@@ -748,7 +748,7 @@ describe('RoomRow working dot', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Organization: mute + move to group (rooms-in-groups, DOR-581)
+// Organization: mute + move to (rooms-in-groups, DOR-581)
 // ---------------------------------------------------------------------------
 
 /** A stored `ui.sidebar` with one manual group and one smart group. */
@@ -801,10 +801,10 @@ function lastSidebarWrite(transport: Transport): SidebarPrefs {
   return last.ui.sidebar;
 }
 
-/** Open "Move to group ▸" and return the submenu that appears. */
+/** Open "Move to section ▸" and return the submenu that appears. */
 async function openMoveToGroup(): Promise<HTMLElement> {
   fireEvent.pointerDown(screen.getByLabelText('#general actions'));
-  fireEvent.click(await screen.findByText('Move to group'));
+  fireEvent.click(await screen.findByText('Move to section'));
   const menus = await screen.findAllByRole('menu');
   // The submenu is the one mounted last; the trigger's own menu stays open.
   return menus[menus.length - 1]!;
@@ -884,7 +884,7 @@ describe('RoomRow organization', () => {
     await screen.findByRole('button', { name: '#general' });
 
     const submenu = await openMoveToGroup();
-    fireEvent.click(within(submenu).getByText('New group…'));
+    fireEvent.click(within(submenu).getByText('New section…'));
 
     expect(onRequestNewGroup).toHaveBeenCalledWith({ kind: 'room', roomId: 'room-1' });
   });

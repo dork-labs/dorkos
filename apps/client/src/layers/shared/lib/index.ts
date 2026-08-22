@@ -114,6 +114,11 @@ export {
 export { playNotificationCue, type NotificationCue } from './notification-sound';
 export { playSliderTick, playCelebration } from './sound';
 export { formatCompactAge } from './format-compact-age';
+export { listWaitingKinds } from './waiting-kinds';
+// Only the function: `RESOLVE_HOLD_S` and `MELT_S` are the curve's own numbers
+// and nothing outside the module reads them (its own test imports the file
+// directly). Putting them on the barrel would be three exports where one is used.
+export { askExitTransition } from './ask-exit-transition';
 export {
   groupSessionsByTime,
   shortenHomePath,

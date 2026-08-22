@@ -26,6 +26,7 @@ import {
   onProjectorInteractionChange,
   type InteractionChange,
 } from '../../session/session-state-projector.js';
+import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import type { NotificationOutcome } from '@dorkos/shared/notification-schemas';
 import { resolveStanding } from '../notification-service.js';
 import { armEscalation } from '../escalation-service.js';
@@ -37,6 +38,13 @@ interface RememberedAsk {
   sessionId: string;
   sessionLabel: string;
   summary: string;
+  /**
+   * The Mesh agent rooted at the session's `cwd`, resolved once when the Ask
+   * parked. Carried through to the resolution row the same way `sessionLabel`
+   * and `summary` are — `InteractionChange`'s `resolved` edge carries no
+   * `cwd` of its own, so a re-resolve there has nothing to resolve against.
+   */
+  agentId?: string;
 }
 
 /**
@@ -75,6 +83,7 @@ function askPayload(
     interactionId,
     sessionLabel: remembered.sessionLabel,
     summary: remembered.summary,
+    ...(remembered.agentId ? { agentId: remembered.agentId } : {}),
   };
 }
 
@@ -95,10 +104,12 @@ export function watchAskResolution(): () => void {
 
   return onProjectorInteractionChange((change) => {
     if (change.type === 'pending') {
+      const agentId = resolveAgentIdForPath(change.cwd);
       const remembered: RememberedAsk = {
         sessionId: change.sessionId,
         sessionLabel: sessionLabelFor(change.cwd),
         summary: summarize(change),
+        ...(agentId ? { agentId } : {}),
       };
       parked.set(change.interaction.id, remembered);
       armEscalation('ask.pending', askPayload(change.interaction.id, remembered));
@@ -116,6 +127,7 @@ export function watchAskResolution(): () => void {
         // An Ask this process never saw parked — one raised before a restart —
         // still deserves an honest row. It says less, not nothing.
         summary: remembered?.summary ?? 'Asked you something',
+        ...(remembered?.agentId ? { agentId: remembered.agentId } : {}),
       }),
       { outcome: OUTCOMES[change.outcome] }
     );

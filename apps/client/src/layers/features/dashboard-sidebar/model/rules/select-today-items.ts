@@ -11,6 +11,7 @@ import type { SidebarRowModel } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
 import { muteIndex, type MuteIndex } from './apply-mute-rules';
 import { deriveUnreadSignal } from './derive-unread-signal';
+import { indexSuppressedDms } from './hand-made-dm';
 import { anchorKey, basename, rowKey } from './targets';
 
 /**
@@ -287,6 +288,18 @@ function anchorRow(
  * message maps — never "has it been active", which is what would let an agent
  * put a row on screen the operator has never touched.
  *
+ * **One clause is not about interaction, and it is the price of one door**
+ * (`sidebar-simplification` D2). A hand-made 1:1 direct message no longer has a
+ * Library row, so a line an agent opened by itself — `relay_notify_user`, the
+ * one shape of this room the operator never starts — would have no row anywhere
+ * and no way in but ⌘K. So a SUPPRESSED one with a directed unread is eligible
+ * here whether or not it has ever been opened (`today:dm-suppressed-unread`).
+ * It is not an agent putting itself on screen: it is an agent that addressed
+ * this person by name, which is the one thing Today has always shown regardless
+ * (BC-16's directed unread is exempt from the cap and from the overnight
+ * boundary already). Once read it drops out on its own, because the clause is
+ * the unread and nothing else.
+ *
  * Ordering, the overnight boundary, mute and the anchor are each a rule of
  * their own; this one only answers who is eligible.
  *
@@ -295,6 +308,11 @@ function anchorRow(
 export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   const previews = previewIndex(state);
   const mutes = muteIndex(state.prefs);
+  // Built here as well as in `buildLibrarySections`, and that is the cheaper of
+  // the two shapes: it is one pass over the rooms plus one hash per agent, and
+  // threading it down from `buildSidebarModel` would put a parameter on both
+  // rules for a cost the rebuild budget does not notice (G8).
+  const suppressedDms = indexSuppressedDms(state, mutes);
   const anchor = anchorKey(state);
   // The room an open THREAD lives in, which is a different key from the thread's
   // own. A thread is keyed on its root entry (`rowKey`), so a deep link into one
@@ -322,8 +340,17 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   for (const room of state.rooms) {
     if (room.archived) continue;
     const key = `room:${room.id}`;
-    if (!touched(key)) continue;
-    rows.push(roomRow(room, state, mutes, previews.get(key)));
+    const row = roomRow(room, state, mutes, previews.get(key));
+    if (touched(key)) {
+      rows.push(row);
+      continue;
+    }
+    // The reachability clause, above. `roomRow` already derived the unread —
+    // mute's silence and the `@mention` that pierces it included — so this asks
+    // the row rather than deriving a second opinion of the same fact.
+    if (suppressedDms.isSuppressed(room) && row.unread.tier === 'directed') {
+      rows.push({ ...row, reason: 'today:dm-suppressed-unread' });
+    }
   }
   for (const thread of state.threads) {
     if (!touched(`room:${thread.roomId}`)) continue;

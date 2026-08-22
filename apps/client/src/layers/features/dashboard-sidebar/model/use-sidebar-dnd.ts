@@ -404,7 +404,7 @@ interface SidebarDndAnnounceContext {
   prefs: SidebarPrefs;
   /** Resolve a sidebar item reference to its display name. */
   itemName: (ref: SidebarItemRef) => string;
-  /** Resolve a group id to its display name. */
+  /** Resolve a section id to its display name. */
   groupName: (groupId: string) => string;
 }
 
@@ -414,7 +414,7 @@ function describeSidebarPickup(
   ctx: SidebarDndAnnounceContext
 ): string {
   return drag.type === 'group'
-    ? `Picked up group ${ctx.groupName(drag.groupId)}.`
+    ? `Picked up section ${ctx.groupName(drag.groupId)}.`
     : `Picked up ${ctx.itemName(drag.ref)}.`;
 }
 
@@ -422,9 +422,9 @@ function describeSidebarPickup(
 function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext): string {
   switch (op.kind) {
     case 'reorder-group':
-      return `Moved group ${ctx.groupName(op.groupId)}.`;
+      return `Moved section ${ctx.groupName(op.groupId)}.`;
     case 'move-to-group':
-      return `Moved ${ctx.itemName(op.ref)} to group ${ctx.groupName(op.groupId)}.`;
+      return `Moved ${ctx.itemName(op.ref)} to ${ctx.groupName(op.groupId)}.`;
     case 'pin':
       return `Pinned ${ctx.itemName(op.ref)}.`;
     case 'unpin':
@@ -434,9 +434,9 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
       // belongs — an agent in Agents, a channel in Channels, a conversation in
       // Direct messages — and which of the three received the drop does not
       // decide that, so naming one would be right only a third of the time.
-      return `Moved ${ctx.itemName(op.ref)} out of its group.`;
+      return `Moved ${ctx.itemName(op.ref)} out of its section.`;
     case 'reorder-within-group':
-      return `Reordered ${ctx.itemName(op.ref)} in group ${ctx.groupName(op.groupId)}.`;
+      return `Reordered ${ctx.itemName(op.ref)} in ${ctx.groupName(op.groupId)}.`;
     case 'reorder-pinned':
       return `Reordered ${ctx.itemName(op.ref)} in Pinned.`;
     case 'reject-smart-group':
@@ -463,7 +463,7 @@ function describeSidebarDragOver(
     case 'computed':
       return container.zone === 'today' ? 'Over Today.' : 'Over Heads up.';
     case 'group':
-      return `Over group ${ctx.groupName(container.groupId)}.`;
+      return `Over ${ctx.groupName(container.groupId)}.`;
   }
 }
 

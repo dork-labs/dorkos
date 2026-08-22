@@ -28,6 +28,11 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     filePath: '/tasks/morning-standup.md',
     createdAt: '2026-08-01T09:00:00.000Z',
     updatedAt: '2026-08-01T09:00:00.000Z',
+    reason: null,
+    proposedBySessionId: null,
+    proposedByAgentPath: null,
+    proposedByName: null,
+    nextRuns: [],
     nextRun: null,
     ...overrides,
   };

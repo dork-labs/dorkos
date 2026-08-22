@@ -156,7 +156,7 @@ function SidebarRowShowcase() {
 
       <ShowcaseLabel>
         The two levels together — header at --sidebar-header-x (12), glyph at --sidebar-row-x (20),
-        label at 46; a section&rsquo;s members one --sidebar-nested-x (12) deeper
+        label at 46. Every row in the panel, a section&rsquo;s members included, is on that one x.
       </ShowcaseLabel>
       <ShowcaseDemo>
         {/* The whole geometry, in one frame a browser can measure. `px-2` is the
@@ -195,16 +195,17 @@ function SidebarRowShowcase() {
               dataSlot="sidebar-geometry-stack-row"
             />
           </SidebarMenu>
-          <div className="pl-[var(--sidebar-nested-x)]">
-            <SectionHeader label="Clients" level={4} collapsed={false} onToggle={() => {}} />
-            <SidebarMenu className="gap-0">
-              <SidebarRow
-                glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
-                title="acme"
-                dataSlot="sidebar-geometry-nested-row"
-              />
-            </SidebarMenu>
-          </div>
+          {/* A hand-made section, flush with everything above it: it is a peer
+              of Channels rather than a child of anything (D3), so its header
+              sits on the header x and its rows on the row x. */}
+          <SectionHeader label="Clients" collapsed={false} onToggle={() => {}} />
+          <SidebarMenu className="gap-0">
+            <SidebarRow
+              glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+              title="acme"
+              dataSlot="sidebar-geometry-section-row"
+            />
+          </SidebarMenu>
         </div>
       </ShowcaseDemo>
 

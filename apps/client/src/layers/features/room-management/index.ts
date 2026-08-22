@@ -31,4 +31,5 @@ export { AgentRosterPicker } from './ui/AgentRosterPicker';
 export { ChannelCreateDialog } from './ui/ChannelCreateDialog';
 export { NewDirectMessageMenu } from './ui/NewDirectMessageMenu';
 export { RoomDetailsDialog } from './ui/RoomDetailsDialog';
+export { ONE_DOOR_HINT, oneDoorSubmitLabel, opensAgentSession } from './lib/one-door';
 export type { RoomDetailsFocus, RoomDetailsRoom } from './model/room-details';

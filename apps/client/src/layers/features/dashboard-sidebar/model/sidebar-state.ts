@@ -61,6 +61,21 @@ export interface AgentRosterEntry {
   isSystem: boolean;
   /** Latest known session activity, epoch ms, or `null` if it never ran. */
   lastActivityAt: number | null;
+  /**
+   * When the viewer last OPENED it, epoch ms, or `null` if they never have.
+   *
+   * **A fifth question, and it earns its place by being one no other field can
+   * answer.** An agent is also a project: one you opened on Tuesday to read is
+   * not dormant, however long it has been since it ran, and one nobody has ever
+   * run OR opened is the emptiest row the panel can draw. The Agents section's
+   * short list is decided on exactly that pair (D3), and `attention` cannot
+   * stand in for it — a never-run agent reads `'fresh'` there, which is the
+   * right word for a dot and the wrong word for "worth a row forever".
+   *
+   * Straight from `entities/interactions`, re-keyed by path. Absent from that
+   * record means `null` — omission, never a guess.
+   */
+  lastInteractionAt: number | null;
   /** How much of the operator's attention it is asking for. */
   attention: AttentionState;
 }

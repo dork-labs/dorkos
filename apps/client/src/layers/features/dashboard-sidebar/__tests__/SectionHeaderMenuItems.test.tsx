@@ -6,12 +6,14 @@ import {
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   buildDirectMessagesHeaderMenuNodes,
+  buildGroupHeaderMenuNodes,
+  type GroupHeaderMenuModel,
   type AgentsHeaderMenuModel,
-  type ChannelsHeaderMenuModel,
-  type DirectMessagesHeaderMenuModel,
+  type RoomSectionHeaderMenuModel,
   type SectionHeaderMenuNode,
 } from '../ui/SectionHeaderMenuItems';
 import { SectionHeader } from '@/layers/shared/ui';
+import type { SidebarGroup } from '@dorkos/shared/config-schema';
 
 beforeAll(() => {
   global.ResizeObserver = class {
@@ -29,27 +31,19 @@ afterEach(() => cleanup());
 // Models with every callback stubbed, so a test names only what it varies.
 // ---------------------------------------------------------------------------
 
-function channels(overrides: Partial<ChannelsHeaderMenuModel> = {}): ChannelsHeaderMenuModel {
+function channels(overrides: Partial<RoomSectionHeaderMenuModel> = {}): RoomSectionHeaderMenuModel {
   return {
     collapsed: false,
     hasUnread: false,
     onMarkAllRead: vi.fn(),
+    sortMode: 'name',
+    onSortModeChange: vi.fn(),
     onToggleCollapsed: vi.fn(),
     ...overrides,
   };
 }
 
-function dms(
-  overrides: Partial<DirectMessagesHeaderMenuModel> = {}
-): DirectMessagesHeaderMenuModel {
-  return {
-    collapsed: false,
-    hasUnread: false,
-    onMarkAllRead: vi.fn(),
-    onToggleCollapsed: vi.fn(),
-    ...overrides,
-  };
-}
+const dms = channels;
 
 function agents(overrides: Partial<AgentsHeaderMenuModel> = {}): AgentsHeaderMenuModel {
   return {
@@ -88,20 +82,21 @@ describe('section header item lists', () => {
   it('offers a caught-up Channels header exactly these items, in this order', () => {
     // No 'new-channel': the New menu is the only create surface, and this
     // section's "+" deep-links into it (BC-45).
-    expect(ids(buildChannelsHeaderMenuNodes(channels()))).toEqual(['collapse']);
+    expect(ids(buildChannelsHeaderMenuNodes(channels()))).toEqual(['sort', 'collapse']);
   });
 
   it('adds Mark all channels read, and its separator, only when a channel is behind', () => {
     expect(ids(buildChannelsHeaderMenuNodes(channels({ hasUnread: true })))).toEqual([
       'mark-all-read',
       'sep-unread',
+      'sort',
       'collapse',
     ]);
   });
 
   it('gives Direct messages the same shape as Channels, with its own nouns', () => {
     const dmNodes = buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true }));
-    expect(ids(dmNodes)).toEqual(['mark-all-read', 'sep-unread', 'collapse']);
+    expect(ids(dmNodes)).toEqual(['mark-all-read', 'sep-unread', 'sort', 'collapse']);
     expect(action(dmNodes, 'mark-all-read').label).toBe('Mark all read');
     expect(
       action(buildChannelsHeaderMenuNodes(channels({ hasUnread: true })), 'mark-all-read').label
@@ -336,7 +331,7 @@ describe('SectionHeader variant parity', () => {
     // Both rules included: they are what separates what you can make from what
     // you can clear from what the section looks like.
     expect(contextTree).toEqual([
-      ['menuitem:Mark all channels read', 'separator:', 'menuitem:Collapse'],
+      ['menuitem:Mark all channels read', 'separator:', 'menuitem:Sort by', 'menuitem:Collapse'],
     ]);
   });
 });
@@ -410,5 +405,67 @@ describe('SectionHeader', () => {
     expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
     expect(screen.getByRole('menuitem', { name: 'Show' })).toBeInTheDocument();
+  });
+});
+
+describe('a hand-made section’s header menu (D3)', () => {
+  /** One stored section, with every callback stubbed. */
+  function group(overrides: Partial<SidebarGroup> = {}): GroupHeaderMenuModel {
+    return {
+      group: {
+        id: 'clients',
+        name: 'Clients',
+        kind: 'manual',
+        items: [],
+        sortMode: 'manual',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        ...overrides,
+      } as SidebarGroup,
+      onRename: vi.fn(),
+      onToggleCollapsed: vi.fn(),
+      onDisplayFilterChange: vi.fn(),
+      onSortModeChange: vi.fn(),
+      onToggleMuted: vi.fn(),
+      onEditRules: vi.fn(),
+      onConvertToManual: vi.fn(),
+      onDelete: vi.fn(),
+    };
+  }
+
+  it('says "section" wherever it names what it is acting on', () => {
+    const labels = buildGroupHeaderMenuNodes(group())
+      .filter((node) => node.kind === 'action')
+      .map((node) => node.label);
+    expect(labels).toContain('Rename section');
+    expect(labels).toContain('Mute section');
+    expect(labels).toContain('Delete section');
+    expect(labels.some((label) => label.toLowerCase().includes('group'))).toBe(false);
+  });
+
+  it('says "Convert to manual section" on a smart one', () => {
+    const labels = buildGroupHeaderMenuNodes(
+      group({ kind: 'smart', sortMode: 'name', rules: { runtimes: ['codex'] } })
+    )
+      .filter((node) => node.kind === 'action')
+      .map((node) => node.label);
+    expect(labels).toContain('Convert to manual section');
+    expect(labels.some((label) => label.toLowerCase().includes('group'))).toBe(false);
+  });
+
+  it('HIDES Mute on a smart section, because muting one does nothing', () => {
+    // What this catches: re-offering the item. `apply-mute-rules.ts` skips smart
+    // sections by design, so the control flipped its own label and changed not
+    // one row (research §3.4 defect 2). Delete the `isSmart ? [] :` guard in the
+    // builder and this goes red.
+    expect(ids(buildGroupHeaderMenuNodes(group()))).toContain('mute');
+    expect(
+      ids(
+        buildGroupHeaderMenuNodes(
+          group({ kind: 'smart', sortMode: 'name', rules: { runtimes: ['codex'] } })
+        )
+      )
+    ).not.toContain('mute');
   });
 });

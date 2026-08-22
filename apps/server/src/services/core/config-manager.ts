@@ -106,7 +106,6 @@ import {
   NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
   toSidebarItemRef,
-  normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger, logError } from '../../lib/logger.js';
@@ -1937,8 +1936,8 @@ export function migrateSidebarMembersToItemRefs(store: {
 
   /**
    * Wrap each stored path; anything already an object is a ref and passes
-   * through. Delegates to the shared {@link toSidebarItemRef} so this file and
-   * the read-time `normalizeSidebarPrefs` conversion state the rule once.
+   * through. Delegates to the shared {@link toSidebarItemRef}, which is the one
+   * statement of what a stored string means.
    */
   const toItemRefs = (value: unknown): unknown[] =>
     (Array.isArray(value) ? value : []).map((entry) =>
@@ -1978,6 +1977,15 @@ export function migrateSidebarMembersToItemRefs(store: {
 
   store.set('ui', { ...(ui as Record<string, unknown>), sidebar: next });
 }
+
+/**
+ * The pre-DOR-579 name for a section's member list.
+ *
+ * Named here rather than spelled inline because two things read it: the shipped
+ * `0.59.0` migration, and `ConfigManager.canonicalSidebar`, which catches the
+ * installs that migration's version window misses.
+ */
+const LEGACY_MEMBERS_KEY = 'agentPaths';
 
 /**
  * The suggestion id the "group your agents" hint card became when Getting
@@ -2906,91 +2914,46 @@ export const CONFIG_MIGRATIONS = {
 } as const;
 
 /**
- * Widen the generated JSON Schema so conf's Ajv ACCEPTS a `ui.sidebar` written
- * before DOR-579, instead of condemning the whole config file.
+ * Declare the eight `ui.sidebar` keys the P2 redesign retired, so that a file
+ * still carrying them CONVERGES on the first write instead of keeping them for
+ * ever.
  *
- * ## Why this has to exist at all
+ * ## What this is not
  *
- * DOR-579 is the first change in this file's migration history that RENAMES a
- * field rather than adding one. Every additive backfill degrades safely when its
- * migration is skipped: the key is absent, a Zod default fills in, nothing
- * breaks. A rename does not. Skipping it leaves `agentPaths` on a group object
- * whose schema is now closed (`additionalProperties: false`), and bare path
- * strings in `pinned`/`muted` where objects are now required — so a config that
- * was valid yesterday becomes schema-INVALID, `new Conf(...)` throws, and the
- * constructor's recovery path backs the file up and replaces it with defaults.
+ * It is no longer about loading such a file. `tolerateUnknownKeys` below already
+ * accepts any key this build does not declare — that is the version-skew rule,
+ * and it is what keeps a config written by a newer DorkOS from being condemned
+ * by an older one. A retired key rides in on the same tolerance.
  *
- * That is not "the sidebar forgets its groups". It resets the ENTIRE file:
- * `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ * ## What it is
  *
- * It no longer takes the person's privacy choice with it —
- * `safe-defaults/protected-state.ts` salvages that (and every other protective
- * value) before the file is replaced, which is what DOR-584 closed. Do not read
- * that as making this widening optional: salvage keeps protections, not
- * preferences, and it needs the doomed file to still parse as JSON. Not
- * condemning the file in the first place is still the goal.
+ * `ConfigManager.write` carries UNKNOWN keys across from disk, deliberately: an
+ * older build saving a theme must not delete a newer build's settings one
+ * section at a time. A retired key is the opposite case — it belongs to
+ * yesterday rather than to tomorrow, and carrying it across means it never
+ * leaves the file. Naming it here puts it back inside "what this build knows
+ * about", so Zod's strip on the write path is final and the first write after an
+ * upgrade cleans it up. `migrateSidebarSectionPrefs` moves what the keys MEANT;
+ * this is what makes the husks go away on an install the migration never
+ * reached.
  *
- * And the migration is skipped more often than it sounds. `conf` runs a key only
- * when `key > storedVersion && key <= projectVersion`, so: a dev tree resolves
- * `SERVER_VERSION` to `0.0.0` and runs NO migrations at all, and shipping this
- * schema in a patch release below the migration key would skip it for every
- * user. Correctness must not hang on the migration running.
+ * They are declared with their real types rather than as an open catchall: "let
+ * yesterday's key through" must not quietly become "validate nothing".
  *
- * ## Why it is here and not in the Zod schema
- *
- * Ajv is the ONLY validator on the config read path — nothing calls Zod on a
- * stored object, and `z.toJSONSchema` emits a pipe's OUTPUT schema, so a Zod
- * `.preprocess` would neither run nor widen what Ajv sees. Keying the widening
- * off the schema identities here keeps the exported TypeScript types strict
- * (`SidebarItemRef[]`, no legacy field), which is what makes the compiler
- * enumerate every membership test, and keeps the legacy encoding out of the
- * operator disclosure walker and the OpenAPI export — both of which build their
- * own schema without this override.
- *
- * ## One thing not to assume
- *
- * `SidebarItemRefSchema` is used at THREE sites (`pinned`, `muted`, and each
- * group's `items`), but this fires ONCE for it — Zod emits the node a single
- * time and clones it into each site afterwards, so one widening reaches all
- * three. That is Zod's un-referencing pass, an implementation detail rather
- * than a contract. The fixture in `'a config written before DOR-579 is not
- * condemned'` exercises all three lists together precisely so a Zod change that
- * stopped sharing the node, or a regression widening only one site, goes red
- * rather than silently leaving two paths condemning the file.
- *
- * ## The eight keys the sidebar redesign retired
- *
- * The same hazard, one release later and in the other direction. The redesign
- * (`specs/sidebar-now-today-library` §D) REMOVES `ungroupedCollapsed`,
- * `channelsCollapsed`, `dmsCollapsed`, `threadsCollapsed`, `recentsCollapsed`,
- * `ungroupedSortMode`, `ungroupedDisplayFilter` and `groupsHintDismissed` from
- * `SidebarPrefsSchema`, and Zod closes the object it generates
- * (`additionalProperties: false`). So a config written by yesterday's release —
- * which is every config there is — becomes schema-INVALID the moment the
- * migration is skipped, and the whole file gets condemned and replaced.
- *
- * Naming them here keeps Ajv from condemning the file while the migration has
- * not run, which is precisely the dev-tree case (`SERVER_VERSION` resolves to
- * `0.0.0`, so no migration runs at all). It is tolerance, not a read path:
- * nothing reads these keys, the exported TypeScript types do not carry them, and
- * Zod strips them on the first write that goes through `applyConfigPatch`.
- *
- * ## Removing it
- *
- * This is back-compat for ONE release: delete this function and its `override`
- * once the DOR-579 migration has shipped, together with the read-time
- * `normalizeSidebarPrefs` conversion and `ConfigManager.canonicalUi`. The tests
- * named above fail if it is removed early.
+ * **The DOR-579 half of this override is gone** (DOR-588). It widened
+ * `SidebarItemRefSchema` and `SidebarGroupSchema` so that bare agent paths and
+ * `groups[].agentPaths` still loaded a release after the rename; that release
+ * has shipped, the migration has run for everyone who has opened DorkOS since,
+ * and a file still in that encoding takes the recovery path like any other
+ * unreadable one — with protections salvaged
+ * (`safe-defaults/protected-state.ts`).
  *
  * @param ctx - The `z.toJSONSchema` override context for one schema node.
  */
-function tolerateLegacySidebarEncoding(ctx: {
+function tolerateRetiredSidebarKeys(ctx: {
   zodSchema: unknown;
   jsonSchema: Record<string, unknown>;
 }): void {
-  // The eight keys the redesign retired. Declared with their real types rather
-  // than as an open catchall: "tolerate what yesterday wrote" must not quietly
-  // become "validate nothing".
   if (ctx.zodSchema === SidebarPrefsSchema) {
     const properties = ctx.jsonSchema.properties as
       | Record<string, Record<string, unknown>>
@@ -3004,29 +2967,35 @@ function tolerateLegacySidebarEncoding(ctx: {
     properties.ungroupedDisplayFilter = { type: 'string', enum: ['all', 'active', 'attention'] };
     return;
   }
+  // **`groups[].agentPaths` has to be DECLARED, or it cannot be converted.**
+  // conf builds Ajv with `removeAdditional`, so a key this schema does not name
+  // is deleted from the object on the way in — not preserved, deleted. Leaving
+  // it undeclared meant a section's membership was gone before any code could
+  // look at it, which is exactly the silent loss `ConfigManager.canonicalSidebar`
+  // exists to prevent (DOR-588 review). This is the ONE piece of the DOR-579
+  // widening that survives: the bare-path form of `pinned`/`muted` is no longer
+  // tolerated, and a config still in THAT shape takes the recovery path.
   // `pinned`, `muted` and `groups[].items` all held a bare agent projectPath.
+  // Declared for the same reason as the key below: conf builds Ajv with
+  // `removeAdditional`, and a shape it refuses is a file it condemns — so
+  // widening here is what keeps the person's pins and mutes reachable long
+  // enough for `ConfigManager.canonicalSidebar` to convert them.
   if (ctx.zodSchema === SidebarItemRefSchema) {
     ctx.jsonSchema.anyOf = [{ type: 'string', minLength: 1 }, { oneOf: ctx.jsonSchema.oneOf }];
     delete ctx.jsonSchema.oneOf;
     return;
   }
-  // `groups[].items` was `groups[].agentPaths`; the group object is closed, so
-  // the retired key has to be named for Ajv to let it through.
   if (ctx.zodSchema === SidebarGroupSchema) {
     const properties = ctx.jsonSchema.properties as
       | Record<string, Record<string, unknown>>
       | undefined;
     if (!properties) return;
-    properties.agentPaths = { type: 'array', items: { type: 'string' } };
+    properties[LEGACY_MEMBERS_KEY] = { type: 'array', items: { type: 'string' } };
     // conf builds Ajv with `useDefaults`, so a declared `default` is WRITTEN IN
-    // during validation, and Zod marks a defaulted field `required` because its
-    // OUTPUT always has one. Left alone, an un-migrated group would gain an
-    // empty `items` before anything could read its `agentPaths`, and the
-    // read-time conversion — which treats a present `items` as authoritative —
-    // would hand back an empty group. Dropping both keeps "absent" meaning
-    // absent, so the conversion can tell the two encodings apart at all.
-    // `normalizeSidebarPrefs` supplies `[]` for a group that genuinely has
-    // neither, and the Zod default still applies wherever Zod parses.
+    // during validation. Left alone, an un-migrated section would gain an empty
+    // `items` before anything could read its `agentPaths`, and the conversion —
+    // which treats a non-empty `items` as authoritative — would hand back an
+    // empty section. Dropping both keeps "absent" meaning absent.
     delete properties.items?.default;
     const required = ctx.jsonSchema.required;
     if (Array.isArray(required)) {
@@ -3037,7 +3006,7 @@ function tolerateLegacySidebarEncoding(ctx: {
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
-  override: tolerateLegacySidebarEncoding,
+  override: tolerateRetiredSidebarKeys,
 }) as { properties?: Record<string, unknown> };
 
 // A key this build does not declare is another build's key, not damage. Zod
@@ -3137,6 +3106,8 @@ export type ConfigChangeListener = (change: ConfigChange) => void;
 export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
+  /** Whether {@link ConfigManager.canonicalSidebar} has already had its one look. */
+  private sidebarConverted = false;
   private listeners = new Set<ConfigChangeListener>();
 
   /**
@@ -3249,6 +3220,103 @@ export class ConfigManager {
     this.announceUnreadableSettings();
   }
 
+  /**
+   * Bring a `ui.sidebar` written before DOR-579 into the shape this build
+   * stores — once, the first time anything reads `ui`.
+   *
+   * ## The case this exists for
+   *
+   * `migrateSidebarMembersToItemRefs` (the `0.59.0` body) moved almost
+   * everybody, and `conf` runs a migration key only when it lands in
+   * `(storedVersion, projectVersion]` — so it never runs at all in a tree whose
+   * version resolves to `0.0.0`, which is every `pnpm dev`, and it is skipped
+   * for anyone whose stored version has already passed it. For an additive
+   * backfill that is harmless. For a RENAME it is not, and the dangerous shape
+   * is the one that looks fine: a config whose `pinned` and `muted` are already
+   * references and whose only old part is `groups[].agentPaths`. That key is
+   * declared to Ajv (see `tolerateRetiredSidebarKeys`) so it survives the read,
+   * but nothing else knows it — the section loads with no members and is written
+   * back that way by the next config change of any kind. Nobody sees a warning;
+   * a person just finds the sections they built are empty.
+   *
+   * ## Why on first read, and not at boot
+   *
+   * At boot it would cost a read of a file the operating system may be refusing,
+   * on a machine already in trouble, for work that can wait — and this class
+   * promises that a boot it cannot complete leaves the settings exactly where
+   * they are. Here it costs nothing: the caller is already reading `ui`, this
+   * inspects the object they were handed, and the latch asks the question once
+   * per process rather than once per read. That last part is what separates it
+   * from the read-time conversion DOR-588 removed, which scanned three lists on
+   * every read for ever to answer "no".
+   *
+   * The write-through is best effort: a conversion that could not be persisted
+   * still returns the right value to this caller, and the next boot tries again.
+   *
+   * @param ui - The stored `ui` section, as `conf` handed it over.
+   */
+  private canonicalSidebar(ui: UserConfig['ui']): UserConfig['ui'] {
+    if (this.sidebarConverted) return ui;
+    this.sidebarConverted = true;
+    const sidebar = ui?.sidebar;
+    if (!sidebar) return ui;
+    const groups: unknown = sidebar.groups;
+    const legacy = (group: unknown): group is Record<string, unknown> =>
+      group !== null && typeof group === 'object' && LEGACY_MEMBERS_KEY in group;
+    /** A membership list still holding bare agent paths. */
+    const bare = (list: unknown): list is unknown[] =>
+      Array.isArray(list) && list.some((entry) => typeof entry === 'string');
+
+    const staleGroups = Array.isArray(groups) ? groups.filter(legacy).length : 0;
+    if (staleGroups === 0 && !bare(sidebar.pinned) && !bare(sidebar.muted)) return ui;
+
+    const converted = (Array.isArray(groups) ? groups : []).map((group) => {
+      if (!legacy(group)) return group;
+      const { [LEGACY_MEMBERS_KEY]: retired, ...rest } = group;
+      // An `items` that already holds something wins: only a file written before
+      // DOR-579 carries the retired key, so the two can never hold different
+      // truths, and preferring `items` keeps this from resurrecting a list the
+      // person has since edited.
+      const source = Array.isArray(rest.items) && rest.items.length > 0 ? rest.items : retired;
+      return {
+        ...rest,
+        items: (Array.isArray(source) ? source : []).map((entry) =>
+          toSidebarItemRef(entry as SidebarItemRef | string)
+        ),
+      };
+    });
+
+    /** One stored list, every bare path wrapped. */
+    const refs = (list: unknown) =>
+      Array.isArray(list)
+        ? list.map((entry) => toSidebarItemRef(entry as SidebarItemRef | string))
+        : list;
+
+    const next = {
+      ...ui,
+      sidebar: {
+        ...sidebar,
+        pinned: refs(sidebar.pinned),
+        muted: refs(sidebar.muted),
+        groups: converted,
+      },
+    } as unknown as UserConfig['ui'];
+    logger.warn(
+      `[Config] Converted a pre-0.59 sidebar in ${this.store.path}: ` +
+        `pins, mutes and ${staleGroups} section(s) now store their members as item references`
+    );
+    try {
+      this.store.set('ui', next);
+    } catch (error) {
+      // Never the reason a read fails. Every failure this class raises is a
+      // `ConfigBootError`, and a raw errno escaping from a tidy-up would reach
+      // the person as the stack trace that contract exists to prevent. The value
+      // returned below is already correct for this caller.
+      logger.warn(`[Config] Could not persist the converted sidebar`, logError(error));
+    }
+    return next;
+  }
+
   /** Whether this is the first time the config file has been created */
   get isFirstRun(): boolean {
     return this._isFirstRun;
@@ -3301,37 +3369,6 @@ export class ConfigManager {
   }
 
   /**
-   * Put a stored `ui` section into the canonical sidebar encoding.
-   *
-   * **This class is the server's read boundary for the legacy encoding.** A
-   * `ui.sidebar` written before DOR-579 holds bare agent paths and
-   * `groups[].agentPaths`; the widened conf schema lets conf LOAD that file, but
-   * the declared `UserConfig` type says otherwise, and every server-side reader
-   * believes the type. Normalizing here — rather than at each consumer — is what
-   * makes the type true at the one place the value is handed out, so a new
-   * reader cannot reintroduce the gap by forgetting to convert.
-   *
-   * It matters most on the WRITE path: `applyConfigPatch` merges a patch onto
-   * this value and re-validates with Zod, which is strict. Un-normalized, a
-   * legacy `pinned` fails that validation and every config write is refused —
-   * theme, telemetry consent, onboarding, all of it — and a legacy `agentPaths`
-   * is silently stripped by Zod and persisted as an empty group.
-   *
-   * Returns its input unchanged once the file is canonical, so callers keep
-   * referential equality and the steady state costs one scan per list.
-   *
-   * Removed with the rest of the DOR-579 back-compat, one release on.
-   *
-   * @param ui - The stored `ui` section, in either encoding.
-   */
-  private canonicalUi(ui: UserConfig['ui']): UserConfig['ui'] {
-    const sidebar = ui?.sidebar;
-    if (!sidebar) return ui;
-    const normalized = normalizeSidebarPrefs(sidebar);
-    return normalized === sidebar ? ui : { ...ui, sidebar: normalized };
-  }
-
-  /**
    * The section this build can actually run on.
    *
    * A leaf whose stored value a NEWER build widened is no longer refused by Ajv
@@ -3353,10 +3390,10 @@ export class ConfigManager {
   /** Get a top-level config section */
   get<K extends keyof UserConfig>(key: K): UserConfig[K] {
     const stored = this.store.get(key);
-    // `ui` is the only section that can carry the pre-DOR-579 sidebar encoding,
-    // and it has to be canonical before Zod is asked anything about it.
+    // `ui` is the only section that can still carry the pre-DOR-579 encoding,
+    // and the conversion asks once per process rather than once per read.
     const value =
-      key === 'ui' ? (this.canonicalUi(stored as UserConfig['ui']) as UserConfig[K]) : stored;
+      key === 'ui' ? (this.canonicalSidebar(stored as UserConfig['ui']) as UserConfig[K]) : stored;
     return this.readable(key, value);
   }
 
@@ -3504,14 +3541,11 @@ export class ConfigManager {
     return result;
   }
 
-  /**
-   * Get the full config object, in the canonical sidebar encoding
-   * (see {@link ConfigManager.canonicalUi}).
-   */
+  /** Get the full config object. */
   getAll(): UserConfig {
-    const config = this.store.store;
-    const ui = this.canonicalUi(config.ui);
-    const canonical = ui === config.ui ? config : { ...config, ui };
+    const stored = this.store.store;
+    const ui = this.canonicalSidebar(stored.ui);
+    const canonical = ui === stored.ui ? stored : { ...stored, ui };
     let repaired: Record<string, unknown> | undefined;
     for (const [key, value] of Object.entries(canonical)) {
       const readable = repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).value;

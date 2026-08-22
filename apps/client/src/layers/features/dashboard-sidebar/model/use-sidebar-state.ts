@@ -210,6 +210,26 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   const threadsQuery = useThreads();
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
 
+  // ── What the operator opened, and when ──
+  // Read before the fleet because attention is a function of it — an agent you
+  // opened this week is not dormant, whatever it ran (D3) — and before prefs
+  // because the digest is a function of it too (BC-22).
+  const interactions = useInteractionTimestamps();
+  // The agent half of that record, re-keyed by path and parsed once. Guarded for
+  // stability like every other map here: a fresh object each render would defeat
+  // `useAgentAttentionMap`'s memo on every store tick.
+  const agentInteractionAt = useShallowStable(
+    useMemo(() => {
+      const opened: Record<string, number> = {};
+      for (const [key, iso] of Object.entries(interactions)) {
+        if (!key.startsWith('agent:')) continue;
+        const at = Date.parse(iso);
+        if (!Number.isNaN(at)) opened[key.slice('agent:'.length)] = at;
+      }
+      return opened;
+    }, [interactions])
+  );
+
   // ── The fleet ──
   const meshQuery = useMeshAgentPaths();
   const meshData = meshQuery.data;
@@ -219,7 +239,9 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   const manifestsQuery = useResolvedAgents(rawPaths);
   const manifests = manifestsQuery.data;
   const { brokenPaths } = useExecutionExceptions();
-  const attentionMap = useShallowStable(useAgentAttentionMap(rawPaths, brokenPaths));
+  const attentionMap = useShallowStable(
+    useAgentAttentionMap(rawPaths, brokenPaths, agentInteractionAt)
+  );
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
   const agents = useMemo<readonly AgentRosterEntry[]>(
     () =>
@@ -233,10 +255,11 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
           namespace: manifest?.namespace ?? null,
           isSystem: manifest?.isSystem ?? false,
           lastActivityAt: Number.isNaN(lastActivityAt) ? null : lastActivityAt,
+          lastInteractionAt: agentInteractionAt[path] ?? null,
           attention: attentionMap[path] ?? 'inactive',
         };
       }),
-    [rawPaths, manifests, agentActivity, attentionMap]
+    [rawPaths, manifests, agentActivity, attentionMap, agentInteractionAt]
   );
   const displayNames = useMemo(
     () => disambiguateDisplayNames(rawPaths, manifests ?? {}),
@@ -273,11 +296,6 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       return written;
     }, [sessions])
   );
-
-  // ── What the operator opened, and when ──
-  // Read before prefs because the digest is a function of it (BC-22), and the
-  // digest is what the prefs handed to the model are adjusted for.
-  const interactions = useInteractionTimestamps();
 
   // ── Preferences, and the recents list they filter ──
   const storedPrefs = useSidebarPrefs();

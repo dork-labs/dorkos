@@ -21,46 +21,24 @@ import type {
   SidebarSectionPrefs,
   SidebarDisplayFilter,
 } from '@dorkos/shared/config-schema';
-import {
-  SIDEBAR_PREFS_DEFAULTS,
-  sameSidebarItem,
-  normalizeSidebarPrefs,
-} from '@dorkos/shared/config-schema';
+import { SIDEBAR_PREFS_DEFAULTS, sameSidebarItem } from '@dorkos/shared/config-schema';
 import { useTransport } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
 /**
- * Normalized prefs, keyed by the exact stored object they came from.
+ * Resolve the sidebar prefs from a (possibly-undefined) server config.
  *
- * {@link selectSidebar} runs on every read, and every consumer memoizes on
- * `prefs.pinned` / `prefs.groups` identity, so converting into a fresh object
- * each call would invalidate those memos on every render. Keying the cache on
- * the stored object makes one config snapshot yield one normalized object for
- * as long as anything holds it, and a `WeakMap` lets the entry go with it.
- */
-const normalizedSidebarCache = new WeakMap<object, SidebarPrefs>();
-
-/**
- * Resolve the sidebar prefs from a (possibly-undefined) server config, in the
- * canonical encoding.
+ * A straight read. It used to convert the pre-DOR-579 encoding on the way past —
+ * bare agent paths, `groups[].agentPaths` — behind a `WeakMap` that kept the
+ * result referentially stable for the memos downstream. That rename shipped a
+ * release ago with its migration, so the conversion and its cache are gone
+ * (DOR-588) and the stored object is handed over as it is.
  *
- * A config written before DOR-579 stores bare agent paths and `agentPaths`
- * instead of item references and `items`, and the migration that rewrites it is
- * skipped whenever the app version falls outside `conf`'s migration window (a
- * dev tree runs no migrations at all). Normalizing here is what keeps the
- * sidebar correct on those installs rather than showing empty groups;
- * `normalizeSidebarPrefs` returns its input unchanged once the file is
- * canonical, so the steady state costs one `some()` per list.
+ * @param config - The server config, or `undefined` while it loads.
  */
 function selectSidebar(config: ServerConfig | undefined): SidebarPrefs {
-  const stored = config?.ui?.sidebar;
-  if (!stored) return SIDEBAR_PREFS_DEFAULTS;
-  const cached = normalizedSidebarCache.get(stored);
-  if (cached) return cached;
-  const normalized = normalizeSidebarPrefs(stored);
-  normalizedSidebarCache.set(stored, normalized);
-  return normalized;
+  return config?.ui?.sidebar ?? SIDEBAR_PREFS_DEFAULTS;
 }
 
 /**

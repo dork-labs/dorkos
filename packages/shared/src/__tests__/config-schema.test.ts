@@ -15,7 +15,6 @@ import {
   SidebarItemRefSchema,
   sameSidebarItem,
   toSidebarItemRef,
-  normalizeSidebarPrefs,
 } from '../config-schema.js';
 import type { UserConfig, SidebarPrefs } from '../config-schema.js';
 
@@ -1126,116 +1125,18 @@ describe('SidebarItemRefSchema + sameSidebarItem (sidebar-groups, DOR-579)', () 
   });
 });
 
-describe('normalizeSidebarPrefs — reading a config the migration has not touched', () => {
+describe('toSidebarItemRef — what a stored membership string means', () => {
   const agent = (path: string) => ({ kind: 'agent' as const, path });
 
-  /** A `ui.sidebar` in the pre-DOR-579 encoding, as it sits on disk. */
-  function priorShape(): SidebarPrefs {
-    return {
-      ...SidebarPrefsSchema.parse({}),
-      pinned: ['/projects/alpha'],
-      muted: ['/projects/beta'],
-      groups: [
-        {
-          id: 'g1',
-          name: 'Clients',
-          agentPaths: ['/projects/alpha', '/projects/gamma'],
-          sortMode: 'manual',
-          collapsed: false,
-          displayFilter: 'all',
-          muted: false,
-          kind: 'manual',
-        },
-      ],
-      // The declared type says refs and `items`; a file written by an earlier
-      // release says otherwise, which is the whole reason this function exists.
-    } as unknown as SidebarPrefs;
-  }
-
-  it('toSidebarItemRef wraps a legacy path and passes a reference through', () => {
+  it('wraps a legacy path and passes a reference through', () => {
+    // The migration is the only caller left: the read-time conversion beside it
+    // was removed a release on (DOR-588). What this still pins is the mapping —
+    // every pre-DOR-579 string IS an agent path, and a reference is untouched.
     expect(toSidebarItemRef('/projects/alpha')).toEqual(agent('/projects/alpha'));
     const ref = agent('/projects/alpha');
     expect(toSidebarItemRef(ref)).toBe(ref);
     const room = { kind: 'room' as const, roomId: '01JROOM' };
     expect(toSidebarItemRef(room)).toBe(room);
-  });
-
-  it('converts all three lists and renames agentPaths to items', () => {
-    const prefs = normalizeSidebarPrefs(priorShape());
-    expect(prefs.pinned).toEqual([agent('/projects/alpha')]);
-    expect(prefs.muted).toEqual([agent('/projects/beta')]);
-    expect(prefs.groups[0]!.items).toEqual([agent('/projects/alpha'), agent('/projects/gamma')]);
-  });
-
-  it('drops the retired agentPaths key rather than carrying it alongside items', () => {
-    const prefs = normalizeSidebarPrefs(priorShape());
-    expect('agentPaths' in prefs.groups[0]!).toBe(false);
-  });
-
-  it('keeps every other group field exactly as stored', () => {
-    const prefs = normalizeSidebarPrefs(priorShape());
-    expect(prefs.groups[0]).toEqual({
-      id: 'g1',
-      name: 'Clients',
-      items: [agent('/projects/alpha'), agent('/projects/gamma')],
-      sortMode: 'manual',
-      collapsed: false,
-      displayFilter: 'all',
-      muted: false,
-      kind: 'manual',
-    });
-  });
-
-  it('returns the SAME object when the prefs are already canonical', () => {
-    // Referential equality is load-bearing: the client selector memoizes on it,
-    // and every consumer memoizes on `pinned` / `groups` identity.
-    const canonical = {
-      ...SidebarPrefsSchema.parse({}),
-      pinned: [agent('/projects/alpha')],
-      groups: [SidebarGroupSchema.parse({ id: 'g1', name: 'Clients' })],
-    };
-    expect(normalizeSidebarPrefs(canonical)).toBe(canonical);
-  });
-
-  it('leaves an already-canonical list untouched by reference', () => {
-    const pinned = [agent('/projects/alpha')];
-    const stored = {
-      ...SidebarPrefsSchema.parse({}),
-      pinned,
-      muted: ['/projects/beta'],
-    } as unknown as SidebarPrefs;
-    const prefs = normalizeSidebarPrefs(stored);
-    expect(prefs.pinned).toBe(pinned); // untouched
-    expect(prefs.muted).toEqual([agent('/projects/beta')]); // converted
-  });
-
-  it('prefers an existing items list over a leftover agentPaths', () => {
-    const stored = {
-      ...SidebarPrefsSchema.parse({}),
-      groups: [
-        {
-          ...SidebarGroupSchema.parse({ id: 'g1', name: 'Clients' }),
-          items: [{ kind: 'room', roomId: '01JROOM' }],
-          agentPaths: ['/projects/stale'],
-        },
-      ],
-    } as unknown as SidebarPrefs;
-    const prefs = normalizeSidebarPrefs(stored);
-    expect(prefs.groups[0]!.items).toEqual([{ kind: 'room', roomId: '01JROOM' }]);
-    expect('agentPaths' in prefs.groups[0]!).toBe(false);
-  });
-
-  it('gives a group with neither key an empty items list', () => {
-    const stored = {
-      ...SidebarPrefsSchema.parse({}),
-      groups: [{ id: 'g1', name: 'Clients', sortMode: 'manual', kind: 'manual' }],
-    } as unknown as SidebarPrefs;
-    expect(normalizeSidebarPrefs(stored).groups[0]!.items).toEqual([]);
-  });
-
-  it('is idempotent — normalizing twice changes nothing further', () => {
-    const once = normalizeSidebarPrefs(priorShape());
-    expect(normalizeSidebarPrefs(once)).toBe(once);
   });
 });
 

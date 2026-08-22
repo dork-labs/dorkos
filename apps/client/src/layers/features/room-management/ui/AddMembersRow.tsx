@@ -97,7 +97,9 @@ export function AddMembersRow({
           roster={roster}
           exclude={exclude}
           onSubmit={onSubmit}
-          submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
+          submitLabel={(chosen) =>
+            chosen.length > 1 ? `Add ${chosen.length} agents` : 'Add agent'
+          }
           emptyRosterMessage={emptyRosterMessage}
           emptyRosterAction={emptyRosterAction}
           allChosenMessage={allChosenMessage}

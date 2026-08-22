@@ -70,6 +70,13 @@ export interface NotificationPayloads {
     taskId: string;
     taskName: string;
     agentId?: string;
+    /**
+     * The session the proposal came from, so the operator can open the
+     * conversation that led to it rather than judging a cron line cold.
+     * Absent for a proposal made through the sessionless external `/mcp`
+     * server, which has no session to point at.
+     */
+    proposedBySessionId?: string;
     /** What to call whoever proposed it. */
     proposedBy: string;
   };
@@ -358,7 +365,7 @@ const ENTRIES: NotificationRegistryMap = {
     tier: 'blocking',
     storage: 'standing',
     subjectType: 'task',
-    locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId }),
+    locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId, sessionId: p.proposedBySessionId }),
     title: (p) => `${p.proposedBy} proposed a scheduled task`,
     body: (p) => `${p.taskName} will not run until you approve it.`,
     actions: () => SCHEDULE_ACTIONS,
