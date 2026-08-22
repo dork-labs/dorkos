@@ -877,6 +877,35 @@ describe('RuntimeItem', () => {
       expect(accountGroup().getAttribute('data-value')).toBe('__default__');
     });
 
+    it('keeps a held pick when the registry stops being readable at all', async () => {
+      // An empty list is NOT evidence the account is gone: it is equally what a
+      // config read in flight, one that errored, and one the server could not
+      // complete all look like. Deleting an operator's billing choice because
+      // the machine briefly could not answer is the same class of bug as leaving
+      // a dead id on the wire, pointing the other way — only a positive
+      // "registry present, id absent" read may end a pick.
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+      );
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      await user.click(screen.getByText('Acme Corp'));
+      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+
+      // The registry read comes back with nothing — unreadable, not emptied.
+      act(() => {
+        lastQueryClient.setQueryData(configKeys.current(), {
+          claudeCode: { resolvedAccount: '/Users/dev/.claude', inherited: true, accounts: [] },
+        });
+      });
+      rerender(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument());
+      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+    });
+
     it('never offers a root nobody registered, which no hint could name', async () => {
       // The in-use-but-unregistered root has no id, so a hint naming it is
       // unspellable. It is reachable as the default option instead.

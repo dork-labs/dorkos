@@ -101,9 +101,15 @@ export function useAccountSwitch(): AccountSwitch {
   // about which account it asked for). Drop it instead, so display and wire say
   // the same thing.
   //
-  // Guarded on knowing of ANY registered account: an empty list is what a config
-  // read that has not landed looks like, and clearing on that would delete a
-  // legitimate pick every time the query refetched.
+  // **Only a POSITIVE read may end a pick: registry present, id absent.** An
+  // empty list is not evidence the account is gone — it is equally what a config
+  // read still in flight, one that errored, and one the server could not
+  // complete all look like. Deleting an operator's billing choice because the
+  // machine briefly could not answer would be the same class of bug as the one
+  // above, pointing the other way. Hence the `length > 0` term: it is the
+  // narrowest available "the registry really is readable" signal, and it stays
+  // correct if the wire later grows an explicit unavailable flag — such a
+  // response reports no accounts, so this refuses to judge either way.
   const staleHint =
     pendingAccount !== null && selectable.length > 0 && !isRegistered(pendingAccount);
   useEffect(() => {
