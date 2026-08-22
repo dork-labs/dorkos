@@ -27,6 +27,7 @@ import path from 'path';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
+  configManager,
   initConfigManager,
   migrateClaudeAccountRegistry,
 } from '../../../core/config-manager.js';
@@ -41,6 +42,8 @@ import {
 const CHOSEN = '/Users/me/.claude2';
 /** A second registered account, so "the ladder picked one" is not "there is one". */
 const OTHER = '/Users/me/.claude3';
+/** What the launching shell exported — where "inherited" lands. */
+const SHELL_ACCOUNT = '/staged/claude-from-the-shell';
 
 const dirs: string[] = [];
 const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
@@ -48,7 +51,7 @@ const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
 beforeEach(() => {
   // A launching shell pointing somewhere else entirely, so "inherited the env"
   // and "honored the stored choice" cannot be confused for one another.
-  process.env.CLAUDE_CONFIG_DIR = '/staged/claude-from-the-shell';
+  process.env.CLAUDE_CONFIG_DIR = SHELL_ACCOUNT;
 });
 
 afterEach(() => {
@@ -146,6 +149,97 @@ describe('a pre-ladder config, on an install the migration has not reached', () 
     const manager = new ConfigManager(dir);
 
     expect(resolveLaunchAccountRoot({ hintId: 'no-such-account', config: manager })).toBe(CHOSEN);
+  });
+});
+
+describe('clearing to Default on an install the migration has not reached', () => {
+  /** What the cockpit sends when somebody picks "Default" in the account field. */
+  const CLEAR = { runtimes: { claudeCode: { defaultAccount: null } } };
+
+  it('actually clears — the old spelling does not vote on this write', () => {
+    // The failure this pins is the healing's own shadow. `null` under the new
+    // name is how "go back to inheriting" is spelled, and it is also what a
+    // never-set key looks like — so a heal that cannot tell the two apart reads
+    // a deliberate clear as "nothing chosen yet", resurrects the stored
+    // `activeAccount`, and writes it back. The person asks for the default and
+    // gets pinned to the old account instead, permanently.
+    const { dir } = seedPreLadder();
+    initConfigManager(dir);
+
+    expect(applyConfigPatch(CLEAR).ok).toBe(true);
+
+    const block = describeClaudeCodeAccounts(configManager);
+    expect(block.inherited).toBe(true);
+    expect(block.resolvedAccount).toBe(SHELL_ACCOUNT);
+  });
+
+  it('leaves no legacy key behind to resurrect it later', () => {
+    // Convergence is what makes the clear PERMANENT rather than momentary:
+    // while `activeAccount` is still on disk, the next read heals it straight
+    // back into the field the person just emptied.
+    const { dir, configPath } = seedPreLadder();
+    initConfigManager(dir);
+    applyConfigPatch(CLEAR);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      runtimes: { claudeCode: Record<string, unknown> };
+    };
+    expect(onDisk.runtimes.claudeCode).not.toHaveProperty('activeAccount');
+    expect(onDisk.runtimes.claudeCode.defaultAccount).toBeNull();
+  });
+
+  it('stays cleared when the config is read fresh', () => {
+    const { dir } = seedPreLadder();
+    initConfigManager(dir);
+    applyConfigPatch(CLEAR);
+
+    // A new manager over the same directory — the next server start.
+    expect(resolveActiveClaudeRoot(new ConfigManager(dir))).toBe(SHELL_ACCOUNT);
+  });
+
+  it('stays cleared through the migration that arrives later', () => {
+    const { dir, configPath } = seedPreLadder();
+    initConfigManager(dir);
+    applyConfigPatch(CLEAR);
+
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    const store = {
+      get: (key: string) => stored[key],
+      set: (key: string, value: unknown) => {
+        stored[key] = value;
+      },
+    };
+    migrateClaudeAccountRegistry(store);
+
+    expect(
+      (stored.runtimes as { claudeCode: Record<string, unknown> }).claudeCode.defaultAccount
+    ).toBeNull();
+  });
+
+  it('sets a NEW account explicitly, and drops the old spelling with it', () => {
+    // The other half of "the patch named this key": choosing a different
+    // account must not leave the superseded one on disk either.
+    const { dir, configPath } = seedPreLadder();
+    initConfigManager(dir);
+
+    expect(applyConfigPatch({ runtimes: { claudeCode: { defaultAccount: OTHER } } }).ok).toBe(true);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      runtimes: { claudeCode: Record<string, unknown> };
+    };
+    expect(onDisk.runtimes.claudeCode.defaultAccount).toBe(OTHER);
+    expect(onDisk.runtimes.claudeCode).not.toHaveProperty('activeAccount');
+  });
+
+  it('does NOT clear anything when the patch never names the account', () => {
+    // The regression guard in the other direction: a theme change must still
+    // leave the stored choice standing, which is the whole point of the heal.
+    const { dir } = seedPreLadder();
+    initConfigManager(dir);
+
+    expect(applyConfigPatch({ ui: { theme: 'light' } }).ok).toBe(true);
+
+    expect(describeClaudeCodeAccounts(configManager).resolvedAccount).toBe(CHOSEN);
   });
 });
 

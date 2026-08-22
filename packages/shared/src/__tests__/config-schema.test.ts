@@ -4,6 +4,8 @@ import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
+  healClaudeAccountRename,
+  settleLegacyAccountAlias,
   SENSITIVE_CONFIG_KEYS,
   LOG_LEVEL_MAP,
   ONBOARDING_STEPS,
@@ -1108,6 +1110,47 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     const ids = parsed.runtimes.claudeCode.accounts.map((a) => a.id);
     expect(ids).toEqual(['acme-corp', 'acme-corp-2', 'claude']);
     expect(new Set(ids).size).toBe(3);
+  });
+
+  it('reads a pre-rename default, and answers in ONE spelling', () => {
+    // Two claims, and the second is a contract rather than an observable end to
+    // end: a parse would strip the retired key anyway. Stating it here keeps the
+    // function honest for any caller that does not go through the object schema.
+    const healed = healClaudeAccountRename({
+      activeAccount: '/Users/me/.claude2',
+      accounts: [],
+    }) as Record<string, unknown>;
+
+    expect(healed.defaultAccount).toBe('/Users/me/.claude2');
+    expect(healed).not.toHaveProperty('activeAccount');
+  });
+
+  it('lets a real value under the new name outrank the retired one', () => {
+    const healed = healClaudeAccountRename({
+      activeAccount: '/Users/me/.claude2',
+      defaultAccount: '/Users/me/.claude3',
+    }) as Record<string, unknown>;
+
+    expect(healed.defaultAccount).toBe('/Users/me/.claude3');
+    expect(healed).not.toHaveProperty('activeAccount');
+  });
+
+  it('leaves a block with no retired key completely alone', () => {
+    const block = { defaultAccount: null, accounts: [] };
+    expect(healClaudeAccountRename(block)).toBe(block);
+  });
+
+  it('settles the retired key only when the patch NAMES the new one', () => {
+    // `null` is both "never set" and "go back to inheriting". Only the patch
+    // knows which, so this is where a deliberate clear is protected from the
+    // heal that would otherwise resurrect the old account.
+    const merged = { runtimes: { claudeCode: { activeAccount: '/a', defaultAccount: null } } };
+    settleLegacyAccountAlias(merged, { runtimes: { claudeCode: { defaultAccount: null } } });
+    expect(merged.runtimes.claudeCode).not.toHaveProperty('activeAccount');
+
+    const untouched = { runtimes: { claudeCode: { activeAccount: '/a', defaultAccount: null } } };
+    settleLegacyAccountAlias(untouched, { ui: { theme: 'light' } });
+    expect(untouched.runtimes.claudeCode).toHaveProperty('activeAccount');
   });
 
   it('refuses two accounts sharing an id', () => {

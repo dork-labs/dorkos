@@ -1013,25 +1013,89 @@ function backfillMissingAccountIds(value: unknown): unknown {
  * finding the new key present, would then keep the `null` and destroy the choice
  * permanently. Healing here means that write persists the right value instead.
  *
- * `null` and absent are treated alike on purpose: `null` IS the absence of a
- * choice under the new name, so it must not outrank a real value under the old
- * one. A `defaultAccount` holding an actual path is a decision made since the
- * rename and wins.
+ * ## What this cannot see, and who covers it
  *
- * The legacy key is left in place rather than deleted — Zod strips it from the
- * parse OUTPUT, so the first write converges the file on one spelling, and the
- * migration removes it for good on installs that reach it.
+ * `null` and absent are treated alike here, and that is a deliberate limitation
+ * rather than a full answer. `null` IS the absence of a choice under the new
+ * name — but it is ALSO exactly how the cockpit spells "go back to inheriting".
+ * This function is handed a stored block with no idea which of the two it is
+ * looking at, so on its own it would read a deliberate clear as "nothing chosen
+ * yet" and resurrect the old account the person just dismissed.
+ *
+ * Intent is known one layer up, where the incoming patch is still in hand:
+ * `applyConfigPatch` calls {@link settleLegacyAccountAlias} first, which removes
+ * the legacy key whenever the patch NAMES `defaultAccount`. By the time this
+ * runs there is nothing left to resurrect, so a clear clears. Neither half works
+ * alone — this one silently undoes clears, and that one only sees writes.
+ *
+ * A `defaultAccount` holding an actual path is a decision made since the rename
+ * and wins over the old key regardless.
+ *
+ * ## The legacy key is dropped from the OUTPUT
+ *
+ * A contract of this function, so its answer carries one spelling for any
+ * caller. Be precise about what that does and does not buy: parsing through
+ * {@link ClaudeCodeSettingsSchema} would strip an undeclared key anyway, so
+ * dropping it here changes nothing an end-to-end test can see. It is
+ * defense-in-depth and legibility, not the mechanism.
+ *
+ * The mechanism that actually settles the FILE is a schema declaration, made in
+ * `config-manager.ts`: `preserveUnknownKeys` re-attaches every key the schema
+ * does not declare after each write, so while `activeAccount` was undeclared it
+ * came back forever — including after the write that cleared the account.
+ *
+ * With all of it in place, a write that names `runtimes` persists a settled
+ * block. A write naming some OTHER section — a theme change — still rewrites the
+ * stored object as it stands, legacy key included, because `applyConfigPatch`
+ * only persists the sections a patch names. That file converges when the
+ * migration reaches it, or on the next write that touches `runtimes`, whichever
+ * comes first.
  *
  * @param value - The stored `runtimes.claudeCode` block, whatever shape it is in.
- * @returns The same block with `defaultAccount` carrying the operator's choice.
+ * @returns The block with `defaultAccount` carrying the choice and the legacy
+ *   key gone.
  */
 export function healClaudeAccountRename(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const block = value as Record<string, unknown>;
-  if (block.defaultAccount != null) return value;
-  const legacy = block.activeAccount;
-  if (typeof legacy !== 'string' || legacy.length === 0) return value;
-  return { ...block, defaultAccount: legacy };
+  if (!('activeAccount' in block)) return value;
+  const { activeAccount: legacy, ...rest } = block;
+  // A real value under the new name is a decision made since the rename; `null`
+  // or absent means nobody has decided under it, so the old key still speaks.
+  const healed =
+    rest.defaultAccount == null && typeof legacy === 'string' && legacy.length > 0
+      ? legacy
+      : (rest.defaultAccount ?? null);
+  return { ...rest, defaultAccount: healed };
+}
+
+/**
+ * Take the legacy account key out of a merged config when the incoming patch
+ * NAMED the new one — so an explicit clear is not read as "never set".
+ *
+ * The piece {@link healClaudeAccountRename} cannot supply. The heal sees a
+ * stored block; only the write path still holds the patch, and the patch is the
+ * only place the difference between "this person chose the default" and "nobody
+ * has chosen yet" exists. Both spellings of that difference arrive as `null`.
+ *
+ * Applies whenever `runtimes.claudeCode.defaultAccount` is present in the patch
+ * at all, whatever its value. Clearing to `null` is the case that was broken;
+ * naming a different account is the same act and must not leave the superseded
+ * spelling on disk either.
+ *
+ * Mutates `merged` in place — it is a fresh deep-merge result owned by the
+ * caller, never the stored config.
+ *
+ * @param merged - The patch already deep-merged onto the current config.
+ * @param patch - The patch as the caller received it.
+ */
+export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void {
+  const named = (patch as { runtimes?: { claudeCode?: Record<string, unknown> } } | null)?.runtimes
+    ?.claudeCode;
+  if (!named || typeof named !== 'object' || !('defaultAccount' in named)) return;
+  const block = (merged as { runtimes?: { claudeCode?: Record<string, unknown> } } | null)?.runtimes
+    ?.claudeCode;
+  if (block && typeof block === 'object') delete block.activeAccount;
 }
 
 /**
@@ -1163,6 +1227,74 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * session starts, not just this one.
  */
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
+
+/**
+ * What a NEW Claude Code session starts with, and which account it bills.
+ *
+ * Named rather than left inline in {@link UserConfigSchema} so the JSON-schema
+ * override in `config-manager.ts` can key on this node's identity, exactly as it
+ * does for {@link ClaudeCodeAccountSchema}. That override has to DECLARE the
+ * retired `activeAccount` spelling on this object — an undeclared key is one
+ * `preserveUnknownKeys` carries forward forever, which would resurrect a billing
+ * choice the operator had just cleared — and a node it cannot name is a node it
+ * cannot widen.
+ */
+export const ClaudeCodeSettingsSchema = z.object({
+  /**
+   * Absolute path of the Claude config directory a NEW session runs and
+   * bills on when neither the session nor its agent names one. `null`
+   * inherits whatever the process already has — `$CLAUDE_CONFIG_DIR`,
+   * else `~/.claude` — which is byte-for-byte the behavior before this
+   * field existed.
+   *
+   * An explicit path OVERRIDES an inherited `CLAUDE_CONFIG_DIR`, so which
+   * account runs the work stops depending on which terminal happened to
+   * launch DorkOS. Stored as a path, never an index into
+   * {@link ClaudeCodeAccountSchema} entries, so removing an account can
+   * never silently repoint the selection at a different client
+   * (spec `claude-code-accounts` D1/D2).
+   *
+   * **A path here, an id everywhere else** (ADR 260821-205324). This one
+   * field stays a path on purpose: the default may legitimately name a
+   * root that is not a registry entry at all, and choosing it is what
+   * adds it to the read set (ADR 260801-204126). Agents and launch hints
+   * have no such case and reference accounts by {@link
+   * ClaudeCodeAccountSchema.shape.id}.
+   *
+   * Renamed from `activeAccount` in 0.65.0 (`billing-account-ladder`):
+   * "active" described the retired global-switch semantics, where the
+   * status-bar picker repointed this value for every future session.
+   */
+  defaultAccount: z.string().nullable().default(null),
+  /**
+   * The Claude accounts DorkOS knows about — what lets it show which
+   * client a session belongs to. The operator registers these: DorkOS
+   * never globs `~/.claude*`, because that guess sweeps up directories
+   * that are not accounts at all (D4).
+   */
+  accounts: ClaudeCodeAccountsSchema.default(() => []),
+  /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
+  defaultModel: DefaultModelSchema,
+  /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
+  defaultEffort: DefaultEffortSchema,
+  /**
+   * Trust stop a new claude-code session starts at, overriding
+   * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+   */
+  defaultTrustStop: DefaultTrustStopSchema,
+  /**
+   * Whether a Claude Code chat keeps its agent running between your
+   * messages instead of starting it up again for each one. Ships
+   * `false`, which is how DorkOS has always worked: every message gets
+   * its own run.
+   *
+   * Read when a chat's agent starts, so a chat already under way keeps
+   * the way it started until its process is replaced. That is what lets
+   * one machine run chats both ways at the same time and compare them on
+   * the same work (spec `persistent-session-runtime` §P3).
+   */
+  persistentSession: z.boolean().default(false),
+});
 
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -1860,74 +1992,14 @@ export const UserConfigSchema = z.object({
       // spelling the default `activeAccount` parses with the operator's choice
       // in the new key — and the first write that persists this parse converges
       // the file. See {@link healClaudeAccountRename}.
-      claudeCode: z
-        .preprocess(
-          healClaudeAccountRename,
-          z.object({
-            /**
-             * Absolute path of the Claude config directory a NEW session runs and
-             * bills on when neither the session nor its agent names one. `null`
-             * inherits whatever the process already has — `$CLAUDE_CONFIG_DIR`,
-             * else `~/.claude` — which is byte-for-byte the behavior before this
-             * field existed.
-             *
-             * An explicit path OVERRIDES an inherited `CLAUDE_CONFIG_DIR`, so which
-             * account runs the work stops depending on which terminal happened to
-             * launch DorkOS. Stored as a path, never an index into
-             * {@link ClaudeCodeAccountSchema} entries, so removing an account can
-             * never silently repoint the selection at a different client
-             * (spec `claude-code-accounts` D1/D2).
-             *
-             * **A path here, an id everywhere else** (ADR 260821-205324). This one
-             * field stays a path on purpose: the default may legitimately name a
-             * root that is not a registry entry at all, and choosing it is what
-             * adds it to the read set (ADR 260801-204126). Agents and launch hints
-             * have no such case and reference accounts by {@link
-             * ClaudeCodeAccountSchema.shape.id}.
-             *
-             * Renamed from `activeAccount` in 0.65.0 (`billing-account-ladder`):
-             * "active" described the retired global-switch semantics, where the
-             * status-bar picker repointed this value for every future session.
-             */
-            defaultAccount: z.string().nullable().default(null),
-            /**
-             * The Claude accounts DorkOS knows about — what lets it show which
-             * client a session belongs to. The operator registers these: DorkOS
-             * never globs `~/.claude*`, because that guess sweeps up directories
-             * that are not accounts at all (D4).
-             */
-            accounts: ClaudeCodeAccountsSchema.default(() => []),
-            /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
-            defaultModel: DefaultModelSchema,
-            /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
-            defaultEffort: DefaultEffortSchema,
-            /**
-             * Trust stop a new claude-code session starts at, overriding
-             * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
-             */
-            defaultTrustStop: DefaultTrustStopSchema,
-            /**
-             * Whether a Claude Code chat keeps its agent running between your
-             * messages instead of starting it up again for each one. Ships
-             * `false`, which is how DorkOS has always worked: every message gets
-             * its own run.
-             *
-             * Read when a chat's agent starts, so a chat already under way keeps
-             * the way it started until its process is replaced. That is what lets
-             * one machine run chats both ways at the same time and compare them on
-             * the same work (spec `persistent-session-runtime` §P3).
-             */
-            persistentSession: z.boolean().default(false),
-          })
-        )
-        .default(() => ({
-          defaultAccount: null,
-          accounts: [],
-          defaultModel: null,
-          defaultEffort: null,
-          defaultTrustStop: null,
-          persistentSession: false,
-        })),
+      claudeCode: z.preprocess(healClaudeAccountRename, ClaudeCodeSettingsSchema).default(() => ({
+        defaultAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+        defaultTrustStop: null,
+        persistentSession: false,
+      })),
       opencode: z
         .object({
           enabled: z.boolean().default(true),

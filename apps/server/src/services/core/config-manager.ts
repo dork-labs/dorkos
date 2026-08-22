@@ -106,6 +106,7 @@ import {
   NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
   ClaudeCodeAccountSchema,
+  ClaudeCodeSettingsSchema,
   claudeAccountId,
   toSidebarItemRef,
   normalizeSidebarPrefs,
@@ -3198,6 +3199,28 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
   zodSchema: unknown;
   jsonSchema: Record<string, unknown>;
 }): void {
+  // The retired `activeAccount` spelling, DECLARED — with its real type, not as
+  // an open catchall, on the same rule the sidebar's retired keys follow.
+  //
+  // Declaring it is not about letting it past Ajv; `tolerateUnknownKeys` already
+  // does that. It is about `preserveUnknownKeys` (`config/version-skew.ts`),
+  // which carries every key the schema does NOT declare from the stored value
+  // onto the value replacing it — so that an older build saving a theme cannot
+  // delete a newer build's settings. Left undeclared, `activeAccount` was
+  // re-attached to the file after EVERY write, including the write that had just
+  // cleared the account. The next read healed it straight back, and "go back to
+  // inheriting" became "pin to the old account, permanently". Declared, this
+  // build owns the key: a write whose parse output drops it genuinely removes it.
+  if (ctx.zodSchema === ClaudeCodeSettingsSchema) {
+    const properties = ctx.jsonSchema.properties as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!properties) return;
+    // Deliberately no `default`: conf builds Ajv with `useDefaults`, so a
+    // declared default would WRITE this retired key into every config on earth.
+    properties.activeAccount = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+    return;
+  }
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
   const required = ctx.jsonSchema.required;
   if (Array.isArray(required)) {
