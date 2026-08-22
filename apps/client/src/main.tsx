@@ -6,10 +6,12 @@ import ReactDOM from 'react-dom/client';
 // from the global scope (Obsidian plugin model).
 (globalThis as unknown as Record<string, unknown>).React = React;
 import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
 import {
   HttpTransport,
+  createBootCache,
   queryClient,
   streamManager,
   executeUiCommand,
@@ -215,7 +217,7 @@ function Root() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryProviders>
       <TransportProvider transport={transport}>
         <EventStreamProvider>
           <ExtensionProvider deps={extensionDeps}>
@@ -236,7 +238,31 @@ function Root() {
         </EventStreamProvider>
       </TransportProvider>
       {import.meta.env.DEV && <DevToolsPanel />}
-    </QueryClientProvider>
+    </QueryProviders>
+  );
+}
+
+/**
+ * The query client, plus the local memory the sidebar boots from.
+ *
+ * **The provider's own restore is what makes a reload warm** — it holds queries
+ * paused while `isRestoring` and resolves long before the router has mounted the
+ * sidebar, so `useBootState` latches `startedWarm` on hydrated data and the
+ * panel is simply there. That was measured against a production build rather
+ * than assumed: see `BootCache` for the numbers and why an earlier synchronous
+ * pre-render hydrate was removed.
+ *
+ * On a surface with no local memory — the Obsidian embed, whose server is in the
+ * same process — this is the plain provider and nothing is written anywhere.
+ */
+function QueryProviders({ children }: { children: React.ReactNode }) {
+  if (bootCache === null) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  }
+  return (
+    <PersistQueryClientProvider client={queryClient} persistOptions={bootCache.persistOptions}>
+      {children}
+    </PersistQueryClientProvider>
   );
 }
 
@@ -248,6 +274,24 @@ const transport = new HttpTransport(apiBaseUrl);
 // transport — in packaged Electron the renderer loads from file://, where a
 // relative `/api` cannot reach the localhost server.
 streamManager.useHttpSource(apiBaseUrl);
+
+// The sidebar's local memory (spec `sidebar-simplification` D6). `null` on any
+// surface that must not keep one — see `createBootCache`.
+const bootCache = createBootCache({
+  transport,
+  apiBaseUrl,
+  buster: __APP_VERSION__,
+});
+
+// Write the memory before the page goes away. The ordinary save is throttled to
+// one a second, which is right for a boot and wrong for the last second before a
+// reload: dismiss a card or create a section and reload straight away, and the
+// next load would paint the state from BEFORE the change and then take it back
+// when the server answered. `pagehide` is the browser saying it is leaving, and
+// it fires for a reload, a navigation and a close alike.
+if (bootCache !== null) {
+  window.addEventListener('pagehide', () => bootCache.flush(queryClient));
+}
 
 // Router at module scope — creating it inside Root() caused StrictMode to
 // remount the entire provider tree (including EventStreamProvider) on every

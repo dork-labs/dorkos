@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
 
 /**
  * The checkout root, which the cockpit leg runs boundary-scoped to.
@@ -356,6 +357,33 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // **Every spec gets a COLD cockpit.** The app remembers its sidebar between
+    // loads (`shared/lib/query-persister.ts`), which is right for a person and
+    // wrong for a suite written against a cold first paint. A fresh context per
+    // test is not enough on its own: WITHIN one test every navigation shares the
+    // context, so the second `page.goto` restores what the first left, and specs
+    // that assert on paint order, scroll anchoring or a live lane's first frame
+    // start racing a warm boot they were never written for. CI's slower machines
+    // widen every one of those races.
+    //
+    // Set HERE rather than in a fixture because half this suite does not use the
+    // shared `test` — 48 files import `test` straight from `@playwright/test`,
+    // and a fixture-level opt-out silently misses every one of them (measured:
+    // `now-survives-reload.ts` was the one that noticed, by reloading into a
+    // snapshot taken before the session it was asserting on errored). A config
+    // `storageState` applies to every context in every project however `test`
+    // was imported, which is the property this needs.
+    //
+    // One entry per leg, because `localStorage` is per-origin.
+    // `dashboard-sidebar/boot-stability.spec.ts` removes the key to opt back in —
+    // warm boot is the thing it tests.
+    storageState: {
+      cookies: [],
+      origins: [VITE_PORT, MOCK_VITE_PORT].map((vitePort) => ({
+        origin: `http://localhost:${vitePort}`,
+        localStorage: [{ name: BOOT_CACHE_DISABLED_KEY, value: '1' }],
+      })),
+    },
   },
 
   webServer: [

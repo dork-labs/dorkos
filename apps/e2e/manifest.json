@@ -641,6 +641,22 @@
       "relatedCode": [],
       "lastModified": ""
     },
+    "boot-stability": {
+      "specFile": "tests/dashboard-sidebar/boot-stability.spec.ts",
+      "feature": "dashboard-sidebar",
+      "description": "shows bones once on a cold load, and one finished picture on a warm one",
+      "lastRun": "2026-08-22T01:20:00.000Z",
+      "lastStatus": "passed",
+      "runCount": 4,
+      "passCount": 4,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/shared/lib/query-persister.ts",
+        "apps/client/src/layers/features/dashboard-sidebar/model/boot/use-boot-state.ts",
+        "apps/client/src/layers/features/dashboard-sidebar/ui/SidebarZones.tsx"
+      ],
+      "lastModified": ""
+    },
     "sidebar-today": {
       "specFile": "tests/dashboard-sidebar/sidebar-today.spec.ts",
       "feature": "dashboard-sidebar",
