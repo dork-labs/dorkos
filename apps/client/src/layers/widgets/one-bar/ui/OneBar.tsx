@@ -69,20 +69,23 @@ export function OneBar({ identity, fill, chips, actions }: OneBarProps) {
       {chips ? <div className="flex shrink-0 items-center gap-1.5">{chips}</div> : null}
       {fill ? (
         // `self-stretch` passes the row's height through to fill content that
-        // asks for it. Without it this wrapper is only as tall as its own text,
-        // and `/team`'s tab strip — which sizes its tabs with `h-full` —
-        // resolved that to a 20px tap target inside a 36px row (measured in
-        // Chromium at 1440). Stretched, the same tabs measure 35px: the row
-        // less its bottom hairline. `items-center` still centres children that
-        // do not ask to stretch, so filter chips are unaffected.
+        // asks for it. Without it this wrapper is sized by its own content
+        // rather than by the row, so `/team`'s tab strip — which sizes its tabs
+        // with `h-full` — had nothing full-height to resolve against and its
+        // tabs came out short of the row. Stretched, they measure 35px: the
+        // 36px row less the 1px that is its bottom hairline. `items-center`
+        // still centres children that do not ask to stretch, so filter chips
+        // are unaffected.
         //
-        // **Three boxes, three numbers, and they are not the same bug.** The
-        // shell's cross-fade wrapper collapsed to 24px and `bar-tab-strip`'s own
-        // wrapper to 24px (both DOR-1401, both fixed by their own
-        // `self-stretch`); this wrapper collapsed to 20px, because what sets its
-        // height is `/team`'s title text rather than a tab label. All three had
-        // to stretch before `h-full` could mean the row — a strip in `fill` is
-        // three wrappers deep, and any one of them left unstretched caps it.
+        // **A strip in `fill` is three wrappers deep, and every one of them has
+        // to stretch.** The shell's cross-fade wrapper and `bar-tab-strip`'s own
+        // wrapper are the other two; both got their `self-stretch` in DOR-1401,
+        // and the 24px figures in their comments describe the DOM as it was
+        // then, before the strip owned its stretch — they are not measurements
+        // of this wrapper and do not predict what it does today. What carries
+        // forward is only the structure: `h-full` means the row exactly when
+        // nothing between the tab and the header caps the chain, so a fill
+        // wrapper that stops stretching silently shortens the tabs again.
         <div className="ml-3 flex min-w-0 flex-1 items-center self-stretch">{fill}</div>
       ) : (
         <div className="flex-1" />

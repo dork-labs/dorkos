@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): team views join the one tab language (DOR-1405)'
+  - "fix(client): each team bar owns its own active marker, and the phone's + is a real target"
 ---
 
 ### Changed
