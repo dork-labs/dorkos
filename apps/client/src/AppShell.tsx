@@ -13,12 +13,15 @@ import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { getAgentDisplayName, cn, isDesktopShell, normalizeTeamView } from '@/layers/shared/lib';
+// Off the barrel by construction — see the module's own note.
+import { basename } from '@/layers/shared/lib/basename';
 import {
   useSessionId,
   useDefaultCwd,
   useDirectoryState,
   useGlobalSessionStream,
   useSessionOrigin,
+  useSessionDetail,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
@@ -338,6 +341,25 @@ export function AppShell() {
   const sidebarSlot = useSidebarSlot();
   const { origin: activeSessionOrigin, originLabel: activeSessionOriginLabel } =
     useSessionOrigin(activeSessionId);
+  // The session's own name, out of the one session cache the sidebar list, the
+  // recents and every other reader share — so the bar cannot call a session
+  // something the list you picked it from doesn't. `select` narrows the
+  // subscription to the title, so an unrelated settings write to the same row
+  // doesn't re-render the shell.
+  //
+  // `enabled: false` is deliberate and load-bearing. The bar REPORTS a session's
+  // name; it does not own the session. Every route that needs the row already
+  // fetches it, and the global session stream patches this cache directly
+  // (`syncSessionDetailCache`), so the title still arrives and still updates
+  // live. What this rules out is the shell adding a fetch of its own to a key
+  // other surfaces read — the permission control resolves the session's runtime
+  // from this same row, and a shell-initiated request racing session creation
+  // would put a row they then read into the cache. The hook documents exactly
+  // this case: a caller that only reports on a session someone else owns.
+  const { data: activeSessionTitle } = useSessionDetail(activeSessionId, {
+    enabled: false,
+    select: (session) => session.title,
+  });
   const routeHeader = useRouteHeader();
   const searchStr = useRouterState({ select: (st) => st.location.searchStr });
   // What every route bar reads but no route resolves for itself — the shell has
@@ -345,9 +367,16 @@ export function AppShell() {
   // about which room is open.
   const oneBarState = useMemo<OneBarRouteState>(
     () => ({
+      sessionId: activeSessionId ?? undefined,
       agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
+      // Only when there IS an agent. `useAgentVisual` hashes a face out of the
+      // cwd otherwise, which is right for a favicon and wrong for the bar: a
+      // face there says "this is an agent", and a bare directory is not one.
+      agentVisual: currentAgent ? agentVisual : undefined,
       origin: activeSessionOrigin,
       originLabel: activeSessionOriginLabel,
+      sessionTitle: activeSessionTitle,
+      sessionDirectoryName: selectedCwd ? basename(selectedCwd) : undefined,
       roomTitle,
       // Read straight off the URL rather than through `useSearch`, so the bar
       // keeps rendering during a route exit animation — and normalized through
@@ -355,7 +384,17 @@ export function AppShell() {
       // never disagree about which view is showing.
       teamViewMode: normalizeTeamView(new URLSearchParams(searchStr).get('view') ?? undefined),
     }),
-    [currentAgent, activeSessionOrigin, activeSessionOriginLabel, roomTitle, searchStr]
+    [
+      activeSessionId,
+      currentAgent,
+      agentVisual,
+      activeSessionOrigin,
+      activeSessionOriginLabel,
+      activeSessionTitle,
+      selectedCwd,
+      roomTitle,
+      searchStr,
+    ]
   );
 
   // Eligible global banners, ranked and rendered one-at-a-time by AppBannerSlot
@@ -540,7 +579,15 @@ export function AppShell() {
                       // `desktop-darwin:` variant utility — see the
                       // `.app-drag-region` comment in index.css. Inert without
                       // the `.desktop-darwin` ancestor, so it is unconditional.
-                      className="app-drag-region relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
+                      // `@container/bar` makes the row itself the thing bars
+                      // measure against. A bar's crowding is a fact about the
+                      // width it HAS, and that is not the window's: collapsing
+                      // the sidebar takes this row from 524px to 804px at a
+                      // fixed window size (measured). A `sm:` breakpoint keyed
+                      // to the viewport would answer the wrong question — and
+                      // answer it wrongly in the playground too, where a 390px
+                      // bar sits inside a 1440px page.
+                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.
                           A hamburger that opens nothing is worse than no
