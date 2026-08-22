@@ -416,8 +416,8 @@ export function createRuntimeCardProps(
 }
 
 /**
- * A fleet that does not run on the defaults — one row per breakage kind, plus a
- * healthy deviation, in the order the strip's own hook would emit them.
+ * A fleet that does not run on the defaults — one row per breakage kind, plus
+ * healthy deviations, in the order the strip's own hook would emit them.
  *
  * The ordering is the caller's, and that is worth showing: the strip renders
  * what it is handed, so broken rows come first because
@@ -484,10 +484,32 @@ export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
     },
   },
   {
-    path: '/Users/dev/projects/marketing',
+    path: '/Users/dev/projects/retired-client',
     agent: {
       ...MOCK_AGENT_MANIFEST,
       id: 'exception-04',
+      name: 'retired-client',
+      icon: '🧾',
+      color: '#ef4444',
+    },
+    report: {
+      breakages: [
+        {
+          kind: 'account-unregistered',
+          message:
+            'The account “acme-legacy” is no longer registered, so this agent bills to the default.',
+        },
+      ],
+      deviations: [{ field: 'account', label: 'acme-legacy' }],
+      isException: true,
+      isBroken: true,
+    },
+  },
+  {
+    path: '/Users/dev/projects/marketing',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-05',
       name: 'marketing',
       icon: '📣',
       color: '#22c55e',
@@ -498,6 +520,22 @@ export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
         { field: 'model', label: 'Sonnet 4.5' },
         { field: 'effort', label: 'Low' },
       ],
+      isException: true,
+      isBroken: false,
+    },
+  },
+  {
+    path: '/Users/dev/projects/client-work',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-06',
+      name: 'client-work',
+      icon: '💼',
+      color: '#eab308',
+    },
+    report: {
+      breakages: [],
+      deviations: [{ field: 'account', label: 'Acme Corp' }],
       isException: true,
       isBroken: false,
     },

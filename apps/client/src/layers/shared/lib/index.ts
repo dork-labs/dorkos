@@ -260,6 +260,7 @@ export type {
   ExecutionBreakage,
   ExecutionBreakageKind,
   ExecutionDeviation,
+  KnownAccount,
 } from './execution-config';
 
 export {

@@ -110,11 +110,29 @@ function capabilityMap(opencodeSupportsEffort: boolean) {
  */
 const WITHHELD = 'withheld' as const;
 
+/** The account registry as `GET /api/config` reports it, when a test supplies one. */
+interface ClaudeCodeConfig {
+  resolvedAccount: string;
+  inherited: boolean;
+  accounts: { id: string | null; path: string; label: string | null; isAccountRoot: boolean }[];
+}
+
+/** Two registered accounts — the smallest registry that offers a real choice. */
+const TWO_ACCOUNTS: ClaudeCodeConfig = {
+  resolvedAccount: '/Users/dev/.claude',
+  inherited: false,
+  accounts: [
+    { id: 'personal', path: '/Users/dev/.claude', label: null, isAccountRoot: true },
+    { id: 'work', path: '/Users/dev/.claude-work', label: 'Acme Corp', isAccountRoot: true },
+  ],
+};
+
 function renderRows(
   agent: AgentManifest,
   executionDefaults: ExecutionDefaults = DEFAULTS,
   models: typeof MODELS = MODELS,
-  capabilities: ReturnType<typeof capabilityMap> | typeof WITHHELD = capabilityMap(false)
+  capabilities: ReturnType<typeof capabilityMap> | typeof WITHHELD = capabilityMap(false),
+  claudeCode: ClaudeCodeConfig | undefined = undefined
 ) {
   const onUpdate = vi.fn();
   const transport = createMockTransport({
@@ -132,6 +150,7 @@ function renderRows(
       platform: 'linux-x64',
       runtimes: ['claude-code'],
       claudeCliPath: null,
+      claudeCode,
       executionDefaults,
       tunnel: {
         enabled: false,
@@ -359,5 +378,146 @@ describe('AgentExecutionRows', () => {
     // Nor does it guess the other way: "Not supported" is a claim, and nothing
     // has said it.
     expect(screen.queryByTestId('agent-effort-unsupported-runtime')).toBeNull();
+  });
+});
+
+describe('AgentExecutionRows — the Account row', () => {
+  /** One registered account: a registry with nothing to choose between. */
+  const ONE_ACCOUNT: ClaudeCodeConfig = {
+    ...TWO_ACCOUNTS,
+    accounts: [TWO_ACCOUNTS.accounts[0]!],
+  };
+
+  it('is absent on a runtime that has no such thing as an account', async () => {
+    renderRows(manifest({ runtime: 'opencode' }), DEFAULTS, MODELS, capabilityMap(true), {
+      ...TWO_ACCOUNTS,
+    });
+    // Wait for something the same config DOES draw, so the absence below is a
+    // rendered absence rather than a not-yet.
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+    );
+    expect(screen.queryByTestId('agent-account-row')).toBeNull();
+  });
+
+  it('is absent when this machine knows only one account — there is nothing to pick', async () => {
+    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), ONE_ACCOUNT);
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+    );
+    expect(screen.queryByTestId('agent-account-row')).toBeNull();
+  });
+
+  it('comes back for an agent that HAS an account set, however small the registry', async () => {
+    // The one agent whose setting must stay visible: hiding it would make it
+    // unclearable.
+    renderRows(
+      manifest({ account: 'personal' }),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      ONE_ACCOUNT
+    );
+    expect(await screen.findByTestId('agent-account-row')).toBeInTheDocument();
+  });
+
+  it('is absent until the config answers, rather than offering an empty picker', async () => {
+    renderRows(manifest());
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+    );
+    expect(screen.queryByTestId('agent-account-row')).toBeNull();
+  });
+
+  it('wears the resolved server default when the agent has no opinion', async () => {
+    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), TWO_ACCOUNTS);
+    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent(
+      'server default · .claude'
+    );
+    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('.claude');
+  });
+
+  it('says "set here" and names the account by its label, not its id', async () => {
+    renderRows(manifest({ account: 'work' }), DEFAULTS, MODELS, capabilityMap(false), TWO_ACCOUNTS);
+    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent('set here');
+    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
+  });
+
+  it('writes the registry id when an account is picked', async () => {
+    const { onUpdate } = renderRows(
+      manifest(),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    await userEvent.click(await screen.findByRole('button', { name: /Acme Corp/ }));
+    expect(onUpdate).toHaveBeenCalledWith({ account: 'work' });
+  });
+
+  it('restores the server default through the footer, writing the wire null', async () => {
+    const { onUpdate } = renderRows(
+      manifest({ account: 'work' }),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    const inherit = await screen.findByTestId('agent-account-row-inherit');
+    expect(inherit).toHaveTextContent('Using server default: .claude — tap to restore');
+    await userEvent.click(inherit);
+    // `null`, not `undefined`: omitting the key would leave the override in
+    // place on the manifest.
+    expect(onUpdate).toHaveBeenCalledWith({ account: null });
+  });
+
+  it('never offers a synthesized root as a choice — nothing can point at it', async () => {
+    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), {
+      resolvedAccount: '/Users/dev/.claude',
+      inherited: true,
+      accounts: [
+        // The inherited root the operator never registered: display-only,
+        // carrying no id (ADR 260821-205324).
+        { id: null, path: '/Users/dev/.claude', label: null, isAccountRoot: true },
+        { id: 'work', path: '/Users/dev/.claude-work', label: 'Acme Corp', isAccountRoot: true },
+      ],
+    });
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    await screen.findByTestId('agent-account-row-option-work');
+    // The registered account is the ONLY option; the only way back to the
+    // unregistered root is the inherit footer below them.
+    expect(screen.queryAllByTestId(/^agent-account-row-option-/)).toHaveLength(1);
+  });
+
+  it('turns amber for an id nobody registered, and still says which id', async () => {
+    renderRows(
+      manifest({ account: 'retired-client' }),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    const chip = await screen.findByTestId('agent-account-row-chip');
+    expect(chip).toHaveTextContent('set here');
+    // The warning is appended to the chip's accessible name, so it is never
+    // only a color.
+    expect(screen.getByRole('button', { name: /no longer registered/i })).toBeInTheDocument();
+    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('retired-client');
+  });
+
+  it('reads the optimistic wire null as inheriting, not as an account named null', async () => {
+    renderRows(
+      manifest({ account: null } as unknown as Partial<AgentManifest>),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-account-row-chip')).toHaveTextContent('server default')
+    );
+    expect(screen.queryByRole('button', { name: /no longer registered/i })).toBeNull();
   });
 });
