@@ -24,18 +24,20 @@ import { BarMembersChip } from './BarMembersChip';
  */
 export function HomeMembersChip() {
   const team = useTeamRoom();
-  const roomId = team.room?.id ?? null;
+  // **Archived resolves to no room here, before the roster is even asked for.**
+  // An archived #team draws no conversation at all — Home offers to bring it
+  // back instead (`HomeRoomPage`) — so a head count for it would be a control
+  // for something that is not on screen, opening a sheet to manage members of a
+  // room the owner put away. Passing `null` rather than filtering the result
+  // later also means `useRoom` never runs the request (it is `enabled` on the
+  // id), so an archived room costs no roster read.
+  const roomId = team.status === 'archived' ? null : (team.room?.id ?? null);
   const roster = useRoom(roomId);
   const [focus, setFocus] = useState<RoomDetailsFocus | null>(null);
 
-  const room = team.room;
+  const room = roomId === null ? null : team.room;
   const count = roster.data?.members.length;
   if (room === null || count === undefined) return null;
-  // An archived #team draws no room at all — Home offers to bring it back
-  // instead (`HomeRoomPage`). A head count for a conversation that is not on
-  // screen, opening a sheet to manage members of a room the owner put away, is
-  // a control for something that is not there.
-  if (team.status === 'archived') return null;
 
   return (
     <>

@@ -14,7 +14,7 @@ import userEvent from '@testing-library/user-event';
 import { TooltipProvider } from '@/layers/shared/ui';
 
 /** #team as `useTeamRoom` answers, and its roster as `useRoom` answers. */
-const { room, roster } = vi.hoisted(() => ({
+const { room, roster, status, roomAsked } = vi.hoisted(() => ({
   room: {
     current: {
       id: 'team-room',
@@ -28,11 +28,24 @@ const { room, roster } = vi.hoisted(() => ({
     } as Record<string, unknown> | null,
   },
   roster: { members: undefined as { members: { authorId: string }[] } | undefined },
+  // What `useTeamRoom` is answering on this render. `ready` unless a test says
+  // otherwise — the archived case is the one that must not draw a chip.
+  status: { current: 'ready' as 'ready' | 'archived' },
+  // Every id `useRoom` is asked for, so a test can prove a request was NOT made.
+  roomAsked: vi.fn(),
 }));
 
 vi.mock('@/layers/entities/room', () => ({
-  useTeamRoom: () => ({ status: room.current ? 'ready' : 'missing', room: room.current }),
-  useRoom: () => ({ data: roster.members }),
+  useTeamRoom: () => ({
+    status: room.current ? status.current : 'missing',
+    room: room.current,
+  }),
+  useRoom: (roomId: string | null) => {
+    roomAsked(roomId);
+    // The real hook is `enabled` on the id: a `null` room is never fetched, so
+    // it has no data either.
+    return { data: roomId === null ? undefined : roster.members };
+  },
   roomDisplayTitle: () => '#team',
 }));
 
@@ -61,6 +74,7 @@ function renderHomeBar() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  status.current = 'ready';
   roster.members = members(5);
   room.current = {
     id: 'team-room',
@@ -100,6 +114,23 @@ describe('HomeMembersChip', () => {
     renderHomeBar();
 
     expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
+  });
+
+  it('draws nothing for an archived #team, and does not ask for its roster', () => {
+    // Home draws no conversation at all when #team is archived — it offers to
+    // bring the room back instead. A head count beside that offer would be a
+    // control for something that is not on screen, and the sheet behind it would
+    // manage members of a room the owner deliberately put away.
+    status.current = 'archived';
+    renderHomeBar();
+
+    expect(screen.queryByTestId('bar-members-chip')).not.toBeInTheDocument();
+    // And the roster read never runs: the hook is asked for `null`, which is
+    // what disables it. Asserting the request's ABSENCE, not just the chip's,
+    // because a guard that filtered the result afterwards would look identical
+    // on screen while still costing a fetch on every archived load.
+    expect(roomAsked).toHaveBeenCalledWith(null);
+    expect(roomAsked).not.toHaveBeenCalledWith('team-room');
   });
 
   it('draws nothing when there is no team room to count', () => {

@@ -273,12 +273,22 @@ describe('HomeSurfaceBar', () => {
   });
 
   it('keeps ONE tab strip mounted across a tab press — the node survives', async () => {
-    // The bug this pins: the shell used to key its cross-fade on the route id,
-    // so four home routes were four keys and every tab press unmounted the strip
-    // and mounted a new one. The person saw the whole row blink; the sliding
-    // underline could not slide, because the element it would slide from was
-    // gone. All four routes declare the SAME bar component now, and the key is
-    // derived from the component — so React reconciles in place.
+    // **What this can and cannot prove.** It cannot fail under the original bug.
+    // The bug lived in the SHELL — `AnimatePresence` keyed on the route id, so
+    // four home routes were four keys and every tab press tore the bar down —
+    // and this harness mounts the bar directly, with no `resolveRouteHeader` and
+    // no `AnimatePresence` above it. So the node would have survived here even
+    // then.
+    //
+    // What it does prove is the bar's own half of the fix, which is a real way
+    // to break it again: that pressing a tab re-renders this component rather
+    // than remounting its strip — a `key` on the strip, or resolving the tabs
+    // per route into a fresh array identity, would fail here. The shell's half
+    // is pinned in `route-header.test.ts` (routes sharing a bar share a key),
+    // and the end-to-end claim — same DOM node across all four switches, the
+    // underline sliding 351 → 585 — is browser-measured evidence on DOR-1401,
+    // because a mounted-ness question about a real animation is not one jsdom
+    // can answer.
     const user = userEvent.setup();
     renderAt('/');
     await screen.findByTestId('home-page');
