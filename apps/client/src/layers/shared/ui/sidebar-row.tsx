@@ -29,7 +29,7 @@ import {
   hasSecondLine,
 } from '@/layers/shared/lib/row-grammar';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
-import { SidebarMenuItem } from './sidebar';
+import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
 
@@ -210,16 +210,6 @@ export interface RowDragBindings {
   /** Whether a drag is currently hovering this row as a drop target. */
   isOver: boolean;
 }
-
-/**
- * The list item, animated — the one element a row's continuity motion lands on.
- *
- * It has to be the `<li>` itself: a FLIP measures the box that moved, and a
- * wrapper inside the item would move with the row rather than being what moved.
- * `SidebarMenuItem` spreads every prop it is given onto its `<li>`, ref
- * included, so `motion.create` can drive it directly.
- */
-const MotionMenuItem = motion.create(SidebarMenuItem);
 
 /**
  * What the sidebar's continuity layer puts on a row's list item (spec
@@ -648,36 +638,8 @@ export function SidebarRow({
       </button>
     );
 
-  // The list item, with or without motion on it. A row that was handed none
-  // renders the plain `<li>` it always did — the motion component is not merely
-  // idle in that case, it is not in the tree at all.
-  const Item = rowMotion === undefined ? SidebarMenuItem : MotionMenuItem;
-  const itemProps =
-    rowMotion === undefined
-      ? {}
-      : {
-          layout: rowMotion.layout,
-          layoutDependency: rowMotion.layoutDependency,
-          initial: rowMotion.initial,
-          animate: rowMotion.animate,
-          exit: rowMotion.exit,
-          transition: rowMotion.transition,
-          // Present or absent, never `false`: the CSS keyframe fires on the
-          // attribute appearing, and `data-arrived="false"` would fire it too.
-          ...(rowMotion.arrived === true ? { 'data-arrived': '' } : {}),
-        };
-
-  return (
-    <Item
-      {...itemProps}
-      // The tint the arrival attribute above turns on, and the rounding it needs
-      // so a 200 ms wash does not paint a square over a rounded row.
-      className={
-        rowMotion === undefined
-          ? undefined
-          : 'motion-safe:data-arrived:animate-sidebar-row-arrived rounded-md'
-      }
-    >
+  const inside = (
+    <>
       <div
         ref={drag?.setNodeRef}
         style={drag?.style}
@@ -746,6 +708,40 @@ export function SidebarRow({
         </SidebarMenuSurface>
       </div>
       {expansion}
-    </Item>
+    </>
+  );
+
+  // **A `motion.li`, written out rather than `motion.create(SidebarMenuItem)`.**
+  // The FLIP has to be on the list item itself — a wrapper inside it travels
+  // WITH the row and measures nothing that moved — and `motion.create` would
+  // have to run at module scope to keep one stable component type. That call
+  // runs the moment anything imports the `shared/ui` barrel, which is most of
+  // the app: measured, it broke 17 test suites that mock `motion/react` without
+  // a `create` and never render a sidebar row. `motion.li` is reached at render
+  // time and only by a row that asked for motion, so nothing else pays. The
+  // item's identity lives in {@link SIDEBAR_MENU_ITEM_ATTRS} so the two `<li>`s
+  // cannot drift into different things that merely look alike.
+  if (rowMotion === undefined) return <SidebarMenuItem>{inside}</SidebarMenuItem>;
+  return (
+    <motion.li
+      {...SIDEBAR_MENU_ITEM_ATTRS}
+      layout={rowMotion.layout}
+      layoutDependency={rowMotion.layoutDependency}
+      initial={rowMotion.initial}
+      animate={rowMotion.animate}
+      exit={rowMotion.exit}
+      transition={rowMotion.transition}
+      // Present or absent, never `false`: the CSS keyframe fires on the
+      // attribute APPEARING, and `data-arrived="false"` would fire it too.
+      {...(rowMotion.arrived === true ? { 'data-arrived': '' } : {})}
+      // The tint that attribute turns on, and the rounding it needs so a 200 ms
+      // wash does not paint a square over a rounded row.
+      className={cn(
+        SIDEBAR_MENU_ITEM_CLASS,
+        'motion-safe:data-arrived:animate-sidebar-row-arrived rounded-md'
+      )}
+    >
+      {inside}
+    </motion.li>
   );
 }
