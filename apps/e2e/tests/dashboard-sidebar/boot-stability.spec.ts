@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
-import { test, expect, BOOT_CACHE_DISABLED_KEY } from '../../fixtures';
+import { test, expect } from '../../fixtures';
+import { BOOT_CACHE_DISABLED_KEY } from '../../boot-cache-flag';
 import type { RoomsApi } from '../../fixtures/rooms-api';
 
 /**

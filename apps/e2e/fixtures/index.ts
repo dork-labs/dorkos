@@ -29,40 +29,7 @@ type DorkOSFixtures = {
   tasksApi: TasksApi;
 };
 
-/**
- * The client's opt-out key for its persisted boot cache.
- *
- * Spelled here rather than imported: `apps/e2e` depends on no workspace package,
- * and one string is not worth making it depend on the client bundle. The value
- * is pinned from the other side — `query-persister.test.ts` asserts this exact
- * literal and names this file — so a rename reddens a unit test that says where
- * to look.
- */
-export const BOOT_CACHE_DISABLED_KEY = 'dorkos:boot-cache-disabled';
-
 export const test = base.extend<DorkOSFixtures>({
-  /**
-   * Every spec gets a COLD cockpit, unless it says otherwise.
-   *
-   * The cockpit remembers its sidebar between loads (`shared/lib/query-persister.ts`),
-   * which is right for a person and wrong for a suite written against a cold
-   * first paint. A fresh context per test is not enough: within one test, the
-   * second `page.goto` restores what the first left, so specs that assert on
-   * paint order, scroll anchoring, or a live lane's first frame start racing a
-   * warm boot they were never written for — and CI's slower machines widen every
-   * one of those races.
-   *
-   * So the suite opts OUT by default and `dashboard-sidebar/boot-stability.spec.ts`
-   * opts back in, because warm boot is the thing it tests. Anything else that
-   * comes to depend on warm behaviour should opt in the same way, deliberately,
-   * rather than inherit it.
-   */
-  context: async ({ context }, use) => {
-    await context.addInitScript((key) => {
-      window.localStorage.setItem(key, '1');
-    }, BOOT_CACHE_DISABLED_KEY);
-    await use(context);
-  },
   basePage: async ({ page }, use) => {
     await use(new BasePage(page));
   },
