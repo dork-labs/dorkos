@@ -8,6 +8,7 @@ covers:
   - 'test(e2e): the room specs meet the panel in a browser (DOR-1403)'
   - "chore(e2e): record the room specs' latest runs (DOR-1403)"
   - 'fix(client,e2e): answer the R2 review — the missing room, the home indicator, and the doors nobody had tested (DOR-1403)'
+  - "fix(client): the sidebar's Members door lands the keyboard too, and the manifest tells the truth (DOR-1403)"
 ---
 
 ### Changed
