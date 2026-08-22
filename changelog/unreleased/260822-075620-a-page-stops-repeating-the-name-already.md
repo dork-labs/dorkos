@@ -2,6 +2,7 @@
 covers:
   - 'refactor(client): a page stops repeating the name already in the bar'
   - 'refactor(client): the tab strip drops the density no route wears'
+  - 'refactor(client): name the fixed cluster so I1 can be asserted by name'
 ---
 
 ### Changed
