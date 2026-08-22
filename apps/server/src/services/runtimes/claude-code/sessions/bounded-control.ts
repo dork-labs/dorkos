@@ -1,9 +1,11 @@
 /**
- * The wall clock behind every Stop (DOR-1244).
+ * The wall clock behind every control request (DOR-1244, DOR-1301).
  *
- * **The property: Stop is bounded.** Once a person presses Stop, the turn ends
- * within a small, named window whatever the CLI is doing — including the case
- * where the CLI can no longer hear DorkOS at all.
+ * **The property: no control request outlives a bound.** Whatever DorkOS asks a
+ * running CLI to do out of band — stop, change permission mode, swap the model,
+ * reload plugins — it either gets an answer within a small, named window or
+ * gives up and says so. Nothing waits for ever, including the case where the CLI
+ * can no longer hear DorkOS at all.
  *
  * That case is real, and it is DorkOS's own doing. At the `result` a turn is
  * taken to end on, `settleStdinAtResult` closes the held prompt, which sends the
@@ -22,10 +24,15 @@
  *
  * Only a clock can break that tie, because each side of it is waiting on the
  * other. This module is that clock and nothing more: WHAT to do when no ack
- * comes is the caller's decision, and the two callers decide differently (see
- * `session-store.ts` — a Stop escalates to `close()`, a task stop does not).
+ * comes is the caller's decision, and the callers decide differently (see
+ * `session-store.ts` — a Stop escalates to `close()`, a task stop does not; and
+ * `launch-live-settings.ts`, where an unanswered setter downgrades the
+ * fingerprint instead of failing the turn).
  *
- * @module services/runtimes/claude-code/sessions/bounded-stop
+ * Every bound in the runtime is declared here rather than beside its call site,
+ * so the whole property can be audited by reading one file.
+ *
+ * @module services/runtimes/claude-code/sessions/bounded-control
  */
 
 /**
@@ -66,8 +73,62 @@
  */
 export const STOP_ACK_TIMEOUT_MS = 3_000;
 
-/** What a bounded stop request concluded. */
-export type StopAck =
+/**
+ * How long a live permission-mode change may go unanswered before `PATCH
+ * /api/sessions/:id` stops waiting on it.
+ *
+ * The same one-line control round-trip as an interrupt, so the same three
+ * seconds, and for the same reason: a person is sitting in front of this one,
+ * watching a control they just moved. Expiring costs strictly less here than it
+ * does for a Stop — the new mode is already persisted before the live call is
+ * made (write-through, ADR-0260), so a request that times out loses the change
+ * for the turn in flight and nothing beyond it. Nothing is killed, nothing is
+ * reverted; the mode takes effect on the next turn either way.
+ */
+export const PERMISSION_MODE_ACK_TIMEOUT_MS = 3_000;
+
+/**
+ * How long a live setter that merely flips a field — `setModel`,
+ * `setPermissionMode` — may go unanswered while a dispatch waits on it.
+ *
+ * Nothing happens behind these but a variable assignment in the CLI, so a
+ * healthy subprocess answers in milliseconds. Three seconds is the same
+ * human-facing budget as a Stop, because the wait lands in the same place: a
+ * person has pressed send and their message has not started yet.
+ */
+export const LIVE_SETTING_ACK_TIMEOUT_MS = 3_000;
+
+/**
+ * How long a live setter with real work behind it — `setMcpServers`,
+ * `reloadPlugins` — may go unanswered.
+ *
+ * These two are not field flips. `setMcpServers` connects and disconnects
+ * servers, some of them freshly spawned processes; `reloadPlugins` re-reads
+ * every plugin directory from disk and restarts the servers they declare. So
+ * the same three seconds would expire on a HEALTHY CLI that is simply doing what
+ * it was asked. Eight seconds is this repo's existing allowance for a control
+ * round-trip that has to wait on something real (`CONTEXT_USAGE_TIMEOUT_MS`,
+ * `sdk/context-usage.ts`), and there is no reason for a second number.
+ */
+export const PLUGIN_RELOAD_ACK_TIMEOUT_MS = 8_000;
+
+/**
+ * How long the model-cache warm-up may wait on `supportedModels()` before it
+ * abandons the throwaway subprocess it started.
+ *
+ * Nobody is blocked on this one: the warm-up runs in the background, and the
+ * caller-facing read (`getSupportedModels`) already races it on its own 3 s
+ * clock and falls through to an empty list. What the bound protects is the
+ * warm-up itself — an unanswered probe pins `warmupPromise` for the life of the
+ * server, so every later warm-up dedupes onto a promise that will never settle
+ * and the temporary query is never closed. Ten seconds because a cold start here
+ * pays for spawning a CLI subprocess before the probe is even sent, and being
+ * generous costs nothing when no request is waiting.
+ */
+export const MODEL_PROBE_ACK_TIMEOUT_MS = 10_000;
+
+/** What a bounded control request concluded. */
+export type ControlAck =
   /** The CLI answered: the stop was delivered. */
   | 'acked'
   /** The CLI, or the SDK on its behalf, answered with a failure. */
@@ -76,7 +137,7 @@ export type StopAck =
   | 'unacked';
 
 /**
- * Make one stop-shaped control request against a wall clock.
+ * Make one control request against a wall clock.
  *
  * Never throws, and never leaves a live timer behind, whichever way it goes.
  * Two details are load-bearing rather than merely defensive:
@@ -89,21 +150,25 @@ export type StopAck =
  *   ("Query closed before response received") — a rejection that lands after
  *   this function has already returned, and would otherwise be unhandled.
  *
+ * The bound is always passed in, never defaulted: every call site has had to
+ * choose a number and justify it, and a default would let the next one skip
+ * that.
+ *
  * @param request - The control call to make, e.g. `() => query.interrupt()`.
- * @param timeoutMs - The bound to hold it to; defaults to {@link STOP_ACK_TIMEOUT_MS}.
+ * @param timeoutMs - The bound to hold it to, from the table above.
  * @returns How the request settled, or `unacked` when the bound won.
  */
-export async function awaitStopAck(
+export async function awaitControlAck(
   request: () => Promise<unknown>,
-  timeoutMs: number = STOP_ACK_TIMEOUT_MS
-): Promise<StopAck> {
-  const settled: Promise<StopAck> = (async () => request())().then(
+  timeoutMs: number
+): Promise<ControlAck> {
+  const settled: Promise<ControlAck> = (async () => request())().then(
     () => 'acked' as const,
     () => 'refused' as const
   );
   let timer: NodeJS.Timeout | undefined;
   try {
-    const expiry = new Promise<StopAck>((resolve) => {
+    const expiry = new Promise<ControlAck>((resolve) => {
       timer = setTimeout(() => resolve('unacked'), timeoutMs);
       timer.unref?.();
     });
