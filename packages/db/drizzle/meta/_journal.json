@@ -512,6 +512,13 @@
       "when": 1787383865514,
       "tag": "0072_even_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1787442146398,
+      "tag": "0073_fresh_vampiro",
+      "breakpoints": true
     }
   ]
 }

@@ -88,3 +88,42 @@ export const sessionMessageQueue = sqliteTable(
 
 export type SessionMessageQueueRow = typeof sessionMessageQueue.$inferSelect;
 export type NewSessionMessageQueueRow = typeof sessionMessageQueue.$inferInsert;
+
+// Words somebody staged for a session — "attach this for the agent, without
+// provoking a turn" — that the runtime could not append to its own transcript,
+// waiting to ride the next dispatch as a `staged_context` entry (ADR-0273).
+//
+// It is persisted for the same reason the queue above is, and the reason got
+// sharper with DOR-1307: the server emits a DURABLE "Added context for the next
+// reply" receipt the moment the words are held, and on a default claude-code
+// install every Add context takes this path. A hold that lived only in process
+// memory therefore left a permanent receipt pointing at words a restart had
+// thrown away — a silent downgrade, which ADR `260816-143752` forbids (DOR-1324).
+//
+// `position` orders one session's holds by when they were staged, so two notes
+// staged before one dispatch ride it in the order the person wrote them. Unlike
+// the queue's, it is never reordered — there is no UI for it and a fold is not a
+// queue — so it steps by one and nothing renumbers.
+//
+// `session_id` is the canonical session id where one exists, and rows move with
+// the same rekey that carries the queue: a hold stranded at the pre-rename id is
+// invisible to the dispatch it was staged for.
+export const sessionStagedContext = sqliteTable(
+  'session_staged_context',
+  {
+    // The server-minted messageId the `context_staged` receipt correlates on.
+    id: text('id').primaryKey(),
+    sessionId: text('session_id').notNull(),
+    position: integer('position').notNull(),
+    // The person's staged words, pristine — the fold never mutates them.
+    content: text('content').notNull(),
+  },
+  (t) => ({
+    // Every read is one session's holds in order, so the index serves the
+    // ORDER BY as well as the filter.
+    bySession: index('session_staged_context_session_idx').on(t.sessionId, t.position),
+  })
+);
+
+export type SessionStagedContextRow = typeof sessionStagedContext.$inferSelect;
+export type NewSessionStagedContextRow = typeof sessionStagedContext.$inferInsert;
