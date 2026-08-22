@@ -2167,11 +2167,12 @@ export class RoomService {
    * Post because the agent decided to — `post_to_room` (room-participation spec
    * §10.2), and the only caller is the rooms capability domain.
    *
-   * **It is `post` with two things added and nothing removed**, which is the
+   * **It is `post` with three things added and nothing removed**, which is the
    * whole design: the tool must not become a second write path. Membership, the
    * archive check, mention resolution, the cascade stamp, the SSE publish and the
    * dispatch all come from {@link RoomService.post} unchanged, so a bound that
-   * holds for a person's message holds for this.
+   * holds for a person's message holds for this. Two of the three are refusals,
+   * so the additions can only ever make this narrower than `post`, never wider.
    *
    * What it adds:
    *
@@ -2179,6 +2180,13 @@ export class RoomService {
    *   agent was unambiguously addressed, answering is obligatory, and the turn's
    *   own text already posts. A second way to say the same thing there would be a
    *   second way for it to fail, and it would buy nothing.
+   * - **A turn somebody STOPPED is refused** — `TURN_WAS_STOPPED`, DOR-1313. An
+   *   interrupt is delivered rather than obeyed, so a stopped turn may still be
+   *   running and reach for this; the room already throws away its narration and
+   *   this is the same refusal on the half the turn speaks for itself. It stands
+   *   until the room gives that agent another turn there
+   *   (`RoomTriggerDispatcher.stoppedHere`, where both its limits are written
+   *   down).
    * - **The turn is marked as having spoken**, so the narration that turn writes
    *   back to its session is not ALSO posted (see {@link ActiveClaim.spokeViaTool}).
    *
@@ -2207,6 +2215,24 @@ export class RoomService {
       throw new RoomError(
         'TOOL_POST_NOT_IN_DM',
         'This is a direct message — your reply is posted for you, so there is nothing to post here.'
+      );
+    }
+    // **A stopped turn says nothing here either** (DOR-1313). The room already
+    // throws away the narration of a turn somebody stopped; this is the same
+    // refusal on the other half of that turn's voice, and it is the half that
+    // measurably got through — an interrupt that reached a process still
+    // spawning left the turn running, and it posted its whole answer by hand
+    // twenty-three seconds after the room said everything had been stopped.
+    // Refused rather than silently dropped: the agent is the one holding the
+    // pen, and telling it beats letting it believe it spoke.
+    if (this.triggers.stoppedIn(roomId, input.authorId)) {
+      logger.info('[rooms] refused a stopped turn a post of its own', {
+        roomId,
+        authorId: input.authorId,
+      });
+      throw new RoomError(
+        'TURN_WAS_STOPPED',
+        'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
       );
     }
     const entry = this.post(roomId, input);
