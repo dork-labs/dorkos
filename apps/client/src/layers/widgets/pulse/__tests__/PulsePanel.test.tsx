@@ -62,7 +62,14 @@ vi.mock('@/layers/features/dashboard-attention', () => ({
   AttentionSignalRow: ({ signal }: { signal: MockSignal }) => (
     <div data-testid="signal-row">{signal.primary}</div>
   ),
-  ScheduleApprovalRow: ({ task }: { task: MockSchedule }) => (
+}));
+
+// The proposed-schedule card moved to its own slice when it stopped being a row
+// (DOR-1398). Stubbed for the same reason as everything else in this suite: the
+// panel's job here is composition and caps, and the real card would drag in the
+// transport, two mutations and a run-history poll.
+vi.mock('@/layers/features/schedule-approval', () => ({
+  ScheduleApprovalCard: ({ task }: { task: MockSchedule }) => (
     <div data-testid="schedule-row">{task.displayName}</div>
   ),
 }));

@@ -65,6 +65,7 @@ import { useNotifications } from '@/layers/entities/notifications';
 import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
 import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
+import { discardPendingRejections } from '@/layers/features/schedule-approval';
 import { InboxBell } from '../ui/InboxBell';
 
 /**
@@ -234,6 +235,10 @@ describe('InboxBell', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -509,7 +514,7 @@ describe('InboxBell', () => {
     });
 
     const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName(/1 agent is waiting on your answer/i);
+    expect(marker).toHaveAccessibleName(/1 question needs your answer/i);
     expect(marker).not.toHaveAccessibleName(/approval/i);
   });
 
@@ -653,6 +658,10 @@ describe('InboxBell — history and read state', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -875,6 +884,10 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -960,6 +973,10 @@ describe('InboxBell — what the panel says', () => {
 
   afterEach(() => {
     cleanup();
+    // The undo window is module-level so it can survive this popover
+    // unmounting, which means `cleanup()` does not end it — a rejection left
+    // pending would fire its DELETE inside a later, unrelated case.
+    discardPendingRejections();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -1017,7 +1034,9 @@ describe('InboxBell — what the panel says', () => {
     // The panel's own summary, not the pill's accessible name — both say a
     // version of this sentence, and only one of them is under test.
     expect(
-      await screen.findByText('1 agent is waiting on your answer before carrying on.')
+      await screen.findByText(
+        '1 question is waiting on your answer. Nothing carries on until you answer.'
+      )
     ).toBeInTheDocument();
 
     // Somebody answered it, anywhere.
@@ -1099,7 +1118,19 @@ describe('InboxBell — what the panel says', () => {
     expect(
       await screen.findByText('2 schedules want your approval. Nothing runs until you decide.')
     ).toBeInTheDocument();
-    expect(screen.queryByText(/request/i)).not.toBeInTheDocument();
+    // No COUNTED "request" anywhere on the panel — the mislabel this pins is a
+    // sentence that reports a number of requests when the number is schedules.
+    //
+    // Scoped to counted phrases rather than the bare word, and that narrowing is
+    // deliberate rather than a retreat: the cards themselves legitimately say
+    // "Requested without an agent identity" for a proposal that carries no agent
+    // path (the shared identity fallback), so a bare `/request/i` sweep now
+    // matches honest copy about identity and would have to be deleted instead.
+    // Seeded defect: fold `schedules` back into `approvals` in the
+    // `waitingSummary` call and the panel reads "2 requests are waiting for your
+    // approval", which this matches.
+    expect(screen.queryByText(/\d+ requests? (is|are|need)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/requests? (is|are) waiting/i)).not.toBeInTheDocument();
   });
 
   it('names all three kinds at once, in the panel listing order, still promising nothing runs', async () => {
