@@ -159,6 +159,19 @@ describe('SessionHeader', () => {
     expect(chip.querySelector('.hidden.\\@max-md\\/bar\\:inline-flex')).not.toBeNull();
   });
 
+  it('lets the labelled arm shrink, so the chip’s cap actually caps it', () => {
+    renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, origin: 'task' });
+    const labelled = screen
+      .getByTestId('session-origin-chip')
+      .querySelector('.\\@max-md\\/bar\\:hidden');
+    // A flex item's automatic minimum size is its CONTENT. Without `min-w-0`
+    // here the wrapper refuses to shrink, the truncate never engages, and the
+    // label spills past the parent's `max-w` — measured at +182px, painting
+    // over the fixed cluster. The cap only caps a box allowed to get smaller.
+    expect(labelled).toHaveClass('min-w-0');
+    expect(labelled?.querySelector('.truncate')).toHaveClass('min-w-0');
+  });
+
   it('gives the collapsed origin its meaning back through an accessible label', () => {
     renderBar({
       agentName: 'dorkbot',

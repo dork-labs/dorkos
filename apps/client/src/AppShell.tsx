@@ -570,11 +570,12 @@ export function AppShell() {
                       // the `.desktop-darwin` ancestor, so it is unconditional.
                       // `@container/bar` makes the row itself the thing bars
                       // measure against. A bar's crowding is a fact about the
-                      // width it actually has — which the right panel opening
-                      // changes without the window moving at all (spec §5.5) —
-                      // so a `sm:` breakpoint keyed to the viewport would answer
-                      // the wrong question, and answer it wrongly in the
-                      // playground, where a 390px bar sits inside a 1440px page.
+                      // width it HAS, and that is not the window's: collapsing
+                      // the sidebar takes this row from 524px to 804px at a
+                      // fixed window size (measured). A `sm:` breakpoint keyed
+                      // to the viewport would answer the wrong question — and
+                      // answer it wrongly in the playground too, where a 390px
+                      // bar sits inside a 1440px page.
                       className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.

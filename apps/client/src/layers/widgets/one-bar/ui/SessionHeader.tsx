@@ -112,9 +112,15 @@ export function SessionHeader() {
                 label itself — which is exactly the mode this component already
                 has. Above the threshold the visible text would be announced
                 twice, so it goes back to decorative. */}
-            <span className="inline-flex items-center gap-1 @max-md/bar:hidden">
+            {/* `min-w-0` is load-bearing, not tidying. A flex item's automatic
+                minimum size is its CONTENT, so without it this wrapper refuses
+                to shrink, the `truncate` below never engages, and the label
+                spills straight past the 12rem cap on its parent — measured at
+                +182px, painting over the fixed cluster. The cap only caps a box
+                that is allowed to get smaller. */}
+            <span className="inline-flex min-w-0 items-center gap-1 @max-md/bar:hidden">
               <SessionOriginMark origin={origin} label={originText} decorative />
-              <span className="truncate" title={originText}>
+              <span className="min-w-0 truncate" title={originText}>
                 {originText}
               </span>
             </span>

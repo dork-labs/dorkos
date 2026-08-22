@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): the session header says who you are talking to and which conversation (DOR-1404)'
   - "fix(client): the session bar yields in order instead of painting over itself, and holds a deleted agent's name (DOR-1404)"
+  - "fix(client): the origin chip's cap actually caps it, and the bar comment says what is true (DOR-1404)"
 ---
 
 ### Changed
