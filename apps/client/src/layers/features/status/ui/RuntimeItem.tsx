@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
   RUNTIME_DESCRIPTORS,
@@ -100,6 +100,10 @@ export function RuntimeItem({
   const { data: requirements } = useRuntimeRequirements();
   const account = useAccountSwitch();
   const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
+  // Generated, not a literal: the status line renders one chip, but the tree can
+  // hold more (the dev playground shows several side by side), and a duplicated
+  // id would point every group at the first note.
+  const accountNoteId = useId();
 
   const registeredTypes = Object.keys(capabilityMap?.capabilities ?? {});
   // Ready runtimes are selectable; unsatisfied ones get the setup affordance.
@@ -225,8 +229,11 @@ export function RuntimeItem({
               {/* Said before the options, not after: the scope of the choice is
                   what a person needs to know to make it. Picking here used to
                   rewrite the server default, so spelling out that it no longer
-                  does is the whole point of the line. */}
+                  does is the whole point of the line. It is the group's
+                  DESCRIPTION, not a loose paragraph — a caveat about money that
+                  only sighted users receive is not a caveat. */}
               <p
+                id={accountNoteId}
                 className="text-muted-foreground px-2 pb-1 text-[11px] leading-snug"
                 data-testid="account-scope-note"
               >
@@ -235,6 +242,7 @@ export function RuntimeItem({
               <ResponsiveDropdownMenuRadioGroup
                 value={account.selectedValue}
                 onValueChange={account.choose}
+                aria-describedby={accountNoteId}
               >
                 <ResponsiveDropdownMenuRadioItem value={DEFAULT_ACCOUNT_VALUE}>
                   {account.defaultLabel ? `Default — ${account.defaultLabel}` : 'Default'}

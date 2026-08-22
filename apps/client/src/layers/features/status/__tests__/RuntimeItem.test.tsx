@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render as rtlRender, screen, cleanup, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, cleanup, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider, useAppStore, useClaudeAccounts } from '@/layers/shared/model';
+import {
+  TransportProvider,
+  configKeys,
+  useAppStore,
+  useClaudeAccounts,
+} from '@/layers/shared/model';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { ServerConfig } from '@dorkos/shared/types';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // ---------------------------------------------------------------------------
 // Mock the runtime entity hooks so tests can drive the registered-runtime map
@@ -101,15 +107,20 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
       children,
       value,
       onValueChange,
+      // Forwarded exactly as the real primitive forwards it, so the accessible
+      // description this menu depends on is observable here.
+      'aria-describedby': describedBy,
     }: {
       children: React.ReactNode;
       value?: string;
       onValueChange?: (v: string) => void;
+      'aria-describedby'?: string;
       [key: string]: unknown;
     }) => (
       <div
         role="radiogroup"
         data-value={value}
+        aria-describedby={describedBy}
         onClick={(e) => {
           const target = (e.target as HTMLElement).closest('[data-radio-value]');
           if (target && onValueChange) onValueChange(target.getAttribute('data-radio-value')!);
@@ -187,9 +198,11 @@ afterEach(() => {
   mockRuntimeCapabilities.mockReturnValue({ data: undefined });
   mockRuntimeRequirements.mockReturnValue({ data: undefined });
   mockServerConfig = {};
+  mockAgent = null;
   // The account pick is shared app state, so a test that leaves one behind would
-  // hand the next one a hint it never made.
-  useAppStore.getState().setPendingAccount(null);
+  // hand the next one a hint it never made. `selectedCwd` likewise decides
+  // whether the agent tier is even consulted.
+  useAppStore.setState({ pendingAccount: null, selectedCwd: null });
 });
 
 // Import after mocks are set up
@@ -205,20 +218,62 @@ let mockServerConfig: Partial<ServerConfig> = {};
 /** The transport the most recent {@link render} handed the tree, for write assertions. */
 let lastTransport: ReturnType<typeof createMockTransport>;
 
+/** That render's query cache, so a test can move the server's answer under a live tree. */
+let lastQueryClient: QueryClient;
+
+/**
+ * The agent registered at the working directory the launch would resolve
+ * against, as `getAgentByPath` answers it. `null` is "no agent here", which is
+ * every case that is not about the ladder's agent tier.
+ */
+let mockAgent: AgentManifest | null = null;
+
+/**
+ * The agent at the launch directory, in the only detail this surface reads: the
+ * account it is pinned to. Everything else is filler the manifest type demands.
+ */
+function agentPinnedTo(account: string | undefined): AgentManifest {
+  return {
+    id: 'agent-1',
+    name: 'Worker',
+    description: 'An agent registered at the launch directory.',
+    runtime: 'claude-code',
+    capabilities: [],
+    behavior: { responseMode: 'always' },
+    registeredAt: '2026-01-01T00:00:00.000Z',
+    registeredBy: 'test',
+    personaEnabled: true,
+    enabledToolGroups: {},
+    mcpServers: [],
+    ...(account === undefined ? {} : { account }),
+  };
+}
+
 /**
  * Render with the providers the chip's config read needs. Shadows RTL's `render`
  * so every existing case gets them without repeating the wrapper.
  */
 function render(ui: React.ReactElement) {
+  return renderWithAgent(ui, () => Promise.resolve(mockAgent));
+}
+
+/**
+ * As {@link render}, but the caller drives when — and whether — the agent
+ * manifest read answers. Needed to observe the state BEFORE it lands, which is
+ * the only state in which the default row must stay unnamed.
+ */
+function renderWithAgent(ui: React.ReactElement, getAgent: () => Promise<AgentManifest | null>) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue(mockServerConfig),
     // Present so a test can assert the picker calls it NOT AT ALL: the account
     // choice is session-scoped now and writes no config (spec
     // `billing-account-ladder`).
     updateConfig: vi.fn(() => Promise.resolve()),
+    getAgentByPath: vi.fn(getAgent),
   });
   lastTransport = transport;
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = lastQueryClient;
   return rtlRender(ui, {
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
@@ -226,6 +281,15 @@ function render(ui: React.ReactElement) {
       </QueryClientProvider>
     ),
   });
+}
+
+/** A promise plus the handle to settle it, for holding a query open on purpose. */
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
 }
 
 /**
@@ -668,7 +732,7 @@ describe('RuntimeItem', () => {
       expect(group.getAttribute('data-value')).toBe('__default__');
     });
 
-    it('says the choice is this session only, before offering it', async () => {
+    it('says the choice is this session only, and says it to a screen reader too', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
       render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
@@ -677,6 +741,65 @@ describe('RuntimeItem', () => {
       expect(screen.getByTestId('account-scope-note')).toHaveTextContent(
         'This session only. Locked once the first message sends.'
       );
+      // A caveat about money that only sighted users receive is not a caveat: a
+      // bare paragraph between menu items is part of no item's accessible name,
+      // so it has to be the GROUP's description.
+      expect(accountGroup()).toHaveAccessibleDescription(
+        'This session only. Locked once the first message sends.'
+      );
+    });
+
+    it("names the AGENT's account on the default row, not the server default", async () => {
+      // The ladder is agent-then-default, so on a directory whose agent is
+      // pinned to Acme Corp a machine defaulting to Personal still bills Acme.
+      // "Default — Personal" here would be a false statement about money.
+      mockServerConfig = withAccounts(2);
+      mockAgent = agentPinnedTo('acme-corp');
+      useAppStore.setState({ selectedCwd: '/work/project' });
+      everyRuntimeReady();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Acme Corp'));
+      expect(accountGroup()).not.toHaveTextContent('Default — Personal');
+    });
+
+    it('falls back to the server default when the agent pins an account nobody registered', async () => {
+      // The server's own tier-2 fallthrough: an unresolvable id is skipped, so
+      // the default is what actually bills. Naming the dead id would describe a
+      // billing that will not happen.
+      mockServerConfig = withAccounts(2);
+      mockAgent = agentPinnedTo('retired-client');
+      useAppStore.setState({ selectedCwd: '/work/project' });
+      everyRuntimeReady();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Personal'));
+      expect(accountGroup()).not.toHaveTextContent('retired-client');
+    });
+
+    it('says a bare "Default" while the agent question is still unanswered', async () => {
+      // Silence beats a confident wrong name: until the manifest read lands this
+      // surface cannot tell whether an agent overrules the default.
+      mockServerConfig = withAccounts(2);
+      useAppStore.setState({ selectedCwd: '/work/project' });
+      everyRuntimeReady();
+      const agentAnswer = createDeferred<AgentManifest | null>();
+      renderWithAgent(
+        <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />,
+        () => agentAnswer.promise
+      );
+
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      const defaultRow = screen
+        .getAllByRole('radio')
+        .find((el) => el.getAttribute('data-radio-value') === '__default__')!;
+      expect(defaultRow).toHaveTextContent('Default');
+      expect(defaultRow).not.toHaveTextContent('—');
+
+      // And it fills in once the answer arrives.
+      agentAnswer.resolve(agentPinnedTo('acme-corp'));
+      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Acme Corp'));
     });
 
     it('holds the pick for THIS session and writes no config at all', async () => {
@@ -712,6 +835,46 @@ describe('RuntimeItem', () => {
       // server's own ladder (the agent's account, then the default) in charge.
       expect(useAppStore.getState().pendingAccount).toBeNull();
       expect(lastTransport.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('drops a held pick when that account stops being registered', async () => {
+      // Masking the radio back to Default is not enough: the send path reads the
+      // store, so a dead id would still ride the first message. Display and wire
+      // have to say the same thing.
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+      );
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      await user.click(screen.getByText('Acme Corp'));
+      expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+
+      // The operator removes it in Settings; this menu is still mounted, and the
+      // config cache every account surface reads moves under it.
+      act(() => {
+        lastQueryClient.setQueryData(configKeys.current(), {
+          claudeCode: {
+            resolvedAccount: '/Users/dev/.claude',
+            inherited: true,
+            accounts: [
+              {
+                id: 'personal',
+                path: '/Users/dev/.claude',
+                label: 'Personal',
+                isAccountRoot: true,
+              },
+              { id: 'third', path: '/Users/dev/.claude3', label: 'Third', isAccountRoot: true },
+            ],
+          },
+        });
+      });
+      rerender(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(useAppStore.getState().pendingAccount).toBeNull());
+      // And the radio agrees rather than pointing at something that is gone.
+      expect(accountGroup().getAttribute('data-value')).toBe('__default__');
     });
 
     it('never offers a root nobody registered, which no hint could name', async () => {

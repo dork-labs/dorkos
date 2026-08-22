@@ -33,7 +33,7 @@
  *
  * @module features/status/model/use-runtime-chip
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore, useInPlaceNavigate } from '@/layers/shared/model';
 import { useSessions } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
@@ -121,12 +121,14 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
  * The status-bar runtime chip: {@link useResolvedSessionRuntime} plus the
  * selection action, and the one effect that discards a stale pending selection.
  *
- * Call this only from a surface that OWNS the chip. A selection belongs to the
- * session it was made in, so the effect clears it whenever the active session
- * changes (switch, agent launch, or the first send binding the canonical id); the
- * new session then resolves from its own `?runtime=` param. A read-only consumer
- * must use {@link useResolvedSessionRuntime} instead — mounting this hook would
- * clear a pre-launch choice the operator had just made.
+ * A selection belongs to the session it was made in, so the effect clears it on
+ * an OBSERVED session change (switch, agent launch, or the first send binding the
+ * canonical id); the new session then resolves from its own `?runtime=` param.
+ * Mounting clears nothing — see the effect for why that distinction is what
+ * protects a billing pick.
+ *
+ * Prefer {@link useResolvedSessionRuntime} in a read-only consumer regardless:
+ * this hook's extra work is the selection action, which a readout has no use for.
  *
  * @param sessionId - Active session id (see {@link useResolvedSessionRuntime}).
  */
@@ -134,6 +136,12 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
   const resolved = useResolvedSessionRuntime(sessionId);
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
   const setPendingAccount = useAppStore((s) => s.setPendingAccount);
+
+  /**
+   * The last session id this instance actually observed. `undefined` means it
+   * has observed none yet, which is the mount pass.
+   */
+  const observedSessionId = useRef<string | undefined>(undefined);
 
   // Effect — never a render-time external-store write, which would update the
   // sibling consumer mid-render.
@@ -143,7 +151,18 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
   // survived into the NEXT session would bill work the person never chose it
   // for. "This session only" is the promise the menu makes; this is where it is
   // kept.
+  //
+  // **A TRANSITION clears; a mount does not.** The hook's contract says one
+  // owner, but two surfaces call it today (ChatPanel and ChatStatusSection), so
+  // a clear-on-mount discards whatever the other one is holding the moment
+  // either remounts — a person's billing pick deleted by a re-render they never
+  // asked for. Keying on an observed change makes the rule what it always meant:
+  // the pick belongs to the session it was made in, and only leaving that
+  // session ends it.
   useEffect(() => {
+    const previous = observedSessionId.current;
+    observedSessionId.current = sessionId;
+    if (previous === undefined || previous === sessionId) return;
     setPendingRuntime(null);
     setPendingAccount(null);
   }, [sessionId, setPendingRuntime, setPendingAccount]);

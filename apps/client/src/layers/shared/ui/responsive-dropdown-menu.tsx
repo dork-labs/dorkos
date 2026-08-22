@@ -145,6 +145,14 @@ interface ResponsiveDropdownMenuRadioGroupProps {
   closeOnSelect?: boolean;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Id of the element describing what choosing here means — a caveat a screen
+   * reader would otherwise never reach, because a bare paragraph between menu
+   * items is not part of any item's accessible name. Named explicitly rather
+   * than spread: these props are a deliberate list, and both branches below have
+   * to carry it or the caveat exists on desktop only.
+   */
+  'aria-describedby'?: string;
 }
 
 const RadioGroupContext = React.createContext<{
@@ -160,18 +168,28 @@ function ResponsiveDropdownMenuRadioGroup({
   closeOnSelect = true,
   children,
   className,
+  'aria-describedby': describedBy,
 }: ResponsiveDropdownMenuRadioGroupProps) {
   const { isDesktop } = React.useContext(ResponsiveDropdownMenuContext);
   if (isDesktop) {
     return (
-      <DropdownMenuRadioGroup value={value} onValueChange={onValueChange} className={className}>
+      <DropdownMenuRadioGroup
+        value={value}
+        onValueChange={onValueChange}
+        className={className}
+        aria-describedby={describedBy}
+      >
         {children}
       </DropdownMenuRadioGroup>
     );
   }
   return (
     <RadioGroupContext.Provider value={{ value, onValueChange, closeOnSelect }}>
-      <div role="radiogroup" className={cn('flex flex-col', className)}>
+      <div
+        role="radiogroup"
+        className={cn('flex flex-col', className)}
+        aria-describedby={describedBy}
+      >
         {children}
       </div>
     </RadioGroupContext.Provider>

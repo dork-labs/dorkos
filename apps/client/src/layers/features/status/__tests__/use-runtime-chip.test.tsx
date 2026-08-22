@@ -148,6 +148,25 @@ describe('useRuntimeChip — shared pending selection', () => {
     expect(screen.getByTestId('palette-runtime')).toHaveTextContent('claude-code');
   });
 
+  it('does NOT clear a held pick when a second consumer mounts on the same session', () => {
+    // The hook's contract says one owner, but two surfaces call it today
+    // (ChatPanel and ChatStatusSection). A clear-on-MOUNT therefore deletes
+    // whatever the other one is holding the moment either remounts — a person's
+    // billing pick discarded by a re-render they never asked for. Only an
+    // observed session TRANSITION may end a pick.
+    render(<ChipConsumer testid="status-bar" sessionId="session-1" />);
+    act(() => {
+      useAppStore.setState({ pendingAccount: 'acme-corp', pendingRuntime: 'codex' });
+    });
+
+    // A second surface arrives on the SAME session — a conditional mount, a tab
+    // opening, a remount after a layout change.
+    render(<ChipConsumer testid="palette" sessionId="session-1" />);
+
+    expect(useAppStore.getState().pendingAccount).toBe('acme-corp');
+    expect(useAppStore.getState().pendingRuntime).toBe('codex');
+  });
+
   it('clears the pre-launch billing pick when the active session changes', () => {
     // "This session only" is a promise about MONEY: a pick that survived into
     // the next session would bill work the person never chose it for. The first
