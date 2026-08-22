@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { askExitTransition, MELT_S, RESOLVE_HOLD_S } from '../model/ask-exit-transition';
+import { askExitTransition, MELT_S, RESOLVE_HOLD_S } from '../ask-exit-transition';
 
 describe('askExitTransition', () => {
   it('holds an answered card long enough to read its checkmark', () => {

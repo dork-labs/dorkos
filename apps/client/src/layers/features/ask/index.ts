@@ -33,5 +33,8 @@ export { AskReceiptRow } from './ui/AskReceiptRow';
 export { useAnswerAsk } from './model/use-answer-ask';
 export { useAskShortcut } from './model/use-ask-shortcut';
 export { useAskTrayRequest } from './model/ask-tray-store';
-export { askExitTransition } from './model/ask-exit-transition';
+// Re-exported, not owned: the timing moved to `shared/lib` once a third card
+// family started reading it (see that module). Kept on this barrel because the
+// Ask cards are still where the curve is felt.
+export { askExitTransition } from '@/layers/shared/lib';
 export { formatTimeLeft } from './lib/format-time-left';
