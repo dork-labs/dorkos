@@ -39,6 +39,8 @@ import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
 import { applyLiveChanges, prepareDispatch } from './launch-live-settings.js';
 import type { PumpControlQuery, PumpLauncher, PumpQuery } from './session-pump-contract.js';
+import { createTrackedSpawn } from './tracked-spawn.js';
+import { sharedWarmProcessLedger } from './warm-process-ledger.js';
 
 /** What one dispatch resolved: the turn's message, and the launch behind it. */
 export interface PumpLaunchPlan {
@@ -80,7 +82,18 @@ export function createPumpLauncher(
 ): PumpLauncher {
   return ({ sessionId, prompt }): PumpQuery => {
     const plan = currentPlan();
-    const live = query({ prompt, options: plan.sdkOptions });
+    // The one option this path adds to the resolved plan, and the reason it is
+    // added HERE rather than in the shared resolver: only a persistent process
+    // can be orphaned by a server that dies without running its shutdown, so
+    // only a persistent process is written into the ledger the next boot sweeps
+    // (DOR-1310). The resume-per-message path keeps the SDK's own spawn.
+    const live = query({
+      prompt,
+      options: {
+        ...plan.sdkOptions,
+        spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger()),
+      },
+    });
     // Deliberately NOT `session.activeQuery = live` here. That field means "a
     // turn is in flight" to every consumer in this runtime — `interruptQuery`
     // escalates to `close()` when `interrupt()` rejects, which on a warm idle
