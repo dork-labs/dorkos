@@ -425,10 +425,10 @@ runtimeConformance(
     // C11 (DOR-1299): warm a process, open a SECOND turn on it and leave it
     // silent (mirrors dispositionTurn above), then arm its `interrupt()` to
     // hang forever — the fake-CLI equivalent of the ended-stdin wedge
-    // `bounded-stop.ts` exists for. `process.received` growing past the warm
+    // `bounded-control.ts` exists for. `process.received` growing past the warm
     // turn's count is the real signal the second turn's message reached the
     // process, i.e. `session.activeQuery` is armed with the query under test.
-    // The pinned settle is `true`: `bounded-stop.ts` escalates an unacked
+    // The pinned settle is `true`: `bounded-control.ts` escalates an unacked
     // interrupt to `query.close()` and reports the process WAS stopped, just
     // not gracefully — unlike opencode, which has nothing to escalate to.
     hangingInterrupt: async (runtime: AgentRuntime, sessionId: string): Promise<boolean> => {

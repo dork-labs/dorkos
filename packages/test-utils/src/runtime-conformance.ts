@@ -220,7 +220,13 @@ export interface RuntimeConformanceOpts {
   /**
    * Stages a session with a GENUINELY ACTIVE turn whose interrupt call the
    * backend will never acknowledge, then hands control back — the driver
-   * behind the C11 bounded-interrupt case.
+   * behind this suite's C11 bounded-interrupt case.
+   *
+   * **This C11 is not `meta/chat-capabilities.md`'s C-11 row.** The doc's
+   * C-11 is "Add context" (a capability id in its numbered matrix); this
+   * suite's numbering is its own, separate sequence of conformance CASES —
+   * the two happen to collide on the number by coincidence, not by any
+   * shared meaning. Read `C11` here as "this file's eleventh case."
    *
    * "Stop is bounded" (`meta/chat-capabilities.md` C-10 matrix preamble;
    * DOR-1244) is only provable against a turn whose backend has gone quiet:

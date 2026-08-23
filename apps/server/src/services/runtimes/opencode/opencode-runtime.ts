@@ -127,7 +127,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-stop.ts`). */
+/** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-control.ts`). */
 type AbortAck =
   /** The backend answered, and the answer is `request`'s return value. */
   | { kind: 'settled'; aborted: boolean }
@@ -139,8 +139,8 @@ type AbortAck =
 /**
  * Race one `session.abort` call against {@link INTERRUPT_ACK_TIMEOUT_MS},
  * mirroring the load-bearing details of claude-code's `awaitStopAck`
- * (`sessions/bounded-stop.ts`, DOR-1244) for the same reason: a promise that
- * only a backend ack settles must not be trusted to settle at all.
+ * (`sessions/bounded-control.ts`, DOR-1244) for the same reason: a promise
+ * that only a backend ack settles must not be trusted to settle at all.
  *
  * Never throws, whichever way the race goes and however `request` fails —
  * `request` is INVOKED here rather than passed in as an already-started

@@ -60,7 +60,7 @@ export class FakeCliProcess {
   interruptRejectsWith: unknown;
   /**
    * When true, `interrupt()` returns a promise nothing will ever settle — the
-   * wedge `bounded-stop.ts` exists for (DOR-1299's C11 conformance case): a
+   * wedge `bounded-control.ts` exists for (DOR-1299's C11 conformance case): a
    * healthy-looking process that simply never acks the control request, same
    * as an ended stdin drops it in silence.
    */

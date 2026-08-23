@@ -131,7 +131,7 @@ export const STREAM_LIVE_TIMEOUT_MS = 2_000;
  * (DOR-1299).
  *
  * The wedge this guards against is the same shape as claude-code's
- * `STOP_ACK_TIMEOUT_MS` (`sessions/bounded-stop.ts`, DOR-1244): a promise
+ * `STOP_ACK_TIMEOUT_MS` (`sessions/bounded-control.ts`, DOR-1244): a promise
  * that only a backend ack settles, raced against nothing, on a wire that can
  * drop a request in silence with a sidecar that never crashes and never
  * answers. 3s to match — the same person-facing complaint applies (a Stop
