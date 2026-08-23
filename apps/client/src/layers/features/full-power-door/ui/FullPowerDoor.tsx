@@ -288,11 +288,13 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
             disabled={busy}
             // Full power is the reward, so the CTA fills with the success token
             // rather than the neutral primary — the same green the dial reads at
-            // its top stop. `text-status-success-bg` is that token's tint, which
-            // flips near-white in light and near-black in dark, so the label
-            // stays legible on the fill in both themes without a raw colour.
+            // its top stop. The label is white in light (≈4.6:1 on the fill,
+            // clears AA — the token's own tint measured 4.34:1, just under) and
+            // the token's dark tint in dark (≈7.7:1). Only the LABEL colour is
+            // local; the green surface stays the shared token, so a later
+            // darkening of `--status-success` only widens both margins.
             className={cn(
-              'bg-status-success text-status-success-bg',
+              'bg-status-success dark:text-status-success-bg text-white',
               'hover:bg-status-success/90 focus-visible:ring-status-success/40'
             )}
           >

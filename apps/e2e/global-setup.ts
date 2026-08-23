@@ -162,7 +162,7 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
       onboarding?: { dismissedAt?: string };
       profile?: { rolePromptDismissedAt?: string | null };
       telemetry?: { userHasDecided?: boolean };
-      ui?: { fullPowerDecidedAt?: string | null };
+      ui?: { fullPowerDecidedAt?: string | null; fullPowerChoice?: string | null };
       dorkHome?: string;
     };
     // Before the first write, and on the same read that was already happening.
@@ -201,7 +201,11 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
         // run; nothing else should see it.
         ui: {
           fullPowerDecidedAt: ui?.fullPowerDecidedAt ?? now,
-          fullPowerChoice: 'supervised',
+          // `?? 'supervised'` for the same reason the timestamp uses `?? now`: a
+          // persistent home that already chose 'full' keeps it rather than being
+          // quietly demoted. (Theoretical for a throwaway e2e home, but the two
+          // fields settle together, so they defer together.)
+          fullPowerChoice: ui?.fullPowerChoice ?? 'supervised',
         },
       },
     });

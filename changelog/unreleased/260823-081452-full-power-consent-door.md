@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): the full-power consent door — one click to unlock, or keep asking (DOR-1431)'
   - 'test(e2e,client): full-power door A1 e2e guard, success-token green, honest changelog (DOR-1431)'
+  - 'fix(client,e2e): AA-legible full-power CTA label; e2e seed keeps an existing power choice (DOR-1431)'
 ---
 
 ### Added
