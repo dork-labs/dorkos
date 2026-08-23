@@ -252,7 +252,28 @@ export function SessionComposer({
   // second, asymmetric implementation of "put the words back." The words the
   // server hands back land in the composer draft, after anything already
   // typed, so nothing is lost.
-  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  //
+  // The question, as asked: WHICH session it was asked on, and HOW MANY
+  // messages were waiting at the moment it was asked.
+  //
+  // Session-keyed for the same reason `stopInFlightSessionId` below is —
+  // `ChatPanel` re-renders this component in place across a session switch, no
+  // `key` and no unmount, so a bare boolean would carry the dialog over to a
+  // session whose Stop was never pressed, and `performStop` (which closes over
+  // the CURRENT `sessionId`) would then interrupt THAT one.
+  //
+  // The count is a snapshot rather than a live read of `waiting.length` for a
+  // subtler reason: the server keeps dispatching the queue while the question
+  // is up, and the dialog fades out over ~200ms with whatever text it is
+  // holding. Reading live meant the copy could decay to "put 0 queued messages
+  // back?" for a paint plus that fade — the exact sentence DOR-1443 exists to
+  // delete. Frozen, it fades out still naming the number the person was
+  // actually asked about, which is the honest thing for it to say on its way
+  // off screen.
+  const [stopConfirm, setStopConfirm] = useState<{
+    sessionId: string;
+    queuedCount: number;
+  } | null>(null);
   // Local truth for the queue item under edit when Stop was pressed, captured
   // BEFORE `leaveQueueForStop` fires its commit — so it survives regardless of
   // whether that fire-and-forget PATCH (`use-message-queue.ts`'s `updateQueued`
@@ -412,7 +433,7 @@ export function SessionComposer({
       performStop();
       return;
     }
-    setStopConfirmOpen(true);
+    setStopConfirm({ sessionId, queuedCount: waiting.length });
   }, [sessionId, stopPending, waiting.length, performStop]);
   const confirmStop = useCallback(() => {
     // Same single-flight guard as `handleStop`, for the same reason: Radix
@@ -422,9 +443,29 @@ export function SessionComposer({
     if (stopLockSessionIdRef.current === sessionId || stopPending) return;
     // Pending starts HERE, on confirm — never on opening the dialog, which
     // asks a question and stops nothing yet.
-    setStopConfirmOpen(false);
+    setStopConfirm(null);
     performStop();
   }, [sessionId, stopPending, performStop]);
+  // The dialog asks about a queue, and a queue can empty while it is up — the
+  // server dispatches the head the moment the turn frees, so a person reading
+  // "put 2 queued messages back?" ends up staring at a question about nothing,
+  // sitting over a composer it blocks until dismissed by hand (DOR-1443). Take
+  // it down as soon as its subject is gone.
+  //
+  // Deliberately NOT carrying the Stop out on the person's behalf. They were
+  // weighing a cost that has since stopped existing, and an interrupted turn
+  // cannot be un-interrupted. Stop stays one click away, and with nothing
+  // queued that click now stops immediately without asking — which is the
+  // same rule `handleStop` already applies to an empty queue.
+  //
+  // Scoped to the session the question was asked ON: another session's queue
+  // draining is not an answer to this one's question, and the `open` check at
+  // the dialog itself is what keeps a switched-to session from seeing it.
+  /* eslint-disable react-hooks/set-state-in-effect -- close the dialog from the external queue signal (queue_update) */
+  useEffect(() => {
+    if (stopConfirm?.sessionId === sessionId && waiting.length === 0) setStopConfirm(null);
+  }, [stopConfirm, sessionId, waiting.length]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Background-task detection reads the hydrated stream-store projection (falling
   // back to the legacy send-path messages until the session hydrates) so it sees
@@ -687,9 +728,13 @@ export function SessionComposer({
       }}
     >
       <StopConfirmDialog
-        open={stopConfirmOpen}
-        onOpenChange={setStopConfirmOpen}
-        queuedCount={waiting.length}
+        // Mirrors `stopPending`'s own comparison: derived at render, every
+        // render, so a session switch has no window to be stale in.
+        open={stopConfirm?.sessionId === sessionId}
+        onOpenChange={(open) => {
+          if (!open) setStopConfirm(null);
+        }}
+        queuedCount={stopConfirm?.queuedCount ?? 0}
         onConfirm={confirmStop}
       />
     </Conversation.Composer>
