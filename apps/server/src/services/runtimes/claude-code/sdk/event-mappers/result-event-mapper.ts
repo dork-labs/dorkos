@@ -2,7 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
-import { mapErrorCategory } from '../sdk-error-mapping.js';
+import { isAbortedTerminalReason, mapErrorCategory } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
 
 /**
@@ -201,9 +201,15 @@ export async function* mapResultEvent(
       };
     }
 
-    // Emit error event if the result is an error subtype
+    // Emit an error event if the result is an error subtype — UNLESS the same
+    // result says the turn was stopped rather than failed. A Stop the CLI acks
+    // comes back as `error_during_execution` with `terminal_reason:
+    // 'aborted_streaming'`, and calling that an error put a red frame in the
+    // durable record of a turn the operator ended on purpose (DOR-1320). The
+    // `session_status` above already carried the reason, which the projector
+    // settles as `interrupted`, so the turn still ends honestly.
     const subtype = result.subtype as string | undefined;
-    if (subtype && subtype !== 'success') {
+    if (subtype && subtype !== 'success' && !isAbortedTerminalReason(terminalReason)) {
       const errors = result.errors as string[] | undefined;
       // Prefer the auth category when the failure text or subtype signals a
       // revoked/expired sign-in, so the client offers a re-auth affordance

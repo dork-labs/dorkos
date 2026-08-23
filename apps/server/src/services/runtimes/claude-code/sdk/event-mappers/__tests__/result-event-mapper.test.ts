@@ -242,4 +242,50 @@ describe('mapResultEvent — error category classification', () => {
     );
     expect(errorData(events)?.category).toBe('execution_error');
   });
+
+  it('leaves no error frame on a stop the CLI acked (DOR-1320)', async () => {
+    // The exact shape every observed Stop produced: an error subtype whose own
+    // terminal reason says the turn was cut short, carrying the CLI's internal
+    // `[ede_diagnostic]` line. A person stopped this turn; the durable record
+    // may not call it a crash.
+    const events = await drain(
+      mapResultEvent(
+        msg({
+          type: 'result',
+          subtype: 'error_during_execution',
+          is_error: true,
+          terminal_reason: 'aborted_streaming',
+          errors: ['[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null'],
+        }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    // And the turn still ends, still saying it was cut short — the reason the
+    // projector settles as `interrupted`.
+    const status = events.find((e) => e.type === 'session_status');
+    expect((status?.data as Record<string, unknown>).terminalReason).toBe('aborted_streaming');
+    expect(events.at(-1)?.type).toBe('done');
+  });
+
+  it('still reports a failure that aborted its tools for a reason nobody asked for', async () => {
+    // `aborted_tools` names a stop too, so this is the boundary case: the same
+    // suppression, and the same terminal. What must NOT happen is the
+    // suppression widening to every error subtype — a genuine failure carries
+    // no abort reason at all and keeps its error frame.
+    const events = await drain(
+      mapResultEvent(
+        msg({
+          type: 'result',
+          subtype: 'error_max_turns',
+          is_error: true,
+          errors: ['the turn limit was reached'],
+        }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    expect(errorData(events)?.category).toBe('max_turns');
+  });
 });

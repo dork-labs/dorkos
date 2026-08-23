@@ -70,6 +70,7 @@ import {
   isContentEvent,
   isInteractiveEvent,
   isReportedFailure,
+  isStoppedTurnEvent,
 } from '../messaging/empty-stream-guard.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
@@ -109,6 +110,17 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
   let eventCount = 0;
   let contentEventCount = 0;
   let wasInteractive = false;
+  // Whether the CLI has said this turn was CUT SHORT rather than finished —
+  // read off the closing `session_status`'s terminal reason, which is the one
+  // signal this path gets about a Stop (DOR-1320).
+  //
+  // The empty-stream guard below has to know. Press Stop before the agent has
+  // said anything and the turn really does end with zero content, and calling
+  // that silence a fault reaches the operator as a crash notice for something
+  // they did on purpose — the DOR-1244 shape, fixed on the resume path and
+  // never on this one. It could not bite until now only because the suppressed
+  // error frame happened to latch `emittedError` first.
+  let wasStopped = false;
   // Anchor for the NEXT turn's resume: the last main-thread assistant uuid seen
   // this turn. Subagent assistant messages carry a `parent_tool_use_id` and live
   // in a separate transcript, so they must never become the main-session anchor.
@@ -184,6 +196,10 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
 
       let prevSdkId = session.sdkSessionId;
       for await (const event of mapSdkMessage(message, session, sessionId, toolState)) {
+        // Latched BEFORE the guard below can read it: the result mapper yields
+        // this `session_status` ahead of the terminal `done` of the same
+        // message, which is the event the guard hangs off.
+        if (isStoppedTurnEvent(event)) wasStopped = true;
         // BEFORE this event leaves the server: `trigger-turn` re-keys the
         // projector on every event it sees, and that announcement is how the
         // cockpit learns the id it POSTs its next message under. Handing the id
@@ -202,7 +218,7 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
           // Zero-content turn about to close: surface the no-response error
           // BEFORE the terminal done — nothing may follow done, or the durable
           // snapshot settles idle with a stale lastError.
-          if (contentEventCount === 0 && !emittedError && !wasInteractive) {
+          if (contentEventCount === 0 && !emittedError && !wasInteractive && !wasStopped) {
             logger.warn('[pump-turn-stream] window closed with zero content events', {
               session: sessionId,
               eventCount,
@@ -240,7 +256,7 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
     session.eventQueueNotify = undefined;
   }
 
-  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive) {
+  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive && !wasStopped) {
     logger.warn('[pump-turn-stream] window closed with zero content events', {
       session: sessionId,
       eventCount,
