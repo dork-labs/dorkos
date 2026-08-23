@@ -640,7 +640,7 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
   it('asks first and names the count when messages are queued, and does not stop yet', async () => {
     seedQueue('one', 'two', 'three');
-    const stop = vi.fn().mockResolvedValue([]);
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -653,7 +653,7 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
   });
 
   it('stops immediately with no dialog when nothing is queued', async () => {
-    const stop = vi.fn().mockResolvedValue([]);
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -666,10 +666,13 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
   it('on confirm, stops and returns the queued text to the composer, in order', async () => {
     seedQueue('one', 'two');
-    const stop = vi.fn().mockResolvedValue([
-      { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-      { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-    ]);
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
     const setInput = vi.fn();
     render(
       <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
@@ -701,10 +704,13 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
           input: 'a thought I had mid-stop',
         });
       });
-      return [
-        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-      ];
+      return {
+        ok: true,
+        cancelled: [
+          { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+          { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        ],
+      };
     });
     const setInput = vi.fn();
     render(
@@ -731,10 +737,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
   });
 
   it('goes pending the instant Stop is clicked, and calls interrupt exactly once even if pressed again mid-flight', async () => {
-    let resolveStop!: (v: never[]) => void;
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
     const stop = vi.fn(
       () =>
-        new Promise<never[]>((resolve) => {
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
           resolveStop = resolve;
         })
     );
@@ -756,15 +762,15 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(stop).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveStop([]);
+      resolveStop({ ok: true, cancelled: [] });
     });
   });
 
   it('clears pending once the turn actually settles (isStreaming flips), independent of when the interrupt response lands', async () => {
-    let resolveStop!: (v: never[]) => void;
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
     const stop = vi.fn(
       () =>
-        new Promise<never[]>((resolve) => {
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
           resolveStop = resolve;
         })
     );
@@ -784,7 +790,7 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(lastChatInputProps().stopPending).toBe(false);
 
     await act(async () => {
-      resolveStop([]);
+      resolveStop({ ok: true, cancelled: [] });
     });
     expect(lastChatInputProps().stopPending).toBe(false);
   });
@@ -793,7 +799,7 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     // Case: the response lands BEFORE turn_end — a successful `stop()` alone
     // must not clear pending, or a person watches the button go live again
     // while the agent is still winding down.
-    const stop = vi.fn().mockResolvedValue([]);
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
     const { rerender } = render(
       <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
     );
@@ -807,7 +813,7 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(lastChatInputProps().stopPending).toBe(false);
   });
 
-  it('re-enables Stop when the interrupt request itself fails, so the person can retry', async () => {
+  it('re-enables Stop when the interrupt request itself fails outright (network, timeout), so the person can retry', async () => {
     const stop = vi.fn().mockRejectedValue(new Error('network error'));
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -823,9 +829,34 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(stop).toHaveBeenCalledTimes(2);
   });
 
+  it('re-enables Stop when the server answers ok:false while the turn is still running', async () => {
+    // The server 200s `{ ok: false }` on a race (turn already finished — the
+    // common case, already covered above by the settle path) AND on a thrown
+    // interrupt with the turn still alive. This test is the second case: the
+    // turn is STILL streaming, so nothing else would ever release a pending
+    // Stop — `performStop` has to read the failure itself and re-enable
+    // (DOR-1300 S4). Delete this test's `ok: false` and turn it into
+    // `ok: true` and it goes red: pending would then correctly stay latched
+    // until the (never-arriving, in this test) settle.
+    const stop = vi.fn().mockResolvedValue({ ok: false, cancelled: [] });
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+
+    // Still streaming (status never changed) — `ok: false` alone is what
+    // re-enabled it, not a settle this test never provided.
+    await waitFor(() => expect(lastChatInputProps().stopPending).toBe(false));
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
   it('starts pending on CONFIRM, not on opening the confirm dialog', async () => {
     seedQueue('one');
-    const stop = vi.fn().mockResolvedValue([]);
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -841,5 +872,95 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     });
     expect(stop).toHaveBeenCalledTimes(1);
     expect(lastChatInputProps().stopPending).toBe(true);
+  });
+
+  it('a same-tick double-press on the dialog Stop button fires only one interrupt (DOR-1300 B2)', async () => {
+    // Radix keeps `AlertDialogAction`'s element mounted through its exit
+    // animation, so nothing stops a fast double-press from reaching the SAME
+    // handler twice before React gets a chance to re-render with the updated
+    // pending state — jsdom cannot run the real ~200ms CSS exit transition
+    // that opens this window (confirmed: the node is already detached from
+    // `document.body` by the time a second, separately-flushed click would
+    // land), so this reproduces the worst case that timing window permits
+    // directly: both clicks dispatched in the SAME synchronous batch, so
+    // `confirmStop` runs twice against the SAME pre-update `stopPending`
+    // closure. A state-only guard (checking the `stopPending` value closed
+    // over at render time) cannot tell these two calls apart — only a
+    // synchronously-written lock can. Swap the `stopLockSessionIdRef.current`
+    // check at the top of `confirmStop` back to a `stopPending`-only check
+    // and this goes red.
+    seedQueue('one');
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    const confirmButton = screen.getByRole('button', { name: 'Stop' });
+
+    act(() => {
+      fireEvent.click(confirmButton);
+      fireEvent.click(confirmButton);
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStop({ ok: true, cancelled: [] });
+    });
+  });
+});
+
+describe('SessionComposer — a Stop pending on one session never leaks into another (DOR-1300 B1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not read as pending on session B after a Stop was clicked on session A and neither has settled', async () => {
+    // `ChatPanel` re-renders this component with a new `sessionId` on a
+    // session switch — no `key`, no unmount — so the reviewer's probe is
+    // exactly this: rerender in place, never remount. A boolean pending flag
+    // would survive the switch (it was never told which session it was for)
+    // and read `true` on B, whose OWN Stop button never fired a single
+    // request.
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    const { rerender } = render(
+      <SessionComposerBench {...baseProps} sessionId="session-a" stop={stop} status="streaming" />
+    );
+
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+
+    // Switch to session B — also streaming, also never had its own Stop
+    // clicked — WITHOUT session A's interrupt ever settling.
+    rerender(
+      <SessionComposerBench {...baseProps} sessionId="session-b" stop={stop} status="streaming" />
+    );
+
+    expect(lastChatInputProps().stopPending).toBe(false);
+    // And B's own Stop must actually work — the guard reading "pending" would
+    // also have refused this click.
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveStop({ ok: true, cancelled: [] });
+    });
   });
 });

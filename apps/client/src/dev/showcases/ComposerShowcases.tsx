@@ -437,6 +437,13 @@ export function ComposerShowcases() {
             surface="session"
             capabilities={SESSION_CAPABILITIES}
             target={buildSessionTarget()}
+            // Text in the box is what makes the coordination visible: with
+            // none, the dedicated red-square Stop was never drawn to begin
+            // with (it only shows `isStreaming && hasText`), so this demo
+            // would look identical to the one above it. With text, it shows
+            // the actual handoff — the square is gone, not merely dimmed, and
+            // the main button alone carries the "Stopping…" state.
+            initialValue="Also check the failing tests"
             isStreaming
             stopPending
           />

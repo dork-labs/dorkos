@@ -156,7 +156,7 @@ function sessionProps(status: 'idle' | 'streaming') {
     tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
     commandPending: false,
     status,
-    stop: vi.fn(async () => []),
+    stop: vi.fn(async () => ({ ok: true, cancelled: [] })),
     setInput: vi.fn(),
     sessionId: 'session-1',
     sessionStatus: null,

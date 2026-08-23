@@ -88,9 +88,11 @@ export interface ComposerInputProps {
   queueDepth?: number;
   onStop?: () => void;
   /**
-   * A Stop this composer already sent has not settled yet. Both stop controls
-   * show a quiet "Stopping…" indicator and take no further clicks while this
-   * is true — the host owns the single-flight guard (it is the one thing that
+   * A Stop this composer already sent has not settled yet. Neither stop
+   * control takes another click while this is true: the main action button
+   * shows a quiet "Stopping…" progress indicator in its slot, and the
+   * dedicated red-square button is hidden outright rather than relabelled to
+   * match. The host owns the single-flight guard (it is the one thing that
    * knows when the request lands and when the turn actually settles); this
    * component only reflects it.
    */
@@ -315,6 +317,38 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       fieldRef.current?.focus();
     }, []);
 
+    // The Stop click is about to replace a focusable button with a
+    // `role="status"` progress indicator (DOR-1300) — an element that cannot
+    // hold focus. A `useEffect` reacting to the state change afterward is too
+    // late to catch this: React removes the DOM node in its mutation phase,
+    // which drops focus to `<body>` SYNCHRONOUSLY as part of that removal,
+    // before any effect (layout or passive) gets a chance to run — by the
+    // time an effect could check `document.activeElement`, the button is
+    // already gone and focus already lost (confirmed empirically: an effect
+    // keyed on the pending prop reliably saw `document.activeElement ===
+    // document.body`, never the just-removed button). So the rescue happens
+    // HERE instead, in the click itself, before `onStop` runs the state
+    // update that removes the button — clicking a button focuses it in every
+    // browser this ships to, so the field is the right next place for
+    // attention regardless, and there is nothing to lose by moving it
+    // unconditionally on this ONE specific click.
+    //
+    // Reshaping the button instead (keeping it a real, `aria-disabled` — not
+    // `disabled` — element so it stays tab-reachable) would touch the shared
+    // progress-state markup `dispatching` also draws, for a fix this task
+    // scopes to Stop alone; this is the cheaper, equally correct option.
+    //
+    // Deliberately wraps only the BUTTON click paths (`InputActionButton`'s
+    // `onStop`, both the dedicated square and the main action button), not
+    // the keyboard ladder's Escape-triggered stop below: Escape fires while
+    // focus is still in the TEXTAREA (which never disappears), and forcing
+    // the caret to the end there would be a real regression — cutting off
+    // mid-edit typing's cursor position for no reason.
+    const handleStopClick = useCallback(() => {
+      fieldRef.current?.focusAt(value.length);
+      onStop?.();
+    }, [onStop, value.length]);
+
     const { handleKeyDown, clearArmed } = useInputKeyboard({
       surface,
       value,
@@ -477,7 +511,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
             queueDepth={queueDepth}
             isTouchOnly={isTouchOnly}
             onSubmit={onSubmit}
-            onStop={onStop}
+            onStop={handleStopClick}
             stopPending={stopPending}
             onQueue={onQueue}
             onSteer={onSteer}

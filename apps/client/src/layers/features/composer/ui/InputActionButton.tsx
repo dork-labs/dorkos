@@ -61,11 +61,13 @@ interface InputActionButtonProps {
   /**
    * A Stop this composer already sent has not settled yet — the request may
    * still be in flight, or the server may still be escalating it
-   * (`STOP_ACK_TIMEOUT_MS`, up to ~3s). Both stop controls read this: they show
-   * a quiet "Stopping…" indicator in place of a live button and take no more
-   * clicks, so the turn's own settle (`isStreaming` flipping) or a request
-   * failure is what ends the wait — never a second click racing the first
-   * (DOR-1300).
+   * (`STOP_ACK_TIMEOUT_MS`, up to ~3s). Both stop controls read this, but not
+   * identically: the main action button SHOWS a quiet "Stopping…" progress
+   * indicator in that slot, while the dedicated red-square button is HIDDEN
+   * outright rather than relabelled, so the two controls never disagree about
+   * whether the click was heard. Either way nothing here takes another click —
+   * the turn's own settle (`isStreaming` flipping) or a request failure is
+   * what ends the wait, never a second click racing the first (DOR-1300).
    */
   stopPending?: boolean;
 }
