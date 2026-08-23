@@ -109,7 +109,7 @@ Seven modules, three tiers:
 
 - **Claude Code Remote Control** — Max plan only, one session, terminal-dependent
 - **Devin** — Cloud-hosted, closed source, $20+/month
-- **Cowork** — Scheduling only works while Mac is awake and Claude Desktop is open
+- **Cowork / Claude Code Routines** — Schedules Claude in Anthropic's cloud, device off. Only Claude, and a cloud _scheduled_ run works from files in your Claude account or a fresh GitHub clone, not the working copy on your disk. The paths that do reach your disk still need the app open and the machine awake. _(Updated 2026-08-23: this line used to read "scheduling only works while Mac is awake." Anthropic fixed that; don't use the old claim. Don't overcorrect either — a cloud **session** can reach connected folders while the desktop app is open, so "the cloud can't touch your machine" is also wrong.)_
 - **Claude Code Agent Teams** — Experimental, terminal-only, single machine
 - **DIY** — Tailscale + tmux + custom Telegram bots + caffeinate hacks
 

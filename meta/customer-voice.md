@@ -107,6 +107,8 @@ _(paraphrase)_ Power users building remote access solutions describe a patchwork
 
 _Developers wanting agents to run overnight, on a schedule, without keeping a terminal open. The "Mac sleep" problem._
 
+> **Freshness note (2026-08-23):** Anthropic solved the scheduling half of this theme (Quotes 2.3 and 2.6 are about other gaps and still stand). Cowork scheduled tasks and Claude Code Routines both run in Anthropic's cloud with your device off. The quotes below are still honest records of early-2026 pain, but **Quote 2.4 is expired and must not be used in copy**. What the theme still supports: an agent scheduled in a vendor's cloud can't see the code on your machine, and every vendor only schedules its own agent.
+
 ---
 
 **Quote 2.1**
@@ -146,6 +148,7 @@ _Developers wanting agents to run overnight, on a schedule, without keeping a te
 - **Source:** Anthropic's own Cowork documentation, [support.claude.com — Get started with Cowork](https://support.claude.com/en/articles/13345190-get-started-with-cowork)
 - **Type:** `[frustration]` — Anthropic's own product acknowledges the Mac sleep problem
 - **Theme:** Background / Scheduled Execution
+- **Status: EXPIRED (2026-08-23). Do not quote this in any copy.** Anthropic changed the product and the page. The same doc set now reads "Scheduled tasks run remotely, so they run on their cadence even when your computer is asleep or the Claude Desktop app is closed" ([support.claude.com/13854387](https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork)), and Claude Code cloud Routines run "when your laptop is closed" ([code.claude.com/docs/en/routines](https://code.claude.com/docs/en/routines)). The quote is kept only as a record of what was true in early 2026.
 
 ---
 
@@ -631,8 +634,8 @@ The community response to these gaps is telling. In 2025-2026, dozens of third-p
 
 ## Notable Patterns
 
-**The Mac Sleep Problem is Real and Documented**
-Both third-party blogs and Anthropic's own Cowork docs acknowledge that Claude stops working when the machine sleeps. Developers are using `caffeinate`, third-party apps, and workarounds to keep their machines awake just so an agent can keep running. This is a solved-at-the-infrastructure-layer problem.
+**The Mac Sleep Problem Was Real — and Anthropic Fixed Its Half (updated 2026-08-23)**
+Through early 2026, third-party blogs and Anthropic's own Cowork docs agreed that Claude stopped working when the machine slept, and developers used `caffeinate` and similar workarounds to keep an agent running. That is no longer the state of the world: Cowork scheduled tasks and Claude Code Routines run in Anthropic's cloud with the device off. The part that did not get solved is that a cloud _scheduled_ run works on files in your Claude account or a fresh GitHub clone, not the working copy on your disk, and every path that does reach your disk still needs the app open and the machine awake — and each vendor schedules only its own agent.
 
 **Approval Fatigue is the Trust Paradox**
 The permission system exists to build trust, but because developers get hundreds of approval prompts during a long task, they eventually rubber-stamp everything — which defeats the purpose. What developers actually want is _meaningful_ approval checkpoints, not a flood of them.
