@@ -146,6 +146,49 @@ export function useSetDeliverNotices(): UseMutationResult<
   });
 }
 
+/**
+ * What one room may say about its own automatic-reply limits.
+ *
+ * Every field is optional and nullable, exactly as `UpdateRoomRequest` has it,
+ * and the two absences mean different things: leaving a field out changes
+ * nothing, while sending `null` clears the override and puts the room back to
+ * following Settings. A caller that means "clear this" must send the `null` —
+ * `undefined` is silently a no-op.
+ */
+export interface SetRoomLimitsInput {
+  roomId: string;
+  /** `true` limited here, `false` unlimited here, `null` follow Settings. */
+  turnLimitsEnabled?: boolean | null;
+  /** Replies in a row allowed here, or `null` to follow Settings. */
+  maxAgentDepth?: number | null;
+  /** Replies from one agent allowed here, or `null` to follow Settings. */
+  maxTurnsPerAgentPerCascade?: number | null;
+  /** Replies this room may run in an hour, or `null` to follow Settings. */
+  maxAutoTurnsPerHour?: number | null;
+}
+
+/**
+ * Give one room limits of its own, or hand any of them back to Settings.
+ *
+ * Person-only, and the server is what enforces it (`PEOPLE_ONLY`): an agent that
+ * could raise its own reply allowance is an agent with no allowance.
+ *
+ * The refresh is the whole story here. `room_updated` fans out over SSE without
+ * these fields on it, so nothing tells an open panel that a limit moved —
+ * invalidating the room's own read is what makes the change visible, including
+ * in a second window looking at the same room.
+ */
+export function useSetRoomLimits(): UseMutationResult<RoomWithRoster, Error, SetRoomLimitsInput> {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ roomId, ...limits }: SetRoomLimitsInput) => transport.updateRoom(roomId, limits),
+    onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
+    meta: { errorLabel: "Couldn't change this room's limits" },
+  });
+}
+
 /** Bring an archived room back. */
 export function useUnarchiveRoom(): UseMutationResult<RoomWithRoster, Error, UnarchiveRoomInput> {
   const transport = useTransport();

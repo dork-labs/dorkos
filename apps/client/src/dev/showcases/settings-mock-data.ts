@@ -17,7 +17,10 @@
  *
  * @module dev/showcases/settings-mock-data
  */
-import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  NOTIFICATION_PREFS_DEFAULTS,
+  ROOM_TURN_LIMIT_DEFAULTS,
+} from '@dorkos/shared/config-schema';
 import type { EffortLevel, ModelOption, ServerConfig } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type {
@@ -49,6 +52,13 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   // The shipped defaults, so the Notifications tab renders its out-of-the-box
   // state: the knock and the all-clear on, the every-turn chime off.
   notifications: NOTIFICATION_PREFS_DEFAULTS,
+  // The shipped defaults again, so the Rooms tab renders its out-of-the-box
+  // state rather than the skeleton it shows before the numbers have been read.
+  rooms: {
+    engagedWindowMinutes: 10,
+    engagedWindowPosts: 5,
+    ...ROOM_TURN_LIMIT_DEFAULTS,
+  },
   port: 4242,
   uptime: 12_345,
   workingDirectory: '/Users/dev/dorkos',

@@ -15,6 +15,7 @@ import { useRoomPanelFocusStore } from '../model/room-panel-focus';
 import { AddMembersRow } from './AddMembersRow';
 import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
+import { RoomLimitsSection } from './RoomLimitsSection';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
 import { RoomPanelNotice } from './RoomPanelNotice';
@@ -523,6 +524,12 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             inputRef={searchRef}
           />
         )}
+
+        {/* Under the roster, because it is about what the people above may do
+            rather than about who they are — and not drawn at all in an archived
+            room, where the banner above says every setting is on hold and
+            nothing is triggered anyway. */}
+        {detail !== null && !detail.archived && <RoomLimitsSection room={detail} />}
       </div>
 
       {/* Nothing to say about a room still being read: the footer's two facts
