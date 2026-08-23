@@ -3569,11 +3569,30 @@ export const ServerConfigSchema = z
           description:
             'How many messages by other members close that same window, whichever ceiling runs out first. Read-only here, for the same reason. `0` means the window never opens',
         }),
+        turnLimitsEnabled: z.boolean().optional().openapi({
+          description:
+            'Whether automatic replies are limited at all. `false` means agents may answer each other until a person presses Stop. Writable from Settings',
+        }),
+        maxAgentDepth: z.number().int().optional().openapi({
+          description:
+            'How many replies in a row agents may send each other before the room stops them. Writable from Settings',
+        }),
+        maxTurnsPerAgentPerCascade: z.number().int().optional().openapi({
+          description:
+            'How many of those replies any ONE agent may send in a single back-and-forth, counted as messages it posted. Writable from Settings',
+        }),
+        maxAutomaticTurnsPerRoomPerHour: z.number().int().optional().openapi({
+          description: 'The most automatic replies any one room may run in an hour',
+        }),
+        maxAutomaticTurnsTotalPerHour: z.number().int().optional().openapi({
+          description:
+            'The most automatic replies this DorkOS may run in an hour, across every room. The one limit no room may override',
+        }),
       })
       .optional()
       .openapi({
         description:
-          'The two engaged-window ceilings, so the cockpit can describe the `engaged` response mode with the numbers actually in force (spec `rooms` §9.2)',
+          'The two engaged-window ceilings, so the cockpit can describe the `engaged` response mode with the numbers actually in force (spec `rooms` §9.2), plus the five automatic-reply limits Settings offers (DOR-1430). The five are optional so a client can tell an older server that has no such panel from a server reporting a limit of zero',
       }),
     welcomeBack: z
       .object({

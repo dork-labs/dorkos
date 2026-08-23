@@ -146,6 +146,87 @@ export function useSetDeliverNotices(): UseMutationResult<
   });
 }
 
+/**
+ * What one room may say about its own automatic-reply limits.
+ *
+ * Every field is optional and nullable, exactly as `UpdateRoomRequest` has it,
+ * and the two absences mean different things: leaving a field out changes
+ * nothing, while sending `null` clears the override and puts the room back to
+ * following Settings. A caller that means "clear this" must send the `null` —
+ * `undefined` is silently a no-op.
+ */
+export interface SetRoomLimitsInput {
+  roomId: string;
+  /** `true` limited here, `false` unlimited here, `null` follow Settings. */
+  turnLimitsEnabled?: boolean | null;
+  /** Replies in a row allowed here, or `null` to follow Settings. */
+  maxAgentDepth?: number | null;
+  /** Replies from one agent allowed here, or `null` to follow Settings. */
+  maxTurnsPerAgentPerCascade?: number | null;
+  /** Replies this room may run in an hour, or `null` to follow Settings. */
+  maxAutoTurnsPerHour?: number | null;
+}
+
+/**
+ * Give one room limits of its own, or hand any of them back to Settings.
+ *
+ * **Operator-only, and the server is what enforces it** (403 `OPERATOR_ONLY`,
+ * `RoomService.updateRoom`). These four fields are spend authority: turning a
+ * room's limits off removes its cascade guard and its hourly ceiling in one
+ * write, and everything billed after that lands on whoever owns the install. So
+ * the gate is the install's owner, not merely a person — an agent could never
+ * write them, and neither can a second human who was invited into the room.
+ * `roomLimitsErrorMessage` is what turns that refusal into a sentence.
+ *
+ * **Optimistic, because the control the reader pressed is the control this
+ * changes.** Every value here is read straight off the room's own record, so
+ * without this the radio they just chose would visibly jump back to the old
+ * stance for the length of a round trip and then forward again. The write lands
+ * on the cached room, rolls back on failure, and is confirmed by a refetch when
+ * it settles.
+ *
+ * That refetch is not optional bookkeeping: `room_updated` fans out over SSE
+ * WITHOUT these fields on it, so nothing else would tell an open panel — here or
+ * in a second window — that a limit moved.
+ */
+export function useSetRoomLimits(): UseMutationResult<
+  RoomWithRoster,
+  Error,
+  SetRoomLimitsInput,
+  { previous: RoomWithRoster | undefined }
+> {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ roomId, ...limits }: SetRoomLimitsInput) => transport.updateRoom(roomId, limits),
+    onMutate: async ({ roomId, ...limits }) => {
+      const key = roomKeys.detail(roomId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<RoomWithRoster>(key);
+      queryClient.setQueryData<RoomWithRoster>(key, (old) =>
+        // Nothing to patch when the room is not in the cache yet; the
+        // settle-time refresh reads it whole.
+        old ? { ...old, ...limits } : old
+      );
+      return { previous };
+    },
+    onError: (_error, { roomId }, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(roomKeys.detail(roomId), context.previous);
+      }
+    },
+    onSettled: (_room, _error, { roomId }) => refreshRoom(queryClient, roomId),
+    // The section renders the refusal itself, under the control that was
+    // refused, so the shared toast would be the same failure said twice in two
+    // voices — the case `query-client.ts` documents this opt-out for. It is also
+    // the only refusal here a person can act on, and acting on it means reading
+    // WHICH install owner they are not, which a toast that has already faded
+    // cannot tell them.
+    meta: { suppressErrorToast: true },
+  });
+}
+
 /** Bring an archived room back. */
 export function useUnarchiveRoom(): UseMutationResult<RoomWithRoster, Error, UnarchiveRoomInput> {
   const transport = useTransport();
