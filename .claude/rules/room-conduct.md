@@ -247,6 +247,27 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   twenty-two seconds before the post, because an interrupt that closes the query
   settles `run()` while the CLI carries on, so that terminal means "the room
   stopped listening" and never "the process stopped".
+  **A stop that lands on NOTHING is remembered and re-aimed once** (DOR-1424).
+  The same 0.7-second Stop that produced the post above also failed to stop the
+  TURN: the runtime binds a turn only once its process is up, so an interrupt a
+  moment earlier reaches nothing, answers that it stopped nothing, and the
+  process then finishes booting and runs the whole prompt. Refusing the answer
+  is not enough — the model turn is paid for either way — so
+  `room-turn-runner.ts` keeps the stop and delivers it at the first thing that
+  turn's runtime produces, which is the earliest moment there is anything to
+  stop. Two bounds keep it from outliving its turn, and both are load-bearing:
+  it is cleared by the next turn on that session, because a new turn is the room
+  asking again, and a `turn_end` does not count as the turn producing anything,
+  because re-aiming at a session whose turn has just closed is how a stop meant
+  for one turn reaches the one after it. Re-aimed ONCE, never on a timer.
+  **And the answer is carried out rather than dropped** (DOR-1425).
+  `RoomTurnRunner.interrupt` reports whether the runtime had a turn to stop, and
+  a halt that found none says so in the log, naming the room, the agent, the
+  dispatch and the session. The claim is dropped either way; what the answer
+  buys is that "we could not reach the agent" is distinguishable from "we
+  stopped it". It is still a boolean deliberately: the five-value receipt of
+  `specs/runtime-interrupt-receipts` §5.2 replaces every stop-shaped verb's
+  return at once, and one caller widening ahead of it is a second vocabulary.
   **Two limits, and this rule is where they are admitted rather than a place
   they are implied away.** A stopped agent the room never triggers again cannot
   post into THAT room by hand, with no expiry — an affordance the `rooms.post`
