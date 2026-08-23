@@ -546,11 +546,12 @@ describe('pending interaction snapshots', () => {
   it('pushes a LIVE question_prompt event carrying a real deadline, not remainingMs: 0 (DOR-1323)', () => {
     // Flag-on finding: a live question_prompt reached the client with
     // remainingMs: 0 while the recovery snapshot for the SAME interaction
-    // carried the real countdown. `handleToolApproval` and `handleElicitation`
-    // both push `startedAt`/`timeoutMs` on the event `data` — the normalizer
-    // (`toQuestionEvent` in session-event-normalizer.ts) falls back to
-    // `remainingMs ?? timeoutMs ?? 0`, so a question missing BOTH landed dead
-    // on arrival. This handler was the one that omitted them.
+    // carried the real countdown. `handleToolApproval` pushes both
+    // `startedAt`/`timeoutMs` on the event `data`; `handleElicitation` pushes
+    // `timeoutMs` only — the normalizer (`toQuestionEvent` in
+    // session-event-normalizer.ts) falls back to `remainingMs ?? timeoutMs ??
+    // 0`, so a question missing BOTH landed dead on arrival. This handler was
+    // the one that omitted them.
     const session = makeBareSession();
     const questions: QuestionItem[] = [
       {
