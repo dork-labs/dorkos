@@ -113,7 +113,20 @@ function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {
 function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   return {
     getTasks: vi.fn().mockReturnValue([]),
-    getTask: vi.fn().mockReturnValue(null),
+    // A plausible EXISTING task by default: `createUpdateScheduleHandler` and
+    // `createDeleteScheduleHandler` both read the row before they write, so a
+    // default of `null` makes every update look like a 404. It is a NON-bypass,
+    // active task on purpose — the update handler's approved-bypass clamp only
+    // fires on a `bypassPermissions` row, so this default never masks it; the clamp
+    // tests set `getTask` to a bypass task explicitly.
+    getTask: vi.fn().mockReturnValue({
+      id: 'existing',
+      name: 'existing-task',
+      prompt: 'the approved prompt',
+      cron: '0 2 * * *',
+      permissionMode: 'acceptEdits',
+      status: 'active',
+    }),
     createTask: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
     deleteTask: vi.fn().mockReturnValue(false),
@@ -410,6 +423,60 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.fields).toEqual(['permissionMode']);
       // Not even the rename landed.
       expect(store!.updateTask).not.toHaveBeenCalled();
+    });
+
+    it('drops an approved bypass when the update changes the work (security)', async () => {
+      // The keeps-approved-bypass window: this handler writes the ROW ONLY, so a
+      // prompt/cron/name change on an approved `bypassPermissions` task must clamp
+      // the mode HERE — the reconciler that would otherwise clamp it is up to five
+      // minutes away. Routed through the same seam the REST path uses. Full
+      // behavioral coverage lives in `mcp-tools/__tests__/task-tools.test.ts`; this
+      // pins the security behavior on this suite too, at the store-call boundary.
+      const approved = {
+        id: 'u1',
+        name: 'nightly-sweep',
+        prompt: 'the approved prompt',
+        cron: '0 2 * * *',
+        permissionMode: 'bypassPermissions',
+        status: 'active',
+      };
+      const updateTask = vi.fn().mockReturnValue({ ...approved, prompt: 'a different prompt' });
+      const handler = createUpdateScheduleHandler(
+        makeTasksDeps({ getTask: vi.fn().mockReturnValue(approved), updateTask })
+      );
+      const result = await handler({ id: 'u1', prompt: 'a different prompt' });
+
+      expect(result.isError).toBeUndefined();
+      // The clamp rides along with the write: the row's mode is dropped to
+      // `acceptEdits` in the same call that lands the new prompt.
+      expect(updateTask).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({ prompt: 'a different prompt', permissionMode: 'acceptEdits' })
+      );
+    });
+
+    it('leaves an approved bypass alone when only metadata changes', async () => {
+      // The clamp binds to the approved WORK. A metadata-only edit (here `enabled`)
+      // changes nothing an unattended run does, so the grant must survive it — or a
+      // legitimate on/off toggle would silently strip a task's autonomy.
+      const approved = {
+        id: 'u1',
+        name: 'nightly-sweep',
+        prompt: 'the approved prompt',
+        cron: '0 2 * * *',
+        permissionMode: 'bypassPermissions',
+        status: 'active',
+      };
+      const updateTask = vi.fn().mockReturnValue({ ...approved, enabled: false });
+      const handler = createUpdateScheduleHandler(
+        makeTasksDeps({ getTask: vi.fn().mockReturnValue(approved), updateTask })
+      );
+      const result = await handler({ id: 'u1', enabled: false });
+
+      expect(result.isError).toBeUndefined();
+      const patch = updateTask.mock.calls[0]![1] as Record<string, unknown>;
+      expect(patch.enabled).toBe(false);
+      expect(patch).not.toHaveProperty('permissionMode');
     });
 
     it('returns error when Tasks disabled', async () => {
