@@ -1741,7 +1741,7 @@ export const UserConfigSchema = z.object({
       /**
        * Shared consent gate. `true` once the user has answered a telemetry
        * consent prompt either way (kept sharing or turned off), which stops the
-       * first-run consent banner from reappearing for any channel.
+       * first-run consent dialog from asking again for any channel.
        */
       userHasDecided: z.boolean().default(false),
       /**
@@ -1767,7 +1767,7 @@ export const UserConfigSchema = z.object({
        * Tier 2 channel (opt-in): send scrubbed crash reports to DorkOS's own
        * ingest at dorkos.ai (which forwards to PostHog Error Tracking), never to
        * a third party. Defaults `false` and turns on only by an explicit opt-in
-       * (never the first-run banner); the notice-before-send gate does not apply.
+       * (never the first-run consent dialog); the notice-before-send gate does not apply.
        * The raw message is never sent and paths/tokens are scrubbed. See ADR
        * 260711-153307 (scrubbing) + 260713-143958 Phase 6 (destination).
        */
@@ -1802,7 +1802,7 @@ export const UserConfigSchema = z.object({
        * device-link descriptor, so the cloud can merge this install's anonymous
        * usage history onto the signed-in account person (DOR-320, ADR
        * 260713-143958 Phase 4). Defaults `false` and turns on only by an explicit
-       * choice in the account-link flow (never the first-run banner); the env
+       * choice in the account-link flow (never the first-run consent dialog); the env
        * kill switches (`DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`) suppress it
        * too. The app treats this flag as the sole opt-in signal: the id is
        * threaded into the link descriptor ONLY when this is `true`, and its
@@ -1818,7 +1818,7 @@ export const UserConfigSchema = z.object({
        * `$ai_generation` event per completed agent turn carrying only the model,
        * the runtime, token counts, timing, and cost. Never prompts, code, file
        * paths, or conversation content. Defaults `false` and turns on only by an
-       * explicit opt-in (never the first-run banner); the notice-before-send gate
+       * explicit opt-in (never the first-run consent dialog); the notice-before-send gate
        * does not apply. Independent of `usage`. See ADR 260713-143958 Phase 7 and
        * https://dorkos.ai/telemetry.
        */

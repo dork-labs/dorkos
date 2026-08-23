@@ -4,7 +4,7 @@ import { HEARTBEAT_PAYLOAD_EXAMPLE } from '../lib/telemetry-payload';
 /**
  * The exact heartbeat payload rendered verbatim in a monospace block with a
  * plain-language caption. This is the single source of the payload's on-screen
- * markup, shared by every telemetry surface (consent banner, onboarding step,
+ * markup, shared by every telemetry surface (consent dialog, onboarding step,
  * privacy settings) so what leaves the machine reads the same everywhere.
  *
  * @param className - Optional classes for the outer wrapper.

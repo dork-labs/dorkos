@@ -15,7 +15,7 @@ interface TelemetryPayloadToggleProps {
  * The "See what's sent" progressive-disclosure toggle — a text link with a
  * chevron that flips when the payload is open. Presentational and controlled;
  * the caller owns the open state and the region being revealed. Shared so the
- * consent banner and the standalone {@link TelemetryPayloadDisclosure} offer the
+ * consent dialog and the standalone {@link TelemetryPayloadDisclosure} offer the
  * exact same affordance.
  *
  * @param open - Whether the controlled payload region is expanded.

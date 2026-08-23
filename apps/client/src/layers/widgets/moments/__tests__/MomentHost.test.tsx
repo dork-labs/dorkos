@@ -156,6 +156,18 @@ describe('MomentHost', () => {
     expect(useAppStore.getState().momentShownThisLaunch).toBe(false);
   });
 
+  it('closes an open moment when the onboarding overlay comes back up', async () => {
+    vi.mocked(useMoments).mockReturnValue([fakeMoment('telemetry', MOMENT_PRIORITY.low)]);
+    const { rerender } = render(<MomentHost />);
+    await screen.findByText('telemetry body');
+
+    // "Replay setup" reopens the first-run overlay. A moment left on top of it
+    // would be a modal painted over the flow that outranks it.
+    rerender(<MomentHost onboardingOverlayVisible />);
+
+    expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
+  });
+
   it('never renders while onboarding is neither finished nor dismissed', () => {
     vi.mocked(useMoments).mockReturnValue([fakeMoment('telemetry', MOMENT_PRIORITY.low)]);
     setOnboarding({ completedAt: null, dismissedAt: null });

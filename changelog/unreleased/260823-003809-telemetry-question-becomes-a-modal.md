@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): one-time moments rail; telemetry consent becomes a modal (DOR-1431)'
+  - 'fix(client,docs): moments yield to a returning onboarding overlay; the consent surface is a dialog everywhere (DOR-1431)'
 ---
 
 ### Changed

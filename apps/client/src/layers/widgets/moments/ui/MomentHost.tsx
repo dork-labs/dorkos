@@ -86,8 +86,11 @@ export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps
   }, [openId, markMomentShown]);
 
   // Answering a moment's question is what makes it ineligible, so the usual way
-  // a modal closes is its descriptor leaving the collector.
-  const open = openId !== null && moments.some((m) => m.id === openId);
+  // a modal closes is its descriptor leaving the collector. `quiet` is re-read
+  // here and not only at open time, so an onboarding overlay coming back up
+  // ("Replay setup") takes an open moment down with it rather than leaving a
+  // modal painted over the flow that outranks it.
+  const open = !quiet && openId !== null && moments.some((m) => m.id === openId);
   const close = () => setOpenId(null);
 
   return (
