@@ -20,6 +20,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
@@ -516,6 +517,51 @@ describe('a room says when a turn has stopped', () => {
       stubborn.release(room.agent);
       await room.wired.service.triggersIdle();
       expect(room.answers()).toHaveLength(0);
+    });
+
+    it('says in the log when the stop found no turn to stop', async () => {
+      // **The boolean the halt used to throw away** (DOR-1425). A stop that
+      // landed on nothing — the runtime had no turn bound yet, which is the boot
+      // window DOR-1424 is about — logged exactly like one that stopped a turn,
+      // so the one place the room could tell an operator "we could not reach the
+      // agent" said the opposite. The claim is dropped either way; what changes
+      // is that the log is true.
+      const unreachable = gatedRunner({ interruptFindsNothing: true });
+      const room = await roomMidTurn(unreachable);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      try {
+        await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+        expect(warn).toHaveBeenCalledWith(
+          '[rooms] a stop found no turn to stop — it may still be starting',
+          expect.objectContaining({ roomId: room.roomId, authorId: room.agent })
+        );
+      } finally {
+        warn.mockRestore();
+        unreachable.release(room.agent);
+        await room.wired.service.triggersIdle();
+      }
+    });
+
+    it('says nothing of the kind when the stop did reach the turn', async () => {
+      // The other half, and the half that makes the line worth reading: it is
+      // the runtime's own answer being carried out, not a line the halt writes
+      // whenever it interrupts anything.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      try {
+        await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+        expect(warn).not.toHaveBeenCalledWith(
+          '[rooms] a stop found no turn to stop — it may still be starting',
+          expect.anything()
+        );
+      } finally {
+        warn.mockRestore();
+        stubborn.release(room.agent);
+        await room.wired.service.triggersIdle();
+      }
     });
 
     it('lets that agent post through the tool again the moment it is given a turn here', async () => {

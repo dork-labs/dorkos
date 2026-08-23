@@ -2327,6 +2327,28 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Say, in the log, that a Stop found no turn to stop (DOR-1425).
+   *
+   * Both halt scopes report through this one method so the sentence and its
+   * fields cannot drift. It is a LOG line and not a room notice on purpose: the
+   * `halted` line is already written, the claim is dropped either way, and a
+   * second line saying the machinery could not reach a process is plumbing
+   * aimed at whoever reads logs rather than at whoever pressed Stop.
+   *
+   * @param roomId - The room the stop was pressed in.
+   * @param claim - The turn it was aimed at.
+   * @param sessionId - The session the interrupt was sent to.
+   */
+  private reportUnreachedStop(roomId: string, claim: ActiveClaim, sessionId: string): void {
+    logger.warn('[rooms] a stop found no turn to stop — it may still be starting', {
+      roomId,
+      authorId: claim.authorId,
+      dispatchId: claim.dispatchId,
+      sessionId,
+    });
+  }
+
+  /**
    * Whether Stop is still standing over this agent in this room — so a post it
    * makes for itself belongs nowhere either (DOR-1313).
    *
@@ -3236,7 +3258,16 @@ export class RoomTriggerDispatcher {
         // every message after.
         const sessionId = this.deps.store.getRoomSession(room.id, claim.authorId);
         if (sessionId !== null && sessionId !== undefined) {
-          await this.deps.runner.interrupt({ sessionId, agentPath: claim.agentPath });
+          const stopped = await this.deps.runner.interrupt({
+            sessionId,
+            agentPath: claim.agentPath,
+          });
+          // **The one place the room can say it could not reach an agent**
+          // (DOR-1425). The answer was thrown away here, so a stop that landed
+          // on nothing — a turn still booting, most often — logged exactly like
+          // one that stopped a turn. The claim goes either way; what changes is
+          // that an operator reading the log can tell the two apart.
+          if (!stopped) this.reportUnreachedStop(room.id, claim, sessionId);
         }
       } catch (err) {
         // One agent that will not stop must not leave the others running, and
@@ -3385,7 +3416,12 @@ export class RoomTriggerDispatcher {
       // after. Whatever went wrong, the claim goes.
       const sessionId = this.deps.store.getRoomSession(room.id, authorId);
       if (sessionId !== null && sessionId !== undefined) {
-        await this.deps.runner.interrupt({ sessionId, agentPath: claim.agentPath });
+        const stopped = await this.deps.runner.interrupt({
+          sessionId,
+          agentPath: claim.agentPath,
+        });
+        // Same answer, same reading, at the narrower scope (DOR-1425).
+        if (!stopped) this.reportUnreachedStop(room.id, claim, sessionId);
       }
     } catch (err) {
       // An agent that will not stop still loses its claim: a claim held for a

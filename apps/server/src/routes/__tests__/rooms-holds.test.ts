@@ -102,7 +102,7 @@ describe('two rooms, one agent, over HTTP', () => {
     return {
       turns: [] as never[],
       interrupted: [] as never[],
-      interrupt: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(false),
       run(req: RoomTurnRequest): Promise<RoomTurnResult> {
         return new Promise<RoomTurnResult>((resolve) => {
           turns.push({

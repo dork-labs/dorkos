@@ -149,9 +149,11 @@ export function outcomeRunner(
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<void> {
+    interrupt(request): Promise<boolean> {
       interrupted.push(request);
-      return Promise.resolve();
+      // Nothing is being held here, so nothing was stopped — the honest answer
+      // for a runner whose turns are already over by the time a halt runs.
+      return Promise.resolve(false);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({
@@ -217,11 +219,17 @@ export interface GatedRunner extends ScriptedTurnRunner {
  *   the test lands it. It is the only way to reach `deliverLate`, which is a
  *   whole delivery path with its own claim release — and the one a Stop pressed
  *   during the late window has to reach.
+ * @param opts.interruptFindsNothing - Whether the stop lands on NOTHING: the
+ *   runtime has no turn to aim it at, so `interrupt` answers `false` and the
+ *   held turn keeps running. That is the boot window (DOR-1424) — a Stop
+ *   pressed before the agent's process has bound its turn — and the only shape
+ *   in which the room can honestly say it could not reach the agent (DOR-1425).
  */
 export function gatedRunner({
   interruptEndsTurn = true,
   interruptedTurnStillAnswers = false,
   answersLate = false,
+  interruptFindsNothing = false,
 } = {}): GatedRunner {
   const turns: ScriptedTurnRunner['turns'] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
@@ -238,20 +246,25 @@ export function gatedRunner({
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<void> {
+    interrupt(request): Promise<boolean> {
       interrupted.push(request);
+      // The stop reached a runtime with no turn bound to it — it stopped
+      // nothing, and says so (DOR-1424, DOR-1425).
+      if (interruptFindsNothing) return Promise.resolve(false);
       // A real interrupt ENDS the turn: the runtime stops, the stream closes,
       // and the collector resolves with whatever there was. A fake that only
       // recorded the call would leave the dispatcher awaiting a turn nothing can
       // finish — which is not what a halt does, and would let a halt that never
       // reached the runtime pass.
-      if (!interruptEndsTurn) return Promise.resolve();
+      if (!interruptEndsTurn) return Promise.resolve(true);
+      let stoppedSomething = false;
       for (const [authorId, queued] of held) {
         if (queued[0]?.request.agentPath !== request.agentPath) continue;
         for (const turn of queued.splice(0)) turn.stop();
         held.delete(authorId);
+        stoppedSomething = true;
       }
-      return Promise.resolve();
+      return Promise.resolve(stoppedSomething);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({

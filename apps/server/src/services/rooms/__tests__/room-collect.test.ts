@@ -74,17 +74,19 @@ function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): 
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<void> {
+    interrupt(request): Promise<boolean> {
       interrupted.push(request);
       // A real interrupt ENDS the turn: the runtime stops, the stream closes,
       // and the collector resolves with whatever there was. A fake that only
       // recorded the call would leave the dispatcher awaiting a turn nothing can
       // finish, which is not what a halt does.
+      let stoppedSomething = false;
       for (const [authorId, queued] of open) {
         if (paths.get(authorId) !== request.agentPath) continue;
         for (const gate of queued.splice(0)) gate();
+        stoppedSomething = true;
       }
-      return Promise.resolve();
+      return Promise.resolve(stoppedSomething);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({
@@ -859,7 +861,7 @@ describe('a room gathers a burst into one turn', () => {
         ...held,
         async interrupt(request) {
           await new Promise((resolve) => setTimeout(resolve, 30));
-          await held.interrupt(request);
+          return held.interrupt(request);
         },
       };
       open(slow, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo']);

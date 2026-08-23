@@ -398,15 +398,18 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       };
     },
 
-    async interrupt({ sessionId, agentPath }): Promise<void> {
+    async interrupt({ sessionId, agentPath }): Promise<boolean> {
       // The runtime is resolved from the AGENT, exactly as `run` resolves it,
       // rather than from the session's registry row: a first turn's row is
       // written after the turn starts, so a halt arriving early would otherwise
       // find nothing to stop.
       const runtime = runtimeRegistry.get(await resolveRoomRuntimeType(agentPath));
-      if (!runtime) return;
+      // No runtime is no stop: nothing was reached, and saying so is the whole
+      // point of answering at all (DOR-1425).
+      if (!runtime) return false;
       const stopped = await runtime.interruptQuery(sessionId);
       logger.info('[rooms] interrupted a turn', { sessionId, stopped });
+      return stopped;
     },
   };
 }
