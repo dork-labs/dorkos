@@ -136,9 +136,10 @@ remains is one calm sentence and one obvious button.
   with "Try again" + "Copy error details". Works everywhere the client is served.
 - 0.6 Fix the wrong log-path strings (`~/Library/Logs/DorkOS` → real path), or point
   electron-log at the `DorkOS` folder explicitly so the dialogs become true.
-- 0.7 **Release + user care**: ship v0.63.1; site/download refreshed; Lil (and any
-  desktop user) installs by fresh DMG — her auto-updater cannot be trusted to deliver
-  the fix (see B), and 0.63.0's cockpit is down entirely.
+- 0.7 **Release + user care** (revised 2026-08-23, operator decision): no separate
+  v0.63.1 hotfix — one full release after the whole program merges, carrying every
+  fix. Affected v0.63.0 desktop users install it by fresh DMG — their auto-updater
+  cannot be trusted to deliver it (see B), and 0.63.0's cockpit is down entirely.
 
 ### Workstream 1 — Renderer supervision & self-healing (the class fix)
 
