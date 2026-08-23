@@ -107,7 +107,7 @@ _(paraphrase)_ Power users building remote access solutions describe a patchwork
 
 _Developers wanting agents to run overnight, on a schedule, without keeping a terminal open. The "Mac sleep" problem._
 
-> **Freshness note (2026-08-23):** Anthropic solved the vendor half of this theme. Cowork scheduled tasks and Claude Code Routines both run in Anthropic's cloud with your device off. The quotes below are still honest records of early-2026 pain, but **Quote 2.4 is expired and must not be used in copy**. What the theme still supports: an agent scheduled in a vendor's cloud can't see the code on your machine, and every vendor only schedules its own agent.
+> **Freshness note (2026-08-23):** Anthropic solved the scheduling half of this theme (Quotes 2.3 and 2.6 are about other gaps and still stand). Cowork scheduled tasks and Claude Code Routines both run in Anthropic's cloud with your device off. The quotes below are still honest records of early-2026 pain, but **Quote 2.4 is expired and must not be used in copy**. What the theme still supports: an agent scheduled in a vendor's cloud can't see the code on your machine, and every vendor only schedules its own agent.
 
 ---
 
@@ -635,7 +635,7 @@ The community response to these gaps is telling. In 2025-2026, dozens of third-p
 ## Notable Patterns
 
 **The Mac Sleep Problem Was Real — and Anthropic Fixed Its Half (updated 2026-08-23)**
-Through early 2026, third-party blogs and Anthropic's own Cowork docs agreed that Claude stopped working when the machine slept, and developers used `caffeinate` and similar workarounds to keep an agent running. That is no longer the state of the world: Cowork scheduled tasks and Claude Code Routines run in Anthropic's cloud with the device off. The part that did not get solved is that a cloud run works on files in your Claude account or a fresh GitHub clone, never the working copy on your disk — and each vendor schedules only its own agent.
+Through early 2026, third-party blogs and Anthropic's own Cowork docs agreed that Claude stopped working when the machine slept, and developers used `caffeinate` and similar workarounds to keep an agent running. That is no longer the state of the world: Cowork scheduled tasks and Claude Code Routines run in Anthropic's cloud with the device off. The part that did not get solved is that a cloud _scheduled_ run works on files in your Claude account or a fresh GitHub clone, not the working copy on your disk, and every path that does reach your disk still needs the app open and the machine awake — and each vendor schedules only its own agent.
 
 **Approval Fatigue is the Trust Paradox**
 The permission system exists to build trust, but because developers get hundreds of approval prompts during a long task, they eventually rubber-stamp everything — which defeats the purpose. What developers actually want is _meaningful_ approval checkpoints, not a flood of them.
