@@ -25,7 +25,7 @@ import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { finished, pipeline } from 'node:stream/promises';
 import { apiCall, apiRequest } from '../lib/api-client.js';
 import { printError } from '../lib/operator-output.js';
 
@@ -261,11 +261,23 @@ async function writeExportFile(
 ): Promise<ExportOutcome> {
   const staging = fs.mkdtempSync(path.join(path.dirname(target), '.dorkos-export-'));
   const scratch = path.join(staging, path.basename(target));
+  // Opened inside the try so a synchronous throw here still runs the cleanup below.
+  let file: fs.WriteStream | undefined;
   try {
-    const outcome = await streamExport(body, fs.createWriteStream(scratch), true);
+    file = fs.createWriteStream(scratch);
+    const outcome = await streamExport(body, file, true);
     if (outcome.entryCount !== null) fs.renameSync(scratch, target);
     return outcome;
   } finally {
+    // Wait for the file to be let go of before touching the directory it is in.
+    // A download that dies rejects the pipeline while the scratch file's `open`
+    // is still running on the threadpool, so the file appears a moment AFTER
+    // the export has failed — and a file appearing mid-sweep makes `rmSync`
+    // fail with ENOTEMPTY, which `force` does not forgive (it forgives a
+    // missing path, not a directory that refilled). That is how a failed export
+    // left a `.dorkos-export-*` directory on somebody's disk. Once the stream
+    // has closed there is nothing left in flight to race.
+    if (file) await finished(file).catch(() => {});
     // All-or-nothing: a file with no receipt cannot be read as an export, so
     // leaving one behind would only be a trap for whoever found it later.
     fs.rmSync(staging, { recursive: true, force: true });
