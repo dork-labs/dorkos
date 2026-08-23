@@ -92,11 +92,12 @@ export const SHORTCUTS = {
     group: 'navigation',
   },
   // The Control Center flyout — see and change the fleet's power at a glance
-  // (spec `full-power-defaults`, D7). `p` for power; verified free in this
-  // registry.
+  // (spec `full-power-defaults`, D7). NOT `mod+shift+p`: Firefox reserves that
+  // for its private window, so it never reaches the page. `mod+shift+l` is free
+  // in this registry and unbound in Chrome, Firefox and Safari.
   CONTROL_CENTER: {
     id: 'control-center',
-    key: 'mod+shift+p',
+    key: 'mod+shift+l',
     label: 'Control Center',
     group: 'navigation',
   },

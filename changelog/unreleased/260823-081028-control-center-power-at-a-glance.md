@@ -5,7 +5,7 @@ covers:
 
 ### Added
 
-- A **Control Center** to see and change your agents' power at a glance. Tap the ⚡ in the top bar (or press ⌘⇧P, or search "Control Center") and one panel opens: how much new sessions may do before they ask, whether your agents can talk across projects, whether "stop asking about this" sticks, whether agents stay warm between messages, and how many scheduled tasks run at once. Setting where new sessions start applies to new sessions — conversations already running keep what they have.
+- A **Control Center** to see and change your agents' power at a glance. Tap the ⚡ in the top bar (or press ⌘⇧L, or search "Control Center") and one panel opens: how much new sessions may do before they ask, whether your agents can talk across projects, whether "stop asking about this" sticks, whether agents stay warm between messages, and how many scheduled tasks run at once. Setting where new sessions start applies to new sessions — conversations already running keep what they have.
 - The Control Center's **Exceptions** list shows anything that runs at a different power than your dial: a runtime with its own default, a live session, a task, or an integration. Each line takes you straight to where you can change it. A tidy setup shows a calm "everything follows your dial" instead.
 
 ### Changed

@@ -15,7 +15,7 @@ import { ControlCenterBody } from './ControlCenterBody';
  * A persistent ⚡ glyph in the app chrome opens a flyout: a Popover on desktop, a
  * bottom drawer on small viewports (both from {@link ResponsivePopover}). The
  * open state lives in the app store, so the same flyout also opens from the
- * command-palette entry, the `mod+shift+p` shortcut, and the full-power consent
+ * command-palette entry, the `mod+shift+l` shortcut, and the full-power consent
  * door's "Customize…" link — every one of them flips
  * `controlCenterOpen`.
  *

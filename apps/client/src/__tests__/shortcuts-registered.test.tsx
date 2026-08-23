@@ -106,7 +106,7 @@ const PROVED: Record<string, Prover> = {
     // Unconditional window-level chord — the hook installs its listener whatever
     // is on screen, which is what lets the Control Center open from anywhere.
     renderHook(() => useControlCenterShortcut());
-    return press({ key: 'p', code: 'KeyP', metaKey: true, shiftKey: true });
+    return press({ key: 'l', code: 'KeyL', metaKey: true, shiftKey: true });
   },
   'answer-next-ask': () => {
     // Unconditional: the hook installs its listener whatever is waiting, which

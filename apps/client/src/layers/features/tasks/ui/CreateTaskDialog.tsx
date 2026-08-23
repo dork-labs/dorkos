@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import {
   useCreateTask,
@@ -74,7 +74,12 @@ export function CreateTaskDialog({
     taskCaps?.permissionModes.values ?? []
   );
   const defaultModeRef = useRef(defaultMode);
-  defaultModeRef.current = defaultMode;
+  // Latest-value ref, kept fresh in an effect rather than during render (a
+  // render-time ref write is impure). Runs before the reset effect below, so
+  // that effect always reads the freshest resolved mode on open.
+  useLayoutEffect(() => {
+    defaultModeRef.current = defaultMode;
+  }, [defaultMode]);
 
   // ── UI-only state ──
   const [step, setStep] = useState<DialogStep>(() => (editTask ? 'form' : 'preset-picker'));
@@ -87,7 +92,10 @@ export function CreateTaskDialog({
   // formValues drives ScheduleForm defaultValues. Changing this + incrementing
   // formKey causes ScheduleForm to remount with fresh form state.
   const [formValues, setFormValues] = useState<ScheduleFormValues>(() =>
-    buildFormValues(editTask, undefined, initialAgentId, defaultModeRef.current)
+    // Read `defaultMode` directly, not the ref: at mount they are equal, and
+    // reading a ref during render is impure. The ref exists only for the
+    // reset-on-open effect, which must not carry `defaultMode` as a dependency.
+    buildFormValues(editTask, undefined, initialAgentId, defaultMode)
   );
   // Incrementing this key remounts ScheduleForm so useAppForm gets fresh defaultValues.
   const [formKey, setFormKey] = useState(0);
