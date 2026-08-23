@@ -683,7 +683,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(interruptSession).toHaveBeenCalledWith('s1');
   });
 
-  it('stop() hands back the messages the server took off the queue, in order', async () => {
+  it('stop() hands back the server verdict and the messages it took off the queue, in order', async () => {
     const cancelledQueued = [
       { id: 'm1', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'me' },
       { id: 'm2', content: 'two', disposition: 'queue', enqueuedAt: 2, enqueuedBy: 'me' },
@@ -702,7 +702,48 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       returned = await result.current.stop();
     });
 
-    expect(returned).toEqual(cancelledQueued);
+    expect(returned).toEqual({ ok: true, cancelled: cancelledQueued });
+  });
+
+  it("stop() carries the server's ok:false through rather than swallowing it (DOR-1300)", async () => {
+    // A caller (the composer) decides whether to re-offer Stop off THIS flag —
+    // if `stop()` silently turned `ok: false` into a same-shaped success, a
+    // genuinely failed interrupt on a still-streaming turn would never be
+    // told apart from one that actually worked, and nothing would ever
+    // re-enable the button.
+    const interruptSession = vi.fn().mockResolvedValue({ ok: false, cancelledQueued: [] });
+    const transport = createMockTransport({ interruptSession });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.stop();
+    });
+
+    expect(returned).toEqual({ ok: false, cancelled: [] });
+  });
+
+  it('stop() reports ok:false when the request itself throws, and still resolves rather than rejecting', async () => {
+    const interruptSession = vi.fn().mockRejectedValue(new Error('network error'));
+    const transport = createMockTransport({ interruptSession });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.stop();
+    });
+
+    expect(returned).toEqual({ ok: false, cancelled: [] });
   });
 
   it('holds status at streaming through the trigger round-trip (CLI-B7 double-submit window)', async () => {

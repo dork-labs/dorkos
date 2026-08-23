@@ -64,6 +64,18 @@ export interface DirectTransportServices {
      * @param sessionId - Session whose plugins should be reloaded
      */
     reloadPlugins?(sessionId: string): Promise<ReloadPluginsResult | null>;
+    /**
+     * Resolve a session's own working directory from its id alone, using
+     * whatever LIVE binding the embedded runtime already holds for it
+     * (AgentRuntime contract, DOR-1322). Optional and best-effort: absent or
+     * `undefined` means "no such binding" — a cold session, or a runtime with
+     * no per-session cwd — not "the session doesn't exist." Mirrors the HTTP
+     * transport's server-side `getSessionCwd`, so `getMessages` can resolve a
+     * session without a caller-supplied `cwd` here too.
+     *
+     * @param sessionId - Session to resolve
+     */
+    getSessionCwd?(sessionId: string): string | undefined;
     /** The authoritative session snapshot for hydration (AgentRuntime contract). */
     getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot>;
     /** The session's monotonically-seq'd event stream (AgentRuntime contract). */

@@ -1780,6 +1780,68 @@ export function backfillRoomsDefaults(store: {
 }
 
 /**
+ * Migration body: raise the three shipped room bounds for installs still
+ * carrying the values they were seeded with, and add the two leaves the new
+ * bounds model introduced (DOR-1428, plan `room-turn-limits-overhaul`).
+ *
+ * **Only a value that still equals its old default moves.** 3 -> 30, 60 ->
+ * 1000, 240 -> 5000, and anything else is left exactly where it stands: a
+ * number somebody typed is a decision, and a migration that overwrote it would
+ * be spending their money on their behalf (safe-defaults rule 3). The cost of
+ * that rule is stated rather than hidden — a person who deliberately set 3
+ * reads as never having touched it, and gets 30 like everybody else. There is
+ * no way to tell the two apart from the file, and Settings is the remedy.
+ *
+ * The two new leaves are added here for the reason every `rooms` backfill in
+ * this table exists: conf merges top-level defaults SHALLOWLY, so a `rooms`
+ * block already on disk never inherits a nested field on its own. Without this
+ * an upgraded install would run with `turnLimitsEnabled` undefined and fail
+ * validation on the next write.
+ *
+ * Idempotent: a second run finds 30/1000/5000, none of which equal the old
+ * defaults, and the two new keys already present.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function raiseRoomTurnLimits(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = { ...(rooms as Record<string, unknown>) };
+  let changed = false;
+
+  /** The old shipped value, and what it becomes when nobody has moved it. */
+  const RAISED: ReadonlyArray<readonly [string, number, number]> = [
+    ['maxAgentDepth', 3, 30],
+    ['maxAutomaticTurnsPerRoomPerHour', 60, 1000],
+    ['maxAutomaticTurnsTotalPerHour', 240, 5000],
+  ];
+  for (const [key, was, becomes] of RAISED) {
+    if (current[key] === was) {
+      current[key] = becomes;
+      changed = true;
+    }
+  }
+
+  /** The leaves this release adds, seeded at the values the schema ships. */
+  const ADDED: Readonly<Record<string, unknown>> = {
+    turnLimitsEnabled: true,
+    maxTurnsPerAgentPerCascade: 10,
+  };
+  for (const [key, value] of Object.entries(ADDED)) {
+    if (current[key] === undefined) {
+      current[key] = value;
+      changed = true;
+    }
+  }
+
+  if (changed) store.set('rooms', current);
+}
+
+/**
  * Migration body: backfill the `welcomeBack` section (what agents may say when
  * you come back after being away; spec `team-room-home`, D5.2) for configs
  * persisted before it existed.
@@ -3031,6 +3093,20 @@ export const CONFIG_MIGRATIONS = {
     // chosen billing account is silently dropped, and without the ids the
     // registry fails schema validation and nothing can reference an account.
     migrateClaudeAccountRegistry(store);
+  },
+  // v0.63.0 is the newest tag and 0.64.0/0.65.0 have merged, so 0.66.0 is the
+  // next key that can still run for everybody. Frozen from merge, not from the
+  // release bump, for the reason `'0.60.0'` above states; anything further
+  // opens `'0.67.0'`.
+  '0.66.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // The raised room bounds and the two leaves the new model adds
+    // (DOR-1428). NOT additive in the first half — it rewrites three values
+    // that already exist — which is why it only ever touches one that still
+    // equals the default it was seeded with. See `raiseRoomTurnLimits`.
+    raiseRoomTurnLimits(store);
   },
 } as const;
 

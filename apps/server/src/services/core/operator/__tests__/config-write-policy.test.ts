@@ -92,6 +92,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
+      'rooms.maxTurnsPerAgentPerCascade',
+      'rooms.turnLimitsEnabled',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',

@@ -33,7 +33,7 @@
  * a live run cannot write unattended. CI never sets the flag: unset → fully
  * mocked, no binary, no Ollama.
  */
-import { afterAll, vi } from 'vitest';
+import { afterAll, expect, onTestFinished, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -198,11 +198,22 @@ function makeMockedProvider(
   turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode')
 ): OpenCodeClientProvider {
   const client = makeConformanceClient(turn) as unknown as OpencodeClient;
+  lastClient = client as unknown as ReturnType<typeof makeConformanceClient>;
   return {
     getClient: async () => client,
     peekClient: () => client,
   };
 }
+
+/**
+ * The mocked client behind whichever runtime `makeRuntime()` most recently
+ * built. `makeMockedProvider` is the only place a fresh one is minted, so
+ * this always names the current test's client — which C11's `hangingInterrupt`
+ * driver needs to reach AFTER construction, to override `global.event` and
+ * `session.abort` for one case without touching every other one's default
+ * script. Never set in LIVE mode, where there is no mock to reach.
+ */
+let lastClient: ReturnType<typeof makeConformanceClient> | undefined;
 
 runtimeConformance(
   // Fresh runtime per test; the provider is the only dependency (ADR-0308).
@@ -254,6 +265,46 @@ runtimeConformance(
             new OpenCodeRuntime({
               provider: makeMockedProvider(opencodeCompactingTurn(OC_SESSION_A)),
             }),
+          // C11 (DOR-1299): stage a turn the mocked sidecar never answers —
+          // `global.event` reports connected and then falls silent (no
+          // `session.idle` ever arrives, so the turn stays genuinely open),
+          // and `session.abort` returns a promise nothing will ever settle,
+          // the mocked equivalent of a wedged sidecar dropping the request.
+          // `promptAsync` having been called is the real, observable signal
+          // that `runOpenCodeTurn` reached past `this.activeTurns.set` — the
+          // same point real DOR-1299 traffic reaches on a healthy sidecar —
+          // so waiting for it (real timers; fake ones arm only for the race
+          // itself, in the shared C11 case) proves the turn is armed rather
+          // than guessing at a tick count. No session-scoped escalation exists
+          // on expiry (`INTERRUPT_ACK_TIMEOUT_MS`'s TSDoc), so the pinned
+          // settle value is `false` — honest, not an escalation.
+          hangingInterrupt: async (runtime, sessionId) => {
+            const client = lastClient;
+            if (!client) {
+              throw new Error('OpenCode conformance: no mocked client to arm for C11');
+            }
+            vi.mocked(client.global.event).mockImplementation(
+              async (options?: { signal?: AbortSignal }) => {
+                const queue = new TurnEventQueue<GlobalEvent>();
+                options?.signal?.addEventListener('abort', () => queue.end(), { once: true });
+                queue.push(globalEvent(PROJECT_DIR, serverConnected()));
+                return { stream: queue };
+              }
+            );
+            vi.mocked(client.session.abort).mockImplementation(() => new Promise(() => {}));
+            // Owned, not floated: this generator never yields (the turn is
+            // deliberately stuck open), so nothing else will ever close it —
+            // `.return()` in cleanup is the only thing that does.
+            const hungTurn = runtime.sendMessage(sessionId, 'hang on interrupt', {
+              cwd: PROJECT_DIR,
+            });
+            onTestFinished(() => {
+              void hungTurn.return(undefined);
+            });
+            void hungTurn.next();
+            await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+            return false;
+          },
         }),
   }
 );

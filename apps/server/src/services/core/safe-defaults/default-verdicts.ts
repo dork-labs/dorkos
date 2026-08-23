@@ -41,9 +41,9 @@
  *
  * `protected-state.ts` asks what must SURVIVE a wipe; this asks what a default
  * IS. They overlap but do not coincide: `approvals.standingGrants` defaults
- * `safe` and needs no carryover rule, while `rooms.maxAgentDepth` defaults to a
- * real bound (`safe`) and still needs one, because a person may have tightened
- * it further. The guard checks the one relationship that must hold: a carryover
+ * `safe` and needs no carryover rule, while `rooms.maxTurnsPerAgentPerCascade`
+ * defaults to a real bound (`safe`) and still needs one, because a person may
+ * have tightened it further. The guard checks the one relationship that must hold: a carryover
  * rule only makes sense for a leaf that can lose something.
  *
  * @module services/core/safe-defaults/default-verdicts
@@ -218,10 +218,11 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  * when a `.default(...)` flips underneath the verdict.
  *
  * Most need no carryover rule in `protected-state.ts` — a wipe lands on them for
- * free. **Five do have one anyway**, and the distinction matters: `rooms.*`,
- * `approvals.trustWindowMinutes` and `approvals.standingGrantsVoidBefore` all
- * ship at a real bound, and a person can tighten PAST it. Landing back on the
- * shipped default would still loosen what they set.
+ * free. **Several do have one anyway**, and the distinction matters: the
+ * `rooms.*` bounds, `approvals.trustWindowMinutes` and
+ * `approvals.standingGrantsVoidBefore` all ship at a real bound, and a person
+ * can tighten PAST it. Landing back on the shipped default would still loosen
+ * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Public exposure starts off, with no hostname, token, or edge passcode.
@@ -234,10 +235,14 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'tunnel.auth': null,
   // Nothing is scanned until a person names a root.
   'mesh.scanRoots': [],
-  // Every room bound ships ON, so an upgraded install is bounded too.
-  'rooms.maxAgentDepth': 3,
-  'rooms.maxAutomaticTurnsPerRoomPerHour': 60,
-  'rooms.maxAutomaticTurnsTotalPerHour': 240,
+  // Automatic replies are limited by default (DOR-1428). The three numbers
+  // beneath this switch are permissive at the values they now ship — see
+  // PERMISSIVE_DEFAULTS — but the switch itself is the protective side of a
+  // real axis: off means no bound of any kind runs.
+  'rooms.turnLimitsEnabled': true,
+  // How many turns one agent may take inside one exchange. A real bound at its
+  // default, and the tightest a person might want is lower, so it carries.
+  'rooms.maxTurnsPerAgentPerCascade': 10,
   // How long a room waits, and when it gives up. Neither is a spend bound, so
   // the safe value is simply the shipped one.
   'rooms.replyWaitMinutes': 10,
@@ -377,6 +382,24 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       'The only default in this table that spends money on its own, and it is listed here rather than argued away: an offer runs an agent for a turn, and shipping ON says yes to that before the person does. The case for it is that the offer is the part of a return worth reading — a note saying what happened is history, a note ending in "want me to open the PR?" is the next thing you would have had to go and ask for — and a spend switch nobody ever finds is a feature nobody has. The relaxation is bounded rather than open: only agents that already earned a note are asked, at most `maxPosts` of them, at most one turn each per return, and every offer rides the ordinary room path, so both automatic-turn caps hold it like any other turn. It is also the most visible one here — the switch states the cost in the sentence beside it, turning it off is one click, and PROTECTIVE_CARRYOVERS keeps that off through a wipe.',
+  },
+  // The three raised room bounds (DOR-1428, plan `room-turn-limits-overhaul`).
+  // Grouped rather than argued three times: they are one decision, and the
+  // reason is the same sentence in each.
+  'rooms.maxAgentDepth': {
+    value: 30,
+    reason:
+      "Agents get thirty replies in a row rather than three, because three is not a conversation: two agents working something out spend the first two hops agreeing what the question is. The old default was chosen to be obviously safe and turned out to be obviously too small — it stopped exchanges the person had asked for, and the room said so in a notice that read as a fault. It is still a bound in code, still resets on the person's own message, and the hourly caps below are what actually holds the bill.",
+  },
+  'rooms.maxAutomaticTurnsPerRoomPerHour': {
+    value: 1000,
+    reason:
+      'The per-room hourly cap is raised in proportion to the reply limit above: at sixty an hour a single busy room hit it during ordinary work, and a cap that fires during ordinary work teaches people to turn caps off. It still keeps one runaway room from eating the whole install allowance, which is the job it exists for.',
+  },
+  'rooms.maxAutomaticTurnsTotalPerHour': {
+    value: 5000,
+    reason:
+      'The install-wide cap, and the one that names the real exposure: a fresh install can now spend about five thousand automatic model turns in an hour if two agents talk in circles all night. That is deliberate — this cap is the backstop, not the everyday limit, and it is set where it stops a runaway rather than where it stops work. ADR 260823-000218 owns the trade in full, including the fact that the numbers are editable and the room says which cap stopped it.',
   },
   'harness.autoSync': {
     value: true,

@@ -43,6 +43,10 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // response only if one is ever added; it is mapped because the table is total
   // by type, and 400 because a DM is the wrong room to ask this of.
   TOOL_POST_NOT_IN_DM: 400,
+  // Same story: an MCP-only verb, mapped because the table is total by type. A
+  // 409 rather than a 400 — the request is well formed and the room is right,
+  // but somebody stopped this turn while it was being written.
+  TURN_WAS_STOPPED: 409,
   // This one IS reachable over HTTP today, and the comment above it used to say
   // otherwise: `POST /api/rooms/:id/entries/:entryId/reactions` resolves an
   // agent from `X-DorkOS-Agent` and goes through the same `toggleReaction`, so

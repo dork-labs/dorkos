@@ -26,7 +26,12 @@ import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
-import { awaitStopAck, type StopAck } from './bounded-stop.js';
+import {
+  awaitControlAck,
+  PERMISSION_MODE_ACK_TIMEOUT_MS,
+  STOP_ACK_TIMEOUT_MS,
+  type ControlAck,
+} from './bounded-control.js';
 
 /**
  * Is this session holding a prompt somebody could still come back and answer?
@@ -477,19 +482,30 @@ export class SessionStore {
       const prevMode = session.permissionMode;
       session.permissionMode = opts.permissionMode;
       if (session.activeQuery) {
-        try {
-          await session.activeQuery.setPermissionMode(
-            opts.permissionMode as Parameters<typeof session.activeQuery.setPermissionMode>[0]
-          );
-        } catch (err) {
-          // Best-effort (ADR-0261): keep the new mode even if the live query
-          // rejects the change — it is already persisted (write-through above)
-          // and takes effect on the next turn. Never revert or re-throw, so the
-          // PATCH route does not surface a spurious 422.
-          logger.warn('[updateSession] live setPermissionMode failed; applies next turn', {
+        const query = session.activeQuery;
+        // Bounded (DOR-1301): on a session winding down, DorkOS has already
+        // ended this query's stdin, so the SDK drops the write in silence and
+        // returns a promise nothing will settle. Awaiting it hung the PATCH —
+        // and made the best-effort catch below unreachable, since a dropped
+        // write never rejects either. The clock is what makes the best-effort
+        // contract true rather than merely written down.
+        const ack = await awaitControlAck(
+          () =>
+            query.setPermissionMode(
+              opts.permissionMode as Parameters<typeof query.setPermissionMode>[0]
+            ),
+          PERMISSION_MODE_ACK_TIMEOUT_MS
+        );
+        if (ack !== 'acked') {
+          // Best-effort (ADR-0261): keep the new mode even when the live query
+          // refuses the change or never answers — it is already persisted
+          // (write-through above) and takes effect on the next turn. Never
+          // revert or re-throw, so the PATCH route does not surface a spurious
+          // 422.
+          logger.warn('[updateSession] live setPermissionMode did not take; applies next turn', {
             sessionId,
             mode: opts.permissionMode,
-            err: err instanceof Error ? err.message : String(err),
+            ack,
           });
         }
       }
@@ -578,7 +594,7 @@ export class SessionStore {
     // CLI's interrupt sentinel on the task's pending calls — stamp it so the
     // phantom detector (DOR-1087) treats those as legitimate.
     session.interruptRequestedAt = Date.now();
-    const ack = await awaitStopAck(() => query.stopTask(taskId));
+    const ack = await awaitControlAck(() => query.stopTask(taskId), STOP_ACK_TIMEOUT_MS);
     if (ack === 'acked') return true;
     logger.warn('[stopTask] the CLI did not stop the task', { sessionId, taskId, ack });
     // Only a REFUSAL clears the stamp. A refusal is the CLI saying the stop did
@@ -618,7 +634,7 @@ export class SessionStore {
    * doing. Waiting on the ack alone was unbounded in the one case where it
    * matters most — a turn winding down, whose stdin DorkOS itself has closed,
    * where the SDK drops the request in silence and the promise behind it is
-   * settled by nothing (DOR-1244; the mechanics are in `bounded-stop.ts`).
+   * settled by nothing (DOR-1244; the mechanics are in `bounded-control.ts`).
    *
    * Split out of {@link interruptQuery} so the persistent path can stop a turn
    * that is still BOOTING — one whose live query the pump holds before its
@@ -661,7 +677,7 @@ export class SessionStore {
       });
       return this.closeStoppedQuery(session, query);
     }
-    const ack: StopAck = await awaitStopAck(() => query.interrupt());
+    const ack: ControlAck = await awaitControlAck(() => query.interrupt(), STOP_ACK_TIMEOUT_MS);
     if (ack === 'acked') return true;
     logger.warn('[interruptQuery] the graceful interrupt did not take; closing the process', {
       sessionId,

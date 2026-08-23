@@ -287,6 +287,18 @@ export interface RoomTriggerDeps {
   /** The live `rooms.maxAgentDepth`, read per dispatch so a change takes effect. */
   maxAgentDepth(): number;
   /**
+   * The live `rooms.maxTurnsPerAgentPerCascade` — how many automatic turns one
+   * agent may run inside one cascade. Read per dispatch for the same reason.
+   */
+  maxTurnsPerAgentPerCascade(): number;
+  /**
+   * The live `rooms.turnLimitsEnabled`. `false` means the person turned every
+   * automatic-reply limit off, and this dispatcher skips BOTH the cascade guard
+   * and the turn budget — see {@link RoomTriggerDispatcher.selectCandidates}.
+   * Read per dispatch, so turning limits back on binds the very next message.
+   */
+  turnLimitsEnabled(): boolean;
+  /**
    * The live engaged-window ceilings, read per dispatch for the same reason:
    * shortening the window in Settings has to bind the very next message.
    */
@@ -440,6 +452,51 @@ export class RoomTriggerDispatcher {
    * because that delivery is still ahead of it.
    */
   private readonly haltedTurns = new Set<string>();
+
+  /**
+   * Where Stop is still standing: `(room, agent)` keys whose last turn here was
+   * stopped and which have not been given a new one since (DOR-1313).
+   *
+   * **The dispatch mark above guards what the ROOM delivers; this guards what
+   * the TURN says for itself.** An agent speaks into a room two ways — the
+   * turn's narration, which `deliver` posts and the mark can therefore refuse,
+   * and `post_to_room`, which the model calls by hand mid-turn and which reaches
+   * {@link RoomService.postFromTool} as an ordinary write with no dispatch
+   * anywhere near it. Measured on 2026-08-17: Stop pressed 0.7 s into a turn
+   * that had not started streaming reached a process that was still spawning,
+   * the room released the claim and forgot the dispatch at that turn's terminal,
+   * and twenty-three seconds later the turn that never stopped posted a
+   * seven-thousand-character answer through the tool — before its own window had
+   * even closed, which is why nothing in `deliver` could have dropped it.
+   *
+   * Keyed by `(room, agent)` rather than by dispatch, and it has to be: the tool
+   * call arrives on its own HTTP request, outside every dispatch scope, so the
+   * pair is the only identity both sides share.
+   *
+   * **Cleared by the next CLAIM here — and NOT at the stopped turn's own
+   * terminal, which is the tempting version and is exactly wrong.** In the
+   * incident above the room's frame ended twenty-two seconds BEFORE the post: an
+   * interrupt that closed the query settled `run()` while the CLI carried on, so
+   * the room's terminal means "the room stopped listening", never "the process
+   * stopped". Releasing on it reopens the bug in the one case it was built for.
+   * The next claim is used instead because it is the room asking again, which
+   * keeps this a stop rather than a mute, and the hand comes back AT the claim
+   * rather than at the answer because speaking mid-turn is the whole point of
+   * the tool. {@link RoomTriggerDispatcher.abandonHolds} drops it too, for the
+   * pair that will never claim again — archived room, agent off the roster.
+   *
+   * **Two limits, and neither is hidden.** A stopped agent that the room never
+   * triggers again cannot post into THAT room by hand, indefinitely — an
+   * advertised affordance (`rooms.post` names cross-room posting) disabled for
+   * one pair with no expiry. It is room-scoped, so the same agent still posts
+   * into every other room it belongs to. And the window this cannot close: a
+   * halt followed immediately by a new message clears the mark for the live
+   * turn, and the old stopped turn — if it is still running — can post inside
+   * it. Both are written down in `.claude/rules/room-conduct.md`; closing the
+   * second would mean holding the mark against the live turn as well, which is
+   * the mute this refuses to be.
+   */
+  private readonly stoppedHere = new Map<string, { roomId: string; authorId: string }>();
 
   /**
    * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
@@ -719,12 +776,27 @@ export class RoomTriggerDispatcher {
       return [];
     }
 
-    const provenance = {
-      root: entry.cascadeRoot,
-      depth: entry.cascadeDepth,
-      authorsInCascade: this.deps.store.authorsInCascade(room.id, entry.cascadeRoot),
-    };
-    const maxAgentDepth = this.deps.maxAgentDepth();
+    // **The whole of "limits off", for the guard half.** `turnLimitsEnabled`
+    // is read HERE rather than inside `cascade-guard.ts`, which stays
+    // limit-agnostic and fully tested: a pure function that sometimes decides
+    // not to decide is a worse thing to reason about than a caller that decides
+    // not to ask. Unlimited means no provenance query, no verdict, and no
+    // notice — nothing was refused, so there is nothing to say. The stamped
+    // depth still advances, so an exchange that ran unlimited is still readable
+    // as a chain afterwards, and turning limits back on judges it normally.
+    const limits = this.deps.turnLimitsEnabled()
+      ? {
+          maxAgentDepth: this.deps.maxAgentDepth(),
+          maxTurnsPerAgentPerCascade: this.deps.maxTurnsPerAgentPerCascade(),
+        }
+      : null;
+    const provenance = limits
+      ? {
+          root: entry.cascadeRoot,
+          depth: entry.cascadeDepth,
+          turnsByAuthor: this.deps.store.turnsByAuthorInCascade(room.id, entry.cascadeRoot),
+        }
+      : null;
 
     const allowed: TriggerCandidate[] = [];
     // Collected rather than reported inline, so a member that is BOTH a selected
@@ -732,7 +804,10 @@ export class RoomTriggerDispatcher {
     const gone = new Set<string>(namedUnreachable);
     for (const authorId of selected) {
       const record = records.get(authorId);
-      const decision = evaluateCascade(authorId, provenance, { maxAgentDepth });
+      const decision: CascadeDecision =
+        limits && provenance
+          ? evaluateCascade(authorId, provenance, limits)
+          : { allowed: true, depth: entry.cascadeDepth + 1 };
       if (!decision.allowed) {
         // Only announce a limit something actually hit. A `depth` refusal
         // against an entry that is its OWN cascade root did not come from a
@@ -766,15 +841,15 @@ export class RoomTriggerDispatcher {
         // The invariant is served differently: nothing was ever triggered, so
         // there is no agent that went quiet on you. `room-silence.test.ts` pins
         // BOTH sides of that narrowness — the silence here, and the two real
-        // refusals that must still speak (an ancestry stop, and a chain that
+        // refusals that must still speak (a repeat stop, and a chain that
         // reaches the depth ceiling), so this cannot be widened into a spray or
         // narrowed into a general hush without something going red.
         //
         // On the two terms below: `fromRealChain` is the load-bearing one, and
-        // the `ancestry` term is a guard rather than a discriminator. Every
-        // reachable ancestry refusal ALSO has `fromRealChain` true, because a
+        // the `repeat` term is a guard rather than a discriminator. Every
+        // reachable repeat refusal ALSO has `fromRealChain` true, because a
         // cascade whose root is this entry contains only this entry (plus
-        // system notices), so the target cannot already be in it. Kept because
+        // system notices), so the target's count in it is zero. Kept because
         // that is a property of `deriveCascade` in another module, not of
         // anything here, and it costs one comparison to not depend on it.
         this.announceCascade(room, entry, authorId, record?.displayName, decision.reason);
@@ -836,20 +911,20 @@ export class RoomTriggerDispatcher {
     reason: CascadeRefusalReason | undefined
   ): void {
     // On the two terms: `fromRealChain` is the load-bearing one, and the
-    // `ancestry` term is a guard rather than a discriminator. Every reachable
-    // ancestry refusal ALSO has `fromRealChain` true, because a cascade whose
+    // `repeat` term is a guard rather than a discriminator. Every reachable
+    // repeat refusal ALSO has `fromRealChain` true, because a cascade whose
     // root is this entry contains only this entry (plus system notices), so the
-    // target cannot already be in it. Kept because that is a property of
+    // target's count in it is zero. Kept because that is a property of
     // `deriveCascade` in another module, not of anything here, and it costs one
     // comparison to not depend on it.
     const fromRealChain = entry.cascadeRoot !== entry.id;
-    if (reason !== 'ancestry' && !fromRealChain) return;
+    if (reason !== 'repeat' && !fromRealChain) return;
     this.notices.announce(
       room,
       entry,
       authorId,
       buildCascadeNotice(displayName ?? 'An agent', authorId),
-      reason === 'ancestry' ? 'cascade_ancestry' : 'cascade_depth',
+      reason === 'repeat' ? 'cascade_repeat' : 'cascade_depth',
       // Explicitly none. This target was refused before it could be given an id
       // — and `selectCandidates` runs synchronously inside `RoomService.post`,
       // which for an AGENT'S reply is inside that agent's own dispatch scope.
@@ -857,6 +932,43 @@ export class RoomTriggerDispatcher {
       // dispatch.
       null
     );
+  }
+
+  /**
+   * Everything one turn is told about what is left to spend — the room's hourly
+   * headroom and its remaining replies in this chain — or `null` for all of it
+   * when the person turned automatic-reply limits off.
+   *
+   * `null` rather than a large number, because this is what an agent reads in
+   * `room_context.budget` and decides how freely to answer against. With
+   * nothing counting, any number here is invented: a big one implies a ceiling
+   * that does not exist and a small one implies a squeeze that is not
+   * happening. "No limit" is the only true thing to say.
+   *
+   * **One helper rather than two, because the promise is that they are `null`
+   * TOGETHER.** `RoomContextData.budget` says so, and the block renders one
+   * sentence or the other off that. Two helpers each reading
+   * `turnLimitsEnabled()` for themselves would document the invariant and not
+   * enforce it: the flag is a live config read, so a person toggling it between
+   * the two calls would assemble half a verdict. Read once, here, per context.
+   *
+   * @param roomId - The room the turn is about to run in.
+   * @param depth - The depth the turn being assembled carries, or `'ceiling'`
+   *   for a turn that is nobody's reply and hands on no chain (an aside).
+   */
+  private headroomFor(
+    roomId: string,
+    depth: number | 'ceiling'
+  ): {
+    budget: { room: number; global: number } | null;
+    repliesLeftInThisChain: number | null;
+  } {
+    if (!this.deps.turnLimitsEnabled()) return { budget: null, repliesLeftInThisChain: null };
+    return {
+      budget: this.deps.budget.remaining(roomId),
+      repliesLeftInThisChain:
+        depth === 'ceiling' ? 0 : Math.max(0, this.deps.maxAgentDepth() - depth),
+    };
   }
 
   /**
@@ -888,7 +1000,7 @@ export class RoomTriggerDispatcher {
    * every newer one it refuses on the way past.
    *
    * **The guard is asked PER MESSAGE, and asking it once for the batch was a
-   * real defect.** Its ancestry rule is a durable query, so a message collected
+   * real defect.** Its repeat rule counts a durable query, so a message collected
    * while a turn was in flight could not be judged against that turn's own post;
    * re-asking when the batch runs is what still terminates a two-agent
    * ping-pong. But a batch is not one message, and a verdict taken from the
@@ -921,14 +1033,31 @@ export class RoomTriggerDispatcher {
     collection: RoomCollection
   ): { held: CollectedTrigger; decision: CascadeDecision; index: number } | null {
     const { room, authorId, displayName } = collection;
-    const maxAgentDepth = this.deps.maxAgentDepth();
+    // Limits off: nothing to re-ask. The newest message is the trigger, and no
+    // notice is written because nothing was refused (see
+    // {@link RoomTriggerDispatcher.selectCandidates} for the whole of it).
+    const limits = this.deps.turnLimitsEnabled()
+      ? {
+          maxAgentDepth: this.deps.maxAgentDepth(),
+          maxTurnsPerAgentPerCascade: this.deps.maxTurnsPerAgentPerCascade(),
+        }
+      : null;
+    if (!limits) {
+      const held = collection.entries.at(-1);
+      if (!held) return null;
+      return {
+        held,
+        decision: { allowed: true, depth: held.entry.cascadeDepth + 1 },
+        index: collection.entries.length - 1,
+      };
+    }
     // One read per distinct cascade, not per message. A batch is usually one or
     // two exchanges, so this is a couple of indexed queries however long it is.
-    const inCascade = new Map<string, readonly string[]>();
-    const authorsInCascade = (root: string): readonly string[] => {
+    const inCascade = new Map<string, ReadonlyMap<string, number>>();
+    const turnsByAuthor = (root: string): ReadonlyMap<string, number> => {
       const known = inCascade.get(root);
       if (known) return known;
-      const found = this.deps.store.authorsInCascade(room.id, root);
+      const found = this.deps.store.turnsByAuthorInCascade(room.id, root);
       inCascade.set(root, found);
       return found;
     };
@@ -939,9 +1068,9 @@ export class RoomTriggerDispatcher {
         {
           root: held.entry.cascadeRoot,
           depth: held.entry.cascadeDepth,
-          authorsInCascade: authorsInCascade(held.entry.cascadeRoot),
+          turnsByAuthor: turnsByAuthor(held.entry.cascadeRoot),
         },
-        { maxAgentDepth }
+        limits
       );
       if (decision.allowed) return { held, decision, index };
       // Nothing here can double-announce: a message only reaches a collection
@@ -1082,17 +1211,26 @@ export class RoomTriggerDispatcher {
     // automatic turn at all — and it is asked without reference to who wrote the
     // entry, so a caller who reached depth 0 by claiming to be human still stops
     // here. ONCE for the collection, because a collection is one turn.
-    const afford = this.deps.budget.tryReserve(room.id);
-    if (!afford.allowed) {
-      // This one CAN be correlated: the target survived the guard and was given
-      // its id above, so the refusal belongs to a real dispatch that never ran.
-      this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
-      this.settleCollection(collection, 'refused');
-      return null;
+    //
+    // **Limits off means no reservation at all**, not a reservation against a
+    // huge number: an hour spent unlimited must not leave a room out of budget
+    // the moment the person turns limits back on, and a counter nothing reads
+    // is a counter that lies. The window keeps whatever was already spent, so
+    // turning limits back on resumes the hour where it was left.
+    if (this.deps.turnLimitsEnabled()) {
+      const afford = this.deps.budget.tryReserve(room.id);
+      if (!afford.allowed) {
+        // This one CAN be correlated: the target survived the guard and was
+        // given its id above, so the refusal belongs to a real dispatch that
+        // never ran.
+        this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
+        this.settleCollection(collection, 'refused');
+        return null;
+      }
+      // Spending again means the window moved, so re-arm the notice: the next
+      // exhaustion is news, not a repeat.
+      this.notices.budgetRecovered(room.id);
     }
-    // Spending again means the window moved, so re-arm the notice: the next
-    // exhaustion is news, not a repeat.
-    this.notices.budgetRecovered(room.id);
 
     // Bind the session BEFORE claiming it. Reading the binding inside `runOne`
     // and writing it on completion left a window: two posts before the first
@@ -1370,8 +1508,9 @@ export class RoomTriggerDispatcher {
         // already advanced past this entry, so reading it here would describe
         // an empty window every time (room-participation spec §8.3).
         lastReadSeq: target.lastReadSeq,
-        budget: this.deps.budget.remaining(room.id),
-        repliesLeftInThisChain: Math.max(0, this.deps.maxAgentDepth() - target.depth),
+        // Both halves of what is left to spend, resolved together so they can
+        // never disagree about whether anything is counting.
+        ...this.headroomFor(room.id, target.depth),
         engaged: target.engaged,
         // Which of the messages in that window landed while this agent was
         // already working (RP8). Without it a steered turn reads as a person
@@ -1836,22 +1975,27 @@ export class RoomTriggerDispatcher {
       });
       return null;
     }
-    if (!this.deps.budget.tryReserve(room.id).allowed) {
-      logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
-        roomId: room.id,
-        authorId,
-      });
-      return null;
+    // Reserved only while the person is counting — the same branch
+    // `claimTargets` makes, for the same reason: with limits off there is no
+    // window to spend from and nothing to re-arm.
+    if (this.deps.turnLimitsEnabled()) {
+      if (!this.deps.budget.tryReserve(room.id).allowed) {
+        logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
+          roomId: room.id,
+          authorId,
+        });
+        return null;
+      }
+      // **The re-arm, exactly as `claimTargets` does it, and it is not optional
+      // here.** Spending again means the hourly window moved, so the next
+      // exhaustion is news rather than a repeat. Without this line an offer
+      // silently consumes the freshly-rolled window and leaves the memory of the
+      // LAST refusal standing — so the next person to be refused is refused with
+      // no notice at all. An invisible refusal of a message somebody addressed is
+      // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
+      // asked for must not be the thing that causes it.
+      this.notices.budgetRecovered(room.id);
     }
-    // **The re-arm, exactly as `claimTargets` does it, and it is not optional
-    // here.** Spending again means the hourly window moved, so the next
-    // exhaustion is news rather than a repeat. Without this line an offer
-    // silently consumes the freshly-rolled window and leaves the memory of the
-    // LAST refusal standing — so the next person to be refused is refused with
-    // no notice at all. An invisible refusal of a message somebody addressed is
-    // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
-    // asked for must not be the thing that causes it.
-    this.notices.budgetRecovered(room.id);
 
     let sessionId: string;
     try {
@@ -1947,10 +2091,12 @@ export class RoomTriggerDispatcher {
         // silently consume the window the next real trigger owes it
         // (room-participation spec §8.3).
         lastReadSeq: entry.seq,
-        budget: this.deps.budget.remaining(room.id),
-        // None. An offer is one line and the end of it; the ceiling stamp above
-        // says the same thing to the guard.
-        repliesLeftInThisChain: 0,
+        // The hourly headroom, and NO chain: an offer is one line and the end of
+        // it, which is what `'ceiling'` says here and what the ceiling stamp
+        // above says to the guard. Asked through the same helper so that an
+        // install with limits off answers `null` here too, rather than telling
+        // an agent it has zero of something nothing is counting.
+        ...this.headroomFor(room.id, 'ceiling'),
         engaged: null,
         // The same word the claim above uses. Nothing asked for this turn, so
         // the block names no "message you are answering": `entry` here is the
@@ -2146,6 +2292,25 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Whether Stop is still standing over this agent in this room — so a post it
+   * makes for itself belongs nowhere either (DOR-1313).
+   *
+   * The counterpart to {@link RoomTriggerDispatcher.wasHalted}, asked by
+   * `post_to_room` rather than by a delivery: the mark that path could use is
+   * keyed by dispatch, and a tool call arrives on its own request with no
+   * dispatch in sight. See {@link RoomTriggerDispatcher.stoppedHere} for why the
+   * two exist side by side and what clears this one.
+   *
+   * @param roomId - The room being posted into.
+   * @param authorId - The agent posting.
+   * @returns Whether that agent's last turn here was stopped and it has not been
+   *   given another one since.
+   */
+  stoppedIn(roomId: string, authorId: string): boolean {
+    return this.stoppedHere.has(agentKey(roomId, authorId));
+  }
+
+  /**
    * Take a claim, and tell the room the agent is on it.
    *
    * The publish is not a courtesy beside the write — it is the write's whole
@@ -2177,6 +2342,10 @@ export class RoomTriggerDispatcher {
     this.notices.workStarted(claim.roomId, claim.authorId);
     const before = this.workingCount(claim.roomId);
     const key = agentKey(claim.roomId, claim.authorId);
+    // The room is asking this agent again, so whatever Stop was standing over it
+    // HERE comes down — including its hand on `post_to_room`. Stop ends a turn;
+    // it never changes a setting (`.claude/rules/room-conduct.md`).
+    this.stoppedHere.delete(key);
     // **Before the `working` publish, so the held line RESOLVES into the working
     // one rather than sitting beside it.** A person watching this room asked a
     // question, was told it was waiting, and is now being told it is running:
@@ -2652,6 +2821,17 @@ export class RoomTriggerDispatcher {
       if (authorId !== undefined && record.authorId !== authorId) continue;
       this.releaseHold(key, 'left');
     }
+    // And the Stop mark goes too. It is otherwise cleared only by the next claim
+    // there ({@link RoomTriggerDispatcher.stoppedHere}), and a room that has been
+    // archived — or an agent taken off its roster — will never claim again, so
+    // without this the key would outlive everything it is about. Nothing is
+    // weakened by dropping it: the pair has no room to speak into any more, and
+    // an agent added back is being asked to take part again.
+    for (const [key, stopped] of [...this.stoppedHere]) {
+      if (stopped.roomId !== roomId) continue;
+      if (authorId !== undefined && stopped.authorId !== authorId) continue;
+      this.stoppedHere.delete(key);
+    }
   }
 
   /**
@@ -2885,7 +3065,7 @@ export class RoomTriggerDispatcher {
    * `(room, agent)`, so a second turn there is a second writer on one
    * transcript answering a room that asked once. Deliberately blind to the
    * cascade, which is the whole point: this used to be a cascade-scoped union
-   * fed into the guard's ancestry rule, and that shape could only ever see a
+   * fed into the guard's repeat rule, and that shape could only ever see a
    * re-trigger arriving inside the SAME exchange — so the common case, the next
    * message a person sends, sailed past it under a fresh root (DOR-752).
    *
@@ -2964,7 +3144,19 @@ export class RoomTriggerDispatcher {
     // prevent — the two-second race measured on 2026-08-15. Nothing after this
     // line can be reached by a turn that started AFTER the halt, because a new
     // turn is a new dispatch id (see {@link RoomTriggerDispatcher.haltedTurns}).
-    for (const claim of claims) this.haltedTurns.add(claim.dispatchId);
+    for (const claim of claims) {
+      this.haltedTurns.add(claim.dispatchId);
+      // And the same statement at the pair, for the half of a turn's voice the
+      // dispatch mark cannot reach: `post_to_room`
+      // ({@link RoomTriggerDispatcher.stoppedHere}). Marked here rather than in
+      // the release loop below for the same reason the dispatch mark is — before
+      // the first `await`, so a turn that is quicker than the interrupt cannot
+      // slip a post through the gap.
+      this.stoppedHere.set(agentKey(room.id, claim.authorId), {
+        roomId: room.id,
+        authorId: claim.authorId,
+      });
+    }
     logger.info('[rooms] a room was halted', { roomId: room.id, stopped: claims.length });
     // **The durable write comes first, and the whole invariant is in that
     // order.** Releasing a claim publishes `done`, so a halt that stopped the
@@ -3100,7 +3292,14 @@ export class RoomTriggerDispatcher {
     // turn whose stream closes while this method is still delivering the
     // interrupt must find the mark already there, or it posts the answer Stop
     // was pressed to prevent.
-    if (claim !== undefined) this.haltedTurns.add(claim.dispatchId);
+    if (claim !== undefined) {
+      this.haltedTurns.add(claim.dispatchId);
+      // The other half of this turn's voice, at the pair rather than at the
+      // dispatch, and scoped to this key like everything else here — stopping
+      // Ana never takes Bo's hand off the tool
+      // ({@link RoomTriggerDispatcher.stoppedHere}).
+      this.stoppedHere.set(key, { roomId: room.id, authorId });
+    }
     logger.info('[rooms] an agent was stopped in a room', {
       roomId: room.id,
       authorId,

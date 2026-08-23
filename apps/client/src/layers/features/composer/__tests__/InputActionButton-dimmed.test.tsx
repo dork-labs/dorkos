@@ -90,3 +90,42 @@ describe('InputActionButton — the blocked send looks blocked (DOR-850)', () =>
     expect(button.className).not.toContain('opacity-');
   });
 });
+
+describe('InputActionButton — Stop already sent shows "Stopping…" and takes no more clicks (DOR-1300)', () => {
+  it('renders a live-region "Stopping…" status, not a clickable Stop, once the request is pending', () => {
+    render(<InputActionButton {...baseProps} isStreaming stopPending hasText={false} />);
+
+    // A `role="status"` region, matching the other progress states this
+    // button already draws (`dispatching`, `cancel-upload`) — not a button a
+    // second click could reach at all.
+    expect(screen.getByRole('status')).toHaveTextContent('Stopping…');
+    expect(screen.queryByRole('button', { name: 'Stop generating' })).not.toBeInTheDocument();
+  });
+
+  it('hides the dedicated red-square Stop once the click lands, so only one control ever claims the pending state', () => {
+    // Before the click: streaming + text draws the dedicated square Stop
+    // alongside the main Queue button.
+    const { rerender } = render(
+      <InputActionButton {...baseProps} isStreaming hasText stopPending={false} />
+    );
+    expect(screen.getByLabelText('Stop generating')).toBeInTheDocument();
+
+    // The click landed — `stopPending` flips. The dedicated square must be
+    // GONE (not merely disabled): re-gut the `!stopPending` guard on it and
+    // this assertion goes red while the "Stopping…" status assertion above
+    // still passes, so the two together are what pin the hide.
+    rerender(<InputActionButton {...baseProps} isStreaming hasText stopPending />);
+    expect(screen.queryByLabelText('Stop generating')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Stopping…');
+  });
+
+  it('a pending Stop beats Queue for the main button, even with text in the box', () => {
+    // hasText + isStreaming alone would resolve to 'queue' (Clock icon) — the
+    // pending Stop has to win the SAME slot, or a person mid-Stop sees an
+    // active Queue button and a vanished (not merely dimmed) Stop.
+    render(<InputActionButton {...baseProps} isStreaming hasText stopPending />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Stopping…');
+    expect(screen.queryByRole('button', { name: 'Queue message' })).not.toBeInTheDocument();
+  });
+});

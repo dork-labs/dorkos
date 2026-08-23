@@ -53,6 +53,18 @@ import type { ChatSessionOptions, ChatStatus } from './chat-types';
 /** Options for the trigger POST — the `Transport.postMessage` options parameter. */
 type PostMessageOptions = NonNullable<Parameters<Transport['postMessage']>[3]>;
 
+/**
+ * What a Stop concluded — the server's own verdict plus the queue it cleared.
+ * See {@link useSessionSubmit}'s `stop` for what `ok: false` does and does not
+ * mean (DOR-1300).
+ */
+export interface StopOutcome {
+  /** Whether the server reports the turn as actually stopped. */
+  ok: boolean;
+  /** Queued messages the server removed, head first — restore these to the composer. */
+  cancelled: QueuedMessage[];
+}
+
 interface UseSessionSubmitParams {
   sessionId: string | null;
   input: string;
@@ -632,19 +644,33 @@ export function useSessionSubmit({
 
   /**
    * Interrupt the active turn and empty its queue; `/events` reports the
-   * resulting status and the emptied queue. Resolves with the messages the
-   * server took off the queue, head first, so the caller can hand the words
-   * back to the composer — nothing typed is destroyed by a Stop. Resolves empty
-   * when there was no session, nothing queued, or the interrupt failed.
+   * resulting status and the emptied queue. Resolves with `cancelled`, the
+   * messages the server took off the queue, head first, so the caller can hand
+   * the words back to the composer — nothing typed is destroyed by a Stop.
+   *
+   * `ok` carries the server's own verdict rather than being swallowed: `true`
+   * means the turn was interrupted (or the process closed on the server's
+   * bounded escalation, `STOP_ACK_TIMEOUT_MS` — both count as "stopped" to the
+   * route). `false` covers two different server-side cases the client cannot
+   * tell apart from here — the turn had already finished on its own (the
+   * ordinary race, and by far the common case: `interruptQuery`'s escalation
+   * path returns `true` for nearly everything short of that), or the interrupt
+   * genuinely threw. A caller that wants to re-offer Stop on `ok: false` should
+   * still trust `isStreaming` as the primary signal — the turn's own settle —
+   * and treat `ok` as the tie-breaker for "is this worth pressing again."
+   * Resolves `{ ok: true, cancelled: [] }` when there was no session to stop,
+   * since nothing was owed to the server and there is nothing to retry.
    */
-  const stop = useCallback(async (): Promise<QueuedMessage[]> => {
-    if (!sessionId) return [];
+  const stop = useCallback(async (): Promise<StopOutcome> => {
+    if (!sessionId) return { ok: true, cancelled: [] };
     try {
-      const { cancelledQueued } = await transport.interruptSession(sessionId);
-      return cancelledQueued ?? [];
+      const { ok, cancelledQueued } = await transport.interruptSession(sessionId);
+      return { ok, cancelled: cancelledQueued ?? [] };
     } catch {
-      // Best-effort — the session may already be idle.
-      return [];
+      // The request itself never got an answer (network failure, timeout) —
+      // distinct from the server's own `ok: false`, but the same outcome for a
+      // caller deciding whether to let the person retry.
+      return { ok: false, cancelled: [] };
     }
   }, [sessionId, transport]);
 

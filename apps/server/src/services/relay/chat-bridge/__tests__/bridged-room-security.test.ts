@@ -573,18 +573,19 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       expect(globalBudget.tryReserve('room-b')).toEqual({ allowed: false, scope: 'global' });
     });
 
-    it('the cascade guard refuses past the depth ceiling and on re-entry of an author already in the cascade', () => {
+    it('the cascade guard refuses past the depth ceiling and once an author has had its turns in the cascade', () => {
       const target = '/agents/ana';
+      const limits = { maxAgentDepth: 3, maxTurnsPerAgentPerCascade: 2 };
       expect(
-        evaluateCascade(target, { root: 'r', depth: 3, authorsInCascade: [] }, { maxAgentDepth: 3 })
+        evaluateCascade(target, { root: 'r', depth: 3, turnsByAuthor: new Map() }, limits)
       ).toMatchObject({ allowed: false, reason: 'depth' });
       expect(
         evaluateCascade(
           target,
-          { root: 'r', depth: 0, authorsInCascade: [target] },
-          { maxAgentDepth: 3 }
+          { root: 'r', depth: 0, turnsByAuthor: new Map([[target, 2]]) },
+          limits
         )
-      ).toMatchObject({ allowed: false, reason: 'ancestry' });
+      ).toMatchObject({ allowed: false, reason: 'repeat' });
     });
 
     it('A5.9: the per-chat ingest ceiling refuses the message that would exceed it and writes no entry for it', async () => {

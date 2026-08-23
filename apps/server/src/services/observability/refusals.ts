@@ -59,8 +59,8 @@ export const REFUSAL_REASONS = {
   agent_gone: 'the agent that owned this identity is gone',
   /** The cascade guard stopped an exchange that had gone around enough times. */
   cascade_depth: 'the exchange reached its automatic-reply limit',
-  /** The cascade guard refused an agent already inside this exchange. */
-  cascade_ancestry: 'the agent was already in this exchange',
+  /** The cascade guard refused an agent that has already had its turns here. */
+  cascade_repeat: 'the agent has already replied enough times in this exchange',
   /** The room has spent its automatic turns for the window. */
   room_budget: 'the room ran out of automatic turns',
   /** The `(room, agent)` session row could not be written, so no turn started. */

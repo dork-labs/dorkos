@@ -1441,12 +1441,42 @@ export const UserConfigSchema = z.object({
   rooms: z
     .object({
       /**
+       * Whether automatic replies are limited at all.
+       *
+       * On is how it ships, and on is what every other number in this block
+       * assumes. Turning it off means agents may answer each other as long as
+       * they keep finding something to say: no reply limit, no per-agent limit,
+       * no hourly ceiling. **The Stop button becomes the only brake, and it is
+       * the only one** — nothing else in DorkOS will end a conversation two
+       * agents are happy to carry on having, and every turn of it costs money.
+       *
+       * Off is a deliberate, temporary posture — watching two agents work
+       * something out without the room stepping in. The numbers you set are
+       * kept while it is off, so turning it back on restores exactly what you
+       * had.
+       */
+      turnLimitsEnabled: z.boolean().default(true),
+      /**
        * How many replies in a row agents may send each other before the room
        * stops them (ADR 260726-170127). Your own messages always start the
        * count over, so a room the limit has quietened is one message away from
        * running again. `0` turns automatic replies off entirely.
        */
-      maxAgentDepth: z.number().int().min(0).max(10).default(3),
+      maxAgentDepth: z.number().int().min(0).max(100).default(30),
+      /**
+       * How many of those replies any ONE agent may run inside a single
+       * back-and-forth.
+       *
+       * The limit above counts the whole chain however many agents are in it;
+       * this one counts each agent separately, so a pair trading answers stops
+       * after ten each rather than running the chain out between them. Your own
+       * messages start both counts over.
+       *
+       * It counts MESSAGES the agent posted in that back-and-forth, not turns
+       * it took: an agent that posts progress notes while it works spends its
+       * allowance faster than one that answers once and stops.
+       */
+      maxTurnsPerAgentPerCascade: z.number().int().min(1).max(100).default(10),
       /**
        * The most automatic replies any ONE room may run in an hour, counted
        * whoever asked for them.
@@ -1462,7 +1492,7 @@ export const UserConfigSchema = z.object({
        * is the one that bounds the total. This one keeps a single busy room from
        * eating that whole allowance.
        */
-      maxAutomaticTurnsPerRoomPerHour: z.number().int().min(0).max(10_000).default(60),
+      maxAutomaticTurnsPerRoomPerHour: z.number().int().min(0).max(10_000).default(1000),
       /**
        * The most automatic replies this DorkOS may run in an hour, across every
        * room that exists.
@@ -1471,7 +1501,7 @@ export const UserConfigSchema = z.object({
        * care how many rooms or threads exist, or who the messages appeared to
        * come from. `0` stops automatic replies entirely.
        */
-      maxAutomaticTurnsTotalPerHour: z.number().int().min(0).max(100_000).default(240),
+      maxAutomaticTurnsTotalPerHour: z.number().int().min(0).max(100_000).default(5000),
       /**
        * How long a room waits for an agent's answer before it carries on
        * without it.
@@ -1546,9 +1576,11 @@ export const UserConfigSchema = z.object({
       collectMaxEntries: z.number().int().min(1).max(200).default(20),
     })
     .default(() => ({
-      maxAgentDepth: 3,
-      maxAutomaticTurnsPerRoomPerHour: 60,
-      maxAutomaticTurnsTotalPerHour: 240,
+      turnLimitsEnabled: true,
+      maxAgentDepth: 30,
+      maxTurnsPerAgentPerCascade: 10,
+      maxAutomaticTurnsPerRoomPerHour: 1000,
+      maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,

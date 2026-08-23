@@ -201,6 +201,11 @@ describe('Database Migrations', () => {
       // restart (spec persistent-session-runtime §3.1, migration 0064).
       'session_message_queue',
       'session_metadata',
+      // Words staged for a session that the runtime could not append to its own
+      // transcript, waiting to ride the next dispatch. Durable because the
+      // "Added context for the next reply" receipt already is (DOR-1324,
+      // migration 0073).
+      'session_staged_context',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).

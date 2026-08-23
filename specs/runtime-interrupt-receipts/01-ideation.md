@@ -1,5 +1,9 @@
 # Runtime Interrupt Receipts — Stop That Actually Stops
 
+> **Specified 2026-08-23:** [`02-specification.md`](02-specification.md) (DOR-1303) carries
+> the frozen design — the five-value receipt, the durable `turn_stopped` event, the reload
+> marker, and the per-runtime mapping.
+
 ## Problem Statement
 
 Today "Stop" is fire-and-forget: DorkOS asks the runtime to interrupt and hopes.
