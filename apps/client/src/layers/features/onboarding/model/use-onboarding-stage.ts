@@ -1,7 +1,7 @@
 /**
  * Sync the onboarding overlay's active stage to a URL search param.
  *
- * The overlay is not a route, but its three entry screens should still respond
+ * The overlay is not a route, but its four entry screens should still respond
  * to the browser's back/forward and survive a refresh. This hook derives the
  * current stage from `?onboarding=` and returns a navigator that walks it via
  * real history entries (so back/forward move between stages). On mount it
