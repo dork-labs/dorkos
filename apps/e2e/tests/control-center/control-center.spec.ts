@@ -121,5 +121,23 @@ test.describe('Control Center @smoke', () => {
     // The row opens the Tasks surface — asserted on the navigation target, the
     // one thing that is true regardless of chrome or geometry.
     await expect(page).toHaveURL(/\/tasks/);
+
+    // And the flyout closed on the way out, so the destination is actually
+    // reachable. The flyout is a MODAL popover: left open, it would hold the page
+    // behind `body { pointer-events: none }` and land us on an inert screen — the
+    // whole point of the ledger is to REACH the surface, not to look at it.
+    await expect(controlCenter.body).toBeHidden();
+
+    // `/tasks` is a route (a page, not a modal), so the modal lock must be gone.
+    const bodyPointerEvents = await page.evaluate(
+      () => getComputedStyle(document.body).pointerEvents
+    );
+    expect(bodyPointerEvents).not.toBe('none');
+
+    // Proof the page is genuinely interactive, using chrome we own: the glyph
+    // takes a real click and reopens the flyout. A stale flyout overlay left on
+    // top would obscure the glyph and this click would time out.
+    await controlCenter.trigger.click();
+    await expect(controlCenter.body).toBeVisible();
   });
 });

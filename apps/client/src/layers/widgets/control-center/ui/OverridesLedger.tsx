@@ -40,7 +40,7 @@ export function OverridesLedger() {
         <p className="text-muted-foreground px-1 text-xs">Checking…</p>
       ) : isEmpty ? (
         <p data-testid="overrides-ledger-empty" className="text-muted-foreground px-1 text-xs">
-          Everything follows your dial. Nothing runs at a different power.
+          Everything follows your dial. A conversation open in another project isn’t counted here.
         </p>
       ) : (
         <ul className="flex flex-col gap-0.5">

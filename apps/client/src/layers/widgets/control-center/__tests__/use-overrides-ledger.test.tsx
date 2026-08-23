@@ -19,6 +19,7 @@ const useBindings = vi.fn();
 const navigate = vi.fn();
 const openSettings = vi.fn();
 const openConnections = vi.fn();
+const setControlCenterOpen = vi.fn();
 
 vi.mock('@/layers/entities/config', () => ({ useConfig: () => useConfig() }));
 vi.mock('@/layers/entities/runtime', () => ({
@@ -35,6 +36,8 @@ vi.mock('@/layers/shared/model', () => ({
   useSafeNavigate: () => navigate,
   useOpenConnections: () => openConnections,
   useSettingsDeepLink: () => ({ open: openSettings }),
+  useAppStore: (selector: (s: { setControlCenterOpen: typeof setControlCenterOpen }) => unknown) =>
+    selector({ setControlCenterOpen }),
 }));
 
 import { useOverridesLedger } from '../model/use-overrides-ledger';
@@ -149,9 +152,27 @@ describe('useOverridesLedger', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });
     result.current.rows.find((r) => r.kind === 'binding')?.onOpen?.();
     expect(openConnections).toHaveBeenCalledWith('messaging');
+
+    // Every deep link closes the modal flyout BEFORE it navigates — a link that
+    // left it open lands the person on a page still locked behind
+    // `body { pointer-events: none }` (or stacks a second modal over it).
+    expect(setControlCenterOpen).toHaveBeenCalledTimes(4);
+    expect(setControlCenterOpen).toHaveBeenCalledWith(false);
   });
 
-  it('does NOT list a session, task or binding that sits at the global stop', () => {
+  it('does NOT list a runtime, session, task or binding that sits at the global stop', () => {
+    // A per-runtime override EQUAL to the global stop is not an exception. Global
+    // is `ask` (the seeded default), so a runtime override at `ask` must produce
+    // no row — the same rule the session/task/binding branches apply.
+    useConfig.mockReturnValue({
+      data: {
+        executionDefaults: {
+          runtime: 'claude-code',
+          trustStop: 'ask',
+          perRuntime: [{ runtime: 'codex', trustStop: 'ask' }],
+        },
+      },
+    });
     useSessions.mockReturnValue({
       sessions: [{ id: 's1', title: 'Quiet', runtime: 'claude-code', permissionMode: 'default' }],
     });

@@ -12,6 +12,12 @@ import { OpenMeshSwitch } from '@/layers/entities/mesh';
 /** Lowest and highest concurrent-run counts the scheduler schema accepts. */
 const MIN_CONCURRENCY = 1;
 const MAX_CONCURRENCY = 10;
+/**
+ * The scheduler's shipped default (`scheduler.maxConcurrentRuns`), used as the
+ * pre-load fallback so the stepper shows the real default — not `1` — in the
+ * frame before config resolves.
+ */
+const DEFAULT_CONCURRENCY = 4;
 
 /**
  * The Control Center's power switches, all writing through hooks that already
@@ -44,7 +50,7 @@ export function ControlCenterSwitches() {
   // route's `claudeCode` block, which exposes it now that its Experiments switch
   // is gone.
   const persistentSession = config?.claudeCode?.persistentSession ?? true;
-  const maxConcurrentRuns = config?.scheduler?.maxConcurrentRuns ?? MIN_CONCURRENCY;
+  const maxConcurrentRuns = config?.scheduler?.maxConcurrentRuns ?? DEFAULT_CONCURRENCY;
 
   return (
     <FieldCard>

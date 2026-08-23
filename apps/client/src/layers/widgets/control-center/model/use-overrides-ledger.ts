@@ -27,7 +27,12 @@
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { permissionModeLabel } from '@/layers/shared/lib';
 import { stopLabel } from '@/layers/shared/ui';
-import { useSafeNavigate, useOpenConnections, useSettingsDeepLink } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useSafeNavigate,
+  useOpenConnections,
+  useSettingsDeepLink,
+} from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
 import { useRuntimeCapabilities, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
@@ -86,6 +91,19 @@ export function useOverridesLedger(): OverridesLedger {
   const navigate = useSafeNavigate();
   const { open: openSettings } = useSettingsDeepLink();
   const openConnections = useOpenConnections();
+  const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
+
+  // Close the flyout BEFORE navigating or opening another surface. The flyout is
+  // a modal popover — it holds `body { pointer-events: none }` while open — so a
+  // deep link that left it open would land the person on an inert page (or stack
+  // a second modal over it). The ledger's whole purpose is to REACH the surface;
+  // leaving the lock on defeats it.
+  const openAndClose =
+    (go: () => void): (() => void) =>
+    () => {
+      setControlCenterOpen(false);
+      go();
+    };
 
   const isResolving = capabilityMap === undefined || config === undefined;
 
@@ -101,19 +119,29 @@ export function useOverridesLedger(): OverridesLedger {
   const rows: OverrideRow[] = [];
 
   if (!isResolving) {
-    // 1. Runtimes with their own default stop.
+    // 1. Runtimes whose own default stop diverges from the global stop. A
+    //    per-runtime override set to the SAME stop as the global default is not
+    //    an exception, so it must not be listed as one — the same divergence
+    //    rule the session/task/binding branches below apply.
     for (const entry of defaults?.perRuntime ?? []) {
-      if (entry.trustStop === null) continue;
+      if (entry.trustStop === null || entry.trustStop === globalStop) continue;
       rows.push({
         key: `runtime:${entry.runtime}`,
         kind: 'runtime',
         name: getRuntimeDescriptor(entry.runtime).label,
         detail: stopLabel(entry.trustStop),
-        onOpen: navigate ? () => openSettings('runtimes') : null,
+        onOpen: navigate ? openAndClose(() => openSettings('runtimes')) : null,
       });
     }
 
     // 2. Live sessions bound to a different stop than the global one.
+    //
+    // A session at a mode its runtime does not declare (`stop` is undefined) is
+    // skipped, not listed: with no descriptor its position on the dial is
+    // unknown, so its divergence cannot be judged here. The same holds for the
+    // task and binding branches below. This is a rare case — a mode a runtime
+    // dropped — and the honest fix, if it ever matters, is an explicit "unknown
+    // mode" row in a follow-up, not a guessed stop.
     for (const session of sessions) {
       const modes = capabilityMap?.capabilities[session.runtime]?.permissionModes;
       const descriptor = modes?.values.find((m) => m.id === session.permissionMode);
@@ -125,7 +153,9 @@ export function useOverridesLedger(): OverridesLedger {
         name: session.title || 'Untitled session',
         detail: descriptor?.label ?? permissionModeLabel(session.permissionMode),
         onOpen: navigate
-          ? () => navigate({ to: '/session', search: { session: session.id, dir: session.cwd } })
+          ? openAndClose(() =>
+              navigate({ to: '/session', search: { session: session.id, dir: session.cwd } })
+            )
           : null,
       });
     }
@@ -144,7 +174,7 @@ export function useOverridesLedger(): OverridesLedger {
         kind: 'task',
         name: task.displayName ?? task.name,
         detail: descriptor?.label ?? permissionModeLabel(task.permissionMode),
-        onOpen: navigate ? () => navigate({ to: '/tasks' }) : null,
+        onOpen: navigate ? openAndClose(() => navigate({ to: '/tasks' })) : null,
       });
     }
 
@@ -158,7 +188,7 @@ export function useOverridesLedger(): OverridesLedger {
         kind: 'binding',
         name: binding.label || binding.adapterId,
         detail: descriptor?.label ?? permissionModeLabel(binding.permissionMode),
-        onOpen: navigate ? () => openConnections('messaging') : null,
+        onOpen: navigate ? openAndClose(() => openConnections('messaging')) : null,
       });
     }
   }

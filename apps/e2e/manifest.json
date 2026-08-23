@@ -1042,25 +1042,16 @@
       "specFile": "tests/control-center/control-center.spec.ts",
       "feature": "control-center",
       "description": "the ⚡ glyph opens the flyout with sane focus, a power switch writes its config patch, an overrides row deep-links to its owning surface, the ⚡ glyph opens the flyout with sane focus, a power switch writes its config patch, an overrides row deep-links to its owning surface, the ⚡ glyph opens the flyout with sane focus, a power switch writes its config patch, an overrides row deep-links to its owning surface",
-      "lastRun": "2026-08-23T09:11:07.370Z",
+      "lastRun": "2026-08-23T09:57:37.298Z",
       "lastStatus": "passed",
-      "runCount": 3,
-      "passCount": 1,
+      "runCount": 4,
+      "passCount": 2,
       "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-08T23-57-51",
-      "timestamp": "2026-08-08T23:57:51.332Z",
-      "total": 8,
-      "passed": 7,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 29034
-    },
     {
       "id": "2026-08-08T23-59-04",
       "timestamp": "2026-08-08T23:59:04.702Z",
@@ -1951,6 +1942,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 30341
+    },
+    {
+      "id": "2026-08-23T09-57-37",
+      "timestamp": "2026-08-23T09:57:37.298Z",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 32117
     }
   ]
 }
