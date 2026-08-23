@@ -22,7 +22,7 @@
  */
 import type { RoomEntryBody, RoomWaitingKind } from '@dorkos/shared/room-schemas';
 import { MENTION_PATTERN } from '../mentions.js';
-import type { BudgetRefusalScope } from '../turn-budget.js';
+import type { BudgetRefusalScope } from '../limits/turn-budget.js';
 
 /**
  * The durable `notice` a cascade refusal writes into the room.

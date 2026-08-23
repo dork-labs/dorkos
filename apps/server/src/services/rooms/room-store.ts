@@ -154,6 +154,15 @@ export class RoomStore {
       fallbackSeatAuthorId: null,
       archived: false,
       ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
+      // Inheriting, always: a room is created with no opinion of its own about
+      // automatic-reply limits, so it follows Settings until somebody says
+      // otherwise (DOR-1429). Written explicitly rather than left to the column
+      // default because this literal is also what `toRoom` hands back, and a
+      // created room must read exactly as a re-fetched one does.
+      turnLimitsEnabled: null,
+      maxAgentDepth: null,
+      maxTurnsPerAgentPerCascade: null,
+      maxAutoTurnsPerHour: null,
       lastActivityAt: room.createdAt,
     };
     this.db.transaction(
@@ -377,13 +386,29 @@ export class RoomStore {
   /**
    * Patch a room's mutable fields.
    *
+   * **An omitted field and a `null` one are different instructions**, and the
+   * four turn-limit overrides are where that matters (DOR-1429): omitted leaves
+   * the stored override alone, `null` clears it back to inheriting Settings.
+   * Drizzle's `set` writes exactly the keys present, so both work without a
+   * sentinel — which is why the caller must strip absent keys rather than
+   * spreading `undefined`s.
+   *
    * @param id - The room id.
    * @param patch - Fields to change; omitted fields are left alone.
    * @returns The updated room, or `null` when no such room exists.
    */
   updateRoom(
     id: string,
-    patch: { title?: string; slug?: string; topic?: string | null; archived?: boolean }
+    patch: {
+      title?: string;
+      slug?: string;
+      topic?: string | null;
+      archived?: boolean;
+      turnLimitsEnabled?: boolean | null;
+      maxAgentDepth?: number | null;
+      maxTurnsPerAgentPerCascade?: number | null;
+      maxAutoTurnsPerHour?: number | null;
+    }
   ): Room | null {
     if (Object.keys(patch).length > 0) {
       this.db.update(rooms).set(patch).where(eq(rooms.id, id)).run();

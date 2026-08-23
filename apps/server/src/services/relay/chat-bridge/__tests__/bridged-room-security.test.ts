@@ -59,7 +59,7 @@ import {
   type RoomHarness,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
-import { RoomTurnBudget } from '../../../rooms/turn-budget.js';
+import { RoomTurnBudget } from '../../../rooms/limits/turn-budget.js';
 import { evaluateCascade } from '../../../rooms/cascade-guard.js';
 import {
   isServerOnlyPrincipal,
@@ -562,7 +562,11 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
         limits: { perRoom: () => 1, global: () => 100 },
       });
       expect(perRoomBudget.tryReserve('room-1').allowed).toBe(true);
-      expect(perRoomBudget.tryReserve('room-1')).toEqual({ allowed: false, scope: 'room' });
+      expect(perRoomBudget.tryReserve('room-1')).toEqual({
+        allowed: false,
+        scope: 'room',
+        counted: false,
+      });
 
       const globalBudget = new RoomTurnBudget({
         db: createTestDb(),
@@ -570,7 +574,11 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       });
       expect(globalBudget.tryReserve('room-a').allowed).toBe(true);
       // A different room — only the GLOBAL cap can be what refuses it.
-      expect(globalBudget.tryReserve('room-b')).toEqual({ allowed: false, scope: 'global' });
+      expect(globalBudget.tryReserve('room-b')).toEqual({
+        allowed: false,
+        scope: 'global',
+        counted: false,
+      });
     });
 
     it('the cascade guard refuses past the depth ceiling and once an author has had its turns in the cascade', () => {

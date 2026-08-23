@@ -28,7 +28,7 @@
  * is bounding how often an agent may speak first anywhere in that scope.
  *
  * Everything else an agent does in a room is bounded by something: a reply
- * spends a turn and turns are counted twice over (`rooms/turn-budget.ts`), a
+ * spends a turn and turns are counted twice over (`rooms/limits/turn-budget.ts`), a
  * reaction spends an hourly allowance ({@link ReactionBudget}). A note spent
  * nothing. The relay's own per-sender rate limit is not this bound either: its
  * generous 2000-per-minute override keys on the `agent:` prefix, while a

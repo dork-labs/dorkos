@@ -43,6 +43,29 @@ export const MIN_TRUST_WINDOW_MINUTES = 5;
  */
 export const MAX_TRUST_WINDOW_MINUTES = 1440;
 
+/**
+ * The bounds every room turn limit must satisfy, wherever it is set.
+ *
+ * **One definition because there are two writers.** These numbers can be set
+ * install-wide in `rooms.*` below, and per room through
+ * `PATCH /api/rooms/:id` (DOR-1429), and a per-room override that accepted a
+ * value the install-wide field refuses would be a way round the ceiling by the
+ * back door. Two copies of a bound is one copy too many: this object is what
+ * both schemas build their `.min()`/`.max()` from, so the two cannot drift.
+ *
+ * `rooms.maxAutomaticTurnsTotalPerHour` is deliberately absent. It bounds the
+ * whole install rather than a room, has no per-room meaning and no per-room
+ * column, so it has exactly one writer and needs no shared bound.
+ */
+export const ROOM_TURN_LIMIT_BOUNDS = {
+  /** How many automatic replies one chain may run. */
+  maxAgentDepth: { min: 0, max: 100 },
+  /** How many of those replies any ONE agent may run. */
+  maxTurnsPerAgentPerCascade: { min: 1, max: 100 },
+  /** How many automatic replies one room may run in an hour. */
+  maxAutoTurnsPerHour: { min: 0, max: 10_000 },
+} as const;
+
 /** Sensitive fields that trigger a warning when set via CLI or API */
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
@@ -1462,7 +1485,12 @@ export const UserConfigSchema = z.object({
        * count over, so a room the limit has quietened is one message away from
        * running again. `0` turns automatic replies off entirely.
        */
-      maxAgentDepth: z.number().int().min(0).max(100).default(30),
+      maxAgentDepth: z
+        .number()
+        .int()
+        .min(ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.min)
+        .max(ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.max)
+        .default(30),
       /**
        * How many of those replies any ONE agent may run inside a single
        * back-and-forth.
@@ -1476,7 +1504,12 @@ export const UserConfigSchema = z.object({
        * it took: an agent that posts progress notes while it works spends its
        * allowance faster than one that answers once and stops.
        */
-      maxTurnsPerAgentPerCascade: z.number().int().min(1).max(100).default(10),
+      maxTurnsPerAgentPerCascade: z
+        .number()
+        .int()
+        .min(ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min)
+        .max(ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.max)
+        .default(10),
       /**
        * The most automatic replies any ONE room may run in an hour, counted
        * whoever asked for them.
@@ -1492,7 +1525,12 @@ export const UserConfigSchema = z.object({
        * is the one that bounds the total. This one keeps a single busy room from
        * eating that whole allowance.
        */
-      maxAutomaticTurnsPerRoomPerHour: z.number().int().min(0).max(10_000).default(1000),
+      maxAutomaticTurnsPerRoomPerHour: z
+        .number()
+        .int()
+        .min(ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.min)
+        .max(ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.max)
+        .default(1000),
       /**
        * The most automatic replies this DorkOS may run in an hour, across every
        * room that exists.
