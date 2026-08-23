@@ -27,6 +27,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   type ReactNode,
@@ -38,7 +39,7 @@ import type { PendingPost } from '@/layers/entities/room';
 import type { ConversationRow, ConversationRowRenderer } from '../lib/row-kinds';
 import { useConversation } from '../model/conversation-context';
 import { useFeedEdgeFocus } from '../model/use-feed-edge-focus';
-import { useTimelineLanding } from '../model/use-timeline-landing';
+import { useTimelineLanding, type TimelineLanding } from '../model/use-timeline-landing';
 import { useTimelineVirtualizer } from '../model/use-timeline-virtualizer';
 import { useTimelineScroll } from '../model/use-timeline-scroll';
 import { PendingRow } from './rows/PendingRow';
@@ -248,7 +249,7 @@ export function ConversationTimeline({
 
   // One element, two consumers: the hook reads the geometry off it, and so does
   // the thumb.
-  const { scrollRef: attachScroller } = scroll;
+  const { scrollRef: attachScroller, atBottomRef } = scroll;
   const setScroller = useCallback(
     (el: HTMLDivElement | null) => {
       scrollerRef.current = el;
@@ -257,7 +258,22 @@ export function ConversationTimeline({
     [attachScroller]
   );
 
-  const virtualizer = useTimelineVirtualizer(rows, scrollerRef);
+  // Re-read the reader's remembered top row whenever the virtualizer SETTLES,
+  // not only when a scroll event fires — see the `onChange` note in
+  // `useTimelineVirtualizer`. Both values are read through refs so this callback
+  // can stay stable AND be handed to the virtualizer before the landing (which
+  // is what produces `reportTopRow`) has run this render.
+  const reportTopRowRef = useRef<TimelineLanding['reportTopRow'] | null>(null);
+  const landedRef = useRef(false);
+  const captureSettledTopRow = useCallback(() => {
+    // Nothing to remember until the landing has placed the reader: before that
+    // the scroller sits at offset 0, and a capture here would overwrite the very
+    // row the landing is about to restore to.
+    if (!landedRef.current) return;
+    reportTopRowRef.current?.(scrollerRef.current, atBottomRef.current);
+  }, [atBottomRef]);
+
+  const virtualizer = useTimelineVirtualizer(rows, scrollerRef, captureSettledTopRow);
 
   // Where this conversation opens, and what it remembers — its own hook,
   // because the decision has traps (wait for geometry, answer in rows not
@@ -272,7 +288,14 @@ export function ConversationTimeline({
     ...(onTopRow === undefined ? {} : { onTopRow }),
   });
 
-  const { atBottomRef } = scroll;
+  // Keep the settle callback's refs current. Written in a layout effect rather
+  // than during render (a render-phase ref write is what `react-hooks/refs`
+  // forbids), and read only from the async `onChange` — never during render.
+  useLayoutEffect(() => {
+    reportTopRowRef.current = reportTopRow;
+    landedRef.current = landed;
+  });
+
   const handleScroll = useCallback(() => {
     scroll.onScroll();
     // Read off the ref rather than the state, because this runs inside the
