@@ -23,6 +23,7 @@
 import type { McpServerStatus, Query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
+import { LAUNCH_PROBE_ACK_TIMEOUT_MS, requestWithinBound } from '../sessions/bounded-control.js';
 import { toMcpAppConnection, type MessageSenderOpts } from './message-sender-shared.js';
 
 /** The slice of the SDK `Query` these probes use. */
@@ -36,14 +37,26 @@ type ProbeQuery = Pick<
  * the runtime cache. Never awaited and never throws: a probe that fails costs
  * the cache one refresh, never the turn.
  *
+ * Not being awaited is not the same as being free (DOR-1301). A probe sent to a
+ * subprocess that can no longer hear DorkOS is dropped in silence against a
+ * promise nothing will settle, and since nobody is waiting, nobody notices: the
+ * promise chain built here, and the callbacks it closes over, simply stay alive
+ * for as long as the server does, once per probe per launch. (What the SDK
+ * retains on its own side for the unanswered request is its business and is not
+ * what this releases.) Each probe is bounded for that reason alone — the bound
+ * cannot rescue an answer nobody is waiting for, it just lets the wait end.
+ *
  * @param agentQuery - The live query just returned by `query()`
  * @param opts - The runtime's cache callbacks
  */
 export function fireLaunchProbes(agentQuery: ProbeQuery, opts: MessageSenderOpts): void {
   // Non-blocking model fetch on first invocation
   if (opts.onModelsReceived) {
-    agentQuery
-      .supportedModels()
+    requestWithinBound(
+      () => agentQuery.supportedModels(),
+      LAUNCH_PROBE_ACK_TIMEOUT_MS,
+      'supportedModels'
+    )
       // Whole objects, never a field pick — see the SdkReportedModel doc for
       // the capability-starvation incident a pick here caused.
       .then((models) => {
@@ -56,8 +69,11 @@ export function fireLaunchProbes(agentQuery: ProbeQuery, opts: MessageSenderOpts
 
   // Non-blocking MCP status snapshot — fires every query, overwrites cache
   if (opts.onMcpStatusReceived || opts.onMcpServerConfigsReceived) {
-    agentQuery
-      .mcpServerStatus()
+    requestWithinBound(
+      () => agentQuery.mcpServerStatus(),
+      LAUNCH_PROBE_ACK_TIMEOUT_MS,
+      'mcpServerStatus'
+    )
       .then((statuses) => {
         const external = statuses.filter((s) => s.name !== 'dorkos');
         opts.onMcpStatusReceived?.(
@@ -90,8 +106,11 @@ export function fireLaunchProbes(agentQuery: ProbeQuery, opts: MessageSenderOpts
 
   // Non-blocking command discovery — fires on first query, caches on runtime
   if (opts.onCommandsReceived) {
-    agentQuery
-      .supportedCommands()
+    requestWithinBound(
+      () => agentQuery.supportedCommands(),
+      LAUNCH_PROBE_ACK_TIMEOUT_MS,
+      'supportedCommands'
+    )
       .then((commands) => {
         opts.onCommandsReceived!(
           commands.map((c) => ({
@@ -108,10 +127,10 @@ export function fireLaunchProbes(agentQuery: ProbeQuery, opts: MessageSenderOpts
   }
 
   // Non-blocking subagent discovery — fires on first query, caches on runtime
-  if (opts.onSubagentsReceived) {
-    agentQuery
-      .supportedAgents?.()
-      ?.then((agents) => {
+  if (opts.onSubagentsReceived && agentQuery.supportedAgents) {
+    const supportedAgents = agentQuery.supportedAgents.bind(agentQuery);
+    requestWithinBound(() => supportedAgents(), LAUNCH_PROBE_ACK_TIMEOUT_MS, 'supportedAgents')
+      .then((agents) => {
         opts.onSubagentsReceived!(
           agents.map((a) => ({
             name: a.name,

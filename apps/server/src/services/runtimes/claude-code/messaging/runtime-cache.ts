@@ -22,6 +22,11 @@ import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { SdkCommandEntry, MessageSenderOpts, SdkReportedModel } from './message-sender.js';
 import type { CommandRegistryService } from '../tooling/command-registry.js';
+import {
+  LAUNCH_PROBE_ACK_TIMEOUT_MS,
+  PLUGIN_RELOAD_ACK_TIMEOUT_MS,
+  requestWithinBound,
+} from '../sessions/bounded-control.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
@@ -211,6 +216,12 @@ export class RuntimeCache {
    * initializes without sending a user message. Fetches models, writes to disk,
    * then closes the query. Safe to call multiple times — deduplicates via a
    * shared promise.
+   *
+   * The probe is bounded (DOR-1301) and the throwaway query is closed in a
+   * `finally`. Both matter for the same reason: an unanswered `supportedModels`
+   * used to pin `warmupPromise` for the life of the server, so every later
+   * warm-up deduplicated onto a promise that would never settle, and the
+   * subprocess it started was never closed either.
    */
   async warmup(cwd: string): Promise<void> {
     if (this.warmupPromise) return this.warmupPromise;
@@ -227,14 +238,20 @@ export class RuntimeCache {
           },
         });
 
-        const models = await agentQuery.supportedModels();
-        this.cachedModels = models.map(mapSdkModelToModelOption);
-        this.writeToDisk();
-        logger.info('[RuntimeCache] warm-up populated model cache', {
-          count: this.cachedModels.length,
-        });
-
-        agentQuery.close();
+        try {
+          const models = await requestWithinBound(
+            () => agentQuery.supportedModels(),
+            LAUNCH_PROBE_ACK_TIMEOUT_MS,
+            'supportedModels'
+          );
+          this.cachedModels = models.map(mapSdkModelToModelOption);
+          this.writeToDisk();
+          logger.info('[RuntimeCache] warm-up populated model cache', {
+            count: this.cachedModels.length,
+          });
+        } finally {
+          agentQuery.close();
+        }
       } catch (err) {
         logger.warn('[RuntimeCache] warm-up failed', { err });
       } finally {
@@ -566,16 +583,29 @@ export class RuntimeCache {
   /**
    * Reload plugins from a query object and update all caches.
    *
+   * Bounded (DOR-1301). `queryObj` is often `session.lastQuery` — a subprocess
+   * kept alive past its turn, which is exactly the query whose stdin DorkOS has
+   * already ended. The SDK drops the write to it in silence and hands back a
+   * promise nothing settles, so unbounded this hung the reload-plugins route and
+   * left the marketplace's post-install refresh waiting for ever on a process
+   * that could not hear it. A request that outlives the bound throws, into the
+   * best-effort catch every caller already has.
+   *
    * @param queryObj - Active or last-completed SDK query
    * @param sessionCwd - Session working directory (cache key for MCP status)
    * @param defaultCwd - Fallback working directory
+   * @throws ControlRequestTimeoutError When the CLI does not answer in time.
    */
   async reloadPlugins(
     queryObj: Query,
     sessionCwd: string | undefined,
     defaultCwd: string
   ): Promise<ReloadPluginsResult> {
-    const result = await queryObj.reloadPlugins();
+    const result = await requestWithinBound(
+      () => queryObj.reloadPlugins(),
+      PLUGIN_RELOAD_ACK_TIMEOUT_MS,
+      'reloadPlugins'
+    );
 
     const cwd = sessionCwd ?? defaultCwd;
     this.cachedSdkCommands.set(

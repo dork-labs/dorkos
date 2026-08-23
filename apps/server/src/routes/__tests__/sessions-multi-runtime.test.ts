@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { collectDurableEvents } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { ControlRequestTimeoutError } from '../../services/runtimes/claude-code/sessions/bounded-control.js';
 
 // Mock boundary before importing app (same pattern as other route tests)
 vi.mock('../../lib/boundary.js', () => ({
@@ -695,6 +696,22 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('NO_ACTIVE_QUERY');
+    });
+
+    it('POST /:id/reload-plugins answers 504, not "send a message first", when the agent never confirms (DOR-1301)', async () => {
+      // The two failures are different facts. `null` means there was no query to
+      // ask; a timeout means there WAS one and it did not answer inside the
+      // bound. Answering the second with the first told the operator to send a
+      // message they had already sent.
+      vi.spyOn(testMode, 'reloadPlugins').mockRejectedValueOnce(
+        new ControlRequestTimeoutError('reloadPlugins', 8_000)
+      );
+
+      const res = await request(app).post(`/api/sessions/${TEST_MODE_SESSION}/reload-plugins`);
+
+      expect(res.status).toBe(504);
+      expect(res.body.code).toBe('RELOAD_TIMEOUT');
+      expect(res.body.error).toContain('may still apply');
     });
 
     it('POST /:id/messages + GET /:id/events deliver a test-mode turn over the durable path (task #15)', async () => {

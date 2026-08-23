@@ -1553,6 +1553,66 @@ describe('ComposerInput', () => {
     });
   });
 
+  describe('clicking Stop rescues focus before the button vanishes (DOR-1300 S5)', () => {
+    // The dedicated red-square Stop button is REMOVED (not merely disabled)
+    // the instant the host flips `stopPending` in response to `onStop` — see
+    // InputActionButton. An element that unmounts outright drops focus to
+    // `<body>` with nothing to rescue it, and by the time any effect could
+    // react to the state change the removal (and the focus loss) has already
+    // happened — a `useEffect` keyed on `stopPending` was tried and reliably
+    // observed `document.activeElement === document.body`, never the
+    // just-removed button, because React's DOM mutation (and the browser's
+    // own focus-drop) both happen before any effect runs. The fix moves
+    // focus to the field INSIDE the click itself, before the host's `onStop`
+    // has any chance to trigger the removal.
+    it('moves focus to the field the moment the dedicated Stop button is clicked', () => {
+      const onStop = vi.fn();
+      render(
+        <ComposerInput
+          {...defaultProps}
+          value="stop the build"
+          isStreaming
+          stopPending={false}
+          onStop={onStop}
+        />
+      );
+      const stopButton = screen.getByLabelText('Stop generating');
+      // Move focus onto the button first — mirroring what a real click does
+      // in a browser (jsdom's `fireEvent.click` does not itself move focus,
+      // so without this the assertion below would pass whether or not the
+      // fix exists: the field is already focused from mount and never stops
+      // being so).
+      act(() => stopButton.focus());
+      expect(document.activeElement).toBe(stopButton);
+
+      act(() => fireEvent.click(stopButton));
+
+      expect(document.activeElement).toBe(screen.getByRole('combobox'));
+      expect(onStop).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not touch focus on the ordinary Escape-triggered stop, which fires from the textarea itself', () => {
+      // Escape's stop path is NOT wrapped: the textarea never disappears, so
+      // rescuing focus there would be pointless — and forcing the caret to
+      // the end would be an actual regression for someone stopping mid-edit
+      // partway through the text.
+      const onStop = vi.fn();
+      render(
+        <ComposerInput {...defaultProps} value="stop partway through" isStreaming onStop={onStop} />
+      );
+      const field = screen.getByRole('combobox') as HTMLTextAreaElement;
+      act(() => field.focus());
+      field.setSelectionRange(5, 5);
+
+      fireEvent.keyDown(field, { key: 'Escape' });
+
+      expect(onStop).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(field);
+      // The caret is untouched — still at position 5, not forced to the end.
+      expect(field.selectionStart).toBe(5);
+    });
+  });
+
   describe('focusUnlessTouch handle', () => {
     // The mount guard only ever protected the composer's own autofocus. Every
     // host that focused THROUGH the handle — ChatPanel on session switch, on

@@ -107,8 +107,15 @@ export function createPumpLauncher(
 export type ProcessReuse =
   /** Nothing: the process was launched with these values. */
   | { action: 'ride' }
-  /** Move the live process onto new values first — awaited, never fired blind. */
-  | { action: 'adjust'; apply: (query: PumpControlQuery) => Promise<void>; to: LaunchFingerprint }
+  /**
+   * Move the live process onto new values first — awaited, never fired blind.
+   *
+   * `apply` ANSWERS with the fingerprint to store for the process, because only
+   * the call knows it: a setter that is refused or goes unanswered inside its
+   * bound leaves its pin where it was (DOR-1301), and storing what the dispatch
+   * wanted would leave DorkOS believing a stale process is current.
+   */
+  | { action: 'adjust'; apply: (query: PumpControlQuery) => Promise<LaunchFingerprint> }
   /** Replace the process: a pin the SDK cannot set live has moved. */
   | { action: 'replace'; reason: string };
 
@@ -136,7 +143,6 @@ export function decideProcessReuse(
   if (decision.liveChanges.length === 0) return { action: 'ride' };
   return {
     action: 'adjust',
-    apply: (control) => applyLiveChanges(control, decision),
-    to: decision.to,
+    apply: async (control) => (await applyLiveChanges(control, decision)).fingerprint,
   };
 }
