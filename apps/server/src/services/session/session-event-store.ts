@@ -72,20 +72,6 @@ export interface UnresolvedInteractionRow {
   startedAt: number;
 }
 
-/**
- * The key one ask is tracked under while unresolved asks are being collected.
- *
- * Both ids, because an interaction id is a tool-call id — unique within its
- * session and nothing more. Keyed by the interaction alone, one session's answer
- * would close a different session's ask.
- *
- * @param sessionId - The session the ask was raised in.
- * @param interactionId - The interaction id.
- */
-function askKey(sessionId: string, interactionId: string): string {
-  return sessionId + '|' + interactionId;
-}
-
 /** The prompt event types, mapped to the interaction kind each one raises. */
 const ASK_KIND_BY_EVENT_TYPE: Readonly<
   Record<BlockingInteractionEventType, PendingInteractionDTO['type']>
@@ -232,21 +218,40 @@ export class SessionEventStore {
   }
 
   /**
-   * Every ask that was raised and never resolved, across every session — the
-   * asks a process death left with nothing to answer them (DOR-1439).
+   * Every ask whose TURN NEVER ENDED, across every session — the asks a process
+   * death left with nothing to answer them (DOR-1439).
    *
-   * "Never resolved" is decided HERE rather than by the caller, and it is a
-   * whole-table question: a prompt row and its resolution row are both durable
-   * the instant they are ingested
-   * ({@link EAGERLY_RECORDED_EVENT_TYPES}), so an ask with no matching
-   * `interaction_resolved` under the same session id is one that was still
-   * parked when the writing process stopped. The four `LIKE`s are one scan of a
-   * table already bounded at {@link EVENT_LOG_MAX_EVENTS} rows per session, run
-   * exactly once at boot.
+   * ## Why the bound is the turn, not the missing resolution
+   *
+   * "A prompt row with no resolution row" is the tempting definition and it is
+   * wrong on the upgrade path. `'history'` sessions (codex, opencode) have
+   * ALWAYS persisted their `approval_required` rows, because that mode flushes
+   * a whole turn — but a resolution arriving AFTER its own `turn_end` was
+   * never persisted at all, and a late resolution is a state the projector
+   * models on purpose (`event-log-history.ts`, `applyLateReceipts`). So on the
+   * first boot after this ships, every legacy ask a person answered late looks
+   * exactly like an ask nobody answered, and stamping it `expired` would
+   * rewrite a real decision — durably, silently, and idempotently enough never
+   * to be revisited.
+   *
+   * A turn that ended is a turn whose ask was settled, whether or not the
+   * settling was written down. A turn that never ended is the only thing a
+   * parked ask can leave behind. So a `turn_end` at a higher `seq` clears
+   * everything raised before it, and what survives the scan is an ask whose
+   * turn is genuinely gone. The same rule covers the rarer shape where the
+   * PROMPT persisted and the RESOLUTION's write failed — `flushTurn` warns and
+   * swallows — because that turn still reached its `turn_end`.
+   *
+   * ## Cost
+   *
+   * One scan at boot. Rows are bounded at {@link EVENT_LOG_MAX_EVENTS} PER
+   * SESSION, and nothing prunes sessions, so the table grows with the number of
+   * sessions this machine has ever run: measured at 80k rows / ~32MB the scan
+   * takes ~155ms and closing 500 orphans another ~225ms. Linear, and paid once.
    *
    * A prompt whose resolution was trimmed away cannot appear as an orphan: the
-   * trim keeps the NEWEST rows, and a resolution always outranks the prompt it
-   * answers, so the prompt goes first.
+   * trim keeps the NEWEST rows, and both the resolution and the `turn_end`
+   * outrank the prompt they belong to, so the prompt goes first.
    */
   readUnresolvedInteractions(): UnresolvedInteractionRow[] {
     const rows = this.db
@@ -257,28 +262,49 @@ export class SessionEventStore {
           sql`${sessionEvents.payload} LIKE '%"type":"approval_required"%'`,
           sql`${sessionEvents.payload} LIKE '%"type":"question_prompt"%'`,
           sql`${sessionEvents.payload} LIKE '%"type":"elicitation_prompt"%'`,
-          sql`${sessionEvents.payload} LIKE '%"type":"interaction_resolved"%'`
+          sql`${sessionEvents.payload} LIKE '%"type":"interaction_resolved"%'`,
+          sql`${sessionEvents.payload} LIKE '%"type":"turn_end"%'`
         )
       )
       .orderBy(sessionEvents.sessionId, sessionEvents.seq)
       .all();
-    const asks = new Map<string, UnresolvedInteractionRow>();
+    const orphans: UnresolvedInteractionRow[] = [];
+    // One session at a time — the rows arrive grouped by session id, so an ask
+    // is only ever compared against its OWN session's turns and answers. A
+    // single shared map would let one session's `turn_end` close another
+    // session's ask, since an interaction id is a tool-call id and unique
+    // nowhere but its own session.
+    let session: string | undefined;
+    let open = new Map<string, UnresolvedInteractionRow>();
+    const closeSession = (): void => {
+      orphans.push(...open.values());
+      open = new Map();
+    };
     for (const row of rows) {
+      if (row.sessionId !== session) {
+        closeSession();
+        session = row.sessionId;
+      }
       const event = parsePayload(row);
       if (event === null) continue;
+      if (event.type === 'turn_end') {
+        open.clear();
+        continue;
+      }
       if (event.type === 'interaction_resolved') {
-        asks.delete(askKey(row.sessionId, event.id));
+        open.delete(event.id);
         continue;
       }
       if (!isBlockingInteractionEvent(event)) continue;
-      asks.set(askKey(row.sessionId, event.id), {
+      open.set(event.id, {
         sessionId: row.sessionId,
         id: event.id,
         kind: ASK_KIND_BY_EVENT_TYPE[event.type],
         startedAt: event.startedAt,
       });
     }
-    return [...asks.values()];
+    closeSession();
+    return orphans;
   }
 
   /**

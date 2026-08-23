@@ -492,8 +492,9 @@ interface for every future adapter to implement, which is the legacy pattern AGE
 forbids tolerating.
 
 **D9 — `turn_stopped` rides the turn; no out-of-turn flush path is built; `not-running` is
-never persisted.** _Resolved._ This is the decision the durability story turns on, so the
-alternatives are on the record.
+never persisted.** _Resolved — see the 2026-08-23 amendment at the end of this item, which
+is why the second clause no longer describes the codebase._ This is the decision the
+durability story turns on, so the alternatives are on the record.
 
 `SessionEventStore.appendTurn` flushes a turn's events at its `turn_end`, and its own doc
 names the hazard: an event ingested outside a turn consumes a `seq` and is never written.
@@ -519,6 +520,18 @@ mark. The cost of the choice is the honest one: `unconfirmed` and `failed` are d
 once their turn ends, so a server that dies mid-turn loses the receipt along with the rest
 of that turn's events. That is the durability every other event in the turn has, not a new
 hole, and buying more would mean building (a) for one row.
+
+**Amended 2026-08-23 (DOR-1439): (a) now exists, and D9's rejection of it still stands for
+`turn_stopped`.** A parked Ask needed the same path and had a reason `turn_stopped` does
+not have: an ask parks precisely because its turn CANNOT end — nobody has answered, the
+promise is unresolved, and a flush that waits for `turn_end` waits forever. So the eager
+path was built, narrowly, for the interaction events
+(`EAGERLY_RECORDED_EVENT_TYPES` in `projector-persistence.ts`). The reasoning above is
+unaffected where it matters: all five stop outcomes happen WITH a turn open, so riding the
+turn still persists four of them and `not-running` still has no turn to ride. What changes
+is only the cost line — the mechanism is no longer hypothetical, so whoever executes this
+spec may reconsider whether `unconfirmed` and `failed` are worth mid-turn durability, as a
+decision on its own merits rather than one foreclosed by "no such path exists".
 
 **D10 — Test-mode's abort maps to `closed` by default, and a scenario may declare any
 receipt.** _Resolved._ `interactionGate.abort` is DorkOS ending the scenario from outside;

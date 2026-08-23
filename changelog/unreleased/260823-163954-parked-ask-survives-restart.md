@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,docs): a question your agent asked before a restart no longer vanishes (DOR-1439)'
+  - 'fix(server,specs): keep an approval you already granted from being marked unanswered (DOR-1439)'
 ---
 
 ### Fixed
