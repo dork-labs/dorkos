@@ -25,6 +25,22 @@ import {
 /** The directory a proposing agent lives in — the key its identity is stored under. */
 const AGENT_PATH = '/tmp/agents/nightly-bot';
 
+/**
+ * The data directory this suite mounts its router on, and the prefix its
+ * `fs.readFile` mock treats as "a file the route just wrote".
+ *
+ * One constant because the two MUST agree. The mock answers a path under this
+ * prefix with empty content and every other path with ENOENT, and the update
+ * route reads those as two different worlds — "a file that is there" versus
+ * "a legacy row with no file" (DOR-1481). If the prefix and the `dorkHome`
+ * argument ever drifted apart, fixtures would quietly cross into the other
+ * branch and the tests would still pass, for the wrong reason.
+ *
+ * `vi.hoisted` because the `vi.mock` factories below are hoisted above ordinary
+ * module scope and could not otherwise see it.
+ */
+const DORK_HOME = vi.hoisted(() => '/tmp/dork-test');
+
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
@@ -50,7 +66,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({
-  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  writeSkillFile: vi.fn().mockResolvedValue(`${DORK_HOME}/tasks/test/SKILL.md`),
   deleteSkillDir: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -72,7 +88,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       // (DOR-1481) — so a blanket empty read would make every fixture here look
       // like a file whose contents are unparseable garbage.
       readFile: vi.fn().mockImplementation(async (p: string) => {
-        if (typeof p === 'string' && p.startsWith('/tmp/dork-test/')) return '';
+        if (typeof p === 'string' && p.startsWith(`${DORK_HOME}/`)) return '';
         throw Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), {
           code: 'ENOENT',
         });
@@ -157,7 +173,7 @@ describe('Tasks routes', () => {
     app.use(express.json());
     app.use(
       '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
     // Error handler to surface errors instead of hanging
     app.use(
@@ -667,7 +683,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     app.use(express.json());
     app.use(
       '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
   });
 
