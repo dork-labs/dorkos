@@ -3583,7 +3583,7 @@ export const ServerConfigSchema = z
         }),
         maxTurnsPerAgentPerCascade: z.number().int().optional().openapi({
           description:
-            'How many of those replies any ONE agent may send in a single back-and-forth, counted as messages it posted. Writable from Settings',
+            'How many TURNS any ONE agent may take in a single back-and-forth. Progress notes it posts mid-turn belong to that turn and do not count extra; posts with no turn behind them count one each. Writable from Settings',
         }),
         maxAutomaticTurnsPerRoomPerHour: z.number().int().optional().openapi({
           description: 'The most automatic replies any one room may run in an hour',
