@@ -149,7 +149,7 @@ import {
   resetSessionKeys,
 } from './session-key-registry.js';
 import { onSessionRemoved } from './session-list-broadcaster.js';
-import { holdStagedContext } from './staged-context-store.js';
+import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
 import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { ROOMS, SESSIONS } from '../../config/constants.js';
@@ -239,11 +239,18 @@ const orphanedSessions = new Set<string>();
  * Run `fn` with this session's dispatch mutex held.
  *
  * Every decision that starts or ends a turn goes through here, so two of them
- * cannot interleave on one session. Today the only holder is the pump; **the
- * warm-process reaper (P3, task 3.4) is the second**, and it shares this mutex
- * precisely so a reap racing a dispatch simply does not happen. The mutex is
- * released as soon as the decision is made — it is never held for the turn's
- * duration, which is the write-lock's job.
+ * cannot interleave on one session. The mutex is released as soon as the
+ * decision is made — it is never held for the turn's duration, which is the
+ * write-lock's job.
+ *
+ * **What it does NOT serialize: the warm-process reaper.** An earlier note here
+ * said the reaper shared this mutex, and the code was written trusting it — a
+ * reap landing between the router reading `canStageSession` and
+ * {@link deliverStage} taking this lock was therefore reported as an adapter bug
+ * (DOR-1325). The reaper is a timer inside the claude-code session registry and
+ * takes nothing from this module; every holder of this mutex is in this file.
+ * Anything that must survive a reap has to re-ask after the fact rather than
+ * assume the lock froze the world.
  *
  * @param sessionKey - The resolved session id to serialize on
  * @param fn - The critical section
@@ -385,20 +392,25 @@ async function deliverByDisposition(
   // fold the design intends never reaches it (DOR-1307).
   const result = await deliverStage({ sessionId, clientId, content, messageId, runtime });
   if (result.delivered) {
-    if (result.viaFallback === true) {
+    if (result.foldedBecause !== undefined) {
       // deliverStage ALREADY folded — it held the text and emitted the
-      // `context_staged` receipt before returning `viaFallback`. Do NOT fold
-      // again (that would hold the words twice and send two receipts). Only log
-      // the declared-ahead-of-mechanism adapter bug and announce the downgrade
-      // the fold produced.
-      logger.error('[MessageDispatcher] runtime declares context staging but had to fold', {
-        runtime: caps.type,
-      });
+      // `context_staged` receipt before returning. Do NOT fold again (that would
+      // hold the words twice and send two receipts); only announce the downgrade
+      // the fold produced, and say which of the two it was.
+      if (result.foldedBecause === 'unsupported') {
+        // Declared the capability, said this session could take it, and then
+        // could not: an adapter bug, and now the only route to this log. A reap
+        // that landed under the gate answers `not-stageable` instead (DOR-1325),
+        // because a designed fold logged as a defect buries the real ones.
+        logger.error('[MessageDispatcher] runtime declares context staging but had to fold', {
+          runtime: caps.type,
+        });
+      }
       const outcome: MessageDeliveryOutcome = {
         messageId,
         requested,
         applied: 'stage',
-        degradedBecause: 'unsupported',
+        degradedBecause: result.foldedBecause,
       };
       emitQueueUpdate(queueKey, outcome);
       return landed(outcome);
@@ -1722,8 +1734,10 @@ export interface SteerDeliveryResult extends RuntimeDeliveryResult {
  * `no-open-turn`).
  *
  * Held under the dispatch mutex so the lock check and the delivery cannot
- * straddle a turn ending or a reap: the same mutex every turn boundary and the
- * warm-process reaper take, so a steer racing either simply does not interleave.
+ * straddle a turn ending: the same mutex every turn boundary takes, so a steer
+ * racing one does not interleave with it. A REAP is not serialized by it (see
+ * {@link withDispatchMutex}) — a steer that races one reads `no-open-turn` from
+ * the spent pump, which is the honest answer either way.
  *
  * This is the ONE server path to a runtime's `deliverIntoTurn` for a steer —
  * one of exactly two, the other being {@link deliverStage} for a stage — just
@@ -1797,12 +1811,18 @@ export interface StageDeliveryResult extends RuntimeDeliveryResult {
   /** True when the caller was entitled to write to this session. */
   authorized: boolean;
   /**
-   * True when the stage landed via the fold-into-next FALLBACK rather than the
+   * Why the stage landed via the fold-into-next FALLBACK rather than the
    * runtime's native transcript — the text is held and rides the next dispatch.
    * Absent on the native path. The person cannot tell the two apart, and should
    * not have to; this is for callers that log or degrade.
+   *
+   * `not-stageable` means the seam went away under this session between the
+   * router's gate and the delivery — an idle reap of a warm process is the way
+   * that happens (DOR-1325), and it is the fold the design intends.
+   * `unsupported` means the runtime could not stage at all where nothing said it
+   * had stopped being able to, which IS an adapter bug and is logged as one.
    */
-  viaFallback?: boolean;
+  foldedBecause?: 'unsupported' | 'not-stageable';
 }
 
 /**
@@ -1829,8 +1849,10 @@ export interface StageDeliveryResult extends RuntimeDeliveryResult {
  * 4.4), not this gate's.
  *
  * Held under the dispatch mutex so the lock check and the delivery cannot
- * straddle a turn boundary or a reap, and so a stage that warms a cold session
- * does not interleave with a dispatch on the same session.
+ * straddle a turn boundary, and so a stage that warms a cold session does not
+ * interleave with a dispatch on the same session. A REAP is not serialized by it
+ * ({@link withDispatchMutex}), which is why the fallback below re-asks the
+ * session whether it could still have staged (DOR-1325).
  *
  * This is the ONE server path to a runtime's `deliverIntoTurn` for a stage, the
  * same single ingress {@link deliverSteer} is for a steer — the single-ingress
@@ -1870,9 +1892,23 @@ export async function deliverStage(opts: DeliverStageOpts): Promise<StageDeliver
       // The runtime cannot append to its own transcript. Hold the person's words
       // and fold them into the next dispatch (ADR-0273); the same receipt goes
       // out, because to the person a stage landed either way.
+      //
+      // WHY THE SESSION IS ASKED AGAIN, AND ONLY NOW (DOR-1325). The router asks
+      // `canStageSession` before this mutex is taken, and the idle reaper does
+      // NOT take this mutex — so a reap can land in that window, and the refusal
+      // above is then the designed answer of a session whose seam has gone,
+      // rather than an adapter that declared ahead of its mechanism. Asking
+      // AFTER the refusal closes the window by construction: any reap that
+      // happened, whenever it happened, is visible in this answer. Asking again
+      // before the native call would only move the race.
+      const stillStageable = runtime.canStageSession?.(sessionId) !== false;
       holdStagedContext(sessionId, content, messageId);
       emitContextStaged(sessionId, content, messageId);
-      return { authorized: true, delivered: true, viaFallback: true };
+      return {
+        authorized: true,
+        delivered: true,
+        foldedBecause: stillStageable ? 'unsupported' : 'not-stageable',
+      };
     }
     // A transient the runtime named (a stream that closed under a warm process, a
     // boundary a cwd failed). Report it; the caller decides what to say. Not
@@ -2008,9 +2044,15 @@ export function sweepOrphanedMessageQueues(opts?: {
   orphanedSessions.clear();
   const doomed = candidates.filter((id) => !isLive(id) && !inFlight.has(id));
   const store = getMessageQueueStore();
+  const staged = getStagedContextStore();
   let removed = 0;
-  for (let i = 0; i < doomed.length && store; i += SWEEP_CHUNK_SIZE) {
-    removed += store.deleteForSessions(doomed.slice(i, i + SWEEP_CHUNK_SIZE).map(queueKeyOf));
+  for (let i = 0; i < doomed.length; i += SWEEP_CHUNK_SIZE) {
+    const chunk = doomed.slice(i, i + SWEEP_CHUNK_SIZE).map(queueKeyOf);
+    removed += store?.deleteForSessions(chunk) ?? 0;
+    // Held staged words go with the queue: same reason, same beat. A session
+    // nobody can open again will never dispatch, so its hold can only sit there
+    // for the life of the install.
+    staged?.deleteForSessions(chunk);
   }
   // The rename bookkeeping goes with them. Two entries are added per renamed
   // session and nothing has ever removed one, so a long-lived server accumulates
