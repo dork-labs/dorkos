@@ -22,8 +22,11 @@ import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 /** Stable `@id` of the site-wide DorkOS entity declared in the marketing layout. */
 const SOFTWARE_APP_ID = `${siteConfig.url}/#software`;
 
-/** Framings that get the two-column "which one is for you" recommendation. */
-const HEAD_TO_HEAD: Competitor['framing'][] = ['competitor', 'adjacent'];
+/**
+ * Framings that get the two-column recommendation block. A shut-down product is
+ * the one framing left out: there is nothing left to recommend it for.
+ */
+const FRAMINGS_WITH_RECOMMENDATION: Competitor['framing'][] = ['competitor', 'adjacent', 'runtime'];
 
 export function generateStaticParams() {
   return comparisons.map((competitor) => ({ slug: competitor.slug }));
@@ -169,7 +172,7 @@ export default async function ComparisonPage(props: { params: Promise<{ slug: st
 
         <ComparisonVerdict competitor={competitor} />
 
-        {HEAD_TO_HEAD.includes(competitor.framing) && (
+        {FRAMINGS_WITH_RECOMMENDATION.includes(competitor.framing) && (
           <ComparisonAudience competitor={competitor} />
         )}
 

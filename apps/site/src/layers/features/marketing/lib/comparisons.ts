@@ -39,12 +39,24 @@ export interface ComparisonDimension {
   /** One-sentence framing of what this dimension means for the user. */
   question: string;
   /**
+   * Finishes the sentence "you want …" in the recommendation column, so the
+   * reason reads as something a person wants rather than a table row label.
+   * No trailing period: the list renders it as a fragment.
+   */
+  wantPhrase: string;
+  /**
    * Wording for DorkOS's cell where the lead feature's tagline does not answer
    * the question (price, for one, is not a feature). This changes the sentence
    * only: the verdict still comes from the backing features' status, and an
    * unproven feature still forces `partial` and gets named.
    */
   dorkosNote?: string;
+  /**
+   * A longer explanation of DorkOS's side, for the criterion section further
+   * down the page. Set it only where there is genuinely more to say than the
+   * table cell already says — sections with nothing extra are not rendered.
+   */
+  dorkosDetail?: string;
 }
 
 /** One product's answer on one dimension. */
@@ -53,6 +65,13 @@ export interface ComparisonCell {
   verdict: CapabilityVerdict;
   /** One plain-language sentence saying what it actually does here. */
   note: string;
+  /**
+   * A longer explanation for the criterion section further down the page. Set it
+   * only where there is more to say than the table cell says; a dimension where
+   * neither side has a detail gets no section at all, rather than an empty
+   * heading repeating the table.
+   */
+  detail?: string;
   /** URL backing a `yes` or `partial` claim. */
   source?: string;
 }
@@ -80,11 +99,17 @@ export interface Competitor {
   /** Two-to-four-sentence honest verdict; it leads the page. */
   verdict: string;
   /**
-   * Where they beat DorkOS. Required for `competitor` and `adjacent` framings,
-   * and always rendered. Each entry finishes the sentence "Use X if …", so it
-   * starts lowercase and reads as a reason, not a feature name.
+   * What the other product is good at, in its own right.
+   *
+   * Each entry finishes the sentence in that framing's recommendation heading
+   * ("Use X if …", "Reach for X when …"), so it starts lowercase and reads as a
+   * reason rather than a feature name. Rendered for `competitor` and `adjacent`
+   * (where it is the honest concession) and for `runtime` (where it is a
+   * compliment to an engine DorkOS runs). Required for those three, enforced by
+   * the invariant suite. Omitted for `discontinued`: that page is about a
+   * product that no longer exists, so there is nothing to recommend.
    */
-  theirStrengths: string[];
+  theirStrengths?: string[];
   /** Their cell for every dimension in {@link COMPARISON_DIMENSIONS}, keyed by dimension id. */
   cells: Record<string, ComparisonCell>;
   /** 2-5 questions, rendered visibly on the page and mirrored into FAQPage markup. */
@@ -120,6 +145,18 @@ export interface ComparisonFramingCopy {
   theirColumn: (name: string) => string;
   /** Column header for DorkOS's side of the table. */
   ourColumn: string;
+  /**
+   * True when the other product's column reads first. Runtime pages tell a
+   * before-and-after story — the engine on its own, then the same engine with
+   * DorkOS around it — so their column goes on the left there.
+   */
+  theirColumnFirst: boolean;
+  /** Heading over the reasons to reach for the other product. Each strength finishes this sentence. */
+  theirReasonHeading: (name: string) => string;
+  /** Heading over the reasons to reach for DorkOS. */
+  ourReasonHeading: string;
+  /** Heading over the whole recommendation block. */
+  recommendationHeading: string;
   /** Hub section heading for this framing. */
   groupLabel: string;
   /** One line under the hub section heading. */
@@ -139,6 +176,10 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     tableHeading: 'Side by side',
     theirColumn: (name) => name,
     ourColumn: 'DorkOS',
+    theirColumnFirst: false,
+    theirReasonHeading: (name) => `Use ${name} if`,
+    ourReasonHeading: 'Use DorkOS if',
+    recommendationHeading: 'Which one is for you',
     groupLabel: 'Head to head',
     groupBlurb: 'Tools that do a similar job, compared honestly.',
   },
@@ -150,6 +191,11 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     tableHeading: 'What DorkOS adds on top',
     theirColumn: (name) => `${name} on its own`,
     ourColumn: 'With DorkOS',
+    // Before, then after: the engine alone reads first on a runtime page.
+    theirColumnFirst: true,
+    theirReasonHeading: (name) => `Reach for ${name} when`,
+    ourReasonHeading: 'DorkOS adds it when',
+    recommendationHeading: 'What each part does',
     groupLabel: 'Agent tools DorkOS runs',
     groupBlurb: 'Coding agents DorkOS drives for you. Keep the tool, gain a control room.',
   },
@@ -163,6 +209,10 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     tableHeading: 'Where the two overlap',
     theirColumn: (name) => name,
     ourColumn: 'DorkOS',
+    theirColumnFirst: false,
+    theirReasonHeading: (name) => `Use ${name} if`,
+    ourReasonHeading: 'Use DorkOS if',
+    recommendationHeading: 'Which one is for you',
     groupLabel: 'Nearby tools',
     groupBlurb: 'Different kinds of product that still cover some of the same ground.',
   },
@@ -176,6 +226,11 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     tableHeading: 'What you get if you move to DorkOS',
     theirColumn: (name) => `${name} (shut down)`,
     ourColumn: 'DorkOS',
+    theirColumnFirst: true,
+    // Never rendered: a shut-down product gets no recommendation block.
+    theirReasonHeading: (name) => `What ${name} used to do`,
+    ourReasonHeading: 'What DorkOS does instead',
+    recommendationHeading: 'Your options now',
     groupLabel: 'Tools that shut down',
     groupBlurb: 'Where to go next when the tool you used is gone.',
   },
@@ -192,24 +247,34 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     label: 'Many agent tools, one place',
     featureSlugs: ['multi-runtime-cockpit', 'session-durability'],
     question: 'Can you run more than one company’s coding agent from the same screen?',
+    wantPhrase: 'every coding agent you run on one screen, not one company’s',
+    dorkosDetail:
+      'Each chat picks its own agent tool, so you can start a job on Claude Code, run the next on Codex, and keep a third on OpenCode without leaving the tab or changing any setup. Sessions from all three land in one list, and closing your laptop does not end them.',
   },
   {
     id: 'scheduling',
     label: 'Work that runs on a schedule',
     featureSlugs: ['task-scheduler', 'notifications'],
     question: 'Can you hand over a job that runs at a set time without you sitting there?',
+    wantPhrase: 'work that happens while you are asleep or away',
+    dorkosDetail:
+      'You write the job once and say when it should run: every night, every Monday, every hour. DorkOS starts the agent at that time on your own machine and messages you when it finishes or needs a decision, so you are not the thing that has to remember.',
   },
   {
     id: 'coordination',
     label: 'Agents that work together',
     featureSlugs: ['relay-message-bus', 'rooms', 'mesh-agent-discovery'],
     question: 'Can several agents find each other and pass work along?',
+    wantPhrase: 'agents that can hand work to each other instead of working alone',
+    dorkosDetail:
+      'Agents share rooms the way people share a group chat: they can see each other, answer each other, and pass a job along. This is the newest part of DorkOS and the part we are least willing to oversell, so the table says "partly" until everyday use proves it.',
   },
   {
     id: 'local-first',
     label: 'Runs on your machine',
     featureSlugs: ['cli', 'workspaces', 'tunnel'],
     question: 'Does the tool run on your own computer, with your work staying there?',
+    wantPhrase: 'your projects and history to stay on your own computer',
     dorkosNote:
       'DorkOS runs on your own machine: your projects, your sessions and your history stay there, under your own accounts.',
   },
@@ -218,18 +283,21 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     label: 'Where you can use it',
     featureSlugs: ['mobile', 'chat-interface', 'notifications'],
     question: 'Can you check in and approve work away from your desk?',
+    wantPhrase: 'to check in and approve work from your phone',
   },
   {
     id: 'extensibility',
     label: 'Adding your own tools',
     featureSlugs: ['marketplace', 'mcp-server', 'connections'],
     question: 'Can you add your own tools and share the setup with other people?',
+    wantPhrase: 'to add your own tools and share the setup with other people',
   },
   {
     id: 'pricing',
     label: 'Price and openness',
     featureSlugs: ['cli'],
     question: 'What does the tool itself cost, and can you read its source code?',
+    wantPhrase: 'a free tool whose code you can read',
     dorkosNote: 'Free and open source. You pay only for the model plan your agents already use.',
   },
 ];
@@ -237,13 +305,18 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
 /** Statuses that mean a feature is built but not yet proven by everyday use. */
 const UNPROVEN_STATUSES: ReadonlySet<Feature['status']> = new Set(['alpha', 'coming-soon']);
 
+/** Drop a trailing period so a note can be joined to another sentence cleanly. */
+function withoutTrailingPeriod(sentence: string): string {
+  return sentence.endsWith('.') ? sentence.slice(0, -1) : sentence;
+}
+
 /** Resolve a dimension's backing features, failing loudly on a slug that no longer exists. */
-function backingFeatures(dimension: ComparisonDimension): Feature[] {
+function backingFeatures(dimension: ComparisonDimension, catalog: Feature[]): Feature[] {
   if (dimension.featureSlugs.length === 0) {
     throw new Error(`Comparison dimension "${dimension.id}" has no backing features.`);
   }
   return dimension.featureSlugs.map((slug) => {
-    const feature = features.find((f) => f.slug === slug);
+    const feature = catalog.find((f) => f.slug === slug);
     if (!feature) {
       throw new Error(
         `Comparison dimension "${dimension.id}" points at unknown feature "${slug}".`
@@ -263,22 +336,30 @@ function backingFeatures(dimension: ComparisonDimension): Feature[] {
  * a comparison page cannot promise more than the feature catalog does.
  *
  * @param dimension - The dimension to score.
+ * @param catalog - Feature catalog to score against. Defaults to the real one;
+ *   a test passes its own so every lifecycle stage can be exercised, including
+ *   stages the shipped catalog happens not to contain today.
  * @returns DorkOS's cell for that dimension.
  */
-export function dorkosCellFor(dimension: ComparisonDimension): ComparisonCell {
-  const backing = backingFeatures(dimension);
+export function dorkosCellFor(
+  dimension: ComparisonDimension,
+  catalog: Feature[] = features
+): ComparisonCell {
+  const backing = backingFeatures(dimension, catalog);
   const base = dimension.dorkosNote ?? backing[0].tagline;
   const unproven = backing.filter((feature) => UNPROVEN_STATUSES.has(feature.status));
+  const detail = dimension.dorkosDetail;
 
   if (unproven.length === 0) {
-    return { verdict: 'yes', note: base };
+    return { verdict: 'yes', note: base, ...(detail ? { detail } : {}) };
   }
 
   const names = unproven.map((feature) => feature.name).join(' and ');
   const verb = unproven.length === 1 ? 'is' : 'are';
   return {
     verdict: 'partial',
-    note: `${base}. ${names} ${verb} still early: built, but not yet proven in everyday use.`,
+    note: `${withoutTrailingPeriod(base)}. ${names} ${verb} still early: built, but not yet proven in everyday use.`,
+    ...(detail ? { detail } : {}),
   };
 }
 
@@ -320,26 +401,32 @@ export const comparisons: Competitor[] = [
     theirStrengths: [
       'you want one polished window for writing code and directing an agent',
       'you want several of its own agents running at once, each on its own copy of your project',
-      'you lean on VS Code extensions and shortcuts, which Cursor keeps',
+      'you lean on VS Code habits: Cursor imports your settings and installs editor extensions',
       'you want the bigger crowd, so answers and shared habits are easy to find',
     ],
     cells: {
       'multi-runtime': {
         verdict: 'no',
         note: 'Cursor runs its own agents inside Cursor. It does not drive Claude Code, Codex or OpenCode for you.',
+        detail:
+          'Cursor picks the model for its own agents, and that is the whole choice on offer: the agent is part of the editor. If you already run Claude Code in one terminal and Codex in another, Cursor does not gather them up — those stay separate tools you switch between by hand.',
       },
       scheduling: {
         verdict: 'no',
         note: 'There is no built-in way to have a job start at a set time. You kick off every run yourself.',
+        detail:
+          'Cursor’s cloud agents keep working after you hand them a job, which is not the same as starting one on their own. Nothing in Cursor says "run this every night at two", so a recurring job needs you, awake, to press the button.',
       },
       coordination: {
         verdict: 'partial',
         note: 'Several agents can work side by side, each on its own copy of the project, but they work alone: there is no shared room where they pass work to each other.',
+        detail:
+          'Cursor 3 added an Agents Window that runs up to eight agents at once, each in its own copy of your project so they do not tread on each other. That is parallel work, not teamwork: no agent can see what another is doing, ask it a question, or hand it the next step.',
         source: 'https://www.deployhq.com/guides/cursor',
       },
       'local-first': {
         verdict: 'partial',
-        note: 'The editor runs on your computer, but it is closed source, signs in to Cursor, and its background agents run on Cursor’s machines.',
+        note: 'The editor runs on your computer, but you sign in to Cursor, and its background agents run on Cursor’s machines rather than yours.',
         source: 'https://www.deployhq.com/guides/cursor',
       },
       surfaces: {
@@ -349,8 +436,10 @@ export const comparisons: Competitor[] = [
       },
       extensibility: {
         verdict: 'yes',
-        note: 'It takes the same extensions as VS Code, and its agent can reach your own tools through MCP, the common way to plug outside tools into an agent.',
-        source: 'https://www.morphllm.com/comparisons/cursor-vs-vscode',
+        note: 'It imports your VS Code setup and installs editor extensions, and its agent can reach your own tools through MCP, the common way to plug outside tools into an agent.',
+        detail:
+          'This is the row where Cursor beats DorkOS outright. Years of editor extensions carry over, with one caveat worth knowing: Cursor installs them from the Open VSX registry rather than the VS Code Marketplace, so a few will be missing. What it does not have is a way to package up a working agent, with its instructions and tools, and hand it to someone else.',
+        source: 'https://cursor.com/docs/configuration/extensions',
       },
       pricing: {
         verdict: 'partial',
@@ -379,9 +468,9 @@ export const comparisons: Competitor[] = [
     lastVerified: '2026-08-23',
     sources: [
       'https://cursor.com/pricing',
+      'https://cursor.com/docs/configuration/extensions',
+      'https://cursor.com/docs/context/mcp',
       'https://www.deployhq.com/guides/cursor',
-      'https://www.morphllm.com/comparisons/cursor-vs-vscode',
-      'https://www.taskade.com/blog/cursor-review',
     ],
     relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'rooms'],
   },

@@ -8,7 +8,7 @@ import {
   type ComparisonDimension,
   type ComparisonFraming,
 } from '../comparisons';
-import { features } from '../features';
+import { features, type Feature } from '../features';
 
 const KEBAB_CASE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FRAMINGS: ComparisonFraming[] = ['competitor', 'runtime', 'adjacent', 'discontinued'];
@@ -78,21 +78,56 @@ describe('comparison catalog data integrity', () => {
     }
   });
 
-  it('concedes where a rival wins: theirStrengths is non-empty for competitor and adjacent pages', () => {
+  it('says what the other product is good at, except where it has shut down', () => {
     for (const competitor of comparisons) {
-      if (competitor.framing !== 'competitor' && competitor.framing !== 'adjacent') continue;
-      expect(
-        competitor.theirStrengths.length,
-        `${competitor.slug} names no strength of its own`
-      ).toBeGreaterThan(0);
-      for (const strength of competitor.theirStrengths) {
+      const strengths = competitor.theirStrengths ?? [];
+      if (competitor.framing === 'discontinued') {
+        // Nothing to recommend about a product that no longer runs.
+        expect(strengths, `${competitor.slug} recommends a shut-down product`).toEqual([]);
+        continue;
+      }
+      expect(strengths.length, `${competitor.slug} names no strength of its own`).toBeGreaterThan(
+        0
+      );
+      for (const strength of strengths) {
         expect(strength.trim().length).toBeGreaterThan(0);
-        // Each one finishes "Use X if …", so it must not start a new sentence.
+        // Each one finishes its framing's heading ("Use X if …", "Reach for X
+        // when …"), so it must not start a new sentence.
         expect(
           strength[0],
-          `${competitor.slug} strength "${strength}" should finish the sentence "Use ${competitor.name} if …"`
+          `${competitor.slug} strength "${strength}" should finish the sentence "${COMPARISON_FRAMING_COPY[competitor.framing].theirReasonHeading(competitor.name)} …"`
         ).toBe(strength[0].toLowerCase());
       }
+    }
+  });
+
+  it('every dimension carries a "you want …" phrase that reads as a fragment', () => {
+    for (const dimension of COMPARISON_DIMENSIONS) {
+      expect(
+        dimension.wantPhrase.trim().length,
+        `${dimension.id} has no wantPhrase`
+      ).toBeGreaterThan(0);
+      expect(
+        dimension.wantPhrase.endsWith('.'),
+        `${dimension.id} wantPhrase ends in a period; it is rendered mid-sentence`
+      ).toBe(false);
+      expect(
+        dimension.wantPhrase,
+        `${dimension.id} wantPhrase is just the table label, which does not read as "you want …"`
+      ).not.toBe(dimension.label.toLowerCase());
+      expect(
+        dimension.wantPhrase[0],
+        `${dimension.id} wantPhrase should continue "you want …", not start a sentence`
+      ).toBe(dimension.wantPhrase[0].toLowerCase());
+    }
+  });
+
+  it('never doubles a period when a derived note joins two sentences', () => {
+    for (const dimension of COMPARISON_DIMENSIONS) {
+      expect(
+        dorkosCellFor(dimension).note,
+        `${dimension.id} note has a doubled period`
+      ).not.toContain('..');
     }
   });
 
@@ -205,6 +240,7 @@ describe('dorkosCellFor — the demo-claim gate', () => {
     label: 'Test dimension',
     featureSlugs,
     question: 'Does the gate hold?',
+    wantPhrase: 'the gate to hold',
   });
 
   /** A feature the catalog ships as alpha: built, not yet proven by real use. */
@@ -229,10 +265,22 @@ describe('dorkosCellFor — the demo-claim gate', () => {
     expect(cell.verdict).toBe('partial');
   });
 
-  it('names the feature that is still early, instead of hiding it', () => {
+  it('names the feature that is still early, in one clean sentence', () => {
     const cell = dorkosCellFor(dimensionWith([gaFeature!.slug, alphaFeature!.slug]));
-    expect(cell.note).toContain(alphaFeature!.name);
-    expect(cell.note).toContain('still early');
+    expect(cell.note).toBe(
+      `${gaFeature!.tagline}. ${alphaFeature!.name} is still early: built, but not yet proven in everyday use.`
+    );
+  });
+
+  it('joins an authored note that already ends in a period without doubling it', () => {
+    const cell = dorkosCellFor({
+      ...dimensionWith([alphaFeature!.slug]),
+      dorkosNote: 'Everything you need is here.',
+    });
+    expect(cell.note).toBe(
+      `Everything you need is here. ${alphaFeature!.name} is still early: built, but not yet proven in everyday use.`
+    );
+    expect(cell.note).not.toContain('..');
   });
 
   it('never says yes for an alpha feature standing alone either', () => {
@@ -261,6 +309,50 @@ describe('dorkosCellFor — the demo-claim gate', () => {
     expect(cell.verdict).toBe('partial');
     expect(cell.note).toContain('Everything here works perfectly');
     expect(cell.note).toContain(alphaFeature!.name);
+  });
+
+  it('never says yes over a feature that has not shipped yet', () => {
+    // The shipped catalog has no `coming-soon` entry today, so this arm of the
+    // gate is only reachable with a catalog of our own — and it is exactly the
+    // arm that matters when someone lists a feature before it exists.
+    const catalog: Feature[] = [
+      {
+        slug: 'not-shipped-yet',
+        name: 'Not Shipped Yet',
+        product: 'core',
+        category: 'infrastructure',
+        tagline: 'Something we have not finished building',
+        description:
+          'A stand-in for a feature that is announced but not yet available, used to prove the gate refuses to score it as done.',
+        status: 'coming-soon',
+        benefits: ['Exists only in this test', 'Never ships a claim', 'Keeps the gate honest'],
+      },
+    ];
+
+    const cell = dorkosCellFor(dimensionWith(['not-shipped-yet']), catalog);
+    expect(cell.verdict, 'a coming-soon feature was scored as delivered').toBe('partial');
+    expect(cell.note).toContain('Not Shipped Yet');
+    expect(cell.note).toContain('still early');
+  });
+
+  it('says yes for that same synthetic catalog once the feature ships', () => {
+    // The mirror of the test above: with only the status changed, the gate opens.
+    // Without this pair, a broken gate that always returns partial would pass.
+    const catalog: Feature[] = [
+      {
+        slug: 'not-shipped-yet',
+        name: 'Not Shipped Yet',
+        product: 'core',
+        category: 'infrastructure',
+        tagline: 'Something we have not finished building',
+        description:
+          'A stand-in for a feature that is announced but not yet available, used to prove the gate refuses to score it as done.',
+        status: 'ga',
+        benefits: ['Exists only in this test', 'Never ships a claim', 'Keeps the gate honest'],
+      },
+    ];
+
+    expect(dorkosCellFor(dimensionWith(['not-shipped-yet']), catalog).verdict).toBe('yes');
   });
 
   it('refuses a dimension with no backing features rather than claiming yes', () => {

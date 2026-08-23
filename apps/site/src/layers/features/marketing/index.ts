@@ -67,22 +67,11 @@ export { ComparisonFaq } from './ui/compare/ComparisonFaq';
 export { ComparisonSources } from './ui/compare/ComparisonSources';
 export { CompetitorCard } from './ui/compare/CompetitorCard';
 
-// Data — comparison catalog
-export {
-  comparisons,
-  COMPARISON_DIMENSIONS,
-  COMPARISON_FRAMING_COPY,
-  dorkosCellFor,
-  dorkosAdvantages,
-} from './lib/comparisons';
-export type {
-  Competitor,
-  ComparisonCell,
-  ComparisonDimension,
-  ComparisonFraming,
-  ComparisonFramingCopy,
-  CapabilityVerdict,
-} from './lib/comparisons';
+// Data — comparison catalog. Only what the routes outside this slice consume:
+// the dimension list, the scoring helpers and the cell types stay internal,
+// where the comparison components import them by relative path.
+export { comparisons, COMPARISON_FRAMING_COPY } from './lib/comparisons';
+export type { Competitor, ComparisonFraming } from './lib/comparisons';
 
 // Data — product-media shot registry (published in manifest.json)
 export { PRODUCT_SHOTS, PRODUCT_SHOT_IDS, getProductShot, shotHasLoop } from './lib/shots';

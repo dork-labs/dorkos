@@ -131,18 +131,21 @@ export function buildFeatureLinks(): string {
 
 /**
  * Comparison pages as a markdown bullet list of `[headline](url): one-liner
- * (last checked <date>)` links to `/compare/<slug>`. The check date rides along
- * because these facts age fast, and an agent reading the index should be able to
- * tell how fresh they are.
+ * (last checked <date>)` links, led by the `/compare` hub so the list matches
+ * what `sitemap.ts` publishes. The check date rides along because these facts
+ * age fast, and an agent reading the index should be able to tell how fresh
+ * they are.
  */
 export function buildComparisonLinks(): string {
-  return comparisons
+  const hub = `- [Compare DorkOS](${siteConfig.url}/compare): every comparison, grouped by how DorkOS relates to the other tool`;
+  const entries = comparisons
     .map((competitor) => {
       const url = `${siteConfig.url}/compare/${competitor.slug}`;
       const headline = COMPARISON_FRAMING_COPY[competitor.framing].headline(competitor.name);
       return `- [${headline}](${url}): ${competitor.oneLiner} (last checked ${competitor.lastVerified})`;
     })
     .join('\n');
+  return `${hub}\n${entries}`;
 }
 
 /**
