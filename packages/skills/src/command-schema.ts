@@ -11,10 +11,13 @@ export const CommandFrontmatterSchema = SkillFrontmatterSchema.extend({
   /** Parameter hint shown in autocomplete (e.g., "[issue-number]"). */
   'argument-hint': z.string().optional(),
 
-  /** Prevent automatic loading by the model. Use for explicit-only commands. */
-  'disable-model-invocation': z.boolean().optional(),
-
-  /** Whether this command appears in the `/` menu. Default: true. */
+  /**
+   * Whether this command appears in the `/` menu. Default: true.
+   *
+   * Narrows the base schema's optional field to a materialized default: a
+   * command palette needs a concrete answer per entry, where a plain skill
+   * read can leave "absent means yes" implicit.
+   */
   'user-invocable': z.boolean().default(true),
 
   /** Execution context. "fork" runs in an isolated subagent. */

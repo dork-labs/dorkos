@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { SkillFrontmatterSchema, SkillKindSchema, SkillNameSchema } from '../schema.js';
+import {
+  SkillFrontmatterSchema,
+  SkillKindSchema,
+  SkillNameSchema,
+  isUserInvocable,
+  isModelInvocable,
+} from '../schema.js';
 import type { SkillKind } from '../schema.js';
 
 describe('SkillNameSchema', () => {
@@ -169,5 +175,62 @@ describe('SkillKindSchema', () => {
     const taskKind: SkillKind = 'task';
     const commandKind: SkillKind = 'command';
     expect([skillKind, taskKind, commandKind]).toEqual(['skill', 'task', 'command']);
+  });
+});
+
+describe('invocation frontmatter', () => {
+  const base = { name: 'deploy', description: 'Ship the app' };
+
+  it('carries user-invocable and disable-model-invocation through a base parse', () => {
+    const parsed = SkillFrontmatterSchema.parse({
+      ...base,
+      'user-invocable': false,
+      'disable-model-invocation': true,
+    });
+    expect(parsed['user-invocable']).toBe(false);
+    expect(parsed['disable-model-invocation']).toBe(true);
+  });
+
+  it('leaves both fields absent when the author omits them (no materialized default)', () => {
+    const parsed = SkillFrontmatterSchema.parse(base);
+    expect(parsed['user-invocable']).toBeUndefined();
+    expect(parsed['disable-model-invocation']).toBeUndefined();
+  });
+
+  it('rejects a non-boolean for either field', () => {
+    expect(SkillFrontmatterSchema.safeParse({ ...base, 'user-invocable': 'no' }).success).toBe(
+      false
+    );
+    expect(
+      SkillFrontmatterSchema.safeParse({ ...base, 'disable-model-invocation': 'yes' }).success
+    ).toBe(false);
+  });
+});
+
+describe('isUserInvocable', () => {
+  it('says yes when the field is absent', () => {
+    expect(isUserInvocable({})).toBe(true);
+  });
+
+  it('says yes on an explicit true', () => {
+    expect(isUserInvocable({ 'user-invocable': true })).toBe(true);
+  });
+
+  it('says no only on an explicit false', () => {
+    expect(isUserInvocable({ 'user-invocable': false })).toBe(false);
+  });
+});
+
+describe('isModelInvocable', () => {
+  it('says yes when the field is absent', () => {
+    expect(isModelInvocable({})).toBe(true);
+  });
+
+  it('says yes on an explicit false', () => {
+    expect(isModelInvocable({ 'disable-model-invocation': false })).toBe(true);
+  });
+
+  it('says no only on an explicit true', () => {
+    expect(isModelInvocable({ 'disable-model-invocation': true })).toBe(false);
   });
 });

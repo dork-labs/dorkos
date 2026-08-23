@@ -69,6 +69,29 @@ export const SkillFrontmatterSchema = z.object({
   'allowed-tools': z.string().optional(),
 
   /**
+   * Whether a person may invoke this skill directly (slash menus and other
+   * human-facing pickers). Absent means yes — only an explicit `false` hides
+   * it, leaving the skill model-only.
+   *
+   * Claude Code dialect, adopted verbatim: it honors the field natively for
+   * its own surfaces, and DorkOS honors it on the surfaces it composes for
+   * the other runtimes (`services/runtimes/codex/scan-skill-commands.ts`).
+   * It lives on the base schema, not just `CommandFrontmatterSchema`, because
+   * those surfaces parse authored skills with the base schema.
+   */
+  'user-invocable': z.boolean().optional(),
+
+  /**
+   * Whether the model must not invoke this skill on its own. `true` makes the
+   * skill person-only: it stays out of the listings DorkOS hands to a model
+   * (`services/core/mcp-resources/skill-resources.ts`), though an explicit
+   * fetch by name still resolves — naming a skill is not auto-invocation.
+   *
+   * Claude Code dialect, adopted verbatim. Absent means the model may invoke.
+   */
+  'disable-model-invocation': z.boolean().optional(),
+
+  /**
    * Optional discriminator declaring whether this file is a skill, task, or
    * command. Marketplace packages SHOULD set this explicitly; user-authored
    * files MAY omit it and rely on location-based inference. See ADR-0229.
@@ -77,3 +100,33 @@ export const SkillFrontmatterSchema = z.object({
 });
 
 export type SkillFrontmatter = z.infer<typeof SkillFrontmatterSchema>;
+
+/**
+ * Whether a person may invoke this skill directly — the question every
+ * human-facing picker (a slash palette, a command menu) asks before showing
+ * an entry. Absent means yes; only an explicit `user-invocable: false` hides
+ * it, leaving the skill model-only.
+ *
+ * @param meta - Validated SKILL.md frontmatter.
+ */
+export function isUserInvocable(meta: Pick<SkillFrontmatter, 'user-invocable'>): boolean {
+  return meta['user-invocable'] !== false;
+}
+
+/**
+ * Whether the model may invoke this skill on its own — the question every
+ * model-facing listing asks before advertising an entry. Absent means yes;
+ * only an explicit `disable-model-invocation: true` withholds it, leaving the
+ * skill person-only.
+ *
+ * This governs what a model is *told about*, not what it may read: an
+ * explicit fetch of a named skill is a person's reference, not the model
+ * inventing the invocation, so detail reads stay open.
+ *
+ * @param meta - Validated SKILL.md frontmatter.
+ */
+export function isModelInvocable(
+  meta: Pick<SkillFrontmatter, 'disable-model-invocation'>
+): boolean {
+  return meta['disable-model-invocation'] !== true;
+}

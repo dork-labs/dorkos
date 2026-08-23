@@ -13,6 +13,11 @@
  * `SKILL.md` against `SkillFrontmatterSchema`. Unparseable or unreadable
  * skills are skipped rather than failing the whole read.
  *
+ * The list is model-facing, so it honors `disable-model-invocation: true` the
+ * way Claude Code does natively: a skill its author marked person-only is not
+ * advertised here. The detail template still serves it by name — an explicit
+ * reference is not the model invoking it on its own.
+ *
  * @module services/core/mcp-resources/skill-resources
  */
 import { readFile } from 'node:fs/promises';
@@ -21,7 +26,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
-import { SkillFrontmatterSchema, SKILL_FILENAME, type SkillFrontmatter } from '@dorkos/skills';
+import {
+  SkillFrontmatterSchema,
+  SKILL_FILENAME,
+  isModelInvocable,
+  type SkillFrontmatter,
+} from '@dorkos/skills';
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
 import { logger } from '../../../lib/logger.js';
 import { firstVar, jsonResourceContents, resourceNotFound } from './resource-helpers.js';
@@ -117,7 +127,14 @@ export function registerSkillResources(server: McpServer, projectDir: string): v
       mimeType: 'application/json',
     },
     async () => {
-      const skills = await listWorkspaceSkills(projectDir);
+      // The list is what a model is TOLD it can reach for, so a skill marked
+      // `disable-model-invocation: true` has no business in it — advertising
+      // one invites exactly the auto-invocation its author ruled out. The
+      // detail template below still serves it: a caller naming a skill is an
+      // explicit reference, not the model deciding to use it on its own.
+      const skills = (await listWorkspaceSkills(projectDir)).filter((s) =>
+        isModelInvocable(s.meta)
+      );
       return jsonResourceContents(
         'dorkos://skills',
         SkillListResourceSchema.parse({
