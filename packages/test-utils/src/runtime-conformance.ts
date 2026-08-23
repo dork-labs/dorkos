@@ -18,7 +18,7 @@
  * @module test-utils/runtime-conformance
  */
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AgentRuntime,
   RuntimeCapabilities,
@@ -217,6 +217,27 @@ export interface RuntimeConformanceOpts {
     heldWhileInteractionPending: boolean;
     ranAfterInteractionResolved: boolean;
   }>;
+  /**
+   * Stages a session with a GENUINELY ACTIVE turn whose interrupt call the
+   * backend will never acknowledge, then hands control back — the driver
+   * behind the C11 bounded-interrupt case.
+   *
+   * "Stop is bounded" (`meta/chat-capabilities.md` C-10 matrix preamble;
+   * DOR-1244) is only provable against a turn whose backend has gone quiet:
+   * a runtime's own `interruptQuery` on an idle session already answers
+   * `false` at once, which proves nothing about a WEDGED one. Arranging the
+   * hang is adapter-specific — an SDK control promise nothing settles for
+   * claude-code, an HTTP call to a stuck sidecar for opencode — so this
+   * driver is that half only; the suite races `interruptQuery` against a
+   * clock once it hands back.
+   *
+   * Provided only by runtimes whose interrupt path awaits a backend ack that
+   * can go unanswered. Omit it and C11 still runs, AT REST rather than
+   * skipping: a runtime with no round trip to wait on — codex's synchronous
+   * `controller.abort()`, test-mode's in-process abort — proves the property
+   * by construction, and the case asserts exactly that shape instead.
+   */
+  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<void>;
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
@@ -860,6 +881,7 @@ export function runtimeConformance(
     dispositionTurn,
     terminalOnce,
     queueDurability,
+    hangingInterrupt,
     autonomyDefaultReason,
     sessionListSilentReason,
     userLastMessageAtSession,
@@ -1578,6 +1600,58 @@ export function runtimeConformance(
         expect(typeof result).toBe('boolean');
         // Contract: true only when an active query was interrupted.
         expect(result).toBe(false);
+      });
+
+      it('C11: interruptQuery against a backend that never answers still resolves within a bound', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        if (!hangingInterrupt) {
+          // No driver: this runtime's interrupt path has no backend round
+          // trip to wait on — codex's is a synchronous `controller.abort()`,
+          // test-mode's never leaves the process — so nothing here can be
+          // made to hang. The property still holds, and provably so: with
+          // nothing to await, the call has no reason to spend real wall-clock
+          // time answering it.
+          const startedAt = Date.now();
+          const result = await runtime.interruptQuery(sessionId);
+          expect(typeof result).toBe('boolean');
+          expect(
+            Date.now() - startedAt,
+            'no hangingInterrupt driver was wired for this runtime, which claims its interrupt ' +
+              'has nothing to await — a real wait here says that claim is wrong (see ' +
+              'RuntimeConformanceOpts.hangingInterrupt)'
+          ).toBeLessThan(200);
+          return;
+        }
+
+        // Staged BEFORE fake timers arm: a driver's own setup can lean on real
+        // macrotask delays (a persistent double's simulated IPC round trip,
+        // `vi.waitFor`'s polling) that fake time would freeze right along
+        // with the wall clock this case exists to race — hanging the SETUP
+        // instead of the property under test, and (worse) leaving fake timers
+        // armed for every test after this one once the suite's own timeout
+        // abandons a stuck `it` without ever reaching a `finally`.
+        await hangingInterrupt(runtime, sessionId);
+
+        vi.useFakeTimers();
+        try {
+          const result = runtime.interruptQuery(sessionId);
+          // A ceiling every runtime's OWN ack bound must clear, not any one
+          // runtime's specific number — each justifies its own near where it
+          // lives (`bounded-stop.ts` for claude-code, `runtime-constants.ts`
+          // for opencode).
+          await vi.advanceTimersByTimeAsync(10_000);
+          await expect(
+            result,
+            'a bounded interrupt must settle once the suite has advanced well past any ' +
+              'reasonable ack timeout — an unbounded one hangs here until the TEST ITSELF ' +
+              'times out, which is the mutant this case exists to catch'
+          ).resolves.toEqual(expect.any(Boolean));
+        } finally {
+          vi.useRealTimers();
+        }
       });
     });
 

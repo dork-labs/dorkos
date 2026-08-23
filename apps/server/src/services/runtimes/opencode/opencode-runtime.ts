@@ -91,7 +91,11 @@ import {
   type ApprovalGateDeps,
   type ApprovalRouting,
 } from './approvals.js';
-import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
+import {
+  OPENCODE_CAPABILITIES,
+  STREAM_LIVE_TIMEOUT_MS,
+  INTERRUPT_ACK_TIMEOUT_MS,
+} from './runtime-constants.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
@@ -121,6 +125,37 @@ interface ActiveTurn {
 /** Sleep helper for the stream-liveness race. */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Race one `session.abort` call against {@link INTERRUPT_ACK_TIMEOUT_MS},
+ * mirroring the load-bearing details of claude-code's `awaitStopAck`
+ * (`sessions/bounded-stop.ts`, DOR-1244) for the same reason: a promise that
+ * only a backend ack settles must not be trusted to settle at all.
+ *
+ * Never throws — a rejected `request` resolves `false` — and never leaves a
+ * live timer behind, whichever way the race goes.
+ *
+ * @param request - Makes the abort call and reports whether it actually aborted.
+ * @returns `true` only when the backend acked an abort inside the bound.
+ */
+function awaitAbortAck(request: () => Promise<boolean>): Promise<boolean> {
+  const settled: Promise<boolean> = request().then(
+    (aborted) => aborted,
+    () => false
+  );
+  let timer: NodeJS.Timeout | undefined;
+  return (async () => {
+    try {
+      const expiry = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), INTERRUPT_ACK_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      return await Promise.race([settled, expiry]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  })();
 }
 
 /**
@@ -495,25 +530,40 @@ export class OpenCodeRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
-   * Aborts the in-flight turn via `POST /session/{id}/abort`. The wire then
-   * carries `session.error{MessageAbortedError}` + `session.idle`, which the
-   * mapper normalizes to a quiet `done` — user-initiated, not an error.
+   * Aborts the in-flight turn via `POST /session/{id}/abort`, bounded by
+   * {@link awaitAbortAck} (DOR-1299): a wedged sidecar drops the request the
+   * same way an ended stdin drops claude-code's, and nothing then answers it,
+   * ever. Past {@link INTERRUPT_ACK_TIMEOUT_MS} this gives up and answers
+   * `false` — honest, not an escalation; see {@link INTERRUPT_ACK_TIMEOUT_MS}
+   * for why there is nothing session-scoped to escalate TO here.
+   *
+   * On the acked path the wire carries `session.error{MessageAbortedError}` +
+   * `session.idle`, which the mapper normalizes to a quiet `done` —
+   * user-initiated, not an error.
    */
   async interruptQuery(sessionId: string): Promise<boolean> {
     const turn = this.activeTurns.get(sessionId);
     if (!turn) return false;
-    try {
-      const client = await this.provider.getClient(turn.cwd);
-      const aborted = unwrap(
-        await client.session.abort({ path: { id: turn.ocSessionId } }),
-        'session.abort'
-      );
+    const aborted = await awaitAbortAck(async () => {
+      try {
+        const client = await this.provider.getClient(turn.cwd);
+        return (
+          unwrap(
+            await client.session.abort({ path: { id: turn.ocSessionId } }),
+            'session.abort'
+          ) === true
+        );
+      } catch (err) {
+        logger.warn('[OpenCodeRuntime] interrupt failed', logError(err));
+        return false;
+      }
+    });
+    if (aborted) {
       logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
-      return aborted === true;
-    } catch (err) {
-      logger.warn('[OpenCodeRuntime] interrupt failed', logError(err));
-      return false;
+    } else {
+      logger.warn('[OpenCodeRuntime] interrupt failed or timed out', { sessionId });
     }
+    return aborted;
   }
 
   // --- Session queries (storage) ---
