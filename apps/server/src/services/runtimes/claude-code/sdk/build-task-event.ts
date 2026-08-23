@@ -23,14 +23,20 @@ export function pendingTaskId(toolUseId: string): string {
   return `pending:${toolUseId}`;
 }
 
-const TASK_CREATED_PATTERN = /^Task #(\d+) created successfully/;
+const TASK_CREATED_PATTERN = /Task #(\d+) created successfully/;
 
 /**
  * Parse the real SDK task id out of a TaskCreate tool_result's text.
  *
+ * Not anchored to the start of the string: a leading empty text block (the
+ * SDK can return multiple content blocks, joined with `\n`) or incidental
+ * leading whitespace must not make a genuinely successful create look
+ * unparseable — the caller treats "unparseable" and "the call failed" very
+ * differently (DOR-1441 S-A).
+ *
  * @param resultText - The tool_result content text for a TaskCreate call.
- * @returns The SDK-assigned task id, or `null` if the text doesn't match the
- *   SDK's confirmation format (e.g. the call failed).
+ * @returns The SDK-assigned task id, or `null` if the text doesn't contain
+ *   the SDK's confirmation format anywhere.
  */
 export function parseCreatedTaskId(resultText: string): string | null {
   const match = TASK_CREATED_PATTERN.exec(resultText);
@@ -121,6 +127,21 @@ export function buildTaskRemovedEvent(toolUseId: string): TaskUpdateEvent {
 }
 
 /**
+ * TodoWrite has no id concept of its own — it hands back its whole list every
+ * call, positionally. That position ("1", "2", …) is the same shape as a
+ * `TaskCreate`/`TaskUpdate` SDK id, and the two tools' events fold into the
+ * same task map (`applyTaskEvent`), so an unprefixed todo id can collide with
+ * — and be silently overwritten by — an unrelated Task-tool id (DOR-1441
+ * S-B). Namespacing keeps the two id spaces disjoint the same way
+ * {@link pendingTaskId} keeps provisional ids disjoint from real ones.
+ *
+ * @param index - The todo's position in the TodoWrite call's `todos` array.
+ */
+export function todoItemId(index: number): string {
+  return `todo:${index + 1}`;
+}
+
+/**
  * Build a snapshot TaskUpdateEvent from a TodoWrite tool call input.
  *
  * TodoWrite replaces the entire todo list each call, so the resulting event
@@ -134,7 +155,7 @@ export function buildTodoWriteEvent(input: Record<string, unknown>): TaskUpdateE
   if (!Array.isArray(todos) || todos.length === 0) return null;
 
   const tasks: TaskItem[] = todos.map((todo: Record<string, unknown>, index: number) => ({
-    id: String(index + 1),
+    id: todoItemId(index),
     subject: (todo.content as string) ?? '',
     status: ((todo.status as string) ?? 'pending') as SessionTaskStatus,
     activeForm: (todo.activeForm as string) ?? undefined,

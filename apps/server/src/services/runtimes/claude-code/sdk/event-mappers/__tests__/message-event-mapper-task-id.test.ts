@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { mapMessageEvent } from '../message-event-mapper.js';
 import type { AgentSession, ToolState } from '../../../agent-types.js';
 import type { StreamEvent, TaskUpdateEvent } from '@dorkos/shared/types';
+
+const { mockWarn } = vi.hoisted(() => ({ mockWarn: vi.fn() }));
+vi.mock('../../../../../../lib/logger.js', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: mockWarn, error: vi.fn() },
+}));
 
 /**
  * DOR-1441: `TaskCreate` never carries an id in its input — only the
@@ -50,7 +55,28 @@ function taskCreateResult(content: string, isError = false): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/** A tool_result whose `content` is an array of text blocks (multi-block SDK shape). */
+function taskCreateResultBlocks(texts: string[]): SDKMessage {
+  return {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: texts.map((text) => ({ type: 'text', text })),
+        },
+      ],
+    },
+  } as unknown as SDKMessage;
+}
+
 describe('message-event-mapper — TaskCreate id resolution', () => {
+  beforeEach(() => {
+    mockWarn.mockClear();
+  });
+
   it('emits an id_assigned task_update keyed to the pending create when the SDK confirms success', async () => {
     const events = await collect(
       taskCreateResult('Task #7 created successfully: Ship it'),
@@ -95,15 +121,56 @@ describe('message-event-mapper — TaskCreate id resolution', () => {
     expect((taskEvent!.data as TaskUpdateEvent).action).toBe('remove');
   });
 
-  it('emits a remove task_update when the result text does not match the SDK confirmation format', async () => {
+  /**
+   * DOR-1441 S-A: a successful create is not the same thing as a failed one,
+   * even when its confirmation text doesn't parse. Deleting the task here
+   * would be silent data loss for a call the SDK actually completed —
+   * `is_error` (not text shape) must be what decides removal.
+   */
+  it('keeps the pending row and warns when a successful result does not match the SDK confirmation format', async () => {
     const events = await collect(
       taskCreateResult('Something unexpected happened'),
       makeSession(),
       makeToolState('TaskCreate')
     );
 
+    expect(events.find((e) => e.type === 'task_update')).toBeUndefined();
+    expect(mockWarn).toHaveBeenCalledTimes(1);
+    expect(mockWarn.mock.calls[0]!.join(' ')).toContain('toolu_1');
+  });
+
+  it('keeps the pending row when the confirmation text is preceded by a leading empty text block', async () => {
+    // extractToolResultText joins blocks with "\n" — a leading empty block
+    // shifts the confirmation text off offset 0.
+    const events = await collect(
+      taskCreateResultBlocks(['', 'Task #3 created successfully: Ship it']),
+      makeSession(),
+      makeToolState('TaskCreate')
+    );
+
     const taskEvent = events.find((e) => e.type === 'task_update');
-    expect((taskEvent!.data as TaskUpdateEvent).action).toBe('remove');
+    expect(taskEvent!.data as TaskUpdateEvent).toEqual({
+      action: 'id_assigned',
+      task: { id: '3', subject: '', status: 'pending' },
+      previousId: 'pending:toolu_1',
+    });
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  it('keeps the pending row when the confirmation text has incidental leading whitespace', async () => {
+    const events = await collect(
+      taskCreateResult(' Task #3 created successfully: Ship it'),
+      makeSession(),
+      makeToolState('TaskCreate')
+    );
+
+    const taskEvent = events.find((e) => e.type === 'task_update');
+    expect(taskEvent!.data as TaskUpdateEvent).toEqual({
+      action: 'id_assigned',
+      task: { id: '3', subject: '', status: 'pending' },
+      previousId: 'pending:toolu_1',
+    });
+    expect(mockWarn).not.toHaveBeenCalled();
   });
 
   it('does not emit a task_update for a non-TaskCreate tool result', async () => {

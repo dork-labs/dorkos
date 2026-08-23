@@ -10,11 +10,18 @@ export interface TaskStatusTimestamp {
 export interface TaskFoldState {
   tasks: Map<string, TaskItem>;
   statusTimestamps: Map<string, TaskStatusTimestamp>;
+  /**
+   * Counts `create` events with no id, so each gets its own synthesized key
+   * instead of collapsing onto the last one (DOR-1441 S-C — see `create`
+   * below). Monotonic per fold instance, so a replay from the durable event
+   * log produces the same distinct keys every time.
+   */
+  legacyCreateCount: number;
 }
 
 /** Build an empty {@link TaskFoldState}. */
 export function createTaskFoldState(): TaskFoldState {
-  return { tasks: new Map(), statusTimestamps: new Map() };
+  return { tasks: new Map(), statusTimestamps: new Map(), legacyCreateCount: 0 };
 }
 
 /**
@@ -65,8 +72,15 @@ export function applyTaskEvent(state: TaskFoldState, event: TaskUpdateEvent, now
       return;
     }
     case 'create': {
-      state.tasks.set(event.task.id, event.task);
-      state.statusTimestamps.set(event.task.id, { status: event.task.status, since: now });
+      // Pre-DOR-1441 durable rows carry `task.id: ''` (the old TaskCreate
+      // mapper never assigned one). Replaying several of those blindly keyed
+      // on `event.task.id` would collapse every one of them onto a single
+      // `""` row — synthesize a distinct key per legacy create instead so
+      // each one renders as its own row.
+      const id = event.task.id || `legacy:${state.legacyCreateCount++}`;
+      const task = id === event.task.id ? event.task : { ...event.task, id };
+      state.tasks.set(id, task);
+      state.statusTimestamps.set(id, { status: task.status, since: now });
       return;
     }
     case 'id_assigned': {

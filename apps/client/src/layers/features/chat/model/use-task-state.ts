@@ -113,6 +113,7 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
       const next: TaskFoldState = {
         tasks: new Map(prev.tasks),
         statusTimestamps: new Map(prev.statusTimestamps),
+        legacyCreateCount: prev.legacyCreateCount,
       };
       applyTaskEvent(next, event, Date.now());
       return next;

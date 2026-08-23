@@ -3,9 +3,11 @@ import {
   buildTaskEvent,
   buildTaskIdAssignedEvent,
   buildTaskRemovedEvent,
+  buildTodoWriteEvent,
   extractTaskResultText,
   parseCreatedTaskId,
   pendingTaskId,
+  todoItemId,
 } from '../../runtimes/claude-code/sdk/build-task-event.js';
 
 describe('buildTaskEvent', () => {
@@ -160,5 +162,44 @@ describe('buildTaskRemovedEvent', () => {
       action: 'remove',
       task: { id: 'pending:toolu_abc', subject: '', status: 'pending' },
     });
+  });
+});
+
+describe('todoItemId', () => {
+  it('namespaces the positional index so it can never collide with a real SDK task id', () => {
+    // DOR-1441 S-B: an unprefixed "1" is indistinguishable from the SDK's
+    // own TaskCreate numbering, which folds into the same task map.
+    expect(todoItemId(0)).toBe('todo:1');
+    expect(todoItemId(1)).toBe('todo:2');
+  });
+});
+
+describe('buildTodoWriteEvent', () => {
+  it('keys each todo by its namespaced positional id', () => {
+    const result = buildTodoWriteEvent({
+      todos: [
+        { content: 'First', status: 'pending' },
+        { content: 'Second', status: 'in_progress', activeForm: 'Doing second' },
+      ],
+    });
+
+    expect(result).toEqual({
+      action: 'snapshot',
+      task: { id: 'todo:1', subject: 'First', status: 'pending', activeForm: undefined },
+      tasks: [
+        { id: 'todo:1', subject: 'First', status: 'pending', activeForm: undefined },
+        {
+          id: 'todo:2',
+          subject: 'Second',
+          status: 'in_progress',
+          activeForm: 'Doing second',
+        },
+      ],
+    });
+  });
+
+  it('returns null for an empty or missing todos array', () => {
+    expect(buildTodoWriteEvent({ todos: [] })).toBeNull();
+    expect(buildTodoWriteEvent({})).toBeNull();
   });
 });

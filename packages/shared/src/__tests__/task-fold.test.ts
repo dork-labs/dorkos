@@ -269,4 +269,66 @@ describe('applyTaskEvent', () => {
     expect(state.tasks.size).toBe(1);
     expect(state.tasks.get('1')).toMatchObject({ subject: 'Buy milk' });
   });
+
+  /**
+   * DOR-1441 S-B: TodoWrite rows and Task-tool ids fold into the same map.
+   * When the caller namespaces TodoWrite ids (`todo:<n>`, see
+   * `build-task-event.ts`'s `todoItemId`), a confirmed `TaskCreate` landing
+   * on the same positional number must not destroy the TodoWrite row.
+   */
+  it('a namespaced TodoWrite row and a same-numbered TaskCreate id coexist', () => {
+    const state = createTaskFoldState();
+    applyTaskEvent(
+      state,
+      {
+        action: 'snapshot',
+        task: { id: 'todo:1', subject: 'Todo one', status: 'pending' },
+        tasks: [{ id: 'todo:1', subject: 'Todo one', status: 'pending' }],
+      },
+      1
+    );
+    applyTaskEvent(
+      state,
+      { action: 'create', task: { id: 'pending:tu1', subject: 'Task one', status: 'pending' } },
+      2
+    );
+    applyTaskEvent(
+      state,
+      {
+        action: 'id_assigned',
+        task: { id: '1', subject: '', status: 'pending' },
+        previousId: 'pending:tu1',
+      },
+      3
+    );
+
+    expect(state.tasks.size).toBe(2);
+    expect(state.tasks.get('todo:1')).toMatchObject({ subject: 'Todo one' });
+    expect(state.tasks.get('1')).toMatchObject({ subject: 'Task one' });
+  });
+
+  /**
+   * DOR-1441 S-C: durable `todo_update` rows recorded before this fold
+   * existed carry `task.id: ''` (the old TaskCreate mapper never assigned
+   * one). Replaying several through the new `create` case must not collapse
+   * them onto a single `""` key.
+   */
+  it('synthesizes distinct keys for legacy create events that carry no id', () => {
+    const state = createTaskFoldState();
+    const legacyCreate = (subject: string): TaskUpdateEvent => ({
+      action: 'create',
+      task: { id: '', subject, status: 'pending' },
+    });
+
+    applyTaskEvent(state, legacyCreate('Old A'), 1);
+    applyTaskEvent(state, legacyCreate('Old B'), 2);
+
+    expect(state.tasks.size).toBe(2);
+    const subjects = Array.from(state.tasks.values())
+      .map((t) => t.subject)
+      .sort();
+    expect(subjects).toEqual(['Old A', 'Old B']);
+    // Neither row is keyed by the empty string.
+    expect(state.tasks.has('')).toBe(false);
+  });
 });

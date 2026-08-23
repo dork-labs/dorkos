@@ -10,6 +10,7 @@ import {
   parseCreatedTaskId,
   TASK_TOOL_NAMES,
 } from '../sdk/build-task-event.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * Parse task state from JSONL transcript lines.
@@ -66,13 +67,24 @@ export function parseTasks(lines: string[]): TaskItem[] {
         if (!pendingCreateIds.has(block.tool_use_id)) continue;
         pendingCreateIds.delete(block.tool_use_id);
 
-        const realId = block.is_error
-          ? null
-          : parseCreatedTaskId(extractTaskResultText(block.content));
-        const event = realId
-          ? buildTaskIdAssignedEvent(block.tool_use_id, realId)
-          : buildTaskRemovedEvent(block.tool_use_id);
-        applyTaskEvent(state, event, Date.now());
+        // `is_error` — not "did the text parse" — decides removal (DOR-1441
+        // S-A). A successful create whose confirmation text doesn't match
+        // the expected shape must keep its pending row rather than vanish
+        // silently; only a genuine failure drops it.
+        if (block.is_error) {
+          applyTaskEvent(state, buildTaskRemovedEvent(block.tool_use_id), Date.now());
+        } else {
+          const realId = parseCreatedTaskId(extractTaskResultText(block.content));
+          if (realId) {
+            applyTaskEvent(state, buildTaskIdAssignedEvent(block.tool_use_id, realId), Date.now());
+          } else {
+            logger.warn(
+              'TaskCreate succeeded but its confirmation text did not match the expected ' +
+                'format — keeping the task pending under %s',
+              block.tool_use_id
+            );
+          }
+        }
       }
     }
   }
