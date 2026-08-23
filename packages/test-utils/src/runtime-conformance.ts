@@ -1031,6 +1031,50 @@ export function runtimeConformance(
         await expect(runtime.getSession(projectDir, nextSessionId())).resolves.toBeNull();
       });
 
+      it('C10: getSessionCwd answers without a directory lookup, never throws, and follows a warmed binding', async (ctx) => {
+        // The cwd-free counterpart of getSession (DOR-1322): a route resolving
+        // a session's messages without a caller-supplied cwd asks this FIRST.
+        // Optional: a runtime with no live per-session binding (or none at
+        // all) omits it, and callers fall back to an explicit projectDir.
+        const runtime = makeRuntime();
+        const getSessionCwd = runtime.getSessionCwd?.bind(runtime);
+        if (getSessionCwd === undefined) {
+          // A SKIP, not a pass, for C7's reason: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'this runtime does not implement `getSessionCwd`, so callers fall back to an ' +
+              'explicit `projectDir` (see AgentRuntime.getSessionCwd)'
+          );
+          return;
+        }
+
+        // (1) ANSWERABLE for a session it has never heard of, never a throw —
+        // a route on a graceful-degradation path cannot afford a lookup that
+        // dereferences a missing entry.
+        const strangerId = nextSessionId();
+        expect(
+          () => getSessionCwd(strangerId),
+          'getSessionCwd must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        expect(
+          getSessionCwd(strangerId),
+          'an id this runtime has never heard of must answer undefined, never a guessed directory'
+        ).toBeUndefined();
+
+        // (2) The answer FOLLOWS THE MECHANISM — checkable exactly where the
+        // suite can move a session into the state that binding lives in.
+        if (!warmSession) return;
+
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await warmSession(runtime, sessionId);
+
+        expect(
+          getSessionCwd(sessionId),
+          'a warmed session`s live binding must be answered, matching the directory it was warmed with'
+        ).toBe(projectDir);
+      });
+
       it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
         // Purpose: `Session.userLastMessageAt` is half the sidebar's Today
         // order key, and the contract is "omission, never a guess". Two honest

@@ -361,6 +361,8 @@ curl -s "http://localhost:$API_PORT/api/sessions/$SDK_SESSION_ID/messages" \
   | jq '[.messages[] | {role, preview: (.content | if type=="string" then .[0:100] else (.[0].text // "[block]")[0:100] end)}]'
 ```
 
+A cwd-less `GET .../messages` now 404s (`SESSION_CWD_REQUIRED`) for a session the server has never loaded this process — `curl -sf` reports that as exit 22, not a JSON body — instead of silently answering `{"messages":[]}` (DOR-1322). If a call in this phase 404s, add `?cwd=<the session's project directory>`.
+
 **h. Compare against JSONL on disk:**
 
 ```bash

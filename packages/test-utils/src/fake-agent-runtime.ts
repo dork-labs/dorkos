@@ -195,6 +195,15 @@ export class FakeAgentRuntime implements AgentRuntime {
   getMessageHistory = vi
     .fn<(projectDir: string, sessionId: string) => Promise<HistoryMessage[]>>()
     .mockResolvedValue([]);
+  // Deliberately NOT defined by default, same stance as `canSteerSession` /
+  // `canStageSession`: the honest double for a fake that declares no
+  // cwd-tracking capability is to omit the method entirely, not to define it
+  // and answer `undefined` — the route branches on whether the method EXISTS
+  // (`runtime.getSessionCwd === undefined`), and a fake with an always-present
+  // stub would never be able to exercise that branch (DOR-1322 round 2). A
+  // test exercising cwd resolution assigns its own spy:
+  // `fakeRuntime.getSessionCwd = vi.fn(() => '/some/project');`.
+  getSessionCwd?: (sessionId: string) => string | undefined;
   getSessionTasks = vi
     .fn<(projectDir: string, sessionId: string) => Promise<TaskItem[]>>()
     .mockResolvedValue([]);

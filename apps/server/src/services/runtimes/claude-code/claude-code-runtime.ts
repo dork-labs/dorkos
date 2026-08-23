@@ -1010,6 +1010,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  getSessionCwd(sessionId: string): string | undefined {
+    return this.sessionStore.findSession(sessionId)?.cwd;
+  }
+
+  /** @inheritdoc */
   async getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null> {
     try {
       const session = this.sessionStore.findSession(sessionId);

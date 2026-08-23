@@ -1274,6 +1274,24 @@ export interface AgentRuntime {
   getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null>;
 
   /**
+   * Resolve a session's own working directory from its id alone, using
+   * whatever LIVE binding this runtime already holds for it — no directory
+   * lookup, no filesystem scan. Optional and best-effort: `undefined` means
+   * this runtime has no such binding for the id (a cold session it has never
+   * loaded this process, or a runtime with no per-session working directory
+   * at all), not that the session doesn't exist. Callers that need a
+   * definitive answer still fall back to an explicit `projectDir`.
+   *
+   * MUST answer synchronously and MUST NEVER throw, for any id (unknown,
+   * malformed, or otherwise) — a caller on a graceful-degradation path relies
+   * on `undefined` alone to mean "try something else next."
+   *
+   * @param sessionId - Session to resolve
+   * @returns The session's working directory, or `undefined` when unknown
+   */
+  getSessionCwd?(sessionId: string): string | undefined;
+
+  /**
    * Read new content from a session transcript starting at a byte offset.
    *
    * @param projectDir - Project directory for transcript lookup

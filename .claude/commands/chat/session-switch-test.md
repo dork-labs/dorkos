@@ -221,6 +221,7 @@ for line in lines[-6:]:
 - A **trailing `assistant TOOL_USE[...]` with no following `tool_result`** = the agent is **blocked on permission** (matches a stuck UI).
 - Confirm tool side-effects: e.g. does `.../testing` exist? (If the dir is absent but the UI claims "Creating testing directory", the mkdir is gated/stuck.)
 - Compare DOM message text (mounted rows only — see the Tooling gotcha on virtualization) vs API: `GET /api/sessions/$SDK_ID/messages`.
+  A cwd-less call here now 404s (`SESSION_CWD_REQUIRED`) for a session the server has never loaded this process, instead of silently answering `{"messages":[]}` — the origin of this skill's own Finding 6 (DOR-1322, fixed). Under `curl -sf` that is exit 22, not a JSON body; add `?cwd=<the session's project directory>` when it happens.
 
 ## Phase 6 — Assertions (the verification matrix)
 
