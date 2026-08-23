@@ -317,6 +317,7 @@ import {
   setSessionEventStore,
   setStagedContextStore,
   onProjectorRekey,
+  expireOrphanedAsks,
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
   listRecentSessions,
@@ -571,7 +572,15 @@ async function start() {
   // test-mode), injected once here so their completed-turn history survives a
   // server restart (DOR-189). Wired before any runtime registers so the first
   // turn/subscribe of a log-backed session persists and hydrates.
-  setSessionEventStore(new SessionEventStore(db));
+  const sessionEventStore = new SessionEventStore(db);
+  setSessionEventStore(sessionEventStore);
+
+  // An agent that was waiting on a person when the last process stopped is not
+  // waiting any more — its turn died with that process, and nothing can hand it
+  // an answer now (DOR-1439). Recorded as unanswered here, before anything can
+  // raise a new ask, so the conversation says so when it is reopened instead of
+  // showing a tool nobody was apparently ever asked about.
+  expireOrphanedAsks(sessionEventStore);
 
   // The durable message queue, wired on the same beat and for the same reason:
   // a message somebody typed and was told was accepted must outlive the request
