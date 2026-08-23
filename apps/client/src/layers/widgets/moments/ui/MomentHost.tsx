@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useConfig } from '@/layers/entities/config';
 import { useAppStore } from '@/layers/shared/model';
@@ -51,7 +51,7 @@ function pickWinner(descriptors: MomentDescriptor[]): MomentDescriptor | null {
  */
 export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps) {
   const moments = useMoments();
-  const { data: config } = useConfig();
+  const { data: config, isFetchedAfterMount } = useConfig();
   const momentShownThisLaunch = useAppStore((s) => s.momentShownThisLaunch);
   const markMomentShown = useAppStore((s) => s.markMomentShown);
 
@@ -61,6 +61,7 @@ export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps
   // The body, kept after its moment closes so the modal can animate out. Never
   // consulted when deciding whether to open anything.
   const [body, setBody] = useState<MomentDescriptor | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // An unloaded config reads as "onboarding still running", which is the safe
   // way round: it delays a moment rather than opening one over the first-run
@@ -68,7 +69,7 @@ export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps
   const onboardingSettled =
     config?.onboarding != null &&
     (config.onboarding.completedAt != null || config.onboarding.dismissedAt != null);
-  const quiet = onboardingOverlayVisible || !onboardingSettled;
+  const quiet = onboardingOverlayVisible || !isFetchedAfterMount || !onboardingSettled;
   const winner = quiet ? null : pickWinner(moments);
 
   // Open the winner by adjusting state during render (React's recommended
@@ -100,7 +101,26 @@ export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps
         if (!next) close();
       }}
     >
-      {body !== null && <DialogContent>{body.render({ onClose: close })}</DialogContent>}
+      {body !== null && (
+        <DialogContent
+          key={body.id}
+          ref={contentRef}
+          // Radix would otherwise autofocus the first tabbable thing in the
+          // body, which on the telemetry moment is the "See what's sent"
+          // chevron — a control nobody asked for, focused ahead of the question
+          // itself. Focus the dialog instead: screen readers announce the title
+          // and description first, and no keystroke can land on a consent
+          // button the reader has not got to yet. Never pre-focus the
+          // affirmative one; a modal that opens with "yes" under the cursor is
+          // a dark pattern however innocently it got there.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            contentRef.current?.focus();
+          }}
+        >
+          {body.render({ onClose: close })}
+        </DialogContent>
+      )}
     </Dialog>
   );
 }

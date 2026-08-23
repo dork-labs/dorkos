@@ -26,9 +26,17 @@ import {
  *
  * Two things it deliberately does not do. It has no "not now" button — closing
  * the dialog is that, and the rail asks again on a later launch. And it never
- * writes `telemetry.lastPromptedVersion`: `hasTier1SendGate` opens on that field
- * as well as on `userHasDecided`, so stamping it here would open the send gate
- * for somebody who never answered. That field stays server-written.
+ * writes `telemetry.lastPromptedVersion`: the server owns that stamp, advancing
+ * it at boot when it prints the first-run notice
+ * (`services/core/telemetry-first-run.ts`). A client that also wrote it would be
+ * racing the boot sequence for a field whose whole job is to record what that
+ * sequence did.
+ *
+ * A failed write says so in place. The config PATCH can 500, and a consent
+ * dialog that swallowed that would close over an answer nobody recorded — or,
+ * worse, sit there looking answerable with the choice already lost. The error
+ * line appears under the buttons, both stay live, and TanStack clears it the
+ * moment a retry starts.
  */
 export function TelemetryConsentMoment() {
   const updateConfig = useUpdateConfig();
@@ -71,13 +79,22 @@ export function TelemetryConsentMoment() {
         {expanded && <TelemetryPayloadBlock />}
       </div>
 
-      <DialogFooter>
-        <Button variant="outline" size="sm" onClick={decline} disabled={updateConfig.isPending}>
-          No thanks
-        </Button>
-        <Button size="sm" onClick={share} disabled={updateConfig.isPending}>
-          Share anonymously
-        </Button>
+      <DialogFooter className="items-center gap-2 sm:justify-between">
+        {updateConfig.isError ? (
+          <p role="alert" className="text-destructive text-xs">
+            Couldn&apos;t save your choice. Try again.
+          </p>
+        ) : (
+          <span aria-hidden />
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={decline} disabled={updateConfig.isPending}>
+            No thanks
+          </Button>
+          <Button size="sm" onClick={share} disabled={updateConfig.isPending}>
+            Share anonymously
+          </Button>
+        </div>
       </DialogFooter>
     </>
   );

@@ -495,6 +495,8 @@ A **moment** is a question the app asks once and then never again: consent, a ne
 - **`MomentHost` opens exactly one**, the highest `priority` (`MOMENT_PRIORITY`), ties going to collector order. Never a stack.
 - **At most one moment per app launch**, latched by a non-persisted flag in the app store. A reload is a new launch; anything else waits for it.
 - **Never over the onboarding overlay**, and never before onboarding is finished or dismissed. Staying quiet does not spend the launch.
+- **Never off a cache the server has not confirmed this page load.** `['config','current']` is on the warm-boot persister's allow-list and, inside its 30s staleTime, a reload can serve it without asking the server. The host waits for `isFetchedAfterMount` before opening anything, because re-asking a question already answered in another window — and then overwriting the real answer — is worse than asking one launch later.
+- **Focus the dialog, never the affirmative button.** The host sets `onOpenAutoFocus` to focus the content container, so the title and description are announced before any control and no keystroke lands on a consent button the reader has not reached.
 - **Persistence is the moment's own concern**, through a real state field it already owns (telemetry's is `telemetry.userHasDecided`). Do not add a `shownMoments` ledger — a parallel record only drifts from the thing it mirrors.
 
 ### Command (cmdk)

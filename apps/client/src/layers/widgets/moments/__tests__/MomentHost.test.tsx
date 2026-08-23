@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -40,9 +40,17 @@ function fakeMoment(id: string, priority: number): MomentDescriptor {
   };
 }
 
-/** Drive the onboarding half of the gate. `null` = config has not loaded. */
+/**
+ * Drive the config half of the gate.
+ *
+ * @param onboarding - The onboarding timestamps, or `null` for "config has not loaded".
+ * @param fetchedAfterMount - Whether this config came from the server on THIS page
+ *   load. `false` models a warm boot serving the persisted cache, which is the
+ *   default the tests below opt out of deliberately.
+ */
 function setOnboarding(
-  onboarding: { completedAt?: string | null; dismissedAt?: string | null } | null
+  onboarding: { completedAt?: string | null; dismissedAt?: string | null } | null,
+  fetchedAfterMount = true
 ) {
   vi.mocked(useConfig).mockReturnValue({
     data:
@@ -55,6 +63,7 @@ function setOnboarding(
             },
           },
     isLoading: false,
+    isFetchedAfterMount: fetchedAfterMount,
     error: null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useConfig>);
@@ -175,6 +184,70 @@ describe('MomentHost', () => {
     render(<MomentHost />);
 
     expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
+  });
+
+  // ── The config in hand must be this page load's, not last week's ──
+  //
+  // `['config','current']` is on the warm-boot persister's allow-list, so a
+  // reload paints from localStorage and — inside the 30s staleTime — may serve
+  // that copy without asking the server at all. Opening a moment off it means
+  // re-asking a question answered in another window, at the CLI or by hand,
+  // then overwriting the real answer with the reply to a question that should
+  // never have been posed.
+
+  it('does not open from a restored cache the server has not confirmed', () => {
+    vi.mocked(useMoments).mockReturnValue([fakeMoment('telemetry', MOMENT_PRIORITY.low)]);
+    setOnboarding(FINISHED_ONBOARDING, false);
+
+    render(<MomentHost />);
+
+    expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
+    // And the launch is not spent, so the ask survives the confirmation.
+    expect(useAppStore.getState().momentShownThisLaunch).toBe(false);
+  });
+
+  it('opens once the server confirms the question is still unanswered', async () => {
+    // Warm boot: the cached copy says "already decided", so the collector is
+    // empty and nothing should open yet — not even on the strength of that.
+    vi.mocked(useMoments).mockReturnValue([]);
+    setOnboarding(FINISHED_ONBOARDING, false);
+    const { rerender } = render(<MomentHost />);
+    expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
+
+    // The refetch lands and the server says the question is open after all.
+    vi.mocked(useMoments).mockReturnValue([fakeMoment('telemetry', MOMENT_PRIORITY.low)]);
+    setOnboarding(FINISHED_ONBOARDING, true);
+    rerender(<MomentHost />);
+
+    expect(await screen.findByText('telemetry body')).toBeInTheDocument();
+  });
+
+  it('never opens when the confirmed config says the question is already answered', () => {
+    // The stale copy says undecided. Without the gate this opens immediately
+    // and the user answers a question they already answered somewhere else.
+    vi.mocked(useMoments).mockReturnValue([fakeMoment('telemetry', MOMENT_PRIORITY.low)]);
+    setOnboarding(FINISHED_ONBOARDING, false);
+    const { rerender } = render(<MomentHost />);
+    expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
+
+    // The refetch lands: decided. The moment drops out and was never shown.
+    vi.mocked(useMoments).mockReturnValue([]);
+    setOnboarding(FINISHED_ONBOARDING, true);
+    rerender(<MomentHost />);
+
+    expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
+    expect(useAppStore.getState().momentShownThisLaunch).toBe(false);
+  });
+
+  it('puts initial focus on the dialog itself, never on the affirmative button', async () => {
+    vi.mocked(useMoments).mockReturnValue([fakeMoment('telemetry', MOMENT_PRIORITY.low)]);
+
+    render(<MomentHost />);
+    const dialog = await screen.findByRole('dialog');
+
+    // The title and description are announced before any control, and no
+    // keystroke can land on a consent button the user has not read up to.
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
   });
 
   it('never renders before config has loaded', () => {

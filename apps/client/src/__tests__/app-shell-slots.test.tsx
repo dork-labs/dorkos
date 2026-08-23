@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { act, render, screen, cleanup, within } from '@testing-library/react';
+import { act, render, screen, cleanup, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -213,11 +213,12 @@ vi.mock('@/layers/features/tours', () => ({
 }));
 
 // The moments rail draws nothing in this suite's world (onboarding is settled
-// but no moment is eligible). Stubbed anyway: this file fakes the app store with
-// a hand-written state object, and the rail's launch latch lives there.
-vi.mock('@/layers/widgets/moments', () => ({
-  MomentHost: () => null,
-}));
+// but no moment is eligible). The REAL `MomentHost` is left unmocked on purpose:
+// the one thing only this suite can prove is that the shell hands it the overlay
+// flag at all. `onboardingOverlayVisible={showOnboarding}` has exactly one
+// production site and the moments suite drives that prop by hand, so deleting
+// the line reddens nothing there. Every other test here leaves the rail with a
+// config that carries no `onboarding` block, so it stays quiet regardless.
 
 // Keep the real AppBannerSlot so this suite can prove *where* the global banner
 // lands in the shell (DOR-389): inside SidebarInset, below the header — never
@@ -315,6 +316,9 @@ vi.mock('@/layers/features/shortcuts', () => ({
   useShortcutsPanel: () => {},
 }));
 
+// Mutable so one test can raise the first-run overlay and watch what the shell
+// tells the moments rail about it.
+let mockOnboardingOverlayVisible = false;
 vi.mock('@/layers/features/onboarding', () => ({
   useOnboarding: () => ({
     shouldShowOnboarding: false,
@@ -324,7 +328,7 @@ vi.mock('@/layers/features/onboarding', () => ({
     isOnboardingDismissed: false,
     dismiss: vi.fn(),
   }),
-  useOnboardingOverlayVisible: () => false,
+  useOnboardingOverlayVisible: () => mockOnboardingOverlayVisible,
   useClearOnboardingStageWhenDone: () => {},
   OnboardingFlow: () => null,
   ProgressCard: () => null,
@@ -440,6 +444,7 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => {
 
 // ── Mock shared model hooks ──
 
+const mockMarkMomentShown = vi.fn();
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state: Record<string, unknown> = {
@@ -451,6 +456,10 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       tasksBadgeCount: 0,
       onboardingHiddenForSession: false,
       setOnboardingHiddenForSession: vi.fn(),
+      // The moments rail's launch latch. Stable references, because the real
+      // host takes `markMomentShown` as an effect dependency.
+      momentShownThisLaunch: false,
+      markMomentShown: mockMarkMomentShown,
       loadRightPanelState: vi.fn(),
       toggleRightPanel: vi.fn(),
       pipContent: null,
@@ -954,6 +963,60 @@ describe('AppShell slot integration', () => {
   // is a required `StaticDataRouteOption`, router.tsx) plus a router-level
   // assertion against the REAL route tree — see 'route headers' in
   // apps/client/src/__tests__/app-route-paths.test.ts.
+
+  describe('moments rail wiring (DOR-1431)', () => {
+    /** A config the rail will act on: onboarding over, telemetry unanswered. */
+    function seedEligibleMoment() {
+      vi.mocked(mockTransport.getConfig).mockResolvedValue({
+        version: '1.0.0',
+        port: 4242,
+        uptime: 0,
+        workingDirectory: '/test',
+        nodeVersion: 'v20.0.0',
+        platform: 'linux-x64',
+        runtimes: ['claude-code'],
+        claudeCliPath: null,
+        tunnel: {
+          enabled: false,
+          connected: false,
+          url: null,
+          authEnabled: false,
+          tokenConfigured: false,
+        },
+        tasks: { enabled: true },
+        onboarding: { completedAt: '2026-08-01T10:00:00.000Z', dismissedAt: null },
+        telemetry: { userHasDecided: false },
+      } as unknown as Awaited<ReturnType<Transport['getConfig']>>);
+    }
+
+    afterEach(() => {
+      mockOnboardingOverlayVisible = false;
+    });
+
+    it('mounts the rail, so an eligible moment actually opens in the shell', async () => {
+      seedEligibleMoment();
+
+      renderAppShell();
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('tells the rail when the onboarding overlay is up, so no moment opens over it', async () => {
+      // The prop under test. `MomentHost` defaults `onboardingOverlayVisible` to
+      // false, so a shell that stopped passing it would open a modal on top of
+      // the first-run flow — and every test in the moments suite would stay
+      // green, because they hand the prop in themselves.
+      seedEligibleMoment();
+      mockOnboardingOverlayVisible = true;
+
+      renderAppShell();
+
+      // Give the config query the same window the passing case needs.
+      await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
 
   describe('global banner placement (DOR-389)', () => {
     afterEach(() => {

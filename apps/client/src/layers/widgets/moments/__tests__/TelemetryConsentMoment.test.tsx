@@ -21,14 +21,14 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
 
 const updateMutate = vi.fn();
 
-function setUpdateConfigState(isPending = false) {
+function setUpdateConfigState({ isPending = false, isError = false } = {}) {
   vi.mocked(useUpdateConfig).mockReturnValue({
     mutate: updateMutate,
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending,
     isSuccess: false,
-    isError: false,
-    error: null,
+    isError,
+    error: isError ? new Error('Request failed with status 500') : null,
     reset: vi.fn(),
   } as unknown as ReturnType<typeof useUpdateConfig>);
 }
@@ -121,11 +121,60 @@ describe('TelemetryConsentMoment', () => {
   });
 
   it('disables both buttons while the update is in flight', () => {
-    setUpdateConfigState(true);
+    setUpdateConfigState({ isPending: true });
 
     renderMoment();
 
     expect(screen.getByRole('button', { name: /no thanks/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /share anonymously/i })).toBeDisabled();
+  });
+
+  it('says so when the write fails, and leaves the choice on offer', () => {
+    // A 500 on the config PATCH used to be silent: the dialog stayed open, the
+    // buttons came back to life, and nothing told anyone the answer was lost.
+    setUpdateConfigState({ isError: true });
+
+    renderMoment();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn.t save your choice/i);
+    // Still answerable — the failure is a prompt to retry, not a dead end.
+    expect(screen.getByRole('button', { name: /no thanks/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /share anonymously/i })).toBeEnabled();
+    expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
+  });
+
+  it('clears the error when the retry is in flight, and writes on success', async () => {
+    const user = userEvent.setup();
+    setUpdateConfigState({ isError: true });
+    const { rerender } = renderMoment();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    // The retry starts: TanStack flips the mutation back to pending, so the
+    // error line goes with it rather than lingering over a live attempt.
+    setUpdateConfigState({ isPending: true });
+    rerender(
+      <Dialog open>
+        <DialogContent>
+          <TelemetryConsentMoment />
+        </DialogContent>
+      </Dialog>
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // And it settles: no error, and the choice reaches the server intact.
+    setUpdateConfigState();
+    rerender(
+      <Dialog open>
+        <DialogContent>
+          <TelemetryConsentMoment />
+        </DialogContent>
+      </Dialog>
+    );
+    await user.click(screen.getByRole('button', { name: /share anonymously/i }));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(updateMutate).toHaveBeenCalledWith({
+      telemetry: { install: true, heartbeat: true, usage: true, userHasDecided: true },
+    });
   });
 });
