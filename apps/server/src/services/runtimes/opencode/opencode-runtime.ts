@@ -91,7 +91,11 @@ import {
   type ApprovalGateDeps,
   type ApprovalRouting,
 } from './approvals.js';
-import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
+import {
+  OPENCODE_CAPABILITIES,
+  STREAM_LIVE_TIMEOUT_MS,
+  INTERRUPT_ACK_TIMEOUT_MS,
+} from './runtime-constants.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
@@ -121,6 +125,50 @@ interface ActiveTurn {
 /** Sleep helper for the stream-liveness race. */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-control.ts`). */
+type AbortAck =
+  /** The backend answered, and the answer is `request`'s return value. */
+  | { kind: 'settled'; aborted: boolean }
+  /** The backend answered with a rejection — a refusal, not silence. */
+  | { kind: 'refused' }
+  /** Nothing answered inside the bound — which says nothing about whether it ever will. */
+  | { kind: 'unacked' };
+
+/**
+ * Race one `session.abort` call against {@link INTERRUPT_ACK_TIMEOUT_MS},
+ * mirroring the load-bearing details of claude-code's `awaitStopAck`
+ * (`sessions/bounded-control.ts`, DOR-1244) for the same reason: a promise
+ * that only a backend ack settles must not be trusted to settle at all.
+ *
+ * Never throws, whichever way the race goes and however `request` fails —
+ * `request` is INVOKED here rather than passed in as an already-started
+ * promise, so a SYNCHRONOUS throw from it becomes a `refused` like any other
+ * failure instead of escaping past the bound this function exists to
+ * provide — and never leaves a live timer behind.
+ *
+ * @param request - Makes the abort call and reports whether it actually aborted.
+ * @returns The tri-state outcome; the caller decides what each means for its
+ *   own `false` vs `true`.
+ */
+function awaitAbortAck(request: () => Promise<boolean>): Promise<AbortAck> {
+  const settled: Promise<AbortAck> = (async () => request())().then(
+    (aborted) => ({ kind: 'settled', aborted }) as const,
+    () => ({ kind: 'refused' }) as const
+  );
+  let timer: NodeJS.Timeout | undefined;
+  return (async () => {
+    try {
+      const expiry = new Promise<AbortAck>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: 'unacked' }), INTERRUPT_ACK_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      return await Promise.race([settled, expiry]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  })();
 }
 
 /**
@@ -495,24 +543,45 @@ export class OpenCodeRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
-   * Aborts the in-flight turn via `POST /session/{id}/abort`. The wire then
-   * carries `session.error{MessageAbortedError}` + `session.idle`, which the
-   * mapper normalizes to a quiet `done` — user-initiated, not an error.
+   * Aborts the in-flight turn via `POST /session/{id}/abort`, bounded by
+   * {@link awaitAbortAck} (DOR-1299): a wedged sidecar drops the request the
+   * same way an ended stdin drops claude-code's, and nothing then answers it,
+   * ever. Past {@link INTERRUPT_ACK_TIMEOUT_MS} this gives up and answers
+   * `false` — honest, not an escalation; see {@link INTERRUPT_ACK_TIMEOUT_MS}
+   * for why there is nothing session-scoped to escalate TO here.
+   *
+   * On the acked path the wire carries `session.error{MessageAbortedError}` +
+   * `session.idle`, which the mapper normalizes to a quiet `done` —
+   * user-initiated, not an error.
    */
   async interruptQuery(sessionId: string): Promise<boolean> {
     const turn = this.activeTurns.get(sessionId);
     if (!turn) return false;
-    try {
+    const ack = await awaitAbortAck(async () => {
       const client = await this.provider.getClient(turn.cwd);
-      const aborted = unwrap(
-        await client.session.abort({ path: { id: turn.ocSessionId } }),
-        'session.abort'
+      return (
+        unwrap(await client.session.abort({ path: { id: turn.ocSessionId } }), 'session.abort') ===
+        true
       );
-      logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
-      return aborted === true;
-    } catch (err) {
-      logger.warn('[OpenCodeRuntime] interrupt failed', logError(err));
-      return false;
+    });
+    // The tri-state is worth telling apart in the log: REFUSED means the
+    // sidecar answered and said no (a bug or a race, not a wedge); UNACKED
+    // means the bound itself fired, which is the wedge this whole path
+    // exists for.
+    switch (ack.kind) {
+      case 'settled':
+        if (ack.aborted) {
+          logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
+        } else {
+          logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
+        }
+        return ack.aborted;
+      case 'refused':
+        logger.warn('[OpenCodeRuntime] interrupt call failed', { sessionId });
+        return false;
+      case 'unacked':
+        logger.warn('[OpenCodeRuntime] interrupt timed out waiting for an ack', { sessionId });
+        return false;
     }
   }
 
