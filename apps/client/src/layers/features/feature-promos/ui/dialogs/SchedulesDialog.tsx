@@ -19,7 +19,7 @@ export function SchedulesDialog({ onClose }: PromoDialogProps) {
           <Moon className="size-5 text-indigo-500" />
         </div>
         <div>
-          <h3 className="text-sm font-medium">Agents that work while you sleep</h3>
+          <h3 className="text-sm font-medium">Agents that work on a schedule</h3>
           <p className="text-muted-foreground text-xs">Schedule recurring tasks with Tasks</p>
         </div>
       </div>
@@ -37,9 +37,9 @@ export function SchedulesDialog({ onClose }: PromoDialogProps) {
         <div className="flex items-start gap-3">
           <Repeat className="text-muted-foreground mt-0.5 size-4" />
           <div>
-            <p className="text-xs font-medium">Wake up to results</p>
+            <p className="text-xs font-medium">Come back to results</p>
             <p className="text-muted-foreground text-xs">
-              Review completed work in the morning, not start it
+              Review completed work instead of starting it
             </p>
           </div>
         </div>

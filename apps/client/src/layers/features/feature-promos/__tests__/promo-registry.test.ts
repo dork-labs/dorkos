@@ -140,7 +140,7 @@ describe('promo-registry', () => {
     // Priority is shared with the cards, so a higher-priority suggestion would
     // quietly monopolise the one slot. This pins the arrangement the spec
     // describes — somebody who has run agents and has no schedules yet gets
-    // "want your agents working while you sleep?".
+    // "want your agents working without you at the keyboard?".
     const usedInstallCtx = {
       hasAdapter: () => false,
       isTasksEnabled: true,
@@ -162,7 +162,7 @@ describe('promo-registry', () => {
 
   it('the schedules suggestion stops once there are schedules', () => {
     // Otherwise it prints under a forward look that names a run already on the
-    // books — "want your agents working while you sleep?" beneath "Morning
+    // books — "want your agents working without you at the keyboard?" beneath "Morning
     // standup runs tomorrow at 9:00 AM".
     const withSchedules = {
       hasAdapter: () => false,

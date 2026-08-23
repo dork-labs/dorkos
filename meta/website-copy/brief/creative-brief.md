@@ -67,7 +67,7 @@ Seven modules, three tiers:
 
 **Modules (composable capabilities):**
 
-- **Pulse** — Cron-based agent scheduling. Agents run while you sleep. Independent of IDE/terminal
+- **Pulse** — Cron-based agent scheduling. Agents run without you at the keyboard, for as long as the DorkOS server runs; put it on an always-on machine and they never stop. Independent of IDE/terminal
 - **Relay** — Built-in messaging. Agents reach you on Telegram, notify each other, connect through any channel
 - **Mesh** — Agent discovery and network. Scans projects, registers agents, governs access
 
@@ -141,7 +141,7 @@ Dorian Collier grew up in Section 8 housing with no connections to tech. Learned
 
 The throughline: one person, building systems that let you do what should take a team.
 
-When AI coding agents arrived, he saw the gap immediately. The agents were brilliant but trapped — stuck in terminals, starting every session with amnesia, unable to run while you sleep. He'd seen this pattern before: every time a powerful capability emerges, the missing piece is the coordination layer.
+When AI coding agents arrived, he saw the gap immediately. The agents were brilliant but trapped — stuck in terminals, starting every session with amnesia, unable to run unless he was sitting there driving them. He'd seen this pattern before: every time a powerful capability emerges, the missing piece is the coordination layer.
 
 He named it after himself. Because the people who build at 3am, who have opinions about cron expressions and message routing — those people deserve a tool that's unapologetically theirs.
 

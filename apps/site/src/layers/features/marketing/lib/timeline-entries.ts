@@ -9,11 +9,11 @@ export const timelineEntries: TimelineEntry[] = [
   {
     id: '1114pm',
     time: '11:14 PM',
-    headline: 'You hand off three tasks. Then you close the laptop.',
+    headline: 'You hand off three tasks. Then you go to bed.',
     paragraphs: [
       'A test suite that needs expanding. A dependency upgrade across two services. A refactor you\u2019ve been putting off.',
       'You type one command. [TASKS] schedules all three.',
-      'You close the laptop.',
+      'You leave DorkOS running and walk away.',
     ],
   },
   {
@@ -47,9 +47,9 @@ export const timelineEntries: TimelineEntry[] = [
   {
     id: '700am',
     time: '7:00 AM',
-    headline: 'You open your laptop to a full progress report.',
+    headline: 'You come back to a full progress report.',
     paragraphs: [
-      'You open your laptop. [CONSOLE] shows the night at a glance: three changes ready for review, one fix already merged, the refactor at 80%, waiting on a design question it queued for you.',
+      'You sit down with coffee. [CONSOLE] shows the night at a glance: three changes ready for review, one fix already merged, the refactor at 80%, waiting on a design question it queued for you.',
     ],
   },
   {

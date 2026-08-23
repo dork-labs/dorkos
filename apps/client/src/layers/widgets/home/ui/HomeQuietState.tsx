@@ -137,7 +137,7 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
       // empty one would hide discovery from exactly the people running the most.
       // The pairing stays honest at the other end — a promo that offers what
       // this install already has does not qualify (see the registry's
-      // `taskCount` condition), so "want your agents working while you sleep?"
+      // `taskCount` condition), so "want your agents working without you at the keyboard?"
       // cannot print under a run already scheduled for 6am.
       suggestion={<QuietSuggestion />}
     />

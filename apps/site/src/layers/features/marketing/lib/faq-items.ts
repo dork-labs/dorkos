@@ -15,7 +15,7 @@ export const faqItems: FaqItem[] = [
     id: 'how-different-from-claude-code',
     question: 'How is this different from just using Claude Code?',
     answer:
-      'Claude Code is the agent: the tool that thinks and writes code. DorkOS is the system around it. Without DorkOS, your agent stops the moment you close the terminal. With it, your agents run on a schedule, message you when something breaks, message each other, and pick up right where they left off.',
+      'Claude Code is the agent: the tool that thinks and writes code. DorkOS is the system around it. Without DorkOS, your agent only works while you sit there driving it. With it, your agents run on a schedule, message you when something breaks, message each other, and pick up right where they left off.',
   },
   {
     id: 'data-privacy',
@@ -39,7 +39,7 @@ export const faqItems: FaqItem[] = [
     id: 'remote-server',
     question: 'Can I run DorkOS on a remote server?',
     answer:
-      'Yes. DorkOS runs wherever you put it: your laptop, a home server, or a cheap cloud box. Built-in tunnel support lets you reach it from anywhere.',
+      'Yes. DorkOS runs wherever you put it: your laptop, a home server, or a cheap cloud box. Built-in tunnel support lets you reach it from anywhere. Your scheduled agents run for as long as DorkOS does, so a machine that stays on is a machine where they never stop.',
   },
   {
     id: 'cost',

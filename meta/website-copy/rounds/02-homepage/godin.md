@@ -51,6 +51,8 @@ New session. "Let me give you some context..." Again. Every conversation starts 
 **The tab graveyard.**
 Ten agents across five projects. Different terminal windows. One of them has been waiting for approval since lunch. You don't know which one.
 
+> **Retired 2026-08-23 (DOR-1478).** Do not mine "The sleeping Mac" for live copy. On a default local install DorkOS runs on that same laptop, so it sleeps too — the pain is real but we are not the cure for it. Use the honest pain instead: the agent only runs while you sit there driving it.
+
 **The sleeping Mac.**
 Your laptop went to sleep. The agent went with it. Eight hours of potential, gone — because no one told the screen to stay awake.
 
