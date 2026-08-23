@@ -138,6 +138,8 @@ Trigger a schedule outside its cron timing:
 curl -X POST http://localhost:4242/api/tasks/{id}/trigger
 ```
 
+Running a schedule on demand is yours to decide, so this call answers 403 for a caller that identifies itself as an agent or presents an approval token — the same bar that decides who may set `permissionMode` or `status`. You can trigger any schedule, including one still parked at `pending_approval`: running a proposal once is how you find out what it does before you approve it.
+
 Cancel an active run:
 
 ```bash

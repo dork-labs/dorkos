@@ -164,6 +164,26 @@ export const OPERATOR_ONLY_TASK_ERROR = 'Only a person can decide how a schedule
 export const OPERATOR_ONLY_TASK_CODE = 'operator_only_task_field';
 
 /**
+ * The refusal an agent reads when it tries to run a scheduled task on demand
+ * (DOR-1481).
+ *
+ * Running a task now is not a FIELD, so it has no row in the table above — but
+ * it is the same decision the table is about, reached through a different door.
+ * `POST /api/tasks/:id/trigger` had no caller check at all, which made the
+ * parking on create decorative: an agent could propose a schedule, watch it
+ * park at `pending_approval`, and then trigger it anyway.
+ *
+ * Written for the model, like {@link describeOperatorOnlyTaskRefusal}: it says
+ * what did not happen, why, and what to do instead, because a model that is
+ * only told "no" tries again.
+ */
+export const OPERATOR_ONLY_TRIGGER_REFUSAL =
+  "DorkOS did not run this task. Whether a scheduled task runs is the person's to decide, " +
+  'not yours — and that goes double for one still waiting to be approved, since running it ' +
+  'now would do most of what approving it would allow. Ask the person to open the task in ' +
+  'DorkOS and run it there.';
+
+/**
  * Find the operator-only fields a task write body reaches for.
  *
  * Presence is what counts, not the value. A caller that sends
