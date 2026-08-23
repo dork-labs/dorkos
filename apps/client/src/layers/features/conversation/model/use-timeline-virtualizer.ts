@@ -18,11 +18,17 @@ import type { ConversationRow } from '../lib/row-kinds';
  *
  * @param rows - The rows being drawn, oldest first.
  * @param scrollerRef - The scrolling element, once it exists.
+ * @param onSettle - Called when the list stops moving — after a scroll ends and
+ *   after a lazy measurement re-runs the layout — with `isScrolling` false. It
+ *   is how the timeline re-reads the reader's top row from the SETTLED geometry
+ *   rather than only on scroll events (see the `onChange` note below). Must be
+ *   idempotent: it can fire several times for one resting position.
  * @returns The virtualizer.
  */
 export function useTimelineVirtualizer(
   rows: readonly ConversationRow[],
-  scrollerRef: RefObject<HTMLDivElement | null>
+  scrollerRef: RefObject<HTMLDivElement | null>,
+  onSettle?: () => void
 ): Virtualizer<HTMLDivElement, Element> {
   // Stable per key-space, NOT per render. `getMeasurementOptions` lists
   // `getItemKey` among its memo deps and virtual-core's `memo` compares by
@@ -80,6 +86,21 @@ export function useTimelineVirtualizer(
     anchorTo: 'end',
     followOnAppend: true,
     scrollEndThreshold: 64,
+    // The scroll handler captures the reader's top row on every scroll EVENT,
+    // but the virtualizer keeps refining geometry after the last one: it lazily
+    // measures the rows a reader scrolled up into (`measureElement` above, wired
+    // through a ResizeObserver) and re-runs its layout, and that settle arrives
+    // with NO scroll event to hang a capture off — so a scroll-only capture is
+    // left a row stale. Measured coming back from a thread: off by one.
+    // `onChange` fires on those settles too, so re-read the top row from the
+    // SETTLED geometry once the list is no longer actively scrolling. Gated on
+    // `!isScrolling` because an active scroll is already the scroll handler's
+    // job, and firing here as well would be redundant work on every frame. The
+    // capture is idempotent — it tells its host only when the top row actually
+    // changed, and the host stores the answer in a ref — so this cannot loop.
+    onChange: (instance) => {
+      if (!instance.isScrolling) onSettle?.();
+    },
   });
 
   return virtualizer;
