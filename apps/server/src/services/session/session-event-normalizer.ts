@@ -366,21 +366,39 @@ function toToolPayload(data: StreamData): Omit<RawOf<'tool_call'>, 'type'> {
   };
 }
 
+/**
+ * The countdown fields every interaction member carries, mapped once.
+ *
+ * All three kinds are drawn on the same cards and answered the same way, so the
+ * timer is read here rather than per-kind: `toQuestionEvent` used to drop the
+ * budget its runtime declared while `toApprovalEvent` kept it, which left a live
+ * question's card with a deadline it could only count from NOW — restarting the
+ * countdown on every remount instead of letting it decay (DOR-1442).
+ *
+ * `timeoutMs` is carried only when the runtime declared one: an invented budget
+ * would draw a deadline nothing enforces (DOR-810).
+ */
+function toInteractionTimer(data: StreamData): {
+  startedAt: number;
+  remainingMs: number;
+  timeoutMs?: number;
+} {
+  return {
+    startedAt: Number(data.startedAt ?? Date.now()),
+    remainingMs: Number(data.remainingMs ?? data.timeoutMs ?? 0),
+    ...(data.timeoutMs !== undefined ? { timeoutMs: Number(data.timeoutMs) } : {}),
+  };
+}
+
 /** Map an `approval_required` StreamEvent to its session-stream member. */
 function toApprovalEvent(data: StreamData): RawOf<'approval_required'> {
   return {
     type: 'approval_required',
     id: String(data.toolCallId ?? ''),
-    startedAt: Number(data.startedAt ?? Date.now()),
-    remainingMs: Number(data.remainingMs ?? data.timeoutMs ?? 0),
+    ...toInteractionTimer(data),
     toolName: String(data.toolName ?? ''),
     input: String(data.input ?? ''),
     hasSuggestions: Boolean(data.hasSuggestions),
-    // The client gates its countdown on this, so it has to survive the hop from
-    // the runtime's StreamEvent onto the durable member (DOR-810). Carried only
-    // when the runtime declared one — an invented budget would draw a deadline
-    // nothing enforces.
-    ...(data.timeoutMs !== undefined ? { timeoutMs: Number(data.timeoutMs) } : {}),
     ...(data.title !== undefined ? { title: String(data.title) } : {}),
     ...(data.displayName !== undefined ? { displayName: String(data.displayName) } : {}),
     ...(data.description !== undefined ? { description: String(data.description) } : {}),
@@ -394,8 +412,7 @@ function toQuestionEvent(data: StreamData): RawOf<'question_prompt'> {
   return {
     type: 'question_prompt',
     id: String(data.toolCallId ?? ''),
-    startedAt: Number(data.startedAt ?? Date.now()),
-    remainingMs: Number(data.remainingMs ?? data.timeoutMs ?? 0),
+    ...toInteractionTimer(data),
     // QuestionItem[] passes through structurally; the projector treats it opaquely.
     questions: (data.questions as RawOf<'question_prompt'>['questions']) ?? [],
   };
@@ -498,8 +515,7 @@ function toElicitationEvent(data: StreamData): RawOf<'elicitation_prompt'> {
   return {
     type: 'elicitation_prompt',
     id: String(data.interactionId ?? data.elicitationId ?? ''),
-    startedAt: Number(data.startedAt ?? Date.now()),
-    remainingMs: Number(data.remainingMs ?? data.timeoutMs ?? 0),
+    ...toInteractionTimer(data),
     serverName: String(data.serverName ?? ''),
     message: String(data.message ?? ''),
     ...(data.mode !== undefined ? { mode: data.mode as RawOf<'elicitation_prompt'>['mode'] } : {}),
