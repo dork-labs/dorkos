@@ -578,12 +578,35 @@ export interface RoomContextData {
    * spend it deliberately.
    */
   budget: {
-    /** Automatic turns this room may still run this hour. */
-    automaticRepliesLeftInThisRoomThisHour: number;
-    /** Automatic turns the whole install may still run this hour. */
-    automaticRepliesLeftInTotalThisHour: number;
-    /** The cascade ceiling minus this turn's depth. */
-    repliesLeftInThisChain: number;
+    /**
+     * Automatic turns this room may still run this hour, or `null` when this
+     * room's automatic-reply limits are off.
+     */
+    automaticRepliesLeftInThisRoomThisHour: number | null;
+    /**
+     * Automatic turns the whole install may still run this hour, or `null` when
+     * the install-wide toggle is off.
+     *
+     * **Independent of the other two**, and that is the per-room override
+     * showing through (DOR-1429): a room may switch its own bounds off while the
+     * install still counts every automatic reply against one hourly total, so
+     * this can be a number beside two `null`s. A room opts out of its own
+     * bounds, never out of the install's wallet.
+     */
+    automaticRepliesLeftInTotalThisHour: number | null;
+    /**
+     * The cascade ceiling minus this turn's depth, or `null` when this room's
+     * automatic-reply limits are off.
+     *
+     * `null` means "nothing is counting" rather than "none left". A number would
+     * be invented in that state, and an agent that reads its own headroom to
+     * decide how freely to answer would be deciding against a fiction.
+     *
+     * This and {@link RoomContextData.budget.automaticRepliesLeftInThisRoomThisHour}
+     * ARE `null` together: both are this room's own bounds, and one reading of
+     * the ladder decides both.
+     */
+    repliesLeftInThisChain: number | null;
   };
 }
 
@@ -818,9 +841,9 @@ export const RoomContextDataSchema = z.object({
     addressedNow: z.boolean(),
   }),
   budget: z.object({
-    automaticRepliesLeftInThisRoomThisHour: z.number().int(),
-    automaticRepliesLeftInTotalThisHour: z.number().int(),
-    repliesLeftInThisChain: z.number().int(),
+    automaticRepliesLeftInThisRoomThisHour: z.number().int().nullable(),
+    automaticRepliesLeftInTotalThisHour: z.number().int().nullable(),
+    repliesLeftInThisChain: z.number().int().nullable(),
   }),
 });
 

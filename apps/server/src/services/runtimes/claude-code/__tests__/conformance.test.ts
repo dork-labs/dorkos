@@ -175,6 +175,7 @@ import {
   driveTerminalOnce,
   driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
+import { getOrCreateProjector, feedProjector } from '../../../session/index.js';
 import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
 
 const mockedQuery = vi.mocked(query);
@@ -421,6 +422,41 @@ runtimeConformance(
     // driven through the shared machinery rather than claude-code itself.
     terminalOnce: () => driveTerminalOnce('/projects/conformance'),
     queueDurability: () => driveQueueDurability(),
+    // C11 (DOR-1299): warm a process, open a SECOND turn on it and leave it
+    // silent (mirrors dispositionTurn above), then arm its `interrupt()` to
+    // hang forever — the fake-CLI equivalent of the ended-stdin wedge
+    // `bounded-control.ts` exists for. `process.received` growing past the warm
+    // turn's count is the real signal the second turn's message reached the
+    // process, i.e. `session.activeQuery` is armed with the query under test.
+    // The pinned settle is `true`: `bounded-control.ts` escalates an unacked
+    // interrupt to `query.close()` and reports the process WAS stopped, just
+    // not gracefully — unlike opencode, which has nothing to escalate to.
+    hangingInterrupt: async (runtime: AgentRuntime, sessionId: string): Promise<boolean> => {
+      persistent.on = true;
+      warmCli = new FakeCli();
+      mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
+      for await (const _event of runtime.sendMessage(sessionId, 'warm the process', {
+        cwd: '/projects/conformance',
+      })) {
+        // Drained to leave the session warm — the hung turn below joins it.
+      }
+      const process = warmCli.processes[0]!;
+      const warmReceived = process.received.length;
+      process.goSilent();
+      process.interruptNeverSettles = true;
+      const projector = getOrCreateProjector(sessionId, '/projects/conformance');
+      // Started, NOT awaited — same as dispositionTurn above: the silent
+      // process never answers, so this promise never settles on its own.
+      void feedProjector(
+        projector,
+        runtime.sendMessage(sessionId, 'this turn is never answered', {
+          cwd: '/projects/conformance',
+        }),
+        { userMessage: 'this turn is never answered' }
+      );
+      await vi.waitFor(() => expect(process.received.length).toBe(warmReceived + 1));
+      return true;
+    },
     // Claude-code CAN say when the person last wrote: it rides the transcript
     // tail read the session list already performs. Read back through
     // `listSessions` rather than `getSession`, because the recents LIST is the

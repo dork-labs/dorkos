@@ -171,8 +171,6 @@ const CARRYOVER_EXEMPT: Readonly<Record<string, string>> = {
     'An array of MIME globs. "More protective" is a subset test the carryover directions cannot express. The size and count caps are the real bound, and both of those DO carry across a wipe.',
   'mcp.rateLimit.windowSecs':
     'Lower is not more protective here: a shorter window with the same request count allows MORE traffic, not less. The count (`maxPerWindow`) is the bound that carries.',
-  'scheduler.maxConcurrentRuns':
-    'Ships at its schema minimum (1), so there is nothing below the default for a person to tighten to.',
   'rooms.replyWaitMinutes':
     'How long a room waits before carrying on without an answer. Neither direction is more protective: the turn runs either way, and the answer is posted late rather than dropped, so a shorter wait costs nothing and a longer one spends nothing.',
   'rooms.lateReplyCeilingMinutes':

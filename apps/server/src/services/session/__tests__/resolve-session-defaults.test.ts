@@ -24,6 +24,7 @@ import {
   resolveSessionDefaults,
   readAgentExecutionDefaults,
   describeExecutionDefaults,
+  resolveUnattendedDefaultStop,
 } from '../resolve-session-defaults.js';
 
 /** The least manifest that validates, for the on-disk half of the ladder. */
@@ -801,9 +802,13 @@ describe('resolveSessionDefaults — the trust stop', () => {
 
   it('resolves nothing when the caller passes no declared modes — the unattended path', () => {
     // THE interactive-only boundary, in the shape it actually holds: a room
-    // turn, a scheduled task and a relay binding all resolve their defaults
-    // without handing over a profile, so the stop cannot reach them however it
-    // is configured.
+    // turn and a relay binding resolve their defaults without handing over a
+    // profile, so the stop cannot reach them however it is configured. A
+    // scheduled task DOES take the operator's level now (spec
+    // `full-power-defaults`, D6) — and it takes it by calling
+    // `resolveUnattendedDefaultStop` by name, which is the point of that being
+    // a separate export rather than a flag on this one. This function's silence
+    // for a caller with no profile is unchanged.
     expect(
       resolveForRuntime({
         runtimeType: 'claude-code',
@@ -828,5 +833,71 @@ describe('resolveSessionDefaults — the trust stop', () => {
         permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
       })
     ).toEqual({ model: 'opus', effort: 'high', permissionMode: 'acceptEdits' });
+  });
+});
+
+describe('resolveUnattendedDefaultStop', () => {
+  it('answers the global stop when that is all there is', () => {
+    expect(resolveUnattendedDefaultStop({ runtimes: runtimes({ defaultTrustStop: 'act' }) })).toBe(
+      'act'
+    );
+  });
+
+  it('lets the runtime that declared a section override the global stop', () => {
+    const config = runtimes({
+      defaultTrustStop: 'autonomy',
+      codex: { ...USER_CONFIG_DEFAULTS.runtimes.codex, defaultTrustStop: 'ask' },
+    });
+
+    expect(resolveUnattendedDefaultStop({ configSection: 'codex', runtimes: config })).toBe('ask');
+    // And every runtime that did not override it stays on the global answer.
+    expect(resolveUnattendedDefaultStop({ configSection: 'claudeCode', runtimes: config })).toBe(
+      'autonomy'
+    );
+  });
+
+  it('reads a per-runtime null as "no answer here", not as "no answer at all"', () => {
+    expect(
+      resolveUnattendedDefaultStop({
+        configSection: 'claudeCode',
+        runtimes: runtimes({ defaultTrustStop: 'act' }),
+      })
+    ).toBe('act');
+  });
+
+  it('still reads the global stop for a runtime with no config section of its own', () => {
+    // `test-mode` declares `configSection: null`, and the stop is runtime-neutral
+    // by construction — "every unattended run at my level" has to mean every
+    // runtime, not every runtime somebody wrote a settings section for.
+    expect(
+      resolveUnattendedDefaultStop({
+        configSection: null,
+        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
+      })
+    ).toBe('autonomy');
+  });
+
+  it('skips a section this build has no config key for rather than throwing', () => {
+    expect(
+      resolveUnattendedDefaultStop({
+        configSection: 'someRuntimeFromTheFuture',
+        runtimes: runtimes({ defaultTrustStop: 'ask' }),
+      })
+    ).toBe('ask');
+  });
+
+  it('answers null on a fresh install, with neither tier set', () => {
+    expect(resolveUnattendedDefaultStop({ runtimes: runtimes() })).toBeNull();
+    expect(
+      resolveUnattendedDefaultStop({ configSection: 'claudeCode', runtimes: runtimes() })
+    ).toBe(null);
+  });
+
+  it('answers null before the config manager has booted', () => {
+    // `configManager` is a `let` that is undefined until `initConfigManager`
+    // runs, and no test here initialises it. A missing setting is a reason to
+    // fall through, never a reason to refuse the work.
+    expect(resolveUnattendedDefaultStop()).toBeNull();
+    expect(resolveUnattendedDefaultStop({ configSection: 'claudeCode' })).toBeNull();
   });
 });

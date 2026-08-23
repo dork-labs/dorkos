@@ -32,11 +32,12 @@ import { ReactionStore } from './reactions/reaction-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
+import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
-import { RoomTurnBudget, type TurnBudgetLimits } from './turn-budget.js';
+import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
@@ -113,44 +114,70 @@ export function createAgentLookup(db: Db): RoomAgentLookup {
 }
 
 /**
- * The live cascade ceiling, degrading to the shipped default rather than
- * throwing.
+ * The install-wide `rooms` settings, or `null` when they cannot be read.
  *
- * `RoomService.post` reads this on EVERY write, so a config manager that is not
- * up yet — or a config file that cannot be read — must never be able to stop a
- * room accepting messages. Degrading to the schema's own default keeps the
- * guard ON: the failure mode is "the guard used its default", never "the guard
- * was absent", which is the only direction it is safe to fail in.
+ * `null` rather than a throw, because `RoomService.post` resolves limits on
+ * EVERY write: a config manager that is not up yet — or a config file that
+ * cannot be read — must never be able to stop a room accepting messages.
+ * {@link resolveRoomLimits} lands a `null` on the schema's own defaults, so the
+ * failure mode is "the limits used their defaults", never "the limits were
+ * absent", which is the only direction it is safe to fail in.
  */
-function readMaxAgentDepth(): number {
+function readRoomsConfig() {
   try {
-    return configManager.get('rooms').maxAgentDepth;
+    return configManager.get('rooms');
   } catch {
-    return USER_CONFIG_DEFAULTS.rooms.maxAgentDepth;
+    return null;
   }
 }
 
 /**
- * The live hourly ceilings on automatic turns — per room, and across the whole
- * install — degrading the same way and for the same reason as
- * {@link readMaxAgentDepth}.
+ * The ladder, bound to this install's rooms table.
+ *
+ * One indexed primary-key read per resolution, and it is resolved per dispatch
+ * rather than captured — so an override set on a room, or a number changed in
+ * Settings, binds the very next message rather than the next server start. A
+ * room that has vanished resolves to the install's own limits.
+ *
+ * @param store - The rooms table, for the first rung.
  */
-const turnBudgetLimits: TurnBudgetLimits = {
-  perRoom: () => {
-    try {
-      return configManager.get('rooms').maxAutomaticTurnsPerRoomPerHour;
-    } catch {
-      return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsPerRoomPerHour;
-    }
-  },
-  global: () => {
-    try {
-      return configManager.get('rooms').maxAutomaticTurnsTotalPerHour;
-    } catch {
-      return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsTotalPerHour;
-    }
-  },
-};
+function createRoomLimitsResolver(store: RoomStore): RoomLimitsResolver {
+  return (roomId) => resolveRoomLimits(store.getRoom(roomId), readRoomsConfig());
+}
+
+/**
+ * The two hourly ceilings, as the budget reads them — and the one place the
+ * room/install asymmetry is spelled out in code.
+ *
+ * `perRoom` goes through the ladder, so a room may raise, lower or switch off
+ * its own hourly ceiling. `global` does NOT and cannot: it reads the
+ * install-wide toggle and the install-wide number, because
+ * `rooms.maxAutomaticTurnsTotalPerHour` is the ceiling on what every room
+ * together may cost and no room has a say in it. An unlimited ROOM is therefore
+ * still charged against the install's hour — see `room-limits.ts`.
+ *
+ * `null` from either is "this cap is off", which the budget treats as a state
+ * rather than a large number.
+ *
+ * @param limitsFor - The bound ladder.
+ */
+function createTurnBudgetLimits(limitsFor: RoomLimitsResolver): TurnBudgetLimits {
+  return {
+    perRoom: (roomId) => {
+      const limits = limitsFor(roomId);
+      return limits.turnLimitsEnabled ? limits.maxAutoTurnsPerHour : null;
+    },
+    global: () => {
+      const config = readRoomsConfig();
+      const enabled = config?.turnLimitsEnabled ?? USER_CONFIG_DEFAULTS.rooms.turnLimitsEnabled;
+      if (!enabled) return null;
+      return (
+        config?.maxAutomaticTurnsTotalPerHour ??
+        USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsTotalPerHour
+      );
+    },
+  };
+}
 
 /**
  * A room-turn bound in milliseconds, read live from config and degrading to the
@@ -296,6 +323,7 @@ export function createRoomSubsystem(opts: {
   readCursors?: ReadCursorService;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
+  const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
@@ -320,7 +348,8 @@ export function createRoomSubsystem(opts: {
     // The budget reads its own spent hour back out of this database at
     // construction, so the ceilings mean an hour of wall clock rather than an
     // hour of uptime (DOR-1205).
-    budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits, db: opts.db }),
+    budget:
+      opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db }),
     // Recovered from the reactions themselves rather than a counter table, so an
     // agent that spent its hour and met a restart comes back spent
     // (ADR 260814-195522).
@@ -336,9 +365,11 @@ export function createRoomSubsystem(opts: {
         limit,
         afterOrdinal: afterSeq,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
-    // Read per write, not captured once: changing the ceiling in Settings has
-    // to bound the very next cascade, not the next server start.
-    maxAgentDepth: readMaxAgentDepth,
+    // Resolved per write, not captured once: changing a ceiling in Settings —
+    // or on the room — has to bound the very next cascade, not the next server
+    // start. Turning limits back ON is the direction that must never wait for a
+    // restart.
+    limitsFor,
     // Read per dispatch, for the same reason: shortening the window in Settings
     // has to bind the very next message, not the next server start.
     engagedWindow: readEngagedWindow,
@@ -520,4 +551,4 @@ export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export { toAuthorRef, type AuthorRecord } from './author-registry.js';
 export type { RoomTurnRunner } from './room-trigger.js';
-export { RoomTurnBudget } from './turn-budget.js';
+export { RoomTurnBudget } from './limits/turn-budget.js';

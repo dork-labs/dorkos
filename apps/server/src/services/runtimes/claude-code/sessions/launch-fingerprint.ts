@@ -93,7 +93,9 @@ import type {
   PermissionMode,
   SdkPluginConfig,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
+import { toSdkEffort } from '../messaging/thinking-config.js';
 
 /**
  * Every launch parameter the pin list governs, and what a change to it costs.
@@ -123,7 +125,15 @@ export const PIN_DISPOSITIONS = {
   settingSources: 'relaunch',
   /** Everything else in the process env, hashed. */
   env: 'relaunch',
-  /** The resolved reasoning options: SDK `effort` and its `thinking` block. */
+  /**
+   * The resolved reasoning options: SDK `effort` and its `thinking` block.
+   * Compared with a carve-out for DOR-1308 — see
+   * {@link LaunchFingerprint.reasoning} and `compareLaunchFingerprints`'s
+   * `reasoningChanged` helper — so a model-capability cache that has not yet
+   * resolved for a launch cannot, on its own, relaunch a process the user's
+   * effort setting never asked to move. See `claude-code/NOTES.md` for when
+   * that cache is actually unresolved (not "every server boot").
+   */
   effort: 'relaunch',
   /** `settings.fastMode`. */
   fastMode: 'relaunch',
@@ -193,6 +203,33 @@ export interface LiveSettings {
   readonly plugins: readonly SdkPluginConfig[] | undefined;
 }
 
+/**
+ * What `pins.effort` was derived FROM, captured alongside it.
+ *
+ * `thinking-config.ts` resolves `effort`/`thinking` from two things: the
+ * session's own effort setting, and the selected model's thinking capability
+ * — read synchronously from `RuntimeCache.resolveModelCapability`, which can
+ * come back `undefined` (unresolved) for reasons more specific than "server
+ * just booted": no on-disk model cache exists yet, the on-disk one is stale
+ * (>24h) or unreadable, or the selected model simply matches no row the cache
+ * has ever seen. A launch resolved against `undefined` and a dispatch
+ * resolved against a since-populated cache can derive two different
+ * `pins.effort` values for the SAME session setting (DOR-1308) — see
+ * `claude-code/NOTES.md` for the exact conditions and the residual case this
+ * carve-out does not close. Carrying the raw setting separately lets the
+ * comparison in `compareLaunchFingerprints` tell that apart from an actual
+ * setting change.
+ */
+export interface ReasoningPin {
+  /** The session's raw effort setting, exactly as configured. */
+  readonly input: EffortLevel | '<unset>';
+  /**
+   * Whether the model's thinking capability was known — not `undefined` —
+   * when `pins.effort` was derived.
+   */
+  readonly capabilityResolved: boolean;
+}
+
 /** What a launch was pinned to, captured at the moment it happened. */
 export interface LaunchFingerprint {
   /** Compared first and unconditionally. Also present in {@link pins}. */
@@ -201,6 +238,8 @@ export interface LaunchFingerprint {
   readonly pins: Readonly<Record<RelaunchPin, string>>;
   /** The values a live process can still be moved to. */
   readonly live: LiveSettings;
+  /** What `pins.effort` was derived from — see {@link ReasoningPin}. */
+  readonly reasoning: ReasoningPin;
 }
 
 /** Everything a launcher resolved for one launch, as it resolved it. */
@@ -216,6 +255,14 @@ export interface LaunchParams {
   readonly credentialEnv: Readonly<Record<string, string>>;
   /** Who `resolveAgentTokenEnv()` was asked to mint for, or nobody. */
   readonly agentIdentity: AgentIdentityPin | undefined;
+  /** The session's raw effort setting — feeds {@link ReasoningPin.input}. */
+  readonly effortInput: EffortLevel | undefined;
+  /**
+   * Whether `options.effort`/`.thinking` were derived from a KNOWN model
+   * capability (`opts.modelThinkingCapability !== undefined` at the call to
+   * `resolveThinkingOptions`) — feeds {@link ReasoningPin.capabilityResolved}.
+   */
+  readonly capabilityResolved: boolean;
 }
 
 /** One live-settable value that moved, and what to set it to. */
@@ -378,7 +425,8 @@ function readSystemPromptAppend(prompt: Options['systemPrompt']): string {
  *   rather than surviving as a fingerprint that certifies the wrong account.
  */
 export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprint {
-  const { accountRoot, options, credentialEnv, agentIdentity } = launch;
+  const { accountRoot, options, credentialEnv, agentIdentity, effortInput, capabilityResolved } =
+    launch;
   const env = (options.env ?? {}) as Readonly<Record<string, string | undefined>>;
   const configDirEnv = env.CLAUDE_CONFIG_DIR;
   const account: AccountPin = { root: accountRoot, configDirEnv };
@@ -405,7 +453,9 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
       // `effort` and `thinking` are one decision resolved together against the
       // model's capability (`thinking-config.ts`), so they are one pin. This is
       // also what makes a live `setModel` safe: a model change that would have
-      // resolved DIFFERENT reasoning options moves this pin and relaunches.
+      // resolved DIFFERENT reasoning options moves this pin and relaunches —
+      // as long as the capability was known on both sides; see `reasoning`
+      // below and `compareLaunchFingerprints` for the DOR-1308 carve-out.
       effort: JSON.stringify({ effort: options.effort, thinking: options.thinking }),
       fastMode: String(
         typeof options.settings === 'object' && options.settings !== null
@@ -418,6 +468,10 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
       permissionMode: options.permissionMode,
       mcpServers: options.mcpServers,
       plugins: options.plugins,
+    },
+    reasoning: {
+      input: effortInput ?? '<unset>',
+      capabilityResolved,
     },
   };
 }
@@ -472,6 +526,71 @@ function diffLiveSettings(live: LiveSettings, wanted: LiveSettings): LiveChange[
 }
 
 /**
+ * Canonicalize a {@link ReasoningPin.input} to the SDK value it would resolve
+ * to, so two DorkOS settings that mean the same thing to the SDK compare
+ * equal. Without this, comparing the raw setting directly (an earlier version
+ * of this fix) treated `minimal`→`low` as a real change, because
+ * `toSdkEffort` maps both to the SDK's `low` — tearing down a warm process
+ * for an edit with no observable effect (review finding S2, DOR-1308).
+ *
+ * @param input - A captured {@link ReasoningPin.input}
+ */
+function canonicalEffort(input: ReasoningPin['input']) {
+  return toSdkEffort(input === '<unset>' ? undefined : input);
+}
+
+/**
+ * Did the `effort` pin move for a reason a dispatch actually controls?
+ *
+ * The ordinary pin comparison (`live.pins.effort !== wanted.pins.effort`)
+ * cannot tell a real setting change from the model-capability cache
+ * resolving mid-conversation (DOR-1308): both change the derived
+ * `{ effort, thinking }` shape. This is the carve-out:
+ *
+ * - The raw setting moving — compared via {@link canonicalEffort}, not
+ *   verbatim, so `minimal`→`low` and `undefined`→`none` are not "moving" —
+ *   is ALWAYS a real change and relaunches, regardless of capability.
+ * - With the canonicalized setting unchanged, the derived shape is trusted
+ *   only when `live` resolved it against a KNOWN capability. If `live` was
+ *   launched with capability unresolved, a difference in the derived shape
+ *   proves nothing about what the user asked for, so it is not grounds to
+ *   relaunch — this is the DOR-1308 case: `live` is a launch whose capability
+ *   never resolved and `wanted` is a later dispatch with a now-resolved one.
+ *   Only `live`'s side is checked, deliberately: `wanted` being unresolved
+ *   while `live` is resolved (e.g. a live model swap onto an uncached model)
+ *   is a real capability change and must still be free to relaunch — see the
+ *   next bullet.
+ * - With the canonicalized setting unchanged and `live` resolved, a
+ *   derived-shape difference is real (a model swap that moved the effective
+ *   capability, whether or not `wanted`'s own capability happens to be
+ *   resolved) and still relaunches — the guarantee `NOTES.md` documents for
+ *   `setModel`.
+ *
+ * The residual gap — a process launched with capability unresolved, whose
+ * capability then resolves without ever relaunching for an unrelated reason —
+ * never re-derives its OWN reasoning options and can run its whole life on
+ * stale ones. `NOTES.md` states this plainly rather than closing it.
+ *
+ * @param live - What the running process's reasoning pin was derived from
+ * @param wanted - What this dispatch's reasoning pin would be derived from
+ * @param liveDerived - `live.pins.effort`: the SDK shape the running process
+ *   actually launched with
+ * @param wantedDerived - `wanted.pins.effort`: the SDK shape this dispatch
+ *   would launch with today
+ * @returns Whether the `effort` pin should be treated as moved
+ */
+function reasoningChanged(
+  live: ReasoningPin,
+  wanted: ReasoningPin,
+  liveDerived: string,
+  wantedDerived: string
+): boolean {
+  if (canonicalEffort(live.input) !== canonicalEffort(wanted.input)) return true;
+  if (!live.capabilityResolved) return false;
+  return liveDerived !== wantedDerived;
+}
+
+/**
  * May a dispatch pinned to `wanted` ride a process launched under `live`?
  *
  * The account is answered first and on its own, before any other pin is looked
@@ -492,6 +611,14 @@ export function compareLaunchFingerprints(
   const changed = new Set<RelaunchPin>();
   if (!accountsMatch(live.account, wanted.account)) changed.add('accountRoot');
   for (const pin of RELAUNCH_PINS) {
+    if (pin === 'effort') {
+      if (
+        reasoningChanged(live.reasoning, wanted.reasoning, live.pins.effort, wanted.pins.effort)
+      ) {
+        changed.add('effort');
+      }
+      continue;
+    }
     if (live.pins[pin] !== wanted.pins[pin]) changed.add(pin);
   }
   if (changed.size > 0) {

@@ -24,13 +24,14 @@
  *
  * @module features/settings/ui/runtimes/GlobalTrustRow
  */
-import { ShieldOff } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { resolveTrustStops } from '@/layers/shared/lib';
 import {
   CANONICAL_TRUST_STOPS,
   SegmentedControl,
   SegmentedControlItem,
+  TRUST_TONE_TEXT,
   TrustModeIcon,
 } from '@/layers/shared/ui';
 import { listRuntimes } from '../../lib/list-runtimes';
@@ -146,18 +147,20 @@ export function GlobalTrustRow({
         </SegmentedControl>
       </div>
 
-      {/* Findable, not buried. Kept under its old test id so the assertions that
+      {/* Findable, not buried — and green, because a person who set this got what
+          they asked for. The note exists so they can find it cold months later,
+          not to tell them off. Kept under its old test id so the assertions that
           already guard this promise keep guarding it. */}
       {(sharedAtAutonomy || overriddenToAutonomy.length > 0) && (
         <p
-          className="flex items-start gap-1.5 px-1 text-xs text-red-600 dark:text-red-400"
+          className={`flex items-start gap-1.5 px-1 text-xs ${TRUST_TONE_TEXT.power}`}
           data-testid="default-trust-stop-standing-note"
         >
-          <ShieldOff className="mt-px size-3 shrink-0" aria-hidden />
+          <Zap className="mt-px size-3 shrink-0" aria-hidden />
           <span>
             {sharedAtAutonomy
-              ? 'New sessions run without asking'
-              : `New sessions on ${listRuntimes(overriddenToAutonomy)} run without asking`}{' '}
+              ? 'New sessions run at full power'
+              : `New sessions on ${listRuntimes(overriddenToAutonomy)} run at full power`}{' '}
             —{' '}
             <button
               type="button"

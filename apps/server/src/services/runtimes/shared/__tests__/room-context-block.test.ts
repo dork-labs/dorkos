@@ -1692,3 +1692,73 @@ describe('an attachment path an agent can actually open (DOR-1266)', () => {
     );
   });
 });
+
+describe('the headroom line, and the four states it has to describe (DOR-1429)', () => {
+  it('reads three numbers when everything is counting', () => {
+    expect(formatRoomContext(context(), { nonce: NONCE })).toContain(
+      'Automatic replies left: 41 in this room, 187 across DorkOS, 2 more in this back-and-forth.'
+    );
+  });
+
+  it('says "no limit" for a room whose own limits are off, and keeps the install number', () => {
+    // The mixed state a per-room override creates. A stand-in number for this
+    // room would tell the agent it was being counted when nothing is; dropping
+    // the install's real number would tell it nothing is watching when
+    // something is.
+    const block = formatRoomContext(
+      context({
+        budget: {
+          automaticRepliesLeftInThisRoomThisHour: null,
+          automaticRepliesLeftInTotalThisHour: 187,
+          repliesLeftInThisChain: null,
+        },
+      }),
+      { nonce: NONCE }
+    );
+    expect(block).toContain(
+      'Automatic replies left: no limit in this room, 187 across DorkOS, no limit in this back-and-forth.'
+    );
+    // And the honest consequence: nothing HERE will stop this, but the install
+    // still can.
+    expect(block).toContain('only the limit across all of DorkOS');
+  });
+
+  it('says "no limit" everywhere when the whole install stopped counting', () => {
+    const block = formatRoomContext(
+      context({
+        budget: {
+          automaticRepliesLeftInThisRoomThisHour: null,
+          automaticRepliesLeftInTotalThisHour: null,
+          repliesLeftInThisChain: null,
+        },
+      }),
+      { nonce: NONCE }
+    );
+    expect(block).toContain(
+      'Automatic replies left: no limit in this room, no limit across DorkOS, no limit in this back-and-forth.'
+    );
+    expect(block).toContain(
+      'Nothing will end this exchange for you, so keep it as short as the work needs.'
+    );
+  });
+
+  it('keeps this room numbers when the INSTALL is the unlimited one', () => {
+    // The other mixed state: a room that kept its own limits on an install that
+    // turned them off. No "nothing will end this" sentence, because something
+    // will — this room's own bounds.
+    const block = formatRoomContext(
+      context({
+        budget: {
+          automaticRepliesLeftInThisRoomThisHour: 41,
+          automaticRepliesLeftInTotalThisHour: null,
+          repliesLeftInThisChain: 2,
+        },
+      }),
+      { nonce: NONCE }
+    );
+    expect(block).toContain(
+      'Automatic replies left: 41 in this room, no limit across DorkOS, 2 more in this back-and-forth.'
+    );
+    expect(block).not.toContain('Nothing will end this exchange');
+  });
+});

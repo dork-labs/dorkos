@@ -18,6 +18,7 @@ import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
+import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -658,7 +659,22 @@ export class TaskSchedulerService {
 
     try {
       const sessionId = run.id; // Use run ID as session ID for isolation
-      const permissionMode = (task.permissionMode ?? 'acceptEdits') as PermissionMode;
+      // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
+      // unreachable through the shipped store: `pulse_schedules.permission_mode`
+      // is `NOT NULL DEFAULT 'acceptEdits'`, so a row always carries a mode and
+      // the level a task runs at is decided once, at CREATE, by the ladder in
+      // `scheduled-run-power.ts` (spec `full-power-defaults`, D6).
+      //
+      // Say that plainly rather than letting this line read as the thing that
+      // makes existing tasks follow the operator's level — it is not, and they do
+      // not: a task created before the ladder existed keeps the mode stored on
+      // its row. What this covers is a row that reached memory without one (a
+      // hand-built fixture, a future store, a column that loses its constraint),
+      // and it answers with the same ladder rather than a second hardcoded
+      // constant, so the two can never disagree. Still `'acceptEdits'` when
+      // nothing is configured, which is what this line always did.
+      const permissionMode = (task.permissionMode ??
+        resolveScheduledRunPermissionMode()) as PermissionMode;
 
       this.agentManager.ensureSession(sessionId, {
         permissionMode,

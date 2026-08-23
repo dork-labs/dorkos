@@ -661,8 +661,10 @@ export async function* executeSdkQuery(
   // loop, and a `query.close()` there is a process death — the windower settles
   // it as `turn_end{terminalReason:'error'}` and the session reports `crashed`
   // (`sessions/session-turn-windows.ts`, `sessions/persistent-dispatch.ts`).
-  // `persistentSession` ships OFF; making the pump's Stop settle honestly is a
-  // named DOR-1244 follow-up.
+  // `persistentSession` now ships ON (spec `full-power-defaults`, D1), so the
+  // pump is the path a default install takes and making its Stop settle
+  // honestly — DOR-1244's named follow-up — stopped being a minority case when
+  // that default flipped.
   //
   // Carried on a `session_status` because that is where the result mapper puts
   // `terminalReason` too, and the normalizer reads it off either. It projects no

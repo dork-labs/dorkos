@@ -51,7 +51,7 @@ import {
   type BusyContext,
   type WaitingKind,
 } from './notice-copy.js';
-import type { BudgetRefusalScope } from '../turn-budget.js';
+import type { BudgetRefusalScope } from '../limits/turn-budget.js';
 
 /** The cascade a written entry belongs to. */
 export interface CascadeStamp {
@@ -434,7 +434,7 @@ export class RoomNoticeLog {
     entry: RoomEntry,
     authorId: string,
     body: RoomEntryBody,
-    cause: 'cascade_depth' | 'cascade_ancestry',
+    cause: 'cascade_depth' | 'cascade_repeat',
     dispatchId: string | null
   ): void {
     const key = cascadeNoticeKey(room.id, entry.cascadeRoot, authorId);

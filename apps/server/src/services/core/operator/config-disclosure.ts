@@ -173,6 +173,12 @@ export const CONFIG_DISCLOSURE = {
   // and unlocks nothing on being read — an agent that learns the date is no
   // closer to anything than one that does not.
   'ui.autonomyAcknowledgedAt': 'expose',
+  // The power-door answer, for the same reason as the acknowledgement above: a
+  // date and the word `'full'` or `'supervised'` name nothing and unlock
+  // nothing on being read. An agent that knows the operator chose supervised
+  // learns something genuinely useful — that it should expect to be asked.
+  'ui.fullPowerDecidedAt': 'expose',
+  'ui.fullPowerChoice': 'expose',
 
   // How loud DorkOS may be, and how long before it tries a louder channel. All
   // preferences: none of them names a credential, a host or a device, and an
@@ -204,7 +210,9 @@ export const CONFIG_DISCLOSURE = {
 
   'mesh.scanRoots': 'expose',
 
+  'rooms.turnLimitsEnabled': 'expose',
   'rooms.maxAgentDepth': 'expose',
+  'rooms.maxTurnsPerAgentPerCascade': 'expose',
   'rooms.maxAutomaticTurnsPerRoomPerHour': 'expose',
   'rooms.maxAutomaticTurnsTotalPerHour': 'expose',
   'rooms.replyWaitMinutes': 'expose',

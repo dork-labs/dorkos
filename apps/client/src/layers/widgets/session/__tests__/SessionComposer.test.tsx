@@ -78,13 +78,20 @@ vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
 
+// Hoisted (not a bare object literal) so the Stop-vs-PATCH-race suite below can
+// swap `updateQueuedMessage`'s implementation per test — a promise it resolves
+// or rejects on its own schedule, to drive the PATCH-wins/PATCH-loses ordering
+// against Stop's `outcome.cancelled` independently. Every other suite in this
+// file only needs it to exist.
+const mockTransport = vi.hoisted(() => ({
+  stopTask: vi.fn(),
+  updateQueuedMessage: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
     selector({ isTextStreaming: false })
   ),
-  useTransport: () => ({
-    stopTask: vi.fn(),
-  }),
+  useTransport: () => mockTransport,
 }));
 
 // The composer preference (DOR-948). Stubbed rather than driven through a real
@@ -139,7 +146,38 @@ import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { useSessionStreamStore, useSessionChatStore } from '@/layers/entities/session';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
-import { createRef } from 'react';
+import { createRef, useCallback, type ComponentProps } from 'react';
+
+/**
+ * The composer's `input`/`setInput` wired THROUGH the real per-session store —
+ * exactly the pairing `ChatPanel` hands it (`useSessionStoreActions.setInput`
+ * is `(value) => useSessionChatStore.getState().updateSession(sid, { input:
+ * value })`, and `input` is that same session's live field). Every other test
+ * in this file passes a static `input` string and a bare `vi.fn()` `setInput`
+ * — a faithful stand-in for "what did the container tell its parent to do,"
+ * but blind to what the container's OWN reads and writes do to the store in
+ * between (DOR-1323 fix-round finding 2): `commitEditInPlace`'s early-return
+ * on an empty `input` never fires here, because `input` genuinely tracks what
+ * was last written, so a mutant that deleted the commit call is NOT reachable
+ * from this bench alone.
+ */
+function ControlledStopComposer(
+  props: Omit<ComponentProps<typeof SessionComposerBench>, 'input' | 'setInput'>
+) {
+  const sessionId = props.sessionId ?? 'test-session';
+  const input = useSessionChatStore(
+    useCallback((s) => s.sessions[sessionId]?.input ?? '', [sessionId])
+  );
+  const setInput = useCallback(
+    (value: string) => {
+      useSessionChatStore.getState().updateSession(sessionId, { input: value });
+    },
+    [sessionId]
+  );
+  return (
+    <SessionComposerBench {...props} sessionId={sessionId} input={input} setInput={setInput} />
+  );
+}
 
 /** Props the (mocked) `Composer.Input` was last rendered with. */
 function lastChatInputProps() {
@@ -640,7 +678,7 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
   it('asks first and names the count when messages are queued, and does not stop yet', async () => {
     seedQueue('one', 'two', 'three');
-    const stop = vi.fn().mockResolvedValue([]);
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -653,7 +691,7 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
   });
 
   it('stops immediately with no dialog when nothing is queued', async () => {
-    const stop = vi.fn().mockResolvedValue([]);
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -666,10 +704,13 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
   it('on confirm, stops and returns the queued text to the composer, in order', async () => {
     seedQueue('one', 'two');
-    const stop = vi.fn().mockResolvedValue([
-      { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-      { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-    ]);
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
     const setInput = vi.fn();
     render(
       <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
@@ -684,6 +725,52 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
     expect(stop).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
+  });
+
+  it('restores a queued edit exactly ONCE when Stop cancels the item under edit (DOR-1323)', async () => {
+    // Reproduces the flag-on finding: queue a message, open its edit (the
+    // composer now shows the item's own text as the "live" edit), then Stop
+    // and confirm. The server hands back the whole cancelled queue — INCLUDING
+    // the edited item, with the same text — and `restoreToComposer` used to
+    // append that onto whatever the composer already held, landing the edited
+    // item's words twice.
+    //
+    // `setInput` here writes THROUGH to the store, the way the real
+    // session-chat hook wires it (`ChatPanel` hands this composer the same
+    // `setInput` its `useSessionChat`/store pairing returns) — every other
+    // case in this describe block uses a bare spy and drives the store by hand
+    // instead, which cannot see this bug: it is specifically about what the
+    // FIX's own `setInput(draftRef.current)` call does to the store that
+    // `restoreToComposer` reads a moment later.
+    seedQueue('one', 'two');
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
+    const setInput = vi.fn((value: string) => {
+      useSessionChatStore.getState().updateSession('test-session', { input: value });
+    });
+    render(
+      <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+    );
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[0]!.id));
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    // Exactly once, not 'one\n\none\n\ntwo'.
+    await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
+    expect(setInput).not.toHaveBeenCalledWith('one\n\none\n\ntwo');
   });
 
   it('preserves text typed WHILE the Stop is in flight, appending the cleared messages after it', async () => {
@@ -701,10 +788,13 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
           input: 'a thought I had mid-stop',
         });
       });
-      return [
-        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
-      ];
+      return {
+        ok: true,
+        cancelled: [
+          { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+          { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        ],
+      };
     });
     const setInput = vi.fn();
     render(
@@ -722,5 +812,354 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
     await waitFor(() =>
       expect(setInput).toHaveBeenCalledWith('a thought I had mid-stop\n\none\n\ntwo')
     );
+  });
+});
+
+describe('SessionComposer — Stop trusts the local rewrite over the queue PATCH (DOR-1323 fix round)', () => {
+  // The PATCH `leaveQueueForStop` fires (`transport.updateQueuedMessage`) is
+  // fire-and-forget and races the interrupt's queue cancellation. A round trip
+  // that LOSES that race used to hand `restoreToComposer` the server's
+  // PRE-edit snapshot, and it trusted it — silently discarding the rewrite,
+  // which breaks `StopConfirmDialog`'s own promise ("Nothing you typed is
+  // lost"). `pendingEditRef` closes it: the rewrite is captured locally the
+  // instant Stop fires, before the PATCH is even sent, and substituted by id
+  // into whatever `outcome.cancelled` reports — so the round trip's outcome
+  // stops mattering for this one row.
+  //
+  // `ControlledStopComposer` is required here, not the bare-spy `setInput` the
+  // rest of this file uses: `commitEditInPlace` (the PATCH's own trigger)
+  // early-returns on an empty `input`, and a bare spy never feeds a rewrite
+  // back into the `input` PROP the hook actually reads — only a store-backed
+  // `input` does. Deleting `commitEditInPlace()` from `leaveQueue` stayed
+  // green against every other test in this file for exactly this reason.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTransport.updateQueuedMessage.mockReset().mockResolvedValue(undefined);
+  });
+
+  /** Open the second queued row's edit and overwrite its text. */
+  function editSecondRowAndRewrite(rewrite: string): void {
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[1]!.id));
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: rewrite });
+    });
+  }
+
+  it('PATCH wins: commits the rewrite through the PATCH, then restores draft + queue + rewrite, each once', async () => {
+    seedQueue('one', 'two');
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: 'hello draft' });
+    });
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        // The server's snapshot already reflects the committed PATCH.
+        {
+          id: 'q1',
+          content: 'TWO REWRITTEN',
+          disposition: 'queue',
+          enqueuedAt: 1,
+          enqueuedBy: 'window-a',
+        },
+      ],
+    });
+    render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
+
+    editSecondRowAndRewrite('TWO REWRITTEN');
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    // The commit half actually fired — this is what mutation-testing "delete
+    // `commitEditInPlace()`" would silence.
+    expect(mockTransport.updateQueuedMessage).toHaveBeenCalledWith('test-session', 'q1', {
+      content: 'TWO REWRITTEN',
+    });
+    await waitFor(() =>
+      expect(useSessionChatStore.getState().getSession('test-session').input).toBe(
+        'hello draft\n\none\n\nTWO REWRITTEN'
+      )
+    );
+  });
+
+  it('PATCH loses: still restores the rewrite, not the stale pre-edit text, when the commit has not landed by the time Stop reports', async () => {
+    seedQueue('one', 'two');
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: 'hello draft' });
+    });
+    // The PATCH never resolves inside this test's window — modeling "the
+    // interrupt's queue cancellation is processed before the PATCH lands."
+    mockTransport.updateQueuedMessage.mockImplementation(() => new Promise<void>(() => {}));
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        // STALE — the server's snapshot predates the PATCH, and carries the
+        // ORIGINAL pre-edit text.
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
+    render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
+
+    editSecondRowAndRewrite('TWO REWRITTEN');
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    expect(mockTransport.updateQueuedMessage).toHaveBeenCalledWith('test-session', 'q1', {
+      content: 'TWO REWRITTEN',
+    });
+    // Local truth wins over the stale round trip: the rewrite survives, and
+    // the parked draft is not clobbered either. Pre-fix this reads
+    // 'hello draft\n\none\n\ntwo' — the rewrite silently lost.
+    await waitFor(() =>
+      expect(useSessionChatStore.getState().getSession('test-session').input).toBe(
+        'hello draft\n\none\n\nTWO REWRITTEN'
+      )
+    );
+  });
+});
+
+describe('SessionComposer — Stop acknowledges instantly and cannot double-fire (DOR-1300)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('goes pending the instant Stop is clicked, and calls interrupt exactly once even if pressed again mid-flight', async () => {
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    // The pending flag flips synchronously on the click, before the request
+    // has any chance to settle — this IS the "acknowledges instantly" property.
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // A second click while the first interrupt is still in flight is a no-op:
+    // remove the single-flight guard in `handleStop` and this count goes to 2.
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStop({ ok: true, cancelled: [] });
+    });
+  });
+
+  it('clears pending once the turn actually settles (isStreaming flips), independent of when the interrupt response lands', async () => {
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    const { rerender } = render(
+      <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
+    );
+
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+
+    // Case: the stream settles BEFORE the interrupt response lands — the
+    // pending state ends with the settle, not the response, and a later
+    // resolve must not flip it back on (no flicker).
+    rerender(<SessionComposerBench {...baseProps} stop={stop} status="idle" />);
+    expect(lastChatInputProps().stopPending).toBe(false);
+
+    await act(async () => {
+      resolveStop({ ok: true, cancelled: [] });
+    });
+    expect(lastChatInputProps().stopPending).toBe(false);
+  });
+
+  it('stays pending after a successful interrupt response until the stream settles', async () => {
+    // Case: the response lands BEFORE turn_end — a successful `stop()` alone
+    // must not clear pending, or a person watches the button go live again
+    // while the agent is still winding down.
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const { rerender } = render(
+      <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
+    );
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+
+    rerender(<SessionComposerBench {...baseProps} stop={stop} status="idle" />);
+    expect(lastChatInputProps().stopPending).toBe(false);
+  });
+
+  it('re-enables Stop when the interrupt request itself fails outright (network, timeout), so the person can retry', async () => {
+    const stop = vi.fn().mockRejectedValue(new Error('network error'));
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+
+    await waitFor(() => expect(lastChatInputProps().stopPending).toBe(false));
+    // Free to retry: a fresh click reaches `stop` again.
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-enables Stop when the server answers ok:false while the turn is still running', async () => {
+    // The server 200s `{ ok: false }` on a race (turn already finished — the
+    // common case, already covered above by the settle path) AND on a thrown
+    // interrupt with the turn still alive. This test is the second case: the
+    // turn is STILL streaming, so nothing else would ever release a pending
+    // Stop — `performStop` has to read the failure itself and re-enable
+    // (DOR-1300 S4). Delete this test's `ok: false` and turn it into
+    // `ok: true` and it goes red: pending would then correctly stay latched
+    // until the (never-arriving, in this test) settle.
+    const stop = vi.fn().mockResolvedValue({ ok: false, cancelled: [] });
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+
+    // Still streaming (status never changed) — `ok: false` alone is what
+    // re-enabled it, not a settle this test never provided.
+    await waitFor(() => expect(lastChatInputProps().stopPending).toBe(false));
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts pending on CONFIRM, not on opening the confirm dialog', async () => {
+    seedQueue('one');
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    // The dialog is up, but nothing has been asked of the server yet.
+    expect(screen.getByText(/Stop, and put 1 queued message back\?/)).toBeInTheDocument();
+    expect(stop).not.toHaveBeenCalled();
+    expect(lastChatInputProps().stopPending).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(lastChatInputProps().stopPending).toBe(true);
+  });
+
+  it('a same-tick double-press on the dialog Stop button fires only one interrupt (DOR-1300 B2)', async () => {
+    // Radix keeps `AlertDialogAction`'s element mounted through its exit
+    // animation, so nothing stops a fast double-press from reaching the SAME
+    // handler twice before React gets a chance to re-render with the updated
+    // pending state — jsdom cannot run the real ~200ms CSS exit transition
+    // that opens this window (confirmed: the node is already detached from
+    // `document.body` by the time a second, separately-flushed click would
+    // land), so this reproduces the worst case that timing window permits
+    // directly: both clicks dispatched in the SAME synchronous batch, so
+    // `confirmStop` runs twice against the SAME pre-update `stopPending`
+    // closure. A state-only guard (checking the `stopPending` value closed
+    // over at render time) cannot tell these two calls apart — only a
+    // synchronously-written lock can. Swap the `stopLockSessionIdRef.current`
+    // check at the top of `confirmStop` back to a `stopPending`-only check
+    // and this goes red.
+    seedQueue('one');
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    const confirmButton = screen.getByRole('button', { name: 'Stop' });
+
+    act(() => {
+      fireEvent.click(confirmButton);
+      fireEvent.click(confirmButton);
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStop({ ok: true, cancelled: [] });
+    });
+  });
+});
+
+describe('SessionComposer — a Stop pending on one session never leaks into another (DOR-1300 B1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not read as pending on session B after a Stop was clicked on session A and neither has settled', async () => {
+    // `ChatPanel` re-renders this component with a new `sessionId` on a
+    // session switch — no `key`, no unmount — so the reviewer's probe is
+    // exactly this: rerender in place, never remount. A boolean pending flag
+    // would survive the switch (it was never told which session it was for)
+    // and read `true` on B, whose OWN Stop button never fired a single
+    // request.
+    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    const stop = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+          resolveStop = resolve;
+        })
+    );
+    const { rerender } = render(
+      <SessionComposerBench {...baseProps} sessionId="session-a" stop={stop} status="streaming" />
+    );
+
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(lastChatInputProps().stopPending).toBe(true);
+
+    // Switch to session B — also streaming, also never had its own Stop
+    // clicked — WITHOUT session A's interrupt ever settling.
+    rerender(
+      <SessionComposerBench {...baseProps} sessionId="session-b" stop={stop} status="streaming" />
+    );
+
+    expect(lastChatInputProps().stopPending).toBe(false);
+    // And B's own Stop must actually work — the guard reading "pending" would
+    // also have refused this click.
+    act(() => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveStop({ ok: true, cancelled: [] });
+    });
   });
 });

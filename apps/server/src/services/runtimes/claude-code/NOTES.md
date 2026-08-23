@@ -65,6 +65,52 @@ LIVE-VERIFY: whether `applyFlagSettings({ effortLevel })` alone takes effect on 
 turn was not watched on a live model. Irrelevant to the verdict — the coupling above decides
 it either way — but it is the thing to check if effort is ever revisited.
 
+**Carve-out added for DOR-1308.** "The selected model's capability" above is read
+synchronously from `RuntimeCache.resolveModelCapability` (`messaging/runtime-cache.ts`), which
+does NOT start empty on every boot — it persists the model list to
+`${dorkHome}/cache/runtimes/claude-code/models.json` with a 24-hour TTL and loads it lazily on
+the first call. It comes back `undefined` (unresolved) for reasons more specific than "server
+just booted":
+
+- no on-disk cache file exists yet (a genuinely fresh install, or the cache directory was
+  cleared),
+- the on-disk file is older than 24 hours or fails to parse,
+- or — the case that outlives all the others — the session's selected model simply matches no
+  row the cache has ever seen. `getCachedModel` looks the value up by `value` then by
+  `resolvedModel`; a model absent from both stays unresolved until an actual SDK turn's
+  `onModelsReceived` widens the cached list. Nothing ages this back to "resolved" on its own.
+
+Any of those left `effort`/`thinking` resolved against an unknown capability at launch, and a
+later dispatch — after some turn's response had populated or widened the cache — resolved the
+SAME session setting into a different shape, so the pin read "changed" and relaunched a process
+that was warm and correctly configured. Nothing the user had touched actually moved.
+
+`compareLaunchFingerprints`'s `reasoningChanged` helper now carries the session's raw effort
+setting alongside the derived shape (`LaunchFingerprint.reasoning`), canonicalized through
+`toSdkEffort` before comparison so two DorkOS settings the SDK treats identically (`minimal` and
+`low`; `undefined` and `none`) are never read as a change either (review finding S2 — comparing
+the raw string caught this as a false relaunch during review). A canonicalized setting change
+always relaunches. With the setting unchanged, a derived-shape difference is trusted only when
+`live` — the running process's OWN launch — resolved its capability; `wanted`'s side is not
+required, so a live model swap onto an uncached model (capability newly unresolved) still
+relaunches rather than silently reusing (review finding S3). This keeps the `setModel` guarantee
+above intact for the case that matters and only stops treating "this specific process's capability
+never resolved" as a change the user asked for.
+
+**What that carve-out does not close.** `bundle.fingerprint` (`persistent-dispatch.ts`) refreshes
+only when a dispatch takes the `adjust` path (a live-settable pin actually moved) or the process
+is replaced; a plain `ride` — nothing to adjust — leaves it exactly as it was at that process's
+own launch. So a process launched with its capability unresolved carries
+`reasoning.capabilityResolved: false` in its OWN stored fingerprint for as long as it stays warm,
+however many turns later the cache resolves. If nothing else about that session ever forces a
+relaunch or a live-settable adjust, that one warm process can run its entire life deriving
+`effort`/`thinking` against an unknown capability — in practice, an adaptive-capable model never
+gets `thinking: { type: 'adaptive', display: 'summarized' }` on that process, so its thinking
+blocks stay empty (the "omitted" default) until something else reaps it. This is a known,
+accepted gap, not a further bug to chase: closing it would mean re-deriving reasoning options on
+every `ride`, which is the cache-population problem this carve-out exists to tolerate, just moved
+one level up.
+
 ### `fastMode` — RELAUNCH
 
 `Settings.fastMode` exists (`sdk.d.ts:6605`) and `applyFlagSettings` accepts any `Settings`

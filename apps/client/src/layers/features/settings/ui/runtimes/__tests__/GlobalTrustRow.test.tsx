@@ -81,17 +81,17 @@ describe('GlobalTrustRow', () => {
     expect(screen.queryByTestId('default-trust-stop-standing-note')).not.toBeInTheDocument();
   });
 
-  it('says out loud that new sessions run without asking, and offers the way back', async () => {
+  it('says out loud that new sessions run at full power, and offers the way back', async () => {
     const { onChange, onChangeRuntime } = renderRow({ stop: 'autonomy' });
     const note = screen.getByTestId('default-trust-stop-standing-note');
-    expect(note).toHaveTextContent('New sessions run without asking');
+    expect(note).toHaveTextContent('New sessions run at full power');
 
     await userEvent.click(screen.getByRole('button', { name: 'change' }));
     expect(onChange).toHaveBeenCalledWith('ask');
     expect(onChangeRuntime).not.toHaveBeenCalled();
   });
 
-  it('names the runtimes running without asking when the shared setting is not the one at autonomy', async () => {
+  it('names the runtimes running at full power when the shared setting is not the one at autonomy', async () => {
     // Fired on the EFFECTIVE resolution: a card can sit at autonomy while this
     // row reads Asks before acting, and the server gates that write identically.
     const { onChange, onChangeRuntime } = renderRow({
@@ -103,7 +103,7 @@ describe('GlobalTrustRow', () => {
       ],
     });
     const note = screen.getByTestId('default-trust-stop-standing-note');
-    expect(note).toHaveTextContent('New sessions on Codex run without asking');
+    expect(note).toHaveTextContent('New sessions on Codex run at full power');
 
     // Undo exactly what is set: the override, never the shared choice.
     await userEvent.click(screen.getByRole('button', { name: 'change' }));
@@ -111,7 +111,7 @@ describe('GlobalTrustRow', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('names every runtime running without asking, in a sentence', () => {
+  it('names every runtime running at full power, in a sentence', () => {
     renderRow({
       stop: 'ask',
       runtimes: [
@@ -121,7 +121,7 @@ describe('GlobalTrustRow', () => {
       ],
     });
     expect(screen.getByTestId('default-trust-stop-standing-note')).toHaveTextContent(
-      'New sessions on Claude Code, Codex and OpenCode run without asking'
+      'New sessions on Claude Code, Codex and OpenCode run at full power'
     );
   });
 
@@ -138,11 +138,18 @@ describe('GlobalTrustRow', () => {
     expect(onChangeRuntime).toHaveBeenCalledExactlyOnceWith('codex', null);
   });
 
-  it('warns from the effective stop, so an unset preference that lands on autonomy still says so', () => {
+  it('reads from the effective stop, so an unset preference that lands on autonomy still says so', () => {
     renderRow({ stop: null, effectiveStop: 'autonomy' });
     expect(screen.getByTestId('default-trust-stop-standing-note')).toHaveTextContent(
-      'New sessions run without asking'
+      'New sessions run at full power'
     );
+  });
+
+  it('reads green, not red — the person got what they asked for', () => {
+    renderRow({ stop: 'autonomy' });
+    const note = screen.getByTestId('default-trust-stop-standing-note');
+    expect(note.className).toContain('text-status-success');
+    expect(note.className).not.toMatch(/red/);
   });
 
   it('stacks the control full width until the row itself is wide enough for both halves', () => {

@@ -126,6 +126,34 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
 export const STREAM_LIVE_TIMEOUT_MS = 2_000;
 
 /**
+ * How long `interruptQuery`'s `session.abort` call may go unanswered before
+ * OpenCode gives up on it and answers Stop honestly instead of hanging it
+ * (DOR-1299).
+ *
+ * The wedge this guards against is the same shape as claude-code's
+ * `STOP_ACK_TIMEOUT_MS` (`sessions/bounded-control.ts`, DOR-1244): a promise
+ * that only a backend ack settles, raced against nothing, on a wire that can
+ * drop a request in silence with a sidecar that never crashes and never
+ * answers. 3s to match — the same person-facing complaint applies (a Stop
+ * that visibly does nothing reads as broken) and `POST /session/{id}/abort`
+ * is a control call a healthy sidecar acks in milliseconds, so this is
+ * budget for a genuinely stuck one, not for a slow one.
+ *
+ * Unlike claude-code there is no escalation on expiry. Claude-code's bound
+ * closes the CLI SUBPROCESS behind the stuck query — one process, one
+ * session. OpenCode has no per-session process to close: `apps/server`
+ * manages exactly ONE `opencode serve` child for its own lifetime, spawned
+ * lazily on first use and shared by every session across every project this
+ * server instance has open (ADR-0308 — "a single instance suffices", per-
+ * request `directory` routing rather than a per-cwd pool). Killing IT to
+ * unstick a single wedged interrupt would cut every other session's turn on
+ * the whole server, workspace-unrelated ones included. Expiry here is
+ * therefore a plain, honest `false` — the same answer a refused interrupt
+ * gets — rather than an escalation with no session-scoped target to aim at.
+ */
+export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
+
+/**
  * How many ROOT sessions one `GET /session` may return before the adapter
  * treats the read as truncated.
  *

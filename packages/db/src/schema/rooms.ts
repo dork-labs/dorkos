@@ -324,6 +324,47 @@ export const rooms = sqliteTable(
      */
     fallbackSeatAuthorId: text('fallback_seat_author_id'),
 
+    /**
+     * This room's own answer to "are automatic replies limited here at all",
+     * or `null` to inherit `rooms.turnLimitsEnabled` from user config.
+     *
+     * **Three states, not two, and that is the whole reason it is nullable.**
+     * `false` makes this room unlimited even on an install that limits every
+     * other room; `true` keeps it limited on an install where the person turned
+     * limits off; `null` — the state every room is created in — follows
+     * whatever Settings says, so changing the install-wide toggle still moves
+     * every room that never asked to differ.
+     *
+     * A room opts out of its OWN bounds, never out of the install's wallet: the
+     * global hourly cap has no per-room meaning and no column here, so it still
+     * gates an unlimited room unless the install-wide toggle is also off. See
+     * `resolveRoomLimits` in the server's rooms domain, which is the only thing
+     * that reads these four columns.
+     */
+    turnLimitsEnabled: integer('turn_limits_enabled', { mode: 'boolean' }),
+
+    /**
+     * This room's `rooms.maxAgentDepth`, or `null` to inherit it.
+     *
+     * Bounds only this room's cascades. Stored as a plain nullable integer
+     * rather than a sentinel, because `null` already means "inherit" and a
+     * number always means a number — toggling this room to unlimited and back
+     * therefore restores exactly what was set.
+     */
+    maxAgentDepth: integer('max_agent_depth'),
+
+    /** This room's `rooms.maxTurnsPerAgentPerCascade`, or `null` to inherit it. */
+    maxTurnsPerAgentPerCascade: integer('max_turns_per_agent_per_cascade'),
+
+    /**
+     * This room's `rooms.maxAutomaticTurnsPerRoomPerHour`, or `null` to inherit
+     * it.
+     *
+     * The per-ROOM hourly ceiling only. `rooms.maxAutomaticTurnsTotalPerHour`
+     * is the install's wallet and deliberately has no twin here.
+     */
+    maxAutoTurnsPerHour: integer('max_auto_turns_per_hour'),
+
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
   },

@@ -22,7 +22,7 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
-import { slugify } from '@dorkos/skills/slug';
+import { slugify, validateSlug } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { loadTemplates, RESERVED_TASK_DIRNAMES } from '../services/tasks/task-templates.js';
@@ -36,6 +36,8 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { armEscalation } from '../services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
+import { resolveScheduledRunPermissionMode } from '../services/tasks/scheduled-run-power.js';
+import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -102,11 +104,15 @@ function clearsTheAgentBar(req: Request, res: Response): boolean {
  *
  * ## Read the RAW body, and refuse it whole
  *
- * The check runs before `parseBody` for two reasons. `CreateTaskRequestSchema`
- * DEFAULTS `permissionMode` to `acceptEdits`, so a parsed body always carries the
- * key and the guard could not tell a caller that sent it from one that did not.
- * And refusing before anything is parsed or written is what makes the refusal
- * whole: a caller is never told a change landed when only part of it did.
+ * The check runs before `parseBody` for two reasons. It has to see what the
+ * CALLER sent rather than what the route resolved: an omitted `permissionMode`
+ * is filled in from the operator's own trust stop a few lines later
+ * (`resolveScheduledRunPermissionMode`), and a guard reading the resolved value
+ * could not tell a caller that named a level from one that did not. That was
+ * true of the Zod default this replaced and it is true of the ladder — the guard
+ * did not change, only the thing it must not be moved after. And refusing before
+ * anything is parsed or written is what makes the refusal whole: a caller is
+ * never told a change landed when only part of it did.
  *
  * @param req - The incoming request, whose raw body is inspected.
  * @param res - The response, answered with 403 when a field is refused.
@@ -255,6 +261,39 @@ export function createTasksRouter(
     const data = parseBody(CreateTaskRequestSchema, req.body, res);
     if (!data) return;
 
+    // How much power this schedule runs with, resolved ONCE (spec
+    // `full-power-defaults`, D6). A caller that named a mode keeps it verbatim;
+    // one that named none gets the operator's own trust stop, mapped through the
+    // runtime the scheduler actually drives, and `'acceptEdits'` when no stop is
+    // configured — byte-for-byte the Zod default this replaced. Resolved here
+    // rather than at each read below because three of them follow (the
+    // frontmatter, the trusted un-clamp, and the DB fallback insert) and three
+    // resolutions is three chances to disagree.
+    const permissionMode = data.permissionMode ?? resolveScheduledRunPermissionMode();
+
+    // …and clamped ONCE, for every caller that did not clear the agent bar
+    // (DOR-1432 stage-2 review). This is the value that gets written to the file
+    // and inserted into the row; the explicit un-clamp below is the only thing
+    // that lifts it, and only for a trusted caller.
+    //
+    // **Why the clamp has to live here rather than on the fallback insert
+    // alone.** Two paths reach the row — `upsertFromFile`, which clamps a
+    // file-declared bypass itself, and the direct `store.createTask` below,
+    // which is not a file path and so has no clamp of its own. WHICH ONE runs is
+    // decided by whether the file the route just wrote parses back, and an agent
+    // could choose that: several request fields were looser than their
+    // frontmatter counterparts, so a body the request schema accepted produced a
+    // file the frontmatter schema rejected, and the resolved
+    // `bypassPermissions` went in unclamped. `maxRuntime` was the reported one,
+    // an over-long `description` and a name that slugifies to nothing did it
+    // too. Those three are tightened at the schema, which is the other half of
+    // the fix — but tightening only ever closes the divergences somebody has
+    // thought of, and this closes the shape of the bug: no path from a caller
+    // that cannot ask for a mode can write one, whichever branch it lands on.
+    const effectivePermissionMode = trusted
+      ? permissionMode
+      : clampSchedulePermissionMode(permissionMode).mode;
+
     // A task this caller cannot arm itself is a PROPOSAL, and a proposal has to
     // make its own case (DOR-1394). Asked here rather than in the Zod schema
     // because it depends on WHO is asking, and asked before the file is written
@@ -268,6 +307,22 @@ export function createTasksRouter(
 
     // Resolve slug and target directory
     const slug = slugify(data.name);
+
+    // A name that slugifies to something the SKILL.md name rule rejects — most
+    // easily the empty string, which `'!!!'` produces. Refused here rather than
+    // in `CreateTaskRequestSchema`, because the constraint is on the DERIVED
+    // slug and the request body carries the name it was derived from.
+    //
+    // It is a validation fix with a security reason (DOR-1432 stage-2 review):
+    // an unparseable file used to send the route down a create path that skipped
+    // the permission clamp, so any field a caller could make the frontmatter
+    // reject was a lever on which path ran. Both paths clamp now — this closes
+    // the lever as well, which is the layer that stops the next one.
+    if (!validateSlug(slug)) {
+      return res.status(400).json({
+        error: `"${data.name}" has no usable name in it. Use letters or numbers — "Nightly sweep" becomes "nightly-sweep".`,
+      });
+    }
 
     // `templates/` is a container the tasks system owns, so a task cannot live
     // at that path. Refused rather than silently allowed, because a row
@@ -316,8 +371,17 @@ export function createTasksRouter(
     if (data.timezone) frontmatter.timezone = data.timezone;
     if (data.enabled === false) frontmatter.enabled = false;
     if (data.maxRuntime) frontmatter['max-runtime'] = data.maxRuntime;
-    if (data.permissionMode && data.permissionMode !== 'acceptEdits') {
-      frontmatter.permissions = data.permissionMode;
+    // The CLAMPED mode, so the file and the row agree. This is a file-first
+    // architecture: the reconciler and the watcher both re-read this file, and a
+    // SKILL.md saying `permissions: bypassPermissions` over a row holding
+    // `acceptEdits` is a standing request from disk that nobody made and no
+    // screen shows. It could not escalate on its own — `resolveFilePermissionMode`
+    // clamps it on every sync, and `keepsApprovedBypass` needs the row to be
+    // bypass AND active already — but a file that disagrees with its own row is
+    // a lie in the source of truth, and the next reader should not have to
+    // rediscover why it is harmless.
+    if (effectivePermissionMode && effectivePermissionMode !== 'acceptEdits') {
+      frontmatter.permissions = effectivePermissionMode;
     }
 
     // Write file first (source of truth)
@@ -330,20 +394,11 @@ export function createTasksRouter(
     if (parsed.ok) {
       const def = { ...parsed.definition, scope: 'global' as const, projectPath: undefined };
       schedule = store.upsertFromFile(def, agentId ?? undefined);
-      // `upsertFromFile` refuses a file-declared `bypassPermissions`, because a
-      // SKILL.md on disk is nobody's approval
-      // (`services/tasks/schedule-permission-clamp.ts`). The mode here did not
-      // come from the file: the route wrote that file from this request body a
-      // few lines up, and `refusedOperatorOnlyTaskWrite` has already asked
-      // whether this caller may set the field at all. So the clamp is undone
-      // for the one caller that cleared the bar — the same after-the-fact patch
-      // the parking below uses, and for the same reason: the store's file path
-      // cannot tell the two sources apart.
-      if (trusted && data.permissionMode === 'bypassPermissions') {
-        schedule = store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
-      }
     } else {
-      // Fallback: create directly in DB
+      // Fallback: create directly in DB. NOT a file path, so it gets none of
+      // `upsertFromFile`'s clamping — which is why the mode it is handed was
+      // clamped up at the resolution above rather than here. Do not put the raw
+      // `permissionMode` back into this call.
       schedule = store.createTask({
         name: slug,
         displayName: data.displayName,
@@ -354,9 +409,37 @@ export function createTasksRouter(
         agentId,
         enabled: data.enabled,
         maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
-        permissionMode: data.permissionMode,
+        permissionMode: effectivePermissionMode,
         filePath,
       });
+    }
+
+    // The ONE un-clamp, after BOTH branches, because both need exactly the same
+    // patch and two copies of a security exception are two chances to fix only
+    // one of them. Above, `upsertFromFile` refuses a file-declared
+    // `bypassPermissions` (a SKILL.md on disk is nobody's approval,
+    // `services/tasks/schedule-permission-clamp.ts`); below, the resolution did
+    // the clamping. Either way the row is now at most `acceptEdits`, and this is
+    // what lifts it.
+    //
+    // It is lifted only for a caller that cleared the agent bar, and the mode it
+    // is lifted to is the one that caller effectively asked for: either they
+    // named `bypassPermissions`, or they named nothing on an install whose
+    // operator set the global stop to full autonomy through the consent-gated
+    // door (spec `full-power-defaults`, D6). The store's file path cannot tell
+    // those from a file that simply declared it, which is why the lift happens
+    // here and not there.
+    //
+    // **What is NOT true, stated because an earlier version of this comment
+    // claimed it:** there is no confirmation dialog standing behind this. The
+    // cockpit's task form always sends an explicit mode and so never reaches the
+    // resolved branch at all; the callers that DO reach it — `dorkos task
+    // create`, a bare HTTP POST, anything with a shell — have no confirm step of
+    // any kind. The CLI prints a line naming the level after the fact, which is
+    // disclosure, not consent. The real protection is the agent bar plus the
+    // clamp; do not add "and the UI asks" to the list.
+    if (trusted && permissionMode === 'bypassPermissions') {
+      schedule = store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
     }
 
     // Both store insert paths hardcode `status: 'active'`, so parking is a patch

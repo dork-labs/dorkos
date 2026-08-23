@@ -58,6 +58,13 @@ export class FakeCliProcess {
    * escalation-to-`close()` branch a booting Stop can hit (DOR-1191).
    */
   interruptRejectsWith: unknown;
+  /**
+   * When true, `interrupt()` returns a promise nothing will ever settle — the
+   * wedge `bounded-control.ts` exists for (DOR-1299's C11 conformance case): a
+   * healthy-looking process that simply never acks the control request, same
+   * as an ended stdin drops it in silence.
+   */
+  interruptNeverSettles = false;
   /** The four settable-live pins, in the order they were applied. */
   readonly liveSets: string[] = [];
   /** Every message id this process has READ off its input stream, in order. */
@@ -302,6 +309,7 @@ export class FakeCliProcess {
 
   interrupt(): Promise<void> {
     this.interrupts += 1;
+    if (this.interruptNeverSettles) return new Promise<void>(() => {});
     if (this.interruptRejectsWith !== undefined) return Promise.reject(this.interruptRejectsWith);
     return Promise.resolve();
   }

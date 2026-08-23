@@ -117,6 +117,15 @@
  * window is never projected at all. Draining rather than ignoring matters: an
  * unread channel is a buffer nobody empties.
  *
+ * What gets drained is CENSUSED, and the two outcomes are reported differently
+ * (DOR-1314). A window carrying only a `result` and a `system` line is the CLI
+ * volunteering bookkeeping — routine, and logged at debug with what it held. A
+ * window carrying model speech is words a person was owed, and that is an
+ * error, not a shrug. The steer case that made it routine is fixed upstream in
+ * `SessionTurnWindows`: a steered window now waits to see whether the CLI gave
+ * the steer a turn of its own, so that turn lands INSIDE the person's window
+ * instead of in a runtime one nothing projects.
+ *
  * @module services/runtimes/claude-code/sessions/persistent-dispatch
  */
 import { randomUUID } from 'node:crypto';
@@ -145,7 +154,7 @@ import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
 import { PumpRefusedError } from './session-pump-contract.js';
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
@@ -376,8 +385,10 @@ export class PersistentDispatch {
         bundle.fingerprint = undefined;
       } else {
         try {
-          await reuse.apply(control);
-          bundle.fingerprint = reuse.to;
+          // What the process HOLDS, which is not always what was wanted: a
+          // setter that went unanswered inside its bound leaves its pin where it
+          // was, and the next dispatch has to see that (DOR-1301).
+          bundle.fingerprint = await reuse.apply(control);
         } catch (err) {
           if (err instanceof AccountPinViolationError) {
             logger.error('[persistent-dispatch] refused a cross-account dispatch', {
@@ -441,8 +452,14 @@ export class PersistentDispatch {
    * the same reason {@link steer} does: a reaped pump is spent and refuses
    * everything asked of it, and there is no window under it to settle anyway.
    *
+   * A window that is merely waiting to see whether a steer got a turn of its
+   * own (DOR-1314) is settled here too, but on the real `result` it is holding
+   * rather than on a synthetic error — and it answers `false`, because that
+   * turn finished. The caller logs a `true` as "ended a turn that never
+   * finished", and that sentence would not be true of it.
+   *
    * @param sessionId - The session about to open a turn, in any id it answers to
-   * @returns True when a window was open and has been settled
+   * @returns True when a turn that never finished had to be abandoned
    */
   settleOpenTurn(sessionId: string): boolean {
     const key = this.sessionKeyOf(sessionId);
@@ -729,6 +746,21 @@ export class PersistentDispatch {
     // registry replaced is as stale as one it dropped.
     if (existing !== undefined && this.registry.peek(key) === existing.pump) return existing;
 
+    // `existing !== undefined` here means this class HELD a bundle for this
+    // session and the registry no longer backs it with the same pump — an
+    // idle reap or a warm-ceiling reclaim it was never told about (see the
+    // comment above). That is a genuine relaunch, not a first-time cold
+    // start, and it used to be invisible below `debug`: a session mid-flow
+    // would silently pay for a fresh process boot with no line in the log
+    // explaining why (DOR-1323, flag-on run L-11). One line, not per-turn —
+    // this fires only on the transition, never on the (far more common)
+    // warm reuse a line above returns early on.
+    if (existing !== undefined) {
+      logger.info('[persistent-dispatch] relaunching after the registry reaped this session', {
+        session: key,
+      });
+    }
+
     // Definitely-assigned three lines down. Nothing can observe the gap: the
     // pump boots nothing until it is dispatched to, which cannot happen before
     // this function returns.
@@ -880,14 +912,54 @@ function enrichDeliveredContent(content: string, additionalContext?: AdditionalC
  * settle. Never yields the messages anywhere: see the module doc.
  */
 async function drainUnprojected(sessionId: string, window: TurnWindow): Promise<void> {
+  const census: Record<string, number> = {};
   let dropped = 0;
+  let content = 0;
   try {
-    for await (const _message of window.messages) dropped += 1;
+    for await (const message of window.messages) {
+      dropped += 1;
+      census[message.type] = (census[message.type] ?? 0) + 1;
+      if (carriesContent(message)) content += 1;
+    }
   } catch (err) {
     logger.debug('[persistent-dispatch] a runtime window failed while draining', {
       sessionId,
       err,
     });
   }
-  logger.warn('[persistent-dispatch] dropped a turn nobody asked for', { sessionId, dropped });
+  // The two cases are genuinely different and must not read alike. A window
+  // holding only a `result` and a `system` line is bookkeeping the CLI
+  // volunteered — routine, and a warning about it is noise that trains people
+  // to ignore the log. A window holding model speech is words a person was owed
+  // and never saw, which is the DOR-1314 loss, and it says so at the level that
+  // gets read.
+  if (content === 0) {
+    logger.debug('[persistent-dispatch] drained a content-free turn nobody asked for', {
+      sessionId,
+      dropped,
+      census,
+    });
+    return;
+  }
+  logger.error('[persistent-dispatch] dropped model output nobody could project', {
+    sessionId,
+    dropped,
+    content,
+    census,
+  });
+}
+
+/**
+ * Whether an SDK message carries something a person would have read — model
+ * speech or tool traffic — as opposed to the process's own bookkeeping.
+ *
+ * Deliberately generous: anything that is not a `result` or a `system` line
+ * counts. An over-count costs one log line at the wrong level; an under-count
+ * would report data loss as routine, which is the failure this exists to
+ * prevent.
+ *
+ * @param message - One message drained from a window nothing will project
+ */
+function carriesContent(message: SDKMessage): boolean {
+  return message.type !== 'result' && message.type !== 'system';
 }

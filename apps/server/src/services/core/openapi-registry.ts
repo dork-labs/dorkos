@@ -513,8 +513,28 @@ registry.registerPath({
   path: '/api/sessions/{id}/messages',
   tags: ['Sessions'],
   summary: 'Get message history',
+  description:
+    "`cwd` is optional (DOR-1322): the server first tries the runtime's own live " +
+    'binding for the session, then falls back to its default project directory — ' +
+    'but only after VERIFYING the session actually lives there, never on the ' +
+    'unchecked assumption that it does. Pass `cwd` explicitly for a session the ' +
+    'server has never loaded this process — a cold read straight from the SDK ' +
+    'transcript. A session that cannot be placed either way (no live binding, and ' +
+    'not confirmed at the default directory) answers 404 SESSION_CWD_REQUIRED ' +
+    'rather than an empty message list, so "no messages yet" and "wrong or missing ' +
+    'cwd" are never the same response.',
   request: {
     params: z.object({ id: z.string().uuid() }),
+    query: z.object({
+      cwd: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            "The session's project directory (boundary-checked). Optional for a " +
+            'session the server can already place; required for a cold session it cannot.',
+        }),
+    }),
   },
   responses: {
     200: {
@@ -524,6 +544,12 @@ registry.registerPath({
           schema: z.object({ messages: z.array(HistoryMessageSchema) }),
         },
       },
+    },
+    404: {
+      description:
+        "Could not determine this session's working directory (SESSION_CWD_REQUIRED). " +
+        'Retry with an explicit `cwd`.',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

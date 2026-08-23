@@ -26,6 +26,42 @@ import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import type { DirectTransportServices } from './services';
 
 /**
+ * Resolve the directory to read a session's messages from without a
+ * caller-supplied `cwd` — the DirectTransport twin of the HTTP route's
+ * `resolveMessagesCwd` (DOR-1322; see its TSDoc for the full argument).
+ * Verification applies ONLY when the embedded runtime implements
+ * `getSessionCwd` — today that is always true, since DirectTransport embeds
+ * exactly one runtime (claude-code, whose JSONL storage genuinely is
+ * directory-keyed); the branch exists so a future non-directory-keyed
+ * embedded runtime (e.g. an embedded test-mode) trusts the vault root outright
+ * instead of being 404'd by a verification probe that means nothing for it.
+ * Tries the runtime's own live binding first, then falls back to the vault
+ * root, but only after `transcriptReader.getSession` confirms the session
+ * actually lives there. Guarded: a `getSession` throw (rather than a `null`
+ * "not found") degrades to `undefined` exactly like the server-side probe
+ * does, never propagates.
+ *
+ * @param services - In-process service seams wired by the embedding host
+ * @param sessionId - Session to resolve
+ */
+async function resolveDirectMessagesCwd(
+  services: DirectTransportServices,
+  sessionId: string
+): Promise<string | undefined> {
+  if (services.runtime.getSessionCwd === undefined) return services.vaultRoot;
+
+  const liveCwd = services.runtime.getSessionCwd(sessionId);
+  if (liveCwd) return liveCwd;
+
+  try {
+    const found = await services.transcriptReader.getSession(services.vaultRoot, sessionId);
+    return found ? services.vaultRoot : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Create all session-related methods bound to the injected services.
  *
  * @param services - In-process service seams wired by the embedding host
@@ -132,11 +168,25 @@ export function createDirectSessionMethods(
 
     // ── Message History ─────────────────────────────────────────────────────
 
+    /**
+     * Read a session's message history, resolving its working directory the
+     * same way the HTTP route does (DOR-1322): an explicit `cwd` wins;
+     * otherwise the embedded runtime's own live binding
+     * (`services.runtime.getSessionCwd`); otherwise the vault root, but only
+     * once verified — `transcriptReader.getSession` confirms the session
+     * actually lives there before `readTranscript` is trusted to look. A
+     * session that resolves nowhere throws, exactly like the HTTP transport's
+     * `fetchJSON` throws on the server's 404 SESSION_CWD_REQUIRED — callers
+     * already handle a rejected `getMessages` as a query error (React Query).
+     */
     async getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }> {
-      const messages = await services.transcriptReader.readTranscript(
-        cwd || services.vaultRoot,
-        sessionId
-      );
+      const resolvedCwd = cwd || (await resolveDirectMessagesCwd(services, sessionId));
+      if (!resolvedCwd) {
+        throw new Error(
+          `Could not determine the working directory for session '${sessionId}'. Pass cwd explicitly.`
+        );
+      }
+      const messages = await services.transcriptReader.readTranscript(resolvedCwd, sessionId);
       return { messages };
     },
 

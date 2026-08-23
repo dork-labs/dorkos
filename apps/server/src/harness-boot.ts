@@ -32,7 +32,12 @@ import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
-import { SessionEventStore, setSessionEventStore } from './services/session/index.js';
+import {
+  SessionEventStore,
+  StagedContextStore,
+  setSessionEventStore,
+  setStagedContextStore,
+} from './services/session/index.js';
 import {
   createRoomSubsystem,
   setRoomAttachmentStores,
@@ -84,6 +89,9 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // The log-backed turn path (test-mode IS log-backed) persists + hydrates
   // through the durable session-event store and the registry's DB handle.
   setSessionEventStore(new SessionEventStore(db));
+  // Staged words fold into the next dispatch on test-mode too, and the receipt
+  // for them is durable, so the hold behind it is (DOR-1324).
+  setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
 
   // Register the deterministic TestModeRuntime as default — a dynamic import so

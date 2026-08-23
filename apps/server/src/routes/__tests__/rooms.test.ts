@@ -366,6 +366,149 @@ describe('/api/rooms', () => {
     });
   });
 
+  describe("PATCH /:id — this room's own automatic-reply limits (DOR-1429)", () => {
+    /** Mint an agent identity for Ana and put her in the room. */
+    async function anaIn(roomId: string): Promise<string> {
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+      await request(app).post(`/api/rooms/${roomId}/members`).send({ agentPath: ANA_PATH });
+      return token;
+    }
+
+    it('stores the four overrides and hands them straight back', async () => {
+      const room = await createChannel();
+      const res = await request(app).patch(`/api/rooms/${room.id}`).send({
+        turnLimitsEnabled: false,
+        maxAgentDepth: 4,
+        maxTurnsPerAgentPerCascade: 2,
+        maxAutoTurnsPerHour: 12,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        turnLimitsEnabled: false,
+        maxAgentDepth: 4,
+        maxTurnsPerAgentPerCascade: 2,
+        maxAutoTurnsPerHour: 12,
+      });
+      // And on the read path, so a client can draw what is set.
+      const read = await request(app).get(`/api/rooms/${room.id}`);
+      expect(read.body.maxAgentDepth).toBe(4);
+    });
+
+    it('leaves a room inheriting when nothing was ever set', async () => {
+      const room = await createChannel();
+      const read = await request(app).get(`/api/rooms/${room.id}`);
+      expect(read.body).toMatchObject({
+        turnLimitsEnabled: null,
+        maxAgentDepth: null,
+        maxTurnsPerAgentPerCascade: null,
+        maxAutoTurnsPerHour: null,
+      });
+    });
+
+    it('leaves an override alone when the field is absent from the patch', async () => {
+      const room = await createChannel();
+      await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
+      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ topic: 'unrelated' });
+      expect(res.status).toBe(200);
+      expect(res.body.maxAgentDepth).toBe(4);
+    });
+
+    it('clears an override with an explicit null', async () => {
+      // Absent means "do not touch" and `null` means "go back to inheriting" —
+      // the distinction this route exists to carry.
+      const room = await createChannel();
+      await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
+      const cleared = await request(app)
+        .patch(`/api/rooms/${room.id}`)
+        .send({ maxAgentDepth: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.maxAgentDepth).toBeNull();
+    });
+
+    it('clears the toggle with an explicit null, which is not the same as false', async () => {
+      const room = await createChannel();
+      await request(app).patch(`/api/rooms/${room.id}`).send({ turnLimitsEnabled: false });
+      const cleared = await request(app)
+        .patch(`/api/rooms/${room.id}`)
+        .send({ turnLimitsEnabled: null });
+      expect(cleared.body.turnLimitsEnabled).toBeNull();
+    });
+
+    it('refuses an agent with OPERATOR_ONLY, and writes nothing', async () => {
+      // An agent that can raise its own reply allowance has no allowance. The
+      // gate is the OPERATOR one rather than a person check, because these
+      // fields are spend authority — `room-limit-overrides.test.ts` measures the
+      // half this route cannot reach, a human who is not the owner.
+      const room = await createChannel();
+      const token = await anaIn(room.id);
+      const res = await request(app)
+        .patch(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token)
+        .send({ maxAgentDepth: 99 });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OPERATOR_ONLY');
+      const read = await request(app).get(`/api/rooms/${room.id}`);
+      expect(read.body.maxAgentDepth).toBeNull();
+    });
+
+    it('refuses an agent CLEARING one too — a clear is a write', async () => {
+      const room = await createChannel();
+      await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
+      const token = await anaIn(room.id);
+      const res = await request(app)
+        .patch(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token)
+        .send({ maxAgentDepth: null });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OPERATOR_ONLY');
+    });
+
+    it('still lets an agent patch a topic, so the gate is the fields and not the route', async () => {
+      const room = await createChannel();
+      const token = await anaIn(room.id);
+      const res = await request(app)
+        .patch(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token)
+        .send({ topic: 'what we are working on' });
+      expect(res.status).toBe(200);
+    });
+
+    it('answers 404, not 403, when an agent aims a limit patch at a room it cannot see', async () => {
+      // Visibility is judged first, so an agent learns exactly what reading the
+      // room would tell it and no more.
+      const room = await createChannel();
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: BO_PATH, displayName: 'Bo' });
+      const res = await request(app)
+        .patch(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token)
+        .send({ maxAgentDepth: 99 });
+      expect(res.status).toBe(404);
+    });
+
+    it('refuses a number outside the bounds the config schema uses', async () => {
+      const room = await createChannel();
+      // 100 is the shared ceiling; 101 is one past it.
+      expect(
+        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 101 })).status
+      ).toBe(400);
+      // The per-agent counter's floor is 1 — zero would mean "never answer",
+      // which is what the toggle is for.
+      expect(
+        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxTurnsPerAgentPerCascade: 0 }))
+          .status
+      ).toBe(400);
+      expect(
+        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxAutoTurnsPerHour: 10_001 }))
+          .status
+      ).toBe(400);
+      expect(
+        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 2.5 })).status
+      ).toBe(400);
+    });
+  });
+
   describe('GET / — bridge on every listed room (sidebar-simplification D2)', () => {
     it('says which listed rooms are bridged and which are not', async () => {
       // The cockpit tells a direct message somebody made by hand from one a

@@ -2,6 +2,27 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260823-021312",
+      "slug": "interrupt-receipts-are-a-typed-vocabulary",
+      "title": "Every stop-shaped verb answers with a typed interrupt receipt, and DorkOS never settles a turn it did not observe end",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "specSlug": "runtime-interrupt-receipts",
+      "amends": null,
+      "affects": [
+        "packages/shared/src/agent-runtime.ts",
+        "packages/shared/src/session-stream.ts",
+        "packages/shared/src/transport.ts",
+        "apps/server/src/routes/sessions.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/session-store.ts",
+        "apps/server/src/services/runtimes/codex/event-mapper.ts",
+        "apps/server/src/services/runtimes/opencode/session-event-mapper.ts",
+        "apps/server/src/services/session/projector-persistence.ts",
+        "apps/server/src/services/rooms/room-turn-port.ts",
+        "apps/client/src/layers/features/chat/model/use-session-submit.ts"
+      ]
+    },
+    {
       "id": "260817-152705",
       "slug": "dev-server-previews-get-their-own-origin",
       "title": "Dev-server previews get their own origin; local-file serving keeps the opaque one",
@@ -4766,6 +4787,78 @@
       "specSlug": "billing-account-ladder",
       "amends": null,
       "supersedes": null
+    },
+    {
+      "id": "260822-235759",
+      "slug": "consent-led-default-flipping",
+      "title": "Full power by default is consent-led — the door's accept writes the flips, never a migration",
+      "status": "proposed",
+      "created": "2026-08-22",
+      "extractedFrom": "full-power-defaults",
+      "specSlug": "full-power-defaults",
+      "amends": null,
+      "supersedes": null
+    },
+    {
+      "id": "260822-235800",
+      "slug": "one-time-modals-ride-a-moments-rail",
+      "title": "One-time modals ride a moments rail, mirroring the banner slot's arbitration",
+      "status": "proposed",
+      "created": "2026-08-22",
+      "extractedFrom": "full-power-defaults",
+      "specSlug": "full-power-defaults",
+      "amends": null,
+      "supersedes": null
+    },
+    {
+      "id": "260822-235801",
+      "slug": "green-means-full-power-red-means-alarm",
+      "title": "The color economy — green means full power, red is reserved for alarms",
+      "status": "proposed",
+      "created": "2026-08-22",
+      "extractedFrom": "full-power-defaults",
+      "specSlug": "full-power-defaults",
+      "amends": null,
+      "supersedes": null
+    },
+    {
+      "id": "260822-235802",
+      "slug": "unattended-surfaces-follow-the-operator-level",
+      "title": "Unattended surfaces follow the operator's power level, resolved at creation, confirm kept",
+      "status": "proposed",
+      "created": "2026-08-22",
+      "extractedFrom": "full-power-defaults",
+      "specSlug": "full-power-defaults",
+      "amends": null,
+      "supersedes": null
+    },
+    {
+      "id": "260823-000217",
+      "slug": "the-ancestry-rule-becomes-a-per-agent-turn-counter",
+      "title": "The cascade guard's ancestry rule becomes a per-agent turn counter",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "amends": "260726-170127",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/cascade-guard.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/room-store.ts"
+      ]
+    },
+    {
+      "id": "260823-000218",
+      "slug": "room-turn-limits-ship-loose-and-can-be-turned-off",
+      "title": "Room turn limits ship loose, and a person may turn them off entirely",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/config-schema.ts",
+        "apps/server/src/services/core/config-manager.ts",
+        "apps/server/src/services/core/safe-defaults/default-verdicts.ts"
+      ]
     }
   ]
 }

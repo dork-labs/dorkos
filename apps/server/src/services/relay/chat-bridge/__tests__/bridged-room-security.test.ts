@@ -59,7 +59,7 @@ import {
   type RoomHarness,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
-import { RoomTurnBudget } from '../../../rooms/turn-budget.js';
+import { RoomTurnBudget } from '../../../rooms/limits/turn-budget.js';
 import { evaluateCascade } from '../../../rooms/cascade-guard.js';
 import {
   isServerOnlyPrincipal,
@@ -562,7 +562,11 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
         limits: { perRoom: () => 1, global: () => 100 },
       });
       expect(perRoomBudget.tryReserve('room-1').allowed).toBe(true);
-      expect(perRoomBudget.tryReserve('room-1')).toEqual({ allowed: false, scope: 'room' });
+      expect(perRoomBudget.tryReserve('room-1')).toEqual({
+        allowed: false,
+        scope: 'room',
+        counted: false,
+      });
 
       const globalBudget = new RoomTurnBudget({
         db: createTestDb(),
@@ -570,21 +574,26 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       });
       expect(globalBudget.tryReserve('room-a').allowed).toBe(true);
       // A different room — only the GLOBAL cap can be what refuses it.
-      expect(globalBudget.tryReserve('room-b')).toEqual({ allowed: false, scope: 'global' });
+      expect(globalBudget.tryReserve('room-b')).toEqual({
+        allowed: false,
+        scope: 'global',
+        counted: false,
+      });
     });
 
-    it('the cascade guard refuses past the depth ceiling and on re-entry of an author already in the cascade', () => {
+    it('the cascade guard refuses past the depth ceiling and once an author has had its turns in the cascade', () => {
       const target = '/agents/ana';
+      const limits = { maxAgentDepth: 3, maxTurnsPerAgentPerCascade: 2 };
       expect(
-        evaluateCascade(target, { root: 'r', depth: 3, authorsInCascade: [] }, { maxAgentDepth: 3 })
+        evaluateCascade(target, { root: 'r', depth: 3, turnsByAuthor: new Map() }, limits)
       ).toMatchObject({ allowed: false, reason: 'depth' });
       expect(
         evaluateCascade(
           target,
-          { root: 'r', depth: 0, authorsInCascade: [target] },
-          { maxAgentDepth: 3 }
+          { root: 'r', depth: 0, turnsByAuthor: new Map([[target, 2]]) },
+          limits
         )
-      ).toMatchObject({ allowed: false, reason: 'ancestry' });
+      ).toMatchObject({ allowed: false, reason: 'repeat' });
     });
 
     it('A5.9: the per-chat ingest ceiling refuses the message that would exceed it and writes no entry for it', async () => {

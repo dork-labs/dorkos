@@ -342,6 +342,55 @@ export async function resolveUnattendedSessionDefaults(opts: {
 }
 
 /**
+ * The trust stop the operator has configured, for a surface NOBODY IS WATCHING.
+ *
+ * The same two tiers {@link resolveSessionDefaults} walks for its permission
+ * key, and nothing else: the runtime's own
+ * `runtimes.<section>.defaultTrustStop` where a runtime is known and declares a
+ * config section, then the runtime-neutral `runtimes.defaultTrustStop`, then
+ * `null` for "nothing configured". A runtime with no config section still reads
+ * the global stop — the value means the same thing on every runtime, which is
+ * why the global tier exists at all.
+ *
+ * **It answers a STOP, not a mode.** Translating a stop into a runtime's own
+ * mode id is {@link resolveTrustStops}'s job — the same function the dial
+ * renders from — so a caller resolves the id by asking the target runtime's
+ * capability profile, exactly as {@link resolveTrustMode} does below. Never
+ * re-derive that mapping: a second copy is how a default and the dial come to
+ * disagree about which mode a position means.
+ *
+ * **Why this is separate from {@link resolveSessionDefaults} rather than a flag
+ * on it.** That function deliberately answers a permission tier only for a
+ * caller that hands it the runtime's declared modes, which is what keeps an
+ * attended-session default out of rooms and relay bindings (spec `trust-dial`,
+ * decision 6). Unattended surfaces that DO want the operator's level — a
+ * scheduled run, which the person configured on purpose and which has its own
+ * confirm at creation — ask for it here, by name, so the asking is visible in
+ * the diff rather than hidden in an argument.
+ *
+ * @param opts.configSection - Which `runtimes.*` key holds the target runtime's
+ *   own defaults, from its declared `settings.configSection`. Omitted, `null`,
+ *   or a section this build has no key for all mean the same thing: no
+ *   per-runtime tier, and the global stop still applies.
+ * @param opts.runtimes - The `runtimes` config section; defaults to the stored
+ *   one. The `?.` is the same pre-boot tolerance {@link resolveSessionDefaults}
+ *   documents — `configManager` is a `let` that is undefined until
+ *   `initConfigManager` runs, and a missing setting is a reason to fall through,
+ *   never a reason to refuse the work.
+ * @returns The configured stop, or `null` when nothing is configured.
+ */
+export function resolveUnattendedDefaultStop(opts?: {
+  configSection?: string | null;
+  runtimes?: UserConfig['runtimes'];
+}): PermissionStop | null {
+  const runtimes = opts?.runtimes ?? configManager?.get('runtimes');
+  const declared = opts?.configSection ?? null;
+  const section = isRuntimesConfigSection(declared) ? declared : undefined;
+  const configured = section ? runtimes?.[section] : undefined;
+  return configured?.defaultTrustStop ?? runtimes?.defaultTrustStop ?? null;
+}
+
+/**
  * Turn a configured dial position into the mode id this runtime calls it.
  *
  * The one rule, and it is not this module's: {@link resolveTrustStops} is what
