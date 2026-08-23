@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): pressing Stop now responds instantly and never sends the request twice (DOR-1300)'
+  - 'fix(client): close the reachable Stop-button gaps a review found (DOR-1300)'
 ---
 
 ### Fixed
