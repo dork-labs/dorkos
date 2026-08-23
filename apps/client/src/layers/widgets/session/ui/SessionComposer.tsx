@@ -32,6 +32,7 @@ import {
   useRotatingPlaceholder,
   type NativeCommandResult,
   type InteractionProps,
+  type StopOutcome,
   type SyncPresenceProps,
   type useInputAutocomplete,
 } from '@/layers/features/chat';
@@ -94,11 +95,11 @@ interface SessionComposerProps {
   commandPending: boolean;
   status: 'idle' | 'streaming' | 'error';
   /**
-   * Interrupt the running turn and empty its queue. Resolves with the messages
-   * the server took off the queue, head first, so this window can return the
-   * words to the composer.
+   * Interrupt the running turn and empty its queue. Resolves with the server's
+   * own verdict and the messages it took off the queue, head first, so this
+   * window can return the words to the composer. See {@link StopOutcome}.
    */
-  stop: () => Promise<QueuedMessage[]>;
+  stop: () => Promise<StopOutcome>;
   setInput: (value: string) => void;
   sessionId: string;
   sessionStatus: SessionStatusEvent | null;
@@ -244,9 +245,13 @@ export function SessionComposer({
 
   // Stop means stop everything queued. When messages are waiting, the person is
   // asked first and told the cost, because a Stop that silently emptied a queue
-  // would be a surprise; a Stop with nothing waiting behaves exactly as before,
-  // with no dialog. The words the server hands back land in the composer draft,
-  // after anything already typed, so nothing is lost.
+  // would be a surprise; a Stop with nothing waiting skips the dialog and stops
+  // immediately. Both paths end in the SAME `performStop` below, and both now
+  // restore uniformly: the no-dialog path's call is a harmless no-op (nothing
+  // was queued, so the server hands back nothing to restore), rather than a
+  // second, asymmetric implementation of "put the words back." The words the
+  // server hands back land in the composer draft, after anything already
+  // typed, so nothing is lost.
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const restoreToComposer = useCallback(
     (returned: QueuedMessage[]) => {
@@ -260,17 +265,109 @@ export function SessionComposer({
     },
     [sessionId, setInput]
   );
+  // A Stop that has to escalate on the server (`STOP_ACK_TIMEOUT_MS`, up to
+  // ~3s) used to leave the button red and clickable for the whole wait, with
+  // the fire-and-forget handler posting a fresh `/interrupt` on every extra
+  // click. This is the acknowledgment: the button goes pending the instant the
+  // click is heard and STAYS pending — not just for the request's own
+  // round-trip — until the turn actually settles, which is what closes the
+  // window a second click could race into (DOR-1300).
+  //
+  // Holds the SESSION the click was for, not a bare boolean. `ChatPanel`
+  // re-renders this component in place across a session switch — no `key`, no
+  // unmount — so a boolean pending flag survives the switch and reads as
+  // "Stopping…" on a session that was never clicked, with its own Stop button
+  // gone and its own click refused, until whatever session originally owned
+  // the flag happens to settle. Comparing against the CURRENT `sessionId` at
+  // render, every render, is what a session switch cannot race: there is no
+  // window where the derived value is stale, because there is no effect
+  // between the switch and the read.
+  const [stopInFlightSessionId, setStopInFlightSessionId] = useState<string | null>(null);
+  const stopPending = stopInFlightSessionId === sessionId && isStreaming;
+  // The single-flight lock a click actually reads, mirroring the state above
+  // rather than replacing it — keyed by session for the same B1 reason, but a
+  // REF because a click has to read it WITHIN the current tick, before React
+  // has had any chance to re-render. Two clicks landing in the same
+  // synchronous turn — Radix keeps `AlertDialogAction`'s element mounted
+  // through its exit animation, so nothing stops a fast double-press from
+  // reaching it twice before a paint — would both read the SAME stale
+  // `stopPending` closure and both pass a state-only guard; the ref is
+  // written synchronously by the first click before the second one's check
+  // runs, so it is what actually makes this a single-flight guard rather than
+  // a single-RENDER one (DOR-1300 B2).
+  const stopLockSessionIdRef = useRef<string | null>(null);
+  // The turn settling — `isStreaming` flipping false — is what ends a pending
+  // Stop on the happy path, and clearing the flag here (rather than only
+  // relying on the comparison above) matters for a case the comparison alone
+  // cannot cover: the SAME session starting a SECOND turn later. Without this,
+  // `stopInFlightSessionId` would still equal `sessionId` from the first
+  // Stop, and the new turn would render "Stopping…" from its very first frame.
+  // Keyed on `sessionId` too, so switching sessions cannot leave this reading
+  // a different session's `isStreaming` than the one it just wrote.
+  const clearSettledStop = useCallback(() => {
+    stopLockSessionIdRef.current = null;
+    setStopInFlightSessionId(null);
+  }, []);
+  /* eslint-disable react-hooks/set-state-in-effect -- sync local pending flag from the external isStreaming signal (turn_end) */
+  useEffect(() => {
+    if (!isStreaming) clearSettledStop();
+  }, [isStreaming, sessionId, clearSettledStop]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  // A fresh read of `isStreaming` at the moment the request settles, not the
+  // value `performStop` closed over at click time — the promise can resolve
+  // long after this component has re-rendered several times.
+  const isStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+  const performStop = useCallback(() => {
+    stopLockSessionIdRef.current = sessionId;
+    setStopInFlightSessionId(sessionId);
+    void stop()
+      .then((outcome: StopOutcome) => {
+        restoreToComposer(outcome.cancelled);
+        // `ok: false` mostly means the turn had already finished on its own
+        // (the server's own race note, `use-session-submit.ts`) — in which
+        // case `isStreaming` has already flipped and the effect above already
+        // cleared this. The case worth handling here is the other one: the
+        // request genuinely failed AND the turn is still running, where
+        // nothing else would ever release a pending Stop — re-enable so the
+        // person can press it again instead of watching "Stopping…" forever.
+        if (!outcome.ok && isStreamingRef.current) clearSettledStop();
+      })
+      .catch(() => {
+        // The request itself never got an answer at all (network, timeout).
+        // Always safe to clear: if the turn had already settled, the effect
+        // above already did this and it's a no-op; if not, this is the retry
+        // path.
+        clearSettledStop();
+      });
+  }, [sessionId, stop, restoreToComposer, clearSettledStop]);
   const handleStop = useCallback(() => {
+    // Single-flight for THIS session: a Stop already in flight cannot be
+    // re-fired by a second click, Enter's Escape binding, or a rapid
+    // double-press. The ref catches a same-tick double-fire the `stopPending`
+    // state alone cannot (see `stopLockSessionIdRef` above); comparing it
+    // against the CURRENT `sessionId`, exactly like the state, is what keeps
+    // a session switch from inheriting session A's still-in-flight lock.
+    if (stopLockSessionIdRef.current === sessionId || stopPending) return;
     if (waiting.length === 0) {
-      void stop();
+      performStop();
       return;
     }
     setStopConfirmOpen(true);
-  }, [waiting.length, stop]);
+  }, [sessionId, stopPending, waiting.length, performStop]);
   const confirmStop = useCallback(() => {
+    // Same single-flight guard as `handleStop`, for the same reason: Radix
+    // keeps the confirm dialog's content mounted through its exit animation,
+    // so a fast double-press on its own Stop button can reach this twice
+    // before either a re-render or the dialog's own removal (DOR-1300 B2).
+    if (stopLockSessionIdRef.current === sessionId || stopPending) return;
+    // Pending starts HERE, on confirm — never on opening the dialog, which
+    // asks a question and stops nothing yet.
     setStopConfirmOpen(false);
-    void stop().then(restoreToComposer);
-  }, [stop, restoreToComposer]);
+    performStop();
+  }, [sessionId, stopPending, performStop]);
 
   // Background-task detection reads the hydrated stream-store projection (falling
   // back to the legacy send-path messages until the session hydrates) so it sees
@@ -479,6 +576,7 @@ export function SessionComposer({
         isStreaming,
         commandPending,
         onStop: handleStop,
+        stopPending,
         onEscape: autocomplete.dismissPalettes,
         onClear: () => {
           setInput('');
