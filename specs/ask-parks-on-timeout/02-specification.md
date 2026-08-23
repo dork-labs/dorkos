@@ -898,6 +898,11 @@ Named so a cold reader does not improve a deliberate gap back into a bug.
     hours and says nothing on the surface that asked — the notification gap named
     in #1 — while holding a warm slot. Refusing it fast instead would answer for
     somebody who can, in fact, still answer.
+    **Partly superseded (2026-08-23, DOR-1440):** `ask-entitlement` §5.2 shipped
+    after this and does send an Approve/Deny card into the chat — for an
+    `approval` only, and only into a live one-to-one DM whose single outside
+    member is on that adapter's approver allowlist. The park itself is unchanged;
+    "cockpit only" now holds for everything outside that narrow case.
 11. **A room turn is still given up after `rooms.lateReplyCeilingMinutes`**
     (60 by default). Before the park every prompt settled inside ten minutes, so
     that bound was unreachable; now a room-raised Ask answered after an hour runs

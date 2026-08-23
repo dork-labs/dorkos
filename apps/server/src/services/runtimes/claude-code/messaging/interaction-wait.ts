@@ -382,9 +382,18 @@ export function elicitationTimeoutNotice(serverName: string, waited: string): st
  * scheduled task, and only the scheduler passes this flag. The difference is
  * whether anybody can still answer: a scheduled run's prompt reaches nobody,
  * while a bridged agent's prompt is listed fleet-wide and is answerable from
- * the cockpit by the same person the room is talking to. It does NOT reach
- * Slack or Telegram (spec "What is not done" #1), so a bridged Ask parks
- * quietly and is answerable in the cockpit only.
+ * the cockpit by the same person the room is talking to.
+ *
+ * Some of them are answerable from the chat itself, and this used to claim
+ * otherwise (DOR-1440). `chat-bridge/ask-card.ts` sends a real Approve/Deny
+ * card into the bridged chat — but only for an `approval`, and only into a live
+ * one-to-one DM whose single outside member is on that adapter's approver
+ * allowlist (`chat-bridge/ask-audience.ts`), with `initiate` provenance so an
+ * operator who switched that off still gets none. Everything outside that
+ * narrow case — a group chat, a question, an elicitation, or a card the consent
+ * gate refuses — parks quietly with only the room's waiting sentence, and is
+ * answerable in the cockpit. Either way the wait is the same wait; what differs
+ * is how many places can end it.
  *
  * @param session - The session holding the prompt.
  */
