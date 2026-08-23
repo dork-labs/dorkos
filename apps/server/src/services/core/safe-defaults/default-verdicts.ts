@@ -116,6 +116,16 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
   'ui.composer.richText',
+  // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
+  // of an ANSWER and nothing more: they send nothing off the machine, grant no
+  // capability, and no gate reads them. That is what separates them from
+  // `ui.autonomyAcknowledgedAt` next door, which is classified `safe` because the
+  // server's autonomy gate really does read it — a value there decides whether a
+  // 428 is raised, and a value here decides whether a modal is shown. A wipe that
+  // lands both back on `null` simply puts the question again, which is the right
+  // outcome and costs one dialog.
+  'ui.fullPowerDecidedAt',
+  'ui.fullPowerChoice',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -191,16 +201,6 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // upgrade cannot move anybody onto a more expensive one.
   'runtimes.claudeCode.defaultModel',
   'runtimes.claudeCode.defaultEffort',
-  // Whether a Claude Code chat keeps its agent running between messages (spec
-  // `persistent-session-runtime` §P3). Ships `false` — one process per message,
-  // byte-for-byte today's behavior — and the flip side sends nothing off the
-  // machine, grants no capability, and relaxes no bound: the same executable
-  // runs with the same permissions and the same per-dispatch boundary check,
-  // held open for longer. The bounds that do apply to a held process (the warm
-  // ceiling and the idle reaper) live in code, not under this default, so
-  // calling `false` a safety verdict would claim a protection this leaf does
-  // not provide.
-  'runtimes.claudeCode.persistentSession',
   'runtimes.opencode.defaultModel',
   'runtimes.codex.defaultModel',
   'runtimes.codex.defaultEffort',
@@ -269,7 +269,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
-  'scheduler.maxConcurrentRuns': 1,
   // No user extension runs its code until a person approves it (DOR-516).
   'extensions.enabled': [],
   'extensions.disabled': [],
@@ -405,6 +404,16 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       "Projecting `.agents/` and installed plugins into a project's harness directories is what makes an installed skill actually reach the agent; without it, every install would silently do nothing. Writes are confined to harness directories inside projects the person has already opened.",
+  },
+  'runtimes.claudeCode.persistentSession': {
+    value: true,
+    reason:
+      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one `PATCH /api/config` away — a switch for it lands with the Control Center (task 2.2), which is the one thing this default is currently missing.',
+  },
+  'scheduler.maxConcurrentRuns': {
+    value: 4,
+    reason:
+      'Four scheduled runs at once instead of one moves a resource throttle off the FLOOR of its own declared range (1–10) — it is not a capability grant, because nothing about what a run may do changes, and every run still passes the same approval gates and the same file clamp. What it relaxes is queueing: one slow run no longer holds up every schedule behind it. The bound the schema already enforces is unchanged, and a person who wants the old behavior sets it back to 1.',
   },
 };
 

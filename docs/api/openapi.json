@@ -4498,7 +4498,8 @@
           },
           "description": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 1024
           },
           "prompt": {
             "type": "string",
@@ -4529,7 +4530,9 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "minLength": 1,
+            "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"

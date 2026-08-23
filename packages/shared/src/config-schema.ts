@@ -124,17 +124,26 @@ export function parseCredentialReference(
 }
 
 /**
- * The guided onboarding steps a first-time user walks through: meeting DorkBot
- * (personality), telling it what kind of work you do (`'profile'`, the role
- * beat from spec `user-profile-onboarding`), and importing projects
- * (`'discovery'`). The former `'tasks'` and `'adapters'` values were retired
- * (task scheduling moved out of onboarding; the adapters step never shipped) — a
- * config migration scrubs them from any persisted `completedSteps`/`skippedSteps`
- * so a narrowed enum never fails to parse an upgraded config. Adding `'profile'`
- * is the opposite move: widening is additive, old stored arrays still parse, and
- * no scrub migration is needed.
+ * The guided onboarding steps a first-time user walks through, in flow order:
+ * choosing how much power their agents run with (`'power'`, spec
+ * `full-power-defaults`), meeting DorkBot (personality), telling it what kind of
+ * work you do (`'profile'`, the role beat from spec `user-profile-onboarding`),
+ * and importing projects (`'discovery'`). The former `'tasks'` and `'adapters'`
+ * values were retired (task scheduling moved out of onboarding; the adapters step
+ * never shipped) — a config migration scrubs them from any persisted
+ * `completedSteps`/`skippedSteps` so a narrowed enum never fails to parse an
+ * upgraded config. Adding `'profile'` and `'power'` is the opposite move:
+ * widening is additive, old stored arrays still parse, and no scrub migration is
+ * needed. `scrubRetiredOnboardingSteps` filters to whatever this set holds, so a
+ * wider set only ever keeps MORE — it cannot make a shipped migration delete
+ * something new.
+ *
+ * **A step is flow progress, never consent.** `'power'` records that the person
+ * reached and left the power stage; whether they actually answered the door is
+ * {@link UserConfig.ui}`.fullPowerDecidedAt`, which the door itself writes. A
+ * skipped stage completes no answer.
  */
-export const ONBOARDING_STEPS = ['meet-dorkbot', 'profile', 'discovery'] as const;
+export const ONBOARDING_STEPS = ['power', 'meet-dorkbot', 'profile', 'discovery'] as const;
 
 export const OnboardingStepSchema = z.enum(ONBOARDING_STEPS);
 export type OnboardingStep = z.infer<typeof OnboardingStepSchema>;
@@ -1243,16 +1252,29 @@ export const ClaudeCodeSettingsSchema = z.object({
   defaultTrustStop: DefaultTrustStopSchema,
   /**
    * Whether a Claude Code chat keeps its agent running between your
-   * messages instead of starting it up again for each one. Ships
-   * `false`, which is how DorkOS has always worked: every message gets
-   * its own run.
+   * messages instead of starting it up again for each one. Ships `true`
+   * (spec `full-power-defaults`, D1): replies from the second message on
+   * arrive about four times faster.
+   *
+   * **It currently has no switch in the product.** The Experiments row was
+   * its only control and went out with the flag when it graduated, so until
+   * the Control Center lands (task 2.2) the way to turn it off is this leaf
+   * — `PATCH /api/config`, `dorkos config set`, or the file. Do not describe
+   * a switch that is not there yet.
+   *
+   * **Safety-neutral, which is why it flips as a plain default.** A warm
+   * agent is the same executable with the same permissions and the same
+   * per-dispatch boundary check, held open for longer — nothing about what
+   * it may DO changes. The real cost is memory, and the bounds on it live
+   * in code rather than under this setting: at most twelve stay warm, about
+   * 1 GB each worst case, and the idle reaper closes the rest.
    *
    * Read when a chat's agent starts, so a chat already under way keeps
    * the way it started until its process is replaced. That is what lets
    * one machine run chats both ways at the same time and compare them on
    * the same work (spec `persistent-session-runtime` §P3).
    */
-  persistentSession: z.boolean().default(false),
+  persistentSession: z.boolean().default(true),
 });
 
 const LoggingConfigSchema = z.object({
@@ -1375,6 +1397,40 @@ export const UserConfigSchema = z.object({
        * record.
        */
       autonomyAcknowledgedAt: z.string().datetime().nullable().default(null),
+      /**
+       * When this person answered the full-power door — **either way** (spec
+       * `full-power-defaults`, D1).
+       *
+       * The single "they have been asked" signal, read by both hosts of the same
+       * door: the onboarding power stage and the one-time modal existing users
+       * meet on the moments rail. Non-null means never ask again, whichever way
+       * they answered, because re-asking a question somebody already answered is
+       * the nagging this program exists to avoid.
+       *
+       * Distinct from {@link UserConfig.ui}`.autonomyAcknowledgedAt`, which is a
+       * standing acknowledgement the server's autonomy gate reads. This one is
+       * only about the door: an answer of "keep asking me first" sets this and
+       * leaves that one null. Nothing here grants a capability — it records that
+       * a question was put and answered.
+       *
+       * `operator-only` to write, for exactly the reason the acknowledgement
+       * above is: a consent record an agent can write is a consent record an
+       * agent can forge.
+       */
+      fullPowerDecidedAt: z.string().datetime().nullable().default(null),
+      /**
+       * What they chose at the door: `'full'` (unlock everything) or
+       * `'supervised'` (keep asking me first). `null` until they answer.
+       *
+       * Read rather than inferred, because the two answers lead somewhere
+       * different afterwards: `'full'` is what pre-selects `canInitiate` on a new
+       * adapter binding, and `'supervised'` is a first-class answer that changes
+       * nothing anywhere. Choosing `'supervised'` here and moving to full power
+       * later is a normal, supported path — the door itself never re-asks once
+       * {@link UserConfig.ui}`.fullPowerDecidedAt` is set, and the Control Center
+       * that will offer that second chance in one click arrives with task 2.2.
+       */
+      fullPowerChoice: z.enum(['full', 'supervised']).nullable().default(null),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -1396,6 +1452,13 @@ export const UserConfigSchema = z.object({
       statusBar: { pins: [] },
       composer: { richText: true },
       autonomyAcknowledgedAt: null,
+      // Both halves of the power-door answer. Declared here as well as per-field
+      // because `conf` merges top-level defaults SHALLOWLY: the per-field default
+      // is what a fresh install lands on, this literal is what an upgrade whose
+      // stored `ui` block predates the fields lands on, and a field declared in
+      // only one of the two is a silent disagreement between those paths.
+      fullPowerDecidedAt: null,
+      fullPowerChoice: null,
     })),
   /**
    * How DorkOS gets your attention, and how hard it tries.
@@ -1446,13 +1509,23 @@ export const UserConfigSchema = z.object({
   scheduler: z
     .object({
       enabled: z.boolean().default(true),
-      maxConcurrentRuns: z.number().int().min(1).max(10).default(1),
+      /**
+       * How many scheduled runs may be in flight at once.
+       *
+       * Ships `4` (spec `full-power-defaults`, D1). One at a time meant a slow
+       * run held up every schedule behind it; four is a throttle set off the
+       * floor of its own range, not a capability grant — nothing about what a
+       * run may do changes, and the bounds `1–10` are unchanged. Both
+       * declarations of this value have to agree, here and in the section
+       * literal below, because `conf` merges top-level defaults shallowly.
+       */
+      maxConcurrentRuns: z.number().int().min(1).max(10).default(4),
       timezone: z.string().nullable().default(null),
       retentionCount: z.number().int().min(1).default(100),
     })
     .default(() => ({
       enabled: true,
-      maxConcurrentRuns: 1,
+      maxConcurrentRuns: 4,
       timezone: null,
       retentionCount: 100,
     })),
@@ -2006,7 +2079,11 @@ export const UserConfigSchema = z.object({
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        persistentSession: false,
+        // Warm agents, ON (spec `full-power-defaults`, D1). Three declarations
+        // carry this value — the per-field one on `ClaudeCodeSettingsSchema`,
+        // this one, and the `runtimes` literal below — and all three have to
+        // agree or the shallow defaults-merge lands somebody on the old value.
+        persistentSession: true,
       })),
       opencode: z
         .object({
@@ -2087,7 +2164,7 @@ export const UserConfigSchema = z.object({
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        persistentSession: false,
+        persistentSession: true,
       },
       opencode: {
         enabled: true,

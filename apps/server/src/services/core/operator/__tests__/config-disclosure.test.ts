@@ -143,6 +143,8 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       statusBar: { pins: ['cwd'] },
       composer: { richText: true },
       autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z',
+      fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
+      fullPowerChoice: 'full',
     },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {

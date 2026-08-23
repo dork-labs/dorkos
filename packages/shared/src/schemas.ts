@@ -3633,6 +3633,19 @@ export const ServerConfigSchema = z
           description:
             'When this person last acknowledged what Full autonomy means and asked not to be shown the dialog again (ISO 8601), or null. The cockpit sends the standing acknowledgement on every autonomy PATCH from here',
         }),
+        // The two halves of the power-door answer (spec `full-power-defaults`,
+        // D1). On the wire because the cockpit decides from them whether to put
+        // the door up at all — a curated DTO that omitted them would leave the
+        // one-time modal unable to tell an unanswered install from an answered
+        // one, which is how a "shown once" moment becomes a nag.
+        fullPowerDecidedAt: z.string().nullable().openapi({
+          description:
+            'When this person answered the full-power door, either way (ISO 8601), or null when they have not been asked yet. Non-null means never ask again',
+        }),
+        fullPowerChoice: z.enum(['full', 'supervised']).nullable().openapi({
+          description:
+            "What they chose at the full-power door: 'full' or 'supervised', or null when they have not answered. Records the answer only — it grants nothing on its own",
+        }),
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
@@ -3939,18 +3952,90 @@ export const TaskTemplateSchema = z
 
 export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
 
+/**
+ * The fields `CreateTaskRequestSchema` must not accept more loosely than the
+ * SKILL.md frontmatter it gets written into (DOR-1432 stage-2 review).
+ *
+ * ## Why this is a security boundary and not tidiness
+ *
+ * `POST /api/tasks` writes the request into a SKILL.md and immediately reads it
+ * back with `TaskFrontmatterSchema`. Whether that re-parse SUCCEEDS decides
+ * which of two code paths creates the row, and only one of them ran the
+ * permission clamp. So any field this schema accepts and the frontmatter
+ * rejects is a switch a caller can flip to choose its own write path — which is
+ * how an agent that is forbidden from naming `permissionMode` could still land
+ * a `bypassPermissions` schedule, by sending `maxRuntime: 'banana'` on an
+ * install whose operator sits at full autonomy.
+ *
+ * The route no longer depends on the re-parse for that (both paths are clamped
+ * now, which is the structural fix). These mirrors are the second layer: they
+ * stop the divergence existing at all.
+ *
+ * ## Mirrored by VALUE, on purpose
+ *
+ * `@dorkos/skills` holds the frontmatter schema, depends on this package, and is
+ * still on zod v3 while this one is on v4 — so importing it here would be a
+ * cycle AND a cross-version composition, the same boundary
+ * `TASK_PERMISSION_MODES` documents from the other side. The values are
+ * therefore restated, and `packages/skills/src/__tests__/task-schema.test.ts`
+ * asserts the two sides agree, so they cannot drift apart in silence.
+ *
+ * **`name` is deliberately absent from these mirrors.** The route slugifies it
+ * before writing, so the constraint belongs on `slugify(name)` rather than on
+ * `name`, and Zod is the wrong place for it; `routes/tasks.ts` checks the
+ * derived slug and answers 400. `slugify` can return the empty string (`'!!!'`
+ * does it), which the frontmatter's name rule rejects — the third way the same
+ * trick worked.
+ *
+ * Mirrors `DurationSchema`'s regex in `@dorkos/skills` (`duration.ts`). Paired
+ * with a `.min(1)` at the use site, standing in for that schema's non-empty
+ * refinement, because this pattern alone also matches `''`.
+ */
+export const TASK_DURATION_PATTERN = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
+
+/**
+ * Mirrors `SkillFrontmatterSchema.description`'s cap in `@dorkos/skills`.
+ *
+ * @see {@link TASK_DURATION_PATTERN} for why these mirrors exist.
+ */
+export const TASK_DESCRIPTION_MAX = 1024;
+
 export const CreateTaskRequestSchema = z
   .object({
     name: z.string().min(1),
     displayName: z.string().optional(),
-    description: z.string().min(1),
+    /**
+     * Capped to match `SkillFrontmatterSchema`'s `description` — see
+     * {@link TASK_DURATION_PATTERN} for why a field looser here than in the
+     * frontmatter is a security bug and not a convenience.
+     */
+    description: z.string().min(1).max(TASK_DESCRIPTION_MAX),
     prompt: z.string().min(1),
     cron: z.string().min(1).nullable().optional(),
     timezone: z.string().nullable().optional(),
     target: z.string().min(1),
     enabled: z.boolean().optional().default(true),
-    maxRuntime: z.string().nullable().optional(),
-    permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
+    /**
+     * A duration like `5m`, `1h`, `30s`, `2h30m`. Validated to the same shape
+     * the frontmatter accepts — see {@link TASK_DURATION_PATTERN}.
+     */
+    maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
+    /**
+     * How much this schedule's runs may do without asking.
+     *
+     * **Deliberately without a default** (spec `full-power-defaults`, D6). It
+     * used to default to `'acceptEdits'` here, which meant every unattended run
+     * started at one fixed power level no matter what the operator had chosen
+     * for everything else. Omitting it now means "use my level", and the route
+     * resolves it: the configured trust stop, mapped through the runtime the
+     * scheduler actually drives, and `'acceptEdits'` when nothing is configured —
+     * byte-for-byte the old behavior for anyone who never answered the power
+     * door.
+     *
+     * Leaving it undefined here is also what lets the route's operator-only
+     * guard tell a caller that SENT the field from one that did not.
+     */
+    permissionMode: PermissionModeSchema.optional(),
     /**
      * Why this schedule should exist, in the proposer's own words.
      *
