@@ -403,13 +403,34 @@ router.get('/:id/tasks', async (req, res) => {
  * Resolve the project directory to read a session's messages from, without
  * requiring the caller to already know it (DOR-1322).
  *
- * An explicit `cwdParam` always wins. Otherwise, try the runtime's own LIVE
- * binding for the session (`getSessionCwd`, live in-process sessions only —
- * claude-code's is populated by `ensureSession`/`ensureForMessage`). Failing
- * that, fall back to the server's default project directory, but — unlike the
- * old unconditional fallback — verify the session actually lives there before
- * trusting it, so a session from a DIFFERENT directory never reads back as a
- * silently-empty transcript.
+ * An explicit `cwdParam` always wins. Otherwise, the verify-before-trust
+ * ladder below applies ONLY to a runtime that implements `getSessionCwd` —
+ * today, only claude-code, because its storage is the one that is genuinely
+ * KEYED BY DIRECTORY: a JSONL transcript lives under a slug derived from cwd,
+ * so guessing the wrong directory silently reads back empty (the original
+ * DOR-1322 bug). For such a runtime: try its live binding first, then fall
+ * back to the server's default project directory, but — unlike the old
+ * unconditional fallback — verify the session actually lives there before
+ * trusting it.
+ *
+ * A runtime that does NOT implement `getSessionCwd` trusts the default
+ * project directory outright, exactly like the pre-DOR-1322 code, with no
+ * verification step. This is not a gap reopened: every shipped runtime in
+ * that category answers `getMessageHistory` independent of the directory
+ * argument, so passing the "wrong" one cannot reproduce the silent-empty bug
+ * this function exists to prevent. Codex's reads are keyed purely by session
+ * id (`registry.get(id)`, the directory parameter is unused). OpenCode's
+ * directory-scoped read falls back to a durable, id-keyed EventLog read on
+ * failure. Test-mode's `getMessageHistory` reads the same id-keyed EventLog
+ * directly and never consults its registry at all — which is also why
+ * `getSession` cannot stand in as a verification probe for it: test-mode's
+ * `getSession` reflects the SEPARATE in-memory registry (session "known" to
+ * the runtime's own bookkeeping), not the durable store `getMessageHistory`
+ * actually reads, so a session with zero registry presence can still have
+ * real message history. Gating a verified-fallback on `getSession` for THIS
+ * class of runtime does not add safety — it produces false negatives on
+ * exactly the reads that used to work (found via the review round on PR
+ * #1191: `sessions-kickoff-filter.test.ts`, `sessions-multi-runtime.test.ts`).
  *
  * @param runtime - The resolved runtime for this session
  * @param internalSessionId - Backend-internal session id
@@ -423,7 +444,9 @@ async function resolveMessagesCwd(
 ): Promise<string | null> {
   if (cwdParam) return cwdParam;
 
-  const liveCwd = runtime.getSessionCwd?.(internalSessionId);
+  if (runtime.getSessionCwd === undefined) return vaultRoot;
+
+  const liveCwd = runtime.getSessionCwd(internalSessionId);
   if (liveCwd) return liveCwd;
 
   // Guarded: getSession is a graceful-degradation probe here, not a trusted
@@ -437,8 +460,10 @@ async function resolveMessagesCwd(
     // below will find the SAME file — both key off the identical
     // (vaultRoot, internalSessionId) pair via the runtime's own transcript
     // lookup — so returning the bare `vaultRoot` string (not `found.cwd`) is
-    // safe. `found.cwd` isn't even guaranteed to exist on every runtime: only
-    // claude-code's Session always carries one; codex/opencode may omit it.
+    // safe. This branch is only reached for a runtime that implements
+    // `getSessionCwd` (claude-code today), whose `getSession` genuinely does
+    // reflect directory-scoped disk presence — unlike test-mode's, gated out
+    // above.
     const found = await runtime.getSession(vaultRoot, internalSessionId);
     return found ? vaultRoot : null;
   } catch {

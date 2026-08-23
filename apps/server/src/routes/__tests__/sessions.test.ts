@@ -1191,7 +1191,9 @@ describe('Sessions Routes', () => {
       fakeRuntime.getInternalSessionId.mockReturnValue('sdk-uuid-123');
       // A live cwd binding is what makes the id "known" without a ?cwd= param
       // (DOR-1322) — without it the route can no longer place the session.
-      fakeRuntime.getSessionCwd.mockReturnValue('/mock/project');
+      // Assigned (not `.mockReturnValue`) because the fake omits the method
+      // by default, same stance as `canSteerSession`/`canStageSession`.
+      fakeRuntime.getSessionCwd = vi.fn(() => '/mock/project');
       fakeRuntime.getMessageHistory.mockResolvedValue([]);
 
       await request(server).get(`/api/sessions/${S1}/messages`);
@@ -1204,7 +1206,7 @@ describe('Sessions Routes', () => {
     });
 
     it('returns 500 when getMessageHistory throws', async () => {
-      fakeRuntime.getSessionCwd.mockReturnValue('/mock/project');
+      fakeRuntime.getSessionCwd = vi.fn(() => '/mock/project');
       fakeRuntime.getMessageHistory.mockRejectedValueOnce(new Error('I/O error'));
 
       const res = await request(server)
@@ -1217,7 +1219,7 @@ describe('Sessions Routes', () => {
 
     it('GET /messages falls back to URL session ID when not in runtime', async () => {
       fakeRuntime.getInternalSessionId.mockReturnValue(undefined);
-      fakeRuntime.getSessionCwd.mockReturnValue('/mock/project');
+      fakeRuntime.getSessionCwd = vi.fn(() => '/mock/project');
       fakeRuntime.getMessageHistory.mockResolvedValue([]);
 
       await request(server).get(`/api/sessions/${S1}/messages`);
@@ -1261,7 +1263,7 @@ describe('Sessions Routes', () => {
     it('returns messages for a known session with no ?cwd= param', async () => {
       // The runtime's own live binding (e.g. an in-memory session store) is
       // what makes the session "known" without the caller supplying cwd.
-      fakeRuntime.getSessionCwd.mockReturnValue('/live/project');
+      fakeRuntime.getSessionCwd = vi.fn(() => '/live/project');
       fakeRuntime.getMessageHistory.mockImplementation(async (projectDir) =>
         projectDir === '/live/project'
           ? [{ id: 'm1', role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' }]
@@ -1275,10 +1277,12 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith('/live/project', S1);
     });
 
-    it('returns 404 naming the missing cwd when the session cannot be placed', async () => {
-      // No live binding, and the session does not live in the default project
-      // directory either (getSession's default mock resolves null).
-      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+    it('returns 404 naming the missing cwd when a cwd-tracking runtime cannot place the session', async () => {
+      // getSessionCwd IS implemented (this runtime declares cwd-tracking, like
+      // claude-code) but answers no live binding, and the session does not
+      // live in the default project directory either (getSession's default
+      // mock resolves null) — a genuine claude-code cold-session case.
+      fakeRuntime.getSessionCwd = vi.fn(() => undefined);
 
       const res = await request(server).get(`/api/sessions/${S1}/messages`);
 
@@ -1288,13 +1292,40 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
     });
 
+    it('trusts the default project directory outright for a runtime with no cwd-tracking capability', async () => {
+      // No `getSessionCwd` assigned at all — this fake stands in for codex,
+      // opencode, or test-mode, none of which implement it, because none of
+      // their `getMessageHistory` reads are directory-sensitive (codex is
+      // purely id-keyed; opencode and test-mode fall back to a durable
+      // id-keyed store). `getSession` is deliberately left at its default
+      // `null` — for these runtimes it reflects a SEPARATE in-memory registry
+      // and is not a reliable stand-in for "does this session have history"
+      // (test-mode's getSession is null-by-default even for a session that
+      // answers getMessageHistory just fine — this is what
+      // sessions-multi-runtime.test.ts's "GET /:id/messages routes to
+      // test-mode runtime" and sessions-kickoff-filter.test.ts's codex/
+      // opencode-like fixtures actually exercise). Gating the fallback on
+      // getSession here would 404 a real, answerable history read — the
+      // regression this test pins shut (DOR-1322 round 2, PR #1191).
+      fakeRuntime.getMessageHistory.mockResolvedValue([
+        { id: 'm1', role: 'assistant', content: 'hi', timestamp: '2026-01-01T00:00:00Z' },
+      ]);
+
+      const res = await request(server).get(`/api/sessions/${S1}/messages`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.messages).toHaveLength(1);
+      expect(fakeRuntime.getSession).not.toHaveBeenCalled();
+      expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(expect.any(String), S1);
+    });
+
     it('degrades to the honest 404 rather than 500 when the fallback probe throws', async () => {
       // A real regression: claude-code's getSession can throw for reasons
       // unrelated to "session not found" (e.g. an uninitialized boundary —
       // transcript-reader.ts validates it OUTSIDE its own try/catch). The
       // fallback probe here is graceful degradation, not a trusted read, so a
       // throw must still land on the same 404 a clean "not found" would.
-      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+      fakeRuntime.getSessionCwd = vi.fn(() => undefined);
       fakeRuntime.getSession.mockRejectedValueOnce(new Error('Boundary not initialized'));
 
       const res = await request(server).get(`/api/sessions/${S1}/messages`);
@@ -1305,7 +1336,7 @@ describe('Sessions Routes', () => {
     });
 
     it('honours an explicit ?cwd= even when the runtime has no live binding', async () => {
-      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+      fakeRuntime.getSessionCwd = vi.fn(() => undefined);
       fakeRuntime.getMessageHistory.mockResolvedValue([
         { id: 'm1', role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' },
       ]);
@@ -1322,8 +1353,8 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.getSession).not.toHaveBeenCalled();
     });
 
-    it('falls back to the default project directory when the session lives there', async () => {
-      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+    it('falls back to the default project directory when a cwd-tracking runtime confirms the session lives there', async () => {
+      fakeRuntime.getSessionCwd = vi.fn(() => undefined);
       fakeRuntime.getSession.mockResolvedValue({
         id: S1,
         title: 'Test',

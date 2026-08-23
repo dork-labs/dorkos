@@ -28,13 +28,18 @@ import type { DirectTransportServices } from './services';
 /**
  * Resolve the directory to read a session's messages from without a
  * caller-supplied `cwd` — the DirectTransport twin of the HTTP route's
- * `resolveMessagesCwd` (DOR-1322). Tries the embedded runtime's own live
- * binding first, then falls back to the vault root, but only after
- * `transcriptReader.getSession` confirms the session actually lives there —
- * the same "verify before trusting the fallback" contract as the server, so
- * a session from a different directory never reads back as silently empty.
- * Guarded: a `getSession` throw (rather than a `null` "not found") degrades
- * to `undefined` exactly like the server-side probe does, never propagates.
+ * `resolveMessagesCwd` (DOR-1322; see its TSDoc for the full argument).
+ * Verification applies ONLY when the embedded runtime implements
+ * `getSessionCwd` — today that is always true, since DirectTransport embeds
+ * exactly one runtime (claude-code, whose JSONL storage genuinely is
+ * directory-keyed); the branch exists so a future non-directory-keyed
+ * embedded runtime (e.g. an embedded test-mode) trusts the vault root outright
+ * instead of being 404'd by a verification probe that means nothing for it.
+ * Tries the runtime's own live binding first, then falls back to the vault
+ * root, but only after `transcriptReader.getSession` confirms the session
+ * actually lives there. Guarded: a `getSession` throw (rather than a `null`
+ * "not found") degrades to `undefined` exactly like the server-side probe
+ * does, never propagates.
  *
  * @param services - In-process service seams wired by the embedding host
  * @param sessionId - Session to resolve
@@ -43,7 +48,9 @@ async function resolveDirectMessagesCwd(
   services: DirectTransportServices,
   sessionId: string
 ): Promise<string | undefined> {
-  const liveCwd = services.runtime.getSessionCwd?.(sessionId);
+  if (services.runtime.getSessionCwd === undefined) return services.vaultRoot;
+
+  const liveCwd = services.runtime.getSessionCwd(sessionId);
   if (liveCwd) return liveCwd;
 
   try {
