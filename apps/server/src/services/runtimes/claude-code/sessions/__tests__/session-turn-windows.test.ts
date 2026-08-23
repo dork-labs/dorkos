@@ -73,7 +73,7 @@ function errorResultMessage(): SDKMessage {
  * The `result` the CLI sends once it has acked an interrupt and wound down:
  * an error subtype, and a terminal reason naming the abort.
  */
-function stoppedResultMessage(answers: string): SDKMessage {
+function abortedResultMessage(answers: string): SDKMessage {
   return {
     type: 'result',
     subtype: 'error_during_execution',
@@ -845,7 +845,7 @@ describe('SessionTurnWindows — a stopped turn ends without waiting on accounti
     h.live().holdControls = true;
 
     h.live().emit(textDeltaMessage('starting on it'));
-    h.live().emit(stoppedResultMessage('m1'));
+    h.live().emit(abortedResultMessage('m1'));
 
     await settled(h, 1);
     const windows = h.windowsOnStream();

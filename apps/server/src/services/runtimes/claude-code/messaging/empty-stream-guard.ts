@@ -20,7 +20,6 @@ import type {
   OperationProgressEvent,
   StreamEvent,
 } from '@dorkos/shared/types';
-import { isAbortedTerminalReason } from '../sdk/sdk-error-mapping.js';
 
 /**
  * Event types that are, on their own, proof the turn said or did something —
@@ -98,30 +97,6 @@ export function isContentEvent(event: StreamEvent): boolean {
  */
 export function isInteractiveEvent(event: StreamEvent): boolean {
   return isBlockingInteractionEventType(event.type);
-}
-
-/**
- * Whether this event is the CLI saying the turn was STOPPED rather than
- * finished (DOR-1320).
- *
- * The guard has to know, because a Stop pressed before the agent has said
- * anything ends a turn with genuinely zero content — and calling that silence a
- * fault reaches the operator as "The agent did not respond" for something they
- * did on purpose (DOR-1244). The resume path knows a Stop happened from its own
- * per-query record; the pump has no such record, and this is the signal it does
- * get: the closing `result`'s terminal reason, which the mapper puts on a
- * `session_status` yielded ahead of the terminal `done`.
- *
- * `StreamEvent.data` is a bare union rather than discriminated on `type`, so
- * the read is a cast — the same shape {@link isContentEvent} needs for
- * `compact_boundary`, and the same reason.
- *
- * @param event - A mapped stream event, before it leaves the server.
- */
-export function isStoppedTurnEvent(event: StreamEvent): boolean {
-  if (event.type !== 'session_status' && event.type !== 'done') return false;
-  const reason = (event.data as { terminalReason?: string } | undefined)?.terminalReason;
-  return isAbortedTerminalReason(reason);
 }
 
 /**

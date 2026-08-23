@@ -141,11 +141,11 @@
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage, UsageStatus } from '@dorkos/shared/types';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import { logger } from '../../../../lib/logger.js';
 import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
 import { validateDispatchBoundary } from '../dispatch-boundary.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
-import { isAbortedTerminalReason } from '../sdk/sdk-error-mapping.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import {
   PumpRefusedError,
@@ -238,17 +238,6 @@ const CONTINUATION_GRACE_MS = 500;
  * (DOR-1438).
  */
 const CONTINUATION_CAP_MS = 5_000;
-
-/**
- * How much a timer may fire ahead of its deadline before {@link armGrace}'s
- * expiry check stops believing the clock.
- *
- * Node's timers round to whole milliseconds, so a timer armed for exactly the
- * remaining cap can land a fraction under it. Without the slack a close that
- * really did reach the cap would report itself as an ordinary grace expiry —
- * the same wrong answer the arm-time computation used to give.
- */
-const TIMER_EARLY_FIRE_SLACK_MS = 1;
 
 /** The per-window accounting fetched from the still-live process at its close. */
 export interface WindowUsage {
@@ -429,22 +418,27 @@ function readAnsweredId(message: SDKMessage): string | undefined {
 }
 
 /**
- * Whether this `result` is the CLI reporting a turn somebody STOPPED (DOR-1319).
+ * Whether this `result` closes a turn that was CUT SHORT — by a person, or by
+ * anything else that aborted it (DOR-1319).
  *
- * The one thing the windower can know about a Stop. It never sees the request —
- * `interruptGivenQuery` talks to the control channel, not to this layer — but
- * the `result` the CLI sends back after acking one names `aborted_streaming` or
- * `aborted_tools` as its terminal reason, and that is enough to answer the only
- * question this layer has to ask: is a person waiting on this close?
+ * **Shape only, deliberately, and this is the one place that is enough.** The
+ * terminal reason says a turn was aborted and never by whom (see
+ * `sdk/sdk-error-mapping.ts`, which ANDs the same shape with DorkOS's own stop
+ * record before it will drop an error frame). This layer cannot ask the same
+ * question — it never sees the stop request and holds no session — but it does
+ * not need to, because of what it does with the answer: it skips an accounting
+ * fetch. A false positive costs one turn's context breakdown, which the next
+ * window's close refetches. Nothing about the turn's honesty rides on it, so
+ * the cheaper question is the right one HERE and would be the wrong one there.
  *
  * Read defensively, exactly as {@link readAnsweredId} is, and for the same
  * reason: the field is not declared on every `result` member.
  *
  * @param message - The `result` closing a window
  */
-function closesAStoppedTurn(message: SDKMessage): boolean {
+function closesAnAbortedTurn(message: SDKMessage): boolean {
   const reason = (message as { terminal_reason?: unknown }).terminal_reason;
-  return typeof reason === 'string' && isAbortedTerminalReason(reason);
+  return typeof reason === 'string' && isInterruptedTerminalReason(reason);
 }
 
 /**
@@ -1037,9 +1031,20 @@ export class SessionTurnWindows {
     // closing inline, because this runs inside the pump's synchronous read loop
     // and a close re-entering it there would attribute the next message to a
     // window that no longer exists.
-    const deadline = record.graceDeadline;
-    const remaining = Math.max(0, deadline - Date.now());
+    const remaining = Math.max(0, record.graceDeadline - Date.now());
     const delay = wait === 'until-cap' ? remaining : Math.min(grace, remaining);
+    // Whether this timer is armed to end AT the cap rather than at a full
+    // grace — which is the honest meaning of `capped`, and is decidable right
+    // here (DOR-1438). It is exactly `delay === remaining`, spelled out because
+    // the two ways to reach it are worth naming: an `until-cap` arm by
+    // definition, and a `grace` arm with less than one grace of cap left.
+    //
+    // The predicate this replaced was `remaining === 0`, which answers a
+    // different question — "was the cap ALREADY spent when we armed" — and so
+    // reported `false` for the ordinary way a window reaches its cap. Asking at
+    // EXPIRY instead is no better: timers fire late far more often than early,
+    // and a late fire would relabel a plain grace expiry as capped.
+    const capped = delay === remaining;
     record.grace = setTimeout(() => {
       record.grace = undefined;
       // Another path may have settled this window while the timer ran — a
@@ -1048,12 +1053,6 @@ export class SessionTurnWindows {
       if (this.current !== record) return;
       const deferred = record.deferred;
       if (deferred === undefined) return;
-      // Asked HERE rather than at arming, because arming cannot know the answer
-      // (DOR-1438). A grace armed with less than a full grace of cap left runs
-      // out exactly AT the cap — the arm-time reading called that an ordinary
-      // grace expiry, so the one line that says "this process talked past its
-      // budget" never appeared for the shape that reaches the cap most often.
-      const capped = Date.now() >= deadline - TIMER_EARLY_FIRE_SLACK_MS;
       logger.debug('[SessionTurnWindows] no continuation began; closing the steered turn', {
         sessionId: this.opts.sessionId,
         steered: [...record.steered],
@@ -1186,7 +1185,7 @@ export class SessionTurnWindows {
    * is not a close call.
    */
   private async settle(record: WindowRecord, result: SDKMessage): Promise<void> {
-    if (!closesAStoppedTurn(result)) await this.fetchUsage();
+    if (!closesAnAbortedTurn(result)) await this.fetchUsage();
     record.channel.push(result);
     record.channel.end();
     // Only a window a dispatch opened has a pump turn behind it. A runtime

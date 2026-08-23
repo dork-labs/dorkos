@@ -64,13 +64,12 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { recordPhantomCancellation } from '../../../observability/phantom-cancellations.js';
-import { createToolState, type AgentSession } from '../agent-types.js';
+import { createToolState, stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import {
   emptyStreamError,
   isContentEvent,
   isInteractiveEvent,
   isReportedFailure,
-  isStoppedTurnEvent,
 } from '../messaging/empty-stream-guard.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
@@ -110,17 +109,24 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
   let eventCount = 0;
   let contentEventCount = 0;
   let wasInteractive = false;
-  // Whether the CLI has said this turn was CUT SHORT rather than finished —
-  // read off the closing `session_status`'s terminal reason, which is the one
-  // signal this path gets about a Stop (DOR-1320).
-  //
-  // The empty-stream guard below has to know. Press Stop before the agent has
-  // said anything and the turn really does end with zero content, and calling
-  // that silence a fault reaches the operator as a crash notice for something
-  // they did on purpose — the DOR-1244 shape, fixed on the resume path and
-  // never on this one. It could not bite until now only because the suppressed
-  // error frame happened to latch `emittedError` first.
-  let wasStopped = false;
+  /**
+   * Whether a DorkOS Stop has been aimed at the query running this turn — the
+   * pump's copy of the question `message-sender` asks on the resume path, asked
+   * of the same record and for the same two reasons (DOR-1320).
+   *
+   * Read live rather than captured, because a Stop can land at any moment of
+   * the stream and both readers want the answer AT THE MOMENT they ask.
+   *
+   * `activeQuery` is the turn's query while the pump is RUNNING; the pump's
+   * `running` edge disarms it at `endTurn()` and preserves it as `lastQuery`,
+   * and `endTurn()` can win the race against this generator draining the
+   * window's last messages. Asking both is what makes the answer independent of
+   * that race. Neither can be stale from an EARLIER turn: `PersistentDispatch`
+   * clears this session's queries out of the record at every dispatch, because
+   * one warm process serves many turns under one query object.
+   */
+  const wasStopped = (): boolean =>
+    stopWasAimedAt(session, session.activeQuery) || stopWasAimedAt(session, session.lastQuery);
   // Anchor for the NEXT turn's resume: the last main-thread assistant uuid seen
   // this turn. Subagent assistant messages carry a `parent_tool_use_id` and live
   // in a separate transcript, so they must never become the main-session anchor.
@@ -195,11 +201,7 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
       }
 
       let prevSdkId = session.sdkSessionId;
-      for await (const event of mapSdkMessage(message, session, sessionId, toolState)) {
-        // Latched BEFORE the guard below can read it: the result mapper yields
-        // this `session_status` ahead of the terminal `done` of the same
-        // message, which is the event the guard hangs off.
-        if (isStoppedTurnEvent(event)) wasStopped = true;
+      for await (const event of mapSdkMessage(message, session, sessionId, toolState, wasStopped)) {
         // BEFORE this event leaves the server: `trigger-turn` re-keys the
         // projector on every event it sees, and that announcement is how the
         // cockpit learns the id it POSTs its next message under. Handing the id
@@ -218,7 +220,13 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
           // Zero-content turn about to close: surface the no-response error
           // BEFORE the terminal done — nothing may follow done, or the durable
           // snapshot settles idle with a stale lastError.
-          if (contentEventCount === 0 && !emittedError && !wasInteractive && !wasStopped) {
+          //
+          // A turn the operator STOPPED is not a dead stream, even with nothing
+          // in it — the same reason `wasInteractive` is here. Press Stop before
+          // the agent has said anything and this guard called the silence a
+          // fault, which reaches the operator as a crash notice for something
+          // they did on purpose (DOR-1244, fixed on the resume path first).
+          if (contentEventCount === 0 && !emittedError && !wasInteractive && !wasStopped()) {
             logger.warn('[pump-turn-stream] window closed with zero content events', {
               session: sessionId,
               eventCount,
@@ -256,7 +264,14 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
     session.eventQueueNotify = undefined;
   }
 
-  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive && !wasStopped) {
+  // No `wasStopped()` conjunct here, unlike the in-loop arm above and unlike
+  // the resume path's twin. This arm requires `!emittedDone`, and on the pump
+  // every window ends on a `result` — the correlated one, a deferred one, a
+  // synthetic stranded one, or the crash's — so the mapper has always yielded a
+  // `done` by the time this is reached. The resume path needs its conjunct
+  // because a `query.close()` there ends the SDK stream with no `result` at
+  // all; the windower never leaves that gap (DOR-1320 review).
+  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive) {
     logger.warn('[pump-turn-stream] window closed with zero content events', {
       session: sessionId,
       eventCount,

@@ -9,7 +9,7 @@
  * `error` frame, and it is not additionally reported as a dead stream.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../../lib/logger.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
@@ -19,7 +19,15 @@ import type { TurnWindow } from '../session-turn-windows.js';
 
 const SESSION_ID = 'sess-pump-stop';
 
-function makeSession(): AgentSession {
+/** The pump's live query — one object serving every turn on a warm process. */
+const PUMP_QUERY = {} as Query;
+
+/**
+ * A session mid-turn on the pump. `stopped` stages the record
+ * `interruptGivenQuery` writes when a person presses Stop, which is the INTENT
+ * half of the gate on a stopped turn's error frame.
+ */
+function makeSession(stopped: boolean): AgentSession {
   return {
     sdkSessionId: 'sdk-1',
     lastActivity: Date.now(),
@@ -27,6 +35,9 @@ function makeSession(): AgentSession {
     hasStarted: true,
     pendingInteractions: new Map(),
     eventQueue: [],
+    // The pump arms this on its `running` edge; a turn is in flight here.
+    activeQuery: PUMP_QUERY,
+    ...(stopped ? { stoppedQueries: new WeakSet<Query>([PUMP_QUERY]) } : {}),
   };
 }
 
@@ -74,11 +85,11 @@ function makeWindow(messages: SDKMessage[]): TurnWindow {
   };
 }
 
-async function runWindow(messages: SDKMessage[]): Promise<StreamEvent[]> {
+async function runWindow(messages: SDKMessage[], stopped: boolean): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
   for await (const event of streamTurnWindow({
     sessionId: SESSION_ID,
-    session: makeSession(),
+    session: makeSession(stopped),
     window: makeWindow(messages),
     opts: makeOpts(),
     meshAgentId: undefined,
@@ -108,7 +119,7 @@ afterEach(() => {
 
 describe('streamTurnWindow — a Stop the CLI acked (DOR-1320)', () => {
   it('records no error at all for a turn a person stopped', async () => {
-    const events = await runWindow([stoppedResult()]);
+    const events = await runWindow([stoppedResult()], true);
 
     // Neither the CLI's own frame nor the guard's substitute. This is the whole
     // finding: the operator stopped the turn, the stop was acked, and the
@@ -120,13 +131,34 @@ describe('streamTurnWindow — a Stop the CLI acked (DOR-1320)', () => {
     expect(events.at(-1)?.type).toBe('done');
   });
 
-  it('still calls a genuinely failed empty turn what it is', async () => {
-    // The suppression is gated on the abort reason, not on the subtype, so a
-    // failure that named no abort keeps its error — otherwise this fix would
-    // hide every failed turn on the pump.
-    const events = await runWindow([failedResult()]);
+  it('KEEPS the error when the same abort shape arrived with no Stop behind it', async () => {
+    // Identical `result`, no stop record — the `refusal-fallback-edit` shape,
+    // where the CLI aborts the main turn controller itself. Suppressing here
+    // would hide a real failure and tell the operator they stopped a turn they
+    // never touched (DOR-1320 review, SF1).
+    const events = await runWindow([stoppedResult()], false);
 
     expect(events.some((e) => e.type === 'error')).toBe(true);
+    // And with the error reported, the guard must not pile its vaguer line on.
+    expect(deadStreamErrors(events)).toHaveLength(0);
+  });
+
+  it('still calls a genuinely failed empty turn what it is', async () => {
+    // A stop WAS requested, but this result named no abort at all — so the
+    // conjunct's shape half fails and the failure keeps its error frame.
+    const events = await runWindow([failedResult()], true);
+
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    expect(deadStreamErrors(events)).toHaveLength(0);
+  });
+
+  it('does not call a stopped, wordless turn a dead stream', async () => {
+    // Stop pressed before the agent said anything: zero content, and now no
+    // error frame either. Without the guard knowing about the stop, the turn
+    // gets "The agent did not respond" — a crash notice for something the
+    // operator did on purpose (DOR-1244, fixed on the resume path first).
+    const events = await runWindow([stoppedResult()], true);
+
     expect(deadStreamErrors(events)).toHaveLength(0);
   });
 });

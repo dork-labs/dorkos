@@ -242,38 +242,70 @@ describe('mapResultEvent — error category classification', () => {
     );
     expect(errorData(events)?.category).toBe('execution_error');
   });
+});
 
-  it('leaves no error frame on a stop the CLI acked (DOR-1320)', async () => {
-    // The exact shape every observed Stop produced: an error subtype whose own
-    // terminal reason says the turn was cut short, carrying the CLI's internal
-    // `[ede_diagnostic]` line. A person stopped this turn; the durable record
-    // may not call it a crash.
+describe('mapResultEvent — a turn a person stopped is not an error (DOR-1320)', () => {
+  /** The `data` payload of the emitted `error` event, if any. */
+  function errorData(events: StreamEvent[]): Record<string, unknown> | undefined {
+    return events.find((e) => e.type === 'error')?.data as Record<string, unknown> | undefined;
+  }
+
+  /**
+   * The exact `result` every observed Stop produced: an error subtype, the
+   * CLI's internal `[ede_diagnostic]` line, and a terminal reason naming the
+   * abort.
+   */
+  function abortedResult(terminalReason = 'aborted_streaming'): SDKMessage {
+    return msg({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      terminal_reason: terminalReason,
+      errors: ['[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null'],
+    });
+  }
+
+  it('leaves no error frame when DorkOS asked for the stop', async () => {
     const events = await drain(
-      mapResultEvent(
-        msg({
-          type: 'result',
-          subtype: 'error_during_execution',
-          is_error: true,
-          terminal_reason: 'aborted_streaming',
-          errors: ['[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null'],
-        }),
-        makeSession(),
-        SESSION_ID
-      )
+      mapResultEvent(abortedResult(), makeSession(), SESSION_ID, () => true)
     );
+
     expect(events.some((e) => e.type === 'error')).toBe(false);
-    // And the turn still ends, still saying it was cut short — the reason the
+    // The turn still ends, still saying it was cut short — the reason the
     // projector settles as `interrupted`.
     const status = events.find((e) => e.type === 'session_status');
     expect((status?.data as Record<string, unknown>).terminalReason).toBe('aborted_streaming');
     expect(events.at(-1)?.type).toBe('done');
   });
 
-  it('still reports a failure that aborted its tools for a reason nobody asked for', async () => {
-    // `aborted_tools` names a stop too, so this is the boundary case: the same
-    // suppression, and the same terminal. What must NOT happen is the
-    // suppression widening to every error subtype — a genuine failure carries
-    // no abort reason at all and keeps its error frame.
+  it('KEEPS the error frame when nobody asked for the stop', async () => {
+    // The discriminating case, and the reason shape alone is not the gate. The
+    // CLI drives `aborted_streaming` from one `signal.aborted` check and
+    // collapses nine causes into it — `refusal-fallback-edit` (an API refusal
+    // aborting the main turn controller) is the provable non-operator one. A
+    // shape-only gate dropped that failure's error frame and told the operator
+    // they stopped a turn they never touched (DOR-1320 review, SF1).
+    const events = await drain(
+      mapResultEvent(abortedResult(), makeSession(), SESSION_ID, () => false)
+    );
+
+    expect(errorData(events)?.category).toBe('execution_error');
+    expect(errorData(events)?.code).toBe('error_during_execution');
+  });
+
+  it('KEEPS the error frame when the caller tracks no stops at all', async () => {
+    // The absent-predicate default. Every runtime path that does not follow
+    // stops must behave as though none happened, or the suppression leaks to
+    // callers that never opted into it.
+    const events = await drain(mapResultEvent(abortedResult(), makeSession(), SESSION_ID));
+
+    expect(errorData(events)?.category).toBe('execution_error');
+  });
+
+  it('KEEPS the error frame for a failure that named no abort at all', async () => {
+    // The other half of the conjunct: a stop was requested, but this turn ended
+    // on a limit rather than on the stop. A stop DorkOS asked for and the CLI
+    // never acted on does not make an unrelated failure a stop.
     const events = await drain(
       mapResultEvent(
         msg({
@@ -283,9 +315,11 @@ describe('mapResultEvent — error category classification', () => {
           errors: ['the turn limit was reached'],
         }),
         makeSession(),
-        SESSION_ID
+        SESSION_ID,
+        () => true
       )
     );
+
     expect(errorData(events)?.category).toBe('max_turns');
   });
 });

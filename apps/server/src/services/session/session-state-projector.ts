@@ -38,6 +38,7 @@ import type {
   TaskItem,
 } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
+import { INTERRUPTED_TERMINAL_REASONS } from '@dorkos/shared/schemas';
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
@@ -194,17 +195,10 @@ const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
  */
 const TERMINAL_REASON_ERROR = 'error';
 
-/**
- * `turn_end.terminalReason` values that mean the turn was interrupted/aborted
- * rather than completing. Includes the explicit `interrupted` plus the SDK's
- * abort reasons (`TerminalReason`), so an aborted turn settles to the
- * `interrupted` lifecycle (not idle) and a cold hydrate shows it was cut short.
- */
-const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
-  'interrupted',
-  'aborted_streaming',
-  'aborted_tools',
-]);
+// `INTERRUPTED_TERMINAL_REASONS` — the reasons that settle a turn to the
+// `interrupted` lifecycle rather than idle — is imported from `@dorkos/shared`,
+// which is also where the claude-code result mapper reads it. It used to be a
+// hand-kept copy in each place (DOR-1320 review).
 
 /** A fully-zeroed {@link SessionContextUsage}; the base for the first delta. */
 const ZERO_CONTEXT_USAGE: SessionContextUsage = {
