@@ -18,6 +18,7 @@ export {
   SkillNameSchema,
   isUserInvocable,
   isModelInvocable,
+  readYamlBoolean,
 } from './schema.js';
 export type { SkillFrontmatter, SkillKind } from './schema.js';
 

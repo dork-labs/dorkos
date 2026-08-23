@@ -123,7 +123,10 @@ export function registerSkillResources(server: McpServer, projectDir: string): v
       title: 'Skills',
       description:
         'Authored skills discovered under .agents/skills in this project directory. Name and ' +
-        'description only. Read dorkos://skills/{name} for the full SKILL.md body.',
+        'description only. Read dorkos://skills/{name} for the full SKILL.md body. Skills ' +
+        'marked disable-model-invocation are omitted from this list — they are for a person ' +
+        'to invoke, not for you to reach for — but dorkos://skills/{name} still resolves ' +
+        'them by name.',
       mimeType: 'application/json',
     },
     async () => {

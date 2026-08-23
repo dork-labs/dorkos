@@ -5,6 +5,7 @@ import {
   SkillNameSchema,
   isUserInvocable,
   isModelInvocable,
+  readYamlBoolean,
 } from '../schema.js';
 import type { SkillKind } from '../schema.js';
 
@@ -197,13 +198,78 @@ describe('invocation frontmatter', () => {
     expect(parsed['disable-model-invocation']).toBeUndefined();
   });
 
-  it('rejects a non-boolean for either field', () => {
-    expect(SkillFrontmatterSchema.safeParse({ ...base, 'user-invocable': 'no' }).success).toBe(
-      false
+  // js-yaml v4 is YAML 1.2 core, so gray-matter hands us these as STRINGS.
+  // A person writing `user-invocable: no` means false and must not have their
+  // whole skill rejected over the dialect.
+  it.each([
+    ['no', false],
+    ['off', false],
+    ['n', false],
+    ['"false"', false],
+    ['False', false],
+    ['yes', true],
+    ['on', true],
+    ['y', true],
+    ['True', true],
+  ])('reads the YAML 1.1 word %s as %s', (word, expected) => {
+    const raw = word.replaceAll('"', '');
+    expect(SkillFrontmatterSchema.parse({ ...base, 'user-invocable': raw })['user-invocable']).toBe(
+      expected
     );
     expect(
-      SkillFrontmatterSchema.safeParse({ ...base, 'disable-model-invocation': 'yes' }).success
+      SkillFrontmatterSchema.parse({ ...base, 'disable-model-invocation': raw })[
+        'disable-model-invocation'
+      ]
+    ).toBe(expected);
+  });
+
+  it('ignores surrounding whitespace on a boolean word', () => {
+    expect(
+      SkillFrontmatterSchema.parse({ ...base, 'user-invocable': '  No  ' })['user-invocable']
     ).toBe(false);
+  });
+
+  it('degrades an unreadable value to absent instead of rejecting the skill', () => {
+    // Pre-change, an unknown key was simply stripped and the skill parsed
+    // fine. A typo here must not delete the whole skill from the product.
+    const parsed = SkillFrontmatterSchema.safeParse({
+      ...base,
+      'user-invocable': 'maybe',
+      'disable-model-invocation': 42,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data['user-invocable']).toBeUndefined();
+      expect(parsed.data['disable-model-invocation']).toBeUndefined();
+    }
+  });
+
+  it('treats a garbage value as permissive on both questions', () => {
+    const meta = SkillFrontmatterSchema.parse({
+      ...base,
+      'user-invocable': 'maybe',
+      'disable-model-invocation': 'sometimes',
+    });
+    expect(isUserInvocable(meta)).toBe(true);
+    expect(isModelInvocable(meta)).toBe(true);
+  });
+});
+
+describe('readYamlBoolean', () => {
+  it('passes real booleans through', () => {
+    expect(readYamlBoolean(true)).toBe(true);
+    expect(readYamlBoolean(false)).toBe(false);
+  });
+
+  it('reads the YAML 1.1 words', () => {
+    expect(readYamlBoolean('no')).toBe(false);
+    expect(readYamlBoolean('YES')).toBe(true);
+  });
+
+  it('returns undefined for absent or unreadable values', () => {
+    expect(readYamlBoolean(undefined)).toBeUndefined();
+    expect(readYamlBoolean('maybe')).toBeUndefined();
+    expect(readYamlBoolean(0)).toBeUndefined();
   });
 });
 

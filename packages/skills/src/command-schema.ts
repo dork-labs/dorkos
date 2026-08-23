@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SkillFrontmatterSchema } from './schema.js';
+import { SkillFrontmatterSchema, readYamlBoolean } from './schema.js';
 
 /**
  * Command frontmatter schema — a superset of the SKILL.md base.
@@ -16,9 +16,15 @@ export const CommandFrontmatterSchema = SkillFrontmatterSchema.extend({
    *
    * Narrows the base schema's optional field to a materialized default: a
    * command palette needs a concrete answer per entry, where a plain skill
-   * read can leave "absent means yes" implicit.
+   * read can leave "absent means yes" implicit. It reads the same YAML 1.1
+   * boolean words the base does (`no`, `off`, a quoted `"false"`), so the two
+   * dialects never disagree about the same file, and an unreadable value
+   * falls back to visible rather than failing the parse.
    */
-  'user-invocable': z.boolean().default(true),
+  'user-invocable': z
+    .preprocess((v) => readYamlBoolean(v) ?? v, z.boolean())
+    .default(true)
+    .catch(true),
 
   /** Execution context. "fork" runs in an isolated subagent. */
   context: z.enum(['fork']).optional(),

@@ -102,6 +102,27 @@ describe('dorkos://skills', () => {
     expect(detail.body).toContain('Body of release.');
   });
 
+  it('withholds a skill that says disable-model-invocation: yes, but still serves it by name', async () => {
+    // YAML 1.1 word, delivered as the string "yes" by gray-matter.
+    await writeSkill(cwd, 'analyze', 'Analyze the codebase');
+    await writeSkill(cwd, 'release', 'Cut a release', 'disable-model-invocation: yes\n');
+    client = await connect(cwd);
+
+    expect(await listedSkillNames(client)).toEqual(['analyze']);
+    const detail = jsonBody<{ name: string }>(
+      await client.readResource({ uri: 'dorkos://skills/release' })
+    );
+    expect(detail.name).toBe('release');
+  });
+
+  it('lists a skill whose disable-model-invocation value is unreadable', async () => {
+    // Degrade to absent (visible), never drop the skill entirely.
+    await writeSkill(cwd, 'analyze', 'Analyze it', 'disable-model-invocation: maybe\n');
+    client = await connect(cwd);
+
+    expect(await listedSkillNames(client)).toEqual(['analyze']);
+  });
+
   it('lists a user-invocable:false skill — model-only is what a model listing is for', async () => {
     await writeSkill(cwd, 'house-style', 'Background knowledge', 'user-invocable: false\n');
     client = await connect(cwd);
