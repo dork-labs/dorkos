@@ -425,6 +425,22 @@ export function SessionComposer({
     setStopConfirmOpen(false);
     performStop();
   }, [sessionId, stopPending, performStop]);
+  // The dialog asks about a queue, and a queue can empty while it is up — the
+  // server dispatches the head the moment the turn frees, so a person reading
+  // "put 2 queued messages back?" ends up staring at "put 0 queued messages
+  // back?": a question about nothing, sitting over a composer it blocks until
+  // dismissed by hand (DOR-1443). Take it down as soon as its subject is gone.
+  //
+  // Deliberately NOT carrying the Stop out on the person's behalf. They were
+  // weighing a cost that has since stopped existing, and an interrupted turn
+  // cannot be un-interrupted. Stop stays one click away, and with nothing
+  // queued that click now stops immediately without asking — which is the
+  // same rule `handleStop` already applies to an empty queue.
+  /* eslint-disable react-hooks/set-state-in-effect -- close the dialog from the external queue signal (queue_update) */
+  useEffect(() => {
+    if (stopConfirmOpen && waiting.length === 0) setStopConfirmOpen(false);
+  }, [stopConfirmOpen, waiting.length]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Background-task detection reads the hydrated stream-store projection (falling
   // back to the legacy send-path messages until the session hydrates) so it sees

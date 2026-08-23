@@ -24,7 +24,10 @@ interface StopConfirmDialogProps {
  * A Stop stops everything queued, so it names the cost before it happens: how
  * many messages come back. A confirmation that hides the consequence is not one.
  * The messages return to the composer rather than vanishing, so this asks about
- * a pause, not a loss. A Stop with nothing queued never reaches this dialog.
+ * a pause, not a loss. A Stop with nothing queued never reaches this dialog —
+ * and neither does a Stop whose queue drains while the question is on screen:
+ * the host closes this the moment `queuedCount` reaches zero, so the copy is
+ * never left asking about no messages at all (DOR-1443).
  */
 export function StopConfirmDialog({
   open,

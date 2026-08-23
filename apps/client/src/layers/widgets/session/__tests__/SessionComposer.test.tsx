@@ -1163,3 +1163,104 @@ describe('SessionComposer — a Stop pending on one session never leaks into ano
     });
   });
 });
+
+describe('SessionComposer — the Stop question goes away when its queue does (DOR-1443)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * The server dispatching everything that was waiting, while the confirm is
+   * on screen — a `queue_update` carrying an empty queue, exactly the event
+   * the pump sends.
+   */
+  function drainQueue() {
+    useSessionStreamStore
+      .getState()
+      .applyEvent('test-session', { seq: 3, type: 'queue_update', queue: [] });
+  }
+
+  it('closes itself once the queued messages it asked about have all dispatched', async () => {
+    // The live finding: the count decayed to 0 under the dialog's own nose and
+    // the dialog stayed, reading "Stop, and put 0 queued messages back?" over a
+    // composer it blocked until dismissed by hand.
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    seedQueue('one', 'two');
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(screen.getByText('Stop, and put 2 queued messages back?')).toBeInTheDocument();
+
+    await act(async () => {
+      drainQueue();
+    });
+
+    expect(screen.queryByText(/queued message/)).not.toBeInTheDocument();
+    // Closing is not confirming: the person weighed a cost that has since
+    // stopped existing, and an interrupted turn cannot be un-interrupted.
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('leaves Stop working immediately afterwards — one click, no second question', async () => {
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    seedQueue('one');
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      drainQueue();
+    });
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/queued message/)).not.toBeInTheDocument();
+  });
+
+  it('does not pop back up when the person queues something new during the same turn', async () => {
+    // The reason the fix clears the open FLAG rather than deriving `open` from
+    // the count: a derived-only guard leaves the flag true, so the next
+    // `queue_update` that puts a message back on the queue would re-open a
+    // dialog nobody asked for.
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    seedQueue('one');
+    render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      drainQueue();
+    });
+    await act(async () => {
+      useSessionStreamStore.getState().applyEvent('test-session', {
+        seq: 4,
+        type: 'queue_update',
+        queue: [
+          {
+            id: 'q9',
+            content: 'and one more thing',
+            disposition: 'queue' as const,
+            enqueuedAt: 2_000,
+            enqueuedBy: 'window-a',
+          },
+        ],
+      });
+    });
+
+    expect(screen.queryByText(/queued message/)).not.toBeInTheDocument();
+  });
+
+  // NOT covered here, honestly: what the operator SEES as the dialog leaves.
+  // jsdom runs no layout and no Radix exit animation, so this suite can prove
+  // the dialog is unmounted and the composer is reachable again in the React
+  // tree, but it cannot prove focus returns to the message box rather than
+  // being stranded on the element Radix just removed — the same class of
+  // blur/focus race jsdom missed on the menu -> inline-editor path. That needs
+  // a browser.
+});
