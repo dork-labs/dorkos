@@ -17,7 +17,7 @@ The category DorkOS sits in is real, named, and filling up fast. That is good ne
 
 ### First parties (the absorption threat)
 
-- **Anthropic**: Claude Code for web (async cloud execution, teleport to local), **Claude Managed Agents** (lead agent delegating to parallel specialists), "Dreaming" (scheduled memory curation), Cowork. Single-vendor orchestration is being absorbed into the platform itself.
+- **Anthropic**: Claude Code for web (async cloud execution, teleport to local), **Claude Managed Agents** (lead agent delegating to parallel specialists), "Dreaming" (scheduled memory curation), Cowork. **Cloud scheduling shipped (verified 2026-08-23):** Cowork scheduled tasks run on Anthropic's servers "even when your computer is asleep or the Claude Desktop app is closed" (Cowork reached web and mobile 2026-07-07), and Claude Code has cloud **Routines** (research preview) that run on Anthropic-managed infrastructure "when your laptop is closed," triggered by a schedule, an API call, or a GitHub event. Treat any "their scheduling needs your machine awake" claim as retired. What a cloud run cannot do is touch your machine: a Routine starts from a fresh GitHub clone with no local file access, a Cowork cloud task "can't be tied to a folder on your computer," and the one Anthropic option that does reach local files (a Claude Code Desktop **local** scheduled task) still fires only while the app is open and the computer is awake. Single-vendor orchestration is being absorbed into the platform itself.
 - **OpenAI**: Codex cloud with token billing and a $100/mo Pro tier; hired Steinberger to lead personal agents. Fast, cheap models (~2.5x Opus token speed) make Codex the cost-hedge runtime.
 - **Google**: Jules, free-tier async PR agent.
 
