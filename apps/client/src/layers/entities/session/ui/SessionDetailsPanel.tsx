@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GitFork } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, permissionModeLabel } from '@/layers/shared/lib';
-import { CopyButton } from '@/layers/shared/ui';
+import { CopyButton, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
 import { getOriginDescriptor } from '../config/origin-descriptors';
@@ -61,7 +61,8 @@ function formatTimestamp(iso: string): string {
  *
  * **It reads the permission summary itself, and its caller reads it too.** That
  * duplication is deliberate: `SessionRowFull` and `SessionRowSidebar` both need
- * `isUnsafe` for the shield on the row face, and this needs the mode in words.
+ * `isUnsafe` for the full-power mark on the row face, and this needs the mode in
+ * words.
  * Both calls land on the same two cached reads — a `enabled: false` session
  * query and one `staleTime: Infinity` capability map the shell has already
  * mounted — so the second costs a map lookup and nothing else. Passing it down
@@ -104,10 +105,13 @@ export function SessionDetailsPanel({
               label="Origin"
               value={session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
             />
+            {/* Green, matching the row face one click above it and every other
+                full-power surface. This line and that glyph are the same fact,
+                so they cannot be two colours (spec `full-power-defaults`, D8). */}
             <DetailRow
               label="Permissions"
               value={permissionModeLabel(permissionMode)}
-              valueClassName={isUnsafe ? 'text-red-500' : undefined}
+              valueClassName={isUnsafe ? TRUST_TONE_TEXT.power : undefined}
             />
             {onFork && (
               <button

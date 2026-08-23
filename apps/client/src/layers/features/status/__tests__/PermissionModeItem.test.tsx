@@ -423,46 +423,87 @@ describe('PermissionModeItem', () => {
     });
   });
 
-  describe('what gets marked red', () => {
+  describe('what the word is tinted', () => {
     /** The trigger's classes, where the current mode's tint lands. */
     function triggerClasses(): string {
       return screen.getByTestId('popover-trigger').querySelector('button')!.className;
     }
 
-    it('marks the mode that never asks about anything, anywhere', () => {
+    it('reads green at full power — the setting this product is for', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(
         <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
       );
 
-      expect(triggerClasses()).toContain('text-red-500');
+      expect(triggerClasses()).toContain('text-status-success');
     });
 
-    it("marks Codex's full access too, from its own words rather than its id", () => {
+    it("reads green on Codex's full access too, under its own label", () => {
+      // NOT the id-independence case: DorkOS normalizes Codex's
+      // `danger-full-access` to the same `bypassPermissions` id Claude uses, so
+      // this pair would pass an implementation keyed on that string. What it
+      // pins is that the runtime's different LABEL and promise do not change
+      // the tone. The id property is the test below.
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(
         <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="codex" />
       );
 
-      expect(triggerClasses()).toContain('text-red-500');
+      expect(triggerClasses()).toContain('text-status-success');
     });
 
-    it("leaves Codex's workspace-write unmarked, loud as its caption is", () => {
+    it('reads green on a top stop whose id no client table knows', () => {
+      // `test-mode` declares its autonomy stop as `always-allow`. Nothing in the
+      // client has ever heard that name, so the only way the word turns green is
+      // by reading the semantics the runtime declared.
+      mockCapabilitiesForRuntime.mockReturnValue(TEST_MODE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode={'always-allow' as never}
+          onChangeMode={vi.fn()}
+          runtime="test-mode"
+        />
+      );
+
+      expect(triggerClasses()).toContain('text-status-success');
+    });
+
+    it("leaves Codex's workspace-write plain, loud as its caption is", () => {
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
 
-      expect(triggerClasses()).not.toContain('text-red-500');
+      expect(triggerClasses()).not.toContain('text-status-success');
       // The divergence is said instead of shouted — amber, on the caption.
       expect(screen.getByTestId('trust-dial-caption').className).toContain('amber');
     });
 
-    it('marks nothing while the capability map is still arriving', () => {
+    it('leaves the cautious choice plain — nothing shames it', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="claude-code" />);
+
+      expect(triggerClasses()).not.toContain('text-status-success');
+      expect(triggerClasses()).not.toMatch(/red/);
+    });
+
+    it('tints nothing while the capability map is still arriving', () => {
       mockCapabilitiesForRuntime.mockReturnValue(undefined);
       render(
         <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
       );
 
-      expect(triggerClasses()).not.toContain('text-red-500');
+      expect(triggerClasses()).not.toContain('text-status-success');
+    });
+
+    it('spends no red on any stop the runtime declares', () => {
+      // Red is reserved for genuine alarms — quarantine, unreadable rules,
+      // errors. A stop a person deliberately chose is never one of those
+      // (spec `full-power-defaults`, D8).
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
+        render(<PermissionModeItem mode={mode} onChangeMode={vi.fn()} runtime="claude-code" />);
+        expect(triggerClasses()).not.toMatch(/red/);
+        cleanup();
+      }
     });
   });
 

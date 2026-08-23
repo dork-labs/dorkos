@@ -2,14 +2,15 @@
  * @vitest-environment jsdom
  */
 /**
- * The standing banner for autonomy nobody is watching: what it says, when it
- * says nothing, and where its two links go.
+ * The standing row for full power nobody is watching: what it says, when it says
+ * nothing, and where its two links go.
  *
  * The rule deciding WHICH drivers reach this component is the server's
  * (`services/core/unattended-autonomy/`). What is pinned here is the
- * half a person actually meets — that the banner names the things by name rather
- * than counting them, that it never appears over an empty list, and that each
- * link lands on the surface that can switch the thing off.
+ * half a person actually meets — that the row names the things by name rather
+ * than counting them, that it never appears over an empty list, that it reads as
+ * information rather than an alarm (spec `full-power-defaults`, D8), and that
+ * each link lands on the surface that can change the thing.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -65,14 +66,14 @@ describe('UnattendedAutonomyBanner', () => {
   it('names a single driver and what kind of thing it is', () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'The Nightly cleanup task runs without asking.'
+      'Running unattended at full power: the Nightly cleanup task.'
     );
   });
 
   it('names both drivers when two are running', () => {
     render(<UnattendedAutonomyBanner drivers={[deploys, cleanup_task]} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'The Deploys integration and the Nightly cleanup task run without asking.'
+      'Running unattended at full power: the Deploys integration and the Nightly cleanup task.'
     );
   });
 
@@ -88,20 +89,20 @@ describe('UnattendedAutonomyBanner', () => {
       />
     );
     expect(screen.getByRole('status')).toHaveTextContent(
-      'The Deploys integration, the Nightly cleanup task and 2 more run without asking.'
+      'Running unattended at full power: the Deploys integration, the Nightly cleanup task and 2 more.'
     );
   });
 
-  it('says why it matters — nobody is there to answer', () => {
+  it('states the fact without the fear — full power is a chosen state', () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Nobody is watching, so nothing waits for your approval.'
-    );
+    const banner = screen.getByRole('status');
+    expect(banner).not.toHaveTextContent('Nobody is watching');
+    expect(banner).not.toHaveTextContent('without asking');
   });
 
-  it('is amber, not red — a standing setting, not an incident', () => {
+  it('is info, not a warning — a normal setting, not an incident', () => {
     render(<UnattendedAutonomyBanner drivers={[deploys]} />);
-    expect(screen.getByRole('status')).toHaveAttribute('data-variant', 'warning');
+    expect(screen.getByRole('status')).toHaveAttribute('data-variant', 'info');
   });
 
   it('cannot be dismissed — the condition is standing, not an announcement', () => {
