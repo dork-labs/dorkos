@@ -17,6 +17,8 @@ export {
   AlertDialogCancel,
 } from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
+export { BoundedNumberInput } from './bounded-number-input';
+export type { BoundedNumberInputProps } from './bounded-number-input';
 export { BarTabStrip } from './bar-tab-strip';
 export type { BarTab } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';

@@ -12,6 +12,7 @@ import {
   UserRound,
   FlaskConical,
   Bell,
+  MessagesSquare,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -19,6 +20,7 @@ import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { NotificationsTab } from './tabs/NotificationsTab';
+import { RoomsTab } from './tabs/RoomsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsResetAction, ToolsTab } from './ToolsTab';
@@ -61,6 +63,16 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Runtimes',
     icon: Cpu,
     component: RuntimesTab,
+    group: 'Agents & sessions',
+  },
+  {
+    // Beside Runtimes rather than under System: what it holds is how far agents
+    // may carry a conversation with EACH OTHER, which is a question about
+    // agents, not about this machine.
+    id: 'rooms',
+    label: 'Rooms',
+    icon: MessagesSquare,
+    component: RoomsTab,
     group: 'Agents & sessions',
   },
   {

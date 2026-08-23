@@ -10,6 +10,8 @@
 export { configKeys, CONFIG_STALE_TIME_MS } from './api/query-keys';
 export { useConfig } from './model/use-config';
 export { useEngagedWindow } from './model/use-engaged-window';
+export { useRoomTurnLimits } from './model/use-room-turn-limits';
+export type { RoomTurnLimits, RoomTurnLimitsState } from './model/use-room-turn-limits';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';
 export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
