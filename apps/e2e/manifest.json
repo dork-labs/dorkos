@@ -1043,27 +1043,21 @@
       "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "full-power-door": {
+      "specFile": "tests/full-power-door.spec.ts",
+      "feature": "full-power-door.spec.ts",
+      "description": "ACCEPT lands full power atomically and the door does not return, DECLINE records supervised, touches nothing consent-gated, and does not return, ACCEPT lands full power atomically and the door does not return, DECLINE records supervised, touches nothing consent-gated, and does not return",
+      "lastRun": "2026-08-23T15:54:57.159Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-08T23-59-04",
-      "timestamp": "2026-08-08T23:59:04.702Z",
-      "total": 8,
-      "passed": 8,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 30729
-    },
-    {
-      "id": "2026-08-09T00-00-37",
-      "timestamp": "2026-08-09T00:00:37.705Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 47329
-    },
     {
       "id": "2026-08-09T00-01-59",
       "timestamp": "2026-08-09T00:01:59.673Z",
@@ -1945,6 +1939,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 32117
+    },
+    {
+      "id": "2026-08-23T14-49-51",
+      "timestamp": "2026-08-23T14:49:51.859Z",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 197120
+    },
+    {
+      "id": "2026-08-23T15-54-57",
+      "timestamp": "2026-08-23T15:54:57.159Z",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 92130
     }
   ]
 }

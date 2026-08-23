@@ -18,17 +18,22 @@ import { test, expect } from '../fixtures';
  *      and touches NOTHING consent-gated: no autonomy stop, no ack, no standing
  *      grants, no open mesh. It does not return on reload.
  *
- * ## Why this is opt-in, serial, and warm-boot
+ * ## It RUNS in CI (no skip gate), and why it is `serial` + warm-boot
  *
- * Two properties of the moments rail (spec `moments`, task 1.2) shape this spec.
+ * This is the guard for the headline consent surface, so it must actually execute
+ * in the sharded suite — never a `test.skip` on a CI-unset env var, which
+ * `scripts/assert-browser-tests-executed.sh` fails as "collected but every one of
+ * their tests was skipped". Two properties of the moments rail (spec
+ * `full-power-defaults` D3, task 1.2) shape how it does that.
  *
- * **It ambushes the parallel suite.** The door is a launch MODAL that focus-traps
- * and sets `pointer-events: none` on the app body, eligible whenever onboarding
- * is settled and `ui.fullPowerDecidedAt` is null. `global-setup.ts` settles a
- * "supervised" decision on every leg so no OTHER spec is ambushed. This spec has
- * to UN-settle it to make the door appear, which on the shared cockpit leg would
- * ambush every parallel spec — so, like `auth-login.spec.ts`, it is OPT-IN behind
- * an env gate, `serial`, and self-healing (the `afterAll` restores the decision).
+ * **It must not ambush other specs.** The door is a launch MODAL that focus-traps
+ * and sets `pointer-events: none`, eligible whenever onboarding is settled and
+ * `ui.fullPowerDecidedAt` is null. `global-setup.ts` settles a "supervised"
+ * decision on every leg, so the suite's steady state never shows it. This spec
+ * un-settles it only inside its own `beforeEach` and restores it in `afterAll`;
+ * combined with CI's `workers: 1` (specs run serially per shard) and the
+ * `isFetchedAfterMount` gate below (a normal load by another spec never opens the
+ * door), nothing else on the leg is ambushed.
  *
  * **A moment opens only after a server-confirmed config fetch completes AFTER
  * `MomentHost` mounts** (`MomentHost`'s `isFetchedAfterMount` gate, which exists
@@ -37,22 +42,11 @@ import { test, expect } from '../fixtures';
  * fetched once and stays fresh inside its 30s `staleTime` — so the door never
  * opens for it, however correct the config is. A real returning user hits it via
  * the warm boot: the persister restores a now-stale config and `refetchOnMount`
- * fires the confirming refetch. This spec reproduces exactly that — load to prime
- * the persister, let the config go stale, reload — with the boot cache LEFT ON
- * (the suite's default `storageState` disables it), which is why {@link openDoor}
- * waits out the stale window and each test runs on a raised timeout.
- *
- * A normal `pnpm e2e` run never sets the gate, so the door never opens for it.
- * Run this one explicitly, against a throwaway `DORK_HOME` and alone:
- *
- *   DORKOS_E2E_FULL_POWER=1 DORKOS_COCKPIT_PORT=4275 DORKOS_COCKPIT_VITE_PORT=4274 \
- *     DORKOS_MOCK_PORT=4273 DORKOS_MOCK_VITE_PORT=4272 \
- *     pnpm --filter @dorkos/e2e exec playwright test tests/full-power-door.spec.ts \
- *     --workers=1 --repeat-each=3
+ * fires the confirming refetch. The `beforeEach` reproduces exactly that — load
+ * to prime the persister, let the config go stale, reload — with the boot cache
+ * LEFT ON (the suite's default `storageState` disables it), which is why it waits
+ * out the stale window and each test runs on a raised timeout.
  */
-
-// eslint-disable-next-line no-restricted-syntax -- e2e has no env.ts; opt-in gate for a modal that ambushes the parallel suite
-const RUN_FULL_POWER_E2E = !!process.env.DORKOS_E2E_FULL_POWER;
 
 /** Config staleTime is 30s; wait past it so the warm reload refetches. */
 const STALE_WINDOW_MS = 31_000;
@@ -128,10 +122,6 @@ async function resetToUnanswered(request: APIRequestContext): Promise<void> {
 }
 
 test.describe('Full-power consent door @full-power', () => {
-  test.skip(
-    !RUN_FULL_POWER_E2E,
-    'Opt-in: set DORKOS_E2E_FULL_POWER=1 (re-opens a modal that would ambush the parallel suite; run alone).'
-  );
   test.describe.configure({ mode: 'serial' });
   // Leave the boot cache ON so the warm reload can refetch — the suite's default
   // storageState disables it, and without the persister there is no restore to
