@@ -58,7 +58,25 @@ export function parseTasks(lines: string[]): TaskItem[] {
           status: 'pending',
         });
       } else if (block.name === 'TaskUpdate' && input.taskId) {
-        const existing = tasks.get(input.taskId as string);
+        const taskId = input.taskId as string;
+        let existing = tasks.get(taskId);
+        if (!existing && input.subject) {
+          // Fallback: the SDK's own task id (used here) and this reader's
+          // creation-order counter (used for TaskCreate above) are two
+          // different id spaces that usually happen to agree but are not
+          // guaranteed to — a lookup miss otherwise silently drops the
+          // update (DOR-1441). When the update carries a subject, match by
+          // subject and re-key the entry under the SDK's real id so later
+          // id-only updates for the same task resolve directly.
+          for (const [localId, task] of tasks) {
+            if (task.subject === input.subject) {
+              tasks.delete(localId);
+              existing = { ...task, id: taskId };
+              tasks.set(taskId, existing);
+              break;
+            }
+          }
+        }
         if (existing) {
           if (input.status) existing.status = input.status as SessionTaskStatus;
           if (input.subject) existing.subject = input.subject as string;

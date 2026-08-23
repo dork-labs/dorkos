@@ -151,7 +151,24 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
         taskMap.set(id, { ...event.task, id });
         statusTimestamps.set(id, { status: event.task.status, since: now });
       } else if (event.action === 'update' && event.task.id) {
-        const existing = taskMap.get(event.task.id);
+        let existing = taskMap.get(event.task.id);
+        if (!existing && event.task.subject) {
+          // Fallback: the create fold mints a local sequential id (nextId)
+          // while TaskUpdate carries the SDK's own task id — two id spaces
+          // that usually agree but are not guaranteed to, and a lookup miss
+          // otherwise silently drops the update (DOR-1441). When the update
+          // carries a subject, match by subject and re-key the entry under
+          // the SDK's real id so later id-only updates resolve directly.
+          for (const [localId, task] of taskMap) {
+            if (task.subject === event.task.subject) {
+              taskMap.delete(localId);
+              statusTimestamps.delete(localId);
+              existing = task;
+              taskMap.set(event.task.id, existing);
+              break;
+            }
+          }
+        }
         if (existing) {
           taskMap.set(event.task.id, {
             ...existing,
