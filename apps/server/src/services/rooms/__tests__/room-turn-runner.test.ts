@@ -60,18 +60,31 @@ let internalSessionId: (sessionId: string) => string | undefined = () => undefin
  */
 let registeredRuntimes: string[] = ['claude-code', 'codex', 'opencode', 'test-mode'];
 
+/**
+ * Whether the registry can hand back a runtime at all.
+ *
+ * The real `runtimeRegistry.get` throws for an unregistered type while the
+ * runner guards with `if (!runtime)`, so "no runtime" is a state only this seam
+ * can model — and it has an answer that matters: a stop nothing could even be
+ * aimed at is not a stop (DOR-1425).
+ */
+let runtimeIsRegistered = true;
+
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     getSessionSettings: () => Promise.resolve(storedSettings),
-    get: () => ({
-      getCapabilities: () => getCapabilities(),
-      acquireLock: () => true,
-      releaseLock: () => undefined,
-      sendMessage: () => undefined,
-      interruptQuery: (sessionId: string) => interruptQuery(sessionId),
-      getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
-    }),
+    get: () =>
+      runtimeIsRegistered
+        ? {
+            getCapabilities: () => getCapabilities(),
+            acquireLock: () => true,
+            releaseLock: () => undefined,
+            sendMessage: () => undefined,
+            interruptQuery: (sessionId: string) => interruptQuery(sessionId),
+            getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
+          }
+        : undefined,
     has: (type: string) => registeredRuntimes.includes(type),
     getDefaultType: () => 'claude-code',
   },
@@ -296,6 +309,7 @@ describe('createSessionRoomTurnRunner', () => {
     persistSessionRuntime.mockClear();
     interruptQuery.mockClear();
     interruptQuery.mockImplementation(() => Promise.resolve(false));
+    runtimeIsRegistered = true;
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
   });
@@ -1122,6 +1136,25 @@ describe('createSessionRoomTurnRunner', () => {
       expect(interruptQuery).toHaveBeenCalledTimes(1);
       turn.close();
       await turn.answered;
+    });
+
+    it('reports a stop it could not even find a runtime for', async () => {
+      // The narrowest `false` there is, and the one most easily reported as a
+      // success: an agent whose runtime this process does not have registered —
+      // the packaged desktop app ships only one SDK — has nothing behind it at
+      // all. Answering `true` there would tell an operator a turn was stopped by
+      // a call that never happened, which is the exact confusion DOR-1425 exists
+      // to remove.
+      runtimeIsRegistered = false;
+
+      expect(
+        await createSessionRoomTurnRunner().interrupt({
+          sessionId: 'sess-no-runtime',
+          agentPath: '/repo/ana',
+        })
+      ).toBe(false);
+      // And nothing was reached: there was nothing to reach.
+      expect(interruptQuery).not.toHaveBeenCalled();
     });
 
     it('never aims it at the NEXT turn, which is the room asking again', async () => {

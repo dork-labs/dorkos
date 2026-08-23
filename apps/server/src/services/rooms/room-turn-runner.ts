@@ -151,6 +151,27 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * asking again, and a stop left standing across it would kill a turn nobody
    * stopped. Re-aimed ONCE, never on a timer — a retry loop with no turn to
    * bound it is how a stop meant for one turn reaches the next one.
+   *
+   * **The third lifetime is that there isn't one**, and it is admitted here
+   * rather than implied away: a stop recorded for a turn that then dies without
+   * producing anything leaves its entry until the next `run` on that session id
+   * — which for a pair whose room is archived, or whose agent leaves the roster,
+   * never comes. What is retained is a string key and the runtime SINGLETON, so
+   * this is a bounded-by-sessions-ever-stopped map and not a retention of
+   * anything a session owns. Sweeping it would need a second lifetime to get
+   * wrong; being one entry per abandoned session is the cheaper mistake.
+   *
+   * **It rests on one cross-module ordering invariant**, which is worth checking
+   * if this ever stops working: the first event a turn puts on the projector
+   * after its synthesized `turn_start` must mean the runtime has a turn that can
+   * be interrupted. For claude-code that boundary is `bundle.booting = true` in
+   * `sessions/persistent-dispatch.ts`, immediately before `recovery.dispatch` —
+   * everything the pump yields BEFORE it (`plan.statusEvents`) is on the wrong
+   * side of it. That is inert today because the only producer of a status event
+   * there is the auto-permission-mode downgrade, and a room turn cannot be
+   * `permissionMode: 'auto'` (it passes no `interactive` flag, so it takes the
+   * runtime's `'default'`). A future status event yielded before the boot would
+   * spend this one shot on nothing, with every test still green.
    */
   const stopsWaitingForATurn = new Map<string, AgentRuntime>();
   return {
