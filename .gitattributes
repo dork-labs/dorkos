@@ -1,0 +1,5 @@
+# Force a textual diff for this file even when compared against a commit
+# whose blob still holds the raw NUL bytes this fix removes (DOR-1450) — git's
+# NUL-byte heuristic otherwise renders any diff spanning that boundary as
+# "Binary files differ", in the local CLI and in the GitHub PR view alike.
+apps/client/src/layers/features/dashboard-sidebar/model/boot/use-boot-state.ts diff
