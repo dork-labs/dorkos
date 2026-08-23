@@ -111,7 +111,7 @@ describe('toRawSessionEvent', () => {
       },
     },
     {
-      name: 'question_prompt → question_prompt (id from toolCallId)',
+      name: 'question_prompt → question_prompt (id from toolCallId, budget preserved)',
       input: {
         type: 'question_prompt',
         data: {
@@ -126,6 +126,11 @@ describe('toRawSessionEvent', () => {
         id: 'q1',
         startedAt: 2000,
         remainingMs: 600000,
+        // The budget rides the question member exactly as it rides the
+        // approval's. Dropping it left the card counting from whatever was left
+        // when it arrived, so the countdown restarted on every remount
+        // (DOR-1442).
+        timeoutMs: 600000,
         questions: [{ header: 'H', question: 'Q?', options: [], multiSelect: false }],
       },
     },
@@ -146,8 +151,30 @@ describe('toRawSessionEvent', () => {
         id: 'e1',
         startedAt: 3000,
         remainingMs: 600000,
+        // Same budget, same reason as the question above (DOR-1442).
+        timeoutMs: 600000,
         serverName: 'srv',
         message: 'fill this',
+      },
+    },
+    {
+      name: 'question_prompt → question_prompt (no budget invented when the runtime declared none)',
+      input: {
+        type: 'question_prompt',
+        data: {
+          toolCallId: 'q2',
+          questions: [],
+          startedAt: 2000,
+        },
+      },
+      // No `timeoutMs` key at all: absent means "this runtime did not say", and
+      // a number made up here would draw a deadline nothing enforces.
+      expected: {
+        type: 'question_prompt',
+        id: 'q2',
+        startedAt: 2000,
+        remainingMs: 0,
+        questions: [],
       },
     },
     {

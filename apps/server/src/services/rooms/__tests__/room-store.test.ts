@@ -734,6 +734,85 @@ describe('RoomStore.roomsPostedInBy', () => {
   });
 });
 
+describe('RoomStore.turnsByAuthorInCascade counts turns, not messages', () => {
+  /** A cascade rooted at `root`, so every entry lands in the same count. */
+  function inCascade(id: string, authorId: string, dispatchId?: string): NewRoomEntry {
+    return entry({ id, authorId, cascadeRoot: 'root', cascadeDepth: 1, ...{ dispatchId } });
+  }
+
+  it('collapses every entry one turn wrote into a single turn', () => {
+    // The DOR-1434 property, at the grain the query decides it: an agent that
+    // says what it is doing three times and then answers has taken ONE turn.
+    // Under the shipped `COUNT(*)` this read 4, which taxed an agent for being
+    // legible about its work.
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'root', authorId: 'human' }));
+    store.appendEntry(inCascade('n1', 'ana', 'dsp_1'));
+    store.appendEntry(inCascade('n2', 'ana', 'dsp_1'));
+    store.appendEntry(inCascade('n3', 'ana', 'dsp_1'));
+    store.appendEntry(inCascade('answer', 'ana', 'dsp_1'));
+
+    expect(store.turnsByAuthorInCascade(ROOM_ID, 'root').get('ana')).toBe(1);
+  });
+
+  it('counts each turn once and adds them up', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'root', authorId: 'human' }));
+    store.appendEntry(inCascade('a1', 'ana', 'dsp_1'));
+    store.appendEntry(inCascade('a2', 'ana', 'dsp_1'));
+    store.appendEntry(inCascade('a3', 'ana', 'dsp_2'));
+    store.appendEntry(inCascade('b1', 'bo', 'dsp_3'));
+
+    expect(store.turnsByAuthorInCascade(ROOM_ID, 'root').get('ana')).toBe(2);
+    expect(store.turnsByAuthorInCascade(ROOM_ID, 'root').get('bo')).toBe(1);
+  });
+
+  it('charges an unmarked row one turn each, so old rows keep counting as they did', () => {
+    // Rows written before `dispatch_id` existed carry null, and so does every
+    // post with no turn behind it. Each costs one — which is exactly the
+    // message-counting behaviour those rows shipped under, so a database that
+    // predates this column is not silently re-interpreted.
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'root', authorId: 'human' }));
+    store.appendEntry(inCascade('legacy1', 'ana'));
+    store.appendEntry(inCascade('legacy2', 'ana'));
+    store.appendEntry(inCascade('legacy3', 'ana'));
+
+    expect(store.turnsByAuthorInCascade(ROOM_ID, 'root').get('ana')).toBe(3);
+  });
+
+  it('adds marked turns and unmarked rows together', () => {
+    // The mixed cascade a real install upgrades into: some of Ana's rows predate
+    // the column, and the turn she has taken since is one more on top.
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'root', authorId: 'human' }));
+    store.appendEntry(inCascade('legacy1', 'ana'));
+    store.appendEntry(inCascade('legacy2', 'ana'));
+    store.appendEntry(inCascade('now1', 'ana', 'dsp_1'));
+    store.appendEntry(inCascade('now2', 'ana', 'dsp_1'));
+
+    expect(store.turnsByAuthorInCascade(ROOM_ID, 'root').get('ana')).toBe(3);
+  });
+
+  it('never counts another cascade or another room', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    seedRoom(store, 'room-2');
+    store.appendEntry(entry({ id: 'root', authorId: 'human' }));
+    store.appendEntry(inCascade('mine', 'ana', 'dsp_1'));
+    store.appendEntry(entry({ id: 'other', authorId: 'ana', cascadeRoot: 'other-root' }));
+    store.appendEntry(
+      entry({ id: 'elsewhere', authorId: 'ana', roomId: 'room-2', cascadeRoot: 'root' })
+    );
+
+    expect(store.turnsByAuthorInCascade(ROOM_ID, 'root').get('ana')).toBe(1);
+  });
+});
+
 describe('RoomStore never trims the log', () => {
   // Deliberately heavy: proving the absence of a trim means writing past the cap
   // through the real append path, which is 5000+ IMMEDIATE transactions. The

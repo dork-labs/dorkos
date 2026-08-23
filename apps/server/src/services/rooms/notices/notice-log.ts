@@ -57,6 +57,17 @@ import type { BudgetRefusalScope } from '../limits/turn-budget.js';
 export interface CascadeStamp {
   root: string;
   depth: number;
+  /**
+   * The turn writing this entry, when the writer knows it — the repeat rule's
+   * unit (DOR-1434), so a turn that posts progress notes and then answers spends
+   * one turn rather than four.
+   *
+   * Optional because two of the three writers here genuinely have no turn to
+   * name: a notice is the room's own voice, and a post inheriting a stamp
+   * through `activeTurnFor` is stamped from the live claim instead. Set on the
+   * dispatcher's delivery, which holds the id outright.
+   */
+  dispatchId?: string;
 }
 
 /**

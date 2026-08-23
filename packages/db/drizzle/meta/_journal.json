@@ -526,6 +526,13 @@
       "when": 1787455262381,
       "tag": "0074_amusing_ikaris",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1787496284241,
+      "tag": "0075_amusing_deathbird",
+      "breakpoints": true
     }
   ]
 }

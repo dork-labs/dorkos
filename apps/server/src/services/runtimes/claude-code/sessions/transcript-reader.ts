@@ -827,6 +827,17 @@ export class TranscriptReader {
 
   /**
    * Read task state — tries the SDK todo file first, falls back to JSONL transcript parsing.
+   *
+   * The todo-file path (`readTodosFromFile`, above) mints `id: String(index +
+   * 1)` for any entry with no id of its own — a positional counter in the
+   * same shape `task-reader.ts`'s `parseTasks` used to use before DOR-1441,
+   * and the same failure class: it can drift from a real SDK task id.
+   * Verified dormant today (`~/.claude{,2,3}/todos` do not exist on this
+   * machine, so the JSONL fallback below — which DOES use the fixed
+   * `parseTasks` — is what actually serves), but if that file reappears this
+   * path reintroduces the drift undetected. Left as-is rather than refactored
+   * here: fixing it belongs in its own reviewed change, same as the
+   * account-routing note above.
    */
   async readTasks(vaultRoot: string, sessionId: string): Promise<TaskItem[]> {
     // File-first: SDK todo file is the authoritative source when present. The

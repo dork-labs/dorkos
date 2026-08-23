@@ -25,6 +25,13 @@
  * mechanism fires at N instead of at 1. Nothing about its standing changed: it
  * is still a bound in code and never a prompt (ADR 260726-170127, amended).
  *
+ * **The unit it counts is a TURN, not a message** (DOR-1434). One turn may write
+ * as many entries as it likes — progress notes posted through the rooms tool,
+ * then the answer the dispatcher delivers — and they all spend one. The counting
+ * lives in `RoomStore.turnsByAuthorInCascade`, which reads each entry's
+ * `dispatch_id`; nothing in this module has to know that, which is the point of
+ * it taking the counts rather than the rows.
+ *
  * Pure — the caller supplies the provenance it read, and the ceiling it is
  * measuring against. There is deliberately no default ceiling here: the number
  * lives in `rooms.maxAgentDepth` (user config), and a second copy in this file
@@ -51,13 +58,18 @@ export interface CascadeProvenance {
   /** `cascadeDepth` of the triggering entry. The triggered turn inherits this + 1. */
   depth: number;
   /**
-   * How many entries each author already has in this cascade
-   * (`SELECT author_id, COUNT(*) FROM room_entries WHERE room_id = ? AND
-   * cascade_root = ? GROUP BY author_id`).
+   * How many TURNS each author has already taken in this cascade — one indexed
+   * read, `RoomStore.turnsByAuthorInCascade`.
    *
    * A count rather than a set, because the repeat rule fires at
    * `maxTurnsPerAgentPerCascade` rather than at the first repeat. An author
    * absent from the map has spoken zero times here.
+   *
+   * Turns, not rows: entries written by one turn share a `dispatch_id` and
+   * collapse to one, so an agent narrating its work as it goes is not charged
+   * for being legible (DOR-1434). Entries with no turn behind them — a person's
+   * post, an un-provenanced agent post, anything written before that column —
+   * count one each.
    */
   turnsByAuthor: ReadonlyMap<string, number>;
 }

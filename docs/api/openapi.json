@@ -1139,6 +1139,9 @@
           },
           "remainingMs": {
             "type": "number"
+          },
+          "timeoutMs": {
+            "type": "number"
           }
         },
         "required": [
@@ -1655,11 +1658,11 @@
               "remainingMs": {
                 "type": "number"
               },
-              "id": {
-                "type": "string"
-              },
               "timeoutMs": {
                 "type": "number"
+              },
+              "id": {
+                "type": "string"
               },
               "toolName": {
                 "type": "string"
@@ -1716,6 +1719,9 @@
               "remainingMs": {
                 "type": "number"
               },
+              "timeoutMs": {
+                "type": "number"
+              },
               "id": {
                 "type": "string"
               },
@@ -1752,6 +1758,9 @@
                 "type": "number"
               },
               "remainingMs": {
+                "type": "number"
+              },
+              "timeoutMs": {
                 "type": "number"
               },
               "id": {
@@ -1890,7 +1899,9 @@
                 "enum": [
                   "create",
                   "update",
-                  "snapshot"
+                  "snapshot",
+                  "id_assigned",
+                  "remove"
                 ]
               },
               "task": {
@@ -1901,6 +1912,9 @@
                 "items": {
                   "$ref": "#/components/schemas/TaskItem"
                 }
+              },
+              "previousId": {
+                "type": "string"
               }
             },
             "required": [
@@ -3606,7 +3620,7 @@
           "session-idle",
           "not-steerable",
           "not-stageable",
-          "no-open-turn",
+          "turn-owned-elsewhere",
           "pending-interaction"
         ]
       },
@@ -6656,7 +6670,7 @@
             ],
             "minimum": 1,
             "maximum": 100,
-            "description": "How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`."
+            "description": "How many TURNS any ONE agent may take here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`. Progress notes an agent posts mid-turn do not count extra."
           },
           "maxAutoTurnsPerHour": {
             "type": [
@@ -7078,7 +7092,7 @@
             ],
             "minimum": 1,
             "maximum": 100,
-            "description": "How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`."
+            "description": "How many TURNS any ONE agent may take here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`. Progress notes an agent posts mid-turn do not count extra."
           },
           "maxAutoTurnsPerHour": {
             "type": [
@@ -9700,11 +9714,11 @@
                         "remainingMs": {
                           "type": "number"
                         },
-                        "id": {
-                          "type": "string"
-                        },
                         "timeoutMs": {
                           "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
                         },
                         "toolName": {
                           "type": "string"
@@ -9761,6 +9775,9 @@
                         "remainingMs": {
                           "type": "number"
                         },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -9797,6 +9814,9 @@
                           "type": "number"
                         },
                         "remainingMs": {
+                          "type": "number"
+                        },
+                        "timeoutMs": {
                           "type": "number"
                         },
                         "id": {
@@ -9935,7 +9955,9 @@
                           "enum": [
                             "create",
                             "update",
-                            "snapshot"
+                            "snapshot",
+                            "id_assigned",
+                            "remove"
                           ]
                         },
                         "task": {
@@ -9946,6 +9968,9 @@
                           "items": {
                             "$ref": "#/components/schemas/TaskItem"
                           }
+                        },
+                        "previousId": {
+                          "type": "string"
                         }
                       },
                       "required": [

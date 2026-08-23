@@ -389,6 +389,23 @@ export class MessageQueueStore {
     return removed;
   }
 
+  /**
+   * Every session id that holds at least one queued message.
+   *
+   * The boot reconcile's input (`reconcile-session-rows.ts`): the only way to
+   * find rows whose session disappeared while this server was DOWN is to start
+   * from the rows themselves, because nothing announced their session's
+   * departure to a process that was not running. Distinct ids rather than rows —
+   * a thousand-message queue is one question, not a thousand.
+   */
+  listSessionIds(): string[] {
+    return this.db
+      .selectDistinct({ sessionId: sessionMessageQueue.sessionId })
+      .from(sessionMessageQueue)
+      .all()
+      .map((row) => row.sessionId);
+  }
+
   /** One session's rows, ordered head-first. */
   private rows(sessionId: string): SessionMessageQueueRow[] {
     return this.db

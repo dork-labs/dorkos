@@ -6,7 +6,12 @@ import {
   SettingRow,
   SwitchSettingRow,
 } from '@/layers/shared/ui';
-import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import {
+  configKeys,
+  useConfig,
+  useRoomTurnLimits,
+  useUpdateConfig,
+} from '@/layers/entities/config';
 import { OpenMeshSwitch } from '@/layers/entities/mesh';
 
 /** Lowest and highest concurrent-run counts the scheduler schema accepts. */
@@ -25,6 +30,10 @@ const DEFAULT_CONCURRENCY = 4;
  *
  * - **Open mesh** — the shared {@link OpenMeshSwitch}, wired to the topology
  *   query, so it reads the real `openMesh` rule rather than a local boolean.
+ * - **Limit automatic replies** — `rooms.turnLimitsEnabled`, through the same
+ *   {@link useRoomTurnLimits} hook Settings → Rooms writes with, so the two
+ *   surfaces cannot disagree. The four numbers behind it stay in Settings: this
+ *   panel is for the switches a person reaches for, not for tuning.
  * - **Standing grants** — `approvals.standingGrants`, coupled to Require login
  *   exactly as the canonical Security control is: without a login DorkOS cannot
  *   tell the operator from an agent, so the switch reads off and is held.
@@ -38,6 +47,7 @@ export function ControlCenterSwitches() {
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
+  const { limits, setLimits } = useRoomTurnLimits();
 
   // Every config reader — the status bar, the sidebar, `useFeatureEnabled` —
   // sits on a broader key set than this flyout, and the server applies each
@@ -56,6 +66,23 @@ export function ControlCenterSwitches() {
     <FieldCard>
       <FieldCardContent>
         <OpenMeshSwitch />
+
+        {/* The off state says the consequence in the same words Settings → Rooms
+            uses, because it is the same consequence and a person who read it
+            there must not have to re-derive it here. Disabled until the limits
+            land: `turnLimitsEnabled` ships on, so guessing would draw the right
+            switch most of the time and let somebody flip a guess the rest. */}
+        <SwitchSettingRow
+          label="Limit automatic replies"
+          description={
+            limits?.turnLimitsEnabled === false
+              ? 'Agents can reply to each other without limit. The Stop button is the only brake.'
+              : 'Agents stop replying to each other once a back-and-forth has run far enough. Your next message starts the count over. Set the numbers in Settings → Rooms.'
+          }
+          checked={limits?.turnLimitsEnabled ?? true}
+          disabled={limits === null}
+          onCheckedChange={(next) => setLimits({ turnLimitsEnabled: next })}
+        />
 
         <SwitchSettingRow
           label="Standing permissions"

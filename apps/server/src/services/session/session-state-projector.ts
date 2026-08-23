@@ -48,6 +48,7 @@ import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
 import {
+  EAGERLY_RECORDED_EVENT_TYPES,
   RECORDED_EVENT_TYPES,
   type ProjectorPersistence,
   type ProjectorPersistenceMode,
@@ -611,6 +612,10 @@ export class SessionStateProjector {
     // persistence failure only forfeits cross-restart durability, never live
     // streaming.
     if (turnToFlush !== null) this.flushTurn(turnToFlush);
+    // An ask does not wait for its turn to end to become durable — the turn it
+    // parked may never end at all (DOR-1439). Same placement and same reason as
+    // the turn flush above: the event has already reached every live subscriber.
+    if (EAGERLY_RECORDED_EVENT_TYPES.has(event.type)) this.flushTurn([event]);
     // Three ways this event can be worth telling the fleet about, in the order
     // they take precedence:
     //
@@ -767,6 +772,12 @@ export class SessionStateProjector {
    * In `'record'` mode the turn is narrowed to {@link RECORDED_EVENT_TYPES}
    * first, so the row count per turn is a constant rather than a function of how
    * much the model said.
+   *
+   * Also called with a SINGLE event, by the eager-record path in
+   * {@link SessionStateProjector.ingest} — an ask writes itself down before its
+   * turn ends, because the turn may never end (DOR-1439). Idempotent either way:
+   * `appendTurn` is `INSERT OR IGNORE` on `(session_id, seq)`, so the turn flush
+   * that later re-offers the same event writes nothing twice.
    *
    * Rows key by the LIVE {@link sessionId} — see the {@link ProjectorPersistence}
    * rekey note.

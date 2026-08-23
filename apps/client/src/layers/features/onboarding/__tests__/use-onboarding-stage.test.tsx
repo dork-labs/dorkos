@@ -237,3 +237,30 @@ describe('onboarding stage param — config-loading survival race', () => {
     await waitFor(() => expect(harness.readStage()).toBeUndefined());
   });
 });
+
+// ── The power stage is URL-synced and refresh-safe ───────────
+//
+// Adding `'power'` to ONBOARDING_STAGES makes it a member of the search enum for
+// free, so `?onboarding=power` validates, derives, and round-trips like every
+// other stage. These pin that so a future schema change cannot silently drop it.
+describe('useOnboardingStage — the power stage', () => {
+  it('derives the power stage from `?onboarding=power` (refresh-safe)', async () => {
+    const harness = buildHarness('/?onboarding=power');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    expect(result.current.stage).toBe('power');
+    // The param is left exactly as the URL carried it — nothing rewrote it.
+    expect(harness.readStage()).toBe('power');
+  });
+
+  it('round-trips through the URL when navigated to', async () => {
+    const harness = buildHarness('/?onboarding=requirements');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    act(() => result.current.goToStage('power'));
+
+    await waitFor(() => expect(harness.readStage()).toBe('power'));
+    expect(result.current.stage).toBe('power');
+  });
+});

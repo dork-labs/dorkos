@@ -649,6 +649,73 @@ describe('RuntimeRegistry', () => {
       });
     });
 
+    describe('getSessionBindings (DOR-1436)', () => {
+      it('answers only for sessions that are actually bound', async () => {
+        await registry.persistSessionRuntime('started', 'test-mode');
+        // A settings write before the first turn: the row exists, the owner does
+        // not (DOR-812).
+        await registry.saveSessionSettings('picked-a-mode', { permissionMode: 'default' });
+
+        const bindings = registry.getSessionBindings(['started', 'picked-a-mode', 'never-seen']);
+
+        expect([...bindings.keys()]).toEqual(['started']);
+        expect(bindings.get('started')?.runtime).toBe('test-mode');
+      });
+
+      it('never infers, where getSessionRuntimeType does', async () => {
+        // The whole reason this method exists beside that one: its caller
+        // deletes rows, and the default-runtime inference would hand every
+        // never-started session to claude-code and take its words with it.
+        expect(await registry.getSessionRuntimeType('legacy-session')).toBe('claude-code');
+        expect(registry.getSessionBindings(['legacy-session']).size).toBe(0);
+      });
+
+      it('reports when the binding was written, so a caller can tell it from a fresh one', async () => {
+        const before = Date.now();
+        await registry.persistSessionRuntime('timed', 'test-mode');
+
+        const boundAt = registry.getSessionBindings(['timed']).get('timed')?.boundAt;
+
+        expect(boundAt).not.toBeNull();
+        expect(boundAt).toBeGreaterThanOrEqual(before - 1);
+        expect(boundAt).toBeLessThanOrEqual(Date.now() + 1);
+      });
+
+      it('reports an unreadable timestamp as unknown rather than as a number', async () => {
+        // `created_at` is free-form TEXT. A caller comparing garbage against a
+        // clock would get a verdict out of a value that means nothing.
+        await db.insert(sessionMetadata).values({
+          sessionId: 'hand-edited',
+          runtime: 'test-mode',
+          agentPath: null,
+          createdAt: 'sometime last week',
+        });
+
+        expect(registry.getSessionBindings(['hand-edited']).get('hand-edited')).toEqual({
+          runtime: 'test-mode',
+          boundAt: null,
+        });
+      });
+
+      it('reads a list far past what one statement can bind', async () => {
+        // SQLite compiles in a bound-variable ceiling (32766 on this build); one
+        // unchunked `IN (...)` past it throws "too many SQL variables" and loses
+        // the WHOLE read — which for the boot reconcile means every candidate
+        // looks unbound. 1200 ids, the count this test used first, never came
+        // near it and the chunking could be deleted with the test still green.
+        await registry.persistSessionRuntime('needle', 'test-mode');
+        const ids = [...Array.from({ length: 40_000 }, (_, i) => `bulk-${i}`), 'needle'];
+
+        const bindings = registry.getSessionBindings(ids);
+
+        expect(bindings.get('needle')?.runtime).toBe('test-mode');
+      });
+
+      it('asks nothing for an empty list', () => {
+        expect(registry.getSessionBindings([])).toEqual(new Map());
+      });
+    });
+
     describe('resolveForSession', () => {
       it('returns claude-code for a new session without writing a row (infer-on-miss, no persist)', async () => {
         const runtime = await registry.resolveForSession('new-session');

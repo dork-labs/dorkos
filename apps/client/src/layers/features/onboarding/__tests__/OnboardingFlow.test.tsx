@@ -62,6 +62,18 @@ vi.mock('../ui/OnboardingConversation', () => ({
   ),
 }));
 
+// The power stage hosts the real full-power door (its own writes are pinned in
+// OnboardingPowerStep.test); here it is stubbed so OnboardingFlow's stage
+// navigation is what is under test. "Answer power" stands in for any door answer
+// or "Decide later" — both advance via `onAdvance`.
+vi.mock('../ui/OnboardingPowerStep', () => ({
+  OnboardingPowerStep: ({ onAdvance }: { onAdvance: () => void }) => (
+    <div data-testid="power-step">
+      <button onClick={onAdvance}>Answer power</button>
+    </div>
+  ),
+}));
+
 import { OnboardingFlow } from '../ui/OnboardingFlow';
 
 // ── Router harness ───────────────────────────────────────────
@@ -152,12 +164,32 @@ describe('OnboardingFlow', () => {
     await waitFor(() => expect(harness.readStage()).toBe('requirements'));
   });
 
-  it('Continue advances from requirements into the conversation', async () => {
+  it('Continue advances from requirements into the power stage', async () => {
     const harness = await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
+    expect(await screen.findByTestId('power-step')).toBeTruthy();
+    await waitFor(() => expect(harness.readStage()).toBe('power'));
+  });
+
+  it('answering the power stage advances into the conversation', async () => {
+    const harness = await renderFlow('/');
+    fireEvent.click(screen.getByText('Get Started'));
+    fireEvent.click(await screen.findByText('Continue'));
+    fireEvent.click(await screen.findByText('Answer power'));
     expect(await screen.findByTestId('conversation')).toBeTruthy();
     await waitFor(() => expect(harness.readStage()).toBe('conversation'));
+  });
+
+  it('Back on the power stage returns to requirements', async () => {
+    const harness = await renderFlow('/');
+    fireEvent.click(screen.getByText('Get Started'));
+    fireEvent.click(await screen.findByText('Continue'));
+    await screen.findByTestId('power-step');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
+    await waitFor(() => expect(harness.readStage()).toBe('requirements'));
   });
 
   it('refresh restores the stage from the param (deep-link is refresh-safe)', async () => {
@@ -165,12 +197,22 @@ describe('OnboardingFlow', () => {
     expect(screen.getByTestId('requirements-step')).toBeTruthy();
   });
 
+  it('refresh restores the power stage from the param (deep-link is refresh-safe)', async () => {
+    await renderFlow('/?onboarding=power');
+    expect(screen.getByTestId('power-step')).toBeTruthy();
+  });
+
   it('browser back walks the stages backward', async () => {
     const harness = await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));
     await screen.findByTestId('requirements-step');
     fireEvent.click(await screen.findByText('Continue'));
+    await screen.findByTestId('power-step');
+    fireEvent.click(await screen.findByText('Answer power'));
     await screen.findByTestId('conversation');
+
+    act(() => harness.history.back());
+    expect(await screen.findByTestId('power-step')).toBeTruthy();
 
     act(() => harness.history.back());
     expect(await screen.findByTestId('requirements-step')).toBeTruthy();
@@ -216,6 +258,7 @@ describe('OnboardingFlow', () => {
     await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
+    fireEvent.click(await screen.findByText('Answer power'));
     await screen.findByTestId('conversation');
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Skip all setup' })).toBeTruthy();
@@ -228,28 +271,30 @@ describe('OnboardingFlow', () => {
     const harness = await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
+    await screen.findByTestId('power-step');
+    fireEvent.click(await screen.findByText('Answer power'));
     await screen.findByTestId('conversation');
 
     // Drain the mount/forward actions, then Back should POP, not PUSH — so a
     // later browser Back can't land on a phantom conversation entry.
     harness.actions.length = 0;
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('requirements'));
+    expect(await screen.findByTestId('power-step')).toBeTruthy();
+    await waitFor(() => expect(harness.readStage()).toBe('power'));
     expect(harness.actions).toContain('BACK');
     expect(harness.actions).not.toContain('PUSH');
   });
 
-  it('the in-UI Back pushes to requirements when the stage was restored by refresh', async () => {
+  it('the in-UI Back pushes to the power stage when the stage was restored by refresh', async () => {
     // Landed directly on conversation (refresh/deep-link) — nothing to pop, so
-    // Back pushes to requirements instead of ejecting out of the app.
+    // Back pushes to the power stage instead of ejecting out of the app.
     const harness = await renderFlow('/?onboarding=conversation');
     expect(screen.getByTestId('conversation')).toBeTruthy();
 
     harness.actions.length = 0;
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('requirements'));
+    expect(await screen.findByTestId('power-step')).toBeTruthy();
+    await waitFor(() => expect(harness.readStage()).toBe('power'));
     expect(harness.actions).toContain('PUSH');
     expect(harness.actions).not.toContain('BACK');
   });
@@ -259,6 +304,7 @@ describe('OnboardingFlow', () => {
     await renderFlow('/', onComplete);
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
+    fireEvent.click(await screen.findByText('Answer power'));
     await screen.findByTestId('conversation');
     fireEvent.click(screen.getByRole('button', { name: 'Skip all setup' }));
     expect(mockDismiss).toHaveBeenCalled();

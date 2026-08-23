@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260823-174248",
+      "slug": "comparison-pages",
+      "title": "/compare — SEO comparison pages driven by the feature catalog",
+      "created": "2026-08-23",
+      "status": "specified"
+    },
+    {
       "id": "260822-235213",
       "slug": "full-power-defaults",
       "title": "Full power by default: one-door consent, open mesh, Control Center, green-unlocked UI",
