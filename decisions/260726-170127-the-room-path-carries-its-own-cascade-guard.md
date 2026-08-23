@@ -78,7 +78,7 @@ load-bearing:
   you" true. The per-room cap stays because it is what keeps one runaway room
   from eating the entire global allowance and starving every other room.
 
-The division from the cascade guard is equally deliberate — depth-and-ancestry is
+The division from the cascade guard is equally deliberate — its two rules are
 the precise instrument that keeps a healthy room from wasting calls, and the
 budget is the blunt one that bounds a dishonest caller. Neither is redundant, and
 deleting either on the grounds that the other exists reopens a case the other
@@ -110,7 +110,7 @@ What the guard genuinely buys — and this is worth having entirely on its own �
 a bound on **accidental** loops between well-behaved agents. Two `always` agents
 in one room is a configuration a reasonable person reaches on purpose, and the
 cost of it running unbounded is a real bill for no work. That is the common case,
-it involves no attacker, and depth-plus-ancestry plus the budget bound it
+it involves no attacker, and the guard's two rules plus the budget bound it
 completely.
 
 So the honest framing is: the budget is defence in depth against an adversary who
@@ -162,14 +162,17 @@ never a spend history. And hydration bounds the window at BOTH ends — a row
 stamped in the future, which a backwards clock jump can leave behind, is ignored
 rather than counted, because only the lower bound is self-healing.
 
-**Cross-room cascades carry their depth but not their ancestry.** An agent
-mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its
-current depth (the turn's provenance follows the agent, not the room), so B's
-members trigger one deeper and A's ceiling still bounds the chain. The ancestry
-rule does not carry: `authorsInCascade` is scoped `(room_id, cascade_root)`, so
-the same author can appear once per room within one cascade. That is defensible
-— depth is doing the bounding, and per-room scoping is what keeps the query on
-an index — but it means the ancestry rule is a within-room guarantee only.
+**Cross-room cascades carry their depth but not their per-author count.** An
+agent mid-turn in room A that posts into room B inherits A's `cascadeRoot` at
+its current depth (the turn's provenance follows the agent, not the room), so
+B's members trigger one deeper and A's ceiling still bounds the chain. Rule 2
+does not carry: the provenance query is scoped `(room_id, cascade_root)`, so the
+same author gets a fresh allowance in each room within one cascade. That is
+defensible — depth is doing the bounding, and per-room scoping is what keeps the
+query on an index — but it means rule 2 is a within-room guarantee only. (Read
+under the amendment below: that query was `authorsInCascade`, a distinct-author
+set, and is now `turnsByAuthorInCascade`, a count. The scoping is unchanged and
+so is this consequence.)
 
 ### Amendment (2026-08-23, DOR-1428): rule 2 is a counter, and the numbers moved
 
@@ -192,14 +195,14 @@ That trade is argued in ADR 260823-000218, not here.
 ### Positive
 
 - Runaway agent-to-agent loops are bounded before rooms ship, rather than discovered by a bill.
-- The ancestry rule bounds ping-pong at the first repeat, which a depth counter alone does not.
+- Rule 2 bounds ping-pong per agent, which a depth counter alone does not: it fires on the agent that keeps answering, well below a ceiling counting the whole chain. As shipped it fired at the first repeat; since the amendment above it fires at `rooms.maxTurnsPerAgentPerCascade`.
 - Room fan-out stays off the relay, so rooms do not inherit per-endpoint file writes or per-endpoint watchers.
 - The guard is visible. A member sees why an agent stopped replying instead of watching it appear broken.
 
 ### Negative
 
 - **Two implementations of one idea.** Someone will fix a cascade bug in one and not the other. The extraction condition above is written down precisely because that is the predictable failure.
-- The ancestry rule is deliberately conservative and will produce false refusals: a room where A genuinely should answer B twice in one cascade hits the guard on the second pass. The ceiling is configurable, but the default will be wrong for somebody.
+- Rule 2 as shipped was deliberately conservative and produced false refusals: a room where A genuinely should answer B twice in one cascade hit the guard on the second pass. **This is the consequence that came true**, and it is what the amendment above answers — the rule is now a counter with a configurable ceiling. The second half of the sentence survives the fix: the default will still be wrong for somebody.
 - Provenance has to be threaded through every path that can trigger a turn from a room post. A path that forgets to carry it is unguarded and looks fine in tests, because the guard's absence is only visible under a cascade.
 - The refusal entry is a new durable log entry type that exists to describe an absence, which is a small but permanent widening of the room log's vocabulary.
 - **Two bounds, not one.** The budget above is a second mechanism with its own config field, its own notice code and its own tests, and a reader meeting either one alone will reasonably wonder why the other exists. The section above is the answer; keep it accurate if either changes.

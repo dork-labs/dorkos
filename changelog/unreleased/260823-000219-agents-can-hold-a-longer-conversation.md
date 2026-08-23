@@ -2,6 +2,7 @@
 covers:
   - 'feat(shared,server): the ancestry rule becomes a counter, and every room bound is raised (DOR-1428)'
   - 'feat(server): migrate stored room bounds to the raised defaults (DOR-1428)'
+  - 'fix(server): resolve room headroom once per turn, and test the paths review found bare (DOR-1428)'
 ---
 
 ### Changed
