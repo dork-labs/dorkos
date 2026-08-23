@@ -2,6 +2,27 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260823-021312",
+      "slug": "interrupt-receipts-are-a-typed-vocabulary",
+      "title": "Every stop-shaped verb answers with a typed interrupt receipt, and DorkOS never settles a turn it did not observe end",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "specSlug": "runtime-interrupt-receipts",
+      "amends": null,
+      "affects": [
+        "packages/shared/src/agent-runtime.ts",
+        "packages/shared/src/session-stream.ts",
+        "packages/shared/src/transport.ts",
+        "apps/server/src/routes/sessions.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/session-store.ts",
+        "apps/server/src/services/runtimes/codex/event-mapper.ts",
+        "apps/server/src/services/runtimes/opencode/session-event-mapper.ts",
+        "apps/server/src/services/session/projector-persistence.ts",
+        "apps/server/src/services/rooms/room-turn-port.ts",
+        "apps/client/src/layers/features/chat/model/use-session-submit.ts"
+      ]
+    },
+    {
       "id": "260817-152705",
       "slug": "dev-server-previews-get-their-own-origin",
       "title": "Dev-server previews get their own origin; local-file serving keeps the opaque one",
