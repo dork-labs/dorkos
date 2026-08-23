@@ -254,6 +254,44 @@ describe('runRoomExport', () => {
     expect(said).toContain('Reason: terminated');
   });
 
+  it('clears the staging directory only once the dead download has let go of the file', async () => {
+    // The mechanism behind a leftover `.dorkos-export-*`, pinned at its cause.
+    // A body that dies rejects the pipeline while the scratch file's `open` is
+    // still running on the threadpool: measured over 100 dropped downloads, the
+    // stream had closed 0 times by the time the old cleanup ran, and the file
+    // it goes on to create lands inside `rmSync`'s walk-then-remove window
+    // often enough (~5% of runs) to fail the removal with ENOTEMPTY and strand
+    // the directory. Waiting for the close is what makes that unraceable, so
+    // that — not the leftover, which only shows up on the unlucky runs — is
+    // what this asserts.
+    const out = path.join(workDir, 'backend.jsonl');
+    fs.writeFileSync(out, `${WHOLE_EXPORT}\n`);
+    apiRequestMock.mockResolvedValue(droppedResponse('{"type":"room-export"'));
+
+    // Both spies delegate to the real thing: they observe the order the command
+    // does its work in, they do not change it.
+    const createWriteStream = fs.createWriteStream.bind(fs);
+    let scratch: fs.WriteStream | undefined;
+    vi.spyOn(fs, 'createWriteStream').mockImplementation(((
+      ...args: Parameters<typeof fs.createWriteStream>
+    ) => {
+      scratch = createWriteStream(...args);
+      return scratch;
+    }) as typeof fs.createWriteStream);
+
+    const rmSync = fs.rmSync.bind(fs);
+    const closedWhenCleared: (boolean | undefined)[] = [];
+    vi.spyOn(fs, 'rmSync').mockImplementation(((...args: Parameters<typeof fs.rmSync>) => {
+      closedWhenCleared.push(scratch?.closed);
+      return rmSync(...args);
+    }) as typeof fs.rmSync);
+
+    expect(await runRoomExport({ room: ROOM_ID, out, force: true })).toBe(1);
+
+    expect(closedWhenCleared, 'cleaned up once, with nothing still in flight').toEqual([true]);
+    expect(workDirEntries()).toEqual(['backend.jsonl']);
+  });
+
   it('does not claim success when the write fails after the last line arrived', async () => {
     // A receipt that reached this process is not a receipt that reached the
     // disk. Without the `reason === null` guard the outcome below reads as a

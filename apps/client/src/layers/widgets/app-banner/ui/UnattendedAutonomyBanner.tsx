@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { ShieldOff } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import type {
   UnattendedAutonomyDriver,
   UnattendedDriverKind,
@@ -36,35 +36,44 @@ export interface UnattendedAutonomyBannerProps {
 }
 
 /**
- * The standing signal for autonomy nobody is watching — an agent running
- * without asking behind a relay integration or a scheduled task.
+ * The standing note for full power nobody is watching — an agent running behind
+ * a relay integration or a scheduled task, with no one in front of it.
  *
  * ## Why this one survived when the session banner did not
  *
  * The Trust Dial retired the app-wide bypass banner for attended sessions: it
  * repeated what the status strip already said about a session the person was
- * looking at, and two alarms for one fact teach people to read neither (spec
+ * looking at, and two voices for one fact teach people to read neither (spec
  * `trust-dial`, decision 3A). The unattended half is the opposite case. Nobody
  * is looking at anything — there is no strip, no transcript, no approval card —
  * so this is not a second voice, it is the only one.
  *
+ * ## Why it is information rather than a warning
+ *
+ * Running at full power is the setting this product is for, and after the
+ * defaults flip it is what most installs look like (spec `full-power-defaults`,
+ * D8). A standing amber row over a normal, chosen state is an alarm that is
+ * always on, which is the fastest way to teach somebody to stop reading the
+ * row — and to stop reading the next one, which might be an actual problem. So
+ * the tone is flat: this is what is running, here is where to change it.
+ *
  * ## Why it names things instead of counting them
  *
- * "2 agents are running without asking" is an alarm; "the Deploys integration
- * and the Nightly cleanup task run without asking" is a fact a person can act
- * on. Naming is also what keeps the banner honest as it truncates: past two, the
- * remainder becomes a count rather than a wall of text, and the server's stable
- * ordering means the two that are named do not shuffle between reads.
+ * "2 agents are running at full power" is a number; "the Deploys integration and
+ * the Nightly cleanup task" is something a person can act on. Naming is also
+ * what keeps the row honest as it truncates: past two, the remainder becomes a
+ * count rather than a wall of text, and the server's stable ordering means the
+ * two that are named do not shuffle between reads.
  *
  * ## Why it cannot be dismissed
  *
  * The condition is standing, not an announcement — true until somebody changes a
  * setting, and gone the moment they do. A dismiss button would let the one
  * signal with no other home be hidden while it is still true. What keeps that
- * from nagging is the tier: amber, one row, no modal, no repetition, and no
- * ceremony when the last driver is dialled back.
+ * from nagging is everything else about it: one row, one line, no modal, no
+ * repetition, and no ceremony when the last driver is dialled back.
  *
- * @param drivers - Every live driver currently running without asking.
+ * @param drivers - Every live driver currently running at full power.
  */
 export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerProps) {
   // `null` in the Obsidian embed, which has no router — and no bindings or tasks
@@ -76,10 +85,11 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
   const named = drivers.slice(0, NAMED_LIMIT);
   const remaining = drivers.length - named.length;
 
-  const phrases: ReactNode[] = named.map((driver, index) => (
+  // Lower-case "the" throughout: the list is introduced by a colon, so no phrase
+  // starts a sentence any more.
+  const phrases: ReactNode[] = named.map((driver) => (
     <>
-      {index === 0 ? 'The' : 'the'} <span className="font-medium">{driver.name}</span>{' '}
-      {KIND_NOUN[driver.kind]}
+      the <span className="font-medium">{driver.name}</span> {KIND_NOUN[driver.kind]}
     </>
   ));
   if (remaining > 0) phrases.push(<>{remaining} more</>);
@@ -88,8 +98,8 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
 
   return (
     <Banner
-      variant="warning"
-      icon={ShieldOff}
+      variant="info"
+      icon={Zap}
       actions={
         navigate ? (
           <>
@@ -116,8 +126,7 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
         ) : undefined
       }
     >
-      {joinPhrases(phrases)} run{drivers.length === 1 ? 's' : ''} without asking. Nobody is
-      watching, so nothing waits for your approval.
+      Running unattended at full power: {joinPhrases(phrases)}.
     </Banner>
   );
 }

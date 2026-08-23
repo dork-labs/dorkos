@@ -360,7 +360,20 @@ export class SessionPumpRegistry {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     entry.idleTimer = undefined;
-    if (await this.reap(sessionId)) return;
+    // `entry.warmIdleMs` IS the idle duration this fired at — the timer that
+    // just elapsed was armed for exactly that long, so there is no separate
+    // clock to read. One line at info, greppable by session, is what makes a
+    // process going away for lack of use distinguishable in the log from one
+    // that crashed or was evicted — DOR-1323 (flag-on run, L-11): this was
+    // invisible below `debug` (the sibling ceiling-reclaim path a few lines
+    // down already logs; this, the far more common exit, did not).
+    if (await this.reap(sessionId)) {
+      logger.info('[SessionPumpRegistry] retired an idle warm process', {
+        session: sessionId,
+        idleMs: entry.warmIdleMs,
+      });
+      return;
+    }
     // Still on the books and still warm: the reap was declined, so ask again a
     // window from now. Any other state has its own arming rule and gets it from
     // `noteStateChange`.

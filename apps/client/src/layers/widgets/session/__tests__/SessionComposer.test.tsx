@@ -78,13 +78,20 @@ vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
 
+// Hoisted (not a bare object literal) so the Stop-vs-PATCH-race suite below can
+// swap `updateQueuedMessage`'s implementation per test — a promise it resolves
+// or rejects on its own schedule, to drive the PATCH-wins/PATCH-loses ordering
+// against Stop's `outcome.cancelled` independently. Every other suite in this
+// file only needs it to exist.
+const mockTransport = vi.hoisted(() => ({
+  stopTask: vi.fn(),
+  updateQueuedMessage: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
     selector({ isTextStreaming: false })
   ),
-  useTransport: () => ({
-    stopTask: vi.fn(),
-  }),
+  useTransport: () => mockTransport,
 }));
 
 // The composer preference (DOR-948). Stubbed rather than driven through a real
@@ -139,7 +146,38 @@ import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { useSessionStreamStore, useSessionChatStore } from '@/layers/entities/session';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
-import { createRef } from 'react';
+import { createRef, useCallback, type ComponentProps } from 'react';
+
+/**
+ * The composer's `input`/`setInput` wired THROUGH the real per-session store —
+ * exactly the pairing `ChatPanel` hands it (`useSessionStoreActions.setInput`
+ * is `(value) => useSessionChatStore.getState().updateSession(sid, { input:
+ * value })`, and `input` is that same session's live field). Every other test
+ * in this file passes a static `input` string and a bare `vi.fn()` `setInput`
+ * — a faithful stand-in for "what did the container tell its parent to do,"
+ * but blind to what the container's OWN reads and writes do to the store in
+ * between (DOR-1323 fix-round finding 2): `commitEditInPlace`'s early-return
+ * on an empty `input` never fires here, because `input` genuinely tracks what
+ * was last written, so a mutant that deleted the commit call is NOT reachable
+ * from this bench alone.
+ */
+function ControlledStopComposer(
+  props: Omit<ComponentProps<typeof SessionComposerBench>, 'input' | 'setInput'>
+) {
+  const sessionId = props.sessionId ?? 'test-session';
+  const input = useSessionChatStore(
+    useCallback((s) => s.sessions[sessionId]?.input ?? '', [sessionId])
+  );
+  const setInput = useCallback(
+    (value: string) => {
+      useSessionChatStore.getState().updateSession(sessionId, { input: value });
+    },
+    [sessionId]
+  );
+  return (
+    <SessionComposerBench {...props} sessionId={sessionId} input={input} setInput={setInput} />
+  );
+}
 
 /** Props the (mocked) `Composer.Input` was last rendered with. */
 function lastChatInputProps() {
@@ -689,6 +727,52 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
     await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
   });
 
+  it('restores a queued edit exactly ONCE when Stop cancels the item under edit (DOR-1323)', async () => {
+    // Reproduces the flag-on finding: queue a message, open its edit (the
+    // composer now shows the item's own text as the "live" edit), then Stop
+    // and confirm. The server hands back the whole cancelled queue — INCLUDING
+    // the edited item, with the same text — and `restoreToComposer` used to
+    // append that onto whatever the composer already held, landing the edited
+    // item's words twice.
+    //
+    // `setInput` here writes THROUGH to the store, the way the real
+    // session-chat hook wires it (`ChatPanel` hands this composer the same
+    // `setInput` its `useSessionChat`/store pairing returns) — every other
+    // case in this describe block uses a bare spy and drives the store by hand
+    // instead, which cannot see this bug: it is specifically about what the
+    // FIX's own `setInput(draftRef.current)` call does to the store that
+    // `restoreToComposer` reads a moment later.
+    seedQueue('one', 'two');
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
+    const setInput = vi.fn((value: string) => {
+      useSessionChatStore.getState().updateSession('test-session', { input: value });
+    });
+    render(
+      <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+    );
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[0]!.id));
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    // Exactly once, not 'one\n\none\n\ntwo'.
+    await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
+    expect(setInput).not.toHaveBeenCalledWith('one\n\none\n\ntwo');
+  });
+
   it('preserves text typed WHILE the Stop is in flight, appending the cleared messages after it', async () => {
     // The data-safety guarantee stated directly: a person who keeps typing during
     // the interrupt round-trip must not lose those words, and the cleared messages
@@ -727,6 +811,121 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
     // Typed text first, then the cleared messages after it — nothing clobbered.
     await waitFor(() =>
       expect(setInput).toHaveBeenCalledWith('a thought I had mid-stop\n\none\n\ntwo')
+    );
+  });
+});
+
+describe('SessionComposer — Stop trusts the local rewrite over the queue PATCH (DOR-1323 fix round)', () => {
+  // The PATCH `leaveQueueForStop` fires (`transport.updateQueuedMessage`) is
+  // fire-and-forget and races the interrupt's queue cancellation. A round trip
+  // that LOSES that race used to hand `restoreToComposer` the server's
+  // PRE-edit snapshot, and it trusted it — silently discarding the rewrite,
+  // which breaks `StopConfirmDialog`'s own promise ("Nothing you typed is
+  // lost"). `pendingEditRef` closes it: the rewrite is captured locally the
+  // instant Stop fires, before the PATCH is even sent, and substituted by id
+  // into whatever `outcome.cancelled` reports — so the round trip's outcome
+  // stops mattering for this one row.
+  //
+  // `ControlledStopComposer` is required here, not the bare-spy `setInput` the
+  // rest of this file uses: `commitEditInPlace` (the PATCH's own trigger)
+  // early-returns on an empty `input`, and a bare spy never feeds a rewrite
+  // back into the `input` PROP the hook actually reads — only a store-backed
+  // `input` does. Deleting `commitEditInPlace()` from `leaveQueue` stayed
+  // green against every other test in this file for exactly this reason.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTransport.updateQueuedMessage.mockReset().mockResolvedValue(undefined);
+  });
+
+  /** Open the second queued row's edit and overwrite its text. */
+  function editSecondRowAndRewrite(rewrite: string): void {
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[1]!.id));
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: rewrite });
+    });
+  }
+
+  it('PATCH wins: commits the rewrite through the PATCH, then restores draft + queue + rewrite, each once', async () => {
+    seedQueue('one', 'two');
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: 'hello draft' });
+    });
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        // The server's snapshot already reflects the committed PATCH.
+        {
+          id: 'q1',
+          content: 'TWO REWRITTEN',
+          disposition: 'queue',
+          enqueuedAt: 1,
+          enqueuedBy: 'window-a',
+        },
+      ],
+    });
+    render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
+
+    editSecondRowAndRewrite('TWO REWRITTEN');
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    // The commit half actually fired — this is what mutation-testing "delete
+    // `commitEditInPlace()`" would silence.
+    expect(mockTransport.updateQueuedMessage).toHaveBeenCalledWith('test-session', 'q1', {
+      content: 'TWO REWRITTEN',
+    });
+    await waitFor(() =>
+      expect(useSessionChatStore.getState().getSession('test-session').input).toBe(
+        'hello draft\n\none\n\nTWO REWRITTEN'
+      )
+    );
+  });
+
+  it('PATCH loses: still restores the rewrite, not the stale pre-edit text, when the commit has not landed by the time Stop reports', async () => {
+    seedQueue('one', 'two');
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: 'hello draft' });
+    });
+    // The PATCH never resolves inside this test's window — modeling "the
+    // interrupt's queue cancellation is processed before the PATCH lands."
+    mockTransport.updateQueuedMessage.mockImplementation(() => new Promise<void>(() => {}));
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        // STALE — the server's snapshot predates the PATCH, and carries the
+        // ORIGINAL pre-edit text.
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
+    render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
+
+    editSecondRowAndRewrite('TWO REWRITTEN');
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    expect(mockTransport.updateQueuedMessage).toHaveBeenCalledWith('test-session', 'q1', {
+      content: 'TWO REWRITTEN',
+    });
+    // Local truth wins over the stale round trip: the rewrite survives, and
+    // the parked draft is not clobbered either. Pre-fix this reads
+    // 'hello draft\n\none\n\ntwo' — the rewrite silently lost.
+    await waitFor(() =>
+      expect(useSessionChatStore.getState().getSession('test-session').input).toBe(
+        'hello draft\n\none\n\nTWO REWRITTEN'
+      )
     );
   });
 });

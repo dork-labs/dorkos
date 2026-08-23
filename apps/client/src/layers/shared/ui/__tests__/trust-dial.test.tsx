@@ -86,6 +86,32 @@ const CODEX: PermissionModeDescriptor[] = [
   },
 ];
 
+/**
+ * `test-mode`'s declared modes, verbatim from its shipped profile. Its ids sit
+ * outside every name the client knows, which is what makes it the fixture that
+ * can prove the dial reads semantics rather than ids — Claude and Codex both
+ * normalize their top stop to `bypassPermissions`, so a pair of those two
+ * proves nothing about ids at all.
+ */
+const TEST_MODE: PermissionModeDescriptor[] = [
+  {
+    id: 'always-allow',
+    label: 'Always allow',
+    stop: 'autonomy',
+    asks: 'never',
+    reach: 'everything',
+    promise: 'Approves every request without asking. For tests only.',
+  },
+  {
+    id: 'always-deny',
+    label: 'Always deny',
+    stop: 'ask',
+    asks: 'always',
+    reach: 'read',
+    promise: 'Refuses every request. For tests only.',
+  },
+];
+
 /** A runtime that offers no middle ground at all. */
 const TWO_STOP: PermissionModeDescriptor[] = [CLAUDE[0], CLAUDE[3]];
 
@@ -231,6 +257,31 @@ describe('TrustDial', () => {
     });
   });
 
+  describe('one shape per stop', () => {
+    /** The lucide class on the glyph inside one segment. */
+    function stopIcon(name: string): string {
+      return screen.getByRole('radio', { name }).querySelector('svg')?.getAttribute('class') ?? '';
+    }
+
+    it('gives Ask first a padlock — the limited stop, marked by shape not colour', () => {
+      // The whole of that stop's marking. Ask first is uncoloured on purpose
+      // (painting the safe resting state in the alarm colour would shame the
+      // cautious choice), so the padlock is the only thing carrying "this is
+      // the held-back setting" — spec `full-power-defaults`, D8.
+      render(<TrustDial mode="default" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+
+      expect(stopIcon('Ask first')).toMatch(/lucide-lock/);
+    });
+
+    it('keeps the three stops on three different shapes', () => {
+      render(<TrustDial mode="default" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+
+      expect(stopIcon('Ask first')).toMatch(/lucide-lock/);
+      expect(stopIcon('Act')).toMatch(/lucide-sparkles/);
+      expect(stopIcon('Full autonomy')).toMatch(/lucide-zap/);
+    });
+  });
+
   describe('the caption', () => {
     it('says what the selected mode does, in the runtime’s own sentence', () => {
       render(<TrustDial mode="acceptEdits" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
@@ -265,20 +316,44 @@ describe('TrustDial', () => {
       expect(screen.getByTestId('trust-dial-caption').className).not.toContain('amber');
     });
 
-    it('goes red at the stop that never asks about anything, anywhere', () => {
+    it('goes green at the top stop — full power, and it looks like it', () => {
       // Choosing autonomy must not look identical to choosing Act. Amber is the
-      // runtime breaking a promise; red is the setting nobody can walk back.
+      // runtime bending a promise; green is the person taking the whole dial.
       render(<TrustDial mode="bypassPermissions" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('trust-dial-caption').className).toContain('red');
+      expect(screen.getByTestId('trust-dial-caption').className).toContain('text-status-success');
+    });
+
+    it('goes green on Codex’s top stop too, under its own promise', () => {
+      // Not the id case — DorkOS normalizes Codex's `danger-full-access` to the
+      // same `bypassPermissions` id Claude uses. What this pins is that a
+      // materially different promise sentence still reads green.
+      render(<TrustDial mode="bypassPermissions" descriptors={CODEX} onChangeMode={vi.fn()} />);
+
+      expect(screen.getByTestId('trust-dial-caption').className).toContain('text-status-success');
+    });
+
+    it('goes green on a top stop whose id no client table knows', () => {
+      // `always-allow` is the id property, stated where it is actually true.
+      render(<TrustDial mode="always-allow" descriptors={TEST_MODE} onChangeMode={vi.fn()} />);
+
+      expect(screen.getByTestId('trust-dial-caption').className).toContain('text-status-success');
     });
 
     it('leaves Ask first colourless — safety is the resting state', () => {
       render(<TrustDial mode="default" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
 
       const caption = screen.getByTestId('trust-dial-caption').className;
-      expect(caption).not.toContain('red');
+      expect(caption).not.toContain('text-status-success');
       expect(caption).not.toContain('amber');
+    });
+
+    it('spends no red on any stop — red is left for real alarms', () => {
+      for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
+        render(<TrustDial mode={mode} descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+        expect(screen.getByTestId('trust-dial-caption').className).not.toMatch(/red/);
+        cleanup();
+      }
     });
 
     it('is what the dial is described by', () => {

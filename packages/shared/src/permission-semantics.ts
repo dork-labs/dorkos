@@ -47,17 +47,6 @@ import type { PermissionAsks, PermissionModeDescriptor, PermissionStop } from '.
 export const PERMISSION_STOPS: readonly PermissionStop[] = ['ask', 'act', 'autonomy'];
 
 /**
- * How severely a surface should mark a mode. Deliberately three values and not
- * a boolean: "never asks" and "never asks about anything, anywhere" are
- * different promises, and flattening them trains people to read neither.
- *
- * - `'danger'` — never asks, and can reach anything on the machine.
- * - `'caution'` — never asks, within a bounded reach.
- * - `'none'` — the mode still stops for the person; nothing to mark.
- */
-export type TrustWarnTier = 'danger' | 'caution' | 'none';
-
-/**
  * What each dial position promises about asking, before any runtime speaks.
  * The canonical expectation — a runtime that cannot meet it is not corrected,
  * it is reported ({@link isDivergent}).
@@ -121,24 +110,6 @@ export function isDivergent(descriptor: PermissionModeDescriptor): boolean {
 }
 
 /**
- * How loudly to mark a mode, from what it does rather than what it is called.
- *
- * A mode earns red for exactly one combination — it never asks AND it can reach
- * the whole machine — because that is the one a person cannot walk back. Never
- * asking inside a bounded reach is worth a quieter mark. A mode that only reads
- * gets nothing at all: it may never ask, but it has nothing to ask about, and
- * warning about the safest setting on offer is how a warning stops being read.
- *
- * @param descriptor - A mode as its runtime declared it.
- */
-export function warnTier(descriptor: PermissionModeDescriptor): TrustWarnTier {
-  if (descriptor.asks !== 'never') return 'none';
-  if (descriptor.reach === 'everything') return 'danger';
-  if (descriptor.reach === 'read') return 'none';
-  return 'caution';
-}
-
-/**
  * Whether a mode hands the agent the keys — runs any tool, anywhere, without
  * asking. The semantic replacement for the old id list, and the authoritative
  * answer wherever the runtime's profile is in hand: the standing banner, the
@@ -188,10 +159,10 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
  *    and ask. Nothing about the dial's position makes that walk-back-able, so
  *    gating the position alone let it in through a door held open.
  *
- * `reach: 'read'` is excluded for the reason {@link isDivergent} and
- * {@link warnTier} exclude it: a mode that can only read never asks because it
- * has nothing to ask about, and a consent dialog in front of the safest setting
- * on offer is how a consent dialog stops being read.
+ * `reach: 'read'` is excluded for the reason {@link isDivergent} excludes it: a
+ * mode that can only read never asks because it has nothing to ask about, and a
+ * consent dialog in front of the safest setting on offer is how a consent dialog
+ * stops being read.
  *
  * ## Why this is not composed from the predicates beside it
  *
@@ -199,8 +170,8 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
  * `reach: 'everything'` — a strict subset of clause 2, so OR-ing it in would add
  * a term that can never change the answer. Widening THAT predicate instead is
  * the tempting shortcut and the wrong one: it drives the standing banner and the
- * status line's red, and a mode confined to the workspace does not earn either
- * (`warnTier` puts it at `caution` on purpose). {@link isUnattendedAutonomy} is
+ * mark on a session's row, and a mode confined to the workspace earns neither.
+ * {@link isUnattendedAutonomy} is
  * built on that one and was left where it stood for the same reason: widening a
  * door decides what a person is asked before choosing, and widening an always-on
  * banner decides what a standing alarm is for. Three questions, three answers,

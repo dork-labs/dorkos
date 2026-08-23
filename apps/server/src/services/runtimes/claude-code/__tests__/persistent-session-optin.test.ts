@@ -26,20 +26,24 @@ function readerMissingLeaf() {
 }
 
 describe('isPersistentSessionEnabled', () => {
-  it('is off on a shipped config, so claude-code keeps one process per message', () => {
-    expect(isPersistentSessionEnabled(readerFor(USER_CONFIG_DEFAULTS as UserConfig))).toBe(false);
+  it('is on for a shipped config, so a claude-code chat keeps its agent warm', () => {
+    // Flipped when the flag graduated out of Experiments (spec
+    // `full-power-defaults`, D1). The three false cases below are unchanged and
+    // are what this file is really for: the default moving does not make a
+    // missing leaf, or an unreadable config, mean yes.
+    expect(isPersistentSessionEnabled(readerFor(USER_CONFIG_DEFAULTS as UserConfig))).toBe(true);
   });
 
-  it('is on once the operator turns it on', () => {
+  it('is off once the operator turns it off', () => {
     const config = {
       ...USER_CONFIG_DEFAULTS,
       runtimes: {
         ...USER_CONFIG_DEFAULTS.runtimes,
-        claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, persistentSession: true },
+        claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, persistentSession: false },
       },
     } as UserConfig;
 
-    expect(isPersistentSessionEnabled(readerFor(config))).toBe(true);
+    expect(isPersistentSessionEnabled(readerFor(config))).toBe(false);
   });
 
   it('answers false — not undefined — when the leaf is not on disk yet', () => {

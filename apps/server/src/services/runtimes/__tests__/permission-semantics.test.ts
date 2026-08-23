@@ -18,7 +18,6 @@ import {
   isDivergent,
   needsConsentRitual,
   resolveTrustStops,
-  warnTier,
 } from '@dorkos/shared/permission-semantics';
 import { PermissionModeIdSchema } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES } from '../claude-code/runtime-constants.js';
@@ -49,8 +48,8 @@ function declaredModes(): Array<[string, PermissionModeDescriptor]> {
  */
 const LEGACY_BYPASS_IDS = new Set(['bypassPermissions', 'always-allow']);
 
-/** The mode ids the deleted `MODE_WARN` table tinted red in the picker. */
-const LEGACY_WARN_IDS = new Set(['bypassPermissions', 'auto', 'always-allow']);
+/** The mode ids the deleted `MODE_WARN` table singled out in the picker. */
+const LEGACY_MARKED_IDS = new Set(['bypassPermissions', 'auto', 'always-allow']);
 
 describe('declared permission-mode semantics', () => {
   it.each(declaredModes())('%s/%o carries complete, plain-language semantics', (_runtime, d) => {
@@ -137,33 +136,24 @@ describe('equivalence with the id tables it replaces', () => {
     }
   );
 
-  it.each(declaredModes())(
-    '%s/%o: only the old bypass ids reach the danger tier',
-    (_runtime, d) => {
-      expect(warnTier(d) === 'danger').toBe(LEGACY_BYPASS_IDS.has(d.id));
-    }
-  );
-
-  it.each(declaredModes())('%s/%o: nothing else earns the red tint', (_runtime, d) => {
-    // The picker tints on `danger` alone in this change, so the set of red modes
-    // is unchanged EXCEPT for Claude's `auto` — see the pinned exception below.
-    const wasRed = LEGACY_WARN_IDS.has(d.id);
-    const isRed = warnTier(d) === 'danger';
+  it.each(declaredModes())('%s/%o: nothing else is marked as never-asking', (_runtime, d) => {
+    // The set of marked modes is the old hand-kept table EXCEPT for Claude's
+    // `auto` — see the pinned exception below.
     if (d.id === 'auto') return;
-    expect(isRed).toBe(wasRed);
+    expect(isBypassSemantics(d)).toBe(LEGACY_MARKED_IDS.has(d.id));
   });
 
-  it('drops the red tint on Claude’s auto mode, deliberately', () => {
-    // The only visible difference this change makes. `auto` was red because it
-    // sat in a hand-kept table of "modes that feel dangerous"; what it actually
-    // does is let a classifier resolve the routine calls and raise an approval
-    // card for the risky ones (`resolveModeDecision`). Red is reserved for the
-    // one mode that never asks about anything, anywhere, and `auto` is not it —
-    // marking it the same colour is what taught people to ignore the colour
+  it('stops marking Claude’s auto mode, deliberately', () => {
+    // The only visible difference this change makes. `auto` was marked because
+    // it sat in a hand-kept table of "modes that feel dangerous"; what it
+    // actually does is let a classifier resolve the routine calls and raise an
+    // approval card for the risky ones (`resolveModeDecision`). A mode that
+    // still stops for the person is not one that never asks, and marking it the
+    // same as one that does is what taught people to ignore the mark
     // (spec `trust-dial`, decision 3).
     const auto = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((v) => v.id === 'auto');
     expect(auto?.asks).toBe('when-risky');
-    expect(warnTier(auto!)).toBe('none');
+    expect(isBypassSemantics(auto!)).toBe(false);
   });
 });
 
@@ -245,7 +235,6 @@ describe('the consent door’s reach across every runtime', () => {
     };
     expect(isAutonomyStop(sandboxedAutonomy)).toBe(true);
     expect(isBypassSemantics(sandboxedAutonomy)).toBe(false);
-    expect(warnTier(sandboxedAutonomy)).toBe('caution');
   });
 });
 

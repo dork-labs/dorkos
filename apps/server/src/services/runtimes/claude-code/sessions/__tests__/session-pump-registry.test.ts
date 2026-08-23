@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import { SESSIONS } from '../../../../../config/constants.js';
+import { logger } from '../../../../../lib/logger.js';
 import {
   SessionPumpRegistry,
   shutdownSessionPumps,
@@ -363,6 +364,49 @@ describe('the process idle timer', () => {
     expect(registry.warmth('s1')).toBe('cold');
     expect(queries[0]!.closed).toBe(1);
     expect(registry.size).toBe(0);
+  });
+
+  // Purpose: the idle reap used to be invisible at info level (DOR-1323,
+  // flag-on run L-11) — nothing in the log distinguished a process given back
+  // for lack of use from one that crashed or was evicted. One line, naming the
+  // session and the idle window it sat for, is what makes it greppable.
+  it('logs at info when the idle timer retires a warm process', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const queries: FakeQuery[] = [];
+    const registry = new SessionPumpRegistry(identity);
+    await registry.acquire('s1', launchOpts(queries)).warm();
+
+    await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
+
+    expect(registry.warmth('s1')).toBe('cold');
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[SessionPumpRegistry] retired an idle warm process',
+      expect.objectContaining({ session: 's1', idleMs: IDLE_MS })
+    );
+    infoSpy.mockRestore();
+  });
+
+  // Purpose: pins the ORDER, not just the outcome — the review that caught this
+  // (DOR-1323 fix round) mutated the log to fire before `await this.reap(...)`
+  // resolves instead of after, and every other test in this file stayed green:
+  // a reap that DECLINES (parked on a person) would then still claim "retired"
+  // in the log. The line must be true, not merely present.
+  it('does NOT log "retired" when the idle reap is declined (parked on a person)', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const queries: FakeQuery[] = [];
+    const registry = new SessionPumpRegistry(identity);
+    await registry.acquire('s1', launchOpts(queries, { hasPendingInteraction: () => true })).warm();
+
+    await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
+
+    // Declined, not retired: still warm, and the log never claimed otherwise.
+    expect(registry.warmth('s1')).toBe('warm');
+    expect(
+      infoSpy.mock.calls.some(
+        ([msg]) => msg === '[SessionPumpRegistry] retired an idle warm process'
+      )
+    ).toBe(false);
+    infoSpy.mockRestore();
   });
 
   // Purpose: the two halves of "armed on a window close, disarmed on the next

@@ -746,6 +746,21 @@ export class PersistentDispatch {
     // registry replaced is as stale as one it dropped.
     if (existing !== undefined && this.registry.peek(key) === existing.pump) return existing;
 
+    // `existing !== undefined` here means this class HELD a bundle for this
+    // session and the registry no longer backs it with the same pump — an
+    // idle reap or a warm-ceiling reclaim it was never told about (see the
+    // comment above). That is a genuine relaunch, not a first-time cold
+    // start, and it used to be invisible below `debug`: a session mid-flow
+    // would silently pay for a fresh process boot with no line in the log
+    // explaining why (DOR-1323, flag-on run L-11). One line, not per-turn —
+    // this fires only on the transition, never on the (far more common)
+    // warm reuse a line above returns early on.
+    if (existing !== undefined) {
+      logger.info('[persistent-dispatch] relaunching after the registry reaped this session', {
+        session: key,
+      });
+    }
+
     // Definitely-assigned three lines down. Nothing can observe the gap: the
     // pump boots nothing until it is dispatched to, which cannot happen before
     // this function returns.

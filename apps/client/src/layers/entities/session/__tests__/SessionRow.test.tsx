@@ -150,7 +150,7 @@ describe('SessionRow variant="full"', () => {
     expect(bg).toBeNull();
   });
 
-  it('shows permission warning for bypassPermissions mode', () => {
+  it('marks a full-power session on the row face', () => {
     const { container } = renderRow(
       <SessionRow
         variant="full"
@@ -159,16 +159,29 @@ describe('SessionRow variant="full"', () => {
         onClick={() => {}}
       />
     );
-    const warning = container.querySelector('.text-red-500');
-    expect(warning).not.toBeNull();
+    // Green and a bolt, the pair every full-power surface uses. It used to be a
+    // red shield, which after the defaults flip would have put an alarm colour
+    // on most rows in the list (spec `full-power-defaults`, D8).
+    //
+    // Scoped to the mark itself, never the whole row: `SessionContextGauge`
+    // draws a legitimately red dot when a session is nearly out of context, and
+    // a row-wide "no red" sweep would fail on that the day a fixture runs the
+    // context down — for a reason that has nothing to do with permissions.
+    const mark = screen.getByRole('button', { name: 'Full power — runs without asking' });
+    expect(mark).toBeInTheDocument();
+    expect(mark.innerHTML).toMatch(/text-status-success/);
+    expect(mark.innerHTML).not.toMatch(/text-red-/);
+    expect(container.querySelector('.text-status-success')).not.toBeNull();
   });
 
-  it('does not show permission warning for default mode', () => {
+  it('leaves the mark off a session that asks first', () => {
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
     );
-    const warning = container.querySelector('.text-red-500');
-    expect(warning).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Full power — runs without asking' })
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('.text-status-success')).toBeNull();
   });
 
   it('does not render preview text', () => {
@@ -305,7 +318,13 @@ describe('SessionRow variant="full"', () => {
     );
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.getByText('Bypass All')).toBeDefined();
-    expect(container.querySelector('.text-red-500')).not.toBeNull();
+    // The details line and the mark on the row face are the same fact, so they
+    // read in the same colour — green, never red. Scoped to the details panel:
+    // the context gauge on the row face is red on purpose when a session is
+    // nearly out of context (see the note on the full-power mark above).
+    const panel = container.querySelector('[data-slot="session-details-panel"]')!;
+    expect(panel.querySelector('.text-status-success')).not.toBeNull();
+    expect(panel.innerHTML).not.toMatch(/text-red-/);
   });
 
   it('does not trigger onClick when details button is clicked', () => {

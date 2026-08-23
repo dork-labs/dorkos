@@ -82,10 +82,10 @@
  * nothing here can answer "how much did this room cost last Tuesday". This is a
  * counter, and the activity log is where history lives.
  *
- * @module server/services/rooms/turn-budget
+ * @module server/services/rooms/limits/turn-budget
  */
 import { roomTurnSpend, and, gt, lte, type Db } from '@dorkos/db';
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 
 /** One hour, the window both config fields are denominated in. */
 const WINDOW_MS = 60 * 60_000;
@@ -118,14 +118,49 @@ export interface BudgetDecision {
   allowed: boolean;
   /** Set only when `allowed` is false: which cap said no. */
   scope?: BudgetRefusalScope;
+  /**
+   * Whether this turn was actually charged to a window.
+   *
+   * False when nothing was counting it — both caps off — in which case
+   * `allowed` is true and no window moved. The one caller that needs the
+   * difference is the notice log's re-arm: "the window rolled, so the next
+   * exhaustion is news" is only true of a window that exists.
+   */
+  counted: boolean;
 }
 
-/** The two live caps, read per call so a change in Settings takes effect at once. */
+/**
+ * The two live caps, read per call so a change in Settings — or on the room —
+ * takes effect at once.
+ *
+ * **`null` is unlimited, and it is a distinct state rather than a big number**
+ * (the plan's decision 4, `plans/room-turn-limits-overhaul.md`). A cap that is
+ * off is not a cap of `Infinity`: nothing is reserved against it, nothing is
+ * recorded for it, and {@link RoomTurnBudget.remaining} reports `null` so an
+ * agent reading `room_context.budget` is told "no limit" instead of a number
+ * nobody is counting down.
+ *
+ * The two are independent, because a room may be unlimited on an install that
+ * is not (`resolveRoomLimits`, which owns that asymmetry). A room whose own cap
+ * is `null` is still gated by `global()`.
+ */
 export interface TurnBudgetLimits {
-  /** Automatic turns any ONE room may run per window. */
-  perRoom: () => number;
-  /** Automatic turns the whole install may run per window, across every room. */
-  global: () => number;
+  /**
+   * Automatic turns this room may run per window, or `null` when this room's
+   * own limits are off.
+   *
+   * Takes the room id because the ceiling is per room now: `rooms.max_auto_turns_per_hour`
+   * overrides `rooms.maxAutomaticTurnsPerRoomPerHour` for one room (DOR-1429).
+   */
+  perRoom: (roomId: string) => number | null;
+  /**
+   * Automatic turns the whole install may run per window, across every room, or
+   * `null` when the install-wide toggle is off.
+   *
+   * Takes no room id, and cannot: this is the install's wallet, and no room has
+   * a say in it.
+   */
+  global: () => number | null;
 }
 
 /**
@@ -176,28 +211,39 @@ export class RoomTurnBudget {
    * out of budget the answer is the same for every room, and reporting the room
    * as the reason would send someone to the wrong setting.
    *
+   * **A cap that is off is not asked and not charged.** With BOTH off nothing
+   * is reserved and nothing is written, so an hour spent unlimited cannot leave
+   * a room out of budget the moment somebody turns limits back on — the window
+   * resumes exactly where it was left. With only ONE off the turn is still
+   * charged, because the other cap is genuinely counting it and a global
+   * ceiling that skipped an unlimited room's turns would not be a ceiling.
+   *
    * @param roomId - The room about to run a turn.
    */
   tryReserve(roomId: string): BudgetDecision {
+    const globalCap = this.limits.global();
+    const roomCap = this.limits.perRoom(roomId);
+    if (globalCap === null && roomCap === null) return { allowed: true, counted: false };
+
     const at = this.now();
     const floor = at - this.windowMs;
     this.globalRuns = this.globalRuns.filter((t) => t > floor);
     const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor);
 
-    if (this.globalRuns.length >= this.limits.global()) {
+    if (globalCap !== null && this.globalRuns.length >= globalCap) {
       this.store(roomId, room);
-      return { allowed: false, scope: 'global' };
+      return { allowed: false, scope: 'global', counted: false };
     }
-    if (room.length >= this.limits.perRoom()) {
+    if (roomCap !== null && room.length >= roomCap) {
       this.store(roomId, room);
-      return { allowed: false, scope: 'room' };
+      return { allowed: false, scope: 'room', counted: false };
     }
 
     room.push(at);
     this.globalRuns.push(at);
     this.store(roomId, room);
     this.record(roomId, at, floor);
-    return { allowed: true };
+    return { allowed: true, counted: true };
   }
 
   /**
@@ -213,15 +259,24 @@ export class RoomTurnBudget {
    * writes nothing back and reserves nothing, so calling it can never make a
    * turn unaffordable.
    *
+   * **`null` means nothing is counting, never "none left".** The two halves are
+   * answered independently, so an unlimited room on a limited install reports
+   * `{ room: null, global: 4998 }` — which is the true state, and the one the
+   * room context block renders as "no limit in this room, 4998 across DorkOS".
+   * Reporting a number for a cap that is off would tell an agent it was being
+   * counted when nothing is.
+   *
    * @param roomId - The room being asked about.
    */
-  remaining(roomId: string): { room: number; global: number } {
+  remaining(roomId: string): { room: number | null; global: number | null } {
     const floor = this.now() - this.windowMs;
+    const globalCap = this.limits.global();
+    const roomCap = this.limits.perRoom(roomId);
     const global = this.globalRuns.filter((t) => t > floor).length;
     const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor).length;
     return {
-      room: Math.max(0, this.limits.perRoom() - room),
-      global: Math.max(0, this.limits.global() - global),
+      room: roomCap === null ? null : Math.max(0, roomCap - room),
+      global: globalCap === null ? null : Math.max(0, globalCap - global),
     };
   }
 

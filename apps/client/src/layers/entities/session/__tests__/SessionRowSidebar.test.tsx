@@ -271,7 +271,7 @@ describe('SessionRowSidebar', () => {
     expect(screen.getByText('Session ID')).toBeInTheDocument();
   });
 
-  it('warns on the row face when the session can act without asking', () => {
+  it('marks the row face when the session runs at full power', () => {
     renderRow(
       <SessionRowSidebar
         session={makeSession({ permissionMode: 'bypassPermissions' })}
@@ -280,12 +280,33 @@ describe('SessionRowSidebar', () => {
       />
     );
 
-    expect(screen.getByRole('img', { name: /Permissions bypassed/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Full power — runs without asking' })
+    ).toBeInTheDocument();
   });
 
-  it('leaves the warning off a session that asks first', () => {
+  it('draws that mark green, never red — the person chose this', () => {
+    // Red here would have marked most rows in the rail once full power became
+    // the default, which is how a rail stops being read
+    // (spec `full-power-defaults`, D8).
+    renderRow(
+      <SessionRowSidebar
+        session={makeSession({ permissionMode: 'bypassPermissions' })}
+        isActive={false}
+        onSelect={() => {}}
+      />
+    );
+
+    const mark = screen.getByRole('img', { name: 'Full power — runs without asking' });
+    expect(mark.getAttribute('class')).toContain('text-status-success');
+    expect(mark.getAttribute('class')).not.toMatch(/red/);
+  });
+
+  it('leaves the mark off a session that asks first', () => {
     renderRow(<SessionRowSidebar session={makeSession()} isActive={false} onSelect={() => {}} />);
-    expect(screen.queryByRole('img', { name: /Permissions bypassed/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('img', { name: 'Full power — runs without asking' })
+    ).not.toBeInTheDocument();
   });
 
   // ── The reason this row exists: it is the shared primitive, not a fourth

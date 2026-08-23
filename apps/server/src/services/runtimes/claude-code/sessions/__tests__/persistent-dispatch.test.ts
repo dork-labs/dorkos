@@ -705,6 +705,37 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
 
     expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
   });
+
+  // Purpose: the SAME reclaim-behind-this-class's-back as finding 2 above, but
+  // asserting the log rather than the degrade. This exit used to be invisible
+  // below `debug` — a session mid-flow paying for a fresh process boot with
+  // nothing in the log explaining why (DOR-1323, flag-on run L-11). The first
+  // turn (a genuine cold start) must NOT log it; only the relaunch that
+  // follows the reclaim should.
+  it('logs at info when a dispatch relaunches after the registry reclaimed this session (DOR-1323)', async () => {
+    const { logger } = await import('../../../../../lib/logger.js');
+    const a = nextSession();
+    vi.mocked(logger.info).mockClear();
+    await turn(a);
+    expect(
+      vi.mocked(logger.info).mock.calls.some(([msg]) => String(msg).includes('relaunching'))
+    ).toBe(false);
+
+    // Warming a second session reclaims A's warm pump (the ceiling is 1 here),
+    // WITHOUT telling PersistentDispatch — A's bundle now points at a spent pump.
+    const b = nextSession();
+    await turn(b);
+    expect(runtime.getSessionWarmth(a)).toBe('cold');
+
+    vi.mocked(logger.info).mockClear();
+    await turn(a, 'again, after the reclaim');
+
+    expect(cli.launches).toBe(3);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      '[persistent-dispatch] relaunching after the registry reaped this session',
+      expect.objectContaining({ session: a })
+    );
+  });
 });
 
 describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 4.2)', () => {

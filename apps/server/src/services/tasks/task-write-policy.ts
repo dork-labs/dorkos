@@ -171,9 +171,13 @@ export const OPERATOR_ONLY_TASK_CODE = 'operator_only_task_field';
  * `bypassPermissions`, and answering "that one was harmless" would mean this
  * guard has an opinion about values, which it deliberately does not.
  *
- * Call this on the RAW body, before Zod parses it. `CreateTaskRequestSchema`
- * defaults `permissionMode` to `acceptEdits`, so a parsed body always carries the
- * key and this function would refuse every create.
+ * Call this on the RAW body, before Zod parses it and before the route resolves
+ * an omitted `permissionMode` from the operator's own trust stop
+ * (`services/tasks/scheduled-run-power.ts`). Read after either step, the key is
+ * present on every create and this function would refuse them all. The schema
+ * used to supply that key with a hardcoded `'acceptEdits'` default; the default
+ * is gone and the ladder replaced it, so the ordering rule is the same one for a
+ * new reason.
  *
  * @param body - The write body a caller supplied (any shape; a non-object
  *   reaches for nothing).
