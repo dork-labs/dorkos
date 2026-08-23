@@ -35,23 +35,34 @@ function seed(sessionIds: string[]): void {
   }
 }
 
+/** This run started at noon; every binding below is placed either side of it. */
+const BOOTED_AT = Date.parse('2026-08-23T12:00:00.000Z');
+/** Bound while an earlier process was running — old enough to judge. */
+const BEFORE_BOOT = BOOTED_AT - 60_000;
+
+/** A binding as `RuntimeRegistry.getSessionBindings` hands it over. */
+function bound(runtime: string, boundAt: number | null = BEFORE_BOOT) {
+  return { runtime, boundAt };
+}
+
 /** The deps every case starts from: everything alive, inventory complete. */
 function deps(overrides?: {
   inventory?: () => Promise<{ ids: Set<string>; complete: boolean }>;
-  owners?: Map<string, string>;
+  bindings?: Map<string, { runtime: string; boundAt: number | null }>;
 }) {
   return {
     queue,
     staged,
-    boundRuntimesFor: () =>
-      overrides?.owners ??
+    bindingsFor: () =>
+      overrides?.bindings ??
       new Map([
-        [LIVE, 'claude-code'],
-        [GONE, 'claude-code'],
-        [CODEX, 'codex'],
+        [LIVE, bound('claude-code')],
+        [GONE, bound('claude-code')],
+        [CODEX, bound('codex')],
       ]),
     claudeCodeInventory:
       overrides?.inventory ?? (() => Promise.resolve({ ids: new Set([LIVE]), complete: true })),
+    bootedAt: BOOTED_AT,
   };
 }
 
@@ -82,6 +93,7 @@ describe('reconcileSessionRows — only the session its owner says is gone loses
       reaped: 1,
       rows: 2,
       kept: 3,
+      failedDeletes: 0,
       inventoryComplete: true,
     });
     expect(survivors()).toEqual([CODEX, LIVE, UNBOUND].sort());
@@ -113,6 +125,7 @@ describe('reconcileSessionRows — only the session its owner says is gone loses
       reaped: 0,
       rows: 0,
       kept: 0,
+      failedDeletes: 0,
       inventoryComplete: true,
     });
   });
@@ -135,6 +148,7 @@ describe('reconcileSessionRows — a degraded runtime keeps every one of its row
       reaped: 0,
       rows: 0,
       kept: 4,
+      failedDeletes: 0,
       inventoryComplete: false,
     });
     expect(survivors()).toEqual([CODEX, GONE, LIVE, UNBOUND].sort());
@@ -179,7 +193,7 @@ describe('reconcileSessionRows — a degraded runtime keeps every one of its row
 
     const report = await reconcileSessionRows({
       ...deps(),
-      boundRuntimesFor: () => {
+      bindingsFor: () => {
         throw new Error('database is locked');
       },
     });
@@ -188,13 +202,43 @@ describe('reconcileSessionRows — a degraded runtime keeps every one of its row
     expect(queue.list(GONE)).toHaveLength(1);
   });
 
-  it('survives a delete that fails and still reports', async () => {
+  it('keeps a session bound since this process started', async () => {
+    // Guard 3, and the boot race it closes: the first message writes the
+    // binding, the SDK writes the transcript a moment later, and an inventory
+    // taken in between shows nothing. Reaping here would delete the first words
+    // somebody ever sent to that session.
+    seed([GONE]);
+
+    const report = await reconcileSessionRows(
+      deps({ bindings: new Map([[GONE, bound('claude-code', BOOTED_AT + 1)]]) })
+    );
+
+    expect(report.reaped).toBe(0);
+    expect(queue.list(GONE)).toHaveLength(1);
+  });
+
+  it('keeps a session whose binding time cannot be read', async () => {
+    seed([GONE]);
+
+    const report = await reconcileSessionRows(
+      deps({ bindings: new Map([[GONE, bound('claude-code', null)]]) })
+    );
+
+    expect(report.reaped).toBe(0);
+    expect(queue.list(GONE)).toHaveLength(1);
+  });
+
+  it('reports the rows that DID go when the second delete throws', async () => {
+    // The queue delete succeeded and the staged one did not, so rows really were
+    // removed. A report of "nothing happened" would be the exact silence this
+    // module exists to avoid — and it is the accounting line the boot log keys
+    // its warning off.
     seed([GONE]);
 
     const report = await reconcileSessionRows({
       ...deps(),
-      queue: {
-        listSessionIds: () => queue.listSessionIds(),
+      staged: {
+        listSessionIds: () => staged.listSessionIds(),
         deleteForSessions: () => {
           throw new Error('database is locked');
         },
@@ -203,11 +247,15 @@ describe('reconcileSessionRows — a degraded runtime keeps every one of its row
 
     expect(report).toEqual({
       candidates: 1,
-      reaped: 0,
-      rows: 0,
-      kept: 1,
+      reaped: 1,
+      rows: 1,
+      kept: 0,
+      failedDeletes: 1,
       inventoryComplete: true,
     });
+    // And the half that failed really is still there, exactly as reported.
+    expect(queue.list(GONE)).toEqual([]);
+    expect(staged.take(GONE)).toHaveLength(1);
   });
 
   it('survives a row read that fails and judges nothing', async () => {
@@ -226,6 +274,7 @@ describe('reconcileSessionRows — a degraded runtime keeps every one of its row
       reaped: 0,
       rows: 0,
       kept: 0,
+      failedDeletes: 0,
       inventoryComplete: false,
     });
   });

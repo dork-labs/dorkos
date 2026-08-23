@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile, chmod } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, chmod, symlink } from 'fs/promises';
+import { execFileSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { inventorySessionIds } from '../session-inventory.js';
@@ -83,6 +84,46 @@ describe('inventorySessionIds', () => {
 
     expect(complete).toBe(false);
     expect(ids.size).toBe(0);
+  });
+
+  it('follows a symlinked project directory instead of dropping it', async () => {
+    // The reaper's worst case, and it is not hypothetical: `readdir` does not
+    // follow symlinks, so a project directory reached through one reports
+    // `isDirectory() === false`. Filtering on that skipped it WITHOUT marking
+    // the inventory incomplete — a live, listable, resumable session missing
+    // from a roll call that claimed to be complete, which is enough to delete
+    // its queued words.
+    const real = join(tmp, 'elsewhere', '-Users-me-alpha');
+    await mkdir(real, { recursive: true });
+    await writeFile(join(real, 'live-session.jsonl'), '');
+    await symlink(real, join(accountA, 'projects', '-Users-me-alpha'));
+
+    const { ids, complete } = await inventorySessionIds(roots());
+
+    expect([...ids]).toEqual(['live-session']);
+    expect(complete).toBe(true);
+  });
+
+  it('passes over a dangling symlink without calling the inventory partial', async () => {
+    // Its target is gone, so it cannot be hiding a transcript. Reporting it as
+    // a failure would mean one stale link permanently disabling reclamation.
+    await seed(accountA, '-Users-me-alpha', 'aaaa-1');
+    await symlink(join(tmp, 'never-existed'), join(accountA, 'projects', 'dangling'));
+
+    const { ids, complete } = await inventorySessionIds(roots());
+
+    expect([...ids]).toEqual(['aaaa-1']);
+    expect(complete).toBe(true);
+  });
+
+  it('passes over a FIFO the same way', async () => {
+    await seed(accountA, '-Users-me-alpha', 'aaaa-1');
+    execFileSync('mkfifo', [join(accountA, 'projects', 'pipe')]);
+
+    const { ids, complete } = await inventorySessionIds(roots());
+
+    expect([...ids]).toEqual(['aaaa-1']);
+    expect(complete).toBe(true);
   });
 
   it('reports incomplete when an account cannot be read at all', async () => {

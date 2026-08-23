@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): clear out what deleted chats left behind (DOR-1436)'
+  - 'fix(server): never mistake a linked project folder for a deleted chat (DOR-1436)'
 ---
 
 ### Fixed

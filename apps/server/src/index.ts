@@ -1165,18 +1165,25 @@ async function start() {
     // directories, and startup is not the place to wait on a disk.
     const queueStore = getMessageQueueStore();
     const stagedStore = getStagedContextStore();
-    if (queueStore && stagedStore) {
+    if (!queueStore || !stagedStore) {
+      // Unreachable in this host — both stores are injected above, right after
+      // `createDb()` — and said out loud anyway, because a reconcile that
+      // silently did not run is the one outcome nobody could tell from a
+      // database with nothing to reclaim.
+      logger.warn('[SessionRows] skipped the boot reconcile: the durable stores are not wired');
+    } else {
       void reconcileSessionRows({
         queue: queueStore,
         staged: stagedStore,
-        boundRuntimesFor: (ids) => runtimeRegistry.getBoundRuntimeTypes(ids),
+        bindingsFor: (ids) => runtimeRegistry.getSessionBindings(ids),
         claudeCodeInventory: () => inventorySessionIds(transcripts.getProjectsRootSet()),
       }).then(
         (report) => {
-          // An incomplete inventory is reported too: it means the reconcile
-          // reached no verdict at all, which a boot with nothing to reclaim
-          // would otherwise be indistinguishable from.
-          if (report.reaped > 0 || !report.inventoryComplete) {
+          // Every outcome except the clean, complete, nothing-to-do one. A
+          // partial delete and an unreadable inventory both mean rows are still
+          // there, and a boot that logged nothing for them would read exactly
+          // like a boot with nothing to reclaim.
+          if (report.reaped > 0 || report.failedDeletes > 0 || !report.inventoryComplete) {
             logger.info('[SessionRows] checked what vanished sessions left behind', { ...report });
           }
         },
