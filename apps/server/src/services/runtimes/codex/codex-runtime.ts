@@ -54,6 +54,7 @@ import type {
   SseResponse,
   SessionSettingsPort,
   ManagedMcpServerResolver,
+  SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -409,7 +410,7 @@ export class CodexRuntime implements AgentRuntime {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): Promise<boolean> {
+  ): Promise<SessionUpdateResult> {
     await this.seedFromDurable(sessionId);
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
     this.registry.register(sessionId, {
@@ -418,7 +419,7 @@ export class CodexRuntime implements AgentRuntime {
       ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
     });
-    return true;
+    return { updated: true };
   }
 
   /**

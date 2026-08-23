@@ -122,7 +122,7 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     // touch the DB directly, and the ROUTE picks the key it is handed.
     runtime.updateSession.mockImplementation((id: string, opts: SessionSettings) => {
       pendingWrites.push(runtimeRegistry.saveSessionSettings(id, opts));
-      return true;
+      return { updated: true };
     });
     // Default: no aliasing anywhere.
     runtime.getInternalSessionId.mockReturnValue(undefined);

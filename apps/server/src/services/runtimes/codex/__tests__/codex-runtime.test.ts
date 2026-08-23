@@ -389,7 +389,7 @@ describe('CodexRuntime', () => {
 
       const updated = await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
 
-      expect(updated).toBe(true);
+      expect(updated).toEqual({ updated: true });
       expect(runtime.hasSession(sessionId)).toBe(true);
       expect(port.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
         permissionMode: 'acceptEdits',

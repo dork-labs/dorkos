@@ -30,6 +30,7 @@ import { env } from '../../env.js';
 import {
   PermissionModeSchema,
   SessionSchema,
+  SessionUpdateResponseSchema,
   SessionListResponseSchema,
   RecentSessionsQuerySchema,
   RecentSessionsResponseSchema,
@@ -664,7 +665,14 @@ registry.registerPath({
     'record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
     'AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry ' +
     'the identical request (spec `trust-dial`, decision 5). This is a consent ' +
-    'ritual for a person, not a boundary against a caller.',
+    'ritual for a person, not a boundary against a caller.\n\n' +
+    'The chosen mode is always saved. When it could not also be delivered to a ' +
+    'reply already in flight AND it was a tightening (the agent must now ask ' +
+    'more, or may reach less far), the answer is `202` with ' +
+    '`permissionModePendingUntilNextTurn: true` — saved, in force from the next ' +
+    'reply, and NOT governing the reply already running. A loosening in the same ' +
+    'position stays a plain `200`: it costs a few extra approval prompts for the ' +
+    'rest of one turn and corrects itself.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -675,6 +683,12 @@ registry.registerPath({
     200: {
       description: 'Updated session',
       content: { 'application/json': { schema: SessionSchema } },
+    },
+    202: {
+      description:
+        'Saved, but a stricter permission mode did not reach the reply already ' +
+        'in flight — it applies from the next reply',
+      content: { 'application/json': { schema: SessionUpdateResponseSchema } },
     },
     400: {
       description: 'Validation error, or a permission mode the runtime does not declare',

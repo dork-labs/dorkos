@@ -389,6 +389,26 @@ export const SessionSchema = z
 export type Session = z.infer<typeof SessionSchema>;
 
 /**
+ * What `PATCH /api/sessions/:id` answers with: the session as it now stands,
+ * plus — on a `202` — the one thing the session itself cannot say.
+ *
+ * The extra field is deliberately NOT part of {@link SessionSchema}. It is a
+ * fact about one write at one moment, not a property of the session, and a
+ * session carrying it around would go stale the instant the next turn started.
+ */
+export const SessionUpdateResponseSchema = SessionSchema.extend({
+  /**
+   * The stricter permission mode is saved, but the reply already in flight
+   * keeps the looser one it started under — the new mode applies from the next
+   * reply. Present only on a `202`, and only for a tightening.
+   */
+  permissionModePendingUntilNextTurn: z.literal(true).optional(),
+}).openapi('SessionUpdateResponse');
+
+/** Inferred type for {@link SessionUpdateResponseSchema}. */
+export type SessionUpdateResponse = z.infer<typeof SessionUpdateResponseSchema>;
+
+/**
  * The mutable per-session settings an operator can change. Defined once and
  * reused for the update request, the runtime `MessageOpts`/`SessionOpts`, and
  * the persisted `session_metadata` columns (ADR-0260). An omitted field means

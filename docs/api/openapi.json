@@ -3711,6 +3711,24 @@
           "toolName"
         ]
       },
+      "SessionUpdateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Session"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "permissionModePendingUntilNextTurn": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            }
+          }
+        ]
+      },
       "UpdateSessionRequest": {
         "type": "object",
         "properties": {
@@ -9243,7 +9261,7 @@
           "Sessions"
         ],
         "summary": "Update session settings",
-        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.",
+        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.",
         "parameters": [
           {
             "schema": {
@@ -9271,6 +9289,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Saved, but a stricter permission mode did not reach the reply already in flight — it applies from the next reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUpdateResponse"
                 }
               }
             }

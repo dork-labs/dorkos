@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import type { SessionSettings } from '@dorkos/shared/types';
+import type { PermissionMode, SessionSettings } from '@dorkos/shared/types';
 import { SessionStore } from '../session-store.js';
 import { PERMISSION_MODE_ACK_TIMEOUT_MS } from '../bounded-control.js';
 
@@ -41,9 +41,9 @@ function fakeQuery(answer: Answer) {
 }
 
 /** A store holding one live session whose turn is running on `query`. */
-function storeWithLiveTurn(query: Query): SessionStore {
+function storeWithLiveTurn(query: Query, startingMode: PermissionMode = 'default'): SessionStore {
   const store = new SessionStore();
-  store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+  store.ensureSession(SESSION_ID, { permissionMode: startingMode });
   store.findSession(SESSION_ID)!.activeQuery = query;
   return store;
 }
@@ -64,7 +64,7 @@ describe('changing permission mode is bounded (DOR-1301)', () => {
     const patched = store.updateSession(SESSION_ID, { permissionMode: 'plan' });
     await vi.advanceTimersByTimeAsync(PERMISSION_MODE_ACK_TIMEOUT_MS);
 
-    await expect(patched).resolves.toBe(true);
+    await expect(patched).resolves.toMatchObject({ updated: true });
     expect(calls).toEqual(['plan']);
     // Best-effort (ADR-0261): the choice is kept and applies next turn. It is
     // never reverted just because the live process could not be told.
@@ -91,7 +91,7 @@ describe('changing permission mode is bounded (DOR-1301)', () => {
     const patched = store.updateSession(SESSION_ID, { permissionMode: 'bypassPermissions' });
     await vi.advanceTimersByTimeAsync(PERMISSION_MODE_ACK_TIMEOUT_MS);
 
-    await expect(patched).resolves.toBe(true);
+    await expect(patched).resolves.toMatchObject({ updated: true });
     expect(saved).toEqual([{ permissionMode: 'bypassPermissions' }]);
   });
 
@@ -100,7 +100,9 @@ describe('changing permission mode is bounded (DOR-1301)', () => {
     const store = storeWithLiveTurn(query);
 
     // No timer is advanced: an acked change must settle on its own.
-    await expect(store.updateSession(SESSION_ID, { permissionMode: 'plan' })).resolves.toBe(true);
+    await expect(store.updateSession(SESSION_ID, { permissionMode: 'plan' })).resolves.toEqual({
+      updated: true,
+    });
 
     expect(calls).toEqual(['plan']);
     expect(store.findSession(SESSION_ID)!.permissionMode).toBe('plan');
@@ -112,9 +114,83 @@ describe('changing permission mode is bounded (DOR-1301)', () => {
     const { query, calls } = fakeQuery('rejects');
     const store = storeWithLiveTurn(query);
 
-    await expect(store.updateSession(SESSION_ID, { permissionMode: 'plan' })).resolves.toBe(true);
+    await expect(
+      store.updateSession(SESSION_ID, { permissionMode: 'plan' })
+    ).resolves.toMatchObject({ updated: true });
 
     expect(calls).toEqual(['plan']);
     expect(store.findSession(SESSION_ID)!.permissionMode).toBe('plan');
+  });
+});
+
+/**
+ * The honesty half (DOR-1435).
+ *
+ * Keeping the mode is right; reporting it as in force is not. When the running
+ * turn never confirmed a TIGHTENING, it is still running under the looser mode
+ * and nothing on this side can put the approval prompts back for it — so the
+ * result says so, and `PATCH /api/sessions/:id` answers `202` off the back of
+ * it. A loosening in the same position stays silent.
+ */
+describe('an unconfirmed permission change reports which direction it went (DOR-1435)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Drive one mode change against a CLI that never answers. */
+  async function patchAgainstSilentCli(from: PermissionMode, to: PermissionMode) {
+    const { query } = fakeQuery('never-settles');
+    const store = storeWithLiveTurn(query, from);
+    const patched = store.updateSession(SESSION_ID, { permissionMode: to });
+    await vi.advanceTimersByTimeAsync(PERMISSION_MODE_ACK_TIMEOUT_MS);
+    return patched;
+  }
+
+  it('says a stricter mode has not reached the reply already running', async () => {
+    // The case the ticket was filed on: the turn keeps bypassing every approval
+    // while the person believes they just took that away.
+    await expect(patchAgainstSilentCli('bypassPermissions', 'default')).resolves.toEqual({
+      updated: true,
+      permissionModePendingUntilNextTurn: true,
+    });
+  });
+
+  it('says so for a narrowing of reach too, not only for more asking', async () => {
+    // `default` → `plan` keeps asking always and takes the editing away, so the
+    // unconfirmed turn goes on editing files a person just confined to reading.
+    await expect(patchAgainstSilentCli('default', 'plan')).resolves.toEqual({
+      updated: true,
+      permissionModePendingUntilNextTurn: true,
+    });
+  });
+
+  it('stays quiet about a LOOSER mode that went unconfirmed', async () => {
+    // The self-correcting direction: the turn keeps asking for approvals it no
+    // longer needs to, which costs prompts and nothing else.
+    await expect(patchAgainstSilentCli('default', 'bypassPermissions')).resolves.toEqual({
+      updated: true,
+    });
+  });
+
+  it('stays quiet when the CLI confirms the tightening', async () => {
+    const { query } = fakeQuery('acks');
+    const store = storeWithLiveTurn(query, 'bypassPermissions');
+
+    await expect(store.updateSession(SESSION_ID, { permissionMode: 'default' })).resolves.toEqual({
+      updated: true,
+    });
+  });
+
+  it('stays quiet when no turn is running — there is nothing to be out of step with', async () => {
+    const store = new SessionStore();
+    store.ensureSession(SESSION_ID, { permissionMode: 'bypassPermissions' });
+
+    await expect(store.updateSession(SESSION_ID, { permissionMode: 'default' })).resolves.toEqual({
+      updated: true,
+    });
   });
 });

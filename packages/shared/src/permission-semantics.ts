@@ -34,7 +34,12 @@
  *
  * @module shared/permission-semantics
  */
-import type { PermissionAsks, PermissionModeDescriptor, PermissionStop } from './agent-runtime.js';
+import type {
+  PermissionAsks,
+  PermissionModeDescriptor,
+  PermissionReach,
+  PermissionStop,
+} from './agent-runtime.js';
 
 /**
  * The dial's three positions, in the order a person reads them.
@@ -77,6 +82,46 @@ const ASKS_RANK: Record<PermissionAsks, number> = {
   'when-risky': 1,
   never: 0,
 };
+
+/**
+ * How far each value lets an action travel, so two can be compared. Ordered as
+ * {@link PermissionReach} documents them: least to most.
+ */
+const REACH_RANK: Record<PermissionReach, number> = {
+  read: 0,
+  edit: 1,
+  workspace: 2,
+  everything: 3,
+};
+
+/**
+ * Whether moving from one mode to another TIGHTENS the leash — the agent must
+ * ask more often, or may reach less far, than it could a moment ago.
+ *
+ * The direction is the whole point, because the two directions have different
+ * consequences when a live mode change cannot be delivered to a turn already
+ * running (DOR-1435). A loosening that never lands costs a person some extra
+ * approval prompts for the rest of one turn, and fixes itself on the next. A
+ * TIGHTENING that never lands leaves the agent running with the permissions the
+ * person just took away — and under a mode that never asks, DorkOS cannot put
+ * the prompts back mid-turn, because the CLI skips its approval callback
+ * entirely. So a tightening that goes unconfirmed is a fact the product has to
+ * say out loud; a loosening is not.
+ *
+ * Either half counts on its own. Asking more often is the obvious one
+ * (`bypassPermissions` → `default`); reaching less far is the quieter one
+ * (`default` → `plan`, where the turn keeps editing files a person has just
+ * confined to reading).
+ *
+ * @param from - The mode the session was on.
+ * @param to - The mode the person just chose.
+ */
+export function isTightening(
+  from: PermissionModeDescriptor,
+  to: PermissionModeDescriptor
+): boolean {
+  return ASKS_RANK[to.asks] > ASKS_RANK[from.asks] || REACH_RANK[to.reach] < REACH_RANK[from.reach];
+}
 
 /**
  * Whether this runtime's mode asks LESS than its dial position promises —

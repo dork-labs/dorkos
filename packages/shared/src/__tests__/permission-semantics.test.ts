@@ -5,6 +5,7 @@ import {
   isAutonomyStop,
   isBypassSemantics,
   isDivergent,
+  isTightening,
   isUnattendedAutonomy,
   isWorkingMode,
   needsConsentRitual,
@@ -30,6 +31,55 @@ describe('stopExpectation', () => {
     expect(stopExpectation('ask')).toBe('always');
     expect(stopExpectation('act')).toBe('when-risky');
     expect(stopExpectation('autonomy')).toBe('never');
+  });
+});
+
+describe('isTightening', () => {
+  it('is true when the agent must now ask more often', () => {
+    // Claude's `bypassPermissions` → `default`: the change DOR-1435 is about.
+    expect(
+      isTightening(
+        descriptor({ asks: 'never', reach: 'everything' }),
+        descriptor({ asks: 'always', reach: 'edit' })
+      )
+    ).toBe(true);
+    expect(isTightening(descriptor({ asks: 'when-risky' }), descriptor({ asks: 'always' }))).toBe(
+      true
+    );
+  });
+
+  it('is true when the agent may now reach less far, even at the same asking', () => {
+    // `default` → `plan`: both ask always, and the second cannot edit.
+    expect(
+      isTightening(
+        descriptor({ asks: 'always', reach: 'edit' }),
+        descriptor({ asks: 'always', reach: 'read' })
+      )
+    ).toBe(true);
+  });
+
+  it('is false in the loosening direction', () => {
+    expect(
+      isTightening(
+        descriptor({ asks: 'always', reach: 'edit' }),
+        descriptor({ asks: 'never', reach: 'everything' })
+      )
+    ).toBe(false);
+    expect(
+      isTightening(
+        descriptor({ asks: 'always', reach: 'read' }),
+        descriptor({ asks: 'always', reach: 'workspace' })
+      )
+    ).toBe(false);
+  });
+
+  it('is false when nothing about the leash moved', () => {
+    expect(
+      isTightening(
+        descriptor({ id: 'acceptEdits', asks: 'when-risky', reach: 'edit' }),
+        descriptor({ id: 'auto', asks: 'when-risky', reach: 'edit' })
+      )
+    ).toBe(false);
   });
 });
 

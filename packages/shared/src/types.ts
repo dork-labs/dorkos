@@ -18,6 +18,7 @@ export type {
   SessionDailyCountsQuery,
   SessionDailyCountsResponse,
   UpdateSessionRequest,
+  SessionUpdateResponse,
   SessionSettings,
   ForkSessionRequest,
   ReloadPluginsResult,

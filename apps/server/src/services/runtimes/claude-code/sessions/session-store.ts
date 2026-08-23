@@ -16,10 +16,14 @@ import type {
 import type {
   SessionOpts,
   MessageOpts,
+  PermissionModeDescriptor,
   SessionSettingsPort,
+  SessionUpdateResult,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
+import { isTightening } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
@@ -60,6 +64,33 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
     if (now - pending.startedAt < ceilingMs) return true;
   }
   return false;
+}
+
+/** This runtime's own mode descriptors, by id — the only meaning any mode has. */
+const CLAUDE_MODES: ReadonlyMap<string, PermissionModeDescriptor> = new Map(
+  CLAUDE_CODE_CAPABILITIES.permissionModes.values?.map((mode) => [mode.id, mode]) ?? []
+);
+
+/**
+ * Does moving from `from` to `to` take permissions AWAY from a running turn?
+ *
+ * Answered from what this runtime declares each mode does — never from the mode
+ * ids, so a mode added to the capability profile is weighed correctly the day it
+ * lands (spec `trust-dial`, decision 2).
+ *
+ * An unrecognised id on either side answers `true`, and that direction is
+ * deliberate: this decides whether the product ADMITS a change may not have
+ * reached the running turn, so "cannot tell" has to read as "say so". The other
+ * default would let a mode nobody described silently take the confident answer.
+ *
+ * @param from - The mode the running turn started under.
+ * @param to - The mode the person just chose.
+ */
+function tightensPermission(from: PermissionMode, to: PermissionMode): boolean {
+  const before = CLAUDE_MODES.get(from);
+  const after = CLAUDE_MODES.get(to);
+  if (!before || !after) return true;
+  return isTightening(before, after);
 }
 
 /**
@@ -436,8 +467,8 @@ export class SessionStore {
   /**
    * Update mutable session fields, auto-creating (hydrated from durable
    * settings) if the session isn't currently in memory. Always resolves
-   * `true` — there is no "session does not exist" case for this runtime,
-   * because the auto-create branch below handles it.
+   * `updated: true` — there is no "session does not exist" case for this
+   * runtime, because the auto-create branch below handles it.
    */
   async updateSession(
     sessionId: string,
@@ -447,7 +478,7 @@ export class SessionStore {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): Promise<boolean> {
+  ): Promise<SessionUpdateResult> {
     let session = this.findSession(sessionId);
     if (!session) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
@@ -478,6 +509,7 @@ export class SessionStore {
     // (ADR-0260). Only user-driven PATCHes reach updateSession, so transient
     // per-send overrides (Tasks/relay) are never persisted here.
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
+    let permissionModePendingUntilNextTurn = false;
     if (opts.permissionMode) {
       const prevMode = session.permissionMode;
       session.permissionMode = opts.permissionMode;
@@ -507,6 +539,14 @@ export class SessionStore {
             mode: opts.permissionMode,
             ack,
           });
+          // Best-effort is fine; SILENTLY best-effort is not (DOR-1435). Keeping
+          // the mode is right, and reporting it as in force is wrong — the turn
+          // on `activeQuery` is still running under `prevMode`, and when that is
+          // the looser of the two nothing on this side can put the approval
+          // prompts back for it (the CLI skips `canUseTool` entirely under a
+          // mode that never asks). Only the tightening direction is carried up:
+          // see `SessionUpdateResult.permissionModePendingUntilNextTurn`.
+          permissionModePendingUntilNextTurn = tightensPermission(prevMode, opts.permissionMode);
         }
       }
       logger.debug('[updateSession] permissionMode change', {
@@ -518,7 +558,10 @@ export class SessionStore {
     if (opts.model) session.model = opts.model;
     if (opts.effort) session.effort = opts.effort;
     if (opts.fastMode !== undefined) session.fastMode = opts.fastMode;
-    return true;
+    return {
+      updated: true,
+      ...(permissionModePendingUntilNextTurn ? { permissionModePendingUntilNextTurn: true } : {}),
+    };
   }
 
   // ---------------------------------------------------------------------------
