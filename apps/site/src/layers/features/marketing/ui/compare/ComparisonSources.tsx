@@ -12,10 +12,16 @@ function formatVerifiedDate(isoDate: string): string {
   });
 }
 
-/** Show a link by its site, not its full address. */
-function hostOf(url: string): string {
+/**
+ * Label a link by its site and path, so several pages from the same site read
+ * as the different pages they are rather than one name repeated.
+ */
+function sourceLabel(url: string): string {
   try {
-    return new URL(url).hostname.replace(/^www\./, '');
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+    const path = parsed.pathname.replace(/\/$/, '');
+    return `${host}${path}`;
   } catch {
     return url;
   }
@@ -56,7 +62,7 @@ export function ComparisonSources({ competitor }: { competitor: Competitor }) {
               rel="noopener noreferrer"
               className="text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1 font-mono text-xs"
             >
-              {hostOf(source)} <ExternalLink size={10} />
+              {sourceLabel(source)} <ExternalLink size={10} />
             </a>
           </li>
         ))}

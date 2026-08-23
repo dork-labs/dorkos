@@ -291,6 +291,8 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     featureSlugs: ['marketplace', 'mcp-server', 'connections'],
     question: 'Can you add your own tools and share the setup with other people?',
     wantPhrase: 'to add your own tools and share the setup with other people',
+    dorkosDetail:
+      'This is the row where Cursor-style editors win on breadth: nothing here replaces years of editor extensions. What DorkOS adds is the other half — you can package up a working agent, with its instructions and its tools, and hand the whole thing to someone else in one command. Signing those tools in to outside services is the part still finding its feet.',
   },
   {
     id: 'pricing',
@@ -438,7 +440,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'It imports your VS Code setup and installs editor extensions, and its agent can reach your own tools through MCP, the common way to plug outside tools into an agent.',
         detail:
-          'This is the row where Cursor beats DorkOS outright. Years of editor extensions carry over, with one caveat worth knowing: Cursor installs them from the Open VSX registry rather than the VS Code Marketplace, so a few will be missing. What it does not have is a way to package up a working agent, with its instructions and tools, and hand it to someone else.',
+          'Years of editor extensions carry over, with one caveat worth knowing: Cursor installs them from the Open VSX registry rather than the VS Code Marketplace, so a few will be missing. Its agent also connects to outside tools through MCP, so the things your team already runs are reachable from inside the editor.',
         source: 'https://cursor.com/docs/configuration/extensions',
       },
       pricing: {

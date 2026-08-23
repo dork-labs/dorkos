@@ -74,6 +74,7 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
             {COMPARISON_DIMENSIONS.map((dimension) => {
               const ours = dorkosCellFor(dimension);
               const theirs = competitor.cells[dimension.id];
+              const hasDetail = Boolean(ours.detail ?? theirs?.detail);
               const ourCell = (
                 <td key="ours" className="w-1/3 p-4 align-top">
                   <VerdictMark verdict={ours.verdict} />
@@ -81,6 +82,17 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                     {ours.note}
                   </span>
                   <BackingFeatureLinks slugs={dimension.featureSlugs} />
+                  {/* Lives in the cell, not the row header: a row header is the
+                      row's accessible name, and a link inside it reads out with
+                      every cell in the row. */}
+                  {hasDetail && (
+                    <Link
+                      href={`#criterion-${dimension.id}`}
+                      className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-3 inline-block font-mono text-xs underline underline-offset-2"
+                    >
+                      More on {dimension.label.toLowerCase()}
+                    </Link>
+                  )}
                 </td>
               );
               const theirCell = (
@@ -120,14 +132,6 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                     <span className="text-warm-gray-light mt-1 block text-xs leading-relaxed">
                       {dimension.question}
                     </span>
-                    {(ours.detail ?? theirs?.detail) && (
-                      <Link
-                        href={`#criterion-${dimension.id}`}
-                        className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-2 inline-block font-mono text-xs underline underline-offset-2"
-                      >
-                        More on this
-                      </Link>
-                    )}
                   </th>
                   {copy.theirColumnFirst ? [theirCell, ourCell] : [ourCell, theirCell]}
                 </tr>
