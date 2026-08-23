@@ -19,7 +19,9 @@ Transport
   createSession(opts)            -> Session
   listSessions(cwd?)             -> Session[]
   getSession(id, cwd?)           -> Session
-  updateSession(id, opts, cwd?)  -> Session
+  updateSession(id, opts, cwd?)  -> SessionUpdateResponse  # Session + optional
+                                 # permissionModePendingUntilNextTurn (202): a stricter
+                                 # mode is saved but the running reply kept the old one
   getMessages(sessionId, cwd?)   -> { messages: HistoryMessage[] }
   getSessionSnapshot(sessionId, cwd?) -> SessionSnapshot
   subscribeSession(sessionId, sinceCursor?, cwd?, signal?) -> AsyncIterable<SessionEvent>

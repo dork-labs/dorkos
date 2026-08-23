@@ -52,6 +52,7 @@ import type {
   SessionSettingsPort,
   ToolDecisionOptions,
   ManagedMcpServerResolver,
+  SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -276,7 +277,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): Promise<boolean> {
+  ): Promise<SessionUpdateResult> {
     const { effort: _unsupported, ...storable } = opts;
     await this.settingsPort?.saveSessionSettings(sessionId, storable);
     this.registry.register(sessionId, {
@@ -284,7 +285,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       ...(opts.model !== undefined ? { model: opts.model } : {}),
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
     });
-    return true;
+    return { updated: true };
   }
 
   /**

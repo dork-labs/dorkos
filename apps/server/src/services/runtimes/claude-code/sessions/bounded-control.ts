@@ -90,13 +90,22 @@ export const STOP_ACK_TIMEOUT_MS = 3_000;
  * `default` — leaves the gate held by the CLI, not by DorkOS: under bypass the
  * CLI never calls `canUseTool` at all (`launch-resolver.ts`,
  * `phantom-cancellation.ts`), so no in-memory mode on this side can put the
- * approval prompts back for the turn already running. The PATCH still answers
- * `200 {permissionMode:'default'}`, which is true of what DorkOS has stored and
- * NOT of what the running turn will do. Two follow-ups are filed against that
- * gap: reporting whether the live change actually applied (an `AgentRuntime`
- * shape change, so not free), and whether a tightening that goes unanswered
- * should escalate — end the turn rather than let it keep bypassing. Neither is
- * decided here; the bound only makes the failure visible instead of a hang.
+ * approval prompts back for the turn already running.
+ *
+ * **What the product does about that, decided in DOR-1435.** The unanswered
+ * TIGHTENING is REPORTED, not escalated:
+ *
+ * - `updateSession` answers `permissionModePendingUntilNextTurn`, and `PATCH
+ *   /api/sessions/:id` turns that into a `202` saying the new mode starts on
+ *   the next reply. The old `200 {permissionMode:'default'}` stated a safety
+ *   posture the agent had not adopted; a person who is told can decide.
+ * - The turn is NOT killed. Ending it is the same trade `STOP_ACK_TIMEOUT_MS`
+ *   weighs above, and here it comes out the other way: an escalation on this
+ *   clock would destroy real work on a channel that was merely slow, while the
+ *   case that actually produces unacks is the wind-down, where the turn is
+ *   ending anyway and killing it buys nothing. The person keeps the Stop button
+ *   — now with an honest answer in front of them — which is the same power
+ *   without the false positives.
  */
 export const PERMISSION_MODE_ACK_TIMEOUT_MS = 3_000;
 

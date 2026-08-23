@@ -1260,6 +1260,70 @@ export function runtimeConformance(
           );
         }
       });
+
+      it('updateSession answers with an outcome, and says pending only when it means it', async () => {
+        // ## The shape (DOR-1435)
+        //
+        // `updateSession` used to answer a bare boolean, so "saved" and "in
+        // force on the turn already running" were the same word. They are not:
+        // the choice is persisted before the running turn is told (ADR-0260),
+        // and two of the three shipped adapters cannot tell it at all — Claude's
+        // CLI stops calling back under a mode that never asks, and Codex's
+        // sandbox is fixed when the turn starts. A runtime that cannot confirm a
+        // TIGHTENING reached the run says so, and the PATCH route turns that
+        // into a `202`.
+        //
+        // Two things are pinned here, both cheap and both easy to get wrong in a
+        // new adapter. First, the outcome is an OBJECT — a fifth runtime still
+        // returning `true` would otherwise sail through, and the route reads
+        // `.updated`, so `true` reads as "session not found" and answers 404.
+        // Second, `permissionModePendingUntilNextTurn` is `true` or ABSENT and
+        // never `false`: the wire schema types it `z.literal(true).optional()`,
+        // so a literal `false` would be stripped at the boundary and a runtime
+        // author would think they had reported something.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        const result = await runtime.updateSession(sessionId, {
+          permissionMode: resolvePermissionMode(runtime),
+        });
+
+        expect(
+          typeof result,
+          'updateSession must answer with a SessionUpdateResult object, not a bare boolean'
+        ).toBe('object');
+        expect(typeof result.updated, 'SessionUpdateResult.updated must be a boolean').toBe(
+          'boolean'
+        );
+        expect(
+          result.updated,
+          'a session this suite just created must be found by updateSession'
+        ).toBe(true);
+        expect(
+          result.permissionModePendingUntilNextTurn,
+          'permissionModePendingUntilNextTurn must be true or absent — never false, which the wire schema strips'
+        ).not.toBe(false);
+        // Re-picking the mode the session is already on takes nothing away, so
+        // there is nothing to be pending about, turn or no turn.
+        expect(
+          result.permissionModePendingUntilNextTurn,
+          'a no-op mode change reported itself as not yet in force'
+        ).toBeUndefined();
+      });
+
+      it('updateSession answers `updated: false` for a session it does not have', async () => {
+        // The one case the boolean carried and the object must keep carrying:
+        // the route turns it into a 404. A runtime that auto-creates on PATCH
+        // (claude-code, codex) has no such case and answers true — both are
+        // conformant, which is why this asserts the TYPE and the route's read,
+        // not a particular verdict.
+        const runtime = makeRuntime();
+        const result = await runtime.updateSession(nextSessionId(), {
+          permissionMode: resolvePermissionMode(runtime),
+        });
+        expect(typeof result.updated).toBe('boolean');
+      });
     });
 
     describe('messaging', () => {

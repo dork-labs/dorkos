@@ -22,9 +22,10 @@ import type {
   SessionOpts,
   MessageOpts,
   SessionSettingsPort,
+  SessionUpdateResult,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { tightensDeclaredMode, needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -68,6 +69,9 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
   }
   return false;
 }
+
+/** This runtime's own mode descriptors — the only meaning any mode id has. */
+const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
 
 /**
  * The one permission-update scope DorkOS mirrors into its own session state.
@@ -489,8 +493,8 @@ export class SessionStore {
   /**
    * Update mutable session fields, auto-creating (hydrated from durable
    * settings) if the session isn't currently in memory. Always resolves
-   * `true` — there is no "session does not exist" case for this runtime,
-   * because the auto-create branch below handles it.
+   * `updated: true` — there is no "session does not exist" case for this
+   * runtime, because the auto-create branch below handles it.
    */
   async updateSession(
     sessionId: string,
@@ -500,7 +504,7 @@ export class SessionStore {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): Promise<boolean> {
+  ): Promise<SessionUpdateResult> {
     let session = this.findSession(sessionId);
     if (!session) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
@@ -531,6 +535,7 @@ export class SessionStore {
     // (ADR-0260). Only user-driven PATCHes reach updateSession, so transient
     // per-send overrides (Tasks/relay) are never persisted here.
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
+    let permissionModePendingUntilNextTurn = false;
     if (opts.permissionMode) {
       const prevMode = session.permissionMode;
       session.permissionMode = opts.permissionMode;
@@ -560,6 +565,30 @@ export class SessionStore {
             mode: opts.permissionMode,
             ack,
           });
+          // Best-effort is fine; SILENTLY best-effort is not (DOR-1435). Keeping
+          // the mode is right, and reporting it as in force is wrong — the turn
+          // on `activeQuery` is still running under `prevMode`, and when that is
+          // the looser of the two nothing on this side can put the approval
+          // prompts back for it (the CLI skips `canUseTool` entirely under a
+          // mode that never asks). Only the tightening direction is carried up:
+          // see `SessionUpdateResult.permissionModePendingUntilNextTurn`.
+          //
+          // `prevMode` is what the SESSION was set to, which is very nearly —
+          // but not exactly — what the running turn is doing: the launcher can
+          // coerce `auto` down to `default` for a model that cannot do Auto
+          // without writing that back (`messaging/launch-resolver.ts`), so an
+          // `auto` → `default` PATCH on such a model reports pending for a turn
+          // that is already running `default`. Left standing deliberately. The
+          // effective mode is resolved per launch and never recorded on the
+          // session, so comparing against it would mean plumbing a second
+          // source of truth through here — and the error is in the safe
+          // direction: it says "not yet" about a change that has in fact taken,
+          // which costs one sentence and never hides a real gap.
+          permissionModePendingUntilNextTurn = tightensDeclaredMode(
+            CLAUDE_MODES,
+            prevMode,
+            opts.permissionMode
+          );
         }
       }
       logger.debug('[updateSession] permissionMode change', {
@@ -571,7 +600,10 @@ export class SessionStore {
     if (opts.model) session.model = opts.model;
     if (opts.effort) session.effort = opts.effort;
     if (opts.fastMode !== undefined) session.fastMode = opts.fastMode;
-    return true;
+    return {
+      updated: true,
+      ...(permissionModePendingUntilNextTurn ? { permissionModePendingUntilNextTurn: true } : {}),
+    };
   }
 
   // ---------------------------------------------------------------------------

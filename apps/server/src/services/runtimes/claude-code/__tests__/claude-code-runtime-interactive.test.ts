@@ -146,21 +146,22 @@ describe('ClaudeCodeRuntime interactive tools', () => {
   // ---- updateSession ----
 
   describe('updateSession', () => {
-    it('returns true and updates permissionMode', async () => {
+    it('reports the change landed and moves permissionMode', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
       const result = await manager.updateSession('sess-1', { permissionMode: 'plan' });
-      expect(result).toBe(true);
+      // No live turn to be out of step with, so nothing is pending (DOR-1435).
+      expect(result).toEqual({ updated: true });
     });
 
-    it('returns true and updates model', async () => {
+    it('reports the change landed and moves model', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
       const result = await manager.updateSession('sess-1', { model: 'claude-sonnet-4' });
-      expect(result).toBe(true);
+      expect(result).toEqual({ updated: true });
     });
 
-    it('auto-creates and returns true for a non-existent session', async () => {
+    it('auto-creates a non-existent session and reports it updated', async () => {
       const result = await manager.updateSession('no-session', { permissionMode: 'plan' });
-      expect(result).toBe(true);
+      expect(result).toEqual({ updated: true });
       expect(manager.hasSession('no-session')).toBe(true);
     });
   });

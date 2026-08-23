@@ -18,7 +18,7 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
     type,
     ensureSession: () => {},
     hasSession: () => false,
-    updateSession: () => true,
+    updateSession: () => ({ updated: true }),
     sendMessage: async function* () {},
     approveTool: () => true,
     submitAnswers: () => true,
