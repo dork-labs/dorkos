@@ -516,6 +516,26 @@ export const roomEntries = sqliteTable(
 
     cascadeDepth: integer('cascade_depth').notNull().default(0),
 
+    /**
+     * Which agent TURN wrote this entry — the dispatcher's correlation id
+     * (`ActiveClaim.dispatchId`), or null when no turn is behind the write.
+     *
+     * It exists so the repeat rule can count turns instead of messages
+     * (DOR-1434): an agent that posts three progress notes and then answers has
+     * taken ONE turn, and all four rows carry the same id, so the count
+     * de-duplicates them. Null is the honest answer for a person's post, the
+     * room's own notices, an agent post with no trigger behind it, and every row
+     * written before this column existed — and each null row counts one, which
+     * is exactly the message-counting behaviour those rows shipped under.
+     *
+     * **Deliberately not indexed and deliberately off the wire.** It is only
+     * ever read inside a `(room_id, cascade_root)` scan the existing
+     * `idx_room_entries_cascade_root` already narrows to a handful of rows, and
+     * nothing outside `RoomStore` has a question it answers — `toEntry` drops
+     * it rather than letting it ride into `RoomEntry`.
+     */
+    dispatchId: text('dispatch_id'),
+
     /** The entry this one answers, in this same room. Null for a top-level entry. */
     parentEntryId: text('parent_entry_id'),
 

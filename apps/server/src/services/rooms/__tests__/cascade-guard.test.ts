@@ -300,6 +300,81 @@ describe('cascade guard, wired', () => {
     expect(runner.turns).toHaveLength(0);
   });
 
+  it('charges a turn that narrates its work one turn, not one per message', async () => {
+    // DOR-1434, wired: an agent posts three progress notes while it works and
+    // then answers, so the cascade gains four entries from one model call. The
+    // shipped `COUNT(*)` read that as four of its allowance, which made an agent
+    // that thinks out loud run out four times faster than one that answers in a
+    // single line — a tax on being legible about what it is doing.
+    //
+    // Only Ana answers here: a second `always` agent would ping-pong, and the
+    // thing being measured is one agent's own spend.
+    const turns: RecordedTurn[] = [];
+    let postAsAgent: (roomId: string, authorId: string, text: string) => void = () => {};
+
+    const narrating: ScriptedTurnRunner = {
+      turns,
+      interrupted: [],
+      interrupt: () => Promise.resolve(),
+      run(req) {
+        turns.push({
+          roomId: req.room.id,
+          authorId: req.authorId,
+          agentPath: req.agentPath,
+          sessionId: req.sessionId,
+          prompt: req.entry.body.text,
+          roomContext: req.roomContext,
+          attachmentProjection: req.attachmentProjection,
+        });
+        // Written mid-turn through the ordinary post path — the shape of an
+        // agent calling `POST /api/rooms/:id/entries` while it answers, which
+        // carries no provenance of its own and inherits the turn's.
+        for (const note of ['looking', 'reading the migration', 'found it']) {
+          postAsAgent(req.room.id, req.authorId, note);
+        }
+        // And the answer the dispatcher posts for it, which is the fourth entry.
+        return Promise.resolve({ sessionId: 'session-1', text: 'the migration broke it' });
+      },
+    };
+
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: narrating,
+      maxAgentDepth: MAX_AGENT_DEPTH,
+      maxTurnsPerAgentPerCascade: 3,
+    });
+    postAsAgent = (roomId, authorId, text) => {
+      harness.service.post(roomId, { authorId, text });
+    };
+    const quiet = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      harness.human
+    );
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    harness.service.updateMembership(quiet.id, harness.human, anaId, 'always');
+
+    const seed = harness.service.post(quiet.id, { authorId: harness.human, text: 'what broke?' });
+    await harness.service.triggersIdle();
+
+    const log = harness.service.listEntries(quiet.id, harness.human, { limit: 100 });
+    const mine = log.filter((entry) => entry.authorId === anaId);
+    // Four entries — the count is not being made true by writing less.
+    expect(mine.map((entry) => entry.body.text)).toEqual([
+      'looking',
+      'reading the migration',
+      'found it',
+      'the migration broke it',
+    ]);
+    expect(mine.every((entry) => entry.cascadeRoot === seed.id)).toBe(true);
+    // One turn. Under message counting this was four, and Ana's three would
+    // already be spent.
+    expect(harness.service.turnsByAuthorInCascade(quiet.id, seed.id).get(anaId)).toBe(1);
+    // One model call, and nothing was refused, so the room said nothing about
+    // limits either.
+    expect(turns).toHaveLength(1);
+    expect(log.filter((entry) => entry.kind === 'notice')).toEqual([]);
+  });
+
   it('still lets the operator start a conversation the agents answer', async () => {
     // The fix must not become "nothing ever triggers". A person's post is the
     // one thing that resets the count, which is exactly what §6 grants.

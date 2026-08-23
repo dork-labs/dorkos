@@ -1440,6 +1440,32 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Which TURN is writing into this room right now, for the entry about to be
+   * stamped — the repeat rule's unit (DOR-1434).
+   *
+   * **Keyed on `(room, agent)`, which is `activeTurnFor`'s deliberate opposite.**
+   * That one answers "what cascade does this post inherit", and a cascade can
+   * only be guessed at when an agent is answering in several rooms at once, so
+   * it takes the deepest claim. This asks a question the claim map can answer
+   * exactly: the claim on the room the entry lands in IS the turn writing there,
+   * and there is never more than one. No heuristic, one map lookup.
+   *
+   * **Aside turns count here, and do not count there.** An aside has no cascade
+   * to hand on ({@link ActiveClaim.aside}), which is why `deepestClaimOf` skips
+   * it — but it is unambiguously a turn, and the two posts a welcome-back turn
+   * writes are two entries of one turn like any other. Nothing about the cascade
+   * it does not have changes that; each of those entries is its own cascade root
+   * anyway, so this only makes the record honest.
+   *
+   * @param roomId - The room the entry is being written into.
+   * @param authorId - The author writing it.
+   * @returns The dispatch id to stamp, or `undefined` when no turn is running here.
+   */
+  dispatchFor(roomId: string, authorId: string): string | undefined {
+    return this.claimed.get(agentKey(roomId, authorId))?.dispatchId;
+  }
+
+  /**
    * Record that an agent spoke into this room deliberately, from inside its own
    * turn — `post_to_room` (room-participation spec §10.2).
    *
@@ -1836,7 +1862,13 @@ export class RoomTriggerDispatcher {
       authorId: target.authorId,
       text,
       sessionId: opts.sessionId,
-      trigger: { root: entry.cascadeRoot, depth: target.depth },
+      // The dispatch is passed rather than looked up, and that is not belt and
+      // braces: a late answer's claim has been held for minutes, long enough for
+      // a halt plus a fresh message to hand this `(room, agent)` key to another
+      // turn — and reading the key at delivery time would then stamp this
+      // answer with somebody else's turn. The id this turn was minted with is
+      // the only one that is right for it.
+      trigger: { root: entry.cascadeRoot, depth: target.depth, dispatchId: target.dispatchId },
       // Answer where you were asked. `threadRootEntryId` is already a validated
       // top-level entry — every reply carries the root, never another reply —
       // so re-resolving it in `post` cannot refuse this write.
