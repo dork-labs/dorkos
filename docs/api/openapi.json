@@ -1139,6 +1139,9 @@
           },
           "remainingMs": {
             "type": "number"
+          },
+          "timeoutMs": {
+            "type": "number"
           }
         },
         "required": [
@@ -1655,11 +1658,11 @@
               "remainingMs": {
                 "type": "number"
               },
-              "id": {
-                "type": "string"
-              },
               "timeoutMs": {
                 "type": "number"
+              },
+              "id": {
+                "type": "string"
               },
               "toolName": {
                 "type": "string"
@@ -1716,6 +1719,9 @@
               "remainingMs": {
                 "type": "number"
               },
+              "timeoutMs": {
+                "type": "number"
+              },
               "id": {
                 "type": "string"
               },
@@ -1752,6 +1758,9 @@
                 "type": "number"
               },
               "remainingMs": {
+                "type": "number"
+              },
+              "timeoutMs": {
                 "type": "number"
               },
               "id": {
@@ -9672,11 +9681,11 @@
                         "remainingMs": {
                           "type": "number"
                         },
-                        "id": {
-                          "type": "string"
-                        },
                         "timeoutMs": {
                           "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
                         },
                         "toolName": {
                           "type": "string"
@@ -9733,6 +9742,9 @@
                         "remainingMs": {
                           "type": "number"
                         },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -9769,6 +9781,9 @@
                           "type": "number"
                         },
                         "remainingMs": {
+                          "type": "number"
+                        },
+                        "timeoutMs": {
                           "type": "number"
                         },
                         "id": {

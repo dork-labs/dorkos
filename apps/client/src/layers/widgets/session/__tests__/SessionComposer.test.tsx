@@ -928,6 +928,59 @@ describe('SessionComposer — Stop trusts the local rewrite over the queue PATCH
       )
     );
   });
+
+  it('still hands the parked draft back when the edited row left the queue first (DOR-1442)', async () => {
+    // THE WINDOW. `editingIndex` is derived by looking `editingId` up in the
+    // queue, so it goes null the moment the edited row leaves — dispatched as
+    // the turn drained it, or removed from another window — while the cursor
+    // is still open on that row and the composer is still holding its text.
+    // Stop gated on the POSITION skipped `leaveQueueForStop` in exactly that
+    // window, so the parked draft was never handed back and the row's words
+    // stayed in the box as if they had been typed there.
+    seedQueue('one', 'two');
+    act(() => {
+      useSessionChatStore.getState().updateSession('test-session', { input: 'hello draft' });
+    });
+    // The interrupt reports nothing cancelled, so `restoreToComposer` returns
+    // early and what the composer ends up holding is the leave-queue handoff
+    // alone. (Row `q0` is still queued below — it is this mock, not an empty
+    // queue, that makes the restore step a no-op.)
+    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
+
+    editSecondRowAndRewrite('TWO REWRITTEN');
+
+    // The server says the edited row is gone: a fresh whole-queue update
+    // without it, which is the only way the queue is ever published.
+    act(() => {
+      useSessionStreamStore.getState().applyEvent('test-session', {
+        seq: 4,
+        type: 'queue_update',
+        queue: [
+          {
+            id: 'q0',
+            content: 'one',
+            disposition: 'queue',
+            enqueuedAt: 1_000,
+            enqueuedBy: 'window-a',
+          },
+        ],
+      });
+    });
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    // The draft the person parked when they opened the edit, back in the box.
+    // Pre-fix this stays 'TWO REWRITTEN' — the draft dropped on the floor.
+    await waitFor(() =>
+      expect(useSessionChatStore.getState().getSession('test-session').input).toBe('hello draft')
+    );
+  });
 });
 
 describe('SessionComposer — Stop acknowledges instantly and cannot double-fire (DOR-1300)', () => {

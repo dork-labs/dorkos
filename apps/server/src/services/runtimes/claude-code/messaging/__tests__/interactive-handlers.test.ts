@@ -10,6 +10,7 @@ import {
 } from '../interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
 import { resolveApprovalDecision } from '../../../opencode/approvals.js';
+import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
@@ -547,11 +548,11 @@ describe('pending interaction snapshots', () => {
     // Flag-on finding: a live question_prompt reached the client with
     // remainingMs: 0 while the recovery snapshot for the SAME interaction
     // carried the real countdown. `handleToolApproval` pushes both
-    // `startedAt`/`timeoutMs` on the event `data`; `handleElicitation` pushes
-    // `timeoutMs` only — the normalizer (`toQuestionEvent` in
-    // session-event-normalizer.ts) falls back to `remainingMs ?? timeoutMs ??
-    // 0`, so a question missing BOTH landed dead on arrival. This handler was
-    // the one that omitted them.
+    // `startedAt`/`timeoutMs` on the event `data` — the normalizer
+    // (`toQuestionEvent` in session-event-normalizer.ts) falls back to
+    // `remainingMs ?? timeoutMs ?? 0`, so a question missing BOTH landed dead on
+    // arrival. This handler was the one that omitted them. (All three handlers
+    // stamp the pair now; the elicitation's own case is below.)
     const session = makeBareSession();
     const questions: QuestionItem[] = [
       {
@@ -572,6 +573,25 @@ describe('pending interaction snapshots', () => {
     // to compute a nonzero `remainingMs` on the live event. `0`, `undefined`,
     // or absent all reproduce the flag-on symptom.
     expect(data?.timeoutMs).toBeGreaterThan(0);
+
+    // …and through the seam the client actually reads. Asserting only on the
+    // raw `eventQueue` payload stops one hop short: the normalizer is what
+    // decides which of those fields reach the durable member, and it silently
+    // dropped `timeoutMs` for questions while keeping it for approvals — so the
+    // raw event could be perfect and the card still land anchored to nothing
+    // (DOR-1442).
+    const member = toRawSessionEvent(pushed as StreamEvent);
+    expect(member).toMatchObject({
+      type: 'question_prompt',
+      id: 'question-1',
+      startedAt: data?.startedAt,
+      timeoutMs: data?.timeoutMs,
+    });
+    // The countdown is a real one, anchored at the start rather than counting
+    // from whenever the card happened to be built.
+    expect(member).not.toBeNull();
+    const timed = member as unknown as { remainingMs: number };
+    expect(timed.remainingMs).toBeGreaterThan(0);
   });
 
   it('cancels a pending question when the SDK aborts it (F5 — steer/interrupt)', async () => {
@@ -812,6 +832,42 @@ describe('pending interaction snapshots', () => {
       serverName: 'test-mcp',
       message: 'Please authenticate',
     });
+  });
+
+  it('anchors the LIVE elicitation_prompt where it was RAISED, not where it was normalized (DOR-1442)', () => {
+    // The mirror of the question case above, for the member that was actually
+    // short a field: `startedAt` reached only the pending-interaction record, so
+    // the pushed event carried no anchor and the normalizer substituted its own
+    // `Date.now()`. The durable member and the recovery DTO for the SAME prompt
+    // then disagreed about when the clock started. Asserted through
+    // `toRawSessionEvent` as well as on the raw payload, because the normalizer
+    // is the seam that decides which of these fields survive.
+    const session = makeBareSession();
+    const request: ElicitationRequest = {
+      serverName: 'test-mcp',
+      message: 'Please authenticate',
+      elicitationId: 'elicit-timer-1',
+    };
+
+    void handleElicitation(session, request, new AbortController().signal);
+
+    const pushed = session.eventQueue.find((e) => e.type === 'elicitation_prompt');
+    const data = pushed?.data as { startedAt?: number; timeoutMs?: number } | undefined;
+    expect(typeof data?.startedAt).toBe('number');
+    expect(data?.timeoutMs).toBeGreaterThan(0);
+    // The handler's own clock, the same one the pending record was stamped with.
+    expect(data?.startedAt).toBe(session.pendingInteractions.get('elicit-timer-1')?.startedAt);
+
+    const member = toRawSessionEvent(pushed as StreamEvent);
+    expect(member).toMatchObject({
+      type: 'elicitation_prompt',
+      id: 'elicit-timer-1',
+      startedAt: data?.startedAt,
+      timeoutMs: data?.timeoutMs,
+    });
+    expect(member).not.toBeNull();
+    const timed = member as unknown as { remainingMs: number };
+    expect(timed.remainingMs).toBeGreaterThan(0);
   });
 });
 

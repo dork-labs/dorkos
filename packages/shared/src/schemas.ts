@@ -2288,6 +2288,16 @@ export const ElicitationPartSchema = z
      * resetting. Client-only — never serialized to the transcript.
      */
     remainingMs: z.number().optional(),
+    /**
+     * The full budget the prompt was given — what `remainingMs` is a remainder
+     * OF, so a card can anchor to `startedAt + timeoutMs` instead of counting
+     * from whenever it was built. Carried for the same reason the tool-call part
+     * carries it, and kept in step with it: the wire member carries the budget
+     * for all three interaction kinds (DOR-1442), and a fold that dropped it
+     * here would make the elicitation the one kind whose deadline stopped at the
+     * client.
+     */
+    timeoutMs: z.number().optional(),
   })
   .openapi('ElicitationPart');
 
