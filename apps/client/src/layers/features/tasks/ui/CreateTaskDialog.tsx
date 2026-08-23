@@ -166,8 +166,16 @@ export function CreateTaskDialog({
 
   function handleToggleEnabled(checked: boolean) {
     if (!editTask) return;
+    const previous = localEnabled;
     setLocalEnabled(checked);
-    updateTask.mutate({ id: editTask.id, enabled: checked });
+    updateTask.mutate(
+      { id: editTask.id, enabled: checked },
+      // The switch moves before the server has agreed. When the PATCH fails, the
+      // shared mutation toast (`useUpdateTask`'s `meta.errorLabel`) says so — but
+      // the switch stayed where the click put it, so the dialog went on claiming
+      // a schedule was off when it was still running on its cron. Put it back.
+      { onError: () => setLocalEnabled(previous) }
+    );
   }
 
   const isPending = createTask.isPending || updateTask.isPending;

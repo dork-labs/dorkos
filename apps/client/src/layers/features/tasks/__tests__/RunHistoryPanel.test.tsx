@@ -6,6 +6,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
+import type { ListTaskRunsQuery, TaskRun } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockRun } from '@dorkos/test-utils';
@@ -25,6 +26,23 @@ vi.mock('@/layers/entities/session', () => ({
   useSessionId: vi.fn(() => [null, mockSetActiveSession]),
   useDirectoryState: vi.fn(() => ['/current/dir', mockSetSelectedCwd]),
 }));
+
+/** A wrapper that hands back the query client, so a test can invalidate like the app does. */
+function createWrapperWithClient(transport: Transport) {
+  const queryClient = new QueryClient({
+    ...createQueryClientConfig(),
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  const Wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+  return { Wrapper, queryClient };
+}
 
 function createWrapper(transport: Transport) {
   // The real error policy (`createQueryClientConfig`), not a hand-rolled one —
@@ -228,6 +246,96 @@ describe('TaskRunHistoryPanel', () => {
     // Different cwd — should set directory first (with preserveSession option)
     expect(mockSetSelectedCwd).toHaveBeenCalledWith('/other/dir', { preserveSession: true });
     expect(mockSetActiveSession).toHaveBeenCalledWith('session-xyz');
+  });
+
+  describe('after Load more', () => {
+    const PAGE_SIZE = 20;
+
+    /**
+     * A server whose run list the test can rewrite mid-flight, paginated the way
+     * the real endpoint is.
+     */
+    function paginatedTransport(runs: TaskRun[]) {
+      const store = { runs };
+      const listTaskRuns = vi.fn((opts?: Partial<ListTaskRunsQuery>) => {
+        const offset = opts?.offset ?? 0;
+        const limit = opts?.limit ?? 50;
+        return Promise.resolve(store.runs.slice(offset, offset + limit));
+      });
+      return { transport: createMockTransport({ listTaskRuns }), store, listTaskRuns };
+    }
+
+    /** One still-running run on page one, a full page behind it, one run on page two. */
+    function twoPagesWithRunningFirst(): TaskRun[] {
+      const firstPage = Array.from({ length: PAGE_SIZE }, (_, i) =>
+        createMockRun({
+          id: `run-${i}`,
+          status: i === 0 ? 'running' : 'completed',
+          sessionId: null,
+        })
+      );
+      return [
+        ...firstPage,
+        createMockRun({ id: 'run-page-2', status: 'completed', sessionId: null }),
+      ];
+    }
+
+    it('keeps loading pages appended', async () => {
+      const { transport } = paginatedTransport(twoPagesWithRunningFirst());
+      const { Wrapper } = createWrapperWithClient(transport);
+
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+
+      await waitFor(() =>
+        expect(screen.getAllByTitle(/Completed|Running/)).toHaveLength(PAGE_SIZE)
+      );
+
+      fireEvent.click(screen.getByText('Load more'));
+
+      await waitFor(() =>
+        expect(screen.getAllByTitle(/Completed|Running/)).toHaveLength(PAGE_SIZE + 1)
+      );
+      // Page two was short, so there is nothing left to ask for.
+      expect(screen.queryByText('Load more')).toBeNull();
+    });
+
+    it('updates an earlier page in place when its run finishes', async () => {
+      // The panel used to freeze each loaded page into component state and
+      // concatenate. A run's status is not a fixed fact — `run-0` goes
+      // `running` → `completed` while you are looking at it — so once page two
+      // was loaded, page one's spinner span forever for a run that had finished.
+      const { transport, store } = paginatedTransport(twoPagesWithRunningFirst());
+      const { Wrapper, queryClient } = createWrapperWithClient(transport);
+
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+
+      await waitFor(() => expect(screen.getByTitle('Running')).toBeTruthy());
+
+      fireEvent.click(screen.getByText('Load more'));
+      await waitFor(() =>
+        expect(screen.getAllByTitle(/Completed|Running/)).toHaveLength(PAGE_SIZE + 1)
+      );
+      // Still running at this point — the change has not happened yet.
+      expect(screen.getByTitle('Running')).toBeTruthy();
+
+      // The run finishes server-side, and something tells the client to look
+      // again — exactly what `useCancelTaskRun` and `useTriggerTask` do.
+      store.runs = store.runs.map((run) =>
+        run.id === 'run-0' ? { ...run, status: 'completed' as const } : run
+      );
+      await queryClient.invalidateQueries({ queryKey: ['tasks', 'runs'] });
+
+      await waitFor(() => expect(screen.queryByTitle('Running')).toBeNull());
+      expect(screen.getAllByTitle('Completed')).toHaveLength(PAGE_SIZE + 1);
+    });
   });
 
   it('shows loading state', () => {

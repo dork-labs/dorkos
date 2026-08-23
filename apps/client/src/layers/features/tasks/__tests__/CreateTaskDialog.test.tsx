@@ -265,6 +265,128 @@ describe('CreateTaskDialog', () => {
     });
   });
 
+  describe('an invalid cron expression', () => {
+    /** Advance a blank dialog to the form, fill the required fields, and type `cron`. */
+    function fillFormWithCron(cron: string) {
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
+        target: { value: 'Nightly build' },
+      });
+      fireEvent.change(
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+        { target: { value: 'Run the nightly build' } }
+      );
+      fireEvent.click(screen.getByText('Use a cron expression'));
+      fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), { target: { value: cron } });
+    }
+
+    it('blocks the save the form was already calling invalid', async () => {
+      // The builder printed "Invalid cron expression" in red and Create stayed
+      // live right beside it, so the schedule went to the server anyway.
+      const transport = createMockTransport({
+        createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' })),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fillFormWithCron('invalid');
+
+      expect(screen.getByText('Invalid cron expression')).toBeTruthy();
+      const create = screen.getByRole('button', { name: 'Create' });
+      expect(create).toBeDisabled();
+
+      // And clicking it anyway sends nothing.
+      fireEvent.click(create);
+      await waitFor(() => expect(transport.createTask).not.toHaveBeenCalled());
+    });
+
+    it('releases the save once the expression reads back', async () => {
+      const transport = createMockTransport({
+        createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' })),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fillFormWithCron('invalid');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+
+      fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
+        target: { value: '0 0 * * *' },
+      });
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Create' })).not.toBeDisabled()
+      );
+    });
+  });
+
+  describe('the enable switch in edit mode', () => {
+    /** Render an edit dialog whose schedule starts enabled, with a failing update. */
+    async function renderWithFailingToggle() {
+      const schedule = createMockSchedule({ id: 'sched-1', name: 'Nightly', enabled: true });
+      const transport = createMockTransport({
+        updateTask: vi.fn().mockRejectedValue(new Error('Server said no')),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+      return transport;
+    }
+
+    it('goes back to where it was when the change did not save', async () => {
+      // The switch moves optimistically. It never moved back, so a failed PATCH
+      // left the dialog saying a schedule was off while its cron kept firing.
+      const transport = await renderWithFailingToggle();
+
+      fireEvent.click(screen.getByRole('switch'));
+      // Optimistic: it reads "off" straight away.
+      expect(screen.getByRole('switch')).not.toBeChecked();
+
+      await waitFor(() =>
+        expect(transport.updateTask).toHaveBeenCalledWith('sched-1', {
+          enabled: false,
+        })
+      );
+      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+    });
+
+    it('stays where the click put it when the change did save', async () => {
+      const schedule = createMockSchedule({ id: 'sched-1', name: 'Nightly', enabled: true });
+      const transport = createMockTransport({
+        updateTask: vi
+          .fn()
+          .mockResolvedValue(createMockSchedule({ id: 'sched-1', enabled: false })),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+      fireEvent.click(screen.getByRole('switch'));
+
+      await waitFor(() => expect(transport.updateTask).toHaveBeenCalled());
+      expect(screen.getByRole('switch')).not.toBeChecked();
+    });
+  });
+
   it('shows schedule preview in ScheduleBuilder', () => {
     const transport = createMockTransport();
     const Wrapper = createWrapper(transport);
