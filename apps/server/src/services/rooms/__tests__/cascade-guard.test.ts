@@ -539,6 +539,121 @@ describe('triggering', () => {
   });
 });
 
+describe('the counter, wired', () => {
+  /**
+   * Two agents that answer everything, in a room that allows each of them three
+   * turns per exchange. The old rule allowed one, so a run that stops at one
+   * each would pass a counter test written only against the refusal.
+   */
+  function openTradingRoom(maxTurnsPerAgentPerCascade: number) {
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: scriptedRunner(() => 'on it'),
+      maxAgentDepth: 30,
+      maxTurnsPerAgentPerCascade,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      harness.human
+    );
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    const boId = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
+    harness.service.updateMembership(room.id, harness.human, anaId, 'always');
+    harness.service.updateMembership(room.id, harness.human, boId, 'always');
+    return { harness, room, anaId, boId };
+  }
+
+  it('lets each agent answer N times and stops it on the next', async () => {
+    const { harness, room, anaId, boId } = openTradingRoom(3);
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'what do you two think?' });
+    await harness.service.triggersIdle();
+
+    // Three each, and then the room stopped them — not one each, which is what
+    // the ancestry rule this replaced would have produced, and not forever,
+    // which is what no rule at all produces.
+    expect(harness.runner.turns.filter((t) => t.authorId === anaId)).toHaveLength(3);
+    expect(harness.runner.turns.filter((t) => t.authorId === boId)).toHaveLength(3);
+    const notices = harness.service
+      .listEntries(room.id, harness.human, { limit: 200 })
+      .filter((entry) => entry.kind === 'notice');
+    expect(notices.map((entry) => entry.body.notice)).toContain('cascade_stopped');
+  });
+
+  it('starts the count over on the person own next message', async () => {
+    const { harness, room, anaId } = openTradingRoom(2);
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'round one' });
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns.filter((t) => t.authorId === anaId)).toHaveLength(2);
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'round two' });
+    await harness.service.triggersIdle();
+
+    // A person's message mints its own cascade, so the counts it is measured
+    // against are its own — a room the counter quietened is one message away
+    // from running again.
+    expect(harness.runner.turns.filter((t) => t.authorId === anaId)).toHaveLength(4);
+  });
+});
+
+describe('limits off', () => {
+  it('runs past every bound, reserves nothing, and says nothing', async () => {
+    // The room is set up so that ANY of the three bounds would have stopped it:
+    // one turn per agent per cascade, a depth ceiling of three, and a per-room
+    // hourly allowance of one. With limits off none of them is asked.
+    let answered = 0;
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      // Answers six times and then goes quiet, which is what ends the run —
+      // deliberately, because with limits off nothing else would.
+      runner: scriptedRunner(() => {
+        answered += 1;
+        return answered <= 6 ? 'on it' : '';
+      }),
+      turnLimitsEnabled: false,
+      maxAgentDepth: 3,
+      maxTurnsPerAgentPerCascade: 1,
+      maxAutomaticTurnsPerRoomPerHour: 1,
+      maxAutomaticTurnsTotalPerHour: 1,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      harness.human
+    );
+    for (const [path, name] of [
+      ['/agents/ana', 'Ana'],
+      ['/agents/bo', 'Bo'],
+    ] as const) {
+      const id = harness.authors.resolveAgent(path, name).id;
+      harness.service.updateMembership(room.id, harness.human, id, 'always');
+    }
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'talk it through' });
+    await harness.service.triggersIdle();
+
+    // More turns ran than the tightest cap in the room allows, so neither the
+    // guard nor the budget was consulted.
+    expect(harness.runner.turns.length).toBeGreaterThan(2);
+    // And nothing was refused, so the room said nothing about limits.
+    const notices = harness.service
+      .listEntries(room.id, harness.human, { limit: 200 })
+      .filter((entry) => entry.kind === 'notice');
+    expect(notices.map((entry) => entry.body.notice)).not.toContain('cascade_stopped');
+    expect(notices.map((entry) => entry.body.notice)).not.toContain('budget_reached');
+    // The agents were told the truth about it rather than a number: `null` is
+    // "nothing is counting", and a fake finite figure here is what this asserts
+    // against.
+    for (const turn of harness.runner.turns) {
+      expect(turn.roomContext.budget).toEqual({
+        automaticRepliesLeftInThisRoomThisHour: null,
+        automaticRepliesLeftInTotalThisHour: null,
+        repliesLeftInThisChain: null,
+      });
+    }
+  });
+});
+
 describe('evaluateCascade', () => {
   /** Ten turns each, the shipped number, so the counter is the thing measured. */
   const limits = { maxAgentDepth: 30, maxTurnsPerAgentPerCascade: 10 };
