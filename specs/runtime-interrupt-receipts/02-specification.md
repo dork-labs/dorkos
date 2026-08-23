@@ -3,7 +3,6 @@ slug: runtime-interrupt-receipts
 id: 260807-231651
 tracker: DOR-1303
 created: 2026-08-07
-specified: 2026-08-23
 status: specified
 ---
 
@@ -30,8 +29,11 @@ never wrote because it never received the interrupt (the named DOR-1244 limit). 
 ADR-0310 transcripts stay runtime-owned: nothing here writes synthetic JSONL.
 
 One shape serves all three stop-shaped verbs. One vocabulary is mapped by every runtime and
-gated by `runtimeConformance`. The client's rule falls out of it: **"stopped" is only ever
-said about an ending DorkOS observed; everything else says "stop requested".**
+gated by `runtimeConformance` — which forces one deliberate behavior change beyond the
+receipt: codex's and opencode's abort paths must name their terminal reason, or a receipt
+saying the turn ended would sit over a turn that settled `idle` (§4.1). The client's rule falls out of it — call it the
+**stop-requested rule**: _"stopped" is only ever said about an ending DorkOS observed;
+everything else says "stop requested"._
 
 ## Background / Problem statement
 
@@ -174,11 +176,22 @@ not against string equality.
 **The runtime interface.** `AgentRuntime.interruptQuery(sessionId): Promise<InterruptReceipt>`
 and `AgentRuntime.stopTask(sessionId, taskId): Promise<InterruptReceipt>` replace the
 booleans. No parallel method, no deprecation window: the boolean is removed in the same
-change, and every internal caller (`trigger-turn.ts`, `trigger-command-intent.ts`,
-`stall-guard.ts`, `run-stream.ts`, `message-dispatcher.ts`, `room-turn-runner.ts`,
-`session-methods.ts`) is migrated with it. Adapters MUST NOT throw for an ordinary
-refusal — `failed` is the receipt for that — matching the rule ADR `260816-143752` set for
-`deliverIntoTurn`.
+change. Adapters MUST NOT throw for an ordinary refusal — `failed` is the receipt for
+that — matching the rule ADR `260816-143752` set for `deliverIntoTurn`.
+
+**The full migration inventory**, because a partial one leaves the lie somewhere:
+
+| Seam                        | File                                                                                                                                                    | What changes                                                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime interface           | `packages/shared/src/agent-runtime.ts`                                                                                                                  | `interruptQuery`, `stopTask` return types + TSDoc                                                                                                                                       |
+| The client port             | `packages/shared/src/transport.ts` (`interruptSession`)                                                                                                 | returns `{ receipt, cancelledQueued }`; the TSDoc paragraph about `ok` being "best-effort" is replaced by the vocabulary                                                                |
+| HTTP transport              | `apps/client/src/layers/shared/lib/transport/session-methods.ts`                                                                                        | parses the receipt                                                                                                                                                                      |
+| Direct transport (Obsidian) | `apps/client/src/layers/shared/lib/direct/session-methods.ts`                                                                                           | stops **synthesising** an `ok` from the runtime boolean; passes the runtime's receipt straight through, and reports `failed` when the in-process runtime has no `interruptQuery` at all |
+| The client's stop hook      | `apps/client/src/layers/features/chat/model/use-session-submit.ts`                                                                                      | `StopOutcome` becomes `{ receipt, cancelled }`; a thrown request becomes `failed / delivery-failed`                                                                                     |
+| The exported type           | `apps/client/src/layers/features/chat/index.ts` (barrel) + `widgets/session/ui/SessionComposer.tsx`                                                     | consume the new `StopOutcome`                                                                                                                                                           |
+| Room seam                   | `apps/server/src/services/rooms/room-turn-port.ts` — `RoomTurnPort.interrupt` returns `Promise<void>` today                                             | returns `Promise<InterruptReceipt>`; `room-turn-runner.ts` implements it, `room-trigger.ts` collects them                                                                               |
+| Server callers              | `trigger-turn.ts`, `trigger-command-intent.ts`, `stall-guard.ts`, `run-stream.ts`, `message-dispatcher.ts`                                              | their local `interruptQuery` structural types and the `!outcome` branches                                                                                                               |
+| Test doubles                | `packages/test-utils/src/fake-agent-runtime.ts`, `packages/test-utils/src/mock-factories.ts` (its `stopTask` mock resolves `{ success, taskId }` today) | default to `not-running / no-open-turn`                                                                                                                                                 |
 
 **The route.** `POST /api/sessions/:id/interrupt` answers
 `{ receipt: InterruptReceipt, cancelledQueued: QueuedMessage[] }`. `ok` is **removed**:
@@ -199,21 +212,73 @@ otherwise `404`. `POST /api/rooms/:id/halt[/:authorId]` answers per-agent receip
 { type: 'turn_stopped', ...receipt, requestedBy?: string, at: number }
 ```
 
-It is written by the server the moment the receipt is produced — **before** the turn's own
+It is ingested by the server the moment the receipt is produced — **before** the turn's own
 `turn_end`, and independently of whether one ever arrives. That ordering is the point: on
 `unconfirmed` and `failed` there may be no `turn_end` at all, and those are precisely the
-endings a second window must be told about. It rides the durable stream, so it replays via
-`Last-Event-ID`, appears in the snapshot, and reaches every window and the WebSocket alike.
-`not-running` is written too — a second window that thinks a turn is open needs to learn
-it is not.
+endings a second window must be told about. It rides the per-session stream, so it replays
+via `Last-Event-ID`, appears in the snapshot, and reaches every window and the WebSocket
+alike. `not-running` is emitted too — a second window that thinks a turn is open needs to
+learn it is not — but it is deliberately not persisted (D9).
+
+**How it becomes durable, and where it does not.** `SessionEventStore.appendTurn` flushes
+only at a `turn_end` with an open turn; anything ingested outside a turn consumes a `seq`
+and is never written, and that hazard is named verbatim in the store's own doc. So
+`turn_stopped` is designed to **ride the turn** rather than to need a new flush path:
+
+- It is **not** added to the projector's `EVENTS_OUTSIDE_THE_TURN`, so it is pushed into
+  `inProgressTurn` and flushed with that turn by the existing `appendTurn`.
+- It **is** added to `RECORDED_EVENT_TYPES` (`projector-persistence.ts`), or claude-code —
+  which persists in `'record'` mode, its history coming from JSONL — would silently drop it
+  at flush. This is the same reasoning that put `interaction_resolved` there: a fact created
+  entirely inside DorkOS is durable here or it is nowhere.
+- `not-running` has no open turn, so it is never persisted. That is correct rather than a
+  gap: there is no turn for a reload to mark, and nothing was stopped (D9).
+- `unconfirmed` and `failed` leave the turn open, so their event is flushed whenever that
+  turn eventually ends, by whatever ends it. If the process dies first, the whole turn's
+  events die with it — the durability every other event in that turn has, not a new hole.
+
+No out-of-turn flush path is introduced, and the seq space stays exactly as sparse as it is
+today.
+
+**Registration points — every one of them, because the DOR-1215 lesson is that missing one
+fails silently.** A compaction boundary shipped with its projection and its row and reached
+neither, for one missing line in a runtime allowlist. A new event type here must hit all of:
+
+| #   | Where                                                                                                                      | Why it fails silently without it                                                                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `packages/shared/src/session-stream.ts` — the `SessionEvent` union                                                         | nothing can construct or parse it                                                                                                                                                                      |
+| 2   | `session-event-normalizer.ts` — the raw shape + case, as `RawContextStaged` does for `context_staged`                      | the server-side emit helper has nothing to ingest                                                                                                                                                      |
+| 3   | `session-state-projector.ts` — deliberately **absent** from `EVENTS_OUTSIDE_THE_TURN`, plus the snapshot marker attachment | it would stream live and never persist                                                                                                                                                                 |
+| 4   | `projector-persistence.ts` — `RECORDED_EVENT_TYPES`                                                                        | dropped at flush for claude-code (`'record'` mode) — the default runtime                                                                                                                               |
+| 5   | `event-log-history.ts` — the `reconstructHistoryFromEvents` fold                                                           | log-backed runtimes (codex, opencode, test-mode) hydrate a cold transcript with no marker. **claude-code does not use this fold**, which is why the marker also needs the JSONL-independent path in §3 |
+| 6   | `session-stream-store.ts` — `TURN_EVENT_TYPES` (client)                                                                    | the live marker never reaches the projection, exactly the DOR-1215 shape                                                                                                                               |
+| 7   | the client bubble projection + its row component                                                                           | the part exists and renders nothing                                                                                                                                                                    |
+| 8   | `docs/integrations/sse-protocol.mdx` + the OpenAPI schema                                                                  | the public contract lies                                                                                                                                                                               |
 
 ### 3. The reload story
 
 **The rule: the durable record is the authority, the transcript is the runtime's.** At
 snapshot build the projector attaches, to the turn it belongs to, a **stop marker** derived
-from the durable `turn_stopped` plus that turn's `turn_end{terminalReason}` — exactly the
-mechanism `session-state-projector.ts` already uses to re-attach sign-in cards to a
-hydrated turn. Nothing is written into any runtime's transcript store (ADR-0310).
+from the durable `turn_stopped` plus that turn's `turn_end{terminalReason}`. Nothing is
+written into any runtime's transcript store (ADR-0310).
+
+Two paths, because the two persistence modes hydrate differently:
+
+- **Log-backed runtimes** (codex, opencode, test-mode — `'history'` mode) get the marker
+  from the existing fold: `reconstructHistoryFromEvents` gains a `turn_stopped` case
+  (`event-log-history.ts`), exactly as `compact_boundary` has one.
+- **claude-code** (`'record'` mode) has no fold — its completed history is read from JSONL —
+  so `buildSnapshot` reads the markers from the durable store it is already holding
+  (`persistence.store`, filtered to `turn_stopped`) and attaches them to the hydrated turns
+  by turn boundary. This is the JSONL-independent path, and it is the one that matters most:
+  claude-code is the default runtime and the one whose CLI writes no marker of its own.
+
+`session-state-projector.ts` already re-attaches non-transcript facts at `buildSnapshot`
+(`openSigninCards`), and that precedent is worth stating precisely: it demonstrates the
+**attachment mechanism**, not the lifetime. Sign-in cards are in-memory and deliberately
+short-lived — one turn of grace, then retired. A stop marker is the opposite: durable, and
+permanent for the life of the turn's rows. The durability comes from the store, not from
+the precedent.
 
 What a reload shows, per ending:
 
@@ -233,32 +298,65 @@ snapshot build and from the live event, keyed by the turn).
 
 ### 4. Per-runtime mapping
 
-Every cell is what the adapter returns; none of it is new behavior beyond the receipt.
+Every cell is what the adapter returns. **The mapping of an existing stop path to a receipt
+adds no behavior; two rows marked "mapper change" do, and they are specified in §4.1.**
 
-| Runtime         | Situation                                                         | Receipt                            |
-| --------------- | ----------------------------------------------------------------- | ---------------------------------- |
-| **claude-code** | no session, or no live query                                      | `not-running` / `no-open-turn`     |
-|                 | `query.interrupt()` acked                                         | `acked`                            |
-|                 | acked-with-failure, then `close()` succeeded                      | `closed` / `refused`               |
-|                 | unanswered inside `STOP_ACK_TIMEOUT_MS`, then `close()` succeeded | `closed` / `ack-timeout`           |
-|                 | stdin already ended — closed with no graceful attempt             | `closed` / `stdin-ended`           |
-|                 | `close()` itself threw                                            | `failed` / `delivery-failed`       |
-| **codex**       | no `AbortController` for the session                              | `not-running` / `no-open-turn`     |
-|                 | `controller.abort()` — SIGTERMs the per-turn `codex exec`         | `closed`                           |
-| **opencode**    | no tracked turn                                                   | `not-running` / `no-open-turn`     |
-|                 | `session.abort` returned `true`                                   | `acked`                            |
-|                 | `session.abort` returned `false`                                  | `unconfirmed` / `runtime-declined` |
-|                 | the abort call threw (sidecar down, network)                      | `failed` / `delivery-failed`       |
-| **test-mode**   | a scripted turn was open                                          | `acked`                            |
-|                 | none                                                              | `not-running` / `no-open-turn`     |
+| Runtime         | Situation                                                                                              | Receipt                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| **claude-code** | no session, or no live query                                                                           | `not-running` / `no-open-turn`                   |
+|                 | `query.interrupt()` acked                                                                              | `acked`                                          |
+|                 | acked-with-failure, then `close()` succeeded                                                           | `closed` / `refused`                             |
+|                 | unanswered inside `STOP_ACK_TIMEOUT_MS`, then `close()` succeeded                                      | `closed` / `ack-timeout`                         |
+|                 | stdin already ended — closed with no graceful attempt                                                  | `closed` / `stdin-ended`                         |
+|                 | `close()` itself threw                                                                                 | `failed` / `delivery-failed`                     |
+|                 | `stopTask` — the SDK's background-task stop                                                            | today's boolean, mapped: `acked` / `not-running` |
+| **codex**       | no `AbortController` for the session                                                                   | `not-running` / `no-open-turn`                   |
+|                 | `controller.abort()` — the adapter's own TSDoc says this SIGTERMs the per-turn `codex exec` subprocess | `closed` — **requires mapper change** (§4.1)     |
+|                 | `stopTask` — codex has no addressable background tasks at all                                          | `not-running` / `no-open-turn`                   |
+| **opencode**    | no tracked turn                                                                                        | `not-running` / `no-open-turn`                   |
+|                 | `session.abort` returned `true`                                                                        | `acked` — **requires mapper change** (§4.1)      |
+|                 | `session.abort` returned `false`                                                                       | `unconfirmed` / `runtime-declined`               |
+|                 | the abort call threw (sidecar down, network)                                                           | `failed` / `delivery-failed`                     |
+|                 | `stopTask` — opencode exposes no addressable background tasks at all                                   | `not-running` / `no-open-turn`                   |
+| **test-mode**   | a scripted turn was open, default                                                                      | `closed`                                         |
+|                 | a scenario declares the receipt it should answer                                                       | as scripted (any of the five)                    |
+|                 | none                                                                                                   | `not-running` / `no-open-turn`                   |
 
 **Codex is `closed`, never `acked`, and that is deliberate.** Its only interrupt primitive
-is aborting the controller, which SIGTERMs the subprocess. Nothing in codex acknowledges a
-stop; the turn ends because the process died. Reporting that as `acked` would tell the
-person the agent wound down when it did not, and would hide the same cost `closed` exists
-to name.
+is aborting the controller, which — by the adapter's own account — SIGTERMs the per-turn
+subprocess. Nothing in codex acknowledges a stop; the turn ends because the process died.
+Reporting that as `acked` would tell the person the agent wound down when it did not, and
+would hide the same cost `closed` exists to name.
 
-#### The OpenCode position (DOR-1299)
+**Test-mode's default is `closed` for exactly that reason (D10).** Its stop is
+`interactionGate.abort` — DorkOS ending the scenario from the outside. Nothing in the
+scripted turn acknowledges anything, so `acked` would make the one runtime the browser tests
+trust the one runtime that lies. Because test-mode exists to stage shapes on demand, a
+scenario may instead **declare** the receipt its abort answers, which is how the browser leg
+reaches `acked`, `unconfirmed` and `failed` deterministically (AC-10).
+
+#### 4.1 The two abort paths must name their terminal reason
+
+`turnEnded(receipt) === true` promises the turn settles `interrupted` (conformance I3), and
+today neither non-claude runtime keeps that promise:
+
+- **codex** — `mapCodexThread` catches the `AbortError` and yields a plain `done` carrying
+  no `terminalReason`, so `feedProjector` closes the turn with a bare `turn_end` and the
+  session settles `idle`. Indistinguishable from a reply that finished by itself.
+- **opencode** — `mapSessionError` suppresses the `MessageAbortedError` shape entirely and
+  the turn terminates on the `session.idle` that follows, again with no terminal reason.
+
+Both are the right call for "an abort is not an error" and the wrong call for "an abort is
+not a completion". **Each mapper's abort path stamps `terminalReason: 'interrupted'` on the
+`done` it yields** — a value already in the projector's `INTERRUPTED_TERMINAL_REASONS`, so
+the lifecycle derivation and the cold-hydrate settle both work with nothing further to
+change. The suppression itself is untouched: still no typed `error` event, still no red card.
+
+This is the one deliberate behavior change outside the receipt itself, and it is what the
+vocabulary means. A receipt that says the turn ended, over a turn that settles `idle`, is
+the same lie in a new place.
+
+#### 4.2 The OpenCode position (DOR-1299)
 
 **DorkOS does not settle a turn it did not observe end.** A `session.abort` that answers
 `false` returns `unconfirmed`, the DorkOS-side turn stays open, the Stop button stays
@@ -297,15 +395,34 @@ The receipt decides what is _said_:
 
 Copy follows `writing-for-humans`; the marker is a quiet notice row, not a red card, for
 every ending except `failed`. **"Stopped" is only ever said about `acked` and `closed`;
-`unconfirmed` and `failed` say "stop requested".** That is the D7 distinction, and it is a
-lint-able rule: those two words appear in exactly one module.
+`unconfirmed` and `failed` say "stop requested".** That is the stop-requested rule, and it
+is checkable rather than aspirational: both phrasings live in one copy module, so a test
+asserts the mapping instead of grepping the UI.
+
+**The re-enable predicate (DOR-1300, made explicit).** The button re-enables when
+
+```
+!turnEnded(receipt) || (receipt.outcome === 'not-running' && stillStreaming)
+```
+
+Each half earns its place. `unconfirmed` and `failed` re-enable because the turn may well
+still be running and pressing again is the only move the person has. `acked` and `closed`
+do not, because DorkOS observed the end and the turn's own settle takes the button away.
+`not-running` is the interesting one and it is today's `ok: false` shape: the runtime found
+no turn while the client still believes it is streaming, so the two disagree — and the
+person must be able to press again rather than watch "Stopping…" for ever. When the client
+agrees there is nothing running, `not-running` needs no button at all. `isStreaming` stays
+the primary signal throughout; the receipt only resolves the disagreement.
 
 `StopConfirmDialog`'s "put N back" promise and the returned `cancelledQueued` are untouched.
 
 #### 5.2 The room halt
 
-`RoomTriggerDispatcher.halt` / `haltAgent` collect a receipt per agent instead of dropping
-the boolean (DOR-1425), and the halted notice reports what actually happened:
+The seam that changes is `RoomTurnPort.interrupt`, which returns `Promise<void>` today —
+its own TSDoc already admits it reports "only that the interrupt was delivered". It returns
+an `InterruptReceipt`; `room-turn-runner.ts` produces it and `RoomTriggerDispatcher.halt` /
+`haltAgent` collect one per agent instead of dropping the boolean (DOR-1425). The halted
+notice then reports what actually happened:
 
 - all `acked`/`closed`/`not-running` → today's copy, unchanged: **"Stopped 3 agents."**
 - any `unconfirmed`/`failed` → **"Stopped 2 agents. 1 didn't confirm — it may still be
@@ -332,13 +449,14 @@ for every runtime:
 - **I2** — with a turn open, the receipt's outcome is one of the five, `runtime` matches the
   adapter under test, and `reason` is present whenever the table in §4 says it is.
 - **I3** — `turnEnded(receipt) === true` implies the session reaches exactly one `turn_end`
-  within the runtime's own bound, and the session settles `interrupted` — never `crashed`,
-  never `error`.
+  within the runtime's own bound, carrying a terminal reason in
+  `INTERRUPTED_TERMINAL_REASONS`, and the session settles `interrupted` — never `idle`,
+  never `crashed`, never `error`. (This is what §4.1's mapper change exists to satisfy.)
 - **I4** — `turnEnded(receipt) === false` implies DorkOS emitted no `turn_end` of its own.
 - **I5** — an adapter whose stop path throws internally still resolves (`failed`), never
   rejects.
-- **I6** — a `turn_stopped` event is on the durable stream for every receipt, including
-  `not-running`, and exactly one per stop request.
+- **I6** — exactly one `turn_stopped` is emitted per stop request, `not-running` included,
+  and every one of them with an open turn is on the durable stream after that turn ends.
 
 ## Decisions
 
@@ -351,8 +469,8 @@ exhaustive at the type level and matches the `MessageDeliveryOutcome` precedent.
 `ControlAck` stays private to the claude-code adapter.
 
 **D3 — `ok` is removed from the interrupt response rather than kept for compatibility.**
-_Resolved: removed._ Pre-launch alpha, three internal callers, and keeping it would keep
-the exact ambiguity this spec exists to remove. `docs/integrations/sse-protocol.mdx` and
+_Resolved: removed._ Pre-launch alpha, a closed set of callers (all of them inventoried in
+§2), and keeping it would keep the exact ambiguity this spec exists to remove. `docs/integrations/sse-protocol.mdx` and
 the OpenAPI schema are regenerated in the same change.
 
 **D4 — A new durable event rather than a field on `turn_end`.** _Resolved: `turn_stopped`._
@@ -373,48 +491,98 @@ _Resolved._ A parallel `interruptQueryWithReceipt` would leave the lying boolean
 interface for every future adapter to implement, which is the legacy pattern AGENTS.md
 forbids tolerating.
 
+**D9 — `turn_stopped` rides the turn; no out-of-turn flush path is built; `not-running` is
+never persisted.** _Resolved._ This is the decision the durability story turns on, so the
+alternatives are on the record.
+
+`SessionEventStore.appendTurn` flushes a turn's events at its `turn_end`, and its own doc
+names the hazard: an event ingested outside a turn consumes a `seq` and is never written.
+Three options were on the table.
+
+- **(a) A new out-of-turn flush path** for an allowlist of events. Rejected as the general
+  answer. It adds a second way for rows to reach the store, makes the already-sparse seq
+  space sparser in a new pattern, and buys nothing for four of the five outcomes — those all
+  happen with a turn open, so riding the turn already persists them.
+- **(b) Attach the receipt to the session snapshot only**, `pendingInteractions`-style.
+  Rejected: it survives within the process and dies with a restart, which is exactly the
+  reload story this spec exists to deliver.
+- **(c) Downgrade the reload story to in-memory replay.** Rejected for the same reason —
+  it is the feature.
+
+**Chosen: ride the turn, plus one deliberate non-persistence.** `turn_stopped` stays out of
+`EVENTS_OUTSIDE_THE_TURN` so it is flushed with its turn, and joins `RECORDED_EVENT_TYPES`
+so claude-code's `'record'` mode keeps it — the `interaction_resolved` precedent exactly: a
+fact created entirely inside DorkOS is durable here or nowhere. `not-running` alone has no
+open turn, so it is emitted live and never written, and **a reload after a `not-running`
+shows nothing at all** — which is right, because nothing was stopped and there is no turn to
+mark. The cost of the choice is the honest one: `unconfirmed` and `failed` are durable only
+once their turn ends, so a server that dies mid-turn loses the receipt along with the rest
+of that turn's events. That is the durability every other event in the turn has, not a new
+hole, and buying more would mean building (a) for one row.
+
+**D10 — Test-mode's abort maps to `closed` by default, and a scenario may declare any
+receipt.** _Resolved._ `interactionGate.abort` is DorkOS ending the scenario from outside;
+by D7's own logic that is a `closed`, and mapping it to `acked` would make the runtime the
+browser tests trust the runtime that lies. Scenario-declared receipts are what keep the
+browser leg able to stage all five endings deterministically.
+
 ## What happens to the open tickets
 
-| Ticket                                                                   | Under this spec                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **DOR-1299** — OpenCode expiry returns `false`, no receipt               | **Closed by this spec.** §4 gives it `unconfirmed / runtime-declined` and takes the position the review left open.                                                                                                                                                                                                            |
-| **DOR-1302** — the pump settles `crashed` on the unacked shape           | **Subsumed.** `closed` is the input the windower lacks: a deliberate close settles `turn_end{terminalReason:'interrupted'}` and the session settles `interrupted` on the pump exactly as on the resume path. Conformance case **I3** is the check.                                                                            |
-| **DOR-1320** — spurious `error_during_execution` frame on a stopped turn | **Subsumed in part.** "A stopped turn writes no durable error frame and shows no red card" is an acceptance criterion here (AC-7). The `[ede_diagnostic]` log noise is a separate logging cleanup and **stays on DOR-1320**.                                                                                                  |
-| **DOR-1425** — the room halt discards the boolean                        | **Subsumed.** §5.2 — the room is one of the three call sites of the one shape.                                                                                                                                                                                                                                                |
-| **DOR-1319** — a Stop took 7.6 s under load                              | **Stays separate.** This spec makes the latency measurable (`turn_stopped` is timestamped and seq'd) and does not change the bound.                                                                                                                                                                                           |
-| **DOR-1435** — `applied:false` on the permission PATCH                   | **Stays separate, conformed.** Same family, different verb: a permission change has no "closed" and no "not-running", so it takes the `ControlAck` tri-state and an `applied` field, not `InterruptReceipt`. What it inherits is the principle — never report a control request as done when DorkOS did not observe it apply. |
-| DOR-1244, DOR-1300, DOR-1301                                             | Already landed. This spec builds on the bound, the settle, and the client's `stop()` return; none of them is reopened.                                                                                                                                                                                                        |
+| Ticket                                                                   | Under this spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DOR-1299** — OpenCode expiry returns `false`, no receipt               | **Closed by this spec.** §4 gives it `unconfirmed / runtime-declined` and takes the position the review left open.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **DOR-1302** — the pump settles `crashed` on the unacked shape           | **Subsumed.** The windower is handed the WHOLE receipt (not merely a "was closed" flag), recorded against the query on the record `stoppedQueries` already keeps. `session-turn-windows.ts` consults it at `crashResult`, which is where an escalated `close()` reaching `onCrash` synthesises the `error_during_execution` result today, and yields a stopped terminal — `terminal_reason: 'interrupted'`, not an error subtype — instead. The session then settles `interrupted` on the pump exactly as on the resume path. Conformance case **I3** is the check. |
+| **DOR-1320** — spurious `error_during_execution` frame on a stopped turn | **Subsumed in part**, at two named sites. A frame DorkOS synthesises is suppressed at `crashResult` (above). A frame the CLI itself produces — a `result` whose subtype is non-success on an ACKED stop, which is what the flag-ON runs saw — is suppressed where that subtype becomes a typed error (`sdk/sdk-error-mapping.ts`), gated on the same per-query stop record, and settles the turn on its interrupt reason instead. Both are AC-7. The `[ede_diagnostic]` log noise is a logging cleanup with no user-facing surface and **stays on DOR-1320**.       |
+| **DOR-1425** — the room halt discards the boolean                        | **Subsumed.** §5.2 — the room is one of the three call sites of the one shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **DOR-1319** — a Stop took 7.6 s under load                              | **Stays separate.** This spec makes the latency measurable (`turn_stopped` is timestamped and seq'd) and does not change the bound.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **DOR-1435** — `applied:false` on the permission PATCH                   | **Stays separate, conformed.** Same family, different verb: a permission change has no "closed" and no "not-running", so it takes the `ControlAck` tri-state and an `applied` field, not `InterruptReceipt`. What it inherits is the principle — never report a control request as done when DorkOS did not observe it apply.                                                                                                                                                                                                                                       |
+| DOR-1244, DOR-1300, DOR-1301                                             | Already landed. This spec builds on the bound, the settle, and the client's `stop()` return; none of them is reopened.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Acceptance criteria
 
 - **AC-1** — `AgentRuntime.interruptQuery` and `stopTask` return `InterruptReceipt` on all
   four runtimes; the boolean does not exist anywhere in the repo (grep-checkable).
-- **AC-2** — `POST /api/sessions/:id/interrupt` returns `{ receipt, cancelledQueued }` and
-  no `ok`; the OpenAPI schema and `sse-protocol.mdx` match.
-- **AC-3** — every stop request writes exactly one durable `turn_stopped`, including
-  `not-running`; a second window connected to the same session receives it, and a client
-  reconnecting with `Last-Event-ID` replays it.
+- **AC-2** — the whole `ok` inventory of §2 is migrated: the route returns
+  `{ receipt, cancelledQueued }`; `Transport.interruptSession` declares it; the HTTP
+  transport parses it; the direct (Obsidian) transport passes the runtime's receipt through
+  and synthesises no `ok`; `StopOutcome` carries the receipt; the OpenAPI schema and
+  `sse-protocol.mdx` match. No `ok` remains on any stop path.
+- **AC-3** — every stop request emits exactly one `turn_stopped` and a second window
+  receives it. For every outcome with an open turn it is on the durable stream once that
+  turn ends — verified after a server restart on claude-code (`'record'` mode) and on one
+  log-backed runtime — and a client reconnecting with `Last-Event-ID` replays it.
+  `not-running` emits live and is deliberately absent from the store (D9).
 - **AC-4** — conformance cases I1–I6 pass for claude-code, codex, opencode and test-mode.
 - **AC-5** — after a Stop and a full page reload, the stopped turn shows exactly one stop
   marker, on each of: a claude-code ack, a claude-code escalated close, and a codex abort.
+  A reload after a `not-running` shows no marker.
 - **AC-6** — the words "stopped"/"Stopped" reach the UI only for `acked`, `closed` (and the
   room's all-stopped notice); `unconfirmed` and `failed` render the "stop requested" copy of
-  §5.1, and the Stop button stays enabled on both.
+  §5.1. The re-enable predicate of §5.1 is unit-tested over all five outcomes crossed with
+  `stillStreaming` true/false.
 - **AC-7** — a Stop on the persistent path settles `turn_end{terminalReason:'interrupted'}`
   and the session settles `interrupted`, with no durable `error` frame and no red failure
-  card (DOR-1302, DOR-1320-in-part).
+  card — covering both suppression sites: a DorkOS-synthesised `crashResult` and an acked
+  stop whose CLI `result` carried a non-success subtype (DOR-1302, DOR-1320-in-part).
 - **AC-8** — a room halt where one agent answers `unconfirmed` posts the mixed notice of
   §5.2, and every claim is still released.
 - **AC-9** — `cancelledQueued` is returned unchanged on every outcome, `failed` included.
-- **AC-10** — a browser test on test-mode drives Stop through `acked` and through a scripted
-  `unconfirmed`, and asserts the two different copies and the two different button states.
+- **AC-10** — a browser test on test-mode drives Stop through a scripted `acked`, a scripted
+  `unconfirmed` and the default `closed`, asserting the copy and the button state for each.
+- **AC-11** — a codex abort and an opencode abort each settle
+  `turn_end{terminalReason:'interrupted'}` and the `interrupted` lifecycle, live and after a
+  cold hydrate (§4.1), with no typed `error` event on either.
 
 ## Risks
 
-- **A new durable event type is a stream-contract change.** Older clients ignore unknown
-  event types by construction, and the snapshot path is additive; the risk is an
-  exhaustive-switch typecheck fanning out across the client. Mitigated by keeping
-  `turn_stopped` out of the transcript reducer's message path — it feeds the marker only.
+- **The real hazard of a new event type is the allowlists, not the types.** A typecheck
+  failure is loud and cheap; a missing line in one of the eight registration points of §2 is
+  silent — the DOR-1215 shape, where a compaction boundary's projection and row both shipped
+  and nothing live ever reached them. Two of the eight are easy to miss for opposite
+  reasons: `RECORDED_EVENT_TYPES`, whose absence drops the row for the DEFAULT runtime only,
+  and the client's `TURN_EVENT_TYPES`, whose absence breaks the LIVE marker while the reload
+  marker keeps working. `turn_stopped` belongs in both — it rides the turn on the server and
+  must reach the projection on the client — and a test pins each membership by name.
 - **`unconfirmed` leaves a Stop button on a turn that may already be over.** That is the
   honest state, and `isStreaming` still governs the streaming indicator; the button
   disappears when the turn's own settle arrives.
@@ -427,7 +595,18 @@ forbids tolerating.
 - `apps/server/src/services/runtimes/claude-code/sessions/bounded-control.ts` (the bound,
   `ControlAck`), `sessions/session-store.ts` (`interruptGivenQuery`, the escalation)
 - `apps/server/src/routes/sessions.ts` (the interrupt route and its placeholder comment)
-- `apps/server/src/services/rooms/room-trigger.ts`, `services/rooms/room-turn-runner.ts`
+- `apps/server/src/services/rooms/room-turn-port.ts` (`RoomTurnPort.interrupt`, the seam),
+  `services/rooms/room-trigger.ts`, `services/rooms/room-turn-runner.ts`
+- `apps/server/src/services/session/session-event-store.ts` (the turn-scoped flush and its
+  named out-of-turn hazard), `session/projector-persistence.ts` (`RECORDED_EVENT_TYPES`,
+  the two modes), `session/event-log-history.ts` (the history fold),
+  `session/session-state-projector.ts` (`EVENTS_OUTSIDE_THE_TURN`,
+  `INTERRUPTED_TERMINAL_REASONS`, snapshot attachment)
+- `apps/server/src/services/runtimes/codex/event-mapper.ts` (`mapCodexThread`'s abort arm),
+  `runtimes/opencode/session-event-mapper.ts` (`mapSessionError`'s abort suppression),
+  `runtimes/claude-code/sessions/session-turn-windows.ts` (`crashResult`)
+- `apps/client/src/layers/entities/session/model/session-stream-store.ts`
+  (`TURN_EVENT_TYPES`), `packages/shared/src/transport.ts` (`interruptSession`)
 - `apps/server/src/services/tasks/run-stream.ts` (`interruptRun`)
 - `apps/client/src/layers/features/chat/model/use-session-submit.ts` (`stop()`)
 - `meta/chat-capabilities.md` §1 (C-10, the five-phase Stop matrix and its named limits)

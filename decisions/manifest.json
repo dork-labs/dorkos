@@ -12,9 +12,13 @@
       "affects": [
         "packages/shared/src/agent-runtime.ts",
         "packages/shared/src/session-stream.ts",
+        "packages/shared/src/transport.ts",
         "apps/server/src/routes/sessions.ts",
         "apps/server/src/services/runtimes/claude-code/sessions/session-store.ts",
-        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/runtimes/codex/event-mapper.ts",
+        "apps/server/src/services/runtimes/opencode/session-event-mapper.ts",
+        "apps/server/src/services/session/projector-persistence.ts",
+        "apps/server/src/services/rooms/room-turn-port.ts",
         "apps/client/src/layers/features/chat/model/use-session-submit.ts"
       ]
     },

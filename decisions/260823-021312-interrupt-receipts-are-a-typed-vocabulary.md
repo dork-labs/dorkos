@@ -55,7 +55,10 @@ rather than settling a turn that may still be producing text.
   stop marker for a turn whose runtime transcript never recorded one — without writing
   synthetic transcript bytes (ADR-0310 holds).
 - The pump's "a deliberate close is a crash" bug (DOR-1302) becomes a mapping, not a
-  heuristic: the windower is handed the outcome instead of guessing at it.
+  heuristic: the windower is handed the whole receipt instead of guessing at it.
+- The vocabulary forces the runtimes to be honest about their own endings: codex's and
+  opencode's aborts, which today settle as ordinary completions, must name an interrupted
+  terminal reason for a receipt over them to be true.
 
 ### Negative
 
@@ -70,3 +73,6 @@ rather than settling a turn that may still be producing text.
   offers a per-session force-abort.
 - The receipt is derived from `ControlAck` rather than aliasing it, so the claude-code
   adapter now maintains two related vocabularies.
+- Durability is bought by riding the turn rather than by a new flush path, so a receipt
+  whose turn never ends before the process does is lost with the rest of that turn — and
+  one outcome, `not-running`, is deliberately never persisted at all.
