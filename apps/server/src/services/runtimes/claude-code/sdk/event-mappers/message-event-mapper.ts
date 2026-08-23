@@ -3,6 +3,11 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../../agent-types.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
+import {
+  parseCreatedTaskId,
+  buildTaskIdAssignedEvent,
+  buildTaskRemovedEvent,
+} from '../build-task-event.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
 function extractToolResultText(content: unknown): string {
@@ -198,6 +203,21 @@ export async function* mapMessageEvent(
           if (toolState.resolvedResultIds.has(block.tool_use_id)) continue;
 
           const resultText = extractToolResultText(block.content);
+
+          // TaskCreate carries no id in its input — the tool_result is the
+          // only place the SDK's real id ever appears. Resolve the pending
+          // task (created under a provisional key, see `build-task-event.ts`)
+          // to that real id here, or drop it if the call failed (DOR-1441).
+          if (toolState.toolNameById.get(block.tool_use_id) === 'TaskCreate') {
+            const realId = block.is_error ? null : parseCreatedTaskId(resultText);
+            yield {
+              type: 'task_update',
+              data: realId
+                ? buildTaskIdAssignedEvent(block.tool_use_id, realId)
+                : buildTaskRemovedEvent(block.tool_use_id),
+            };
+          }
+
           if (resultText) {
             const uiResourceUri = extractUiResourceUri(resultText);
             yield {

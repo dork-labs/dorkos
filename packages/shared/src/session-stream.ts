@@ -418,9 +418,11 @@ export const SessionEventSchema = z
     z.object({
       ...seqShape,
       type: z.literal('todo_update'),
-      action: z.enum(['create', 'update', 'snapshot']),
+      action: z.enum(['create', 'update', 'snapshot', 'id_assigned', 'remove']),
       task: TaskItemSchema,
       tasks: z.array(TaskItemSchema).optional(),
+      /** For `id_assigned`: the provisional key being replaced by `task.id`. */
+      previousId: z.string().optional(),
     }),
     // A subagent lifecycle update.
     z.object({

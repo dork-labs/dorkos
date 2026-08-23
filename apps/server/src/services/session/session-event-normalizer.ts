@@ -574,13 +574,16 @@ function toPartialContextUsage(data: StreamData): PartialContextUsage | null {
   return Object.keys(usage).length === 0 ? null : usage;
 }
 
-/** Map a `task_update` StreamEvent (TodoWrite) to a `todo_update` member. */
+/** Map a `task_update` StreamEvent (Task tool / TodoWrite) to a `todo_update` member. */
 function toTodoUpdate(data: StreamData): RawOf<'todo_update'> {
   return {
     type: 'todo_update',
     action: (data.action as RawOf<'todo_update'>['action']) ?? 'snapshot',
     task: data.task as RawOf<'todo_update'>['task'],
     ...(data.tasks !== undefined ? { tasks: data.tasks as RawOf<'todo_update'>['tasks'] } : {}),
+    ...(data.previousId !== undefined
+      ? { previousId: data.previousId as RawOf<'todo_update'>['previousId'] }
+      : {}),
   };
 }
 

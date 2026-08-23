@@ -1,18 +1,32 @@
-import type { TaskItem, SessionTaskStatus } from '@dorkos/shared/types';
+import type { TaskItem } from '@dorkos/shared/types';
+import { applyTaskEvent, createTaskFoldState } from '@dorkos/shared/task-fold';
 import type { TranscriptLine } from './transcript-parser.js';
-
-/** Tool names that carry task/todo data in their input. */
-const TASK_TOOL_NAMES = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite']);
+import {
+  buildTaskEvent,
+  buildTaskIdAssignedEvent,
+  buildTaskRemovedEvent,
+  buildTodoWriteEvent,
+  extractTaskResultText,
+  parseCreatedTaskId,
+  TASK_TOOL_NAMES,
+} from '../sdk/build-task-event.js';
 
 /**
  * Parse task state from JSONL transcript lines.
  *
- * Processes TaskCreate/TaskUpdate/TodoWrite tool_use blocks and reconstructs
- * final state. TodoWrite replaces the entire list (last call wins).
+ * Walks `TaskCreate`/`TaskUpdate`/`TodoWrite` tool_use blocks (in `assistant`
+ * messages) and their tool_result blocks (in `user` messages), applying the
+ * same {@link applyTaskEvent} fold the live SSE stream uses. `TaskCreate`
+ * input carries no id — only its tool_result does — so a created task is
+ * held under a provisional key until its result confirms the SDK's real id
+ * (or is dropped, if the call failed). `TodoWrite` replaces the entire list
+ * (last call wins).
  */
 export function parseTasks(lines: string[]): TaskItem[] {
-  const tasks = new Map<string, TaskItem>();
-  let nextId = 1;
+  const state = createTaskFoldState();
+  // Tracks TaskCreate tool_use ids awaiting their tool_result, so a later
+  // `user`-message result block can be recognized as belonging to one.
+  const pendingCreateIds = new Set<string>();
 
   for (const line of lines) {
     let parsed: TranscriptLine;
@@ -22,78 +36,46 @@ export function parseTasks(lines: string[]): TaskItem[] {
       continue;
     }
 
-    if (parsed.type !== 'assistant') continue;
     const message = parsed.message;
     if (!message?.content || !Array.isArray(message.content)) continue;
 
-    for (const block of message.content) {
-      if (block.type !== 'tool_use') continue;
-      if (!block.name || !TASK_TOOL_NAMES.has(block.name)) continue;
-      const input = block.input;
-      if (!input) continue;
+    if (parsed.type === 'assistant') {
+      for (const block of message.content) {
+        if (block.type !== 'tool_use') continue;
+        if (!block.name || !TASK_TOOL_NAMES.has(block.name) || !block.id) continue;
+        const input = block.input;
+        if (!input) continue;
 
-      if (block.name === 'TodoWrite') {
-        // Full overwrite — clear existing tasks and rebuild from todos array
-        tasks.clear();
-        nextId = 1;
-        const todos = input.todos;
-        if (Array.isArray(todos)) {
-          for (const todo of todos) {
-            const id = String(nextId++);
-            tasks.set(id, {
-              id,
-              subject: (todo.content as string) ?? '',
-              status: ((todo.status as string) ?? 'pending') as SessionTaskStatus,
-              activeForm: (todo.activeForm as string) ?? undefined,
-            });
+        if (block.name === 'TodoWrite') {
+          const event = buildTodoWriteEvent(input);
+          if (event) applyTaskEvent(state, event, Date.now());
+        } else if (block.name === 'TaskCreate') {
+          const event = buildTaskEvent('TaskCreate', input, block.id);
+          if (event) {
+            applyTaskEvent(state, event, Date.now());
+            pendingCreateIds.add(block.id);
           }
+        } else if (block.name === 'TaskUpdate') {
+          const event = buildTaskEvent('TaskUpdate', input);
+          if (event) applyTaskEvent(state, event, Date.now());
         }
-      } else if (block.name === 'TaskCreate') {
-        const id = String(nextId++);
-        tasks.set(id, {
-          id,
-          subject: (input.subject as string) ?? '',
-          description: input.description as string | undefined,
-          activeForm: input.activeForm as string | undefined,
-          status: 'pending',
-        });
-      } else if (block.name === 'TaskUpdate' && input.taskId) {
-        const taskId = input.taskId as string;
-        let existing = tasks.get(taskId);
-        if (!existing && input.subject) {
-          // Fallback: the SDK's own task id (used here) and this reader's
-          // creation-order counter (used for TaskCreate above) are two
-          // different id spaces that usually happen to agree but are not
-          // guaranteed to — a lookup miss otherwise silently drops the
-          // update (DOR-1441). When the update carries a subject, match by
-          // subject and re-key the entry under the SDK's real id so later
-          // id-only updates for the same task resolve directly.
-          for (const [localId, task] of tasks) {
-            if (task.subject === input.subject) {
-              tasks.delete(localId);
-              existing = { ...task, id: taskId };
-              tasks.set(taskId, existing);
-              break;
-            }
-          }
-        }
-        if (existing) {
-          if (input.status) existing.status = input.status as SessionTaskStatus;
-          if (input.subject) existing.subject = input.subject as string;
-          if (input.activeForm) existing.activeForm = input.activeForm as string;
-          if (input.description) existing.description = input.description as string;
-          if (input.addBlockedBy)
-            existing.blockedBy = [
-              ...(existing.blockedBy ?? []),
-              ...(input.addBlockedBy as string[]),
-            ];
-          if (input.addBlocks)
-            existing.blocks = [...(existing.blocks ?? []), ...(input.addBlocks as string[])];
-          if (input.owner) existing.owner = input.owner as string;
-        }
+      }
+    } else if (parsed.type === 'user') {
+      for (const block of message.content) {
+        if (block.type !== 'tool_result' || !block.tool_use_id) continue;
+        if (!pendingCreateIds.has(block.tool_use_id)) continue;
+        pendingCreateIds.delete(block.tool_use_id);
+
+        const realId = block.is_error
+          ? null
+          : parseCreatedTaskId(extractTaskResultText(block.content));
+        const event = realId
+          ? buildTaskIdAssignedEvent(block.tool_use_id, realId)
+          : buildTaskRemovedEvent(block.tool_use_id);
+        applyTaskEvent(state, event, Date.now());
       }
     }
   }
 
-  return Array.from(tasks.values());
+  return Array.from(state.tasks.values());
 }
