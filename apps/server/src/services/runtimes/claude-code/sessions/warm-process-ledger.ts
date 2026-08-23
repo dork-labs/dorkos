@@ -369,10 +369,23 @@ export interface ReapOrphanedWarmProcessesInput {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** Wait, so the grace window can be driven synthetically in tests. */
-function realSleep(ms: number): Promise<void> {
+/**
+ * Wait, so the grace window can be driven synthetically in tests.
+ *
+ * The timer is deliberately NOT `unref`'d, unlike almost every other timer in
+ * this server. This runs at the very top of boot, before the HTTP listener and
+ * before any other handle exists, so an unref'd timer is the ONLY thing holding
+ * the event loop — and Node answers an empty loop by exiting, silently and with
+ * status 0. That is not theoretical: it is what the first version of this did,
+ * and a server with orphans to reap quit during the reap and never started.
+ * Two seconds of a referenced timer, once, at boot, is the correct trade.
+ *
+ * @internal Exported so a test can pin that it holds the event loop open.
+ * @param ms - How long to wait
+ */
+export function graceSleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms).unref?.();
+    setTimeout(resolve, ms);
   });
 }
 
@@ -442,7 +455,7 @@ export async function reapOrphanedWarmProcesses(
 ): Promise<WarmProcessReapReport> {
   const probe = input.probe ?? systemProcessProbe;
   const ledger = input.ledger ?? sharedWarmProcessLedger();
-  const sleep = input.sleep ?? realSleep;
+  const sleep = input.sleep ?? graceSleep;
 
   const file = ledger.read();
   if (!file) return { reaped: [], skipped: [], declined: 'no-ledger' };

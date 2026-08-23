@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   WarmProcessLedger,
+  graceSleep,
   reapOrphanedWarmProcesses,
   systemProcessProbe,
   type ProcessProbe,
@@ -234,6 +235,26 @@ describe('reapOrphanedWarmProcesses', () => {
 
     expect(stubborn.signals).toContainEqual({ pid: 900, signal: 'SIGTERM' });
     expect(stubborn.signals).toContainEqual({ pid: 900, signal: 'SIGKILL' });
+  });
+});
+
+describe('graceSleep', () => {
+  it('holds the event loop open while it waits', async () => {
+    // The sweep runs at the very top of boot, before the HTTP listener and
+    // before any other handle exists. An `unref`'d timer would be the only
+    // thing keeping the loop alive, and Node answers an empty loop by exiting
+    // silently with status 0 — which is exactly what a first cut of this did:
+    // a server with orphans to reap quit during the reap and never started.
+    // `getActiveResourcesInfo` lists only resources that KEEP THE LOOP ALIVE,
+    // so an unref'd timer is invisible to it and this goes red.
+    const countTimers = (): number =>
+      process.getActiveResourcesInfo().filter((resource) => resource === 'Timeout').length;
+
+    const before = countTimers();
+    const waiting = graceSleep(20);
+    expect(countTimers()).toBeGreaterThan(before);
+
+    await waiting;
   });
 });
 
