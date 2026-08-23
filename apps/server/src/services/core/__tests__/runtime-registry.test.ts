@@ -649,6 +649,38 @@ describe('RuntimeRegistry', () => {
       });
     });
 
+    describe('getBoundRuntimeTypes (DOR-1436)', () => {
+      it('answers only for sessions that are actually bound', async () => {
+        await registry.persistSessionRuntime('started', 'test-mode');
+        // A settings write before the first turn: the row exists, the owner does
+        // not (DOR-812).
+        await registry.saveSessionSettings('picked-a-mode', { permissionMode: 'default' });
+
+        const bound = registry.getBoundRuntimeTypes(['started', 'picked-a-mode', 'never-seen']);
+
+        expect(bound).toEqual(new Map([['started', 'test-mode']]));
+      });
+
+      it('never infers, where getSessionRuntimeType does', async () => {
+        // The whole reason this method exists beside that one: its caller
+        // deletes rows, and the default-runtime inference would hand every
+        // never-started session to claude-code and take its words with it.
+        expect(await registry.getSessionRuntimeType('legacy-session')).toBe('claude-code');
+        expect(registry.getBoundRuntimeTypes(['legacy-session']).size).toBe(0);
+      });
+
+      it('reads more ids than one statement can bind', async () => {
+        const ids = Array.from({ length: 1200 }, (_, i) => `bulk-${i}`);
+        for (const id of ids) await registry.persistSessionRuntime(id, 'test-mode');
+
+        expect(registry.getBoundRuntimeTypes(ids).size).toBe(1200);
+      });
+
+      it('asks nothing for an empty list', () => {
+        expect(registry.getBoundRuntimeTypes([])).toEqual(new Map());
+      });
+    });
+
     describe('resolveForSession', () => {
       it('returns claude-code for a new session without writing a row (infer-on-miss, no persist)', async () => {
         const runtime = await registry.resolveForSession('new-session');

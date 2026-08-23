@@ -56,6 +56,14 @@ function rowToSettings(row: SettingsRow): SessionSettings {
   return settings;
 }
 
+/**
+ * How many session ids one `WHERE session_id IN (...)` may carry. Every id
+ * spends one of SQLite's compiled-in bound variables (~32k), so a list past the
+ * ceiling would fail the whole read rather than part of it — the same ceiling,
+ * and the same 500, the queue store chunks its deletes at.
+ */
+const BOUND_RUNTIME_CHUNK_SIZE = 500;
+
 /** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
 function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata.$inferInsert> {
   const patch: Partial<typeof sessionMetadata.$inferInsert> = {};
@@ -626,6 +634,39 @@ export class RuntimeRegistry {
     logger.debug(
       `[RuntimeRegistry] Re-keyed session_metadata '${fromId}' -> '${toId}'${destination ? ' (merged into existing row)' : ''}`
     );
+  }
+
+  /**
+   * Batch-read the runtime each of these sessions is BOUND to, with no
+   * inference whatsoever.
+   *
+   * The deliberate opposite of {@link getSessionRuntimeType}, which answers
+   * every unbound session with the registered default so a read never 503s. A
+   * caller about to DELETE something needs the other answer: a session with no
+   * row, or a row whose `runtime` is still NULL, has never started, so nobody
+   * knows who owns it — and it is simply absent from this map rather than
+   * quietly attributed to claude-code. The boot reconcile
+   * (`reconcile-session-rows.ts`) is that caller: an absent id keeps its rows.
+   *
+   * Chunked, because every id spends one of SQLite's bound variables and the
+   * caller's list is as long as the backlog it is reconciling. The chunking
+   * lives here rather than at the caller so no future caller has to remember it.
+   *
+   * @param ids - Session identifiers to read
+   */
+  getBoundRuntimeTypes(ids: string[]): Map<string, string> {
+    const result = new Map<string, string>();
+    if (ids.length === 0) return result;
+    const db = this.requireDb('getBoundRuntimeTypes');
+    for (let i = 0; i < ids.length; i += BOUND_RUNTIME_CHUNK_SIZE) {
+      const rows = db
+        .select({ sessionId: sessionMetadata.sessionId, runtime: sessionMetadata.runtime })
+        .from(sessionMetadata)
+        .where(inArray(sessionMetadata.sessionId, ids.slice(i, i + BOUND_RUNTIME_CHUNK_SIZE)))
+        .all();
+      for (const row of rows) if (row.runtime) result.set(row.sessionId, row.runtime);
+    }
+    return result;
   }
 
   /**

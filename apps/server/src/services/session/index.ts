@@ -98,6 +98,11 @@ export type {
   MessageDispatchResult,
   WhenBusy,
 } from './message-dispatcher.js';
+export { reconcileSessionRows } from './reconcile-session-rows.js';
+export type {
+  SessionRowReconcileDeps,
+  SessionRowReconcileReport,
+} from './reconcile-session-rows.js';
 export { linkSessionId } from './session-key-registry.js';
 export {
   cancelQueuedMessage,
