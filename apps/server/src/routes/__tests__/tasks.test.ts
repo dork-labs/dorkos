@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import {
   TaskSchedulerService,
@@ -83,6 +84,7 @@ function taskInput(
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -142,7 +144,10 @@ describe('Tasks routes', () => {
     scheduler = createMockScheduler();
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+    );
     // Error handler to surface errors instead of hanging
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -649,7 +654,10 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     });
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+    );
   });
 
   afterEach(() => {

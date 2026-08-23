@@ -12,10 +12,16 @@ vi.mock('../../../lib/logger.js', () => ({
   // reconciler hands the logger, and a stub would let a regression through.
   logError: (err: unknown) =>
     err instanceof Error ? { error: err.message, stack: err.stack } : { error: String(err) },
+  // The registrar (constructed by these suites) builds a tagged child logger at
+  // import time; without this the module mock has no `createTaggedLogger` to
+  // give it and the whole suite fails to load.
+  createTaggedLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 import { logger } from '../../../lib/logger.js';
 import { TaskReconciler } from '../task-reconciler.js';
+import { TaskRegistrar } from '../task-registrar.js';
+import { FakeScheduler } from './fake-scheduler.js';
 import { TaskStore } from '../task-store.js';
 import {
   TASK_TEMPLATES_DIRNAME,
@@ -37,6 +43,7 @@ describe('TaskReconciler', () => {
   let db: Db;
   let store: TaskStore;
   let reconciler: TaskReconciler;
+  let scheduler: FakeScheduler;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -45,7 +52,8 @@ describe('TaskReconciler', () => {
     await fs.mkdir(tasksDir, { recursive: true });
     db = createTestDb();
     store = new TaskStore(db);
-    reconciler = new TaskReconciler(store);
+    scheduler = new FakeScheduler();
+    reconciler = new TaskReconciler(store, new TaskRegistrar({ store, scheduler }));
     reconciler.addDirectory(tasksDir, 'global');
   });
 

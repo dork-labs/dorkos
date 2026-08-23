@@ -3,6 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskFileWatcher } from '../task-file-watcher.js';
+import { TaskRegistrar } from '../task-registrar.js';
+import { FakeScheduler } from './fake-scheduler.js';
 import { TaskStore } from '../task-store.js';
 import { TASK_TEMPLATES_DIRNAME } from '../task-templates.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -44,6 +46,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
   let db: Db;
   let store: TaskStore;
   let watcher: TaskFileWatcher;
+  let scheduler: FakeScheduler;
 
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'task-watcher-'));
@@ -51,7 +54,8 @@ describe('TaskFileWatcher (real chokidar)', () => {
     await mkdir(tasksDir, { recursive: true });
     db = createTestDb();
     store = new TaskStore(db);
-    watcher = new TaskFileWatcher(store, () => {}, dorkHome);
+    scheduler = new FakeScheduler();
+    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler }));
   });
 
   afterEach(async () => {

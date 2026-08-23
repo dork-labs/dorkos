@@ -28,7 +28,7 @@ import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { slugify } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import type { TaskStore } from '../tasks/task-store.js';
-import type { TaskSchedulerService } from '../tasks/task-scheduler-service.js';
+import type { TaskRegistrar } from '../tasks/task-registrar.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import type {
   ExistingSchedule,
@@ -40,7 +40,12 @@ import type {
 /** Constructor dependencies for {@link ShapeScheduleService}. */
 export interface ShapeScheduleServiceDeps {
   taskStore: TaskStore;
-  scheduler: TaskSchedulerService;
+  /**
+   * The one seam that turns a row into a live cron job. Shared with the tasks
+   * routes, the file watcher, and the reconciler — a Shape's schedule is an
+   * ordinary schedule, and must not have a second opinion about when it runs.
+   */
+  registrar: TaskRegistrar;
   meshCore?: MeshCore;
   dorkHome: string;
   logger: Logger;
@@ -146,9 +151,7 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
           filePath,
         });
 
-    if (schedule.enabled && schedule.status === 'active') {
-      this.deps.scheduler.registerTask(schedule);
-    }
+    this.deps.registrar.syncTask(schedule.id);
   }
 
   /**
@@ -262,8 +265,9 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * @param task - The schedule to tear down.
    */
   private async teardownSchedule(task: Task): Promise<void> {
-    this.deps.scheduler.unregisterTask(task.id);
     this.deps.taskStore.deleteTask(task.id);
+    // Row first, then the seam: with no row to read, `syncTask` unregisters.
+    this.deps.registrar.syncTask(task.id);
     // A Shape's schedule can be torn down while still waiting on the operator's
     // approval. Ending the standing condition here is what stops an armed
     // escalation buzzing a phone about a schedule that is gone (DOR-1387

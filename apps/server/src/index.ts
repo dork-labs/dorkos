@@ -88,6 +88,7 @@ import {
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
+import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
@@ -366,6 +367,7 @@ let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
+let taskRegistrar: TaskRegistrar | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -2141,9 +2143,19 @@ async function start() {
       activityService,
       dorkHome,
     });
+    // The ONE registration seam, shared by every writer that can change what a
+    // task's schedule is: these routes, the file watcher, and the reconciler.
+    taskRegistrar = new TaskRegistrar({ store: taskStore, scheduler: schedulerService });
     app.use(
       '/api/tasks',
-      createTasksRouter(taskStore, schedulerService, dorkHome, meshCore, activityService)
+      createTasksRouter(
+        taskStore,
+        schedulerService,
+        taskRegistrar,
+        dorkHome,
+        meshCore,
+        activityService
+      )
     );
     setTasksEnabled(true);
     mountedRouters.push('tasks');
@@ -2168,10 +2180,10 @@ async function start() {
 
     // Wire file watcher and reconciler for file-first task sync
     const globalTasksDir = path.join(dorkHome, 'tasks');
-    taskFileWatcher = new TaskFileWatcher(taskStore, () => {}, dorkHome);
+    taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar);
     taskFileWatcher.watch(globalTasksDir, 'global');
 
-    taskReconciler = new TaskReconciler(taskStore);
+    taskReconciler = new TaskReconciler(taskStore, taskRegistrar);
     taskReconciler.addDirectory(globalTasksDir, 'global');
 
     // Watch each registered agent's task directory
@@ -2412,10 +2424,10 @@ async function start() {
   // marketplace block below) so the agent-create re-bind works even when the
   // extension manager is off. Degrades to a no-op stub when Tasks is disabled.
   const shapeScheduleService: ShapeScheduleServiceLike =
-    taskStore && schedulerService
+    taskStore && taskRegistrar
       ? new ShapeScheduleService({
           taskStore,
-          scheduler: schedulerService,
+          registrar: taskRegistrar,
           meshCore,
           dorkHome,
           logger,

@@ -1,14 +1,20 @@
 /**
- * Safety-net reconciler for file→DB sync.
+ * Safety-net reconciler for file→DB→scheduler sync.
  *
  * Runs every 5 minutes to catch changes missed by the file watcher
  * (e.g., during network filesystem hiccups or race conditions).
+ *
+ * A safety net that only repaired the DB was half a net: the pass it exists to
+ * be a backstop for is the one the watcher missed, so the running cron job was
+ * exactly as stale as the row had been. Every write here now goes on through
+ * {@link TaskRegistrar}.
  *
  * @module services/tasks/task-reconciler
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { TaskStore } from './task-store.js';
+import type { TaskRegistrar } from './task-registrar.js';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
@@ -67,7 +73,10 @@ export class TaskReconciler {
   /** One entry per distinct fault currently being damped. See {@link report}. */
   private reportedFailures = new Map<string, ReportedFailure>();
 
-  constructor(private store: TaskStore) {}
+  constructor(
+    private store: TaskStore,
+    private registrar: TaskRegistrar
+  ) {}
 
   /** Register a directory to reconcile. */
   addDirectory(
@@ -276,7 +285,11 @@ export class TaskReconciler {
           projectPath: dir.projectPath,
         };
         try {
-          this.store.upsertFromFile(def, dir.agentId);
+          const task = this.store.upsertFromFile(def, dir.agentId);
+          // Carry the repair through to the clock. This pass exists to catch
+          // what the watcher missed, and what the watcher missed was never only
+          // the row.
+          this.registrar.syncTask(task.id);
           upserted++;
         } catch (err) {
           this.report(
@@ -334,6 +347,10 @@ export class TaskReconciler {
         const updatedAt = new Date(task.updatedAt).getTime();
         if (now - updatedAt > ORPHAN_GRACE_MS) {
           this.store.deleteTask(task.id);
+          // A deleted row with a live job is worse than a stale schedule: the
+          // job still fires, and the run it tries to record belongs to a
+          // schedule that no longer exists.
+          this.registrar.syncTask(task.id);
           // A schedule whose file went away can still have been waiting on the
           // operator. Ending the standing condition here is what stops an armed
           // escalation buzzing a phone about a schedule that no longer exists
@@ -342,6 +359,9 @@ export class TaskReconciler {
           orphaned++;
         } else if (task.status !== 'paused') {
           this.store.markRemovedByFilePath(task.filePath);
+          // Pausing a row the operator can see, while its job keeps firing, is
+          // the same lie the watcher told before the registrar existed.
+          this.registrar.syncTask(task.id);
         }
       } catch (err) {
         this.report('error', `[TaskReconciler] Failed to retire removed task ${task.id}`, err);

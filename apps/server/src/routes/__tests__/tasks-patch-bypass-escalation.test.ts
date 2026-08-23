@@ -33,6 +33,7 @@ import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
@@ -47,6 +48,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -138,7 +140,10 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
 
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, dorkHome));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    );
   });
 
   afterEach(async () => {

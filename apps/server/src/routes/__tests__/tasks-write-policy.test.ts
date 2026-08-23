@@ -58,11 +58,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -113,7 +115,10 @@ describe('operator-only task fields on the REST routes', () => {
       if (resolvedAgentIdentity) res.locals.agentIdentity = resolvedAgentIdentity;
       next();
     });
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
+    );
   });
 
   afterEach(() => {
