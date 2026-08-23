@@ -191,14 +191,19 @@ export interface RoomContextInput {
   /** Other agents holding a turn claim in this room right now. */
   working: ReadonlyArray<{ authorId: string; since: string }>;
   /**
-   * Automatic turns still available this hour, per room and in total, or `null`
-   * when the person turned automatic-reply limits off.
+   * Automatic turns still available this hour, per room and in total, with
+   * `null` for either ceiling that nothing is counting.
+   *
+   * **The two are answered independently** (DOR-1429): a room whose own limits
+   * are off reports `{ room: null, global: 4998 }`, because a room opts out of
+   * its own bounds and not out of the install's wallet.
    */
-  budget: { room: number; global: number } | null;
+  budget: { room: number | null; global: number | null };
   /**
-   * The cascade ceiling minus this turn's depth, or `null` alongside a `null`
-   * {@link RoomContextInput.budget} — nothing is counting, so there is no
-   * honest number to report.
+   * The cascade ceiling minus this turn's depth, or `null` when this room's
+   * limits are off — nothing is counting, so there is no honest number to
+   * report. Always `null` alongside a `null` `budget.room`: both are this
+   * room's own bounds.
    */
   repliesLeftInThisChain: number | null;
   /**
@@ -661,8 +666,8 @@ export function buildRoomContext(
       addressedNow: input.entry.mentions.includes(input.agentAuthorId),
     },
     budget: {
-      automaticRepliesLeftInThisRoomThisHour: input.budget?.room ?? null,
-      automaticRepliesLeftInTotalThisHour: input.budget?.global ?? null,
+      automaticRepliesLeftInThisRoomThisHour: input.budget.room,
+      automaticRepliesLeftInTotalThisHour: input.budget.global,
       repliesLeftInThisChain: input.repliesLeftInThisChain,
     },
   };

@@ -27,7 +27,8 @@ import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import { RoomBroadcaster } from '../room-stream.js';
-import { RoomTurnBudget } from '../turn-budget.js';
+import { resolveRoomLimits, type RoomLimitsResolver } from '../limits/room-limits.js';
+import { RoomTurnBudget } from '../limits/turn-budget.js';
 import type {
   LateRoomReply,
   RoomTurnRequest,
@@ -399,15 +400,23 @@ export interface RoomHarness {
  * @param opts.maxAgentDepth - The cascade ceiling. Pinned to a literal on
  *   purpose — a test that read the same config the code reads could only prove
  *   the two agree, never that they agree on the right number.
+ *
+ *   **Every limit option here is the CONFIG rung of the ladder** (DOR-1429).
+ *   The harness resolves limits through the real `resolveRoomLimits` over the
+ *   real rooms table, so a test that writes an override onto a room — through
+ *   `service.updateRoom` or `store.updateRoom` — beats whatever it passed here,
+ *   exactly as a person setting one would.
  * @param opts.maxTurnsPerAgentPerCascade - How many automatic turns ONE agent
  *   may run inside one cascade. Defaults to **1**, which is the shape every
  *   scenario in this suite was written against and is still a real setting a
  *   person can choose: at 1 the repeat rule fires on an agent's second turn, so
  *   a two-agent ping-pong stops at the first repeat and a refusal is one message
  *   away in any test that wants one. A test ABOUT the counter pins its own N.
- * @param opts.turnLimitsEnabled - Whether automatic-reply limits apply at all.
- *   Defaults to `true`, the shipped posture. A test that passes `false` is
- *   testing the unlimited path, where neither the guard nor the budget is asked.
+ * @param opts.turnLimitsEnabled - Whether automatic-reply limits apply at all,
+ *   INSTALL-WIDE. Defaults to `true`, the shipped posture. A test that passes
+ *   `false` is testing the unlimited path, where neither the guard nor either
+ *   hourly cap is asked. A room that turns its OWN limits off is a different
+ *   test: it still spends against the install's hourly total.
  *   Pass a FUNCTION to move it mid-test, the way the live config reader does —
  *   that is how a test proves an unlimited stretch left the hourly window
  *   unspent, by turning limits back on and finding the allowance intact.
@@ -487,6 +496,18 @@ export function createRoomHarness(opts: {
   const attachments = new AttachmentRowStore(db);
   const bridges = new BridgeStore(db);
   const readCursors = new ReadCursorService(new ReadCursorStore(db));
+  // The REAL ladder over the REAL rooms table, with this harness's options
+  // standing in for the config rung — composed exactly as `createRoomSubsystem`
+  // composes it. A stub resolver here would make every per-room-override test a
+  // test of the stub, and the whole point of an override is that the store rung
+  // beats the config rung.
+  const limitsFor: RoomLimitsResolver = (roomId) =>
+    resolveRoomLimits(store.getRoom(roomId), {
+      turnLimitsEnabled: turnLimitsEnabled(),
+      maxAgentDepth,
+      maxTurnsPerAgentPerCascade,
+      maxAutomaticTurnsPerRoomPerHour: perRoom,
+    });
   const service = new RoomService({
     store,
     reactions,
@@ -498,7 +519,16 @@ export function createRoomHarness(opts: {
     turns: runner,
     budget: new RoomTurnBudget({
       db,
-      limits: { perRoom: () => perRoom, global: () => global },
+      // Wired like production: the per-room ceiling comes through the ladder so
+      // a room's own override binds it, and the global one never does — a room
+      // opts out of its own bounds, not out of the install's wallet.
+      limits: {
+        perRoom: (roomId) => {
+          const limits = limitsFor(roomId);
+          return limits.turnLimitsEnabled ? limits.maxAutoTurnsPerHour : null;
+        },
+        global: () => (turnLimitsEnabled() ? global : null),
+      },
       ...(opts.budgetNow && { now: opts.budgetNow }),
     }),
     // The real budget over the real reaction rows, on the same clock the turn
@@ -522,9 +552,7 @@ export function createRoomHarness(opts: {
         limit,
         afterOrdinal: afterSeq,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
-    maxAgentDepth: () => maxAgentDepth,
-    maxTurnsPerAgentPerCascade: () => maxTurnsPerAgentPerCascade,
-    turnLimitsEnabled,
+    limitsFor,
     engagedWindow: () => engagedWindow,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,
