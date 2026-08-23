@@ -33,7 +33,7 @@
  * a live run cannot write unattended. CI never sets the flag: unset → fully
  * mocked, no binary, no Ollama.
  */
-import { afterAll, expect, vi } from 'vitest';
+import { afterAll, expect, onTestFinished, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -275,7 +275,9 @@ runtimeConformance(
           // same point real DOR-1299 traffic reaches on a healthy sidecar —
           // so waiting for it (real timers; fake ones arm only for the race
           // itself, in the shared C11 case) proves the turn is armed rather
-          // than guessing at a tick count.
+          // than guessing at a tick count. No session-scoped escalation exists
+          // on expiry (`INTERRUPT_ACK_TIMEOUT_MS`'s TSDoc), so the pinned
+          // settle value is `false` — honest, not an escalation.
           hangingInterrupt: async (runtime, sessionId) => {
             const client = lastClient;
             if (!client) {
@@ -290,8 +292,18 @@ runtimeConformance(
               }
             );
             vi.mocked(client.session.abort).mockImplementation(() => new Promise(() => {}));
-            void runtime.sendMessage(sessionId, 'hang on interrupt', { cwd: PROJECT_DIR }).next();
+            // Owned, not floated: this generator never yields (the turn is
+            // deliberately stuck open), so nothing else will ever close it —
+            // `.return()` in cleanup is the only thing that does.
+            const hungTurn = runtime.sendMessage(sessionId, 'hang on interrupt', {
+              cwd: PROJECT_DIR,
+            });
+            onTestFinished(() => {
+              void hungTurn.return(undefined);
+            });
+            void hungTurn.next();
             await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+            return false;
           },
         }),
   }

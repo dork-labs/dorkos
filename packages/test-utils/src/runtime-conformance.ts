@@ -236,8 +236,18 @@ export interface RuntimeConformanceOpts {
    * skipping: a runtime with no round trip to wait on — codex's synchronous
    * `controller.abort()`, test-mode's in-process abort — proves the property
    * by construction, and the case asserts exactly that shape instead.
+   *
+   * @returns The EXACT value `interruptQuery` must settle to once the suite
+   *   advances past the bound — not merely "some boolean". The two shipped
+   *   drivers disagree on purpose: claude-code escalates an unacked
+   *   interrupt to `query.close()` and reports `true` (the process WAS
+   *   stopped, just not gracefully); opencode has no session-scoped
+   *   escalation to reach for and reports `false` (honest, not a lie of
+   *   omission). Pinning the value, rather than accepting either, is what
+   *   would catch a runtime that silently started returning the wrong one
+   *   on expiry.
    */
-  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<void>;
+  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<boolean>;
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
@@ -1611,18 +1621,36 @@ export function runtimeConformance(
           // No driver: this runtime's interrupt path has no backend round
           // trip to wait on — codex's is a synchronous `controller.abort()`,
           // test-mode's never leaves the process — so nothing here can be
-          // made to hang. The property still holds, and provably so: with
-          // nothing to await, the call has no reason to spend real wall-clock
-          // time answering it.
-          const startedAt = Date.now();
-          const result = await runtime.interruptQuery(sessionId);
-          expect(typeof result).toBe('boolean');
+          // made to hang. Prove that deterministically rather than against a
+          // wall-clock budget (flaky under load, and a fixed millisecond
+          // figure is a number to argue with): arm fake timers and never
+          // advance them, so any path that needs even one real timer tick —
+          // a `setTimeout`-based bound included — can never settle no matter
+          // how long this waits. Then drain only MICROTASKS. A truly
+          // synchronous interrupt settles within a handful of `await
+          // Promise.resolve()` hops; a sentinel that is still NOT_SETTLED
+          // after many says this runtime silently grew a real async hop and
+          // is now owed a `hangingInterrupt` driver instead of this branch.
+          const NOT_SETTLED = Symbol('not-settled');
+          onTestFinished(() => {
+            vi.useRealTimers();
+          });
+          vi.useFakeTimers();
+          let settled: boolean | typeof NOT_SETTLED = NOT_SETTLED;
+          void runtime.interruptQuery(sessionId).then((result) => {
+            settled = result;
+          });
+          for (let i = 0; i < 50 && settled === NOT_SETTLED; i++) {
+            await Promise.resolve();
+          }
           expect(
-            Date.now() - startedAt,
+            settled,
             'no hangingInterrupt driver was wired for this runtime, which claims its interrupt ' +
-              'has nothing to await — a real wait here says that claim is wrong (see ' +
+              'has nothing to await — with fake timers armed and never advanced, only a real ' +
+              'microtask hop could settle this, and none did (see ' +
               'RuntimeConformanceOpts.hangingInterrupt)'
-          ).toBeLessThan(200);
+          ).not.toBe(NOT_SETTLED);
+          expect(typeof settled).toBe('boolean');
           return;
         }
 
@@ -1633,25 +1661,33 @@ export function runtimeConformance(
         // instead of the property under test, and (worse) leaving fake timers
         // armed for every test after this one once the suite's own timeout
         // abandons a stuck `it` without ever reaching a `finally`.
-        await hangingInterrupt(runtime, sessionId);
+        const expectedSettle = await hangingInterrupt(runtime, sessionId);
 
-        vi.useFakeTimers();
-        try {
-          const result = runtime.interruptQuery(sessionId);
-          // A ceiling every runtime's OWN ack bound must clear, not any one
-          // runtime's specific number — each justifies its own near where it
-          // lives (`bounded-stop.ts` for claude-code, `runtime-constants.ts`
-          // for opencode).
-          await vi.advanceTimersByTimeAsync(10_000);
-          await expect(
-            result,
-            'a bounded interrupt must settle once the suite has advanced well past any ' +
-              'reasonable ack timeout — an unbounded one hangs here until the TEST ITSELF ' +
-              'times out, which is the mutant this case exists to catch'
-          ).resolves.toEqual(expect.any(Boolean));
-        } finally {
+        // A `finally` is not enough here: when the mutant under test (the
+        // bound removed) makes this hang, vitest's own test-timeout abandons
+        // the `it` WITHOUT ever resuming this async function — so a `finally`
+        // below the await never runs, and fake timers stay armed for every
+        // test after this one in the same file (measured: 4 collateral reds).
+        // `onTestFinished` is vitest's own teardown hook, invoked on the
+        // abandonment path too, so it is what actually restores the clock.
+        onTestFinished(() => {
           vi.useRealTimers();
-        }
+        });
+        vi.useFakeTimers();
+        const result = runtime.interruptQuery(sessionId);
+        // A ceiling every runtime's OWN ack bound must clear, not any one
+        // runtime's specific number — each justifies its own near where it
+        // lives (`bounded-stop.ts` for claude-code, `runtime-constants.ts`
+        // for opencode).
+        await vi.advanceTimersByTimeAsync(10_000);
+        await expect(
+          result,
+          'a bounded interrupt must settle once the suite has advanced well past any ' +
+            'reasonable ack timeout — an unbounded one hangs here until the TEST ITSELF ' +
+            'times out, which is the mutant this case exists to catch. It must also settle to ' +
+            'EXACTLY the value the driver declared, not merely some boolean — a runtime that ' +
+            'silently flips true/false on expiry is a lie this pin exists to catch.'
+        ).resolves.toBe(expectedSettle);
       });
     });
 

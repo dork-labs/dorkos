@@ -127,28 +127,41 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-stop.ts`). */
+type AbortAck =
+  /** The backend answered, and the answer is `request`'s return value. */
+  | { kind: 'settled'; aborted: boolean }
+  /** The backend answered with a rejection — a refusal, not silence. */
+  | { kind: 'refused' }
+  /** Nothing answered inside the bound — which says nothing about whether it ever will. */
+  | { kind: 'unacked' };
+
 /**
  * Race one `session.abort` call against {@link INTERRUPT_ACK_TIMEOUT_MS},
  * mirroring the load-bearing details of claude-code's `awaitStopAck`
  * (`sessions/bounded-stop.ts`, DOR-1244) for the same reason: a promise that
  * only a backend ack settles must not be trusted to settle at all.
  *
- * Never throws — a rejected `request` resolves `false` — and never leaves a
- * live timer behind, whichever way the race goes.
+ * Never throws, whichever way the race goes and however `request` fails —
+ * `request` is INVOKED here rather than passed in as an already-started
+ * promise, so a SYNCHRONOUS throw from it becomes a `refused` like any other
+ * failure instead of escaping past the bound this function exists to
+ * provide — and never leaves a live timer behind.
  *
  * @param request - Makes the abort call and reports whether it actually aborted.
- * @returns `true` only when the backend acked an abort inside the bound.
+ * @returns The tri-state outcome; the caller decides what each means for its
+ *   own `false` vs `true`.
  */
-function awaitAbortAck(request: () => Promise<boolean>): Promise<boolean> {
-  const settled: Promise<boolean> = request().then(
-    (aborted) => aborted,
-    () => false
+function awaitAbortAck(request: () => Promise<boolean>): Promise<AbortAck> {
+  const settled: Promise<AbortAck> = (async () => request())().then(
+    (aborted) => ({ kind: 'settled', aborted }) as const,
+    () => ({ kind: 'refused' }) as const
   );
   let timer: NodeJS.Timeout | undefined;
   return (async () => {
     try {
-      const expiry = new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), INTERRUPT_ACK_TIMEOUT_MS);
+      const expiry = new Promise<AbortAck>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: 'unacked' }), INTERRUPT_ACK_TIMEOUT_MS);
         timer.unref?.();
       });
       return await Promise.race([settled, expiry]);
@@ -544,26 +557,32 @@ export class OpenCodeRuntime implements AgentRuntime {
   async interruptQuery(sessionId: string): Promise<boolean> {
     const turn = this.activeTurns.get(sessionId);
     if (!turn) return false;
-    const aborted = await awaitAbortAck(async () => {
-      try {
-        const client = await this.provider.getClient(turn.cwd);
-        return (
-          unwrap(
-            await client.session.abort({ path: { id: turn.ocSessionId } }),
-            'session.abort'
-          ) === true
-        );
-      } catch (err) {
-        logger.warn('[OpenCodeRuntime] interrupt failed', logError(err));
-        return false;
-      }
+    const ack = await awaitAbortAck(async () => {
+      const client = await this.provider.getClient(turn.cwd);
+      return (
+        unwrap(await client.session.abort({ path: { id: turn.ocSessionId } }), 'session.abort') ===
+        true
+      );
     });
-    if (aborted) {
-      logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
-    } else {
-      logger.warn('[OpenCodeRuntime] interrupt failed or timed out', { sessionId });
+    // The tri-state is worth telling apart in the log: REFUSED means the
+    // sidecar answered and said no (a bug or a race, not a wedge); UNACKED
+    // means the bound itself fired, which is the wedge this whole path
+    // exists for.
+    switch (ack.kind) {
+      case 'settled':
+        if (ack.aborted) {
+          logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
+        } else {
+          logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
+        }
+        return ack.aborted;
+      case 'refused':
+        logger.warn('[OpenCodeRuntime] interrupt call failed', { sessionId });
+        return false;
+      case 'unacked':
+        logger.warn('[OpenCodeRuntime] interrupt timed out waiting for an ack', { sessionId });
+        return false;
     }
-    return aborted;
   }
 
   // --- Session queries (storage) ---

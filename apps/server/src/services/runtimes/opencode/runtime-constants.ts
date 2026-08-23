@@ -141,11 +141,15 @@ export const STREAM_LIVE_TIMEOUT_MS = 2_000;
  *
  * Unlike claude-code there is no escalation on expiry. Claude-code's bound
  * closes the CLI SUBPROCESS behind the stuck query — one process, one
- * session. OpenCode's sidecar is ONE process shared by every session this
- * workspace has open (ADR-0308): killing it to unstick a single interrupt
- * would cut every other session's turn too. Expiry here is therefore a
- * plain, honest `false` — the same answer a refused interrupt gets — rather
- * than an escalation with no session-scoped target to aim at.
+ * session. OpenCode has no per-session process to close: `apps/server`
+ * manages exactly ONE `opencode serve` child for its own lifetime, spawned
+ * lazily on first use and shared by every session across every project this
+ * server instance has open (ADR-0308 — "a single instance suffices", per-
+ * request `directory` routing rather than a per-cwd pool). Killing IT to
+ * unstick a single wedged interrupt would cut every other session's turn on
+ * the whole server, workspace-unrelated ones included. Expiry here is
+ * therefore a plain, honest `false` — the same answer a refused interrupt
+ * gets — rather than an escalation with no session-scoped target to aim at.
  */
 export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
 

@@ -428,7 +428,10 @@ runtimeConformance(
     // `bounded-stop.ts` exists for. `process.received` growing past the warm
     // turn's count is the real signal the second turn's message reached the
     // process, i.e. `session.activeQuery` is armed with the query under test.
-    hangingInterrupt: async (runtime: AgentRuntime, sessionId: string) => {
+    // The pinned settle is `true`: `bounded-stop.ts` escalates an unacked
+    // interrupt to `query.close()` and reports the process WAS stopped, just
+    // not gracefully — unlike opencode, which has nothing to escalate to.
+    hangingInterrupt: async (runtime: AgentRuntime, sessionId: string): Promise<boolean> => {
       persistent.on = true;
       warmCli = new FakeCli();
       mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
@@ -452,6 +455,7 @@ runtimeConformance(
         { userMessage: 'this turn is never answered' }
       );
       await vi.waitFor(() => expect(process.received.length).toBe(warmReceived + 1));
+      return true;
     },
     // Claude-code CAN say when the person last wrote: it rides the transcript
     // tail read the session list already performs. Read back through
