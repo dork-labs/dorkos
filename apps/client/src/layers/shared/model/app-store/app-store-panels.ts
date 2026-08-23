@@ -108,6 +108,19 @@ export interface PanelsSlice {
   onboardingHiddenForSession: boolean;
   setOnboardingHiddenForSession: (hidden: boolean) => void;
 
+  /**
+   * True once the moments rail has opened its one modal for this page life. Two
+   * one-time modals in a single sitting is an interrogation, and the second gets
+   * dismissed unread — so the first to open spends the launch.
+   *
+   * Never persisted, and deliberately not a record of WHICH moment was shown: a
+   * reload is a new launch, and every moment's eligibility is a real state field
+   * it already owns, so nothing is lost by waiting for the next one.
+   */
+  momentShownThisLaunch: boolean;
+  /** Record that the rail has spent this launch's one moment. One-way. */
+  markMomentShown: () => void;
+
   globalPaletteOpen: boolean;
   setGlobalPaletteOpen: (open: boolean) => void;
   toggleGlobalPalette: () => void;
@@ -194,6 +207,9 @@ export const createPanelsSlice: StateCreator<
 
   onboardingHiddenForSession: false,
   setOnboardingHiddenForSession: (hidden) => set({ onboardingHiddenForSession: hidden }),
+
+  momentShownThisLaunch: false,
+  markMomentShown: () => set({ momentShownThisLaunch: true }),
 
   globalPaletteOpen: false,
   setGlobalPaletteOpen: (open) => set({ globalPaletteOpen: open }),

@@ -147,11 +147,11 @@ async function dismissOnboarding(): Promise<void> {
 
 /**
  * Record a settled, opted-out telemetry decision so the first-run consent
- * banner (`TelemetryConsentBanner`) never renders over a capture — it shows
- * app-wide until `telemetry.userHasDecided` is set, which would otherwise
- * overlay the top of every non-`/session` frame. Declining ("No thanks") is
- * the honest choice for a staged demo instance: a real, privacy-respecting
- * decision, not telemetry actually left on.
+ * moment (`TelemetryConsentMoment`, on the moments rail) never renders over a
+ * capture — it opens as a modal on a launch where `telemetry.userHasDecided` is
+ * still unset, which would otherwise sit in the middle of a frame. Declining
+ * ("No thanks") is the honest choice for a staged demo instance: a real,
+ * privacy-respecting decision, not telemetry actually left on.
  */
 async function declineTelemetry(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
