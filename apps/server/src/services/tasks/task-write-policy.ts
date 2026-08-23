@@ -127,7 +127,13 @@ export const TASK_WRITE_POLICY = {
   target: 'agent-writable',
   // Turning a schedule on and off. It cannot promote one past its approval:
   // `enabled: true` on a `pending_approval` task still does not run it, because
-  // the scheduler registers on `enabled && status === 'active'`.
+  // the scheduler registers on `enabled && status === 'active'`. NOTE: that
+  // reasoning is about the `pending_approval` gate. An operator-DISABLED but
+  // already-approved task (`enabled: false, status: 'active'`) is re-armed by an
+  // agent flipping `enabled` back on — but it then runs the operator's OWN
+  // unchanged prompt, so it is a nuisance, not an escalation, and `enabled` stays
+  // agent-writable. Changing WHAT it runs is the escalation, and that is clamped
+  // at `PATCH /api/tasks/:id` (prompt/cron/name), not here.
   enabled: 'agent-writable',
   // A CAP on how long a run may take. Raising it makes a run longer, not more
   // permitted, so it is not an escalation. See the module TSDoc in

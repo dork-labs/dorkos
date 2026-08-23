@@ -276,17 +276,29 @@ router.get('/', async (_req, res) => {
       standingGrants: false,
       trustWindowMinutes: 480,
     },
-    // The two engaged-window ceilings, and only those two. The cockpit prints
-    // them inside the sentence that describes the `engaged` response mode —
-    // "keeps answering for 10 more minutes or 5 more messages" — so an operator
-    // who tuned them would otherwise be reading a sentence about somebody
-    // else's install. The rest of the `rooms` block (turn budgets, reply waits)
-    // is nothing the cockpit says out loud, so it stays off the wire.
+    // The two engaged-window ceilings, and the five automatic-reply limits.
+    //
+    // The ceilings are READ-ONLY here: the cockpit prints them inside the
+    // sentence that describes the `engaged` response mode — "keeps answering for
+    // 10 more minutes or 5 more messages" — so an operator who tuned them would
+    // otherwise be reading a sentence about somebody else's install.
+    //
+    // The five limits ride along because Settings → Rooms offers them, and
+    // because a room's own override is shown as "Use default (N)" where N is
+    // whatever is set HERE (DOR-1430). Writing them is still operator-only —
+    // `config-write-policy.ts` decides that, not this read. The rest of the
+    // block (reply waits) is nothing the cockpit says out loud, so it stays off
+    // the wire.
     rooms: (() => {
       const rooms = configManager.get('rooms') ?? USER_CONFIG_DEFAULTS.rooms;
       return {
         engagedWindowMinutes: rooms.engagedWindowMinutes,
         engagedWindowPosts: rooms.engagedWindowPosts,
+        turnLimitsEnabled: rooms.turnLimitsEnabled,
+        maxAgentDepth: rooms.maxAgentDepth,
+        maxTurnsPerAgentPerCascade: rooms.maxTurnsPerAgentPerCascade,
+        maxAutomaticTurnsPerRoomPerHour: rooms.maxAutomaticTurnsPerRoomPerHour,
+        maxAutomaticTurnsTotalPerHour: rooms.maxAutomaticTurnsTotalPerHour,
       };
     })(),
     // Whether agents may greet you when you come back, whether a greeting may

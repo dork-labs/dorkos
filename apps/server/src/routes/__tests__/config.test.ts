@@ -5,6 +5,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { ROOM_TURN_LIMIT_DEFAULTS } from '@dorkos/shared/config-schema';
 
 // Mock tunnel-manager and agent-manager to avoid side effects
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -969,11 +970,26 @@ describe('GET /api/config', () => {
   // `engaged` response mode — "keeps answering for 10 more minutes or 5 more
   // messages". They are settings, so the sentence is only true if the cockpit
   // reads the numbers actually in force rather than the shipped defaults.
-  describe('rooms — the engaged-window numbers the cockpit says out loud', () => {
-    it('reports the shipped ceilings when nobody has changed them', async () => {
+  describe('rooms — the numbers the cockpit says out loud', () => {
+    /** Every `rooms` field the wire carries, and nothing more. */
+    const WIRE_FIELDS = [
+      'engagedWindowMinutes',
+      'engagedWindowPosts',
+      'maxAgentDepth',
+      'maxAutomaticTurnsPerRoomPerHour',
+      'maxAutomaticTurnsTotalPerHour',
+      'maxTurnsPerAgentPerCascade',
+      'turnLimitsEnabled',
+    ];
+
+    it('reports the shipped numbers when nobody has changed them', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.rooms).toEqual({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
+      expect(res.body.rooms).toEqual({
+        engagedWindowMinutes: 10,
+        engagedWindowPosts: 5,
+        ...ROOM_TURN_LIMIT_DEFAULTS,
+      });
     });
 
     it('reports what an operator actually set, not what ships', async () => {
@@ -982,23 +998,28 @@ describe('GET /api/config', () => {
         ...configManager.get('rooms')!,
         engagedWindowMinutes: 3,
         engagedWindowPosts: 2,
+        maxAgentDepth: 4,
+        turnLimitsEnabled: false,
       });
 
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.rooms).toEqual({ engagedWindowMinutes: 3, engagedWindowPosts: 2 });
+      expect(res.body.rooms).toMatchObject({
+        engagedWindowMinutes: 3,
+        engagedWindowPosts: 2,
+        maxAgentDepth: 4,
+        turnLimitsEnabled: false,
+      });
     });
 
-    it('carries the two ceilings and nothing else out of the rooms block', async () => {
-      // The rest of `rooms` is turn budgets and reply waits — real settings the
-      // cockpit never states out loud. Widening this to the whole block would
-      // put an operator's spend limits on a wire that did not need them.
+    it('carries the ceilings and the limits, and nothing else out of the rooms block', async () => {
+      // Settings offers the five limits, so they ride (DOR-1430) — but the rest
+      // of `rooms` is reply waits and collect timings, real settings the cockpit
+      // never states out loud. Widening this to the whole block would put
+      // settings on a wire that has no reader for them.
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(Object.keys(res.body.rooms).sort()).toEqual([
-        'engagedWindowMinutes',
-        'engagedWindowPosts',
-      ]);
+      expect(Object.keys(res.body.rooms).sort()).toEqual(WIRE_FIELDS);
     });
   });
 

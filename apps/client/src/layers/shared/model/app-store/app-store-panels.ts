@@ -23,6 +23,7 @@ export type SettingsTab =
   | 'security'
   | 'account'
   | 'runtimes'
+  | 'rooms'
   | 'privacy'
   | 'advanced'
   | 'experiments'
