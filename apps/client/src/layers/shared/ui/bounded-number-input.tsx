@@ -66,7 +66,7 @@ function BoundedNumberInput({
   };
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-start gap-1">
       <Input
         type="number"
         inputMode="numeric"
@@ -89,7 +89,7 @@ function BoundedNumberInput({
           }
           if (event.key === 'Escape') setDraft(null);
         }}
-        className={cn('w-24 text-right tabular-nums', className)}
+        className={cn('w-24 tabular-nums', className)}
       />
       {invalid && (
         <p id={errorId} className="text-destructive text-xs">

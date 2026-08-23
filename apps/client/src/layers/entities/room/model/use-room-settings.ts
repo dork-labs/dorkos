@@ -170,22 +170,60 @@ export interface SetRoomLimitsInput {
 /**
  * Give one room limits of its own, or hand any of them back to Settings.
  *
- * Person-only, and the server is what enforces it (`PEOPLE_ONLY`): an agent that
- * could raise its own reply allowance is an agent with no allowance.
+ * **Operator-only, and the server is what enforces it** (403 `OPERATOR_ONLY`,
+ * `RoomService.updateRoom`). These four fields are spend authority: turning a
+ * room's limits off removes its cascade guard and its hourly ceiling in one
+ * write, and everything billed after that lands on whoever owns the install. So
+ * the gate is the install's owner, not merely a person — an agent could never
+ * write them, and neither can a second human who was invited into the room.
+ * `roomLimitsErrorMessage` is what turns that refusal into a sentence.
  *
- * The refresh is the whole story here. `room_updated` fans out over SSE without
- * these fields on it, so nothing tells an open panel that a limit moved —
- * invalidating the room's own read is what makes the change visible, including
- * in a second window looking at the same room.
+ * **Optimistic, because the control the reader pressed is the control this
+ * changes.** Every value here is read straight off the room's own record, so
+ * without this the radio they just chose would visibly jump back to the old
+ * stance for the length of a round trip and then forward again. The write lands
+ * on the cached room, rolls back on failure, and is confirmed by a refetch when
+ * it settles.
+ *
+ * That refetch is not optional bookkeeping: `room_updated` fans out over SSE
+ * WITHOUT these fields on it, so nothing else would tell an open panel — here or
+ * in a second window — that a limit moved.
  */
-export function useSetRoomLimits(): UseMutationResult<RoomWithRoster, Error, SetRoomLimitsInput> {
+export function useSetRoomLimits(): UseMutationResult<
+  RoomWithRoster,
+  Error,
+  SetRoomLimitsInput,
+  { previous: RoomWithRoster | undefined }
+> {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ roomId, ...limits }: SetRoomLimitsInput) => transport.updateRoom(roomId, limits),
-    onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
-    meta: { errorLabel: "Couldn't change this room's limits" },
+    onMutate: async ({ roomId, ...limits }) => {
+      const key = roomKeys.detail(roomId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<RoomWithRoster>(key);
+      queryClient.setQueryData<RoomWithRoster>(key, (old) =>
+        // Nothing to patch when the room is not in the cache yet; the
+        // settle-time refresh reads it whole.
+        old ? { ...old, ...limits } : old
+      );
+      return { previous };
+    },
+    onError: (_error, { roomId }, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(roomKeys.detail(roomId), context.previous);
+      }
+    },
+    onSettled: (_room, _error, { roomId }) => refreshRoom(queryClient, roomId),
+    // The section renders the refusal itself, under the control that was
+    // refused, so the shared toast would be the same failure said twice in two
+    // voices — the case `query-client.ts` documents this opt-out for. It is also
+    // the only refusal here a person can act on, and acting on it means reading
+    // WHICH install owner they are not, which a toast that has already faded
+    // cannot tell them.
+    meta: { suppressErrorToast: true },
   });
 }
 

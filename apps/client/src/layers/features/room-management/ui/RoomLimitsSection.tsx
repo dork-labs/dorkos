@@ -9,6 +9,7 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useRoomTurnLimits } from '@/layers/entities/config';
 import { useSetRoomLimits, type SetRoomLimitsInput } from '@/layers/entities/room';
 import { Badge, CollapsibleFieldCard, Label, RadioGroup, RadioGroupItem } from '@/layers/shared/ui';
+import { roomLimitsErrorMessage } from '../lib/room-limit-errors';
 import { RoomLimitRow } from './RoomLimitRow';
 
 /** The three answers a room may give about being limited at all. */
@@ -41,12 +42,23 @@ export interface RoomLimitsSectionProps {
  * — so the section is collapsed until asked for, and each field shows the number
  * it would use rather than a blank.
  *
- * **Shown only to a person.** The server refuses these writes to anybody else
- * (`PEOPLE_ONLY`): an agent that could raise its own reply allowance is an agent
- * with no allowance. The check here mirrors that rather than inventing a second
- * rule — and it hides the section only when the roster POSITIVELY says the
- * reader is not a person. Seeing a room and being in it are different things, so
- * a reader who is not on the roster is not thereby an agent.
+ * **The write is the install owner's alone** (403 `OPERATOR_ONLY`): these fields
+ * are spend authority, so a second human — an invited member, a cached remote
+ * one — must not be able to uncap a room on the owner's account.
+ *
+ * **The section is still shown to every person, and the refusal is what says
+ * no.** This client genuinely cannot tell the owner from any other human today:
+ * the only signal available is `GET /api/team`'s `isSelf`, which names the
+ * account that owns the install for EVERY caller rather than answering "who is
+ * asking" (the residual `use-room-row-menu.ts` records). Hiding the section on a
+ * guess would hide it from the one person who may use it. So it is offered, and
+ * a refusal becomes a sentence naming who can — inline, under the control that
+ * was refused, which is also why this mutation opts out of the shared toast.
+ *
+ * What IS hidden is the section for a reader the roster positively says is an
+ * agent: no agent may ever write these, so offering it would be a lie in every
+ * case rather than in one. Seeing a room and being in it are different things,
+ * so a reader who is not on the roster at all is not thereby an agent.
  *
  * **The one thing a room cannot do is named out loud.** The install-wide hourly
  * total still applies to an unlimited room, because a room may opt out of its
@@ -172,6 +184,16 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
           onCommit={(next) => write({ maxAutoTurnsPerHour: next })}
         />
       </div>
+
+      {/* One report, under the control that was refused. The mutation opts out
+          of the shared toast for this: a value that has already snapped back
+          plus a toast that fades is a failure said twice and remembered
+          nowhere. */}
+      {setRoomLimits.isError && (
+        <p role="alert" className="text-destructive text-xs">
+          {roomLimitsErrorMessage(setRoomLimits.error)}
+        </p>
+      )}
 
       <p className="text-muted-foreground text-xs">
         The hourly limit across all of DorkOS still applies here. A room can go without its own

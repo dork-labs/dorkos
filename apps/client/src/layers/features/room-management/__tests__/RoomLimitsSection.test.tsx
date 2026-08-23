@@ -18,8 +18,11 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { ROOM_TURN_LIMIT_DEFAULTS } from '@dorkos/shared/config-schema';
+import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { configKeys } from '@/layers/entities/config';
+import { roomKeys, useRoom } from '@/layers/entities/room';
 import { RoomLimitsSection } from '../ui/RoomLimitsSection';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -215,7 +218,12 @@ describe('RoomLimitsSection', () => {
     expect(transport.updateRoom).not.toHaveBeenCalled();
   });
 
-  it('is not offered at all to a reader the server would refuse', () => {
+  it('is not offered to an agent reading the room', () => {
+    // The narrow claim this actually makes. No agent may EVER write these, so
+    // offering the section to one would be a lie in every case. It says nothing
+    // about a human who is not the install's owner: this client cannot tell that
+    // reader apart (see the section's own note), so they are offered the section
+    // and told no by the server — the case below.
     renderSection(
       room({
         members: [member('author-bot', 'agent')],
@@ -232,5 +240,83 @@ describe('RoomLimitsSection', () => {
     renderSection(room({ members: [], viewerAuthorId: 'author-me' } as Partial<RoomWithRoster>));
 
     expect(screen.getByRole('button', { name: /Automatic replies/ })).toBeInTheDocument();
+  });
+
+  describe("through the room's own cache — what the reader sees while a write is in flight", () => {
+    /** The section reading its room the way the panel does: from the query. */
+    function LiveSection({ roomId }: { roomId: string }) {
+      const { data } = useRoom(roomId);
+      return data === undefined ? null : <RoomLimitsSection room={data} />;
+    }
+
+    function renderLive(subject: RoomWithRoster, write: 'accept' | 'hang' | { reject: Error }) {
+      const config = {
+        rooms: { engagedWindowMinutes: 10, engagedWindowPosts: 5, ...ROOM_TURN_LIMIT_DEFAULTS },
+      } as unknown as ServerConfig;
+      const transport = createMockTransport({
+        getConfig: vi.fn().mockResolvedValue(config),
+        getRoom: vi.fn().mockResolvedValue(subject),
+        updateRoom: vi.fn().mockImplementation((_id: string, patch: Record<string, unknown>) => {
+          if (write === 'hang') return new Promise<never>(() => {});
+          if (write !== 'accept') return Promise.reject(write.reject);
+          return Promise.resolve({ ...subject, ...patch });
+        }),
+      });
+      // The real error policy, retries off: this asserts that the shared toast
+      // does NOT fire here, and a hand-rolled client could not tell the
+      // difference between "opted out" and "no policy installed".
+      const queryClient = new QueryClient({
+        ...createQueryClientConfig(),
+        defaultOptions: { queries: { retry: false } },
+      });
+      queryClient.setQueryData(configKeys.current(), config);
+      queryClient.setQueryData(roomKeys.detail(subject.id), subject);
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      );
+      render(<LiveSection roomId={subject.id} />, { wrapper });
+      return { transport };
+    }
+
+    it('moves the stance immediately, without waiting for the server', async () => {
+      const user = userEvent.setup();
+      // A write that never settles: whatever the control shows during it is
+      // what a person on a slow connection actually looks at. Without the
+      // optimistic write this radio stays on "Follow Settings" for the whole
+      // round trip, because it is drawn from the room the server last gave us.
+      renderLive(room(), 'hang');
+      await user.click(screen.getByRole('button', { name: /Automatic replies/ }));
+
+      await user.click(screen.getByRole('radio', { name: 'Not limited' }));
+
+      expect(screen.getByRole('radio', { name: 'Not limited' })).toBeChecked();
+    });
+
+    it('puts the stance back when the owner-only gate refuses it, and names who can', async () => {
+      const user = userEvent.setup();
+      renderLive(room(), {
+        reject: Object.assign(new Error('Only you can change how much a room may spend'), {
+          code: 'OPERATOR_ONLY',
+          status: 403,
+        }),
+      });
+      await user.click(screen.getByRole('button', { name: /Automatic replies/ }));
+
+      await user.click(screen.getByRole('radio', { name: 'Not limited' }));
+
+      expect(
+        await screen.findByText(
+          'Only the person who owns this DorkOS can change a room\u2019s limits.'
+        )
+      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Follow Settings' })).toBeChecked()
+      );
+      // One report, not two: the section renders the refusal itself, so the
+      // shared mutation toast is deliberately opted out of.
+      expect(toast.error).not.toHaveBeenCalled();
+    });
   });
 });

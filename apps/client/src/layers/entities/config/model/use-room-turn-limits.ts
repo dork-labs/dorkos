@@ -34,7 +34,11 @@ export interface RoomTurnLimits {
 /** What {@link useRoomTurnLimits} hands its consumers. */
 export interface RoomTurnLimitsState {
   /**
-   * The settings in force, or `null` until they have been read.
+   * The settings in force, or `null` when they cannot be stated.
+   *
+   * `null` twice over: while the read is in flight, and when it has landed
+   * saying nothing about the limits (see {@link RoomTurnLimitsState.unsupported}
+   * and {@link RoomTurnLimitsState.loadError} for which of the three it is).
    *
    * **A caller must not substitute the shipped defaults for `null`.** Every
    * surface that reads this prints the numbers — Settings shows them in fields,
@@ -43,12 +47,24 @@ export interface RoomTurnLimitsState {
    * corrects itself. Show a skeleton, or show nothing, until they land.
    */
   limits: RoomTurnLimits | null;
-  /** Change one or more of them. Deep-merged server-side. */
+  /**
+   * True once the server has answered and reported no limits at all.
+   *
+   * A distinct state from "still reading", and the reason the wire fields are
+   * optional: a server too old to have this panel is not a slow one, and a
+   * surface that cannot tell them apart shows a loading shape forever.
+   */
+  unsupported: boolean;
+  /** Why the settings could not be read, when the read itself failed. */
+  loadError: Error | null;
+  /**
+   * Change one or more of them. Deep-merged server-side.
+   *
+   * There is deliberately no "saving" flag beside this. The write is optimistic,
+   * so the value on screen is already the new one, and the only thing a pending
+   * flag could do here is disable the control the reader is still using.
+   */
   setLimits: (patch: Partial<RoomTurnLimits>) => void;
-  /** Whether a write is in flight. */
-  isPending: boolean;
-  /** The last write that failed, or `null` when the last one did not. */
-  error: Error | null;
 }
 
 /**
@@ -92,20 +108,23 @@ function readLimits(rooms: ServerConfig['rooms']): RoomTurnLimits | null {
  * `useNotificationPrefs` uses next door — which matters more here than there:
  * the master switch and the four numbers are one control between them, and a
  * switch that waits a round trip before it moves reads as a switch that did not
- * take. The report on failure is the shared mutation toast plus
- * {@link RoomTurnLimitsState.error}, and the value snaps back to what the server
- * still holds.
+ * take. On failure the value snaps back to what the server still holds, and the
+ * shared mutation toast says why — the one report that survives Settings being
+ * closed mid-write.
  *
  * Writing any of these is operator-only, decided by the server
  * (`config-write-policy.ts`). Nothing here needs to know that: an agent driving
  * this cockpit is refused by the same rule that refuses it the API.
  */
 export function useRoomTurnLimits(): RoomTurnLimitsState {
-  const { data: config } = useConfig();
+  const { data: config, error: readError } = useConfig();
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   const limits = readLimits(config?.rooms);
+  // Answered, and it said nothing about the limits. Read off the ANSWER rather
+  // than off `limits === null`, which is also true while the read is in flight.
+  const unsupported = config !== undefined && limits === null;
 
   const mutation = useMutation<
     void,
@@ -140,8 +159,8 @@ export function useRoomTurnLimits(): RoomTurnLimitsState {
 
   return {
     limits,
+    unsupported,
+    loadError: readError,
     setLimits,
-    isPending: mutation.isPending,
-    error: mutation.isError ? mutation.error : null,
   };
 }

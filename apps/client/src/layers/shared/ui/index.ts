@@ -17,12 +17,12 @@ export {
   AlertDialogCancel,
 } from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
-export { BoundedNumberInput } from './bounded-number-input';
-export type { BoundedNumberInputProps } from './bounded-number-input';
 export { BarTabStrip } from './bar-tab-strip';
 export type { BarTab } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
 export type { BannerVariant, BannerProps } from './banner';
+export { BoundedNumberInput } from './bounded-number-input';
+export type { BoundedNumberInputProps } from './bounded-number-input';
 export { Button, buttonVariants } from './button';
 export type { ButtonSize, ButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';

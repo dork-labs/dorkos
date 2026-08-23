@@ -64,7 +64,7 @@ const LIMIT_FIELDS: readonly LimitField[] = [
   {
     key: 'maxAutomaticTurnsPerRoomPerHour',
     label: 'Replies in one room each hour',
-    description: `The most automatic replies any one room may run in an hour. It keeps a single busy room from spending the whole hour below. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsPerRoomPerHour}.`,
+    description: `The most automatic replies any one room may run in an hour. It keeps a single busy room from using up the whole allowance below. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsPerRoomPerHour}.`,
     min: ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.min,
     max: ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.max,
   },
@@ -86,7 +86,7 @@ const LIMIT_FIELDS: readonly LimitField[] = [
  * re-typing job. The server keeps them for the same reason.
  */
 export function RoomsTab() {
-  const { limits, setLimits, isPending } = useRoomTurnLimits();
+  const { limits, unsupported, loadError, setLimits } = useRoomTurnLimits();
 
   return (
     <div className="space-y-6">
@@ -98,20 +98,37 @@ export function RoomsTab() {
       </p>
 
       {limits === null ? (
-        // Never the shipped defaults while the read is in flight: these are
-        // numbers a person may have changed, and printing ours would state
-        // something false about their install and then correct itself.
         <FieldCard>
           <FieldCardContent>
-            {[0, 1, 2, 3, 4].map((row) => (
-              <div key={row} className="flex items-center justify-between gap-4">
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-3 w-full max-w-xs" />
+            {/* Three answers, and only one of them is a loading shape. A read
+                that failed and a server that has no such settings are both
+                FINISHED — showing either as "still loading" is a panel that
+                waits forever and never says why. */}
+            {loadError !== null ? (
+              <p className="text-muted-foreground text-sm">
+                Your settings could not be read just now. Close Settings and open it again to try
+                once more.
+              </p>
+            ) : unsupported ? (
+              <p className="text-muted-foreground text-sm">
+                This server doesn&apos;t report these settings yet. Update DorkOS to change them
+                here.
+              </p>
+            ) : (
+              // Never the shipped defaults while the read is in flight: these
+              // are numbers a person may have changed, and printing ours would
+              // state something false about their install and then correct
+              // itself.
+              [0, 1, 2, 3, 4].map((row) => (
+                <div key={row} className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-full max-w-xs" />
+                  </div>
+                  <Skeleton className="h-9 w-24" />
                 </div>
-                <Skeleton className="h-9 w-24" />
-              </div>
-            ))}
+              ))
+            )}
           </FieldCardContent>
         </FieldCard>
       ) : (
@@ -119,10 +136,9 @@ export function RoomsTab() {
           <FieldCardContent>
             <SwitchSettingRow
               label="Limit automatic replies"
-              description="Keep the numbers below in force."
+              description="Keep the limits below on."
               checked={limits.turnLimitsEnabled}
               onCheckedChange={(on) => setLimits({ turnLimitsEnabled: on })}
-              disabled={isPending}
             />
 
             {/* Said only when it is true, and said plainly. Turning this off is
@@ -135,14 +151,29 @@ export function RoomsTab() {
               </p>
             )}
 
+            {/* Vertical, per `SettingRow`'s own guidance for number inputs, and
+                because these descriptions are two sentences long: side by side
+                with a field they squeeze into a column three words wide on a
+                phone.
+
+                Nothing here is disabled WHILE SAVING. The write is optimistic,
+                so the value on screen is already the new one — and disabling a
+                field the cursor is in takes the keyboard out of it on every
+                save, which is how a person typing the second of two numbers
+                loses their place. */}
             {LIMIT_FIELDS.map((field) => (
-              <SettingRow key={field.key} label={field.label} description={field.description}>
+              <SettingRow
+                key={field.key}
+                orientation="vertical"
+                label={field.label}
+                description={field.description}
+              >
                 <BoundedNumberInput
                   aria-label={field.label}
                   value={limits[field.key]}
                   min={field.min}
                   max={field.max}
-                  disabled={!limits.turnLimitsEnabled || isPending}
+                  disabled={!limits.turnLimitsEnabled}
                   onCommit={(next) => setLimits({ [field.key]: next })}
                 />
               </SettingRow>

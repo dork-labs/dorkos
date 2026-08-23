@@ -111,12 +111,17 @@ export function RoomLimitRow({
         </p>
       )}
       {/* Only when there is something to undo. Emptying the field does the same
-          thing, and a reader who has not noticed that should not have to. */}
+          thing, and a reader who has not noticed that should not have to.
+
+          On hold with the field it belongs to: a room running without limits has
+          nothing to hand back, and a live button beside a dead field is a row
+          that half works. */}
       {value !== null && draft === null && (
         <Button
           type="button"
           size="sm"
           variant="ghost"
+          disabled={disabled}
           className="text-muted-foreground h-7 self-end px-2 text-xs"
           onClick={() => onCommit(null)}
         >
