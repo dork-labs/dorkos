@@ -83,7 +83,7 @@ export type PermissionReach = 'read' | 'edit' | 'workspace' | 'everything';
 /**
  * Which question a mode answers.
  *
- * - `'trust'` — how much the agent may do without asking. These are the modes
+ * - `'trust'` — how much the agent may do before it checks with you. These are the modes
  *   the Trust Dial's three stops select between.
  * - `'working'` — how the agent goes about the work, whatever the trust level.
  *   Claude's `plan` is the only one today: it reads and proposes, and nothing

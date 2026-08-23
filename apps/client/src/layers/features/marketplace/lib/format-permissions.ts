@@ -391,8 +391,8 @@ function describeCron(cron: string): string {
  *
  * Names the permission mode in plain words rather than echoing the raw id: a
  * person deciding whether to trust a package learns nothing from
- * "bypassPermissions" and everything from "can run any command without asking
- * you". The cron expression gets the same treatment for the same reason —
+ * "bypassPermissions" and everything from "can run any command without a
+ * permission prompt". The cron expression gets the same treatment for the same reason —
  * translating one and not the other in a single sentence was the inconsistency
  * this dialog exists to avoid. A job that runs unattended without asking is
  * flagged at warning severity.

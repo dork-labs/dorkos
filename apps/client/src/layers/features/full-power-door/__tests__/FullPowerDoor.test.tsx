@@ -96,8 +96,13 @@ describe('FullPowerDoor', () => {
     renderDoor();
 
     expect(screen.getByText('DorkOS runs at full power')).toBeInTheDocument();
-    expect(screen.getByText(/runs without asking/i)).toBeInTheDocument();
-    expect(screen.getByText(/agents talk to each other/i)).toBeInTheDocument();
+    expect(screen.getByText(/no approval prompts/i)).toBeInTheDocument();
+    // The nuance the reword exists to protect: full power turns off the approval
+    // gate, it does not stop the agent asking or override your instructions.
+    expect(
+      screen.getByText(/still ask when something genuinely needs your call/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/agents reach across projects/i)).toBeInTheDocument();
     expect(screen.getByText(/approvals stick/i)).toBeInTheDocument();
     expect(screen.getByText(/scheduled runs use your power level/i)).toBeInTheDocument();
     // The scope note is reused, not rewritten — the same sentence every mode

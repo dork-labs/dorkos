@@ -570,7 +570,7 @@ function declaredMode(
 function consentRequiredMessage(descriptor: PermissionModeDescriptor): string {
   return isAutonomyStop(descriptor)
     ? 'Turning on Full autonomy needs you to confirm what it means first.'
-    : 'This mode never stops to ask, so you need to confirm what it means first.';
+    : "This mode won't stop for approval on each action, so you need to confirm what it means first.";
 }
 
 // PATCH /api/sessions/:id - Update session settings

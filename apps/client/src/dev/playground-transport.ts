@@ -69,7 +69,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           stop: 'autonomy',
           asks: 'never',
           reach: 'everything',
-          promise: 'Runs everything without asking, including outside this project.',
+          promise:
+            'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
         },
         {
           id: 'auto',
@@ -134,7 +135,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           stop: 'autonomy',
           asks: 'never',
           reach: 'everything',
-          promise: 'Runs everything without asking, network included.',
+          promise:
+            "Acts without approval prompts, anywhere on your machine, network included — and can't pause to ask.",
           native: 'danger-full-access',
         },
       ],
@@ -183,7 +185,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           stop: 'autonomy',
           asks: 'never',
           reach: 'everything',
-          promise: 'Runs everything without asking, including outside this project.',
+          promise:
+            'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
         },
       ],
     },

@@ -105,7 +105,7 @@ export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
     stop: 'autonomy',
     asks: 'never',
     reach: 'everything',
-    promise: 'Runs everything without asking.',
+    promise: 'Acts without stopping for approval — still asks when it matters.',
   },
 ];
 
@@ -310,7 +310,7 @@ export function TrustDial({
     <div className="flex flex-col gap-2">
       {stops.length > 0 && (
         <SegmentedControl
-          aria-label="How much this agent may do without asking"
+          aria-label="How much this agent may do before it checks with you"
           aria-describedby={captionId}
           value={selected?.stop ?? ''}
           disabled={locked}
