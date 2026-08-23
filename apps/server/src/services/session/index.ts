@@ -55,6 +55,9 @@ export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
 export { reconstructHistoryFromEvents } from './event-log-history.js';
 // --- Durable session-event store for LOG-BACKED runtimes (DOR-189) ---
 export { SessionEventStore } from './session-event-store.js';
+export type { UnresolvedInteractionRow } from './session-event-store.js';
+// --- The asks a restart left with nothing to answer them (DOR-1439) ---
+export { expireOrphanedAsks } from './expire-orphaned-asks.js';
 export { readLogBackedHistory } from './log-backed-history.js';
 // --- Answered permission decisions, re-applied to runtime-owned history ---
 export { overlayApprovalReceipts } from './approval-receipt-overlay.js';

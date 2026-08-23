@@ -42,13 +42,44 @@ import {
   lt,
   desc,
   max,
+  or,
   sql,
   type Db,
   type SessionEventRow,
 } from '@dorkos/db';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import {
+  isBlockingInteractionEvent,
+  type BlockingInteractionEventType,
+  type InteractionResolvedEvent,
+  type SessionEvent,
+} from '@dorkos/shared/session-stream';
+import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { EVENT_LOG_MAX_EVENTS } from './event-log.js';
+
+/**
+ * One ask that was raised and never resolved — what
+ * {@link SessionEventStore.readUnresolvedInteractions} hands the boot sweep.
+ */
+export interface UnresolvedInteractionRow {
+  /** The session the ask was raised in. */
+  sessionId: string;
+  /** The interaction id (the tool-use id, for a tool). */
+  id: string;
+  /** Which kind of prompt it was — a resolution cannot be read back without it. */
+  kind: PendingInteractionDTO['type'];
+  /** Server epoch ms the ask was raised at. */
+  startedAt: number;
+}
+
+/** The prompt event types, mapped to the interaction kind each one raises. */
+const ASK_KIND_BY_EVENT_TYPE: Readonly<
+  Record<BlockingInteractionEventType, PendingInteractionDTO['type']>
+> = {
+  approval_required: 'approval',
+  question_prompt: 'question',
+  elicitation_prompt: 'elicitation',
+};
 
 /** The transaction handle Drizzle passes to a `db.transaction(cb)` callback. */
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -184,6 +215,115 @@ export class SessionEventStore {
       if (event?.type === 'interaction_resolved') events.push(event);
     }
     return events;
+  }
+
+  /**
+   * Every ask whose TURN NEVER ENDED, across every session — the asks a process
+   * death left with nothing to answer them (DOR-1439).
+   *
+   * ## Why the bound is the turn, not the missing resolution
+   *
+   * "A prompt row with no resolution row" is the tempting definition and it is
+   * wrong on the upgrade path. `'history'` sessions (codex, opencode) have
+   * ALWAYS persisted their `approval_required` rows, because that mode flushes
+   * a whole turn — but a resolution arriving AFTER its own `turn_end` was
+   * never persisted at all, and a late resolution is a state the projector
+   * models on purpose (`event-log-history.ts`, `applyLateReceipts`). So on the
+   * first boot after this ships, every legacy ask a person answered late looks
+   * exactly like an ask nobody answered, and stamping it `expired` would
+   * rewrite a real decision — durably, silently, and idempotently enough never
+   * to be revisited.
+   *
+   * A turn that ended is a turn whose ask was settled, whether or not the
+   * settling was written down. A turn that never ended is the only thing a
+   * parked ask can leave behind. So a `turn_end` at a higher `seq` clears
+   * everything raised before it, and what survives the scan is an ask whose
+   * turn is genuinely gone. The same rule covers the rarer shape where the
+   * PROMPT persisted and the RESOLUTION's write failed — `flushTurn` warns and
+   * swallows — because that turn still reached its `turn_end`.
+   *
+   * ## Cost
+   *
+   * One scan at boot. Rows are bounded at {@link EVENT_LOG_MAX_EVENTS} PER
+   * SESSION, and nothing prunes sessions, so the table grows with the number of
+   * sessions this machine has ever run: measured at 80k rows / ~32MB the scan
+   * takes ~155ms and closing 500 orphans another ~225ms. Linear, and paid once.
+   *
+   * A prompt whose resolution was trimmed away cannot appear as an orphan: the
+   * trim keeps the NEWEST rows, and both the resolution and the `turn_end`
+   * outrank the prompt they belong to, so the prompt goes first.
+   */
+  readUnresolvedInteractions(): UnresolvedInteractionRow[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        or(
+          sql`${sessionEvents.payload} LIKE '%"type":"approval_required"%'`,
+          sql`${sessionEvents.payload} LIKE '%"type":"question_prompt"%'`,
+          sql`${sessionEvents.payload} LIKE '%"type":"elicitation_prompt"%'`,
+          sql`${sessionEvents.payload} LIKE '%"type":"interaction_resolved"%'`,
+          sql`${sessionEvents.payload} LIKE '%"type":"turn_end"%'`
+        )
+      )
+      .orderBy(sessionEvents.sessionId, sessionEvents.seq)
+      .all();
+    const orphans: UnresolvedInteractionRow[] = [];
+    // One session at a time — the rows arrive grouped by session id, so an ask
+    // is only ever compared against its OWN session's turns and answers. A
+    // single shared map would let one session's `turn_end` close another
+    // session's ask, since an interaction id is a tool-call id and unique
+    // nowhere but its own session.
+    let session: string | undefined;
+    let open = new Map<string, UnresolvedInteractionRow>();
+    const closeSession = (): void => {
+      orphans.push(...open.values());
+      open = new Map();
+    };
+    for (const row of rows) {
+      if (row.sessionId !== session) {
+        closeSession();
+        session = row.sessionId;
+      }
+      const event = parsePayload(row);
+      if (event === null) continue;
+      if (event.type === 'turn_end') {
+        open.clear();
+        continue;
+      }
+      if (event.type === 'interaction_resolved') {
+        open.delete(event.id);
+        continue;
+      }
+      if (!isBlockingInteractionEvent(event)) continue;
+      open.set(event.id, {
+        sessionId: row.sessionId,
+        id: event.id,
+        kind: ASK_KIND_BY_EVENT_TYPE[event.type],
+        startedAt: event.startedAt,
+      });
+    }
+    closeSession();
+    return orphans;
+  }
+
+  /**
+   * Record how one interaction ended, for a caller with no projector to ingest
+   * it through — which today means the boot sweep, because a projector is
+   * exactly what a restart does not have.
+   *
+   * The `seq` comes from {@link SessionEventStore.maxSeq}, the same number a
+   * projector for this session restores its own counter from, so a row written
+   * here can never collide with one a later turn writes.
+   *
+   * @param sessionId - DorkOS session identifier.
+   * @param resolution - The resolution to store, without its `seq`.
+   * @returns The `seq` the row was written under.
+   */
+  appendResolution(sessionId: string, resolution: Omit<InteractionResolvedEvent, 'seq'>): number {
+    const seq = this.maxSeq(sessionId) + 1;
+    this.appendTurn(sessionId, [{ ...resolution, seq }]);
+    return seq;
   }
 
   /**
