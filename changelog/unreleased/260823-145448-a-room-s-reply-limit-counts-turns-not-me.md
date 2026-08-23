@@ -1,6 +1,9 @@
 ---
 covers:
   - "feat(server,db): a room's reply limit counts turns, not messages (DOR-1434)"
+  - "docs(shared,client,decisions): say what the reply limit now counts (DOR-1434)"
+  - "docs(shared): the API descriptions say turns too (DOR-1434)"
+  - "fix(server,decisions): review fixes — say what is stamped, and prove the keying (DOR-1434)"
 ---
 
 ### Changed
