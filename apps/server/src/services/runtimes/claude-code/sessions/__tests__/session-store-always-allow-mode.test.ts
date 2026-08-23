@@ -10,8 +10,10 @@
  * default` and asked all over again.
  *
  * These tests drive `approveTool` against a hand-registered pending approval and
- * pin three things: the mode is adopted, the suggestions still reach the SDK
- * verbatim, and nothing wider than the session moves.
+ * pin three things: an adoptable mode is recorded, the suggestions still reach
+ * the SDK verbatim in every case, and DorkOS mirrors nothing it may not make
+ * durable — anything wider than the session scope, anything the runtime does not
+ * declare, and anything the consent door gates.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
@@ -116,13 +118,90 @@ describe('"Always Allow" and the session mode (DOR-1316)', () => {
     expect(resolved).toEqual([[rule]]);
   });
 
-  it('leaves the operator’s wider settings alone — one card moves one chat', async () => {
+  it('mirrors only the session scope — a settings-file update is the CLI’s business', async () => {
     const global: PermissionUpdate = {
       type: 'setMode',
       mode: 'acceptEdits',
       destination: 'userSettings',
     };
-    const { store, session, saved } = storeWithPendingApproval([global]);
+    const { store, session, saved, resolved } = storeWithPendingApproval([global]);
+
+    expect(store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true })).toBe(true);
+
+    expect(session.permissionMode).toBe('default');
+    expect(saved).toEqual([]);
+    // Not a filter on the grant: the CLI still receives it and may still write
+    // it to the operator's own settings file. DorkOS just does not mirror it.
+    expect(resolved).toEqual([[global]]);
+  });
+
+  it('takes the last mode in a batch, the way the SDK applies them', async () => {
+    const first: PermissionUpdate = { type: 'setMode', mode: 'plan', destination: 'session' };
+    const { store, session } = storeWithPendingApproval([first, SESSION_ACCEPT_EDITS]);
+
+    expect(store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true })).toBe(true);
+
+    expect(session.permissionMode).toBe('acceptEdits');
+  });
+
+  it('writes nothing when the suggested mode is the one already running', async () => {
+    const { store, session, saved } = storeWithPendingApproval([SESSION_ACCEPT_EDITS]);
+    session.permissionMode = 'acceptEdits';
+
+    expect(store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true })).toBe(true);
+
+    expect(session.permissionMode).toBe('acceptEdits');
+    expect(saved).toEqual([]);
+  });
+
+  // The clamp. A card that says "Always Allow" over one Write is not a person
+  // agreeing to a chat that never asks again — and making that durable would
+  // carry it into every later launch, past the `428 AUTONOMY_ACK_REQUIRED` door
+  // on `PATCH /api/sessions/:id` that exists precisely so no client can.
+
+  it('refuses to make a never-asks mode durable — that needs the consent door', async () => {
+    const bypass: PermissionUpdate = {
+      type: 'setMode',
+      mode: 'bypassPermissions',
+      destination: 'session',
+    };
+    const { store, session, saved, resolved } = storeWithPendingApproval([bypass]);
+
+    expect(store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true })).toBe(true);
+
+    expect(session.permissionMode).toBe('default');
+    expect(saved).toEqual([]);
+    // The CLI still applies it to its own live process — the grant is unchanged.
+    // What DorkOS refuses is to carry the escalation into the next launch.
+    expect(resolved).toEqual([[bypass]]);
+  });
+
+  it('refuses a mode this runtime does not declare, whatever the SDK calls it', async () => {
+    // `dontAsk` exists in the SDK and is deliberately not surfaced by
+    // claude-code. Storing it would make the session row display a posture the
+    // runtime never adopted.
+    const undeclared: PermissionUpdate = {
+      type: 'setMode',
+      mode: 'dontAsk',
+      destination: 'session',
+    };
+    const { store, session, saved } = storeWithPendingApproval([undeclared]);
+
+    expect(store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true })).toBe(true);
+
+    expect(session.permissionMode).toBe('default');
+    expect(saved).toEqual([]);
+  });
+
+  it('takes the last mode even when a refused one follows an adoptable one', async () => {
+    // Last-wins is resolved BEFORE the clamp, so a batch ending in bypass adopts
+    // nothing — it must not fall back to the acceptEdits earlier in the array.
+    const bypass: PermissionUpdate = {
+      type: 'setMode',
+      mode: 'bypassPermissions',
+      destination: 'session',
+    };
+    const { store, session, saved } = storeWithPendingApproval([SESSION_ACCEPT_EDITS, bypass]);
 
     expect(store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true })).toBe(true);
 
