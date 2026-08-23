@@ -1,5 +1,6 @@
 import { useConfig } from '@/layers/entities/config';
 import { TelemetryConsentMoment } from '@/layers/features/telemetry-consent';
+import { FullPowerDoorMoment } from '@/layers/features/full-power-door';
 
 import { MOMENT_PRIORITY, type MomentDescriptor } from './moment-descriptor';
 
@@ -25,6 +26,36 @@ export function useTelemetryMomentDescriptor(): MomentDescriptor | null {
 }
 
 /**
+ * Full-power door descriptor — the high rung, shown once to existing users who
+ * have not yet answered the power question. This is a consent door: its accept
+ * flips full power on, so it outranks the telemetry invitation below it.
+ *
+ * Eligible when config has loaded, onboarding is over (`completedAt ?? dismissedAt`
+ * is set), and `ui.fullPowerDecidedAt` is still null — a nullable timestamp plus
+ * an "onboarding already over" gate, the same existing-user re-ask idiom as
+ * `use-profile-prompt`. The rail's own rules (no moment over the onboarding
+ * overlay, at most one moment per launch, nothing from an unconfirmed cache) are
+ * the host's job and are deliberately not repeated here.
+ *
+ * This hook reads only `useConfig`, never a router hook, so the collector stays
+ * renderable without a `RouterProvider`; the destination "Customize…" navigates
+ * to lives in {@link FullPowerDoorMoment}, reached only when the door renders.
+ */
+export function useFullPowerMomentDescriptor(): MomentDescriptor | null {
+  const { data: config } = useConfig();
+  if (!config) return null;
+  const onboardingOver =
+    config.onboarding?.completedAt != null || config.onboarding?.dismissedAt != null;
+  if (!onboardingOver) return null;
+  if (config.ui?.fullPowerDecidedAt != null) return null;
+  return {
+    id: 'full-power-door',
+    priority: MOMENT_PRIORITY.high,
+    render: ({ onClose }) => <FullPowerDoorMoment onClose={onClose} />,
+  };
+}
+
+/**
  * Collects every eligible one-time moment for the current app state. The host
  * ranks the result and opens the highest-priority one — at most one per app
  * launch. Add a moment by writing a descriptor hook and appending its result
@@ -37,6 +68,7 @@ export function useTelemetryMomentDescriptor(): MomentDescriptor | null {
  * record that the moment's own field cannot.
  */
 export function useMoments(): MomentDescriptor[] {
+  const fullPower = useFullPowerMomentDescriptor();
   const telemetry = useTelemetryMomentDescriptor();
-  return [telemetry].filter((d): d is MomentDescriptor => d !== null);
+  return [fullPower, telemetry].filter((d): d is MomentDescriptor => d !== null);
 }
