@@ -662,8 +662,8 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // Updates a MODEL, not a permission mode: test-mode declares its own
       // scenario-shaped mode ids, and the route now refuses to store a mode the
       // owning runtime never declared (that gate is covered in sessions.test.ts).
-      // TestModeRuntime.updateSession returns false because no _sessions entry
-      // exists — the route should respond with 404.
+      // TestModeRuntime.updateSession answers `{ updated: false }` because no
+      // _sessions entry exists — the route should respond with 404.
       const res = await request(app)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ model: 'scripted-model' });

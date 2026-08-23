@@ -11,6 +11,7 @@ import {
   needsConsentRitual,
   resolveTrustStops,
   stopExpectation,
+  tightensDeclaredMode,
 } from '../permission-semantics.js';
 
 /** A declared mode, with only the semantics under test spelled out. */
@@ -80,6 +81,33 @@ describe('isTightening', () => {
         descriptor({ id: 'auto', asks: 'when-risky', reach: 'edit' })
       )
     ).toBe(false);
+  });
+});
+
+describe('tightensDeclaredMode', () => {
+  const declared = [
+    descriptor({ id: 'default', asks: 'always', reach: 'edit' }),
+    descriptor({ id: 'plan', asks: 'always', reach: 'read' }),
+    descriptor({ id: 'bypassPermissions', asks: 'never', reach: 'everything' }),
+  ];
+
+  it('reads the declared meaning of each id, in both directions', () => {
+    expect(tightensDeclaredMode(declared, 'bypassPermissions', 'default')).toBe(true);
+    expect(tightensDeclaredMode(declared, 'default', 'bypassPermissions')).toBe(false);
+  });
+
+  it('fails CLOSED on a mode the runtime does not declare', () => {
+    // The reachable half is `from`: a session persisted in a mode its runtime
+    // has since stopped declaring still loads and runs, and `DirectTransport`
+    // reaches this with no route-level gate at all. "Cannot tell" has to read as
+    // "say so", or a mode nobody described gets the confident answer.
+    expect(tightensDeclaredMode(declared, 'a-mode-nobody-declares', 'default')).toBe(true);
+    expect(tightensDeclaredMode(declared, 'default', 'a-mode-nobody-declares')).toBe(true);
+    expect(tightensDeclaredMode([], 'default', 'default')).toBe(true);
+  });
+
+  it('is quiet when the same declared mode is re-picked', () => {
+    expect(tightensDeclaredMode(declared, 'default', 'default')).toBe(false);
   });
 });
 

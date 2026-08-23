@@ -176,6 +176,26 @@ describe('an unconfirmed permission change reports which direction it went (DOR-
     });
   });
 
+  it('stays quiet when the person re-picks the mode the session is already on', async () => {
+    // Nothing was taken away, so there is nothing to be out of step with — even
+    // though the CLI went silent and a turn is running. Pinned at the seam that
+    // produces the 202, not only on the pure comparison: a `>` that slipped to
+    // `>=` would toast "starts on your next message" at somebody who changed
+    // nothing.
+    await expect(patchAgainstSilentCli('bypassPermissions', 'bypassPermissions')).resolves.toEqual({
+      updated: true,
+    });
+  });
+
+  it('says so when the mode the turn started under is one this runtime no longer declares', async () => {
+    // Fail-closed, at the seam. A session persisted in a since-retired mode
+    // still loads and runs, and nothing can weigh what it permits — so the
+    // honest answer is "this may not have taken", not silence.
+    await expect(
+      patchAgainstSilentCli('a-mode-nobody-declares' as PermissionMode, 'default')
+    ).resolves.toEqual({ updated: true, permissionModePendingUntilNextTurn: true });
+  });
+
   it('stays quiet when the CLI confirms the tightening', async () => {
     const { query } = fakeQuery('acks');
     const store = storeWithLiveTurn(query, 'bypassPermissions');

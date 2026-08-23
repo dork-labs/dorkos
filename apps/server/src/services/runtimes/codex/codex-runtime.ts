@@ -79,6 +79,7 @@ import {
   type CodexThreadMetadataPatch,
   type CodexThreadRecord,
 } from './thread-map.js';
+import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
@@ -94,6 +95,12 @@ import { scanSkillCommands } from './scan-skill-commands.js';
  * synchronous.
  */
 const MCP_STATUS_TTL_MS = 60_000;
+
+/** This runtime's own mode descriptors — the only meaning any mode id has. */
+const CODEX_MODES = CODEX_CAPABILITIES.permissionModes.values ?? [];
+
+/** The mode a session runs under until something says otherwise. */
+const CODEX_DEFAULT_MODE = CODEX_CAPABILITIES.permissionModes.default ?? 'default';
 
 /** Constructor dependencies for {@link CodexRuntime} (composition root). */
 export interface CodexRuntimeOptions {
@@ -401,6 +408,16 @@ export class CodexRuntime implements AgentRuntime {
    * writes the operator's choice through the durable settings store first
    * (ADR-0260) so it survives restarts; the new mode/model applies on the
    * next turn's ThreadOptions projection.
+   *
+   * **"Next turn" is the whole story here, and for a TIGHTENING that has to be
+   * said out loud (DOR-1435).** A mode becomes a `sandboxMode` in
+   * `projectThreadOptions` at the moment a turn starts (`turn-input.ts`), and
+   * Codex has no control channel to move it afterwards — there is not even an
+   * ack to wait for. So a session PATCHed from Full access back to Read only
+   * while a turn is streaming keeps full file and network access until that
+   * turn ends, and answering a plain `200 {permissionMode:'default'}` would
+   * state a posture the run has not adopted. When a turn is in flight and the
+   * change takes permissions away, that is reported rather than assumed.
    */
   async updateSession(
     sessionId: string,
@@ -412,6 +429,9 @@ export class CodexRuntime implements AgentRuntime {
     }
   ): Promise<SessionUpdateResult> {
     await this.seedFromDurable(sessionId);
+    // Read BEFORE the register below overwrites it — this is the mode the
+    // in-flight turn's sandbox was projected from.
+    const prevMode = this.registry.get(sessionId)?.permissionMode ?? CODEX_DEFAULT_MODE;
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
     this.registry.register(sessionId, {
       ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
@@ -419,7 +439,11 @@ export class CodexRuntime implements AgentRuntime {
       ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
     });
-    return { updated: true };
+    const pending =
+      opts.permissionMode !== undefined &&
+      this.activeTurns.has(sessionId) &&
+      tightensDeclaredMode(CODEX_MODES, prevMode, opts.permissionMode);
+    return { updated: true, ...(pending ? { permissionModePendingUntilNextTurn: true } : {}) };
   }
 
   /**

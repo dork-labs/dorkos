@@ -16,12 +16,11 @@ import type {
 import type {
   SessionOpts,
   MessageOpts,
-  PermissionModeDescriptor,
   SessionSettingsPort,
   SessionUpdateResult,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { isTightening } from '@dorkos/shared/permission-semantics';
+import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -66,32 +65,8 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
   return false;
 }
 
-/** This runtime's own mode descriptors, by id — the only meaning any mode has. */
-const CLAUDE_MODES: ReadonlyMap<string, PermissionModeDescriptor> = new Map(
-  CLAUDE_CODE_CAPABILITIES.permissionModes.values?.map((mode) => [mode.id, mode]) ?? []
-);
-
-/**
- * Does moving from `from` to `to` take permissions AWAY from a running turn?
- *
- * Answered from what this runtime declares each mode does — never from the mode
- * ids, so a mode added to the capability profile is weighed correctly the day it
- * lands (spec `trust-dial`, decision 2).
- *
- * An unrecognised id on either side answers `true`, and that direction is
- * deliberate: this decides whether the product ADMITS a change may not have
- * reached the running turn, so "cannot tell" has to read as "say so". The other
- * default would let a mode nobody described silently take the confident answer.
- *
- * @param from - The mode the running turn started under.
- * @param to - The mode the person just chose.
- */
-function tightensPermission(from: PermissionMode, to: PermissionMode): boolean {
-  const before = CLAUDE_MODES.get(from);
-  const after = CLAUDE_MODES.get(to);
-  if (!before || !after) return true;
-  return isTightening(before, after);
-}
+/** This runtime's own mode descriptors — the only meaning any mode id has. */
+const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
 
 /**
  * Manages in-memory session state for the Claude Code runtime.
@@ -546,7 +521,23 @@ export class SessionStore {
           // prompts back for it (the CLI skips `canUseTool` entirely under a
           // mode that never asks). Only the tightening direction is carried up:
           // see `SessionUpdateResult.permissionModePendingUntilNextTurn`.
-          permissionModePendingUntilNextTurn = tightensPermission(prevMode, opts.permissionMode);
+          //
+          // `prevMode` is what the SESSION was set to, which is very nearly —
+          // but not exactly — what the running turn is doing: the launcher can
+          // coerce `auto` down to `default` for a model that cannot do Auto
+          // without writing that back (`messaging/launch-resolver.ts`), so an
+          // `auto` → `default` PATCH on such a model reports pending for a turn
+          // that is already running `default`. Left standing deliberately. The
+          // effective mode is resolved per launch and never recorded on the
+          // session, so comparing against it would mean plumbing a second
+          // source of truth through here — and the error is in the safe
+          // direction: it says "not yet" about a change that has in fact taken,
+          // which costs one sentence and never hides a real gap.
+          permissionModePendingUntilNextTurn = tightensDeclaredMode(
+            CLAUDE_MODES,
+            prevMode,
+            opts.permissionMode
+          );
         }
       }
       logger.debug('[updateSession] permissionMode change', {

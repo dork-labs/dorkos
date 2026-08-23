@@ -124,6 +124,34 @@ export function isTightening(
 }
 
 /**
+ * {@link isTightening}, asked about two mode IDS against the modes a runtime
+ * declares — the form every adapter actually needs, because what a session
+ * stores is an id and what the rule reads is a descriptor.
+ *
+ * **An id the runtime does not declare answers `true`.** This decides whether
+ * the product ADMITS a change may not have reached the running turn, so "cannot
+ * tell" has to read as "say so". The other default would let a mode nobody
+ * described take the confident answer, and the `from` side is genuinely
+ * reachable: a session persisted in a mode the runtime has since stopped
+ * declaring still loads and runs (`PATCH /api/sessions/:id` gates the `to` side
+ * only), and `DirectTransport` bypasses that gate entirely.
+ *
+ * @param declared - Every mode the runtime declares, in any order.
+ * @param from - The mode the running turn started under.
+ * @param to - The mode the person just chose.
+ */
+export function tightensDeclaredMode(
+  declared: readonly PermissionModeDescriptor[],
+  from: string,
+  to: string
+): boolean {
+  const before = declared.find((mode) => mode.id === from);
+  const after = declared.find((mode) => mode.id === to);
+  if (!before || !after) return true;
+  return isTightening(before, after);
+}
+
+/**
  * Whether this runtime's mode asks LESS than its dial position promises —
  * Codex's workspace-write sitting at "act, ask when risky" while never asking at
  * all, because Codex has no way to pause mid-turn.
