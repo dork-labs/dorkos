@@ -8,6 +8,7 @@ import {
   setStagedContextStore,
   resetStagedContextStore,
 } from '../staged-context-store.js';
+import { linkSessionId, resetSessionKeys } from '../session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
 
 const SESSION = '00000000-0000-4000-8000-000000000001';
@@ -29,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   setStagedContextStore(undefined);
   resetStagedContextStore();
+  resetSessionKeys();
   vi.restoreAllMocks();
 });
 
@@ -83,6 +85,47 @@ describe('the hold behind "Added context for the next reply" outlives the proces
 
   it('holds nothing by default, and says so without touching anything', () => {
     expect(takeStagedContext(SESSION)).toEqual([]);
+  });
+});
+
+// The seam the class-level rekey tests below cannot see. Every production caller
+// goes through the module functions, and those resolve the row key themselves —
+// so a store whose rows have moved onto the canonical id while the functions read
+// by the FILING id loses the words under a receipt that has already gone out,
+// which is the DOR-1324 bug wearing a different hat. `queueKeyOf` is the one
+// resolver that follows the rows; `primaryOf` follows the in-memory state.
+describe('a rename does not strand the hold, read through the module functions', () => {
+  const REQUEST = SESSION;
+  const CANON = OTHER;
+
+  it('gives the words back under BOTH ids after the rename', () => {
+    const store = new StagedContextStore(db);
+    setStagedContextStore(store);
+    holdStagedContext(REQUEST, 'staged before the rename', 'msg-1');
+
+    // Exactly what the projector's rekey choke point does, in its order: link
+    // the in-memory half, then carry the durable rows.
+    linkSessionId(REQUEST, CANON);
+    store.rekeySession(REQUEST, CANON);
+
+    // The caller may still be holding either id — a client that never saw the
+    // rename, or the turn that caused it.
+    expect(takeStagedContext(CANON)).toEqual([entry('staged before the rename')]);
+    holdStagedContext(REQUEST, 'staged again', 'msg-2');
+    expect(takeStagedContext(REQUEST)).toEqual([entry('staged again')]);
+  });
+
+  it('writes a hold made AFTER the rename where the next dispatch will look', () => {
+    const store = new StagedContextStore(db);
+    setStagedContextStore(store);
+    linkSessionId(REQUEST, CANON);
+
+    holdStagedContext(REQUEST, 'staged after the rename', 'msg-1');
+
+    // Not a second, invisible hold under the filing id: one hold, on the row key
+    // the rows themselves live under.
+    expect(store.take(CANON)).toEqual([entry('staged after the rename')]);
+    expect(store.take(REQUEST)).toEqual([]);
   });
 });
 

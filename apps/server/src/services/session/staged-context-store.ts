@@ -37,26 +37,43 @@
  * message queue, which is keyed the same way and rehydrates on boot for the same
  * reason (DOR-1132/DOR-1205 lineage).
  *
- * **The take is at-most-once, deliberately.** {@link StagedContextStore.take}
- * reads and deletes in ONE transaction, so a crash after the take loses the
- * note rather than letting it ride a second turn. That trade is not close: the
- * take happens inside the dispatch of the very turn the note was staged for, so
- * a crash in that window loses the TURN too — the loss ADR-0264 already accepts
- * — while the alternative would repeat somebody's words into a later turn they
- * had already watched the agent answer.
+ * **The take is destructive, and that leaves ONE window this fix does not
+ * close.** {@link StagedContextStore.take} reads and deletes in one transaction,
+ * so a note can never ride a second turn. But the take fires in `trigger-turn`
+ * while the context bag is being assembled — BEFORE `settleOpenTurnBefore` and
+ * `sendMessage` — and the durable queue is not symmetric with it: a queued
+ * message's row is deleted at `turn_start` (`onTurnStart`), one step later. So a
+ * throw between the take and the turn actually starting re-parks the message
+ * (`returnToQueue`) and retries it WITHOUT its staged words, under a receipt
+ * that still stands. That is an in-process path, not the crash ADR-0264 covers,
+ * and it predates this store — the in-memory take was destructive in exactly the
+ * same place. It is named here rather than fixed here because closing it means
+ * moving the take to `turn_start` or restoring the hold on `returnToQueue`,
+ * which is turn-path surgery and belongs to its own change. The alternative
+ * trade — a non-destructive take — is worse in the ordinary case: it repeats
+ * somebody's words into a later turn they already watched the agent answer.
  *
- * Keyed by the canonical session id ({@link primaryOf}) so a note staged under a
- * request uuid is still found when the next turn dispatches under the renamed
- * id, and rows move across a rename with {@link StagedContextStore.rekeySession}
- * on the same beat the queue's do — a hold stranded at the pre-rename id would
- * be invisible to every dispatch that followed.
+ * The other surviving residual is the write-refusal fallback below: when SQLite
+ * refuses the insert, the words are kept in this process's memory so they are
+ * not dropped under a receipt that has gone out, which means that one hold is
+ * only as durable as the process. It is logged at `error` when it happens, so it
+ * is a reported downgrade rather than a silent one.
+ *
+ * Keyed through {@link queueKeyOf}, exactly as the message queue's rows are, and
+ * NOT through `primaryOf`. The difference is the whole reason
+ * `session-key-registry.ts` exists: in-memory dispatcher state stays filed under
+ * the id a session was born with (`primaryOf`), while durable ROWS move onto the
+ * canonical id, carried there by {@link StagedContextStore.rekeySession} on the
+ * same beat the queue's are. Reading rows back through the filing id finds
+ * nothing — which, under a receipt that has already gone out, is exactly the
+ * DOR-1324 loss wearing a different hat.
  *
  * @module services/session/staged-context-store
  */
 import { sessionStagedContext, eq, inArray, max, type Db } from '@dorkos/db';
 import type { StagedContextData } from '@dorkos/shared/additional-context';
 import type { SessionStagedContextRow } from '@dorkos/db';
-import { primaryOf } from './session-key-registry.js';
+import { queueKeyOf } from './session-key-registry.js';
 import { logger } from '../../lib/logger.js';
 
 /** A held note as the fold appends it to a dispatch's neutral context bag. */
@@ -123,20 +140,25 @@ export class StagedContextStore {
   /**
    * Hold a note for a session's next dispatch, behind anything already held.
    *
-   * @param sessionId - The canonical session id to hold against
+   * Position and insert go in one transaction so two concurrent holds cannot
+   * read the same tail and collide on it.
+   *
+   * @param sessionId - The row key, already resolved through {@link queueKeyOf}
    * @param text - The person's staged text, pristine
    * @param messageId - The server-minted correlation id for the staged message
    */
   hold(sessionId: string, text: string, messageId: string): void {
-    this.db
-      .insert(sessionStagedContext)
-      .values({
-        id: messageId,
-        sessionId,
-        position: this.nextPosition(sessionId),
-        content: text,
-      })
-      .run();
+    this.db.transaction((tx) => {
+      const tail =
+        tx
+          .select({ value: max(sessionStagedContext.position) })
+          .from(sessionStagedContext)
+          .where(eq(sessionStagedContext.sessionId, sessionId))
+          .get()?.value ?? 0;
+      tx.insert(sessionStagedContext)
+        .values({ id: messageId, sessionId, position: tail + 1, content: text })
+        .run();
+    });
   }
 
   /**
@@ -146,7 +168,7 @@ export class StagedContextStore {
    * and a second reader arriving mid-take must find either all of them or none
    * rather than a half-emptied hold.
    *
-   * @param sessionId - The canonical session id whose hold to drain
+   * @param sessionId - The row key, already resolved through {@link queueKeyOf}
    */
   take(sessionId: string): StagedContextEntry[] {
     return this.db.transaction((tx) => {
@@ -219,17 +241,6 @@ export class StagedContextStore {
     }
     return removed;
   }
-
-  /** The position one past a session's current tail; holds never reorder. */
-  private nextPosition(sessionId: string): number {
-    const tail =
-      this.db
-        .select({ value: max(sessionStagedContext.position) })
-        .from(sessionStagedContext)
-        .where(eq(sessionStagedContext.sessionId, sessionId))
-        .get()?.value ?? 0;
-    return tail + 1;
-  }
 }
 
 /**
@@ -245,7 +256,7 @@ export class StagedContextStore {
  * @param messageId - The server-minted correlation id for the staged message
  */
 export function holdStagedContext(sessionId: string, text: string, messageId: string): void {
-  const key = primaryOf(sessionId);
+  const key = queueKeyOf(sessionId);
   if (sharedStore !== undefined) {
     try {
       sharedStore.hold(key, text, messageId);
@@ -279,7 +290,7 @@ export function holdStagedContext(sessionId: string, text: string, messageId: st
  * @returns The staged entries to append to the next dispatch's context bag
  */
 export function takeStagedContext(sessionId: string): StagedContextEntry[] {
-  const key = primaryOf(sessionId);
+  const key = queueKeyOf(sessionId);
   let durable: StagedContextEntry[] = [];
   if (sharedStore !== undefined) {
     try {

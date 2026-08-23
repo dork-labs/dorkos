@@ -49,6 +49,7 @@ import {
 } from '../message-dispatcher.js';
 import {
   StagedContextStore,
+  holdStagedContext,
   resetStagedContextStore,
   setStagedContextStore,
 } from '../staged-context-store.js';
@@ -76,6 +77,7 @@ const TAB = 'window-a';
 
 let db: Db;
 let store: MessageQueueStore;
+let stagedStore: StagedContextStore;
 let runtime: FakeAgentRuntime;
 let session: string;
 let sessionCounter = 0;
@@ -158,7 +160,8 @@ beforeEach(() => {
   db = createTestDb();
   store = new MessageQueueStore(db);
   setMessageQueueStore(store);
-  setStagedContextStore(new StagedContextStore(db));
+  stagedStore = new StagedContextStore(db);
+  setStagedContextStore(stagedStore);
   runtime = new FakeAgentRuntime();
   runtime.getInternalSessionId.mockReturnValue(undefined);
 });
@@ -1953,6 +1956,27 @@ describe('the orphan sweep', () => {
     expect(removed).toBe(1);
     expect(store.list(gone)).toEqual([]);
     expect(store.list(session).map((row) => row.content)).toEqual(['still wanted']);
+  });
+
+  // DOR-1324. The rows move onto the canonical id with the queue's, so the sweep
+  // has to look for them THERE. Reading by the filing id deletes nothing and the
+  // words of every renamed session sit in the table for the life of the install.
+  it('deletes the staged hold of a RENAMED session that has gone', () => {
+    const canonical = `${session}-canonical`;
+    getOrCreateProjector(session);
+    holdStagedContext(session, 'notes for a session that is about to vanish', 'stage-1');
+
+    rekeyProjector(session, canonical);
+    // The hold followed the rename — the precondition the sweep depends on.
+    expect(stagedStore.take(canonical)).toHaveLength(1);
+    holdStagedContext(session, 'and another', 'stage-2');
+
+    disposeProjector(canonical);
+    noteSessionOrphaned(session);
+    sweepOrphanedMessageQueues();
+
+    expect(stagedStore.take(canonical)).toEqual([]);
+    expect(stagedStore.take(session)).toEqual([]);
   });
 
   it('does nothing at all until a session is actually reported gone', () => {

@@ -3,6 +3,7 @@ covers:
   - 'feat(db): a table for staged words the runtime could not take (DOR-1324)'
   - 'fix(server): context you add for an agent survives a restart (DOR-1324)'
   - 'fix(server): a reaped process is not an adapter bug, and a swept session keeps no words (DOR-1325)'
+  - 'fix(server): staged holds key through queueKeyOf, so a renamed session keeps its words (DOR-1324)'
 ---
 
 ### Fixed
