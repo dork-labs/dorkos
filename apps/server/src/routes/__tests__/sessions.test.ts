@@ -1288,6 +1288,22 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
     });
 
+    it('degrades to the honest 404 rather than 500 when the fallback probe throws', async () => {
+      // A real regression: claude-code's getSession can throw for reasons
+      // unrelated to "session not found" (e.g. an uninitialized boundary —
+      // transcript-reader.ts validates it OUTSIDE its own try/catch). The
+      // fallback probe here is graceful degradation, not a trusted read, so a
+      // throw must still land on the same 404 a clean "not found" would.
+      fakeRuntime.getSessionCwd.mockReturnValue(undefined);
+      fakeRuntime.getSession.mockRejectedValueOnce(new Error('Boundary not initialized'));
+
+      const res = await request(server).get(`/api/sessions/${S1}/messages`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('SESSION_CWD_REQUIRED');
+      expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
+    });
+
     it('honours an explicit ?cwd= even when the runtime has no live binding', async () => {
       fakeRuntime.getSessionCwd.mockReturnValue(undefined);
       fakeRuntime.getMessageHistory.mockResolvedValue([
@@ -1323,6 +1339,11 @@ describe('Sessions Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.messages).toHaveLength(1);
+      // Pins the fallback as VERIFIED, not merely assumed: getSession must
+      // actually have been called (with the default directory and this
+      // session's id) before the messages were trusted, not skipped past.
+      expect(fakeRuntime.getSession).toHaveBeenCalledWith(expect.any(String), S1);
+      expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(expect.any(String), S1);
     });
   });
 

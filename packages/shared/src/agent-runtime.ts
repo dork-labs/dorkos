@@ -1282,6 +1282,10 @@ export interface AgentRuntime {
    * at all), not that the session doesn't exist. Callers that need a
    * definitive answer still fall back to an explicit `projectDir`.
    *
+   * MUST answer synchronously and MUST NEVER throw, for any id (unknown,
+   * malformed, or otherwise) — a caller on a graceful-degradation path relies
+   * on `undefined` alone to mean "try something else next."
+   *
    * @param sessionId - Session to resolve
    * @returns The session's working directory, or `undefined` when unknown
    */

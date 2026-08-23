@@ -426,8 +426,24 @@ async function resolveMessagesCwd(
   const liveCwd = runtime.getSessionCwd?.(internalSessionId);
   if (liveCwd) return liveCwd;
 
-  const found = await runtime.getSession(vaultRoot, internalSessionId);
-  return found ? vaultRoot : null;
+  // Guarded: getSession is a graceful-degradation probe here, not a trusted
+  // read — a runtime whose lookup throws for reasons unrelated to "session
+  // not found" (e.g. an uninitialized boundary) must still fall through to
+  // the honest 404 below rather than 500 on a path whose whole job is to
+  // degrade gracefully. Its own null case (session genuinely absent at
+  // vaultRoot) already means the same thing, so both collapse to `null` here.
+  try {
+    // A successful read here guarantees `readTranscript`/`getMessageHistory`
+    // below will find the SAME file — both key off the identical
+    // (vaultRoot, internalSessionId) pair via the runtime's own transcript
+    // lookup — so returning the bare `vaultRoot` string (not `found.cwd`) is
+    // safe. `found.cwd` isn't even guaranteed to exist on every runtime: only
+    // claude-code's Session always carries one; codex/opencode may omit it.
+    const found = await runtime.getSession(vaultRoot, internalSessionId);
+    return found ? vaultRoot : null;
+  } catch {
+    return null;
+  }
 }
 
 // GET /api/sessions/:id/messages - Get message history from SDK transcript.
