@@ -64,6 +64,15 @@ export interface NewRoomEntry {
   sessionId: string | null;
   cascadeRoot: string;
   cascadeDepth: number;
+  /**
+   * The agent turn that wrote this entry, when one did — the dispatcher's
+   * `dispatchId` (DOR-1434). Optional at the seam and stored as `null` by
+   * default: a person's post, the room's own voice, and an agent post with no
+   * turn behind it all have no turn to name, and a `null` row counts as one
+   * turn on its own, which is what the repeat rule did for every row before
+   * this column existed.
+   */
+  dispatchId?: string | null;
   /** The entry this one answers, or null for a top-level entry. */
   parentEntryId: string | null;
   /** The head of this entry's thread, or null when it is top-level. */
@@ -119,11 +128,19 @@ export function toMember(row: RoomMemberRow): RoomMember {
  * so one bad row costs one message's formatting instead of throwing a whole
  * room's history.
  *
+ * **`dispatch_id` is dropped here on purpose.** It is the repeat rule's private
+ * accounting (DOR-1434) — read only inside {@link RoomStore}, meaningful only
+ * against a live dispatcher, and of no use to a reader of the room. Spreading
+ * the row would carry it into every SSE frame and every API response as a field
+ * `RoomEntry` does not declare, so it is removed here rather than left to a
+ * schema parse somewhere downstream to strip.
+ *
  * @param row - The stored row.
  */
 export function toEntry(row: RoomEntryRow): RoomEntry {
+  const { dispatchId: _internalDispatchId, ...rest } = row;
   return {
-    ...row,
+    ...rest,
     kind: row.kind as RoomEntryKind,
     body: parseEntryBody(row.body),
     mentions: parseJson<string[]>(row.mentions, []),

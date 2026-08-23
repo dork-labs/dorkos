@@ -1440,6 +1440,42 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Which TURN is writing into this room right now, for the entry about to be
+   * stamped — the repeat rule's unit (DOR-1434).
+   *
+   * **Keyed on `(room, agent)`, which is `activeTurnFor`'s deliberate opposite.**
+   * That one answers "what cascade does this post inherit", and a cascade can
+   * only be guessed at when an agent is answering in several rooms at once, so
+   * it takes the deepest claim. This asks a question the claim map can answer
+   * exactly: the claim on the room the entry lands in IS the turn writing there,
+   * and there is never more than one. No heuristic, one map lookup.
+   *
+   * **So it answers for the TRIGGERING room only, and that is the accepted
+   * trade.** An agent mid-turn in room A that posts a note into room B holds no
+   * claim in B, so the note stamps null and costs one message against its author
+   * there. Read that as correct rather than as a gap: nothing in B asked for that
+   * turn, and B's own allowance is the one the note spends. Within A — where the
+   * turn was triggered and where its answer lands — every entry it writes
+   * collapses to one.
+   *
+   * **Aside turns count here, and do not count there.** An aside has no cascade
+   * to hand on ({@link ActiveClaim.aside}), which is why `deepestClaimOf` skips
+   * it — but it is unambiguously a turn, so its `post_to_room` writes carry its
+   * id like any other turn's. Note the limit: this covers what the aside TURN
+   * writes while its claim is held, not what the welcome-back greeter writes
+   * around it. The greeter's status line goes in before `askAside` is called and
+   * its offer goes in after the claim is released, so both are un-stamped — each
+   * being its own cascade root, that costs nothing.
+   *
+   * @param roomId - The room the entry is being written into.
+   * @param authorId - The author writing it.
+   * @returns The dispatch id to stamp, or `undefined` when no turn is running here.
+   */
+  dispatchFor(roomId: string, authorId: string): string | undefined {
+    return this.claimed.get(agentKey(roomId, authorId))?.dispatchId;
+  }
+
+  /**
    * Record that an agent spoke into this room deliberately, from inside its own
    * turn — `post_to_room` (room-participation spec §10.2).
    *
@@ -1836,7 +1872,15 @@ export class RoomTriggerDispatcher {
       authorId: target.authorId,
       text,
       sessionId: opts.sessionId,
-      trigger: { root: entry.cascadeRoot, depth: target.depth },
+      // The dispatch is passed rather than looked up, as defence in depth. The
+      // worry is a late answer, whose claim has been held for minutes: if this
+      // `(room, agent)` key could be handed to another turn while it waited,
+      // reading the key here would stamp this answer with somebody else's turn.
+      // Traced, and today it cannot — a halt marks the turn and `releaseOwnClaim`
+      // refuses a release from a dispatch that is not the holder, so nothing
+      // re-keys under a live claim. Passing the id keeps the stamp right if that
+      // guard ever moves, and costs one field to do it.
+      trigger: { root: entry.cascadeRoot, depth: target.depth, dispatchId: target.dispatchId },
       // Answer where you were asked. `threadRootEntryId` is already a validated
       // top-level entry — every reply carries the root, never another reply —
       // so re-resolving it in `post` cannot refuse this write.

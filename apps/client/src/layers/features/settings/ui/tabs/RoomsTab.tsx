@@ -57,7 +57,7 @@ const LIMIT_FIELDS: readonly LimitField[] = [
   {
     key: 'maxTurnsPerAgentPerCascade',
     label: 'Replies from one agent',
-    description: `How many of those replies one agent may send in a single back-and-forth, counted as messages posted. An agent that thinks out loud spends this faster than one that answers once. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade}.`,
+    description: `How many turns one agent may take in a single back-and-forth. Progress notes an agent posts while it works belong to the turn it is already taking, so they don't count extra. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade}.`,
     min: ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min,
     max: ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.max,
   },

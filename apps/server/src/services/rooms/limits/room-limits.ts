@@ -89,7 +89,7 @@ export interface ResolvedRoomLimits {
    * exactly as it judges everything else.
    */
   maxAgentDepth: number;
-  /** How many of those replies any ONE agent in this room may run. */
+  /** How many TURNS any ONE agent in this room may take. */
   maxTurnsPerAgentPerCascade: number;
   /** How many automatic replies this room may run in an hour. */
   maxAutoTurnsPerHour: number;
