@@ -42,7 +42,10 @@ function setEligibleConfig() {
       telemetry: { userHasDecided: true },
       auth: { enabled: false },
     },
-    isFetchedAfterMount: true,
+    // MomentHost gates on `dataUpdatedAt > LAUNCH_STARTED_AT` (a fetch confirmed
+    // THIS launch), not `isFetchedAfterMount` — see MomentHost.tsx. Stamp it a
+    // million ms ahead of module-load so the door reads as eligible.
+    dataUpdatedAt: Date.now() + 1_000_000,
   } as unknown as ReturnType<typeof useConfig>);
   vi.mocked(useUpdateConfig).mockReturnValue({
     mutate: vi.fn(),
