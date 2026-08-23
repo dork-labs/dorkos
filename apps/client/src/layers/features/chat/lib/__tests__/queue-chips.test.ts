@@ -53,10 +53,20 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     expect(queueDowngradeNotice(downgraded('not-stageable'))).toBeNull();
   });
 
-  it('explains a turn that closed first', () => {
-    expect(queueDowngradeNotice(downgraded('no-open-turn'))).toBe(
-      'Queued. The task had already finished.'
-    );
+  it('names the window holding the task, and claims nothing about it ending (DOR-1315)', () => {
+    // The reported failure: a steer sent 5s into a visibly running turn came back
+    // downgraded, and the chip read "Queued. The task had already finished." The
+    // task had NOT finished — the other window was running it — and the server
+    // never checked whether it had. The chip now says the one thing the server
+    // does know.
+    const notice = queueDowngradeNotice(downgraded('turn-owned-elsewhere'));
+    expect(notice).toBe("Couldn't cut in. Another window is running this task.");
+    // No claim about the task being over, in any wording. This is the assertion
+    // the old copy failed.
+    expect(notice).not.toMatch(/finish|done|over|ended|complete/i);
+    // And it is not the silent one: the words really did go to the back of the
+    // line, so staying quiet would be the DOR-1268 lie again.
+    expect(notice).not.toBeNull();
   });
 
   it('explains a turn parked on the person', () => {
@@ -69,7 +79,7 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     const reasons: NonNullable<MessageDeliveryOutcome['degradedBecause']>[] = [
       'unsupported',
       'not-steerable',
-      'no-open-turn',
+      'turn-owned-elsewhere',
       'pending-interaction',
     ];
     for (const reason of reasons) {

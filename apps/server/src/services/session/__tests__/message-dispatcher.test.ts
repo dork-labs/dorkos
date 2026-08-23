@@ -1085,6 +1085,67 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(result.queued).toBe(false);
   });
 
+  it('tells a second window that the OTHER window is running the task (DOR-1315)', async () => {
+    // The reported failure: a steer posted ~5s into a visibly running turn came
+    // back `no-open-turn`, and the composer chip said "Queued. The task had
+    // already finished." It had not. The refusal was the write-lock — a steer is
+    // a write, and window-b does not own this turn — which is a fact about
+    // OWNERSHIP and says nothing at all about whether a turn is open. Reporting
+    // it as a missing turn is what let the cockpit assert an ending nobody
+    // checked for.
+    withCapabilities({ supportsSteer: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    // The turn really is running, in the other window, exactly as the operator
+    // saw it: this is the state the old copy called "already finished".
+    expect(projectorStatus()).toBe('streaming');
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await send('course-correct', {
+      disposition: 'steer',
+      clientId: 'window-b',
+    });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'steer',
+      applied: 'queue',
+      degradedBecause: 'turn-owned-elsewhere',
+    });
+    // Refused at the gate, so the runtime was never asked — which is why its
+    // answer could never have told these two situations apart.
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    expect(result.queued).toBe(true);
+
+    first.open();
+    await settle();
+  });
+
+  it('does not call a running turn finished when the steer lost its input stream', async () => {
+    // The other way a steer comes back undelivered to a caller who WAS allowed to
+    // make it: the process's input stream had gone away under the turn. That is
+    // no more evidence of an ending than the ownership refusal was, so the answer
+    // still comes from the session's own projection — and the projection says a
+    // turn is open.
+    withCapabilities({ supportsSteer: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    expect(projectorStatus()).toBe('streaming');
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'stream-closed' });
+
+    const result = await send('course-correct', { disposition: 'steer' });
+
+    expect(result.outcome.degradedBecause).toBe('not-steerable');
+    expect(result.queued).toBe(true);
+
+    first.open();
+    await settle();
+  });
+
   it('publishes whether the session can be steered, once, before the ladder runs', async () => {
     // The composer offers Steer on this value (DOR-1268), so it has to be on the
     // session's own status before any turn a person could steer is open. The

@@ -66,7 +66,11 @@ const DOWNGRADE_NOTICE: Record<
   // sentence here would be a duplicate at best, and at worst it would imply a
   // failure where the design simply chose the later of two honest routes.
   'not-stageable': null,
-  'no-open-turn': 'Queued. The task had already finished.',
+  // Says who is holding the task, and nothing about whether it finished. The
+  // sentence this replaced — "Queued. The task had already finished." — asserted
+  // an ending the server had never checked for, and a person watching the task
+  // run in their other window was told it was over (DOR-1315).
+  'turn-owned-elsewhere': "Couldn't cut in. Another window is running this task.",
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
 
@@ -76,7 +80,7 @@ const DOWNGRADE_NOTICE: Record<
  *
  * Now that steer and stage have real mechanisms (P4), a downgrade is a live
  * event: a steer the runtime could not honour is queued instead, and the chip
- * owns up to it once — `unsupported`, `not-steerable`, `no-open-turn`, and
+ * owns up to it once — `unsupported`, `not-steerable`, `turn-owned-elsewhere`, and
  * `pending-interaction` each get one plain line. Two are deliberately quiet:
  * `session-idle`, because "it ran immediately" is not a loss anybody needs told,
  * and `not-stageable`, because a folded stage sits on no queue and the transcript

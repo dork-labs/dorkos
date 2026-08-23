@@ -348,25 +348,28 @@ async function deliverByDisposition(
       });
       return { degrade: 'unsupported' };
     }
-    // The runtime found nothing to join. TWO very different situations answer
-    // that way, and reporting both as `session-idle` is what let a steer become
-    // a silent follow-up turn (DOR-1268). So ask the session itself whether a
-    // turn was actually running:
+    // A DIFFERENT window started the live turn, so this sender may not write into
+    // it. That is a fact about OWNERSHIP, and it is the one refusal this layer
+    // knows without asking anything else — say it in its own words. Folding it in
+    // with "no turn to join" is what let the cockpit tell a person their task had
+    // already finished while it was visibly running in the other window
+    // (DOR-1315).
+    if (!result.authorized) return { degrade: 'turn-owned-elsewhere' };
+    // The caller was allowed to steer and the runtime still did not deliver:
+    // either it found no turn to join, or the process's input stream had closed
+    // under one. NEITHER answer is evidence about whether a turn is running, so
+    // the server never asserts one — it asks the session's own projection, which
+    // is the only authority on that (DOR-1268):
     //
     // - No turn open — the session was idle, or its turn ended between the click
     //   and the POST. The message just runs now, which lost nothing, and this is
     //   the one downgrade the UI stays quiet about (AC3).
-    // - A turn IS open and the runtime still could not join it — the mechanism
-    //   that cuts in is not under this session (claude-code on the resume path).
-    //   Nothing ran early; the words went to the back of the line, and the
-    //   sender is told so.
-    if (result.authorized && result.reason === 'no-open-turn') {
-      const sessionKey = primaryOf(canonicalId);
-      return { degrade: hasOpenTurn(sessionKey, projector) ? 'not-steerable' : 'session-idle' };
-    }
-    // A DIFFERENT client owns the live turn (unauthorized), or its input stream
-    // had already closed: there is no turn THIS caller may join, so it waits.
-    return { degrade: 'no-open-turn' };
+    // - A turn IS open and the steer still could not join it — the mechanism that
+    //   cuts in is not under this session (claude-code on the resume path), or it
+    //   went away mid-turn. Nothing ran early; the words went to the back of the
+    //   line, and the sender is told so.
+    const sessionKey = primaryOf(canonicalId);
+    return { degrade: hasOpenTurn(sessionKey, projector) ? 'not-steerable' : 'session-idle' };
   }
 
   // stage. The flag routes: a runtime that declares staging is asked to append to
@@ -417,9 +420,10 @@ async function deliverByDisposition(
     }
     return landed({ messageId, requested, applied: 'stage' });
   }
-  // A DIFFERENT client owns the live turn, so the runtime refused the write. The
-  // message waits in line rather than being lost — a rare cross-client race.
-  return { degrade: 'no-open-turn' };
+  // A DIFFERENT window owns the live turn, so the runtime refused the write. The
+  // message waits in line rather than being lost — a rare cross-client race, and
+  // named for what it is rather than as a turn that is not there (DOR-1315).
+  return { degrade: 'turn-owned-elsewhere' };
 }
 
 /**
