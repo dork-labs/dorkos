@@ -171,6 +171,22 @@ the same author can appear once per room within one cascade. That is defensible
 — depth is doing the bounding, and per-room scoping is what keeps the query on
 an index — but it means the ancestry rule is a within-room guarantee only.
 
+### Amendment (2026-08-23, DOR-1428): rule 2 is a counter, and the numbers moved
+
+Rule 2 above is now a per-agent turn counter rather than an ancestry set: a
+target is refused once it has already taken `rooms.maxTurnsPerAgentPerCascade`
+turns in this cascade (default 10), instead of at its first repeat. The refusal
+reason is `'repeat'`. Everything this ADR argues about rule 2 still holds — it is
+still a mechanism rather than a prompt, still fires below the depth ceiling, and
+a person's own message still starts the count over — and the Negative consequence
+this ADR predicted ("will produce false refusals") is what forced the change. See
+ADR 260823-000217.
+
+The four shipped numbers also moved, in the loosening direction, for new and
+existing installs; and a person may now turn every automatic-reply limit off
+(`rooms.turnLimitsEnabled`), which is a state with no automatic brake at all.
+That trade is argued in ADR 260823-000218, not here.
+
 ## Consequences
 
 ### Positive
