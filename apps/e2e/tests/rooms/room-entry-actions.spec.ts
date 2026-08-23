@@ -978,38 +978,58 @@ test.describe('Rooms — a thread on a phone', () => {
     await roomsPage.waitForHistory(40, SERVER_ROUND_TRIP_MS);
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
 
-    // Read back into the history and settle there — and settle with the reply
-    // row the reader is about to tap ON SCREEN, which is a precondition and not
-    // tidiness. A tap scrolls its target into view first, and Chromium CENTRES a
-    // row that is not fully visible, so a reply row sitting above the window
-    // moves the room by about four messages in the gap between this test
-    // recording where the reader was and the thread taking the room away — and
-    // the room then honestly comes back to a place this test had stopped
-    // watching. Measured: with `resume line 24` at the top the tap scrolled the
-    // room from 1012px to 691px and the reader came back four messages higher
-    // (DOR-1364). The sibling test above dodges the same trap by hanging its
-    // thread off the newest message, which is already on screen.
-    await roomsPage.scroller.evaluate((el) => {
-      el.scrollTop = Math.round(el.scrollHeight / 2);
-    });
-    await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
-    // Settled BEFORE the row is scrolled into view and again after: the first
-    // wait is what makes the second scroll land somewhere that stays put.
-    await roomsPage.settledTopVisibleEntryText();
-    const replyRow = roomsPage.replyRow(roomsPage.entry('resume line 21'));
-    await replyRow.scrollIntoViewIfNeeded();
-    // Asked AGAIN after the reposition, because centring the row is itself a
-    // scroll: a room that landed back at its newest message has a reader with no
-    // position to remember, the landing decides `end` instead of `remembered`,
-    // and this test would die at the `data-landed-on` poll with a message about
-    // an attribute rather than about its own precondition.
-    await expect.poll(() => roomsPage.isAtBottom()).toBe(false);
+    // A real reader scrolls back into the history and opens a thread by tapping
+    // a reply they can SEE — so the tap moves nothing. This spec reproduces
+    // exactly that, because the thing under test — does coming back restore the
+    // reader's row? — is only meaningful if the reader's row does not move
+    // between the test recording it and the thread taking the room away.
+    //
+    // The old synthetic `scrollTop = scrollHeight / 2` jump broke that twice
+    // over: it remembered a row against the virtualizer's pre-settle height
+    // estimate, which then shifted under it (DOR-1431), and it left the reply
+    // row it went on to tap only half on screen, so the tap re-centred it —
+    // Chromium centres a target that is not fully visible — and moved the room
+    // by about four messages AFTER the row had been recorded (DOR-1364). The
+    // telemetry banner's ~150px used to paper over both; without it the test has
+    // to earn its own honesty. The sibling test above dodges the same trap by
+    // hanging its thread off the newest message, which is already on screen.
+    const scrollerBox = (await roomsPage.scroller.boundingBox())!;
+    await page.mouse.move(
+      scrollerBox.x + scrollerBox.width / 2,
+      scrollerBox.y + scrollerBox.height / 2
+    );
+    // Wheel back a notch at a time — a genuine gesture, which fires scroll
+    // events at SETTLED geometry so the row the timeline remembers is the one
+    // truly under the reader — until the room's thread is sitting comfortably on
+    // screen, clear of both edges and off the newest message. A third of the
+    // viewport per notch is far smaller than the band where the reply row is
+    // fully clear, so the reader always comes to rest somewhere they can tap it
+    // without the tap scrolling anything.
+    await expect
+      .poll(
+        async () => {
+          if (!(await roomsPage.isAtBottom()) && (await roomsPage.replyRowComfortablyVisible())) {
+            return true;
+          }
+          await page.mouse.wheel(0, -Math.round(scrollerBox.height / 3));
+          return false;
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true);
+
+    // Record where the reader is standing, once the list holds still — the row
+    // coming back has to return them to. A null on both sides of the final
+    // comparison would be a test that passed by measuring nothing.
     const topBefore = await roomsPage.settledTopVisibleEntryText();
-    // A null on both sides of the final comparison would be a test that passed
-    // by measuring nothing.
     expect(topBefore).not.toBeNull();
 
-    await replyRow.click();
+    // Tap the reply the reader can see — the room's one thread, located as what
+    // is on screen rather than by a hardcoded message id. Because the wheel
+    // above left it comfortably in view, this tap scrolls nothing, so the room
+    // stays exactly where `topBefore` recorded it (the DOR-1364 coupling is gone
+    // — there is no reposition between recording the row and leaving it).
+    await roomsPage.replyRows.first().click();
     await expect(roomsPage.threadPanel).toBeVisible();
     await expect(roomsPage.entries).toHaveCount(0);
 

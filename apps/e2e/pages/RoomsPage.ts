@@ -854,4 +854,41 @@ export class RoomsPage {
   async isAtBottom(): Promise<boolean> {
     return this.scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight <= 64);
   }
+
+  /**
+   * Whether the open room's thread reply row is drawn COMFORTABLY on screen —
+   * fully inside the scroller and clear of both its edges — so a reader can tap
+   * it without the tap scrolling anything.
+   *
+   * The clearance is the whole point (DOR-1431/DOR-1364). A reply row flush
+   * against an edge, or clipped by it, is one a tap scrolls into view first —
+   * Chromium centres a target that is not fully visible — and that scroll moves
+   * the room out from under a position a test has just recorded. A row sitting
+   * well inside the viewport is one the tap leaves exactly where it is, which is
+   * what a reader tapping a thread they can already see actually experiences.
+   *
+   * False when no reply row is rendered yet: the timeline is virtualized and
+   * only draws the rows near the viewport, so this is the honest answer while
+   * the thread is still scrolled away — a wheel loop polls it until the thread
+   * has come into view.
+   *
+   * @returns Whether the reply row is comfortably tappable right now.
+   */
+  async replyRowComfortablyVisible(): Promise<boolean> {
+    const row = this.replyRows.first();
+    if ((await row.count()) === 0) return false;
+    return row.evaluate((el) => {
+      const scroller = el.closest('.chat-scroll-area');
+      if (scroller === null) return false;
+      const view = scroller.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      // A margin off each edge so "visible" means "a tap will not scroll it",
+      // not "one pixel is showing" — and enough to stay clear of the masthead
+      // and composer that frame the scroller. A sixth of the viewport is far
+      // wider than any wheel notch below, so the reader always comes to rest
+      // inside this band rather than skipping across it.
+      const margin = view.height / 6;
+      return box.top >= view.top + margin && box.bottom <= view.bottom - margin;
+    });
+  }
 }
