@@ -78,7 +78,18 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     default: {
       ...(actual.default as Record<string, unknown>),
       access: vi.fn().mockRejectedValue(new Error('ENOENT')),
-      readFile: vi.fn().mockResolvedValue(''),
+      // A path the POST path just "wrote" reads back empty; every other path is
+      // a row fixture with no file behind it, and the honest answer for those is
+      // ENOENT. The update route now tells that apart from a file it cannot read
+      // or parse, and only ENOENT means "legacy DB-only task, edit the row alone"
+      // (DOR-1481) — so a blanket empty read would make every fixture here look
+      // like a file whose contents are unparseable garbage.
+      readFile: vi.fn().mockImplementation(async (p: string) => {
+        if (typeof p === 'string' && p.startsWith('/tmp/dork-test/')) return '';
+        throw Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), {
+          code: 'ENOENT',
+        });
+      }),
     },
   };
 });

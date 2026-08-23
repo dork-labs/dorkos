@@ -174,26 +174,41 @@ function parksOnCreate(trusted: boolean): boolean {
 }
 
 /**
- * What a caller is told when a task's SKILL.md could not be read or written.
+ * What a caller is told when a task's SKILL.md could not be read, understood,
+ * or written.
  *
- * Written for a person, because this is the one failure on these routes that a
+ * Written for a person, because these are the failures on this route that a
  * person has to go and fix outside DorkOS: a read-only disk, a full one, a file
- * owned by someone else. It names the file, says plainly that nothing changed,
- * and carries the operating system's own reason rather than hiding it.
+ * owned by someone else, a settings block someone hand-edited into nonsense. It
+ * names the file, says plainly that nothing changed, and carries the underlying
+ * reason rather than hiding it.
  *
- * @param what - `'read'` when loading the file failed, `'save'` when writing it did.
+ * The `parse` case matters most, and is the one added last (DOR-1481 review).
+ * Any task still carrying the `max-runtime: null` corruption this branch also
+ * fixes has an unreadable file on disk right now, and the route used to fall
+ * straight past it to the row and answer 200 — so the corruption had no symptom
+ * at all. Now it has a legible one that says which file to open.
+ *
+ * @param what - Which step failed: loading the file, understanding it, or writing it.
  * @param filePath - The SKILL.md the route was working on.
- * @param err - Whatever the filesystem threw.
- * @returns One sentence for the response body's `error`.
+ * @param reason - The underlying failure, already reduced to a sentence.
+ * @returns One line for the response body's `error`.
  */
-function describeTaskFileFailure(what: 'read' | 'save', filePath: string, err: unknown): string {
-  const advice =
-    what === 'save'
-      ? 'Check who is allowed to write to that file and how much space is left on the disk'
-      : 'Check who is allowed to open that file';
+function describeTaskFileFailure(
+  what: 'read' | 'parse' | 'save',
+  filePath: string,
+  reason: string
+): string {
+  const verb = { read: 'read', parse: 'make sense of', save: 'save' }[what];
+  const advice = {
+    read: 'Check who is allowed to open that file',
+    parse:
+      'Open that file and fix the settings block at the top — a setting written as `null` is the usual cause',
+    save: 'Check who is allowed to write to that file and how much space is left on the disk',
+  }[what];
   return (
-    `DorkOS could not ${what} this task's file at ${filePath}, so nothing was changed: ` +
-    `${toErrorMessage(err, 'the disk gave no reason')}. ${advice}, then try again.`
+    `DorkOS could not ${verb} this task's file at ${filePath}, so nothing was changed: ` +
+    `${reason}. ${advice}, then try again.`
   );
 }
 
@@ -625,6 +640,13 @@ export function createTasksRouter(
     // the edit simply vanished with nothing anywhere saying why. The only error
     // that means "there is no file, edit the row alone" is `ENOENT` on the
     // read; every other one is a real failure and is reported as one.
+    //
+    // A file that READS but does not PARSE is the same silent-success defect one
+    // branch over, and it was still here after the first pass (DOR-1481 review):
+    // the route skipped the write, updated the row, and answered 200. That is
+    // the permanent path for every task already carrying the `max-runtime: null`
+    // corruption this branch fixes, so it is exactly the case that most needs a
+    // symptom. It refuses too.
     if (existing.filePath) {
       let content: string | null = null;
       try {
@@ -633,15 +655,24 @@ export function createTasksRouter(
         // A legacy DB-only task: a row whose file was never written, or was
         // deleted outside DorkOS. Fall through and update the row alone.
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-          return res
-            .status(500)
-            .json({ error: describeTaskFileFailure('read', existing.filePath, err) });
+          return res.status(500).json({
+            error: describeTaskFileFailure(
+              'read',
+              existing.filePath,
+              toErrorMessage(err, 'the disk gave no reason')
+            ),
+          });
         }
       }
 
-      const parsed =
-        content === null ? null : parseSkillFile(existing.filePath, content, TaskFrontmatterSchema);
-      if (parsed?.ok) {
+      if (content !== null) {
+        const parsed = parseSkillFile(existing.filePath, content, TaskFrontmatterSchema);
+        if (!parsed.ok) {
+          return res.status(500).json({
+            error: describeTaskFileFailure('parse', existing.filePath, parsed.error),
+          });
+        }
+
         const updatedFrontmatter = mergeTaskFrontmatter(
           parsed.definition.meta as Record<string, unknown>,
           data
@@ -656,9 +687,13 @@ export function createTasksRouter(
             updatedPrompt
           );
         } catch (err) {
-          return res
-            .status(500)
-            .json({ error: describeTaskFileFailure('save', existing.filePath, err) });
+          return res.status(500).json({
+            error: describeTaskFileFailure(
+              'save',
+              existing.filePath,
+              toErrorMessage(err, 'the disk gave no reason')
+            ),
+          });
         }
       }
     }
@@ -793,6 +828,11 @@ export function createTasksRouter(
       return res.status(403).json({
         error: OPERATOR_ONLY_TASK_ERROR,
         code: OPERATOR_ONLY_TASK_CODE,
+        // Empty on purpose, and present on purpose: the other two refusal sites
+        // on this router always send `fields`, so a caller that reads it should
+        // not have to handle the key being missing here. Nothing was refused
+        // FIELD-by-field — the whole action was — and an empty list says that.
+        fields: [],
         message: OPERATOR_ONLY_TRIGGER_REFUSAL,
       });
     }

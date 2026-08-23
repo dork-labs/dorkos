@@ -12,7 +12,7 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { TaskNameSchema } from '@dorkos/shared/schemas';
+import { TaskNameSchema, TASK_DURATION_PATTERN } from '@dorkos/shared/schemas';
 import type { UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify, validateSlug } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
@@ -58,6 +58,19 @@ export type TaskProvenanceResolver = () => {
 export const MISSING_REASON_ERROR =
   'A scheduled task needs a reason. Say why this schedule should exist, in your own words — ' +
   'the person reading the approval has only what you write here to decide on.';
+
+/**
+ * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
+ * accepts — the MCP twin of the same fix on `UpdateTaskRequestSchema` (DOR-1481).
+ *
+ * `tasks_update` passes this straight through to the store, where
+ * `parseDuration` turns anything it cannot read into `0` — which removes the
+ * run's time limit rather than rejecting the call — and the same string written
+ * into the file makes the file unreadable to every later sync. `tasks_create`
+ * accepts and ignores the argument (see the module note below), but it is
+ * validated on both so the two tools cannot disagree about what a duration is.
+ */
+const DURATION_ARG = z.string().min(1).regex(TASK_DURATION_PATTERN).optional();
 
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =
@@ -434,7 +447,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         reason: z.string().describe(REASON_DESCRIPTION),
         description: z.string().optional().describe('Description of what this task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
-        maxRuntime: z.string().optional().describe('Maximum run time (e.g., "5m", "1h")'),
+        maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },
@@ -458,7 +471,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         cron: z.string().optional().describe('New cron expression'),
         enabled: z.boolean().optional().describe('Enable or disable the schedule'),
         timezone: z.string().optional().describe('New timezone'),
-        maxRuntime: z.string().optional().describe('New max runtime (e.g., "5m", "1h")'),
+        maxRuntime: DURATION_ARG.describe('New max runtime (e.g., "5m", "1h")'),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },

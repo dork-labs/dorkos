@@ -145,18 +145,12 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       expect(store.getTask(id)!.maxRuntime).toBeNull();
     });
 
-    it('clears display-name and timezone the same way', async () => {
-      // `cron: null` is the fourth clearable field and is deliberately NOT
-      // exercised here: `pulse_schedules.cron` is NOT NULL, so clearing a cron
-      // throws out of `store.updateTask` before the row is written. That is a
-      // separate defect from this one — the frontmatter merge handles `cron`
-      // exactly like the other three — and fixing it means a schema or column
-      // change, not a change to this route.
+    it('clears display-name, cron, and timezone the same way', async () => {
       const id = await createTask({ displayName: 'Nightly Sweep', timezone: 'Europe/Berlin' });
 
       const res = await request(app)
         .patch(`/api/tasks/${id}`)
-        .send({ displayName: null, timezone: null });
+        .send({ displayName: null, cron: null, timezone: null });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
 
       const raw = await fs.readFile(skillPath('nightly-sweep'), 'utf-8');
@@ -166,11 +160,41 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       expect(parsed.ok, `the file no longer parses: ${JSON.stringify(parsed)}`).toBe(true);
       if (!parsed.ok) return;
       const meta = parsed.definition.meta as Record<string, unknown>;
-      expect('display-name' in meta, 'display-name should be gone').toBe(false);
+      for (const key of ['display-name', 'cron']) {
+        expect(key in meta, `${key} should be gone`).toBe(false);
+      }
       // `timezone` carries a schema default, so the key comes back as 'UTC'
       // rather than absent — what matters is that it is not the literal null
       // that made the whole file unreadable.
       expect(meta.timezone).toBe('UTC');
+    });
+
+    it('clears a cron all the way to the row, and lands the rest of the edit with it', async () => {
+      // The cockpit's edit form sends `cron: cronTrimmed || null` on EVERY
+      // save (`TaskFormInner.tsx`), so simply editing the prompt of an
+      // on-demand task takes this path. The row's `cron` column is NOT NULL, so
+      // a literal null threw out of `store.updateTask` AFTER the file had
+      // already been rewritten — a 500 to the caller, and then the watcher
+      // picking up the changed file seconds later and applying the "failed"
+      // edit out of band. `''` is what "on demand" means in the column, exactly
+      // as it does on create and on file sync.
+      const id = await createTask({});
+
+      const res = await request(app)
+        .patch(`/api/tasks/${id}`)
+        .send({ cron: null, prompt: 'sweep the backlog more gently' });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+      const after = store.getTask(id)!;
+      expect(after.cron).toBe('');
+      expect(after.prompt).toBe('sweep the backlog more gently');
+
+      const raw = await fs.readFile(skillPath('nightly-sweep'), 'utf-8');
+      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, TaskFrontmatterSchema);
+      expect(parsed.ok, `the file no longer parses: ${JSON.stringify(parsed)}`).toBe(true);
+      if (!parsed.ok) return;
+      expect('cron' in (parsed.definition.meta as Record<string, unknown>)).toBe(false);
+      expect(parsed.definition.body).toBe('sweep the backlog more gently');
     });
 
     it('does not desync the file from the row for every write that follows', async () => {
@@ -217,6 +241,57 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       expect(after.description).toBe(before.description);
       expect(after.updatedAt).toBe(before.updatedAt);
       expect(await fs.readFile(skillPath('nightly-sweep'), 'utf-8')).toBe(fileBefore);
+    });
+
+    it('answers 500 when the file cannot be READ for a reason other than "not there"', async () => {
+      // ENOENT is the only read failure that means "legacy DB-only task". The
+      // row here points at a directory, so the read fails with EISDIR — a real
+      // failure, which must not be mistaken for a missing file and quietly
+      // turned into a DB-only edit.
+      const aDirectory = path.join(dorkHome, 'tasks');
+      await fs.mkdir(aDirectory, { recursive: true });
+      const notAFile = store.createTask({
+        name: 'unreadable',
+        description: 'points at a directory',
+        prompt: 'do a thing',
+        cron: '0 5 * * *',
+        filePath: aDirectory,
+      });
+
+      const res = await request(app)
+        .patch(`/api/tasks/${notAFile.id}`)
+        .send({ description: 'an edit that cannot be checked against the file' });
+
+      expect(res.status).toBe(500);
+      expect(String(res.body.error)).toMatch(/could not read/i);
+      expect(store.getTask(notAFile.id)!.description).toBe('points at a directory');
+    });
+
+    it('answers 500 when the file reads but does not parse, and changes nothing', async () => {
+      // The permanent path for any task already carrying the shipped
+      // `max-runtime: null` corruption. The route used to fall straight through
+      // an unparseable file to `store.updateTask` and answer 200 — the same
+      // silent-success defect the write path had, one branch over, and the
+      // reason a corrupted task had no symptom a person could see.
+      const id = await createTask({});
+      const before = store.getTask(id)!;
+      await fs.writeFile(
+        skillPath('nightly-sweep'),
+        '---\nname: nightly-sweep\nmax-runtime: null\n---\nsweep the backlog\n',
+        'utf-8'
+      );
+
+      const res = await request(app)
+        .patch(`/api/tasks/${id}`)
+        .send({ description: 'an edit onto a broken file' });
+
+      expect(res.status).toBe(500);
+      expect(String(res.body.error)).toMatch(/could not make sense of/i);
+      expect(String(res.body.error)).toContain('nightly-sweep');
+
+      const after = store.getTask(id)!;
+      expect(after.description).toBe(before.description);
+      expect(after.updatedAt).toBe(before.updatedAt);
     });
 
     it('still updates a legacy DB-only task whose file is not there', async () => {

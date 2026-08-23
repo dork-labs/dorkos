@@ -25,6 +25,16 @@
  * route does not manage (`origin`, `shape` on a Shape-installed task) survives
  * a rewrite.
  *
+ * **One thing this deliberately does not fight.** The `base` an update passes in
+ * is the frontmatter as PARSED, which means `TaskFrontmatterSchema`'s defaults
+ * have already been filled in — so rewriting a file that omitted `timezone`,
+ * `enabled` or `permissions` materializes them into the YAML as `UTC`, `true`
+ * and `acceptEdits`. That is a cosmetic change to a file a person may have
+ * written by hand, and it is left alone on purpose: the values are exactly what
+ * the omitted keys already meant, and reconstructing "which keys were absent
+ * before" would mean re-reading the raw YAML alongside the parsed form for no
+ * behavioral gain. Noted so the next reader does not mistake it for a bug.
+ *
  * @module services/tasks/task-frontmatter-merge
  */
 

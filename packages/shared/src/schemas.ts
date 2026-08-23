@@ -4159,7 +4159,13 @@ export const CreateTaskRequestSchema = z
     description: z.string().min(1).max(TASK_DESCRIPTION_MAX),
     prompt: z.string().min(1),
     cron: z.string().min(1).nullable().optional(),
-    timezone: z.string().nullable().optional(),
+    /**
+     * An IANA timezone like `Europe/Berlin`. Non-empty: the frontmatter
+     * defaults this to `UTC` when the key is absent, so an empty string is not
+     * "use the default" — it writes `timezone: ''` into the file and the row,
+     * which is a timezone nothing can read.
+     */
+    timezone: z.string().min(1).nullable().optional(),
     target: z.string().min(1),
     enabled: z.boolean().optional().default(true),
     /**
@@ -4299,7 +4305,13 @@ export const UpdateTaskRequestSchema = z
     description: z.string().min(1).optional(),
     prompt: z.string().min(1).optional(),
     cron: z.string().min(1).nullable().optional(),
-    timezone: z.string().nullable().optional(),
+    /**
+     * An IANA timezone like `Europe/Berlin`. Non-empty: the frontmatter
+     * defaults this to `UTC` when the key is absent, so an empty string is not
+     * "use the default" — it writes `timezone: ''` into the file and the row,
+     * which is a timezone nothing can read.
+     */
+    timezone: z.string().min(1).nullable().optional(),
     enabled: z.boolean().optional(),
     /**
      * A duration like `5m`, `1h`, `30s`, `2h30m`, or `null` to remove the cap.

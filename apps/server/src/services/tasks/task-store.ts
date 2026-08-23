@@ -215,7 +215,15 @@ export class TaskStore {
     if (input.displayName !== undefined) updates.displayName = input.displayName ?? null;
     if (input.description !== undefined) updates.description = input.description;
     if (input.prompt !== undefined) updates.prompt = input.prompt;
-    if (input.cron !== undefined) updates.cron = input.cron;
+    // `''`, never `null` — the column is NOT NULL and an empty cron is what
+    // "on demand" means in it, the same way {@link createTask} and
+    // {@link upsertFromFile} both already write it (`registerTask` reads a
+    // falsy cron as "do not schedule this"). A literal null threw a NOT NULL
+    // constraint error straight out of this method, and the cockpit's edit form
+    // sends exactly that on every save of a task with no cron
+    // (`cron: cronTrimmed || null` in `TaskFormInner.tsx`) — so editing an
+    // on-demand task's prompt failed, AFTER its file had already been rewritten.
+    if (input.cron !== undefined) updates.cron = input.cron ?? '';
     if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.maxRuntime !== undefined) {
