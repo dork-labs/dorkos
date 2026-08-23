@@ -57,6 +57,8 @@ import {
   applySessionOriginOverlays,
   sessionOriginResolvers,
   overlayStoredSettings,
+  resolveSessionCwdOrDefault,
+  resolveSessionCwdOrNull,
 } from '../services/session/index.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import {
@@ -347,6 +349,11 @@ router.get('/:id/runtime-type', async (req, res) => {
 });
 
 // GET /api/sessions/:id - Get session details
+// Like `/:id/messages`, no `?cwd=` is required for a session the server can
+// already place (DOR-1444): a window that opened the session URL without `&dir=`
+// used to read the default project directory, which finds nothing — and, on a
+// server whose default sits outside the configured boundary, threw rather than
+// answering. Both now resolve through the same ladder.
 router.get('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -354,10 +361,11 @@ router.get('/:id', async (req, res) => {
   const cwd = (req.query.cwd as string) || undefined;
   if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
-  const projectDir = cwd || vaultRoot;
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const projectDir = await resolveSessionCwdOrNull(runtime, internalSessionId, cwd);
+  if (!projectDir) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
   const session = await runtime.getSession(projectDir, internalSessionId);
   if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
   // Adapters tag `runtime` themselves (task 1.1); backstop sloppy ones so
@@ -382,11 +390,14 @@ router.get('/:id/tasks', async (req, res) => {
 
   if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
-  const cwd = cwdParam || vaultRoot;
-
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+
+  // Lenient rather than 404-capable: a task read that cannot place the session
+  // already answers "no tasks" honestly, and the live binding is what makes the
+  // no-`&dir=` window read the right transcript (DOR-1444).
+  const cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {
@@ -404,81 +415,9 @@ router.get('/:id/tasks', async (req, res) => {
   }
 });
 
-/**
- * Resolve the project directory to read a session's messages from, without
- * requiring the caller to already know it (DOR-1322).
- *
- * An explicit `cwdParam` always wins. Otherwise, the verify-before-trust
- * ladder below applies ONLY to a runtime that implements `getSessionCwd` —
- * today, only claude-code, because its storage is the one that is genuinely
- * KEYED BY DIRECTORY: a JSONL transcript lives under a slug derived from cwd,
- * so guessing the wrong directory silently reads back empty (the original
- * DOR-1322 bug). For such a runtime: try its live binding first, then fall
- * back to the server's default project directory, but — unlike the old
- * unconditional fallback — verify the session actually lives there before
- * trusting it.
- *
- * A runtime that does NOT implement `getSessionCwd` trusts the default
- * project directory outright, exactly like the pre-DOR-1322 code, with no
- * verification step. This is not a gap reopened: every shipped runtime in
- * that category answers `getMessageHistory` independent of the directory
- * argument, so passing the "wrong" one cannot reproduce the silent-empty bug
- * this function exists to prevent. Codex's reads are keyed purely by session
- * id (`registry.get(id)`, the directory parameter is unused). OpenCode's
- * directory-scoped read falls back to a durable, id-keyed EventLog read on
- * failure. Test-mode's `getMessageHistory` reads the same id-keyed EventLog
- * directly and never consults its registry at all — which is also why
- * `getSession` cannot stand in as a verification probe for it: test-mode's
- * `getSession` reflects the SEPARATE in-memory registry (session "known" to
- * the runtime's own bookkeeping), not the durable store `getMessageHistory`
- * actually reads, so a session with zero registry presence can still have
- * real message history. Gating a verified-fallback on `getSession` for THIS
- * class of runtime does not add safety — it produces false negatives on
- * exactly the reads that used to work (found via the review round on PR
- * #1191: `sessions-kickoff-filter.test.ts`, `sessions-multi-runtime.test.ts`).
- *
- * @param runtime - The resolved runtime for this session
- * @param internalSessionId - Backend-internal session id
- * @param cwdParam - The caller-supplied `?cwd=`, if any
- * @returns The resolved directory, or `null` when none could be confirmed
- */
-async function resolveMessagesCwd(
-  runtime: AgentRuntime,
-  internalSessionId: string,
-  cwdParam: string | undefined
-): Promise<string | null> {
-  if (cwdParam) return cwdParam;
-
-  if (runtime.getSessionCwd === undefined) return vaultRoot;
-
-  const liveCwd = runtime.getSessionCwd(internalSessionId);
-  if (liveCwd) return liveCwd;
-
-  // Guarded: getSession is a graceful-degradation probe here, not a trusted
-  // read — a runtime whose lookup throws for reasons unrelated to "session
-  // not found" (e.g. an uninitialized boundary) must still fall through to
-  // the honest 404 below rather than 500 on a path whose whole job is to
-  // degrade gracefully. Its own null case (session genuinely absent at
-  // vaultRoot) already means the same thing, so both collapse to `null` here.
-  try {
-    // A successful read here guarantees `readTranscript`/`getMessageHistory`
-    // below will find the SAME file — both key off the identical
-    // (vaultRoot, internalSessionId) pair via the runtime's own transcript
-    // lookup — so returning the bare `vaultRoot` string (not `found.cwd`) is
-    // safe. This branch is only reached for a runtime that implements
-    // `getSessionCwd` (claude-code today), whose `getSession` genuinely does
-    // reflect directory-scoped disk presence — unlike test-mode's, gated out
-    // above.
-    const found = await runtime.getSession(vaultRoot, internalSessionId);
-    return found ? vaultRoot : null;
-  } catch {
-    return null;
-  }
-}
-
 // GET /api/sessions/:id/messages - Get message history from SDK transcript.
 // No `?cwd=` is required for a session the server can already place — see
-// resolveMessagesCwd. A session it genuinely cannot place answers 404 rather
+// resolveSessionCwdOrNull. A session it genuinely cannot place answers 404 rather
 // than an empty list, so "no messages yet" and "wrong/missing cwd" are never
 // the same response (DOR-1322).
 router.get('/:id/messages', async (req, res) => {
@@ -493,7 +432,7 @@ router.get('/:id/messages', async (req, res) => {
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
-  const cwd = await resolveMessagesCwd(runtime, internalSessionId, cwdParam);
+  const cwd = await resolveSessionCwdOrNull(runtime, internalSessionId, cwdParam);
   if (!cwd) {
     return sendError(
       res,
