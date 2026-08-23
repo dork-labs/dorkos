@@ -130,7 +130,7 @@ export { TurnWindowSignal } from './turn-window-signal.js';
 export type { TurnWindowWatcher } from './turn-window-signal.js';
 export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
 export {
-  liveSessionCwd,
+  callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
 } from './resolve-session-cwd.js';

@@ -56,6 +56,8 @@ export type { SetDirOptions } from './model/use-directory-state';
 export { useModels, modelsQueryOptions } from './model/use-models';
 export { useSubagents } from './model/use-subagents';
 export { useSessionSearch } from './model/use-session-search';
+export { useSessionScopedCwd, isSessionScopeReady } from './model/use-session-scoped-cwd';
+export type { SessionScopedCwd } from './model/use-session-scoped-cwd';
 export {
   useSessionChatStore,
   useSessionChatState,

@@ -15,14 +15,19 @@
 import { useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { useTransport } from '@/layers/shared/model';
-import { useSessionStreamStore, type SessionStreamState } from '@/layers/entities/session';
+import {
+  useSessionStreamStore,
+  type SessionScopedCwd,
+  type SessionStreamState,
+} from '@/layers/entities/session';
 import { projectInProgressTurn } from './stream/project-session-turn';
 import { collectApprovalReceipts, applyApprovalReceipts } from '../lib/carry-approval-receipts';
 
 interface UseTurnEndReconcileParams {
   sessionId: string | null;
   transport: ReturnType<typeof useTransport>;
-  selectedCwd: string | null;
+  /** Where this session's own transcript lives — see `useSessionScopedCwd`. */
+  sessionCwd: SessionScopedCwd;
   streamState: SessionStreamState;
   /** Used to re-sync canonical task state (`['tasks']`) after the turn settles. */
   queryClient: QueryClient;
@@ -41,11 +46,14 @@ interface UseTurnEndReconcileParams {
 export function useTurnEndReconcile({
   sessionId,
   transport,
-  selectedCwd,
+  sessionCwd,
   streamState,
   queryClient,
   onStreamingDone,
 }: UseTurnEndReconcileParams) {
+  // The reload has to name the SAME directory the history query used, or the
+  // settle would re-fetch a different project's transcript (DOR-1444).
+  const selectedCwd = sessionCwd.cwd;
   // Latest values captured in refs so the settle effect reads current state
   // without re-subscribing the effect to every render.
   const sessionIdRef = useRef(sessionId);

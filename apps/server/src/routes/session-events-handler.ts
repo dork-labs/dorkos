@@ -18,7 +18,11 @@ import type { NextFunction, Request, Response } from 'express';
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { resolveSessionCwdOrDefault, resolveSettingsKey } from '../services/session/index.js';
+import {
+  callerNamedCwd,
+  resolveSessionCwdOrDefault,
+  resolveSettingsKey,
+} from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
@@ -52,7 +56,7 @@ export const sessionEventsHandler = async (
   // an out-of-boundary path never buys a runtime lookup. Agent-home session cwds
   // ({dorkHome}/agents/*) must stream under a narrow boundary; this is the
   // landing path for onboarding's DorkBot session.
-  if (cwdParam !== undefined && !(await assertBoundary(cwdParam, res, { allowDorkHome: true })))
+  if (callerNamedCwd(cwdParam) && !(await assertBoundary(cwdParam, res, { allowDorkHome: true })))
     return;
 
   // Resolve the runtime that owns this session. Unlike GET /:id, we deliberately
@@ -94,7 +98,8 @@ export const sessionEventsHandler = async (
 
   // The directory nobody named still has to be judged, and only the resolution
   // above knows which one that is.
-  if (cwdParam === undefined && !(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
+  if (!callerNamedCwd(cwdParam) && !(await assertBoundary(cwd, res, { allowDorkHome: true })))
+    return;
 
   const sinceCursor = parseResumeCursor(
     (req.headers['last-event-id'] as string | undefined) ??

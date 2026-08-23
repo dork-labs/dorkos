@@ -237,3 +237,58 @@ describe('a window that opened the session without the folder', () => {
     expect(fakeRuntime.getSessionSnapshot).not.toHaveBeenCalled();
   });
 });
+
+describe('a session whose live binding is outside the boundary', () => {
+  // The inverse of everything above, and the reason these resolvers must never
+  // be trusted on their own. `getSessionCwd` reports where a session is
+  // ACTUALLY running, which is not the same as where it is ALLOWED to run: the
+  // task routes create sessions with no boundary check at all, so a scheduled
+  // task can bind one outside it. If a resolved directory skipped the boundary,
+  // omitting `?cwd=` would read a session that naming the same directory is
+  // refused for — a request that is more powerful for saying less.
+  beforeEach(() => {
+    fakeRuntime.getSessionCwd = vi.fn(() => '/secret/outside');
+    fakeRuntime.getMessageHistory.mockResolvedValue([
+      { id: 'm1', role: 'assistant', content: 'SECRET', timestamp: '2026-08-23T00:00:00Z' },
+    ]);
+    fakeRuntime.getSessionTasks.mockResolvedValue([]);
+  });
+
+  /** Every read that can be reached without naming a directory. */
+  const readsWithoutCwd = [
+    ['GET /:id', (id: string) => `/api/sessions/${id}`],
+    ['GET /:id/messages', (id: string) => `/api/sessions/${id}/messages`],
+    ['GET /:id/tasks', (id: string) => `/api/sessions/${id}/tasks`],
+    ['GET /:id/events', (id: string) => `/api/sessions/${id}/events`],
+  ] as const;
+
+  it.each(readsWithoutCwd)('%s refuses it rather than reading it', async (_name, path) => {
+    const res = await request(server).get(path(SESSION_ID));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+  });
+
+  it('never reads the transcript it refused', async () => {
+    await request(server).get(`/api/sessions/${SESSION_ID}/messages`);
+    await request(server).get(`/api/sessions/${SESSION_ID}/tasks`);
+    await request(server).get(`/api/sessions/${SESSION_ID}/events`);
+
+    expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
+    expect(fakeRuntime.getSessionTasks).not.toHaveBeenCalled();
+    expect(fakeRuntime.getSessionSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('answers the same way whether or not the caller named the directory', async () => {
+    // The control that makes the four above mean something: naming the very
+    // same directory was ALWAYS refused, so a no-cwd request that succeeded
+    // would be the inversion, not merely a second opinion.
+    const named = await request(server)
+      .get(`/api/sessions/${SESSION_ID}/messages`)
+      .query({ cwd: '/secret/outside' });
+    const unnamed = await request(server).get(`/api/sessions/${SESSION_ID}/messages`);
+
+    expect(named.status).toBe(403);
+    expect(unnamed.status).toBe(named.status);
+  });
+});

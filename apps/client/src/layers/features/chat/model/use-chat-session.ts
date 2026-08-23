@@ -7,6 +7,7 @@ import {
   useSessionChatState,
   useSessionListStore,
   useSessionStreamConnection,
+  useSessionScopedCwd,
   selectRenderedStatus,
 } from '@/layers/entities/session';
 import { useSessionStoreActions } from './use-session-store-actions';
@@ -50,6 +51,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // sending whatever happens to be in it would let a pick made on an abandoned
   // draft bill the next conversation.
   const pendingAccount = useAppStore((s) => s.pendingAccount);
+  // Where THIS conversation's own reads look, which is not `selectedCwd`: the
+  // store holds the server default once nothing else has claimed it, and a
+  // session opened without `&dir=` does not live there (DOR-1444). The send
+  // path below keeps using `selectedCwd` — launching a new conversation needs a
+  // concrete directory, and that is the question the store actually answers.
+  const sessionCwd = useSessionScopedCwd();
   const sid = sessionId ?? '';
 
   // Single store subscription for all per-session fields.
@@ -72,7 +79,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // per-session store (spec chat-stream-reconnection). The render fields below
   // (messages/status/pendingInteractions) come from this projection once it
   // hydrates; until then the legacy chat store provides the instant first paint.
-  const streamState = useSessionStream(sessionId, selectedCwd);
+  const streamState = useSessionStream(sessionId, sessionCwd.cwd);
 
   // Late rekey follow-up: when the canonical id resolves only AFTER the trigger
   // 202 (the common Claude path), the server's retire announce rewrites the URL
@@ -200,7 +207,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     sessionId,
     sid,
     transport,
-    selectedCwd,
+    sessionCwd,
     enableMessagePolling,
     isStreaming: status === 'streaming',
     setMessages,
@@ -284,7 +291,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   useTurnEndReconcile({
     sessionId,
     transport,
-    selectedCwd,
+    sessionCwd,
     streamState,
     queryClient,
     onStreamingDone: options.onStreamingDone,

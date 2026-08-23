@@ -10,8 +10,12 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTabVisibility, useTransport } from '@/layers/shared/model';
-import { QUERY_TIMING, isSessionRequestReady } from '@/layers/shared/lib';
-import { useSessionChatStore } from '@/layers/entities/session';
+import { QUERY_TIMING } from '@/layers/shared/lib';
+import {
+  useSessionChatStore,
+  isSessionScopeReady,
+  type SessionScopedCwd,
+} from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
 import type { ChatMessage } from './chat-types';
 
@@ -23,7 +27,8 @@ interface UseSessionHistoryParams {
   sessionId: string | null;
   sid: string;
   transport: ReturnType<typeof useTransport>;
-  selectedCwd: string | null;
+  /** Where this session's own transcript lives — see `useSessionScopedCwd`. */
+  sessionCwd: SessionScopedCwd;
   enableMessagePolling: boolean;
   isStreaming: boolean;
   setMessages: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
@@ -42,12 +47,14 @@ export function useSessionHistory({
   sessionId,
   sid,
   transport,
-  selectedCwd,
+  sessionCwd,
   enableMessagePolling,
   isStreaming,
   setMessages,
 }: UseSessionHistoryParams) {
   const isTabVisible = useTabVisibility();
+
+  const selectedCwd = sessionCwd.cwd;
 
   // Ref for stable async access inside effects without stale closures.
   const selectedCwdRef = useRef(selectedCwd);
@@ -62,12 +69,13 @@ export function useSessionHistory({
 
   const historyQuery = useQuery({
     queryKey: ['messages', sessionId, selectedCwd],
-    queryFn: () => transport.getMessages(sessionId!, selectedCwd!),
+    queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined),
     staleTime: QUERY_TIMING.MESSAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
-    // Waits for the working directory too — a fetch keyed on a directory the
-    // store has not resolved yet is one the server always refuses (DOR-495).
-    enabled: isSessionRequestReady(sessionId, selectedCwd),
+    // A null directory is a complete question — the server resolves the
+    // session's own (DOR-1444). Only an UNSETTLED one is worth waiting for,
+    // which is the double-fetch DOR-495 removed.
+    enabled: isSessionScopeReady(sessionId, sessionCwd),
     refetchInterval: () => {
       if (isStreaming) return false;
       if (!enableMessagePolling) return false;

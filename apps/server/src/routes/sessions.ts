@@ -57,6 +57,7 @@ import {
   applySessionOriginOverlays,
   sessionOriginResolvers,
   overlayStoredSettings,
+  callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
 } from '../services/session/index.js';
@@ -358,14 +359,21 @@ router.get('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
-  const cwd = (req.query.cwd as string) || undefined;
-  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
+  const cwdParam = (req.query.cwd as string) || undefined;
+  if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  const projectDir = await resolveSessionCwdOrNull(runtime, internalSessionId, cwd);
+  const projectDir = await resolveSessionCwdOrNull(runtime, sessionId, cwdParam);
   if (!projectDir) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  // A directory the caller never named is judged here — otherwise omitting
+  // `?cwd=` would read a session that naming the same directory is refused for.
+  if (
+    !callerNamedCwd(cwdParam) &&
+    !(await assertBoundary(projectDir, res, { allowDorkHome: true }))
+  )
+    return;
   const session = await runtime.getSession(projectDir, internalSessionId);
   if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
   // Adapters tag `runtime` themselves (task 1.1); backstop sloppy ones so
@@ -398,6 +406,10 @@ router.get('/:id/tasks', async (req, res) => {
   // already answers "no tasks" honestly, and the live binding is what makes the
   // no-`&dir=` window read the right transcript (DOR-1444).
   const cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
+  // A directory the caller never named is judged here — otherwise omitting
+  // `?cwd=` would read a session that naming the same directory is refused for.
+  if (!callerNamedCwd(cwdParam) && !(await assertBoundary(cwd, res, { allowDorkHome: true })))
+    return;
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {
@@ -432,7 +444,7 @@ router.get('/:id/messages', async (req, res) => {
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
-  const cwd = await resolveSessionCwdOrNull(runtime, internalSessionId, cwdParam);
+  const cwd = await resolveSessionCwdOrNull(runtime, sessionId, cwdParam);
   if (!cwd) {
     return sendError(
       res,
@@ -441,6 +453,11 @@ router.get('/:id/messages', async (req, res) => {
       'SESSION_CWD_REQUIRED'
     );
   }
+  // A directory the caller never named is judged here — otherwise omitting
+  // `?cwd=` would read a session that naming the same directory is refused for.
+  // DOR-1322 shipped without this and the gap was live until DOR-1444.
+  if (!callerNamedCwd(cwdParam) && !(await assertBoundary(cwd, res, { allowDorkHome: true })))
+    return;
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {

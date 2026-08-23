@@ -22,6 +22,12 @@ import { wrapKickoff } from '@dorkos/shared/kickoff';
 // Mock boundary before importing app (same pattern as sessions.test.ts)
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  // The DorkHome-aware seam is the one the session-cwd routes use. It was
+  // missing here and nothing noticed, because `/messages` only ever called it
+  // for a caller-supplied `?cwd=` and these cases supply none. The route now
+  // also judges the directory it RESOLVED (DOR-1444), so the omission became a
+  // 500 rather than a silent pass.
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
