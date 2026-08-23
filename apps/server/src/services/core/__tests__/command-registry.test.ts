@@ -56,6 +56,63 @@ describe('CommandRegistryService', () => {
     });
   });
 
+  it('leaves a user-invocable:false command out of the palette', async () => {
+    // This registry IS the `/` palette a person picks from, and the field
+    // exists to say "not for the menu" — Claude Code honors it natively.
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      makeDirent('deploy.md', false),
+      makeDirent('house-style.md', false),
+    ] as never);
+
+    vi.mocked(fs.readFile)
+      .mockResolvedValueOnce('---\ndescription: Ship the app\n---\n# Deploy\n')
+      .mockResolvedValueOnce(
+        '---\ndescription: Background knowledge\nuser-invocable: false\n---\n# Style\n'
+      );
+
+    const registry = new CommandRegistryService('/vault');
+    const result = await registry.getCommands();
+
+    expect(result.commands.map((c) => c.fullCommand)).toEqual(['/deploy']);
+    // The internal flag must not leak into the wire shape.
+    expect(result.commands[0]).not.toHaveProperty('userInvocable');
+  });
+
+  it('leaves a namespaced user-invocable:false command out too', async () => {
+    vi.mocked(fs.readdir)
+      .mockResolvedValueOnce([makeDirent('daily', true)] as never)
+      .mockResolvedValueOnce(['plan.md', 'hidden.md'] as never);
+
+    vi.mocked(fs.readFile)
+      .mockResolvedValueOnce('---\ndescription: Plan your day\n---\n# Plan\n')
+      .mockResolvedValueOnce('---\ndescription: Not for menus\nuser-invocable: false\n---\n#\n');
+
+    const registry = new CommandRegistryService('/vault');
+    const result = await registry.getCommands();
+
+    expect(result.commands.map((c) => c.fullCommand)).toEqual(['/daily:plan']);
+  });
+
+  it('reads user-invocable: no as false (YAML 1.1 word, arrives as a string)', async () => {
+    vi.mocked(fs.readdir).mockResolvedValueOnce([makeDirent('hidden.md', false)] as never);
+    vi.mocked(fs.readFile).mockResolvedValueOnce(
+      '---\ndescription: Hidden\nuser-invocable: no\n---\n# Hidden\n'
+    );
+
+    const registry = new CommandRegistryService('/vault');
+    expect((await registry.getCommands()).commands).toEqual([]);
+  });
+
+  it('keeps a command whose user-invocable value is unreadable', async () => {
+    vi.mocked(fs.readdir).mockResolvedValueOnce([makeDirent('deploy.md', false)] as never);
+    vi.mocked(fs.readFile).mockResolvedValueOnce(
+      '---\ndescription: Ship it\nuser-invocable: maybe\n---\n# Deploy\n'
+    );
+
+    const registry = new CommandRegistryService('/vault');
+    expect((await registry.getCommands()).commands.map((c) => c.fullCommand)).toEqual(['/deploy']);
+  });
+
   it('caches results on second call', async () => {
     vi.mocked(fs.readdir)
       .mockResolvedValueOnce([makeDirent('ns', true)] as never)

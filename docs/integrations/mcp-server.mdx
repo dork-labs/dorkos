@@ -162,17 +162,17 @@ Most tools return plain text content, matching the underlying handler. A handful
 
 Alongside tools, the server registers seven read-only `dorkos://` resources: four list views and three id-scoped templates.
 
-| URI                      | Kind     | Returns                                                                                                                                              |
-| ------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dorkos://sessions`      | List     | Session metadata (id, title, runtime, cwd, updatedAt) across every registered runtime, with per-runtime degradation warnings. No transcript content. |
-| `dorkos://sessions/{id}` | Template | Metadata for one session by id.                                                                                                                      |
-| `dorkos://agents`        | List     | Every agent manifest registered with Mesh, the same data `mesh_list` returns.                                                                        |
-| `dorkos://agents/{id}`   | Template | A single agent manifest (`.dork/agent.json` content) by agent ULID.                                                                                  |
-| `dorkos://skills`        | List     | Authored skills under the server's default project's `.agents/skills`: name, description, kind only.                                                 |
-| `dorkos://skills/{name}` | Template | Full `SKILL.md` frontmatter and body for one skill, by name.                                                                                         |
-| `dorkos://capabilities`  | List     | The live capability catalog: id, title, description, permission tier, input/output schema, and surfaces for every capability on the registry.        |
+| URI                      | Kind     | Returns                                                                                                                                                     |
+| ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dorkos://sessions`      | List     | Session metadata (id, title, runtime, cwd, updatedAt) across every registered runtime, with per-runtime degradation warnings. No transcript content.        |
+| `dorkos://sessions/{id}` | Template | Metadata for one session by id.                                                                                                                             |
+| `dorkos://agents`        | List     | Every agent manifest registered with Mesh, the same data `mesh_list` returns.                                                                               |
+| `dorkos://agents/{id}`   | Template | A single agent manifest (`.dork/agent.json` content) by agent ULID.                                                                                         |
+| `dorkos://skills`        | List     | Authored skills under the server's default project's `.agents/skills`: name, description, kind only. Skills marked `disable-model-invocation` are left out. |
+| `dorkos://skills/{name}` | Template | Full `SKILL.md` frontmatter and body for one skill, by name.                                                                                                |
+| `dorkos://capabilities`  | List     | The live capability catalog: id, title, description, permission tier, input/output schema, and surfaces for every capability on the registry.               |
 
-Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. The session, agent, and skill lists are the complete enumeration for their kind, so the item templates aren't re-listed separately; a client reads those once it already has an id or name. `dorkos://capabilities` is the exception: it enumerates the capability registry, not the tool list, so the 40 tools registered directly on this server are absent from it. The resource's own description says so, so a client reading the list does not have to infer the gap.
+Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. The session and agent lists are the complete enumeration for their kind, so the item templates aren't re-listed separately; a client reads those once it already has an id or name. The skill list has one deliberate gap: a skill whose author wrote `disable-model-invocation: true` meant "do not reach for this on your own", so it is not advertised there. Asking for it by name still works — `dorkos://skills/{name}` serves every skill, because naming one is your choice, not the model's. `dorkos://capabilities` is the exception: it enumerates the capability registry, not the tool list, so the 40 tools registered directly on this server are absent from it. The resource's own description says so, so a client reading the list does not have to infer the gap.
 
 <Callout type="info">
   The server is stateless per request (a fresh instance is built for every `/mcp` call), so it never
