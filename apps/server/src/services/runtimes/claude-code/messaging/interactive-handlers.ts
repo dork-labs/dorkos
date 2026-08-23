@@ -418,6 +418,16 @@ export function handleAskUserQuestion(
     data: {
       toolCallId: toolUseId,
       questions,
+      // `startedAt` and `timeoutMs` were missing here while `handleToolApproval`
+      // carries both, and `handleElicitation` carries `timeoutMs` (its own
+      // `startedAt` local is used only for the pending-interaction record, never
+      // pushed onto the event) — the normalizer's `remainingMs: data.remainingMs
+      // ?? data.timeoutMs ?? 0` had nothing to fall back to but `0`, so a LIVE
+      // question landed with a dead countdown while the recovery snapshot (which
+      // recomputes `remainingMs` from `startedAt` + this same budget) showed the
+      // real deadline. Matching `handleToolApproval` is the fix (DOR-1323).
+      startedAt,
+      timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
     },
   });
   session.eventQueueNotify?.();

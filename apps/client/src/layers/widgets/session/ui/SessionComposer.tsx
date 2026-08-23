@@ -253,10 +253,30 @@ export function SessionComposer({
   // server hands back land in the composer draft, after anything already
   // typed, so nothing is lost.
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  // Local truth for the queue item under edit when Stop was pressed, captured
+  // BEFORE `leaveQueueForStop` fires its commit — so it survives regardless of
+  // whether that fire-and-forget PATCH (`use-message-queue.ts`'s `updateQueued`
+  // → `transport.updateQueuedMessage`) lands before the interrupt's queue
+  // cancellation. Racing the two meant a PATCH that lost returned the
+  // PRE-edit text from `outcome.cancelled` and the rewrite vanished with no
+  // error surfaced (a rejected PATCH against an already-cancelled row is
+  // swallowed as "gone", not reported) — silently breaking
+  // `StopConfirmDialog`'s own promise, "Nothing you typed is lost." Reading
+  // the words back from the server at all was the mistake for THIS one row:
+  // the operator's fingers are a truth the round trip cannot improve on, so
+  // `restoreToComposer` substitutes it by id instead of trusting whichever
+  // content the cancellation happened to see.
+  const pendingEditRef = useRef<{ id: string; content: string } | null>(null);
   const restoreToComposer = useCallback(
     (returned: QueuedMessage[]) => {
+      // Consumed once per Stop, hit or miss: a next Stop's own capture (or
+      // none) must not inherit this one's leftover claim.
+      const pendingEdit = pendingEditRef.current;
+      pendingEditRef.current = null;
       if (returned.length === 0) return;
-      const restored = returned.map((m) => m.content).join('\n\n');
+      const restored = returned
+        .map((m) => (pendingEdit && m.id === pendingEdit.id ? pendingEdit.content : m.content))
+        .join('\n\n');
       // Read the composer's CURRENT text from the store, not a snapshot captured
       // before the interrupt round-trip — a person may have typed while Stop was
       // in flight, and appending to a stale value would drop what they just typed.
@@ -320,7 +340,44 @@ export function SessionComposer({
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
+  const leaveQueueForStop = chatQueue.leaveQueueForStop;
+  // A fresh read of the editing cursor at the moment Stop is pressed — for the
+  // same reason `isStreamingRef` above exists: `performStop` reads it inside a
+  // `useCallback` whose deps deliberately do not include `chatQueue` itself.
+  const editingIndexRef = useRef(chatQueue.editingIndex);
+  useEffect(() => {
+    editingIndexRef.current = chatQueue.editingIndex;
+  }, [chatQueue.editingIndex]);
+  // The id of the row that ref names, read alongside it for the same reason —
+  // `performStop` needs it to stamp `pendingEditRef` with the row the LOCAL
+  // rewrite belongs to, not just that some row was under edit.
+  const editingIdRef = useRef(chatQueue.editingId);
+  useEffect(() => {
+    editingIdRef.current = chatQueue.editingId;
+  }, [chatQueue.editingId]);
   const performStop = useCallback(() => {
+    // Stop cancels the WHOLE queue, including whatever item is open for edit —
+    // and that item's text is already sitting in the composer as the "live"
+    // edit. Left uncommitted, the cancelled message comes back from the server
+    // carrying the SAME text and `restoreToComposer` appends it on top of what
+    // is already there: the edited item's words, twice. Committing the edit and
+    // handing the composer back its draft FIRST is what keeps the composer's
+    // "existing" text (read fresh from the store below) from being the item's
+    // own echo. Gated on actually editing — with nothing under edit,
+    // `leaveQueueForStop` would still fire `setInput(draftRef.current)`, and an
+    // untouched draft ref is `''`, silently wiping whatever the person had typed.
+    if (editingIndexRef.current !== null) {
+      // Captured BEFORE `leaveQueueForStop` fires its commit PATCH — see
+      // `pendingEditRef`'s own comment above `restoreToComposer` for why the
+      // words themselves, not the round trip, are what `restoreToComposer`
+      // trusts for this one row.
+      const editingId = editingIdRef.current;
+      const liveEditText = useSessionChatStore.getState().getSession(sessionId).input.trim();
+      if (editingId !== null && liveEditText) {
+        pendingEditRef.current = { id: editingId, content: liveEditText };
+      }
+      leaveQueueForStop();
+    }
     stopLockSessionIdRef.current = sessionId;
     setStopInFlightSessionId(sessionId);
     void stop()
@@ -342,7 +399,7 @@ export function SessionComposer({
         // path.
         clearSettledStop();
       });
-  }, [sessionId, stop, restoreToComposer, clearSettledStop]);
+  }, [sessionId, stop, restoreToComposer, clearSettledStop, leaveQueueForStop]);
   const handleStop = useCallback(() => {
     // Single-flight for THIS session: a Stop already in flight cannot be
     // re-fired by a second click, Enter's Escape binding, or a rapid
