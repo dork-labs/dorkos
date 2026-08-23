@@ -90,16 +90,25 @@
  *   more — and only in the shape where the `result` named the DISPATCHED id; a
  *   `result` naming the steer itself leaves nothing outstanding and closes at
  *   once.
+ * - **...unless the process is demonstrably still working**, in which case the
+ *   wait extends to {@link CONTINUATION_CAP_MS}. Any frame that is not content
+ *   — an `api_retry` before the continuation's first request, an `auto`
+ *   `compact_boundary` taken to make room for the steer's turn, a late tool
+ *   result — is proof of life without being proof a turn began, and the short
+ *   clock is the wrong question to keep asking of a process that is visibly
+ *   busy. Extending to the cap rather than adding another grace is what makes
+ *   this cover the real gaps: an `api_retry` announces a 700ms backoff, which
+ *   outlasts any single 500ms grace by itself (DOR-1314 review, probe D).
  * - **Something else needs the window NOW** — a dispatch, a `settleOpenTurn`, a
  *   crash. Each takes the deferred `result` with it.
  *
  * **The deferred `result` is never dropped while the window lives.** Only the
- * TIMER is cancellable. That is what keeps every one of those exits honest: a
- * bookkeeping line arriving mid-grace (a `system/init`, a late tool result from
- * the turn that just ended) stops nothing, and even if it did, the window would
- * still hold a real terminal rather than waiting to be stamped "the agent never
- * finished this turn" — which is what a healthy turn got when the two were
- * cleared together.
+ * TIMER is cancellable. That is what keeps every one of those exits honest, and
+ * it is what makes the re-arm above safe: however many times the clock is reset
+ * by a talking process, the window is holding a real terminal the whole time,
+ * so reaching the cap is a clean close and never a hang. Cleared together, they
+ * left a healthy turn waiting to be stamped "the agent never finished this
+ * turn" by the next message that came along.
  *
  * ## And a window may not outlive its turn, whatever the ids say
  *
@@ -192,6 +201,31 @@ const MAX_AWAITING_IDS = 200;
  */
 const CONTINUATION_GRACE_MS = 500;
 
+/**
+ * The MOST a steered window may defer its close, measured from the first time
+ * the grace was armed (DOR-1314 review, probe D).
+ *
+ * A bound on the wait for a process that is demonstrably still working, not on
+ * the wait for a first word. Any frame that is not content extends the wait to
+ * THIS, rather than to another {@link CONTINUATION_GRACE_MS}, because the gaps
+ * it has to cover are longer than one grace: an `api_retry` announces its own
+ * backoff (700ms in the review's probe D, and a ladder backs off further), and
+ * an `auto` compaction takes seconds. Adding a grace per frame would still have
+ * lost both, since neither emits anything more until the continuation starts.
+ *
+ * Ten graces. Long enough for a retry ladder or a compaction ahead of the
+ * continuation — both are seconds on this path, not tens of seconds — and short
+ * enough that a process emitting bookkeeping forever cannot sit on a finished
+ * turn indefinitely. Reaching the cap costs nothing: the deferred `result` is
+ * held throughout, so expiry is a clean close on the CLI's own terminal and
+ * never a hang.
+ *
+ * Measured from the first arming, and reset only by a discrete new reason to
+ * expect a continuation — another `result` deferred, or another steer — never
+ * by the process's own chatter, which is the whole point of having a cap.
+ */
+const CONTINUATION_CAP_MS = 5_000;
+
 /** The per-window accounting fetched from the still-live process at its close. */
 export interface WindowUsage {
   /** The authoritative per-category context breakdown, when the fetch answered. */
@@ -273,6 +307,8 @@ export interface SessionTurnWindowsOptions {
   usageTimeoutMs?: number;
   /** Override {@link CONTINUATION_GRACE_MS}, for tests that drive it directly. */
   continuationGraceMs?: number;
+  /** Override {@link CONTINUATION_CAP_MS}, for tests that drive it directly. */
+  continuationCapMs?: number;
 }
 
 /** A buffered stream of SDK messages with an explicit end. */
@@ -334,6 +370,12 @@ interface WindowRecord {
   steered: Set<string>;
   /** The grace timer running right now, if this window is waiting on a steer. */
   grace?: ReturnType<typeof setTimeout>;
+  /**
+   * The wall-clock moment past which this window may not defer any further,
+   * however much the process keeps talking ({@link CONTINUATION_CAP_MS}). Set
+   * when the grace is first armed for a given reason, and cleared with it.
+   */
+  graceDeadline?: number;
   /** The `result` that would have closed this window, held for the grace. */
   deferred?: SDKMessage;
 }
@@ -391,19 +433,27 @@ function crashResult(crash: PumpCrash): SDKMessage {
  * Whether this message is the CLI STARTING a turn, rather than bookkeeping it
  * emits between them.
  *
- * Only two shapes prove a turn began: `assistant`, and the `stream_event`
- * partials that carry one. Everything a turn does afterwards is preceded by an
- * `assistant` — a tool call is an `assistant` message before it is a `user`
- * tool result — so this cannot miss a continuation it should have caught.
+ * Two shapes prove it: `assistant`, and the `stream_event` partials that carry
+ * one. A turn's own work is always preceded by an `assistant` — a tool call is
+ * an `assistant` message before it is a `user` tool result — so within a turn
+ * this is a sound signal.
  *
- * The two it deliberately EXCLUDES are the ones the module doc already names as
- * routine between-turn traffic: a `system` line (the `init` an explicit warm
- * produces), and the `user` tool result of a tool that was still running when
- * its turn ended. That late tool result belongs to the turn that JUST FINISHED,
- * not to a new one, so reading it as "the continuation began" would stop the
- * clock waiting for a turn that is never coming — the DOR-1314 review's first
- * blocker, in its subtlest shape. Both are still attributed to the open window;
- * they simply do not answer the question the grace is asking.
+ * **It is not a complete one, and the caller does not treat it as one.** The
+ * CLI emits frames BEFORE a continuation's first word that are not content at
+ * all: an `api_retry` when the continuation's first request is retried, an
+ * `auto` `compact_boundary` taken to make room for the steer's turn. Reading a
+ * `false` here as "no continuation is coming" lost exactly those (DOR-1314
+ * review, probe D). So a `false` does not close anything on its own — it means
+ * "not yet proven", and {@link onMessage} answers it by re-arming the grace
+ * within the cap rather than by letting the clock run out.
+ *
+ * The two shapes deliberately excluded are the ones the module doc names as
+ * routine between-turn traffic: a `system` line, and the `user` tool result of
+ * a tool that was still running when its turn ended. That late tool result
+ * belongs to the turn that JUST FINISHED, so it is not evidence a new one
+ * began — but it IS evidence the process is alive, which is why it re-arms.
+ * The two answers are different questions and the split is the whole point:
+ * only content stops the clock, anything else merely postpones it.
  *
  * @param message - The message the process just produced
  */
@@ -553,7 +603,13 @@ export class SessionTurnWindows {
     // Only while the timer is still ARMED. Once a continuation has begun the
     // timer is already stopped, and re-arming it there would put a deadline on
     // a turn that is actively running.
-    if (this.current.grace !== undefined) this.armGrace(this.current);
+    //
+    // A person steering is a discrete new reason to expect a continuation, not
+    // the process's own chatter, so the cap starts over with it.
+    if (this.current.grace !== undefined) {
+      this.current.graceDeadline = undefined;
+      this.armGrace(this.current, 'grace');
+    }
     // And remembered beyond this window, because the CLI may not answer a steer
     // inside the turn it joined — the DOR-1294 case, and the one this ledger was
     // built for. Remembered on the TAG rather than on a successful push, exactly
@@ -740,13 +796,26 @@ export class SessionTurnWindows {
       return;
     }
     if (this.current !== undefined) {
-      // The process SPOKE while this window was waiting to see whether a steer
-      // got a turn of its own: it did, and this is that turn beginning, so the
-      // clock stops and the window now closes on the `result` that names the
-      // steer (DOR-1314). Only the timer stops — the deferred `result` stays on
-      // as this window's terminal until a better one arrives.
-      if (this.current.grace !== undefined && beginsATurn(message)) {
-        this.stopGrace(this.current);
+      // Two tiers, while this window is waiting to see whether a steer got a
+      // turn of its own (DOR-1314).
+      //
+      // The process SPEAKING is the answer: the turn began, so the clock stops
+      // outright and the window now closes on the `result` that names the
+      // steer. Only the timer stops — the deferred `result` stays on as this
+      // window's terminal until a better one arrives.
+      //
+      // Any OTHER frame is not the answer, but it is proof the process is alive
+      // and mid-something — so the short clock stops being the right question
+      // and the wait extends to the absolute cap. That is the review's probe D:
+      // an `api_retry` announcing a 700ms backoff, or an `auto`
+      // `compact_boundary` taken before the steer's turn, would otherwise let a
+      // 500ms clock run out on a continuation already on its way. Extending to
+      // the cap rather than adding one more grace is deliberate: neither of
+      // those frames is followed by anything until the continuation starts, so
+      // another 500ms would have missed it just the same.
+      if (this.current.grace !== undefined) {
+        if (beginsATurn(message)) this.stopGrace(this.current);
+        else this.armGrace(this.current, 'until-cap');
       }
       this.current.channel.push(message);
       return;
@@ -887,22 +956,47 @@ export class SessionTurnWindows {
    */
   private holdForContinuation(record: WindowRecord, result: SDKMessage): void {
     record.deferred = result;
-    this.armGrace(record);
+    // A fresh `result` is a discrete new reason to expect a continuation, so
+    // the cap starts over. Process chatter never gets to do this.
+    record.graceDeadline = undefined;
+    this.armGrace(record, 'grace');
   }
 
   /**
-   * Start (or restart) the wait for a continuation to begin.
+   * Start (or restart) the wait for a continuation to begin, never past this
+   * window's absolute cap ({@link CONTINUATION_CAP_MS}).
    *
-   * Restartable because a steer that arrives DURING the grace is itself a fresh
-   * reason to expect one (DOR-1314 review, B2): the agent has just gone quiet,
-   * which is exactly when a person types, and letting the original timer run
-   * out under the new steer would close the window and drop that steer's answer
-   * — the very loss this whole mechanism exists to prevent.
+   * Restarted by two different kinds of thing, and telling them apart is what
+   * the cap is for:
+   *
+   * - **A discrete new reason to expect a continuation** — another `result`
+   *   deferred, or a steer arriving DURING the grace (DOR-1314 review, B2: the
+   *   agent has just gone quiet, which is exactly when a person types, and
+   *   letting the original clock run out under a brand-new steer would drop
+   *   that steer's answer). Each of these clears the deadline first, so the cap
+   *   starts over.
+   * - **Evidence the process is alive and working** — any frame it emits that
+   *   is not content ({@link onMessage}). These re-arm WITHIN the cap, so
+   *   chatter can postpone the close but never prevent it.
    *
    * @param record - The window waiting on a continuation
+   * @param wait - `'grace'` for the short question "did a turn begin?", asked
+   *   of a process that has said nothing since. `'until-cap'` once the process
+   *   has proven it is alive and mid-something, where the only useful bound
+   *   left is the absolute one — see {@link onMessage}.
    */
-  private armGrace(record: WindowRecord): void {
+  private armGrace(record: WindowRecord, wait: 'grace' | 'until-cap'): void {
     this.stopGrace(record);
+    const grace = this.opts.continuationGraceMs ?? CONTINUATION_GRACE_MS;
+    const cap = this.opts.continuationCapMs ?? CONTINUATION_CAP_MS;
+    record.graceDeadline ??= Date.now() + cap;
+    // Never negative. A cap already spent arms a zero-delay timer rather than
+    // closing inline, because this runs inside the pump's synchronous read loop
+    // and a close re-entering it there would attribute the next message to a
+    // window that no longer exists.
+    const remaining = Math.max(0, record.graceDeadline - Date.now());
+    const capped = remaining === 0;
+    const delay = wait === 'until-cap' ? remaining : Math.min(grace, remaining);
     record.grace = setTimeout(() => {
       record.grace = undefined;
       // Another path may have settled this window while the timer ran — a
@@ -914,11 +1008,12 @@ export class SessionTurnWindows {
       logger.debug('[SessionTurnWindows] no continuation began; closing the steered turn', {
         sessionId: this.opts.sessionId,
         steered: [...record.steered],
+        capped,
       });
-      record.deferred = undefined;
+      this.finalizeGrace(record);
       this.current = undefined;
       this.finish(record, deferred);
-    }, this.opts.continuationGraceMs ?? CONTINUATION_GRACE_MS);
+    }, delay);
     // A held timer must never be the reason a server will not exit.
     record.grace.unref?.();
   }
@@ -949,6 +1044,7 @@ export class SessionTurnWindows {
   private finalizeGrace(record: WindowRecord): void {
     this.stopGrace(record);
     record.deferred = undefined;
+    record.graceDeadline = undefined;
   }
 
   /**

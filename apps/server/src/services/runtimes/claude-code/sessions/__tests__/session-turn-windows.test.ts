@@ -76,6 +76,35 @@ function textDeltaMessage(text: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/**
+ * The SDK's retry notice — what the CLI emits when a continuation's FIRST
+ * request is rate-limited or overloaded and it is about to back off. Not
+ * content, and it arrives ahead of the continuation's first word.
+ */
+function apiRetryMessage(retryDelayMs: number): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'api_retry',
+    attempt: 1,
+    max_retries: 3,
+    retry_delay_ms: retryDelayMs,
+    error_status: 529,
+    session_id: 'sdk-1',
+    uuid: 'api-retry-1',
+  } as unknown as SDKMessage;
+}
+
+/** The SDK's compaction boundary, snake_case as it arrives on the stream. */
+function compactBoundaryMessage(): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'compact_boundary',
+    compact_metadata: { trigger: 'auto', pre_tokens: 38234, post_tokens: 3035, duration_ms: 19707 },
+    session_id: 'sdk-1',
+    uuid: 'boundary-auto',
+  } as unknown as SDKMessage;
+}
+
 /** One window's slice of the durable stream, `turn_start` through `turn_end`. */
 interface ProjectedWindow {
   /** `turn_start.origin` — absent for the ordinary case, `'runtime'` for a window nobody asked for. */
@@ -119,7 +148,11 @@ interface Harness {
  * makes `context_usage` precede `done`.
  */
 function harness(
-  hooks: { onWindowClose?: (window: TurnWindow) => void; graceMs?: number } = {}
+  hooks: {
+    onWindowClose?: (window: TurnWindow) => void;
+    graceMs?: number;
+    capMs?: number;
+  } = {}
 ): Harness {
   const queries: FakeQuery[] = [];
   const opened: TurnWindow[] = [];
@@ -177,6 +210,7 @@ function harness(
     // is the sharper instrument in most of them: a window that must close at
     // once hangs the test if it starts waiting.
     ...(hooks.graceMs !== undefined ? { continuationGraceMs: hooks.graceMs } : {}),
+    ...(hooks.capMs !== undefined ? { continuationCapMs: hooks.capMs } : {}),
     onWindowOpen: (window) => {
       opened.push(window);
       projected.push(project(window));
@@ -1070,7 +1104,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     // stop, and even if it did the window must still hold a real terminal.
     // Clearing the deferred `result` alongside the timer left it holding
     // nothing, and the window never closed at all: this hangs on that.
-    const h = harness({ graceMs: 60 });
+    const h = harness({ graceMs: 60, capMs: 150 });
     await steeredAndAnswered(h, [initMessage()]);
 
     await settled(h, 1);
@@ -1103,6 +1137,93 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     ).toBe(true);
   });
 
+  it('survives an api_retry announced ahead of the continuation', async () => {
+    // Probe D, exactly: a 40ms clock, an `api_retry` inside it, and the
+    // continuation's first word 150ms later. The retry is not content, so it
+    // cannot stop the clock — but it is proof the process is alive, so it buys
+    // another grace. Ignoring it let the clock run out and the whole
+    // continuation went into a runtime window nothing projects.
+    const h = harness({ graceMs: 40 });
+    await steeredAndAnswered(h, [apiRetryMessage(150)]);
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    h.live().emit(textDeltaMessage('answering after the retry'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'answering after the retry'
+      )
+    ).toBe(true);
+  });
+
+  it('survives an auto compaction taken ahead of the continuation', async () => {
+    // The other shape that precedes a continuation's first word, and one the
+    // pump already drives end to end elsewhere: the CLI compacts to make room
+    // for the steer's turn, then runs it.
+    const h = harness({ graceMs: 40 });
+    await steeredAndAnswered(h, [compactBoundaryMessage()]);
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    h.live().emit(textDeltaMessage('answering after the compaction'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'answering after the compaction'
+      )
+    ).toBe(true);
+  });
+
+  it('closes at the cap when the process chatters and never speaks', async () => {
+    // A process that emits bookkeeping forever must not hold a finished turn
+    // open forever. The frames keep re-arming a 40ms grace, and the 200ms cap
+    // is what ends it — on the CLI's own `result`, never on a synthetic error,
+    // because the terminal is held throughout.
+    const h = harness({ graceMs: 40, capMs: 200 });
+    await steeredAndAnswered(h);
+
+    const chatter = setInterval(() => h.live().emit(apiRetryMessage(20)), 20);
+    try {
+      await settled(h, 1);
+    } finally {
+      clearInterval(chatter);
+    }
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.types.at(-1)).toBe('turn_end');
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('does not cut short a continuation that outruns the cap', async () => {
+    // Content stops the clock DEAD rather than extending it, and this is why:
+    // a continuation that works for longer than the cap is a turn in progress,
+    // not a process sitting on a finished one. A 150ms cap against 400ms of
+    // work would cut it in half if the first word merely postponed the close.
+    const h = harness({ graceMs: 40, capMs: 150 });
+    await steeredAndAnswered(h, [textDeltaMessage('starting on the tests')]);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    h.live().emit(textDeltaMessage('and here is the rest of it'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'and here is the rest of it'
+      )
+    ).toBe(true);
+  });
+
   it('restarts the wait when a person steers into the grace', async () => {
     // 400ms of grace, spent in two 200ms halves with a steer between them. The
     // second half ends 200ms past the ORIGINAL deadline, so only a restarted
@@ -1131,7 +1252,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
   it('does not wait at all when the result names the steer itself', async () => {
     // An hour of grace: a window that starts waiting here never closes, so the
     // drain below hangs. Nothing is outstanding once the steer is named.
-    const h = harness({ graceMs: 3_600_000 });
+    const h = harness({ graceMs: 3_600_000, capMs: 3_600_000 });
     await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
     expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
     h.live().emit(textDeltaMessage('both, answered together'));
@@ -1142,7 +1263,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
   });
 
   it('keeps waiting while a SECOND steer is still unanswered', async () => {
-    const h = harness({ graceMs: 3_600_000 });
+    const h = harness({ graceMs: 3_600_000, capMs: 3_600_000 });
     await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
     expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
     expect(h.windows.steerOpenWindow('steer-2')).toBe(true);
@@ -1162,7 +1283,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
   });
 
   it('hands a dispatch the real result, not an abandonment', async () => {
-    const h = harness({ graceMs: 3_600_000 });
+    const h = harness({ graceMs: 3_600_000, capMs: 3_600_000 });
     await steeredAndAnswered(h);
     await graceIsOpen(h);
 
@@ -1185,7 +1306,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
   });
 
   it('settles on the real result when the composer ends the turn, and says so', async () => {
-    const h = harness({ graceMs: 3_600_000 });
+    const h = harness({ graceMs: 3_600_000, capMs: 3_600_000 });
     await steeredAndAnswered(h);
     await graceIsOpen(h);
 
@@ -1200,7 +1321,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
   });
 
   it('lets a crash mid-grace close the window once, as a crash', async () => {
-    const h = harness({ graceMs: 3_600_000 });
+    const h = harness({ graceMs: 3_600_000, capMs: 3_600_000 });
     await steeredAndAnswered(h);
     await graceIsOpen(h);
 

@@ -3,6 +3,7 @@ covers:
   - 'fix(server): keep the answer to a steer inside the turn it belongs to (DOR-1314)'
   - 'test(server): pin the steer continuation the pump drops (DOR-1314)'
   - 'fix(server): finish the continuation grace state machine (DOR-1314)'
+  - 'fix(server): a busy process extends the continuation wait, up to a cap (DOR-1314)'
 ---
 
 ### Fixed
