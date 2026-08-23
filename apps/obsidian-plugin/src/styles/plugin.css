@@ -358,10 +358,10 @@
    * "this failed" is not a fact about the vault's palette, and Obsidian offers
    * no semantic colour for it.
    */
-  --status-success: #16a34a;
-  --status-success-bg: rgba(22, 163, 74, 0.1);
-  --status-success-border: rgba(22, 163, 74, 0.2);
-  --status-success-fg: #16a34a;
+  --status-success: #15803d;
+  --status-success-bg: rgba(21, 128, 61, 0.1);
+  --status-success-border: rgba(21, 128, 61, 0.2);
+  --status-success-fg: #15803d;
   --status-error: #dc2626;
   --status-error-bg: rgba(220, 38, 38, 0.1);
   --status-error-border: rgba(220, 38, 38, 0.2);
