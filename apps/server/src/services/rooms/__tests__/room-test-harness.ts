@@ -408,6 +408,9 @@ export interface RoomHarness {
  * @param opts.turnLimitsEnabled - Whether automatic-reply limits apply at all.
  *   Defaults to `true`, the shipped posture. A test that passes `false` is
  *   testing the unlimited path, where neither the guard nor the budget is asked.
+ *   Pass a FUNCTION to move it mid-test, the way the live config reader does —
+ *   that is how a test proves an unlimited stretch left the hourly window
+ *   unspent, by turning limits back on and finding the allowance intact.
  * @param opts.maxAutomaticTurnsPerRoomPerHour - The per-room spend cap. Also a
  *   literal, and high enough by default that it never silently masks a cascade
  *   test — a budget refusal and a guard refusal look alike from the outside.
@@ -443,7 +446,7 @@ export function createRoomHarness(opts: {
   runner?: ScriptedTurnRunner;
   maxAgentDepth?: number;
   maxTurnsPerAgentPerCascade?: number;
-  turnLimitsEnabled?: boolean;
+  turnLimitsEnabled?: boolean | (() => boolean);
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
@@ -466,7 +469,9 @@ export function createRoomHarness(opts: {
   const runner = opts.runner ?? scriptedRunner();
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
   const maxTurnsPerAgentPerCascade = opts.maxTurnsPerAgentPerCascade ?? 1;
-  const turnLimitsEnabled = opts.turnLimitsEnabled ?? true;
+  const limitsOption = opts.turnLimitsEnabled ?? true;
+  const turnLimitsEnabled: () => boolean =
+    typeof limitsOption === 'function' ? limitsOption : () => limitsOption;
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
@@ -519,7 +524,7 @@ export function createRoomHarness(opts: {
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     maxAgentDepth: () => maxAgentDepth,
     maxTurnsPerAgentPerCascade: () => maxTurnsPerAgentPerCascade,
-    turnLimitsEnabled: () => turnLimitsEnabled,
+    turnLimitsEnabled,
     engagedWindow: () => engagedWindow,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,

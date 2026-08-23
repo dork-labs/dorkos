@@ -1471,6 +1471,10 @@ export const UserConfigSchema = z.object({
        * this one counts each agent separately, so a pair trading answers stops
        * after ten each rather than running the chain out between them. Your own
        * messages start both counts over.
+       *
+       * It counts MESSAGES the agent posted in that back-and-forth, not turns
+       * it took: an agent that posts progress notes while it works spends its
+       * allowance faster than one that answers once and stops.
        */
       maxTurnsPerAgentPerCascade: z.number().int().min(1).max(100).default(10),
       /**

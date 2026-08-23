@@ -588,13 +588,13 @@ describe('RoomService — the repeat rule holds across a thread boundary', () =>
    * The one place the thread change makes a real bound TIGHTER
    * (room-participation spec §3.4, ADR 260728-022013).
    *
-   * `authorsInCascade` is scoped `(room_id, cascade_root)`. Under the child-room
-   * shape, a cascade that went from a channel into a thread crossed a `room_id`
-   * boundary, the per-cascade turn count reset, and the same authors could be triggered a
-   * second time inside one exchange — the cross-room carve-out
+   * `turnsByAuthorInCascade` is scoped `(room_id, cascade_root)`. Under the
+   * child-room shape, a cascade that went from a channel into a thread crossed a
+   * `room_id` boundary, the per-cascade turn count reset, and the same authors
+   * got a fresh allowance inside one exchange — the cross-room carve-out
    * ADR 260726-170127 documented and could not close. A thread reply now carries
-   * the CHANNEL's `room_id`, so the set does not reset and A → thread → A is
-   * refused at the first repeat instead of running to the depth ceiling.
+   * the CHANNEL's `room_id`, so the count does not reset and A → thread → A
+   * spends A's allowance instead of running to the depth ceiling.
    *
    * Driven through the real dispatcher: the guard's absence is only visible
    * under a cascade, so a test that called the guard directly would prove

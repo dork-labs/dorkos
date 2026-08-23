@@ -890,8 +890,9 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * What is left of this room's hourly allowance, or `null` when the person
-   * turned automatic-reply limits off.
+   * Everything one turn is told about what is left to spend — the room's hourly
+   * headroom and its remaining replies in this chain — or `null` for all of it
+   * when the person turned automatic-reply limits off.
    *
    * `null` rather than a large number, because this is what an agent reads in
    * `room_context.budget` and decides how freely to answer against. With
@@ -899,23 +900,30 @@ export class RoomTriggerDispatcher {
    * that does not exist and a small one implies a squeeze that is not
    * happening. "No limit" is the only true thing to say.
    *
-   * @param roomId - The room the turn is about to run in.
-   */
-  private remainingBudget(roomId: string): { room: number; global: number } | null {
-    if (!this.deps.turnLimitsEnabled()) return null;
-    return this.deps.budget.remaining(roomId);
-  }
-
-  /**
-   * How many more replies this chain may run after a turn at `depth`, or `null`
-   * when automatic-reply limits are off — for the reason
-   * {@link RoomTriggerDispatcher.remainingBudget} gives.
+   * **One helper rather than two, because the promise is that they are `null`
+   * TOGETHER.** `RoomContextData.budget` says so, and the block renders one
+   * sentence or the other off that. Two helpers each reading
+   * `turnLimitsEnabled()` for themselves would document the invariant and not
+   * enforce it: the flag is a live config read, so a person toggling it between
+   * the two calls would assemble half a verdict. Read once, here, per context.
    *
-   * @param depth - The depth the turn being assembled carries.
+   * @param roomId - The room the turn is about to run in.
+   * @param depth - The depth the turn being assembled carries, or `'ceiling'`
+   *   for a turn that is nobody's reply and hands on no chain (an aside).
    */
-  private repliesLeftFrom(depth: number): number | null {
-    if (!this.deps.turnLimitsEnabled()) return null;
-    return Math.max(0, this.deps.maxAgentDepth() - depth);
+  private headroomFor(
+    roomId: string,
+    depth: number | 'ceiling'
+  ): {
+    budget: { room: number; global: number } | null;
+    repliesLeftInThisChain: number | null;
+  } {
+    if (!this.deps.turnLimitsEnabled()) return { budget: null, repliesLeftInThisChain: null };
+    return {
+      budget: this.deps.budget.remaining(roomId),
+      repliesLeftInThisChain:
+        depth === 'ceiling' ? 0 : Math.max(0, this.deps.maxAgentDepth() - depth),
+    };
   }
 
   /**
@@ -1455,8 +1463,9 @@ export class RoomTriggerDispatcher {
         // already advanced past this entry, so reading it here would describe
         // an empty window every time (room-participation spec §8.3).
         lastReadSeq: target.lastReadSeq,
-        budget: this.remainingBudget(room.id),
-        repliesLeftInThisChain: this.repliesLeftFrom(target.depth),
+        // Both halves of what is left to spend, resolved together so they can
+        // never disagree about whether anything is counting.
+        ...this.headroomFor(room.id, target.depth),
         engaged: target.engaged,
         // Which of the messages in that window landed while this agent was
         // already working (RP8). Without it a steered turn reads as a person
@@ -2037,12 +2046,12 @@ export class RoomTriggerDispatcher {
         // silently consume the window the next real trigger owes it
         // (room-participation spec §8.3).
         lastReadSeq: entry.seq,
-        budget: this.remainingBudget(room.id),
-        // None. An offer is one line and the end of it; the ceiling stamp above
-        // says the same thing to the guard. Asked from the ceiling so that an
+        // The hourly headroom, and NO chain: an offer is one line and the end of
+        // it, which is what `'ceiling'` says here and what the ceiling stamp
+        // above says to the guard. Asked through the same helper so that an
         // install with limits off answers `null` here too, rather than telling
         // an agent it has zero of something nothing is counting.
-        repliesLeftInThisChain: this.repliesLeftFrom(this.deps.maxAgentDepth()),
+        ...this.headroomFor(room.id, 'ceiling'),
         engaged: null,
         // The same word the claim above uses. Nothing asked for this turn, so
         // the block names no "message you are answering": `entry` here is the

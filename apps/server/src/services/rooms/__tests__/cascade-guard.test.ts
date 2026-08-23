@@ -632,13 +632,23 @@ describe('limits off', () => {
     harness.service.post(room.id, { authorId: harness.human, text: 'talk it through' });
     await harness.service.triggersIdle();
 
-    // More turns ran than the tightest cap in the room allows, so neither the
-    // guard nor the budget was consulted.
-    expect(harness.runner.turns.length).toBeGreaterThan(2);
-    // And nothing was refused, so the room said nothing about limits.
-    const notices = harness.service
-      .listEntries(room.id, harness.human, { limit: 200 })
-      .filter((entry) => entry.kind === 'notice');
+    // **Every one of the six answers the runner was willing to give reached the
+    // room**, which is the exact number and the load-bearing one: one turn per
+    // agent per cascade, a depth ceiling of three and an hourly allowance of one
+    // would each have stopped this at or before the second. The count of TURNS
+    // is deliberately not asserted — a turn also runs for a trigger the runner
+    // answers with silence, and which agent is holding a claim when the last
+    // answer lands decides whether there is one such turn or two.
+    const entries = harness.service.listEntries(room.id, harness.human, { limit: 200 });
+    const agentPosts = entries.filter(
+      (entry) => entry.kind === 'post' && entry.authorId !== harness.human
+    );
+    expect(agentPosts).toHaveLength(6);
+    // And it really was a cascade between the two of them, not one agent
+    // answering itself six times.
+    expect(new Set(agentPosts.map((entry) => entry.authorId)).size).toBe(2);
+    // Nothing was refused, so the room said nothing about limits.
+    const notices = entries.filter((entry) => entry.kind === 'notice');
     expect(notices.map((entry) => entry.body.notice)).not.toContain('cascade_stopped');
     expect(notices.map((entry) => entry.body.notice)).not.toContain('budget_reached');
     // The agents were told the truth about it rather than a number: `null` is
