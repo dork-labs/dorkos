@@ -1349,6 +1349,46 @@ export const TerminalReasonSchema = z
 
 export type TerminalReason = z.infer<typeof TerminalReasonSchema>;
 
+/**
+ * The terminal reasons that mean a turn was CUT SHORT rather than finishing or
+ * failing — the SDK's two abort reasons, plus the `interrupted` DorkOS supplies
+ * itself when a stop killed the process before the SDK could name one.
+ *
+ * **One source, because two readings of one turn may not disagree.** The
+ * session projector settles these as the `interrupted` lifecycle, and the
+ * claude-code result mapper uses them to decide whether a non-success `result`
+ * is a failure or a stop. Those two lived as byte-identical hand-kept copies in
+ * different service domains until DOR-1320's review; a set that drifts would
+ * mean a turn shown as stopped whose error frame says it crashed.
+ *
+ * **Shape, never intent.** These say a turn was aborted, NOT who aborted it.
+ * The CLI collapses nine distinct abort causes — an operator interrupt, a
+ * shutdown, an API refusal fallback, an unlabelled internal teardown — into
+ * these same two strings, and the distinction never reaches the SDK surface. So
+ * a caller that needs "a PERSON stopped this" must AND this with its own record
+ * of having asked (see `claude-code/agent-types.ts`, `stoppedQueries`).
+ */
+export const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'interrupted',
+  'aborted_streaming',
+  'aborted_tools',
+]);
+
+/**
+ * Whether a terminal reason says the turn was cut short rather than finishing
+ * or failing.
+ *
+ * Read defensively rather than by narrowing: {@link TerminalReasonSchema} is a
+ * forward-open union, so an unfamiliar value is simply not an abort. See
+ * {@link INTERRUPTED_TERMINAL_REASONS} for why this answers shape and never
+ * intent.
+ *
+ * @param terminalReason - The reason a turn ended, if it carried one
+ */
+export function isInterruptedTerminalReason(terminalReason: string | undefined): boolean {
+  return terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason);
+}
+
 // === Runtime-neutral Usage / Cost Status ===
 
 /** Utilization health for a subscription window (drives amber/red styling). */

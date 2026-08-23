@@ -163,6 +163,28 @@ export interface ToolState {
   setToolState: (tool: boolean, name: string, id: string) => void;
 }
 
+/**
+ * Whether DorkOS aimed a Stop at this query — the intent half of the two-part
+ * gate on a stopped turn's error frame (DOR-1320).
+ *
+ * Reads {@link AgentSession.stoppedQueries}, which is written BEFORE the
+ * interrupt is even attempted, so a Stop still in flight when the turn's stream
+ * ends already counts. Matched by query identity rather than per session: the
+ * resume path can have two turns overlapping on one session (DOR-1088), and an
+ * outgoing turn's Stop must not condemn its successor.
+ *
+ * **Per-turn only because the caller keeps it so.** One query is one turn on the
+ * resume path; a pump runs many turns on ONE query, so it clears its query out
+ * of the record at every dispatch — without which a single Stop would mark
+ * every later turn on that warm process as stopped (`persistent-dispatch.ts`).
+ *
+ * @param session - The session holding the stop record
+ * @param query - The query running the turn in question, if there is one
+ */
+export function stopWasAimedAt(session: AgentSession, query: Query | undefined): boolean {
+  return query !== undefined && session.stoppedQueries?.has(query) === true;
+}
+
 /** Create a fresh ToolState instance for a streaming loop. */
 export function createToolState(): ToolState {
   let inTool = false;

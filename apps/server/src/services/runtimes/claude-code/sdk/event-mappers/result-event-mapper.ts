@@ -2,7 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
-import { mapErrorCategory } from '../sdk-error-mapping.js';
+import { isStoppedTurnResult, mapErrorCategory } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
 
 /**
@@ -55,11 +55,19 @@ function toUsageState(status: 'allowed' | 'allowed_warning' | 'rejected'): Usage
  * @param session - In-memory session state; its `lastRequestUsage` (the most recent
  *   main-thread request's usage) is the source of truth for context/cache figures.
  * @param sessionId - DorkOS session identifier (stamped onto result session_status/done).
+ * @param wasStopped - Whether DorkOS aimed a Stop at the query running this
+ *   turn, supplied by the loop that owns it because only that loop knows WHICH
+ *   query the turn is on. A predicate rather than a value, and called at the
+ *   moment the `result` is mapped: a Stop can land at any point of a stream, and
+ *   the question is whether one had landed by the time the turn ended. Absent
+ *   means "nobody stopped anything", which is the honest default for every
+ *   caller that does not track stops.
  */
 export async function* mapResultEvent(
   message: SDKMessage,
   session: AgentSession,
-  sessionId: string
+  sessionId: string,
+  wasStopped?: () => boolean
 ): AsyncGenerator<StreamEvent> {
   // Handle prompt suggestion messages (SDK 0.2.86: singular `suggestion` field)
   if (message.type === 'prompt_suggestion') {
@@ -201,9 +209,23 @@ export async function* mapResultEvent(
       };
     }
 
-    // Emit error event if the result is an error subtype
+    // Emit an error event if the result is an error subtype — UNLESS this turn
+    // is one a person STOPPED. A Stop the CLI acks comes back as
+    // `error_during_execution` with `terminal_reason: 'aborted_streaming'`, and
+    // calling that an error put a red frame in the durable record of a turn the
+    // operator ended on purpose (DOR-1320). The `session_status` above already
+    // carried the reason, which the projector settles as `interrupted`, so the
+    // turn still ends honestly.
+    //
+    // Both halves are required, and `isStoppedTurnResult` explains why: the
+    // terminal reason says a turn was aborted but never by whom, so intent
+    // comes from DorkOS's own stop record.
     const subtype = result.subtype as string | undefined;
-    if (subtype && subtype !== 'success') {
+    const stopped = isStoppedTurnResult({
+      terminalReason,
+      stopWasRequested: wasStopped?.() ?? false,
+    });
+    if (subtype && subtype !== 'success' && !stopped) {
       const errors = result.errors as string[] | undefined;
       // Prefer the auth category when the failure text or subtype signals a
       // revoked/expired sign-in, so the client offers a re-auth affordance
