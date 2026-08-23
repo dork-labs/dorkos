@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -16,6 +16,7 @@ import {
   useDeleteTask,
   useTriggerTask,
 } from '../model/use-tasks';
+import { useTaskRuns } from '../model/use-task-runs';
 
 function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
@@ -200,6 +201,121 @@ describe('useDeleteTask', () => {
     await waitFor(() => {
       expect(transport.listTasks).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('the tasks-list invalidation is exact', () => {
+  // `['tasks']` is a PREFIX of the chat panel's per-session todo query,
+  // `['tasks', sessionId, cwd]` (`features/chat/model/use-task-state.ts`), and
+  // TanStack Query matches query keys by prefix unless told `exact: true`. Every
+  // one of these mutations used to invalidate the bare key, so saving, deleting
+  // or flipping ANY schedule anywhere in the app refetched — and reset — a
+  // session's streamed todo list mid-turn. `useTasksSync` already got this right
+  // (`use-tasks-sync.test.tsx`); this pins the same contract for the mutations.
+
+  const SESSION_TODO_KEY = ['tasks', 'session-x', '/cwd'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Mount the shared tasks list, a session-scoped todo query sharing its
+   * `['tasks']` prefix, and all three list mutations against one query client.
+   */
+  async function mountHarness(overrides: Partial<Transport>) {
+    const listTasks = vi.fn().mockResolvedValue([]);
+    const sessionTodoFetch = vi.fn().mockResolvedValue('session-todos');
+    const transport = createMockTransport({ listTasks, ...overrides });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(
+      () => ({
+        tasks: useTasks(),
+        sessionTodos: useQuery({ queryKey: SESSION_TODO_KEY, queryFn: sessionTodoFetch }),
+        create: useCreateTask(),
+        update: useUpdateTask(),
+        remove: useDeleteTask(),
+      }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.sessionTodos.isSuccess).toBe(true));
+    expect(listTasks).toHaveBeenCalledTimes(1);
+    expect(sessionTodoFetch).toHaveBeenCalledTimes(1);
+
+    return { result, listTasks, sessionTodoFetch };
+  }
+
+  it('useCreateTask refetches the list without touching a session todo query', async () => {
+    const { result, listTasks, sessionTodoFetch } = await mountHarness({
+      createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'task-new' })),
+    });
+
+    result.current.create.mutate({
+      name: 'New job',
+      prompt: 'Do something',
+      description: 'Do something',
+      target: 'global',
+    });
+
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2));
+    expect(sessionTodoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('useUpdateTask refetches the list without touching a session todo query', async () => {
+    const { result, listTasks, sessionTodoFetch } = await mountHarness({
+      updateTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'task-1' })),
+    });
+
+    result.current.update.mutate({ id: 'task-1', enabled: false });
+
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2));
+    expect(sessionTodoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('useDeleteTask refetches the list without touching a session todo query', async () => {
+    const { result, listTasks, sessionTodoFetch } = await mountHarness({
+      deleteTask: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    result.current.remove.mutate('task-1');
+
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2));
+    expect(sessionTodoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('useDeleteTask also refreshes run queries, because the server erases the runs too', async () => {
+    // Deleting a schedule cascades to its runs server-side. The old
+    // prefix-matching invalidation swept the run queries in by accident; making
+    // the list invalidation `exact` took that away, and the top-nav health dot
+    // (a failed-runs query that does not poll, on a nav that stays mounted while
+    // Tasks is only a dialog) went on counting runs that no longer exist.
+    const listTaskRuns = vi.fn().mockResolvedValue([]);
+    const transport = createMockTransport({
+      listTasks: vi.fn().mockResolvedValue([]),
+      deleteTask: vi.fn().mockResolvedValue({ ok: true }),
+      listTaskRuns,
+    });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(
+      () => ({
+        tasks: useTasks(),
+        failedRuns: useTaskRuns({ status: 'failed' }),
+        remove: useDeleteTask(),
+      }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.failedRuns.isSuccess).toBe(true));
+    expect(listTaskRuns).toHaveBeenCalledTimes(1);
+
+    result.current.remove.mutate('task-1');
+
+    await waitFor(() => expect(listTaskRuns).toHaveBeenCalledTimes(2));
   });
 });
 

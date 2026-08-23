@@ -9,13 +9,19 @@ import {
   buildCron,
   formatHour,
   getSimplePreview,
+  isCronValid,
   ScheduleBuilder,
 } from '../ui/TaskBuilder';
 
 // --- Mock cronstrue for cron mode preview ---
 vi.mock('cronstrue', () => ({
   default: {
-    toString: (cron: string) => `Cron: ${cron}`,
+    toString: (cron: string) => {
+      // The real cronstrue throws on an expression it cannot read. Standing that
+      // up here is what gives `isCronValid` a failing case to answer.
+      if (cron === 'not-a-cron') throw new Error('Invalid cron');
+      return `Cron: ${cron}`;
+    },
   },
 }));
 
@@ -312,6 +318,28 @@ describe('getSimplePreview', () => {
 });
 
 // ─── Component tests ─────────────────────────────────────────────────
+
+describe('isCronValid', () => {
+  // The submit button in `TaskFormInner` reads this same predicate, so the form
+  // can never accept an expression the builder is showing in red.
+
+  it('accepts an expression cronstrue can read', () => {
+    expect(isCronValid('0 9 * * 1-5')).toBe(true);
+  });
+
+  it('rejects one it cannot', () => {
+    expect(isCronValid('not-a-cron')).toBe(false);
+  });
+
+  it('treats an empty expression as valid — a schedule need not have a cron', () => {
+    expect(isCronValid('')).toBe(true);
+    expect(isCronValid('   ')).toBe(true);
+  });
+
+  it('ignores surrounding whitespace rather than choking on it', () => {
+    expect(isCronValid('  0 9 * * 1-5  ')).toBe(true);
+  });
+});
 
 describe('ScheduleBuilder', () => {
   beforeEach(() => {

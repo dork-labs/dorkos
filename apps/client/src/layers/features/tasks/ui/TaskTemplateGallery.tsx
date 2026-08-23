@@ -16,7 +16,7 @@ interface TaskTemplateGalleryProps {
  * Responsive 2-column grid of all available Tasks presets in selectable variant.
  *
  * Handles loading (skeleton grid) and error states internally.
- * Uses the shared `useTaskTemplates` query — cached under ['tasks', 'presets'].
+ * Uses the shared `useTaskTemplates` query — cached under ['tasks', 'templates'].
  *
  * @param onSelect - Called with the chosen preset when a card is clicked
  * @param selectedId - The id of the currently selected preset
