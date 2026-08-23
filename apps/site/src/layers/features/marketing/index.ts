@@ -58,6 +58,32 @@ export type {
   ProductFrameVariant,
 } from './lib/features';
 
+// Comparison components
+export { ComparisonVerdict } from './ui/compare/ComparisonVerdict';
+export { ComparisonAudience } from './ui/compare/ComparisonAudience';
+export { ComparisonTable } from './ui/compare/ComparisonTable';
+export { ComparisonCriteria } from './ui/compare/ComparisonCriteria';
+export { ComparisonFaq } from './ui/compare/ComparisonFaq';
+export { ComparisonSources } from './ui/compare/ComparisonSources';
+export { CompetitorCard } from './ui/compare/CompetitorCard';
+
+// Data — comparison catalog
+export {
+  comparisons,
+  COMPARISON_DIMENSIONS,
+  COMPARISON_FRAMING_COPY,
+  dorkosCellFor,
+  dorkosAdvantages,
+} from './lib/comparisons';
+export type {
+  Competitor,
+  ComparisonCell,
+  ComparisonDimension,
+  ComparisonFraming,
+  ComparisonFramingCopy,
+  CapabilityVerdict,
+} from './lib/comparisons';
+
 // Data — product-media shot registry (published in manifest.json)
 export { PRODUCT_SHOTS, PRODUCT_SHOT_IDS, getProductShot, shotHasLoop } from './lib/shots';
 export type { ProductShotMeta, ShotConsumer, ShotKind, ShotFrame } from './lib/shots';
