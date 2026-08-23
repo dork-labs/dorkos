@@ -898,11 +898,20 @@ Named so a cold reader does not improve a deliberate gap back into a bug.
     hours and says nothing on the surface that asked — the notification gap named
     in #1 — while holding a warm slot. Refusing it fast instead would answer for
     somebody who can, in fact, still answer.
-    **Partly superseded (2026-08-23, DOR-1440):** `ask-entitlement` §5.2 shipped
-    after this and does send an Approve/Deny card into the chat — for an
-    `approval` only, and only into a live one-to-one DM whose single outside
-    member is on that adapter's approver allowlist. The park itself is unchanged;
-    "cockpit only" now holds for everything outside that narrow case.
+    **Corrected (2026-08-23, DOR-1440).** The park is unchanged; "cockpit only"
+    is not, and it was already too broad when written. There are two relay paths:
+    - **Direct-bound** — an agent addressed over the relay publishes its
+      `approval_required` to the envelope's `replyTo`
+      (`relay/adapters/claude-code/publish.ts`) and Slack/Telegram render real
+      Approve/Deny buttons for it, in any chat shape including a group channel.
+      The approver allowlist is checked at the click, not at the send. So such an
+      agent does NOT "say nothing on the surface that asked".
+    - **Room-bound** — `ask-entitlement` §5.2, which shipped after this item,
+      sends the same card through a bridge under much tighter rules: an
+      `approval` only, only into a live one-to-one DM whose single outside member
+      arrived through that adapter instance and is on its approver allowlist.
+      Everything outside that narrow case is still cockpit-only, which is the
+      half of this item that survives.
 11. **A room turn is still given up after `rooms.lateReplyCeilingMinutes`**
     (60 by default). Before the park every prompt settled inside ten minutes, so
     that bound was unreachable; now a room-raised Ask answered after an hour runs
