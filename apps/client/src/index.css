@@ -211,10 +211,17 @@
   --brand-foreground: 0 0% 100%;
 
   /* === Status tokens === */
-  --status-success: 152 69% 31%;
+  /* Green is text (dial caption, status word, "unattended" notes, session marks)
+     and the inverted white label on the full-power door's green fill. At 31% it
+     missed WCAG AA (4.2-4.5:1 for normal text); 24% is the darkest the reward
+     green needs to be for every green surface to clear 4.5:1 — the binding case
+     is the "N live" green-on-green chip over the sidebar (4.53:1). `-fg` tracks
+     the base (same green on the light `-bg`). Dark mode below is 7.7-11:1,
+     untouched. */
+  --status-success: 152 69% 24%;
   --status-success-bg: 152 69% 96%;
   --status-success-border: 152 69% 80%;
-  --status-success-fg: 152 69% 31%;
+  --status-success-fg: 152 69% 24%;
 
   --status-error: 0 72% 51%;
   --status-error-bg: 0 72% 96%;
@@ -1816,10 +1823,14 @@ body {
   --color-input: var(--background-modifier-form-field);
   --color-ring: var(--interactive-accent);
 
-  --color-status-success: #16a34a;
-  --color-status-success-bg: rgba(22, 163, 74, 0.1);
-  --color-status-success-border: rgba(22, 163, 74, 0.2);
-  --color-status-success-fg: #16a34a;
+  /* Green-700 (`#15803d`), 5.02:1 on the Obsidian light theme's near-white
+     surface — the former green-600 was 3.30:1, under WCAG AA. Kept in sync with
+     the duplicate in apps/obsidian-plugin/src/styles/plugin.css (DOR-1080);
+     plugin-styles.test.ts guards the two against drift. */
+  --color-status-success: #15803d;
+  --color-status-success-bg: rgba(21, 128, 61, 0.1);
+  --color-status-success-border: rgba(21, 128, 61, 0.2);
+  --color-status-success-fg: #15803d;
   --color-status-error: #dc2626;
   --color-status-error-bg: rgba(220, 38, 38, 0.1);
   --color-status-error-border: rgba(220, 38, 38, 0.2);

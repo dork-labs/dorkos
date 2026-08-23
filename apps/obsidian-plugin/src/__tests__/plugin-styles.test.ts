@@ -90,6 +90,37 @@ function bridgedValues(css: string): Set<string> {
 }
 
 /**
+ * The literal value the FIRST declaration of `prop` is given.
+ *
+ * The trailing negative lookahead keeps `--status-success` from matching
+ * `--status-success-bg` — a prefix collision that would compare the wrong two
+ * values and call a drift a match.
+ *
+ * @param css - The stylesheet source (scope it first if the name repeats).
+ * @param prop - The custom-property name, e.g. `--status-success`.
+ */
+function tokenValue(css: string, prop: string): string | undefined {
+  const m = css.match(new RegExp(`${prop}(?![a-z-])\\s*:\\s*([^;]+);`));
+  return m ? m[1]!.trim() : undefined;
+}
+
+/**
+ * The `.copilot-view-content` block(s), concatenated.
+ *
+ * The client declares `--color-status-success` TWICE — once in `@theme` as
+ * `hsl(var(--status-success))`, once here as the Obsidian literal — so reading
+ * the whole file would pick up the theme mapping instead of the pin. Scope
+ * first, then read.
+ *
+ * @param css - The stylesheet source.
+ */
+function copilotBlock(css: string): string {
+  return [...css.matchAll(/\.copilot-view-content\s*\{([\s\S]*?)\n\}/g)]
+    .map((m) => m[1]!)
+    .join('\n');
+}
+
+/**
  * Utility class names present in the built stylesheet.
  *
  * Read off selector heads rather than by substring search: `bg-status-success`
@@ -137,6 +168,39 @@ describe('the plugin bridges the client’s colour family', () => {
       .map((token) => token.replace(/^--color-/, '--'))
       .filter((source) => !values.has(source));
     expect(unmapped).toEqual([]);
+  });
+
+  it('pins the Obsidian success green to the SAME literals the client uses (DOR-1080)', () => {
+    // Two byte-identical copies of the flat green: the client writes it as
+    // `--color-status-success` in its `.copilot-view-content` block, this plugin
+    // writes the raw `--status-success` its own Tailwind reads. They MUST match —
+    // the plugin's built sheet is what paints the embedded sidebar (the "Working"
+    // dot on SessionRowSidebar). A WCAG-AA fix applied to one and not the other
+    // ships the failing colour anyway; this is the guard that catches that drift.
+    //
+    // Positive-anchored to a concrete value so a regex that returns `undefined`
+    // fails here rather than passing on `undefined === undefined`. The AA math
+    // itself is owned by the client's `status-success-contrast` guard, which
+    // asserts this same literal clears 4.5:1 on white; matching it transitively
+    // makes the plugin's green pass too.
+    const clientObsidian = copilotBlock(CLIENT_CSS);
+    const pairs: [clientProp: string, pluginProp: string][] = [
+      ['--color-status-success', '--status-success'],
+      ['--color-status-success-bg', '--status-success-bg'],
+      ['--color-status-success-border', '--status-success-border'],
+      ['--color-status-success-fg', '--status-success-fg'],
+    ];
+    expect(tokenValue(clientObsidian, '--color-status-success')).toBe('#15803d');
+    expect(tokenValue(PLUGIN_CSS, '--status-success')).toBe('#15803d');
+    for (const [clientProp, pluginProp] of pairs) {
+      const client = tokenValue(clientObsidian, clientProp);
+      const plugin = tokenValue(PLUGIN_CSS, pluginProp);
+      expect({ token: pluginProp, client, plugin }).toEqual({
+        token: pluginProp,
+        client,
+        plugin: client,
+      });
+    }
   });
 });
 
