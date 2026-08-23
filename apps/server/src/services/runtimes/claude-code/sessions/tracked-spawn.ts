@@ -39,6 +39,7 @@
  */
 import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { logger } from '../../../../lib/logger.js';
 import type { WarmProcessLedger } from './warm-process-ledger.js';
 
@@ -68,12 +69,19 @@ export function createTrackedSpawn(
     const pid = child.pid;
     if (pid !== undefined) ledger.record(pid);
 
+    // The DATA handler is the load-bearing one: it is what puts stderr into
+    // flowing mode. Without it the pipe fills at 64 KB and the child BLOCKS
+    // forever on its next write to stderr. `StringDecoder` rather than
+    // `chunk.toString()` because a chunk boundary can fall in the middle of a
+    // multi-byte character, which would otherwise corrupt the tail.
+    const decoder = new StringDecoder('utf8');
     let stderrTail = '';
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_LIMIT);
+      stderrTail = (stderrTail + decoder.write(chunk)).slice(-STDERR_TAIL_LIMIT);
     });
-    // A stderr pipe nobody reads fills and blocks the child, so a read error
-    // here is swallowed rather than thrown at an unhandled 'error' listener.
+    // Separate concern: a read error on the pipe would otherwise be emitted as
+    // an unhandled 'error' event, which throws. Swallowed because losing the
+    // diagnostic tail must never take the process down with it.
     child.stderr?.on('error', () => {});
 
     child.once('exit', (code, exitSignal) => {

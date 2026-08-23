@@ -18,10 +18,14 @@ vi.mock('../../../../../lib/logger.js', () => ({
 /** A scriptable operating system: what is alive, when it started, what we hit. */
 function fakeProbe(
   processes: Record<number, { startedAt: string; ppid?: number }>
-): ProcessProbe & { signals: Array<{ pid: number; signal: NodeJS.Signals | 0 }> } {
+): ProcessProbe & {
+  signals: Array<{ pid: number; signal: NodeJS.Signals | 0 }>;
+  processes: Record<number, { startedAt: string; ppid?: number }>;
+} {
   const signals: Array<{ pid: number; signal: NodeJS.Signals | 0 }> = [];
   return {
     signals,
+    processes,
     startTimeOf: (pid) => processes[pid]?.startedAt ?? null,
     processTable: () => {
       const table = new Map<number, number>();
@@ -98,6 +102,43 @@ describe('WarmProcessLedger', () => {
     ledger.forget(1);
 
     expect(ledger.read()?.processes).toEqual([{ pid: 2, startedAt: 'b' }]);
+  });
+
+  it('does not adopt a still-living foreign owner’s records', async () => {
+    // The lock-off case, end to end. Server A is alive and owns the ledger with
+    // its own warm process (700). Server B — this process — warms one too (800).
+    // If B INHERITED A's list while re-stamping `owner: B`, then B dying would
+    // leave a ledger that B's next boot believes it owns, naming A's live
+    // process, and every clause of the proof would pass on a forged premise.
+    const probe = fakeProbe({
+      [process.pid]: { startedAt: 'boot-b' },
+      600: { startedAt: 'boot-a' },
+      700: { startedAt: 'a-warm-process' },
+      800: { startedAt: 'b-warm-process' },
+    });
+    seedLedger({ pid: 600, startedAt: 'boot-a' }, [{ pid: 700, startedAt: 'a-warm-process' }]);
+    const ledgerB = new WarmProcessLedger(dorkHome, probe);
+
+    ledgerB.record(800);
+
+    // A's pid never entered B's list.
+    expect(ledgerB.read()).toEqual({
+      owner: { pid: process.pid, startedAt: 'boot-b' },
+      processes: [{ pid: 800, startedAt: 'b-warm-process' }],
+    });
+
+    // And the property that matters: when B is gone and B′ boots, A's still-live
+    // process 700 is untouched.
+    delete probe.processes[process.pid];
+    const report = await reapOrphanedWarmProcesses({
+      ledger: new WarmProcessLedger(dorkHome, probe),
+      probe,
+      sleep: noSleep,
+    });
+
+    expect(report.reaped).toEqual([800]);
+    expect(report.reaped).not.toContain(700);
+    expect(probe.signals.map((s) => s.pid)).not.toContain(700);
   });
 
   it('survives a truncated file by reading it as no ledger at all', () => {
@@ -282,6 +323,13 @@ describe('reapOrphanedWarmProcesses against a real process', () => {
       { pid, startedAt: 'Mon Jan 1 00:00:00 2001' },
     ]);
     const spared = await reapOrphanedWarmProcesses({ ledger: lying, sleep: noSleep });
+    // `declined` undefined and the pid in `skipped` together prove the spare
+    // came from the per-record START-TIME guard this test is named for, and not
+    // from an early return that never reached it — the owner stamp above names
+    // pid 1, which exists but whose real `lstart` is nothing like the string
+    // recorded, so the sweep genuinely runs.
+    expect(spared.declined).toBeUndefined();
+    expect(spared.skipped).toEqual([pid]);
     expect(spared.reaped).toEqual([]);
     expect(child.exitCode).toBeNull();
     expect(systemProcessProbe.startTimeOf(pid)).not.toBeNull();

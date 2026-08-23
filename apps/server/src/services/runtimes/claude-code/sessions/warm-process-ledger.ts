@@ -36,12 +36,16 @@
  *   unrelated processes, and a ledger that survived a hard kill can easily name
  *   a pid that now belongs to the operator's editor. A recycled pid always
  *   belongs to a process that started AFTER the one we recorded, so its
- *   `lstart` differs and it is left alone. Equality is deliberately exact
- *   rather than a tolerance window: reaping is destructive and unrecoverable,
- *   while failing to reap is merely the bug we already have, so the guard is
- *   the tight one. A start time we cannot read at all — no `ps` (Windows), a
- *   process that already exited, an unparseable format — is never treated as a
- *   match.
+ *   `lstart` differs — except within the one-second resolution `lstart`
+ *   reports. That residual window is unreachable in practice rather than
+ *   merely unlikely: pids are allocated monotonically, so the recycled pid
+ *   cannot come back around until allocation has wrapped the whole pid space,
+ *   which takes far longer than the second it would have to happen inside.
+ *   Equality is deliberately exact rather than a tolerance window: reaping is
+ *   destructive and unrecoverable, while failing to reap is merely the bug we
+ *   already have, so the guard is the tight one. A start time we cannot read at
+ *   all — no `ps` (Windows), a process that already exited, an unparseable
+ *   format — is never treated as a match.
  * - **The owner stamp is the concurrency proof.** The single-instance lock
  *   normally guarantees one server per data directory, but it can be switched
  *   off (`DORKOS_SKIP_INSTANCE_LOCK`, `NODE_ENV=test`), and a ledger read while
@@ -110,6 +114,9 @@ const WarmProcessLedgerFileSchema = z.object({
 /** One process this server spawned, and the proof of which process it is. */
 export type WarmProcessRecord = z.infer<typeof WarmProcessRecordSchema>;
 
+/** The ledger file as it sits on disk: the owning server, and its processes. */
+export type WarmProcessLedgerFile = z.infer<typeof WarmProcessLedgerFileSchema>;
+
 /**
  * The operating-system facts this module needs, behind one seam so the
  * verification logic can be tested without spawning or killing anything.
@@ -135,6 +142,14 @@ export interface ProcessProbe {
    * @param signal - The signal to send
    */
   signal(pid: number, signal: NodeJS.Signals | 0): boolean;
+  /**
+   * Short command names for a set of pids, for the forensic log line only.
+   * Optional: it informs no decision, so a probe that cannot answer simply
+   * leaves the log naming bare pids.
+   *
+   * @param pids - The processes to name, asked in one call
+   */
+  commandsOf?(pids: readonly number[]): ReadonlyMap<number, string> | null;
 }
 
 /**
@@ -188,6 +203,20 @@ export const systemProcessProbe: ProcessProbe = {
     }
     return table.size === 0 ? null : table;
   },
+  commandsOf(pids) {
+    if (pids.length === 0) return null;
+    const raw = runPs(['-p', pids.join(','), '-o', 'pid=,comm=']);
+    if (raw === null) return null;
+    const names = new Map<number, string>();
+    for (const line of raw.split('\n')) {
+      const trimmed = normalise(line);
+      const gap = trimmed.indexOf(' ');
+      if (gap <= 0) continue;
+      const pid = Number(trimmed.slice(0, gap));
+      if (Number.isInteger(pid)) names.set(pid, trimmed.slice(gap + 1));
+    }
+    return names;
+  },
   signal(pid, sig) {
     try {
       process.kill(pid, sig);
@@ -238,6 +267,25 @@ export class WarmProcessLedger {
    * future reader to act on the pid alone. This is the Windows path, and it
    * makes the whole mechanism inert there rather than unsafe.
    *
+   * ## A foreign LIVE owner's records are not ours to adopt
+   *
+   * This write re-stamps the file's `owner` with us, so it must not carry
+   * another server's pids across that re-stamp. Normally it cannot happen — the
+   * single-instance lock means one server per data directory — but the lock can
+   * be switched off (`DORKOS_SKIP_INSTANCE_LOCK`, `NODE_ENV=test`), and then two
+   * servers share this file. Inheriting there would forge the ownership proof:
+   * server B stamps `owner: B` over a list containing server A's LIVE pids, B is
+   * killed, and B's next boot finds a ledger it believes it owns naming a
+   * process A is still using. It would kill it, and every clause of the proof
+   * would have been satisfied — because the lie was told at write time, not at
+   * read time.
+   *
+   * So a file whose owner is a DIFFERENT, still-living process is not merged
+   * with; the list starts empty and holds only what we ourselves spawn. The
+   * cost is that the live owner's records are dropped from the file, which is
+   * the same exposure the unlocked configuration already has, and strictly
+   * better than reaping a process that is in use.
+   *
    * @param pid - The process id the spawn returned
    */
   record(pid: number): void {
@@ -249,7 +297,19 @@ export class WarmProcessLedger {
     const owner = this.owner();
     if (owner === null) return;
     const file = this.read();
-    const processes = (file?.processes ?? []).filter((entry) => entry.pid !== pid);
+    const foreignLiveOwner =
+      file !== null && file.owner.pid !== process.pid && stillOurs(file.owner, this.probe);
+    if (foreignLiveOwner) {
+      logger.warn(
+        '[warm-process-ledger] another live server owns this ledger; starting a new one',
+        {
+          owner: file.owner.pid,
+          dropped: file.processes.length,
+        }
+      );
+    }
+    const inherited = foreignLiveOwner ? [] : (file?.processes ?? []);
+    const processes = inherited.filter((entry) => entry.pid !== pid);
     processes.push({ pid, startedAt });
     this.write({ owner, processes });
   }
@@ -269,7 +329,7 @@ export class WarmProcessLedger {
   }
 
   /** The ledger as it stands, or `null` when there is none or it is unreadable. */
-  read(): z.infer<typeof WarmProcessLedgerFileSchema> | null {
+  read(): WarmProcessLedgerFile | null {
     let raw: string;
     try {
       raw = fs.readFileSync(this.filePath, 'utf8');
@@ -307,7 +367,7 @@ export class WarmProcessLedger {
   }
 
   /** Persist the ledger atomically, so a kill mid-write cannot corrupt it. */
-  private write(file: z.infer<typeof WarmProcessLedgerFileSchema>): void {
+  private write(file: WarmProcessLedgerFile): void {
     const temp = `${this.filePath}.${process.pid}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
@@ -350,6 +410,12 @@ export function sharedWarmProcessLedger(): WarmProcessLedger {
 export interface WarmProcessReapReport {
   /** Records that named a process we proved we own, and therefore ended. */
   reaped: number[];
+  /**
+   * Live descendants of the reaped roots, ended on the root's proof. Empty when
+   * the process table could not be read, in which case only the roots are
+   * signalled and the CLI's own shutdown is left to take its children with it.
+   */
+  descendants: number[];
   /** Records whose pid is gone, or now belongs to somebody else. Left alone. */
   skipped: number[];
   /**
@@ -441,6 +507,19 @@ function stillOurs(record: WarmProcessRecord, probe: ProcessProbe): boolean {
  * End every warm claude-code subprocess a previous instance of THIS data
  * directory left running.
  *
+ * ## The grace window is for the roots only
+ *
+ * Roots get SIGTERM, then up to {@link TERM_GRACE_MS} to go, then SIGKILL.
+ * Descendants get no window of their own: they are signalled once, after the
+ * roots' window has already elapsed. That is deliberate rather than an
+ * oversight. The root is the CLI, and a CLI honouring SIGTERM shuts its own
+ * children down, so by the time the window closes most descendants are already
+ * gone and the survivors are the ones that ignored their parent's shutdown. A
+ * second full window for them would double a boot delay to be polite to
+ * processes that have already demonstrated they will not take the hint. If that
+ * ever proves wrong, the fix is a second window here, not a change to the
+ * ownership proof.
+ *
  * Call once at boot, after the single-instance lock is held and before anything
  * can hand out a warm slot. The ledger is cleared FIRST, in every path: the
  * records describe a server that is gone, the sweep must not be able to repeat
@@ -458,7 +537,7 @@ export async function reapOrphanedWarmProcesses(
   const sleep = input.sleep ?? graceSleep;
 
   const file = ledger.read();
-  if (!file) return { reaped: [], skipped: [], declined: 'no-ledger' };
+  if (!file) return { reaped: [], descendants: [], skipped: [], declined: 'no-ledger' };
 
   // Another server is alive and holding this data directory: these are its
   // processes, not orphans. Leave the ledger exactly as it is — it is the live
@@ -467,7 +546,7 @@ export async function reapOrphanedWarmProcesses(
     logger.warn('[warm-process-ledger] another instance owns this data directory; not sweeping', {
       owner: file.owner.pid,
     });
-    return { reaped: [], skipped: [], declined: 'owner-alive' };
+    return { reaped: [], descendants: [], skipped: [], declined: 'owner-alive' };
   }
 
   ledger.clear();
@@ -478,14 +557,26 @@ export async function reapOrphanedWarmProcesses(
     if (stillOurs(record, probe)) reaped.push(record.pid);
     else skipped.push(record.pid);
   }
-  if (reaped.length === 0) return { reaped, skipped };
+  if (reaped.length === 0) return { reaped, descendants: [], skipped };
 
   const table = probe.processTable();
   const descendants = table === null ? [] : descendantsOf(reaped, table);
 
+  // The subjects, not a count of them. This is the one path in DorkOS whose
+  // failure mode is "a process somebody was using is gone", and after the fact
+  // the evidence is unrecoverable: the pids no longer resolve to anything. So
+  // the names are read HERE, while the processes still exist, and the line
+  // carries the full lists rather than lengths. One extra `ps` at boot, only
+  // when there is actually something to reap, is a cheap price for being able
+  // to answer "what exactly did it end?".
+  const named = probe.commandsOf?.([...reaped, ...descendants]) ?? null;
+  const describe = (pids: readonly number[]): string[] =>
+    pids.map((pid) => (named?.get(pid) === undefined ? String(pid) : `${pid} (${named.get(pid)})`));
+
   logger.info('[warm-process-ledger] ending agent processes an earlier run left behind', {
-    processes: reaped.length,
-    descendants: descendants.length,
+    reaped: describe(reaped),
+    descendants: describe(descendants),
+    skipped,
   });
 
   for (const pid of reaped) probe.signal(pid, 'SIGTERM');
@@ -500,5 +591,5 @@ export async function reapOrphanedWarmProcesses(
     if (probe.signal(pid, 0)) probe.signal(pid, 'SIGKILL');
   }
 
-  return { reaped, skipped };
+  return { reaped, descendants, skipped };
 }

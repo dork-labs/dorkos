@@ -3,6 +3,7 @@ covers:
   - 'feat(server): a ledger of the warm agent processes this data directory owns (DOR-1310)'
   - 'fix(server): a force-quit no longer leaves warm agent processes running (DOR-1310)'
   - 'fix(server): the boot sweep must not let the event loop empty under it (DOR-1310)'
+  - "fix(server): a live server's warm processes are never adopted into another's ledger (DOR-1310)"
 ---
 
 ### Fixed
