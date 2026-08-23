@@ -3298,6 +3298,10 @@ export const ServerConfigSchema = z
           description:
             'True when the account registry could NOT be read (the config store threw, or was consulted before it was initialized), so `accounts` is empty because nothing could be learned rather than because nothing is registered. Absent means the list is an answer. A client must not judge an agent or session account reference against an unavailable registry — an override that cannot be verified is unknown, never wrong',
         }),
+        persistentSession: z.boolean().optional().openapi({
+          description:
+            'Whether Claude Code agents stay warm between messages (`runtimes.claudeCode.persistentSession`). Read here because the setting graduated out of Settings → Experiments and its switch now lives in the Control Center, which needs the current value to show it — the value is written through PATCH /api/config as before.',
+        }),
       })
       .optional()
       .openapi({

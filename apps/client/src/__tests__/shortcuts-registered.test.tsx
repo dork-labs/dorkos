@@ -43,6 +43,7 @@ import { useAskShortcut } from '@/layers/features/ask';
 import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
 import { useNewSessionShortcut } from '@/layers/features/dashboard-sidebar';
+import { useControlCenterShortcut } from '@/layers/widgets/control-center';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
@@ -100,6 +101,12 @@ const PROVED: Record<string, Prover> = {
   'agent-profile': () => {
     renderHook(() => useProfileShortcut());
     return press({ key: 'A', code: 'KeyA', metaKey: true, shiftKey: true });
+  },
+  'control-center': () => {
+    // Unconditional window-level chord — the hook installs its listener whatever
+    // is on screen, which is what lets the Control Center open from anywhere.
+    renderHook(() => useControlCenterShortcut());
+    return press({ key: 'p', code: 'KeyP', metaKey: true, shiftKey: true });
   },
   'answer-next-ask': () => {
     // Unconditional: the hook installs its listener whatever is waiting, which

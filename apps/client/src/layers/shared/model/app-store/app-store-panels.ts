@@ -118,6 +118,19 @@ export interface PanelsSlice {
   shortcutsPanelOpen: boolean;
   setShortcutsPanelOpen: (open: boolean) => void;
   toggleShortcutsPanel: () => void;
+
+  /**
+   * The Control Center flyout — the one top-level place to see and change the
+   * fleet's power posture (spec `full-power-defaults`, D7). Transient like every
+   * flag here: a refresh closes it.
+   *
+   * This flag is also the open-seam the full-power consent door wires its
+   * "Customize…" link to (task 2.1): a caller anywhere flips it to open the
+   * flyout, exactly as the command palette and the keyboard shortcut do.
+   */
+  controlCenterOpen: boolean;
+  setControlCenterOpen: (open: boolean) => void;
+  toggleControlCenter: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,4 +206,8 @@ export const createPanelsSlice: StateCreator<
   shortcutsPanelOpen: false,
   setShortcutsPanelOpen: (open) => set({ shortcutsPanelOpen: open }),
   toggleShortcutsPanel: () => set((s) => ({ shortcutsPanelOpen: !s.shortcutsPanelOpen })),
+
+  controlCenterOpen: false,
+  setControlCenterOpen: (open) => set({ controlCenterOpen: open }),
+  toggleControlCenter: () => set((s) => ({ controlCenterOpen: !s.controlCenterOpen })),
 });

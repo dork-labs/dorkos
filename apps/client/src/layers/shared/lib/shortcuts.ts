@@ -91,6 +91,15 @@ export const SHORTCUTS = {
     label: 'Profile',
     group: 'navigation',
   },
+  // The Control Center flyout — see and change the fleet's power at a glance
+  // (spec `full-power-defaults`, D7). `p` for power; verified free in this
+  // registry.
+  CONTROL_CENTER: {
+    id: 'control-center',
+    key: 'mod+shift+p',
+    label: 'Control Center',
+    group: 'navigation',
+  },
   // In-window tabs (DOR-540), registered by `useAppTabShortcuts` — in the
   // desktop app and nowhere else (DOR-568). The tabs they drive are a desktop
   // feature: a browser owns its own tabs, and these keys already address them

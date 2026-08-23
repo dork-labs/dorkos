@@ -1357,6 +1357,8 @@ describe('GET /api/config', () => {
         resolvedAccount: '/tmp/inherited-claude',
         inherited: true,
         accounts: [],
+        // Warm agents default on, exposed here for the Control Center switch.
+        persistentSession: true,
       });
     });
 
@@ -1392,6 +1394,8 @@ describe('GET /api/config', () => {
           { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
           { id: 'gone', path: missing, label: null, isAccountRoot: false },
         ],
+        // The warm-agents value flows through from config to the Control Center.
+        persistentSession: false,
       });
     });
 

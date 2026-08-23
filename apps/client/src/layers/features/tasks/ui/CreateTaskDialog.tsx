@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import {
   useCreateTask,
@@ -8,6 +8,9 @@ import {
 } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import { useConfig } from '@/layers/entities/config';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { operatorStopForRuntime, resolveConfiguredStopMode } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -27,6 +30,7 @@ import { TaskTemplateGallery } from './TaskTemplateGallery';
 import {
   ScheduleForm,
   buildFormValues,
+  TASK_RUNTIME,
   type ScheduleFormValues,
   type DialogStep,
 } from './TaskFormInner';
@@ -57,6 +61,21 @@ export function CreateTaskDialog({
   const { data: agentsData } = useMeshAgentPaths();
   const agents = agentsData?.agents ?? [];
 
+  // A NEW task opens at the operator's own configured stop, mapped to the task
+  // runtime's mode, rather than a hardcoded `acceptEdits` (spec
+  // `full-power-defaults`, D6). Falls back to `acceptEdits` when no stop is set
+  // or the profile has not loaded. Held in a ref so a late-arriving config does
+  // not reset a form the person is already editing — the reset below runs on
+  // open, and reads the freshest value then.
+  const { data: config } = useConfig();
+  const taskCaps = useCapabilitiesForRuntime(TASK_RUNTIME);
+  const defaultMode = resolveConfiguredStopMode(
+    operatorStopForRuntime(config?.executionDefaults, TASK_RUNTIME),
+    taskCaps?.permissionModes.values ?? []
+  );
+  const defaultModeRef = useRef(defaultMode);
+  defaultModeRef.current = defaultMode;
+
   // ── UI-only state ──
   const [step, setStep] = useState<DialogStep>(() => (editTask ? 'form' : 'preset-picker'));
   const [appliedPreset, setAppliedPreset] = useState<TaskTemplate | null>(null);
@@ -68,7 +87,7 @@ export function CreateTaskDialog({
   // formValues drives ScheduleForm defaultValues. Changing this + incrementing
   // formKey causes ScheduleForm to remount with fresh form state.
   const [formValues, setFormValues] = useState<ScheduleFormValues>(() =>
-    buildFormValues(editTask, undefined, initialAgentId)
+    buildFormValues(editTask, undefined, initialAgentId, defaultModeRef.current)
   );
   // Incrementing this key remounts ScheduleForm so useAppForm gets fresh defaultValues.
   const [formKey, setFormKey] = useState(0);
@@ -82,7 +101,7 @@ export function CreateTaskDialog({
   /* eslint-disable react-hooks/set-state-in-effect -- necessary to sync form with external state changes */
   useEffect(() => {
     if (!open) {
-      applyFormValues(buildFormValues(editTask, undefined, initialAgentId));
+      applyFormValues(buildFormValues(editTask, undefined, initialAgentId, defaultModeRef.current));
       setAppliedPreset(null);
       setDeleteConfirmOpen(false);
       setStep(editTask ? 'form' : 'preset-picker');
@@ -93,11 +112,15 @@ export function CreateTaskDialog({
       setLocalEnabled(editTask.enabled);
       setStep('form');
     } else if (initialPreset) {
-      applyFormValues(buildFormValues(undefined, initialPreset, initialAgentId));
+      applyFormValues(
+        buildFormValues(undefined, initialPreset, initialAgentId, defaultModeRef.current)
+      );
       setAppliedPreset(initialPreset);
       setStep('form');
     } else {
-      applyFormValues(buildFormValues(undefined, undefined, initialAgentId));
+      applyFormValues(
+        buildFormValues(undefined, undefined, initialAgentId, defaultModeRef.current)
+      );
       setStep('preset-picker');
     }
   }, [editTask, open, initialPreset, initialAgentId]);
@@ -107,7 +130,9 @@ export function CreateTaskDialog({
 
   useEffect(() => {
     if (externalTrigger && pendingTemplate) {
-      applyFormValues(buildFormValues(undefined, pendingTemplate, initialAgentId));
+      applyFormValues(
+        buildFormValues(undefined, pendingTemplate, initialAgentId, defaultModeRef.current)
+      );
       setAppliedPreset(pendingTemplate);
       setStep('form');
       clear();
@@ -116,7 +141,7 @@ export function CreateTaskDialog({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleSelectPreset(preset: TaskTemplate) {
-    applyFormValues(buildFormValues(undefined, preset, initialAgentId));
+    applyFormValues(buildFormValues(undefined, preset, initialAgentId, defaultModeRef.current));
     setAppliedPreset(preset);
     setStep('form');
   }

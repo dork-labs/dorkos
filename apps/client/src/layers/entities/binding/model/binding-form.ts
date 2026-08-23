@@ -93,13 +93,39 @@ export function hasNonDefaultAdvanced(vals?: Partial<BindingFormValues>): boolea
 }
 
 /**
+ * Operator-derived defaults for a NEW binding, read from config by the dialog.
+ *
+ * These land only where `initialValues` says nothing — i.e. on create. An
+ * existing binding always carries its own stored `permissionMode` and
+ * `canInitiate`, so editing one never picks these up.
+ */
+export interface BindingDefaultsOptions {
+  /**
+   * The mode a new binding opens at — the operator's configured stop mapped to
+   * the binding runtime, or `undefined` to keep the `'acceptEdits'` fall-back
+   * (spec `full-power-defaults`, D6).
+   */
+  defaultPermissionMode?: PermissionMode;
+  /**
+   * Whether a new binding pre-selects "agent can initiate messages". Set `true`
+   * only when the operator chose full power; the schema default on the wire
+   * stays `false` (this is a form pre-selection, nowhere else).
+   */
+  defaultCanInitiate?: boolean;
+}
+
+/**
  * Build TanStack Form default values from optional initial values. Unset chat
  * filters collapse to the `SELECT_ANY` sentinel that the dialog uses for
  * "no filter selected".
  *
  * @param vals - Optional partial initial values.
+ * @param options - Operator-derived defaults for a new binding (create only).
  */
-export function buildDefaultValues(vals?: Partial<BindingFormValues>) {
+export function buildDefaultValues(
+  vals?: Partial<BindingFormValues>,
+  options?: BindingDefaultsOptions
+) {
   return {
     adapterId: vals?.adapterId ?? '',
     agentId: vals?.agentId ?? '',
@@ -107,8 +133,10 @@ export function buildDefaultValues(vals?: Partial<BindingFormValues>) {
     label: vals?.label ?? '',
     chatId: vals?.chatId ?? SELECT_ANY,
     channelType: vals?.channelType ?? SELECT_ANY,
-    permissionMode: (vals?.permissionMode ?? 'acceptEdits') as PermissionMode,
-    canInitiate: vals?.canInitiate ?? false,
+    permissionMode: (vals?.permissionMode ??
+      options?.defaultPermissionMode ??
+      'acceptEdits') as PermissionMode,
+    canInitiate: vals?.canInitiate ?? options?.defaultCanInitiate ?? false,
     canReply: vals?.canReply ?? true,
     canReceive: vals?.canReceive ?? true,
     notifyOnTaskComplete: vals?.notifyOnTaskComplete ?? true,
