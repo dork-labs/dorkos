@@ -53,10 +53,26 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     expect(queueDowngradeNotice(downgraded('not-stageable'))).toBeNull();
   });
 
-  it('explains a turn that closed first', () => {
-    expect(queueDowngradeNotice(downgraded('no-open-turn'))).toBe(
-      'Queued. The task had already finished.'
+  it('says the task is still running and where the words went, claiming no ending (DOR-1315)', () => {
+    // The reported failure: a steer sent 5s into a visibly running turn came back
+    // downgraded, and the chip read "Queued. The task had already finished." The
+    // task had NOT finished — something else was running it — and the server never
+    // checked whether it had. The chip now says only what the server verified.
+    const notice = queueDowngradeNotice(downgraded('turn-owned-elsewhere'));
+    expect(notice).toBe(
+      "Couldn't cut in. Something else is running this task, so it's waiting in line."
     );
+    // No claim about the task being over, in any wording. This is the assertion
+    // the old copy failed.
+    expect(notice).not.toMatch(/finish|done|over|ended|complete/i);
+    // And no claim about WHO holds it. The lock holder is a client id: a room
+    // (`ROOMS.CLIENT_ID`), an MCP sign-in resume, or the Obsidian transport all
+    // hold turns with no window anywhere, so "another window" would be a fresh
+    // unchecked assertion in the sentence written to remove one.
+    expect(notice).not.toMatch(/window|tab|browser/i);
+    // And it is not the silent one: the words really did go to the back of the
+    // line, so staying quiet would be the DOR-1268 lie again.
+    expect(notice).not.toBeNull();
   });
 
   it('explains a turn parked on the person', () => {
@@ -69,7 +85,7 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     const reasons: NonNullable<MessageDeliveryOutcome['degradedBecause']>[] = [
       'unsupported',
       'not-steerable',
-      'no-open-turn',
+      'turn-owned-elsewhere',
       'pending-interaction',
     ];
     for (const reason of reasons) {

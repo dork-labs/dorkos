@@ -3606,7 +3606,7 @@
           "session-idle",
           "not-steerable",
           "not-stageable",
-          "no-open-turn",
+          "turn-owned-elsewhere",
           "pending-interaction"
         ]
       },
