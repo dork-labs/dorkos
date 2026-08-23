@@ -145,6 +145,7 @@ import { logger } from '../../../../lib/logger.js';
 import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
 import { validateDispatchBoundary } from '../dispatch-boundary.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
+import { isAbortedTerminalReason } from '../sdk/sdk-error-mapping.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import {
   PumpRefusedError,
@@ -425,6 +426,25 @@ function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
 function readAnsweredId(message: SDKMessage): string | undefined {
   const named = (message as { user_message_uuid?: unknown }).user_message_uuid;
   return typeof named === 'string' && named.length > 0 ? named : undefined;
+}
+
+/**
+ * Whether this `result` is the CLI reporting a turn somebody STOPPED (DOR-1319).
+ *
+ * The one thing the windower can know about a Stop. It never sees the request —
+ * `interruptGivenQuery` talks to the control channel, not to this layer — but
+ * the `result` the CLI sends back after acking one names `aborted_streaming` or
+ * `aborted_tools` as its terminal reason, and that is enough to answer the only
+ * question this layer has to ask: is a person waiting on this close?
+ *
+ * Read defensively, exactly as {@link readAnsweredId} is, and for the same
+ * reason: the field is not declared on every `result` member.
+ *
+ * @param message - The `result` closing a window
+ */
+function closesAStoppedTurn(message: SDKMessage): boolean {
+  const reason = (message as { terminal_reason?: unknown }).terminal_reason;
+  return typeof reason === 'string' && isAbortedTerminalReason(reason);
 }
 
 /**
@@ -1145,9 +1165,28 @@ export class SessionTurnWindows {
     this.closingWindows.add(closing);
   }
 
-  /** The body of {@link finish}, kept awaitable. */
+  /**
+   * The body of {@link finish}, kept awaitable.
+   *
+   * **A window closing on a STOP does not spend the accounting budget**
+   * (DOR-1319). `STOP_ACK_TIMEOUT_MS` bounds the ack and nothing else, so what
+   * a person actually waits through after pressing Stop is the ack, then the
+   * CLI's own unwind, then — on this path only — two more control round-trips
+   * against the very channel that just took the interrupt, on their own 8 s
+   * budget. That is 2.7× the Stop bound spent after the turn is already over,
+   * and it is the one segment DorkOS owns: a Stop measured at 7.6 s settled
+   * with its streaming already stopped 7.5 s earlier, so the operator watched a
+   * live-looking turn with a Stop button on it and nothing moving.
+   *
+   * What skipping costs is one turn's context breakdown and one utilization
+   * reading. Neither is lost for long — the next window's close fetches both,
+   * and the strip simply holds its previous values until then — and the money
+   * figure is not involved at all, because `total_cost_usd` rides on the
+   * `result` itself. Weighed against a person waiting on their composer, that
+   * is not a close call.
+   */
   private async settle(record: WindowRecord, result: SDKMessage): Promise<void> {
-    await this.fetchUsage();
+    if (!closesAStoppedTurn(result)) await this.fetchUsage();
     record.channel.push(result);
     record.channel.end();
     // Only a window a dispatch opened has a pump turn behind it. A runtime

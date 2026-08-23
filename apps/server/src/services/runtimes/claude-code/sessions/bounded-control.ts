@@ -74,6 +74,45 @@
 export const STOP_ACK_TIMEOUT_MS = 3_000;
 
 /**
+ * **What this bound does NOT bound** (DOR-1319).
+ *
+ * It bounds the ACK, and only the ack. What a person waits through after
+ * pressing Stop is three segments end to end, and DorkOS owns one of them:
+ *
+ * | Segment                      | Bounded by                                     |
+ * | ---------------------------- | ---------------------------------------------- |
+ * | request sent → ack           | {@link STOP_ACK_TIMEOUT_MS}                    |
+ * | ack → the CLI's own `result` | nothing here; it is the CLI winding down       |
+ * | that `result` → `turn_end`   | on the pump, the closing window's accounting   |
+ *
+ * The clock on the first segment starts at the true send:
+ * {@link awaitControlAck} invokes the request itself and arms the timer in the
+ * same synchronous block, so there is no queue-then-measure gap to blame. What
+ * the clock cannot see is a starved event loop — the timer rides the same loop
+ * the ack does, so under real load the bound inflates along with everything
+ * else, and no clock inside this process can subtract that out. The stop path
+ * therefore MEASURES the ack and says so when it ran long
+ * ({@link STOP_ACK_SLOW_MS}), which is what makes a slow Stop attributable
+ * afterwards instead of guessed at.
+ *
+ * The third segment used to be the largest: two control round-trips on their
+ * own 8 s budget, run after the turn was already over. A window closing on a
+ * stopped turn now skips them (`sessions/session-turn-windows.ts`).
+ */
+
+/**
+ * How long a stop's ack may take before it is worth a line in the log.
+ *
+ * A healthy interrupt is answered in milliseconds, so a full second is already
+ * far outside normal and a third of the bound that follows it. Below this the
+ * latency is recorded at debug and nothing more; above it, the log names the
+ * number — so a Stop that took seconds can be split into "the CLI was slow to
+ * hear us" and "the CLI was slow to wind down" from the log alone, which is the
+ * question a 7.6 s Stop left unanswerable (DOR-1319).
+ */
+export const STOP_ACK_SLOW_MS = 1_000;
+
+/**
  * How long a live permission-mode change may go unanswered before `PATCH
  * /api/sessions/:id` stops waiting on it.
  *

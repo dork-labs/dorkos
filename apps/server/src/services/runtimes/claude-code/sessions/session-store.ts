@@ -29,6 +29,7 @@ import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
   awaitControlAck,
   PERMISSION_MODE_ACK_TIMEOUT_MS,
+  STOP_ACK_SLOW_MS,
   STOP_ACK_TIMEOUT_MS,
   type ControlAck,
 } from './bounded-control.js';
@@ -677,7 +678,24 @@ export class SessionStore {
       });
       return this.closeStoppedQuery(session, query);
     }
+    // Measured, because the bound alone never said where a slow Stop went
+    // (DOR-1319). A Stop seen at 7.6 s could have been a 3 s ack plus a 4.5 s
+    // unwind, or a fast ack and a very slow unwind, and nothing on record could
+    // tell the two apart — so nobody could say whether the number to change was
+    // this bound or something else entirely.
+    const askedAt = Date.now();
     const ack: ControlAck = await awaitControlAck(() => query.interrupt(), STOP_ACK_TIMEOUT_MS);
+    const ackMs = Date.now() - askedAt;
+    if (ackMs >= STOP_ACK_SLOW_MS) {
+      logger.warn('[interruptQuery] the stop took a long time to be heard', {
+        sessionId,
+        ack,
+        ackMs,
+        boundMs: STOP_ACK_TIMEOUT_MS,
+      });
+    } else {
+      logger.debug('[interruptQuery] stop acked', { sessionId, ack, ackMs });
+    }
     if (ack === 'acked') return true;
     logger.warn('[interruptQuery] the graceful interrupt did not take; closing the process', {
       sessionId,

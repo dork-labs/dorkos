@@ -69,6 +69,23 @@ function errorResultMessage(): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/**
+ * The `result` the CLI sends once it has acked an interrupt and wound down:
+ * an error subtype, and a terminal reason naming the abort.
+ */
+function stoppedResultMessage(answers: string): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    terminal_reason: 'aborted_streaming',
+    errors: ['[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null'],
+    uuid: `result-stopped-${answers}`,
+    session_id: 'sdk-1',
+    user_message_uuid: answers,
+  } as unknown as SDKMessage;
+}
+
 /** The model saying something — the content a window is supposed to carry. */
 function textDeltaMessage(text: string): SDKMessage {
   return {
@@ -814,6 +831,44 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     // the observer really was called.
     expect(h.closedWindows).toHaveLength(1);
     expect(h.pump.state).toBe('running');
+  });
+});
+
+describe('SessionTurnWindows — a stopped turn ends without waiting on accounting (DOR-1319)', () => {
+  it('closes a stopped window while the control channel is held, asking it nothing', async () => {
+    // `holdControls` parks every control answer indefinitely, which is the
+    // whole experiment: it stands in for the channel that took 4.5s to answer
+    // after a Stop under load. An ordinary close parks here for its full
+    // accounting budget; a stopped one must not spend any of it.
+    const h = harness();
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    h.live().holdControls = true;
+
+    h.live().emit(textDeltaMessage('starting on it'));
+    h.live().emit(stoppedResultMessage('m1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.types.at(-1)).toBe('turn_end');
+    // Never asked, not merely not awaited. Nothing is parked, so nothing could
+    // have been holding the person's composer.
+    expect(h.live().parkedControls).toBe(0);
+    expect(h.live().contextUsageCalls).toBe(0);
+    expect(h.live().subscriptionUsageCalls).toBe(0);
+    expect(h.usages).toEqual([]);
+  });
+
+  it('still fetches the accounting for a turn that finished on its own', async () => {
+    // The other half: skipping is gated on the abort reason, so an ordinary
+    // close keeps the per-window breakdown it has always had.
+    const h = harness();
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    h.live().emit(resultMessage('m1'));
+
+    await settled(h, 1);
+    expect(h.live().contextUsageCalls).toBe(1);
+    expect(h.usages).toHaveLength(1);
   });
 });
 
