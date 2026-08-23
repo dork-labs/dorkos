@@ -3172,6 +3172,9 @@ export class RoomService {
    * - **No such entry here** → `ENTRY_NOT_FOUND`, scoped to this room so an id
    *   from elsewhere cannot attach a reaction to a message in a room the caller
    *   cannot see.
+   * - **A turn somebody STOPPED** → `TURN_WAS_STOPPED`, DOR-1426. The same
+   *   refusal `post_to_room` keeps, on the other thing a stopped turn can still
+   *   do here, and it only ever reaches an agent.
    *
    * @param roomId - The room.
    * @param entryId - The entry being reacted to.
@@ -3197,6 +3200,29 @@ export class RoomService {
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     if (!this.store.getEntryById(roomId, entryId)) {
       throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
+    }
+    // **A stopped turn does not react either** (DOR-1426, closing the named
+    // limit of DOR-1313). A reaction writes no entry and takes no turn, which is
+    // why the stop mark was first put on `post_to_room` alone — but a room that
+    // has just been told everything in it was stopped, and then watches the
+    // stopped agent thumbs-up the conversation, has been told something untrue.
+    // The mark is the same `(room, agent)` one, with the same lifetime: it is
+    // lifted by the next claim there, so the agent reacts again the moment the
+    // room gives it another turn.
+    //
+    // Asked BEFORE the budget for the same reason every other refusal is: a
+    // caller that is going to be refused must not have an allowance taken off it
+    // on the way out. People are never marked — a claim belongs to an agent —
+    // so this never reaches whoever pressed Stop.
+    if (this.triggers.stoppedIn(roomId, viewerAuthorId)) {
+      logger.info('[rooms] refused a stopped turn a reaction', {
+        roomId,
+        authorId: viewerAuthorId,
+      });
+      throw new RoomError(
+        'TURN_WAS_STOPPED',
+        'This conversation was stopped, so nothing more from this turn lands here. Wait for the next message before reacting.'
+      );
     }
     // Asked LAST of the refusals, and after the entry check, because it is the
     // only one that SPENDS something: a caller that was going to be refused for

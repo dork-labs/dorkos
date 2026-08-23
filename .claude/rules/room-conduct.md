@@ -255,8 +255,16 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   And a halt followed straight away by a new message lifts the mark for the LIVE
   turn, so an old stopped turn still running can post inside that window.
   Neither is closable without holding the mark against the live turn as well,
-  which is the mute this must not become. Reactions are outside all of it: a
-  stopped turn can still leave a pill, which writes no entry.
+  which is the mute this must not become. **Reactions are inside it too, since
+  DOR-1426.** They were left out on the reasoning that a reaction writes no
+  entry and takes no turn — but a room that has just been told everything in it
+  was stopped, and then watches the stopped agent put a pill on the
+  conversation, has been told something untrue. `toggleReaction` asks the same
+  `stoppedIn` mark, with the same lifetime and the same room scope, and refuses
+  with the same `TURN_WAS_STOPPED`. It is asked before the reaction budget, so a
+  refusal never costs an allowance, and it can only ever reach an agent: a claim
+  belongs to one, so the person who pressed Stop is never refused a reaction of
+  their own.
   What is NOT discarded is the spend — a turn that ran a model has spent, and
   `tryReserve` still has no counterpart — nor the turn's own session transcript,
   where a person can still read what it was saying.
