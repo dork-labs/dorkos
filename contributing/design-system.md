@@ -462,14 +462,17 @@ Usage: `import { toast } from 'sonner'` then `toast('message')` or `toast.error(
 
 ### Banners
 
-Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — telemetry consent, a waiting update, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
+Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — an agent running unattended, a waiting update, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
+
+**A banner states a fact; it does not ask a question.** The first-run telemetry invitation used to live here and was moved off it (spec `full-power-defaults` D5): a yes/no question in a slot built for standing conditions just sits above every route until someone answers it. One-time questions belong on the moments rail below. The canonical banner today is the unattended-autonomy one (`UnattendedAutonomyBanner`) — a condition that is true right now and stops being true on its own.
 
 **A banner is the second voice, so it needs the fact to be worth two.** The all-permissions-bypassed banner was retired for this reason (spec `trust-dial`, decision 3A): the status strip already carried the word and the tint for a session the person was sitting in front of, and two alarms about one fact teach people to read neither. Ask what the banner says that the surface the person is looking at does not.
 
 **Banner vs toast:**
 
-- **Banner** — a condition that is _still true_ right now (permissions bypassed, an update is waiting, consent not yet given). Persistent, dismiss only when it makes sense.
+- **Banner** — a condition that is _still true_ right now (an agent running unattended, an update waiting, the connection lost). Persistent, dismiss only when it makes sense.
 - **Toast** — a moment that just _happened_ (run triggered, save failed). Transient, auto-dismisses.
+- **Moment** — a one-time question that has to be answered once and then never again (see below). Modal, at most one per app launch.
 
 **One slot, one banner.** App-wide banners render through a single `AppBannerSlot` mounted just below the shell header (`widgets/app-banner`). It ranks eligible banners by priority and shows only the highest — never a stack. Add one by writing a `BannerDescriptor` hook (`id`, `priority`, `variant`, `render`) and appending it in `useAppBanners`; use `BANNER_PRIORITY` for the standard ladder. See ADR 260720-151913.
 
@@ -480,9 +483,21 @@ Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing c
 | `critical` | An error blocking the user right now                 | `role="alert"`  |
 | `warning`  | A risky standing state (e.g. usage near its ceiling) | `role="status"` |
 | `info`     | A neutral heads-up                                   | `role="status"` |
-| `neutral`  | Announcements and consent (the default)              | `role="status"` |
+| `neutral`  | Announcements (the default)                          | `role="status"` |
 
-There is **no `success` banner** — a success is a toast. Colors come from the `--status-*` tokens, so light/dark and the Obsidian bridge stay correct. Pass `onDismiss` only for a dismissible banner; pass `details` + `detailsOpen` for a collapsible progressive-disclosure region (as the telemetry banner does with its payload).
+There is **no `success` banner** — a success is a toast. Colors come from the `--status-*` tokens, so light/dark and the Obsidian bridge stay correct. Pass `onDismiss` only for a dismissible banner; pass `details` + `detailsOpen` for a collapsible progressive-disclosure region. The telemetry banner was its only production user before it became a moment, so the working example is now the Dev Playground showcase (`dev/showcases/BannerShowcases.tsx`) rather than a shipped surface.
+
+### Moments (one-time modals)
+
+A **moment** is a question the app asks once and then never again: consent, a new default that needs a decision. It is not a banner — a banner states a condition and waits for it to resolve, and a question parked in one just sits above every route until somebody answers it. Moments ride `widgets/moments`, which is to modals what `AppBannerSlot` is to banners.
+
+- **Eligibility lives in the descriptor hook, not on the descriptor.** Write a hook that returns a `MomentDescriptor` (`id`, `priority`, `render`) when the moment should be asked and `null` when it should not, then append its result in `useMoments` — no other wiring. Returning `null` is what makes an ineligible moment structurally unable to occupy the winning slot.
+- **`MomentHost` opens exactly one**, the highest `priority` (`MOMENT_PRIORITY`), ties going to collector order. Never a stack.
+- **At most one moment per app launch**, latched by a non-persisted flag in the app store. A reload is a new launch; anything else waits for it.
+- **Never over the onboarding overlay**, and never before onboarding is finished or dismissed. Staying quiet does not spend the launch.
+- **Never off a cache the server has not confirmed this page load.** `['config','current']` is on the warm-boot persister's allow-list and, inside its 30s staleTime, a reload can serve it without asking the server. The host waits for `isFetchedAfterMount` before opening anything, because re-asking a question already answered in another window — and then overwriting the real answer — is worse than asking one launch later.
+- **Focus the dialog, never the affirmative button.** The host sets `onOpenAutoFocus` to focus the content container, so the title and description are announced before any control and no keystroke lands on a consent button the reader has not reached.
+- **Persistence is the moment's own concern**, through a real state field it already owns (telemetry's is `telemetry.userHasDecided`). Do not add a `shownMoments` ledger — a parallel record only drifts from the thing it mirrors.
 
 ### Command (cmdk)
 

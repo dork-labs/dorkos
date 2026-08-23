@@ -1,25 +1,7 @@
-import { useConfig } from '@/layers/entities/config';
 import { useUnattendedAutonomy } from '@/layers/entities/unattended-autonomy';
-import { TelemetryConsentBanner } from '@/layers/features/telemetry-consent';
 
 import { UnattendedAutonomyBanner } from '../ui/UnattendedAutonomyBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
-
-/**
- * First-run telemetry-consent descriptor — neutral severity, eligible until the
- * user makes an explicit telemetry choice. Mirrors the gate inside
- * {@link TelemetryConsentBanner} so an ineligible banner never suppresses others.
- */
-function useTelemetryBannerDescriptor(): BannerDescriptor | null {
-  const { data: config } = useConfig();
-  if (config?.telemetry?.userHasDecided) return null;
-  return {
-    id: 'telemetry-consent',
-    variant: 'neutral',
-    priority: BANNER_PRIORITY.neutral,
-    render: () => <TelemetryConsentBanner />,
-  };
-}
 
 /**
  * Unattended-autonomy descriptor — info severity, eligible whenever at least one
@@ -68,10 +50,18 @@ function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
  * on the server (`services/core/unattended-autonomy/`), which is why
  * this hook reads one small aggregate and no lists.
  *
+ * ## The telemetry banner that used to live here
+ *
+ * The first-run telemetry invitation was a neutral banner in this slot. It is
+ * now a one-time modal on the moments rail (`widgets/moments`, spec
+ * `full-power-defaults` D5): it asks a yes/no question, and this slot is for
+ * standing conditions, not questions — so it sat above every route for as long
+ * as the user kept not answering it. Nothing about the question or what it
+ * writes changed; only where it is asked.
+ *
  * @param sessionId - The active session id, or null when none is selected.
  */
 export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
-  const telemetry = useTelemetryBannerDescriptor();
   const unattended = useUnattendedAutonomyDescriptor();
-  return [telemetry, unattended].filter((d): d is BannerDescriptor => d !== null);
+  return [unattended].filter((d): d is BannerDescriptor => d !== null);
 }

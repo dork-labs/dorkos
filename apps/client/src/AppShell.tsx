@@ -32,6 +32,7 @@ import { useTasksSync } from '@/layers/entities/tasks';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
+import { MomentHost } from '@/layers/widgets/moments';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
 import {
   DashboardSidebar,
@@ -690,6 +691,10 @@ export function AppShell() {
           )}
         </AnimatePresence>
         <DialogHost />
+        {/* The moments rail — one-time modals, at most one per app launch. It
+            is told whether the onboarding overlay is up rather than working it
+            out, because the shell owns that overlay and its latch. */}
+        <MomentHost onboardingOverlayVisible={showOnboarding} />
         <FeedbackDialogHost />
         <CommandPaletteDialog />
         <CreateAgentDialog />

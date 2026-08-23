@@ -131,7 +131,7 @@ To turn it on, set `telemetry.aiMetadata: true` in your config (or use the **Pri
 
 ## Debug tracing (a separate, local-only flag)
 
-`dorkos --debug-trace` is a diagnostics tool, not part of the telemetry above, and it isn't covered by the opt-in banner: it's a per-run flag you choose to add when you're troubleshooting something, most often because we asked you to when you report a bug.
+`dorkos --debug-trace` is a diagnostics tool, not part of the telemetry above, and it isn't covered by the opt-in dialog: it's a per-run flag you choose to add when you're troubleshooting something, most often because we asked you to when you report a bug.
 
 When it's on, DorkOS writes a local file recording how long things took: session turns, agent calls, relay messages, and task runs, plus counts. It never records your prompts, your code, file paths, or anything else you typed. The file is written to `~/.dork/traces/` and never leaves your machine unless you attach it to a bug report yourself; there is no network sender for it at all.
 
@@ -171,7 +171,7 @@ dorkos telemetry enable --channel heartbeat  # turn on just one (install | heart
 dorkos telemetry disable --channel errors    # turn off just one
 ```
 
-`status` tells you each channel's state, whether a kill switch is overriding it, and whether you have already made a choice. `enable` and `disable` write your choice to `~/.dork/config.json` so the first-run banner never asks again.
+`status` tells you each channel's state, whether a kill switch is overriding it, and whether you have already made a choice. `enable` and `disable` write your choice to `~/.dork/config.json` so the first-run dialog never asks again.
 
 ## Preview the exact payload before it sends
 
@@ -183,7 +183,7 @@ DORKOS_TELEMETRY_DEBUG=1 dorkos
 
 ## How to turn it off (or back on)
 
-The first time you open DorkOS, a banner discloses that it shares anonymous data and shows you the payload above, with a **Keep sharing** and a **Turn off** button. To change it later, open settings (there's a **Privacy & Data** tab with a switch for each channel), use `dorkos telemetry` above, or edit `~/.dork/config.json`:
+The first time you open DorkOS, a dialog asks whether you want to share anonymous data and shows you the payload above, with a **No thanks** and a **Share anonymously** button. Nothing is sent until you pick one. To change it later, open settings (there's a **Privacy & Data** tab with a switch for each channel), use `dorkos telemetry` above, or edit `~/.dork/config.json`:
 
 ```json
 {

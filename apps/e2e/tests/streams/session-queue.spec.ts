@@ -92,9 +92,9 @@ test.describe('the queue every window can see', () => {
     await request.patch(`${API_URL}/api/config`, {
       data: {
         onboarding: { dismissedAt: new Date().toISOString() },
-        // The consent banner is a modal, and the second window is the one that
-        // gets it — a window opened after the first has to answer it before it
-        // can reach anything, including the queue this test is about.
+        // The first-run consent question is a modal, and the second window is the
+        // one that gets it — a window opened after the first has to answer it
+        // before it can reach anything, including the queue this test is about.
         telemetry: { userHasDecided: true },
       },
     });

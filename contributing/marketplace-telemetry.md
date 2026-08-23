@@ -14,7 +14,7 @@ A user installs a marketplace package. Their DorkOS client checks `telemetry.ins
 
 There is no Redis cache layer, no queue, no fan-out worker. The Edge Function makes one synchronous insert and returns 200. The `/marketplace` and `/marketplace/[slug]` pages read aggregate counts at hourly ISR refresh time via a single `GROUP BY` query — also through Drizzle. One ORM, one mental model, one storage tier.
 
-The pipeline is opt-in by default. The DorkOS client never reports anything until the user explicitly flips `telemetry.install` to `true` in `~/.dork/config.json` or via the first-run consent banner. The heartbeat sibling channel (`telemetry.heartbeat`) shares the same consent namespace and anonymous instance id; see `contributing/configuration.md` → `### telemetry` and `docs/self-hosting/telemetry.mdx`.
+The pipeline is opt-in by default. The DorkOS client never reports anything until the user explicitly flips `telemetry.install` to `true` in `~/.dork/config.json` or via the first-run consent dialog (a one-time modal on the moments rail, `apps/client/src/layers/widgets/moments/`). The heartbeat sibling channel (`telemetry.heartbeat`) shares the same consent namespace and anonymous instance id; see `contributing/configuration.md` → `### telemetry` and `docs/self-hosting/telemetry.mdx`.
 
 ## 2. Required Vercel integration
 

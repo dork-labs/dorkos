@@ -53,7 +53,6 @@ vi.mock('../ui/PackageDetailSheet', () => ({
 vi.mock('../ui/InstallConfirmationDialog', () => ({
   InstallConfirmationDialog: () => <div data-testid="install-dialog" />,
 }));
-vi.mock('../ui/TelemetryConsentBanner', () => ({ TelemetryConsentBanner: () => null }));
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
