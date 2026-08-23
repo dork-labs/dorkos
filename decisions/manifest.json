@@ -2,6 +2,70 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260823-200729",
+      "slug": "state-driven-version-free-legacy-migration",
+      "title": "State-driven, version-free legacy migration with a sunset",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "extractedFrom": "universal-scheduled-tasks",
+      "specSlug": "universal-scheduled-tasks",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/tasks/legacy-migration.ts",
+        "apps/server/src/services/tasks/schedule-permission-clamp.ts",
+        "apps/server/src/index.ts"
+      ]
+    },
+    {
+      "id": "260823-200728",
+      "slug": "skill-frontmatter-unifies-on-claude-codes-dialect",
+      "title": "Skill frontmatter unifies on Claude Code's dialect",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "extractedFrom": "universal-scheduled-tasks",
+      "specSlug": "universal-scheduled-tasks",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/skills/src/schema.ts",
+        "packages/skills/src/task-schema.ts",
+        "packages/skills/src/command-schema.ts",
+        "apps/server/src/services/runtimes/codex/scan-skill-commands.ts"
+      ]
+    },
+    {
+      "id": "260823-200726",
+      "slug": "file-discovered-schedules-never-auto-arm",
+      "title": "File-discovered schedules never auto-arm",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "extractedFrom": "universal-scheduled-tasks",
+      "specSlug": "universal-scheduled-tasks",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/tasks/task-store.ts",
+        "apps/server/src/services/tasks/schedule-permission-clamp.ts"
+      ]
+    },
+    {
+      "id": "260823-200724",
+      "slug": "schedulability-is-a-frontmatter-property",
+      "title": "Schedulability is a frontmatter property, not a directory",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "extractedFrom": "universal-scheduled-tasks",
+      "specSlug": "universal-scheduled-tasks",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/tasks/task-file-watcher.ts",
+        "apps/server/src/services/tasks/task-reconciler.ts",
+        "apps/server/src/index.ts"
+      ]
+    },
+    {
       "id": "260823-021312",
       "slug": "interrupt-receipts-are-a-typed-vocabulary",
       "title": "Every stop-shaped verb answers with a typed interrupt receipt, and DorkOS never settles a turn it did not observe end",
