@@ -1,0 +1,784 @@
+# Full Power by Default — task breakdown
+
+**Spec:** `specs/full-power-defaults/02-specification.md`
+**Slug:** `full-power-defaults`
+**Tracker:** DOR-1431 · project "Full Power by Default"
+**Mode:** full
+**Generated:** 2026-08-23T00:12:35.122Z
+
+Seven pull requests, one per task, each worktree-isolated, each adversarially reviewed before the PR opens, each merged through the queue.
+
+| Task | Title                                                                                   | Size   | Depends on | Parallel with |
+| ---- | --------------------------------------------------------------------------------------- | ------ | ---------- | ------------- |
+| 1.1  | Land the spec, the design record and the four proposed ADRs                             | small  | —          | 1.2, 1.3, 1.4 |
+| 1.2  | Build the moments rail and move telemetry consent onto it                               | large  | —          | 1.1, 1.3, 1.4 |
+| 1.3  | Flip the safety-neutral defaults and resolve unattended power from the operator's stop  | xl     | —          | 1.1, 1.2, 1.4 |
+| 1.4  | Make full power read green and reserve red for alarms                                   | medium | —          | 1.1, 1.2, 1.3 |
+| 2.1  | Build the full-power consent door and its existing-user moment                          | large  | 1.2, 1.3   | 2.2           |
+| 2.2  | Build the Control Center flyout and default the unattended forms to the operator's stop | xl     | 1.3        | 2.1           |
+| 3.1  | Add the onboarding power stage                                                          | medium | 2.1        | —             |
+
+**Governing invariant (A1): nothing consent-gated flips silently.** The recommended, pre-selected, one-click path leads to full power; the flips are written by the consent door's accept. The server-enforced `428 AUTONOMY_ACK_REQUIRED` gate is untouched, and no migration writes a consent-gated value.
+
+---
+
+## Phase 1 — Independent foundations
+
+All four run in parallel. Task 1.1 is documentation only; 1.2, 1.3 and 1.4 touch disjoint code except for one small expected conflict in `use-app-banners.tsx` between 1.2 and 1.4.
+
+### Task 1.1: Land the spec, the design record and the four proposed ADRs
+
+- **Subject:** `[full-power-defaults] [P1] Land the spec, the design record and the four proposed ADRs`
+- **Size:** small · **Priority:** high
+- **Depends on:** nothing
+- **Parallel with:** 1.2, 1.3, 1.4
+
+Land the "Full Power by Default" planning artifacts as a **documentation-only** pull request, so every later PR in the program has a merged contract to point at. No source code changes at all.
+
+### What to commit
+
+These files already exist in the repository working tree (`specs/full-power-defaults/` is untracked, the four ADR files are untracked, and both manifests are modified). Move them into your worktree and commit them there:
+
+- `specs/full-power-defaults/01-ideation.md` — id `260822-235213`, frontmatter `status: ideation`
+- `specs/full-power-defaults/02-specification.md` — id `260822-235213`, frontmatter `status: specified`
+- `specs/full-power-defaults/design-decisions.md` — the delegated-decision record (decision 1 made by Dorian interactively; decisions 2–6 delegated, each with reasoning so any can be overruled cheaply)
+- `specs/full-power-defaults/03-tasks.json` and `specs/full-power-defaults/03-tasks.md` — this decomposition
+- `decisions/260822-235759-consent-led-default-flipping.md`
+- `decisions/260822-235800-one-time-modals-ride-a-moments-rail.md`
+- `decisions/260822-235801-green-means-full-power-red-means-alarm.md`
+- `decisions/260822-235802-unattended-surfaces-follow-the-operator-level.md`
+- `decisions/manifest.json` — already carries the four new entries, each `"status": "proposed"`, `"extractedFrom": "full-power-defaults"`, `"specSlug": "full-power-defaults"`, `"amends": null`, `"supersedes": null`
+- `specs/manifest.json` — already carries `{ "id": "260822-235213", "slug": "full-power-defaults", "status": "specified", "project": "Full Power by Default" }`
+
+### What NOT to commit
+
+`plans/room-turn-limits-overhaul.md` is an unrelated untracked file sitting in the same working tree. Sweeping it in would land somebody else's draft. Check `git status` before you stage.
+
+### Invariants to check before pushing
+
+- Each ADR file's frontmatter (`id`, `title`, `status: proposed`, `created: 2026-08-22`, `spec: full-power-defaults`) agrees exactly with its entry in `decisions/manifest.json`. A drifted title between the two is the classic manifest defect.
+- The spec manifest entry's status stays `specified`. Implementation has not started, and `/flow` reads that field to decide the stage.
+- **No `04-*` file exists in `specs/full-power-defaults/`.** Any `04-*` file in a spec directory auto-promotes the spec's manifest status to `implemented`, which is why the decision record is named `design-decisions.md` rather than `04-design-decisions.md`. Do not rename it.
+- Markdown tables are left exactly as Prettier formatted them. Re-padding a shared markdown table by hand is how these files conflict.
+
+### Acceptance criteria
+
+- [ ] All twelve files above are committed on a branch based on `origin/main`.
+- [ ] `git diff --stat origin/main` shows changes only under `specs/` and `decisions/` — nothing under `apps/`, `packages/`, or `scripts/`.
+- [ ] `plans/room-turn-limits-overhaul.md` is absent from the diff.
+- [ ] Every ADR is `status: proposed` in both the file and the manifest.
+- [ ] `/spec:audit` reports no drift between `specs/manifest.json` and the filesystem.
+- [ ] The PR carries the `skip-changelog` label.
+
+### Program note on the changelog gate
+
+This PR is documentation for DorkOS builders, not a user-facing change, so it takes the `skip-changelog` label rather than a fragment (`changelog/README.md`: "a change only a DorkOS _builder_ notices … takes the `skip-changelog` label instead"). Fragment **validity** is never bypassed by that label — if you do write a fragment, its `covers:` block must still parse.
+
+### Verification
+
+```bash
+pnpm verify                                                # affected-only; a docs-only diff touches no package
+python3 .claude/scripts/changelog_backfill.py --validate    # every fragment on disk still parses
+git diff --stat origin/main                                # confirm the diff is docs-only
+```
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+### Task 1.2: Build the moments rail and move telemetry consent onto it
+
+- **Subject:** `[full-power-defaults] [P1] Build the moments rail and move telemetry consent onto it`
+- **Size:** large · **Priority:** high
+- **Depends on:** nothing
+- **Parallel with:** 1.1, 1.3, 1.4
+
+Build a generalized **moments rail** — a registry of one-time modals, arbitrated the way the app-banner slot arbitrates banners — mount it in the app shell, move telemetry consent onto it as its first moment, and delete the telemetry banner. The full-power door is the rail's second consumer and is **not** built here (task 2.1). The rail must be finished enough that adding the door later is one descriptor hook plus one line in the collector.
+
+### New module: `apps/client/src/layers/widgets/moments/`
+
+FSD widgets layer. It may import features, entities and shared; nothing imports it except the app shell.
+
+- `model/moment-descriptor.ts` — a `MOMENT_PRIORITY` ladder constant plus:
+
+  ```ts
+  export interface MomentDescriptor {
+    /** Stable identity — drives the host's render key. */
+    id: string;
+    /** Higher wins. Use MOMENT_PRIORITY. */
+    priority: number;
+    /** Renders the modal body; the host owns open/close state. */
+    render: (props: { onClose: () => void }) => ReactNode;
+  }
+  ```
+
+  Model it directly on `apps/client/src/layers/widgets/app-banner/model/banner-descriptor.ts`, which is the pattern being mirrored (`BANNER_PRIORITY: Record<BannerVariant, number>` plus `BannerDescriptor { id, priority, variant, render }`).
+
+  **There is no `shouldShow(ctx)` method on the object.** Eligibility is decided by the descriptor **hook** returning `null`, exactly as `useTelemetryBannerDescriptor` does today in `apps/client/src/layers/widgets/app-banner/model/use-app-banners.tsx:13-22`. Keep that convention — it is what makes an ineligible moment structurally unable to suppress an eligible one, which is the bug the banner slot's docblock says it was written to avoid.
+
+- `model/use-moments.tsx` — the collector: one descriptor hook per moment, results filtered for `null`, returned as an array. Same "append here, no other wiring is required" shape as `useAppBanners` (`use-app-banners.tsx:66-70`), and say so in its docblock.
+- `ui/MomentHost.tsx` — renders the single winning moment inside a shadcn `Dialog` from `@/layers/shared/ui`.
+- `index.ts` — barrel exporting `MomentHost`, `useMoments`, `MomentDescriptor`, `MOMENT_PRIORITY`, with a module-level `@module widgets/moments` TSDoc block.
+- `__tests__/` — arbitration tests (below).
+
+### Arbitration contract (the part that must be exactly right)
+
+1. Rank eligible descriptors by `priority`; highest wins; ties break on collector order. Exactly one is rendered — never a stack.
+2. **At most one moment is shown per app launch.** Once a moment has been shown, no other moment may open for the rest of this page life. Hold that latch as a plain session flag in the Zustand app store (`apps/client/src/layers/shared/model/app-store/`) — **not persisted**: no `localStorage`, no config field. A reload is a new launch.
+3. Never render while the onboarding overlay is mounted.
+4. Never render while onboarding is incomplete and undismissed — that is `config.onboarding.completedAt == null && config.onboarding.dismissedAt == null`. Both fields are on `OnboardingStateSchema` (`packages/shared/src/config-schema.ts:119`); `completedAt` is the authoritative "the first-run flow is finished" signal and `dismissedAt` records a deliberate skip of the getting-started helper.
+5. **Persistence is each moment's own concern**, expressed through a real state field the moment already owns — the same rule every banner descriptor follows. Do **not** add a `shownMoments` array to config or to the store. A parallel ledger drifts from the truth it is supposed to mirror, and there is nothing it can record that the moment's own state field cannot.
+
+### Moment 1 — telemetry consent (priority `low`)
+
+Eligible when `config.telemetry?.userHasDecided !== true` — the same gate the banner descriptor uses today.
+
+Render the banner's content as a modal, keeping the copy and the affordances:
+
+- The invitation: "DorkOS sends us nothing unless you say so. Want to share a daily "I'm alive" ping and install counts? Never your prompts, code, or files."
+- The "See what's sent" disclosure — `TelemetryPayloadToggle` + `TelemetryPayloadBlock`, both already exported from `@/layers/entities/config` and both untouched by this change.
+- The full-contract link to `https://dorkos.ai/telemetry`.
+- Two buttons: **No thanks** (outline) and **Share anonymously** (primary), both disabled while the write is in flight.
+
+**The writes must not change.** Copy them across byte-for-byte from `apps/client/src/layers/features/telemetry-consent/ui/TelemetryConsentBanner.tsx` and pin them with a test:
+
+```ts
+// decline
+updateConfig.mutate({
+  telemetry: { install: false, heartbeat: false, usage: false, userHasDecided: true },
+});
+// share
+updateConfig.mutate({
+  telemetry: { install: true, heartbeat: true, usage: true, userHasDecided: true },
+});
+```
+
+Both actions write every channel they cover, so a "yes" is never silently narrower than it looks — that is the component's own stated contract and the test is what keeps it true after the move.
+
+**`telemetry.lastPromptedVersion` stays server-written.** The banner never wrote it; the server's first-run notice path does (`apps/server/src/index.ts:743`). Do not start stamping it from the client. `hasTier1SendGate` (`packages/shared/src/telemetry-consent.ts:122`) opens the send gate on **either** `userHasDecided === true` **or** a non-null `lastPromptedVersion`, so a client-side stamp would open the telemetry gate for somebody who never answered. _(Logged assumption: the spec's phrase "stamped as the consent surfaces already do" is read as "keep the existing behavior", which is that this surface does not stamp it.)_
+
+### Retire the banner — no dead code
+
+- Delete `apps/client/src/layers/features/telemetry-consent/ui/TelemetryConsentBanner.tsx`.
+- Delete `apps/client/src/layers/features/telemetry-consent/__tests__/TelemetryConsentBanner.test.tsx` (its assertions move into the moment's test).
+- Remove `useTelemetryBannerDescriptor` and its element of the `useAppBanners` return array (`use-app-banners.tsx:13-22, 67, 69`). `useAppBanners` keeps the unattended-autonomy descriptor and its docblock's explanation of the banner that used to live there.
+- Update `apps/client/src/layers/features/telemetry-consent/index.ts`. If the feature ends up exporting nothing, delete the module and remove every import of it; if the moment's UI lives there instead, the barrel exports that.
+- `apps/client/src/layers/widgets/app-banner/__tests__/AppBannerSlot.test.tsx` uses a locally-built `fakeDescriptor('telemetry', 'neutral')` fixture — that is a string, not an import, and can stay.
+- Run `pnpm knip` (after building dists) and confirm nothing is orphaned.
+
+### Mount point
+
+`apps/client/src/AppShell.tsx` mounts its trailing host block around line 692: `<DialogHost />`, `<FeedbackDialogHost />`, `<CommandPaletteDialog />`, `<CreateAgentDialog />`, `<ImportProjectsDialog />`, `<ShortcutsPanel />`, `<Toaster />`, `<PipHost />`, `<TourHost />`. Add `<MomentHost />` beside `<DialogHost />` in that block. The banner slot stays where it is (`<AppBannerSlot descriptors={appBanners} />`, ~line 643). Embedded mode (Obsidian) bypasses the router and never mounts `AppShell`, so no moment work is needed there.
+
+### Tests (`apps/client/src/layers/widgets/moments/__tests__/`)
+
+- **Priority**: two eligible descriptors → only the higher-priority one renders.
+- **One per launch**: after a moment renders and is closed, a second eligible descriptor does not open in the same page life; a fresh store resets the latch.
+- **Onboarding suppression**: overlay mounted → nothing renders; `completedAt` and `dismissedAt` both null → nothing renders; `completedAt` set → eligible.
+- **Null-safety**: a descriptor hook returning `null` never suppresses an eligible one.
+- **Telemetry moment**: renders while undecided; the two buttons send exactly the payloads above; `userHasDecided: true` makes it ineligible.
+- Client tests use React Testing Library + jsdom with a mock `Transport` supplied through `TransportProvider` (`.claude/rules/testing.md`).
+
+### Acceptance criteria
+
+- [ ] `widgets/moments` exists with descriptor, collector, host, barrel and tests; nothing outside it knows how arbitration works.
+- [ ] `MomentHost` is mounted in `AppShell` beside `DialogHost`.
+- [ ] At most one moment renders per page life, enforced by a non-persisted store flag.
+- [ ] Telemetry consent renders as a modal with unchanged writes, pinned by a test.
+- [ ] `TelemetryConsentBanner`, its test, and its banner descriptor are gone; `pnpm knip` finds nothing orphaned.
+- [ ] Adding a second moment requires one hook plus one line in the collector — demonstrated by a test that appends a fake descriptor.
+
+### Verification
+
+```bash
+pnpm vitest run apps/client/src/layers/widgets/moments
+pnpm vitest run apps/client/src/layers/widgets/app-banner
+pnpm vitest run apps/client/src/layers/features/telemetry-consent   # expect "no test files" once retired
+pnpm --filter @dorkos/client typecheck
+pnpm --filter @dorkos/client lint
+pnpm knip
+pnpm verify
+```
+
+Browser-verify the modal in the running cockpit as well: jsdom cannot see a Radix focus race, and this repo has already been bitten by a menu close blur-cancelling the surface it just opened.
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+### Task 1.3: Flip the safety-neutral defaults and resolve unattended power from the operator's stop
+
+- **Subject:** `[full-power-defaults] [P1] Flip the safety-neutral defaults and resolve unattended power from the operator's stop`
+- **Size:** xl · **Priority:** high
+- **Depends on:** nothing
+- **Parallel with:** 1.1, 1.2, 1.4
+
+The server-and-shared half of the program: two new config fields, one new onboarding step id, two safety-neutral default flips, the `0.66.0` migration, the three build-enforced classification registries, and the ladder that makes tasks and the scheduler start at the operator's own power level instead of a hardcoded `'acceptEdits'`.
+
+**Governing invariant A1 — nothing consent-gated flips silently.** Nothing in this PR may write `runtimes.defaultTrustStop`, `ui.autonomyAcknowledgedAt`, `approvals.standingGrants`, a mesh access rule, or `canInitiate`. Those are written only by the consent door's accept (task 2.1). A reviewer finding any of them in this diff should treat it as a defect.
+
+---
+
+### A. New config fields (`packages/shared/src/config-schema.ts`)
+
+- `ui.fullPowerDecidedAt: z.string().datetime().nullable().default(null)` — the ISO timestamp when the person answered the power door, **either way**. This is the single "answered" signal for both the onboarding stage and the modal.
+- `ui.fullPowerChoice: z.enum(['full', 'supervised']).nullable().default(null)` — what they chose. `'supervised'` followed later by acceptance from the Control Center is a normal path; the door itself never re-asks once `fullPowerDecidedAt` is set.
+
+Declare both beside `ui.autonomyAcknowledgedAt` (per-field declaration at `:1354`).
+
+**The two-declaration rule, and why it bites.** `conf` merges top-level defaults **shallowly**, so every new field must be declared **twice**: once per-field on the Zod schema, and once inside that section's object-literal default (the block carrying `autonomyAcknowledgedAt: null` at `:1375`). The per-field default feeds fresh installs; the object literal feeds upgrades. Declaring one and not the other is a silent disagreement between the two paths. `packages/shared/src/__tests__/config-schema.test.ts` holds full object-literal fixtures (around lines 112, 465, 703, 729) — extend each.
+
+**Onboarding step id.** Add `'power'` to `ONBOARDING_STEPS` at `packages/shared/src/config-schema.ts:114` (currently `['meet-dorkbot', 'profile', 'discovery']`). Widening the enum is additive — previously stored arrays still parse and no scrub migration is needed, which is what the constant's own docblock says about the earlier addition of `'profile'`. The `0.55.0` migration's `scrubRetiredOnboardingSteps` removes an explicit retired list (`'tasks'`, `'adapters'`), so widening cannot change what it deletes — confirm that by reading the body before you touch the enum, because `contributing/configuration.md` warns that changing `ONBOARDING_STEPS` moves no migration hash pin and the guard will therefore not catch it for you.
+
+### B. Changed defaults (safety-neutral only)
+
+- **`runtimes.claudeCode.persistentSession`: `false → true`.** Per-field declaration at `packages/shared/src/config-schema.ts:1232`, and **both** object-literal defaults that carry it (`:1939` and `:2020`). Update all three or the declarations disagree.
+- **Graduate it out of the experiments registry.** Delete the `runtimes.claudeCode.persistentSession` entry (the one with `graduationIssue: 'DOR-1290'`) from `EXPERIMENTS` in `apps/server/src/services/core/config/experiments-registry.ts`. That module's own docblock states the contract — "Graduating a flag means deleting its entry in the same change that flips the default" — and `apps/server/src/services/core/config/__tests__/experiments-registry.test.ts` enforces that every listed path defaults to `false`, so leaving it listed turns the suite red. The `a2a.enabled` entry stays. An emptier registry is the success state, and the Experiments section already says so in plain words when it finds fewer entries. The setting's user-facing switch reappears in the Control Center (task 2.2) — it must not vanish from the product.
+- **`scheduler.maxConcurrentRuns`: default `1 → 4`.** Per-field at `packages/shared/src/config-schema.ts:1426` (bounds `.int().min(1).max(10)` unchanged) and the section's object-literal default at `:1432`.
+
+### C. Migration, key `0.66.0` (`apps/server/src/services/core/config-manager.ts`)
+
+Append a **new** key `'0.66.0'` to `CONFIG_MIGRATIONS` (`:2633`). `'0.65.0'` is the newest merged key; never extend a key that has already merged, tagged or not.
+
+Body — additive, idempotent, every `store.set` guarded by `store.has()`:
+
+1. Seed `ui.fullPowerDecidedAt: null` and `ui.fullPowerChoice: null` when absent.
+2. Bump `scheduler.maxConcurrentRuns` `1 → 4`, **only** when the stored value is exactly `1`.
+3. Bump `runtimes.claudeCode.persistentSession` `false → true`, **only** when the stored value is exactly `false`.
+
+**Why steps 2 and 3 are needed at all:** `conf` builds Ajv with `useDefaults`, so a declared default is written only where the key is **absent**. The `0.59.0` backfill already wrote `persistentSession: false` into upgraded configs, so the schema flip alone would reach nobody who has upgraded.
+
+**Record the honest caveat in the migration comment.** Both values are indistinguishable from an explicit user choice of the old default, because both shipped at that value. The comment says so deliberately; the changelog fragment names it in plain words; the Control Center makes both discoverable and revertible.
+
+**Pin the hash in the same pull request.** Add a `'0.66.0'` line to `apps/server/src/services/core/__tests__/merged-migration-hashes.ts`. The append-only guard (`__tests__/migration-append-only.ts` + `.test.ts`) fails until you do — a pin added later leaves a window in which the body could be rewritten with nothing to show for it. Run the guard, read the expected hash out of the failure, paste it in.
+
+Follow `contributing/configuration.md` §"Step-by-step: adding a new config field" and the `adding-config-fields` skill end to end. That guide is a process to follow, not a file to edit.
+
+### D. The three registries that fail the build on an unclassified leaf
+
+**`apps/server/src/services/core/safe-defaults/default-verdicts.ts`**
+
+- Add `'ui.fullPowerDecidedAt'` and `'ui.fullPowerChoice'` to `NO_RISK_DEFAULTS`. They are records of an answer: they send nothing off the machine, grant no capability, and enforce no bound.
+- **Move `'runtimes.claudeCode.persistentSession'` out of `NO_RISK_DEFAULTS`** (it sits there today around line 203 with a long comment arguing that `false` is capability-neutral) **into `PERMISSIVE_DEFAULTS`** as `{ value: true, reason: '…' }`. The reason must be concrete: a warm agent holds a process open between messages — same executable, same permissions, same per-dispatch boundary check — so nothing about what it may DO changes; the real cost is memory, bounded in code by the warm ceiling (at most 12 warm, about 1 GB each worst case) and the idle reaper, and revertible from the Control Center. "It is convenient" is not a reason, and the guard rejects an empty one.
+- **Move `'scheduler.maxConcurrentRuns'` out of `SAFE_DEFAULTS`** (currently `1`, around line 267) **into `PERMISSIVE_DEFAULTS`** as `{ value: 4, reason: '…' }`: four concurrent scheduled runs instead of one moves a resource throttle off the floor of its own declared range (1–10). It is not a capability grant — nothing about what a run may do changes — and it stays inside bounds the schema already enforces.
+- `PERMISSIVE_DEFAULTS` records the value it really ships with, and the drift guard compares that against `USER_CONFIG_DEFAULTS` (`packages/shared/src/config-schema.ts:2172`). A wrong `value` fails the build.
+- `__tests__/default-verdicts.test.ts` fails when a leaf appears in none of the three lists, when it appears in two, when a permissive entry has no real reason, or when a listed path is not a leaf at all.
+
+**`apps/server/src/services/core/operator/config-disclosure.ts`** — classify `'ui.fullPowerDecidedAt'` and `'ui.fullPowerChoice'` as `'expose'`, matching their neighbour `'ui.autonomyAcknowledgedAt': 'expose'` (`:175`). `'scheduler.maxConcurrentRuns'` (`:201`) and `'runtimes.claudeCode.persistentSession'` (`:333`) already have entries and keep them. An unclassified field used to be exposed the moment it was added with nothing complaining; that inversion is what this registry exists for.
+
+**`apps/server/src/services/core/operator/config-write-policy.ts`** — classify both new fields as **`operator-only`**, for exactly the reason `'ui.autonomyAcknowledgedAt': 'operator-only'` (`:251`) is: they record that a **person** answered a consent question, and a field an agent can write is a consent record an agent can forge. `'scheduler.maxConcurrentRuns'` is `agent-writable` today (`:289`) and stays that way — this program does not change who may write it.
+
+### E. Unattended surfaces resolve the operator's stop (server half)
+
+**New exported helper in `apps/server/src/services/session/resolve-session-defaults.ts`: `resolveUnattendedDefaultStop()`.**
+
+- Answers a `PermissionStop | null`: the per-runtime `runtimes.<section>.defaultTrustStop` where a runtime is known and declares a config section, else the global `runtimes.defaultTrustStop`, else `null`.
+- Reuse the module's existing pieces: `isRuntimesConfigSection` narrows a runtime-declared section onto a real config key (a section this build has no key for is skipped, never thrown on), and the stored config is read as `configManager?.get('runtimes')` with the same optional chaining the module already documents — `configManager` is a `let` that is undefined until `initConfigManager` runs, and a missing setting is a reason to fall through, never a reason to refuse.
+- **It answers a stop, not a mode.** Translating a stop into a runtime mode id is `resolveTrustStops` from `@dorkos/shared/permission-semantics` — the same function the dial renders from, so a resolved default lands on exactly the mode the dial would show as selected, including the first-declared rule where a runtime declares two modes at one stop (Claude Code's `acceptEdits` before `auto`). Never re-derive that mapping.
+- **Do not disturb `resolveSessionDefaults`'s existing guard**: it answers a permission tier only for a caller that hands it the runtime's declared modes, which is what keeps an attended-session default out of rooms and relay bindings. That rule survives this change untouched.
+
+**Tasks (`packages/shared/src/schemas.ts` + `apps/server/src/routes/tasks.ts`)**
+
+- Remove the hardcoded `.default('acceptEdits')` from `CreateTaskRequestSchema.permissionMode` at `packages/shared/src/schemas.ts:3953`; it becomes `PermissionModeSchema.optional()`.
+- In `POST /` (`apps/server/src/routes/tasks.ts:252` onward), resolve an omitted `permissionMode` through the ladder immediately after `parseBody`, once, into a single local value every downstream read uses (`:319` frontmatter, `:342` the trusted bypass patch, `:357` the DB fallback insert): the operator's stop from `resolveUnattendedDefaultStop()`, mapped through the target runtime's capability profile via `resolveTrustStops`, **falling back to `'acceptEdits'` when the stop is unset** — byte-for-byte today's behavior for anyone who never accepted the door.
+- `refusedOperatorOnlyTaskWrite` reads the **raw** body before `parseBody` precisely so it can tell a caller that sent the field from one that did not. Removing the Zod default does not change that guard's behavior, but its docblock (`apps/server/src/routes/tasks.ts:105-108`) explains itself in terms of the default that is going away. Rewrite that prose so the next reader is not misled.
+- `frontmatter.permissions` is written only when the mode is set and is not `'acceptEdits'` (`:319`). Keep the resolved value flowing through it so a non-default choice still lands in the file on disk.
+- **The schedule-permission clamp is untouched.** `apps/server/src/services/tasks/schedule-permission-clamp.ts` refuses a file-declared or marketplace-sourced `bypassPermissions` — downloaded content can never introduce it. The single after-the-fact un-clamp at `:342` still requires `trusted && data.permissionMode === 'bypassPermissions'`. Add or keep a regression test proving a file-sourced schedule still clamps after this change.
+- Task `permissionMode` stays `operator-only` in `apps/server/src/services/tasks/task-write-policy.ts`. Agents cannot raise their own power; nothing here changes that.
+
+**Scheduler** — `apps/server/src/services/tasks/task-scheduler-service.ts:661` reads `const permissionMode = (task.permissionMode ?? 'acceptEdits') as PermissionMode;`. Resolve the `??` branch through the same helper, keeping `'acceptEdits'` as the final fallback when nothing is configured.
+
+### F. Explicitly out of scope (the stay-locked list)
+
+No change to: `extensions.approvedToRun` / `extension-load-policy.ts`; MCP and A2A auth or exposure guards (`mcp-auth.ts`, `exposure-guard.ts`, `DORKOS_ALLOW_INSECURE_BIND`); `a2a.enabled`; the marketplace/content schedule clamp; `task-write-policy.ts`; telemetry channel defaults; `mesh.scanRoots`; the approval TTL ceiling; `ManagedMcpServerSchema.enabled`; any runtime's `permissionModes.default` capability declaration. No weakening of `428 AUTONOMY_ACK_REQUIRED` on `PATCH /api/sessions/:id` (`apps/server/src/routes/sessions.ts:580-593`) or on `PATCH /api/config` (`apps/server/src/services/core/operator/config-write.ts:308`). `AdapterBinding.permissionMode` keeps its `'default'` schema default and `canInitiate` keeps its schema default `false` (`packages/shared/src/relay-adapter-schemas.ts:611, :621`) — the operator-facing pre-selection lands in task 2.2, in the form only.
+
+### Tests
+
+- **Migration `0.66.0`**, through a real `ConfigManager` and a real file. Follow the pattern in `apps/server/src/services/core/__tests__/config-persistent-session-migration.test.ts`: `vi.hoisted` sets `DORKOS_VERSION_OVERRIDE` **before** `lib/version.ts` loads, because `conf` selects a migration only when its key is `<= projectVersion` — a test that skips this passes while exercising nothing. A mock store never crosses the `conf`/Ajv seam and `UserConfigSchema.parse` cannot substitute (Zod strips unknown keys where Ajv rejects them). Cases: fresh install lands on the new values; an upgraded config carrying `maxConcurrentRuns: 1` / `persistentSession: false` is bumped; a config carrying `7` / `true` is left alone; a second run is a no-op; the upgraded file still validates.
+- A guard test that the per-field and object-literal declarations agree for every new and changed default.
+- `default-verdicts.test.ts` green with the moved entries and their recorded `value`s.
+- `experiments-registry.test.ts` green with the entry deleted.
+- `resolveUnattendedDefaultStop`: global set; per-runtime override wins; neither set → `null`; a runtime with no config section still reads the global stop.
+- Task create: omitted mode with no configured stop → exactly `'acceptEdits'` (byte-for-byte regression); omitted with the operator at `'autonomy'` → the target runtime's autonomy mode id; an explicit mode from a trusted caller is untouched; an agent-originated body naming `permissionMode` is still refused 403.
+- Clamp regression: a file-sourced schedule declaring `bypassPermissions` is still clamped.
+- Consent-gate regression: `PATCH /api/config` naming `runtimes.defaultTrustStop: 'autonomy'` **without** an acknowledgment still answers `428 AUTONOMY_ACK_REQUIRED`.
+- Server session-route tests use `FakeAgentRuntime` and the scenarios from `@dorkos/test-utils` where sessions are touched.
+
+### Acceptance criteria
+
+- [ ] Both new `ui` fields exist with both declarations, and are classified in all three registries.
+- [ ] `'power'` is in `ONBOARDING_STEPS`; no scrub migration was added or altered.
+- [ ] `persistentSession` defaults `true` in all three declaration sites and its experiments entry is gone.
+- [ ] `scheduler.maxConcurrentRuns` defaults `4` in both declaration sites, bounds unchanged.
+- [ ] `'0.66.0'` exists, is idempotent, touches no consent-gated value, and is pinned in `merged-migration-hashes.ts` in this same PR.
+- [ ] `resolveUnattendedDefaultStop()` is exported, TSDoc'd, and used by both the task route and the scheduler.
+- [ ] With no configured stop, a task created without `permissionMode` still lands on `'acceptEdits'`.
+- [ ] `docs/api/openapi.json` regenerated (removing a Zod default changes the emitted schema; the `openapi-fresh` job compares the PR merged with `main`).
+- [ ] `docs/` guides touching permissions, onboarding or telemetry updated to match, in `writing-for-humans` voice.
+
+### Verification
+
+```bash
+pnpm --filter @dorkos/shared build     # dists first — a stale dist causes false-red type errors
+pnpm vitest run packages/shared/src/__tests__/config-schema.test.ts
+pnpm vitest run apps/server/src/services/core/__tests__/config-manager.test.ts
+pnpm vitest run apps/server/src/services/core/__tests__/migration-append-only.test.ts
+pnpm vitest run apps/server/src/services/core/__tests__/migration-safety.test.ts
+pnpm vitest run apps/server/src/services/core/safe-defaults/__tests__/default-verdicts.test.ts
+pnpm vitest run apps/server/src/services/core/config/__tests__/experiments-registry.test.ts
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-disclosure.test.ts
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-write-policy.test.ts
+pnpm vitest run apps/server/src/routes/__tests__/tasks-write-policy.test.ts
+pnpm docs:export-api                   # refresh docs/api/openapi.json
+pnpm --filter @dorkos/shared typecheck && pnpm --filter @dorkos/shared lint
+pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint
+pnpm verify
+```
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+### Task 1.4: Make full power read green and reserve red for alarms
+
+- **Subject:** `[full-power-defaults] [P1] Make full power read green and reserve red for alarms`
+- **Size:** medium · **Priority:** medium
+- **Depends on:** nothing
+- **Parallel with:** 1.1, 1.2, 1.3
+
+Invert the color story: green celebrates full power, neutral-plus-a-lock marks the limited modes, amber stays informational for divergence, and red is reserved for genuine alarms (quarantine, unreadable rules, errors, destructive confirmations elsewhere). Pure presentation and copy — no behavior, no writes, no schema.
+
+**The substrate rule is non-negotiable: every styling decision is derived from permission SEMANTICS, never from a mode id.** `packages/shared/src/permission-semantics.ts` exports `warnTier`, `isDivergent`, `isUnattendedAutonomy`, `needsConsentRitual` and `resolveTrustStops`; those are the inputs. A `mode === 'bypassPermissions'` comparison anywhere in this diff is a defect.
+
+**A recorded deviation from the literal brief, already decided.** The brief said "when it's not fully autonomous, it's locked — that should be the red mode." Ask-first is styled **neutral with a lock affordance** instead. Making the safe resting state red would shame the cautious choice and spend the alarm color on a non-alarm — the exact mistake the Auto-mode dialog's own comment documents ("Spending the alarm colour here is what taught people to stop reading it") — and it fails the no-dark-patterns filter in `AGENTS.md`. The lock **iconography** honors the "locked" mental model; red does not. This is flagged as overrulable, so do not quietly re-litigate it in the diff.
+
+### The six surfaces
+
+**1. `apps/client/src/layers/shared/ui/trust-dial.tsx` — `captionTone` (~line 365).** Today:
+
+```ts
+if (warnTier(descriptor) === 'danger') return 'text-red-600 dark:text-red-400';
+if (isDivergent(descriptor)) return 'text-amber-600 dark:text-amber-400';
+return 'text-muted-foreground';
+```
+
+Change the first branch so the autonomy stop reads **positive green** — `text-emerald-600 dark:text-emerald-400`, or the design system's success token if `apps/client/src/index.css` declares one (prefer the token). Divergence stays amber; ask stays `text-muted-foreground`. **Rewrite the function's docblock**, which currently says "red for the one combination a person cannot walk back" — the prose has to move with the color or the next reader trusts a comment that is now false.
+
+**2. `apps/client/src/layers/features/status/ui/PermissionModeItem.tsx:163`** — `currentIsDangerous ? 'text-red-500' : ''`. Replace the red with a stop-derived tint: autonomy → the same green token; ask → muted with a lock affordance. The "Limited" framing belongs in the popover copy, **not** in the strip word — the strip keeps the mode's own label. Keep the existing `hover:`, `transition-` and `disabled:` classes exactly as they are.
+
+**3. `apps/client/src/layers/features/status/ui/AutonomyConfirmDialog.tsx` (:152-153, :161)** — `ShieldOff` tinted `text-red-500` (danger) or amber. Replace with a ⚡ (`Zap` from `lucide-react`) in the green presentation. **The honest fact lines stay verbatim** — "This never pauses to ask. Whatever it decides to do, it does." — restyled tone-neutral, stated as fact rather than fear. The confirm button uses the primary/green treatment.
+
+**4. `apps/client/src/layers/shared/ui/unattended-autonomy-dialog.tsx` (:88-89, :120)** — the same treatment. `ShieldOff` with `danger ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'` becomes the ⚡-green presentation, and the confirm button's red override `{...(danger ? { className: 'bg-red-600 hover:bg-red-700 focus:ring-red-600' } : {})}` goes away. No confirm button in this program uses `bg-red-600`. Shared copy for both dialogs lives in `apps/client/src/layers/shared/ui/consent-ritual-copy.ts` — reword there once rather than in two components.
+
+**5. `apps/client/src/layers/features/settings/ui/runtimes/GlobalTrustRow.tsx` (:151-176)** — the standing note carrying `data-testid="default-trust-stop-standing-note"`. `text-red-600 dark:text-red-400` → green; the `ShieldOff` icon → ⚡; the copy "New sessions run without asking" → **"New sessions run at full power"**, and the per-runtime variant likewise. Keep the trailing "— change" button and its exact undo behavior (it undoes the shared choice when that is the one at autonomy, plus every per-runtime override that is). **Keep the `data-testid`** so the assertions already guarding this promise keep guarding it.
+
+**6. `apps/client/src/layers/widgets/app-banner/ui/UnattendedAutonomyBanner.tsx`** — `variant="warning"` → `variant="info"`, `icon={ShieldOff}` → ⚡, and the copy reframed matter-of-fact: **"Running unattended at full power: {names}"** replacing "…run without asking. Nobody is watching, so nothing waits for your approval." Post-flip this is a normal expected state, not an alarm. It stays **non-dismissible** (the condition is standing, not an announcement), still names up to two drivers and counts the rest (`NAMED_LIMIT = 2`), and still offers the Integrations / Tasks actions. The descriptor in `apps/client/src/layers/widgets/app-banner/model/use-app-banners.tsx:30-39` sets `variant: 'warning'` and `priority: BANNER_PRIORITY.warning` — move **both** to `info`, because the descriptor's `variant` deliberately mirrors the rendered banner's.
+
+### What stays red
+
+Quarantine and unreadable-rules signals, error states, and destructive confirmations elsewhere in the app. Do not sweep those; the point of this change is that red means something again.
+
+All copy passes the `writing-for-humans` standard: plain enough for a smart 9th grader who doesn't code.
+
+### Coordination note
+
+Task 1.2 also edits `use-app-banners.tsx` (removing the telemetry descriptor). Expect a small conflict there and resolve it by keeping both changes.
+
+### Tests
+
+- `apps/client/src/layers/features/status/__tests__/PermissionModeItem.test.tsx` — update the tone assertions to the semantics-derived tint.
+- `apps/client/src/layers/widgets/app-banner/__tests__/UnattendedAutonomyBanner.test.tsx` — new variant, new copy, still non-dismissible, still truncates past two drivers.
+- Settings tests covering `default-trust-stop-standing-note` — new copy, same test id, same undo behavior.
+- Add a test asserting no confirm button in the touched dialogs carries a `bg-red-*` class.
+- `apps/client/src/dev/showcases/TrustDialShowcases.tsx` still renders every stop; refresh it if a variant is now misleading (`maintaining-dev-playground` skill).
+
+### Acceptance criteria
+
+- [ ] The autonomy stop reads green on the dial caption, the status strip, the settings standing note, both consent dialogs and the unattended banner.
+- [ ] Ask-first is neutral with a lock affordance; nothing shames the cautious choice.
+- [ ] Amber still marks divergence only.
+- [ ] No `bg-red-600` confirm button remains in the touched dialogs; no new mode-id comparison was introduced.
+- [ ] `data-testid="default-trust-stop-standing-note"` survives.
+- [ ] The docblock on `captionTone` describes the colors it now returns.
+
+### Verification
+
+```bash
+pnpm vitest run apps/client/src/layers/features/status/__tests__/PermissionModeItem.test.tsx
+pnpm vitest run apps/client/src/layers/widgets/app-banner/__tests__/UnattendedAutonomyBanner.test.tsx
+pnpm vitest run apps/client/src/layers/shared/ui/__tests__
+pnpm vitest run apps/client/src/layers/features/settings/__tests__
+pnpm --filter @dorkos/client typecheck
+pnpm --filter @dorkos/client lint
+pnpm verify
+```
+
+Browser-verify in the running cockpit: jsdom cannot see color, and a Radix menu close can blur-cancel the dialog it just opened — the status-strip → mode popover → confirm-dialog path has to be walked in a real browser.
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+---
+
+## Phase 2 — The door and the center
+
+Both run in parallel once phase 1 has landed. 2.1 needs the rail (1.2) and the new config fields (1.3); 2.2 needs 1.3.
+
+### Task 2.1: Build the full-power consent door and its existing-user moment
+
+- **Subject:** `[full-power-defaults] [P2] Build the full-power consent door and its existing-user moment`
+- **Size:** large · **Priority:** high
+- **Depends on:** 1.2, 1.3
+- **Parallel with:** 2.2
+
+Build the one consent door — the single surface that turns on full power — and put it in front of existing users as a one-time modal on the moments rail. The same component is reused by the onboarding stage in task 3.1, so its content lives in the component, not in the host.
+
+**Needs task 1.2** (the moments rail exists and `useMoments` accepts a new descriptor hook) and **task 1.3** (`ui.fullPowerDecidedAt` and `ui.fullPowerChoice` exist in the config schema, are classified, and are writable through `PATCH /api/config`).
+
+**No server change at all.** Every write in this PR goes through an endpoint that already exists, under a contract that already exists.
+
+### New feature module: `apps/client/src/layers/features/full-power-door/`
+
+FSD features layer: it may import entities and shared, never widgets, and never another feature's `model/`.
+
+**Content** — one component, two hosts. Keep the copy here so the modal and the onboarding stage can never drift; let the host pass the one heading that differs (modal: "DorkOS runs at full power"; onboarding: "Choose your power level").
+
+- Title: **DorkOS runs at full power**
+- A plain-language list of what that means, four lines: _runs without asking_ · _agents message each other across projects_ · _approvals stick_ · _scheduled runs at your power level_
+- Primary button, green: **Unlock full power**
+- Secondary button: **Keep asking me first**
+- Tertiary link: **Customize…**
+- An honest scope note — reuse `PermissionModeScopeNote` from `apps/client/src/layers/shared/ui/permission-mode-scope-note.tsx`. Do not write a second scope sentence.
+- A link into Settings for the person who wants the whole surface.
+- All copy passes `writing-for-humans`. Nothing shames the person who picks "Keep asking me first."
+
+### Accept — the write sequence
+
+Two steps, in this order. The first is **one atomic request**.
+
+**Step 1 — `PATCH /api/config` via `useUpdateConfig` from `@/layers/entities/config`, with a single body:**
+
+```ts
+{
+  ui: {
+    autonomyAcknowledgedAt: new Date().toISOString(),
+    fullPowerDecidedAt: new Date().toISOString(),
+    fullPowerChoice: 'full',
+  },
+  runtimes: { defaultTrustStop: 'autonomy' },
+  approvals: { standingGrants: true },
+}
+```
+
+The acknowledgment must ride in the **same** request as the stop. The server refuses `runtimes.defaultTrustStop: 'autonomy'` without a recorded acknowledgment (`428 AUTONOMY_ACK_REQUIRED`, enforced in `apps/server/src/services/core/operator/config-write.ts:308`), so two requests would race — the stop could land first and bounce. This is exactly the contract `confirmAutonomy` already keeps in `apps/client/src/layers/features/settings/model/use-trust-stop-writes.ts`, whose comment reads "One request, not two… Any refactor that splits this is a defect." **You cannot import that hook** — it lives in another feature's `model/` and cross-feature model imports are forbidden by the FSD rules — so re-create the one-patch shape here and pin it with a test.
+
+On success, invalidate the `configKeys.all` **prefix**, not a single key: the status bar, the sidebar badges and `useFeatureEnabled` read config off a broader key set, and the server applies the default live, so every reader has to move with the write.
+
+**Step 2 — `PUT /api/mesh/topology/access` with `{ sourceNamespace: '*', targetNamespace: '*', action: 'allow' }`.** Use `useSetOpenMesh` from `@/layers/entities/mesh` (`.mutate(true)`) — the same path `OpenMeshSwitch` uses, which already does the optimistic flip, the rollback on failure and the refetch.
+
+**Partial failure is reported, never rolled back.** If step 2 fails after step 1 succeeded, say so plainly in the door: the config flips are real and they stay, only the mesh did not open, and the Control Center shows the true mesh state. Do **not** try to undo step 1 — silently reverting a consent the person just gave is worse than one honest sentence. If step 1 fails, step 2 never fires.
+
+### Decline, deferral, customize
+
+- **Decline** ("Keep asking me first") writes **only** `{ ui: { fullPowerDecidedAt: <ISO>, fullPowerChoice: 'supervised' } }`. Nothing else changes anywhere. Never asked again.
+- **Deferral** — the modal's X — writes **nothing**. The moment re-arbitrates on the next app launch. (In the onboarding host, task 3.1, deferral is a skip and records `skippedSteps` through the existing step semantics.)
+- **Customize…** records `{ ui: { fullPowerDecidedAt: <ISO>, fullPowerChoice: 'supervised' } }` and then opens the Control Center. The door never re-asks once `fullPowerDecidedAt` is set; choosing supervised now and moving to full power later from the Control Center is a normal, supported path — the granularity that a checklist-shaped door would have offered lives there.
+  _Logged assumption:_ task 2.2 (Control Center) may not have landed when this branch is written. If it has not, wire "Customize…" to open Settings → Runtimes and leave a single TODO-free follow-up line in the PR description; whichever of 2.1/2.2 merges second re-points it at the Control Center. Do not leave a lingering `TODO` in the source.
+
+### The existing-user moment
+
+Append one descriptor hook to the collector built in task 1.2, `apps/client/src/layers/widgets/moments/model/use-moments.tsx` — appending to the collector is the only wiring required:
+
+- id `'full-power-door'`, priority **high** (it outranks the telemetry moment, which is `low`).
+- Eligible when **all** hold: config is loaded; onboarding is over (`config.onboarding.completedAt ?? config.onboarding.dismissedAt` is non-null); `config.ui.fullPowerDecidedAt === null`.
+- The rail's own rules already suppress it while the onboarding overlay is mounted and already cap the app at one moment per launch — do not re-implement either.
+- A widgets-layer descriptor rendering a features-layer component is the allowed direction (`widgets → features`).
+
+This mirrors `use-profile-prompt.ts` in the onboarding feature, which is the proven existing-user re-ask idiom in this codebase: a nullable timestamp plus an "onboarding already over" gate.
+
+### Out of scope
+
+The `428` gates, the schedule-permission clamp, the write policies, and the whole stay-locked list are untouched. No schema default flips here — the consent-gated values are written by this accept and by nothing else (invariant A1).
+
+### Tests (`apps/client/src/layers/features/full-power-door/__tests__/` and the moments tests)
+
+- **Accept** sends exactly **one** config PATCH whose body carries all five keys, including `ui.autonomyAcknowledgedAt` — assert the whole body shape — and then the mesh PUT with `* → *` allow.
+- **Mesh failure after a successful config write**: the door shows the partial-success message, does not re-issue the config write, and does not roll it back.
+- **Config failure**: the mesh call never fires.
+- **Decline** writes only the two `ui` keys; nothing else appears in the body.
+- **Deferral** writes nothing at all.
+- **Customize** records `'supervised'` and opens the Control Center (or Settings, per the assumption above).
+- **Moment eligibility**: `fullPowerDecidedAt === null` + onboarding over → eligible; `fullPowerDecidedAt` set → never eligible again; onboarding incomplete and undismissed → not eligible.
+- Client tests use React Testing Library + jsdom with a mock `Transport` through `TransportProvider`.
+- **E2E** (`apps/e2e/tests/`, `browser-testing` skill): the modal appears once for an install with `fullPowerDecidedAt: null` and never returns after either answer.
+
+### Acceptance criteria
+
+- [ ] One component renders the door; the modal host passes only the heading.
+- [ ] Accept = one atomic config PATCH (ack + both decision fields + stop + standing grants), then the mesh PUT.
+- [ ] Partial mesh failure is reported honestly and nothing is rolled back.
+- [ ] Decline writes exactly two fields; deferral writes zero.
+- [ ] The moment shows once, never after an answer, never during onboarding.
+- [ ] No server file changed in this PR.
+- [ ] No cross-feature model import (the FSD lint rule is an error, not a warning).
+
+### Verification
+
+```bash
+pnpm vitest run apps/client/src/layers/features/full-power-door
+pnpm vitest run apps/client/src/layers/widgets/moments
+pnpm vitest run apps/client/src/layers/entities/mesh/__tests__/open-mesh.test.tsx
+pnpm --filter @dorkos/client typecheck
+pnpm --filter @dorkos/client lint
+pnpm verify
+```
+
+Browser-verify in the running cockpit before opening the PR: launch with a config whose `ui.fullPowerDecidedAt` is `null`, accept, and confirm the dial, the mesh switch and the standing-grants switch all read the new state.
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+### Task 2.2: Build the Control Center flyout and default the unattended forms to the operator's stop
+
+- **Subject:** `[full-power-defaults] [P2] Build the Control Center flyout and default the unattended forms to the operator's stop`
+- **Size:** xl · **Priority:** high
+- **Depends on:** 1.3
+- **Parallel with:** 2.1
+
+Give the product one obvious top-level place to see and change its power posture — a Control Center flyout with the global dial, the power switches and an honest overrides ledger — and make the two unattended creation forms start from the operator's own power level instead of a hardcoded `'acceptEdits'`.
+
+**Needs task 1.3** (`ui.fullPowerChoice` exists; `persistentSession` has left the experiments registry and needs its new home; `scheduler.maxConcurrentRuns` defaults to 4). Independent of the door (task 2.1) — the ledger and the switches read state that already exists.
+
+### New widget: `apps/client/src/layers/widgets/control-center/`
+
+FSD widgets layer, so it may import features, entities and shared.
+
+**Entry points — three of them**
+
+1. **A persistent ⚡ glyph in the app chrome.** Candidate anchor: the sidebar header row, `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarHeaderBlock.tsx` (the `<SidebarHeader className="gap-2 px-2 py-3">` at `:139`). Finalize the exact anchor against the live layout — open the cockpit and look — and make sure it is reachable on a phone too: the mobile cockpit is `MobileTabsLayout`, mounted as a sibling of the sidebar provider in `apps/client/src/AppShell.tsx`. The glyph is icon-only, so it needs an `aria-label`.
+2. **A command-palette entry**, contributed the way the palette's existing actions are (`apps/client/src/layers/features/command-palette/model/use-palette-actions.ts`, `palette-contributions.ts`).
+3. **A keyboard shortcut**, registered through the app's existing shortcut layer and listed in `ShortcutsPanel` so it is discoverable.
+
+**Surface**: shadcn `Popover` on desktop, `Sheet` on small viewports, both from `@/layers/shared/ui`. Contents in this order:
+
+**1. The global Trust Dial.** The shared `trust-dial` component (`apps/client/src/layers/shared/ui/trust-dial.tsx`) writing through `useTrustStopWrites` (`apps/client/src/layers/features/settings/model/use-trust-stop-writes.ts`). A widget importing a feature's hook is the allowed direction, provided the hook is exported from the settings feature's barrel `index.ts` — export it there if it is not already, rather than reaching into an internal path. Render `AutonomyConfirmDialog` off `pendingAutonomy` exactly as `RuntimesTab.tsx:61` does. The consent dialog firing on a move to Full autonomy without a standing acknowledgment is **existing behavior** — do not re-implement it, and do not bypass it.
+
+**2. Power switches**, all through hooks that already exist:
+
+- **Open mesh** — `useSetOpenMesh` from `@/layers/entities/mesh`, reading `topology.openMesh` for its state.
+- **Standing grants** — `approvals.standingGrants` through `useUpdateConfig`.
+- **Warm agents** — `runtimes.claudeCode.persistentSession` through `useUpdateConfig`. This is the **new home** of the switch that leaves Settings → Experiments in task 1.3; the setting must not disappear from the product when its experiment entry does. Carry its honest cost note across ("Keeps up to about 1 GB of memory per warm agent, and at most 12 stay warm.") in `writing-for-humans` voice.
+- **Schedule concurrency** — `scheduler.maxConcurrentRuns`, a bounded stepper honoring the schema's 1–10 range.
+
+**3. The overrides ledger — the honesty section.** Composed **client-side from queries that already exist**; there is **no new server endpoint** in this PR.
+
+- Per-runtime `defaultTrustStop` overrides — from the config query (`config.executionDefaults.perRuntime[].trustStop`, which `describeExecutionDefaults` already reports). Each row deep-links to Settings → Runtimes.
+- Live sessions whose bound mode's stop differs from the global stop — from the sessions query, compared through `resolveTrustStops`, never a mode-id table. Each row deep-links to its session.
+- Tasks and their modes — from the tasks query; deep-link to `/tasks`.
+- Bindings and their modes — from the bindings query; deep-link to the relay surface the same way the unattended banner navigates (`search: (prev) => ({ ...prev, relay: 'open' })`).
+- **State the scope plainly at the top of the section**: the global dial applies to **new** sessions; a session already bound keeps its own setting, and nothing here touches a bound row. That is the existing ladder semantics — "applies to new conversations, running ones keep their settings" — and the flyout must not imply otherwise.
+- An install with no overrides shows a calm empty state, not an empty box.
+
+**4. The unattended status line**, shown only when `isUnattendedAutonomy` drivers are live. Read the same small server aggregate the banner reads (`useUnattendedAutonomy` from `@/layers/entities/unattended-autonomy`) — not the task and binding lists. That aggregate exists precisely so an app-wide surface does not have to fetch those lists on every route.
+
+### Also in this PR — the client half of "unattended surfaces follow the operator's level"
+
+- **`apps/client/src/layers/features/tasks/ui/TaskFormInner.tsx`** hardcodes `permissionMode: 'acceptEdits'` in two branches of its default-values builder — the preset branch (`:106`) and the empty branch (`:117`). Both must start from the operator's configured stop, mapped to the target runtime's mode through `resolveTrustStops`, **falling back to `'acceptEdits'` when no stop is configured** — byte-for-byte today's behavior for anyone who never accepted the door. The edit branch (an existing task) keeps that task's stored mode and must not be touched.
+- **The binding creation form** (`apps/client/src/layers/entities/binding/ui/BindingAdvancedSection.tsx` and the dialog hosting it) defaults its TrustDial the same way.
+- **`canInitiate`**: the schema default stays `false` (`packages/shared/src/relay-adapter-schemas.ts:621`) — do not change it. The binding **form** pre-selects it `true` when `config.ui.fullPowerChoice === 'full'`. That pre-selection lives in exactly one place, and nowhere on the wire.
+- **The per-instance `UnattendedAutonomyDialog` confirm at creation stays** on both surfaces. Unattended creation is the one place where a single explicit click still earns its place, and it is not redundant with the door.
+
+### Out of scope
+
+No server file changes. No new endpoint. No weakening of the `428` gates, the schedule-permission clamp, or `task-write-policy.ts`'s `operator-only` stance on task `permissionMode`.
+
+### Tests
+
+- The flyout opens from the glyph, from the palette entry and from the shortcut, and closes on escape / outside click.
+- The dial writes through `useTrustStopWrites`; moving to Full autonomy without an acknowledgment raises the consent dialog; cancelling it writes nothing.
+- Each switch writes the expected patch and reflects server state — the mesh switch reads `topology.openMesh`, not a local boolean.
+- The concurrency stepper clamps at 1 and 10.
+- Overrides ledger: a per-runtime override, a divergent live session, a task and a binding each produce exactly one row with a working deep link; an install with none renders the empty state.
+- The unattended line appears only when drivers are live.
+- Task form defaults: no configured stop → `'acceptEdits'`; operator at `'autonomy'` → the runtime's autonomy mode; editing an existing task keeps its stored mode.
+- Binding form: `canInitiate` pre-selected only when `ui.fullPowerChoice === 'full'`; the wire default stays `false`.
+- Client tests use a mock `Transport` through `TransportProvider`.
+- **E2E** (`apps/e2e/tests/`): the Control Center opens, the dial and switches write, and an overrides row deep-links to its owning surface.
+
+### Acceptance criteria
+
+- [ ] ⚡ glyph, palette entry and shortcut all open the same flyout.
+- [ ] Dial, four switches, overrides ledger and unattended line render in that order.
+- [ ] The ledger is composed from existing queries — `git diff` shows no new server route.
+- [ ] The flyout states in plain words that the global dial applies to new sessions.
+- [ ] Warm agents has a working switch again after leaving Settings → Experiments.
+- [ ] Task and binding forms default their dial from the operator's stop, with the `'acceptEdits'` fallback intact.
+- [ ] `canInitiate` schema default is still `false`; only the form pre-selects.
+- [ ] The per-instance unattended confirm still fires on task and binding creation.
+- [ ] The flyout is added to the Dev Playground (`maintaining-dev-playground` skill).
+
+### Verification
+
+```bash
+pnpm vitest run apps/client/src/layers/widgets/control-center
+pnpm vitest run apps/client/src/layers/features/tasks
+pnpm vitest run apps/client/src/layers/entities/binding
+pnpm vitest run apps/client/src/layers/features/settings/__tests__/use-trust-stop-writes.test.tsx
+pnpm --filter @dorkos/client typecheck
+pnpm --filter @dorkos/client lint
+pnpm verify
+```
+
+Browser-verify before opening the PR. This surface is a popover that opens a dialog, and this repo has a recorded Radix failure where a menu close blur-cancels the editor it just opened — jsdom cannot see it. Walk glyph → flyout → dial → consent dialog in a real browser, on desktop and at a phone viewport.
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+---
+
+## Phase 3 — New-user path
+
+Runs last: the onboarding stage hosts the door component that 2.1 builds.
+
+### Task 3.1: Add the onboarding power stage
+
+- **Subject:** `[full-power-defaults] [P3] Add the onboarding power stage`
+- **Size:** medium · **Priority:** high
+- **Depends on:** 2.1
+- **Parallel with:** nothing
+
+Give new users the same choice, unmissably, as a dedicated onboarding stage between "requirements" and the DorkBot conversation — hosting the door component built in task 2.1.
+
+**Needs task 2.1** (the `full-power-door` feature module exists and its accept/decline/defer writes are pinned) and, transitively, task 1.3 (`'power'` is a member of `ONBOARDING_STEPS`).
+
+### The stage
+
+- **`apps/client/src/layers/features/onboarding/model/onboarding-stage.ts:15`** — `ONBOARDING_STAGES` is `['welcome', 'requirements', 'conversation'] as const`. Insert `'power'` between `'requirements'` and `'conversation'`: `['welcome', 'requirements', 'power', 'conversation']`. That constant also feeds `onboardingStageSearchSchema` (the root route's optional `?onboarding=` search param) and `isOnboardingStage`, so the new stage becomes URL-synced, browser-navigable (back/forward walk the stages) and refresh-safe for free. Update the module docblock, which currently says "three ordered surfaces" and "the three entry screens".
+- **`apps/client/src/layers/features/onboarding/ui/OnboardingFlow.tsx`** branches on `stage`: `'welcome'` at `:78` renders `WelcomeStep`, `'requirements'` at `:94` renders `SystemRequirementsStep` inside the nav-bar frame, and everything else falls through to `<OnboardingConversation onComplete={onComplete} />` at `:114`. Add a `stage === 'power'` branch that renders the door component from `@/layers/features/full-power-door` with the onboarding voice ("Choose your power level"), inside the same `OnboardingNavBar` frame the requirements stage uses.
+- All stage moves go through `useOnboardingStage()`'s history-integrated `goToStage` / `goBack` (`:37`) — never a direct state set, which is what keeps browser navigation honest. Requirements' continue now goes to `'power'`; answering at `'power'` goes to `'conversation'`; back from `'power'` returns to `'requirements'`.
+
+### Step semantics
+
+`'power'` is a member of `ONBOARDING_STEPS` (added in task 1.3, `packages/shared/src/config-schema.ts:114`).
+
+- Answering **either way** calls `completeStep('power')` (`apps/client/src/layers/features/onboarding/model/use-onboarding.ts:107`) and advances to the conversation.
+- Skipping calls `skipStep('power')` (`:117`) and advances, recording it in `onboarding.skippedSteps` through the existing semantics. A skip writes **no** consent fields.
+- **Steps track flow progress, not consent.** The authoritative "they answered" signal stays `ui.fullPowerDecidedAt`, which the door component itself writes. Do not derive consent from `completedSteps`, and do not write `fullPowerDecidedAt` from the stage.
+
+### Why the new-user path never meets the modal
+
+Either `ui.fullPowerDecidedAt` is set — so the moment's predicate is false for ever — or they deferred, and the moment picks them up after onboarding like any other undecided user. That second case is the intended behavior, not a leak: the rail's predicate already requires onboarding to be over (`completedAt ?? dismissedAt` non-null), so a deferred answer surfaces at the next launch and not mid-flow.
+
+### Tests
+
+These three files encode the current three-stage order and will need updating:
+
+- `apps/client/src/layers/features/onboarding/__tests__/use-onboarding-stage.test.tsx`
+- `apps/client/src/layers/features/onboarding/__tests__/OnboardingFlow.test.tsx`
+- `apps/client/src/layers/features/onboarding/__tests__/onboarding-skip.test.tsx`
+
+Add:
+
+- The power stage renders between requirements and conversation, and back from it returns to requirements.
+- Accept performs the door's config writes and calls `completeStep('power')`.
+- Decline records `fullPowerChoice: 'supervised'` and calls `completeStep('power')`.
+- Skip calls `skipStep('power')` and writes no consent fields.
+- `?onboarding=power` round-trips through the URL and survives a refresh.
+- The moments rail does not fire while the onboarding overlay is mounted (regression against the rail's suppression rule).
+- Client tests use a mock `Transport` through `TransportProvider`.
+- **E2E** (`apps/e2e/tests/`, `browser-testing` skill): extend the onboarding spec so the power stage renders and both choices persist across a reload.
+
+### Acceptance criteria
+
+- [ ] `ONBOARDING_STAGES` is `['welcome', 'requirements', 'power', 'conversation']` and its docblock matches.
+- [ ] The stage renders the shared door component — no second copy of the copy.
+- [ ] Answering either way completes the step and advances; skipping skips the step and advances.
+- [ ] The stage writes no consent field itself; `ui.fullPowerDecidedAt` comes from the door.
+- [ ] `?onboarding=power` is navigable and refresh-safe.
+- [ ] A new user who answers never sees the modal afterwards.
+
+### Verification
+
+```bash
+pnpm vitest run apps/client/src/layers/features/onboarding
+pnpm vitest run apps/client/src/layers/features/full-power-door
+pnpm vitest run apps/client/src/layers/widgets/moments
+pnpm --filter @dorkos/client typecheck
+pnpm --filter @dorkos/client lint
+pnpm verify
+```
+
+Browser-verify the whole first-run flow in the running cockpit with a fresh config: welcome → requirements → power → conversation, taking each of the three exits (accept, decline, skip) once.
+
+## Standing constraints (apply to every task in this program)
+
+- Work happens in an **isolated worktree branched from `origin/main`** (`/worktree:create`, or the `working-in-worktrees` skill). Never create a worktree from inside one; never auto-remove one holding uncommitted or unpushed work.
+- A **changelog fragment is required** in `changelog/unreleased/`, named `<timestamp-id>-<slug>.md` (id from `.claude/scripts/id.ts`), carrying a `covers:` frontmatter block that claims this branch's commits. Never edit `CHANGELOG.md` directly.
+- **Prettier + Tailwind class sorting are automatic** — never hand-sort classes and never hand-reformat markdown tables.
+- **TSDoc on every export** (enforced by `eslint-plugin-jsdoc`): `@param name - Description`, never `{type}` annotations.
+- **FSD layer rules for client code**: `shared ← entities ← features ← widgets`. Import through a module's barrel `index.ts` only, never an internal path. A feature's model/hooks must never import another feature's model/hooks.
+- **Tests live in `__tests__/` beside the source** they cover.
+- **Do not weaken `scripts/assert-tests-executed.sh`.**
+- **Never `git stash` and never `git checkout -- <path>`** — both are refused by `.claude/hooks/git-guard.mjs`, and both have eaten work in this repo. Park files in the session scratchpad and restore with `cp`.
+- **Never `pkill`, `killall`, or a group/all-process `kill`** — several agents plus the operator's own dev server share this machine. Stop only the process you started, by the PID you hold or `lsof -ti :<your port>`.
+
+---
+
+## Assumptions logged during decomposition
+
+1. **`telemetry.lastPromptedVersion` stays server-written** (task 1.2). The spec says the telemetry moment stamps it "as the consent surfaces already do"; the surface it replaces never stamped it — the server's first-run notice path does (`apps/server/src/index.ts:743`). Reading the phrase as "keep the existing behavior" is the safe direction, because `hasTier1SendGate` opens the telemetry send gate on a non-null `lastPromptedVersion` even when nobody answered.
+2. **"Customize…" may temporarily point at Settings** (task 2.1). Tasks 2.1 and 2.2 run in parallel, so the door may be written before the Control Center exists. Whichever merges second re-points the link. No lingering `TODO` is left in the source.
+3. **PR-1 takes the `skip-changelog` label rather than a fragment** (task 1.1). It is documentation for DorkOS builders, not a user-facing change, which is the label's stated purpose in `changelog/README.md`.
+4. **The ⚡ glyph's exact anchor is decided at implementation** (task 2.2), against the live layout, with the sidebar header row as the candidate — which is what the spec and the design record both call for.
+5. **`plans/room-turn-limits-overhaul.md` is unrelated** and is deliberately excluded from PR-1's diff, though it sits untracked in the same working tree.
