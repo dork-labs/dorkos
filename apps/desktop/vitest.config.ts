@@ -3,7 +3,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/__tests__/**/*.test.ts'],
+    // `scripts/` is in on purpose: the build gates there decide what ships (a
+    // rejected server bundle, a renderer with unsubstituted defines), and they
+    // were the only code in this package nothing executed — the same reason
+    // tsconfig.scripts.json exists.
+    include: ['src/**/__tests__/**/*.test.ts', 'scripts/**/__tests__/**/*.test.ts'],
     globals: false,
     passWithNoTests: true,
     // The main-process tests wait on mock children behind real socket I/O (the

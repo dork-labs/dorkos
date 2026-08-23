@@ -271,17 +271,36 @@ function QueryProviders({ children }: { children: React.ReactNode }) {
 const apiBaseUrl = resolveApiBaseUrl();
 const transport = new HttpTransport(apiBaseUrl);
 // The StreamManager's durable streams must resolve the SAME origin as the
-// transport — in packaged Electron the renderer loads from file://, where a
-// relative `/api` cannot reach the localhost server.
+// transport. The packaged shell is normally served by its own server
+// (`http://localhost:<port>`), but it also has a `file://` last resort
+// (`window-manager.ts`), and there a relative `/api` reaches nothing — so both
+// are built from one resolved base rather than each guessing.
 streamManager.useHttpSource(apiBaseUrl);
 
-// The sidebar's local memory (spec `sidebar-simplification` D6). `null` on any
-// surface that must not keep one — see `createBootCache`.
-const bootCache = createBootCache({
-  transport,
-  apiBaseUrl,
-  buster: __APP_VERSION__,
-});
+/**
+ * The sidebar's local memory (spec `sidebar-simplification` D6), or none.
+ *
+ * `null` on any surface that must not keep one — see `createBootCache` — and
+ * also on any surface where building one FAILS. Nothing on this line is worth a
+ * blank cockpit: everything below runs at module scope, before React exists and
+ * outside every error boundary, so a throw here is a window that never paints
+ * rather than a panel that starts cold. v0.63.0 was exactly that, from a
+ * `__APP_VERSION__` the desktop bundle had never substituted (DOR-1448).
+ */
+function buildBootCache(): ReturnType<typeof createBootCache> {
+  try {
+    return createBootCache({
+      transport,
+      apiBaseUrl,
+      buster: __APP_VERSION__,
+    });
+  } catch (err) {
+    console.error('[dorkos] Could not build the sidebar’s local memory; booting cold.', err);
+    return null;
+  }
+}
+
+const bootCache = buildBootCache();
 
 // Write the memory before the page goes away. The ordinary save is throttled to
 // one a second, which is right for a boot and wrong for the last second before a

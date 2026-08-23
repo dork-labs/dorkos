@@ -230,12 +230,16 @@ function isRestorableClient(value: unknown): value is PersistedClient {
   const state = client.clientState;
   if (typeof state !== 'object' || state === null) return false;
   if (!Array.isArray(state.queries)) return false;
-  return state.queries.every(
-    (query) =>
-      typeof query === 'object' &&
-      query !== null &&
-      Array.isArray((query as { queryKey?: unknown }).queryKey)
-  );
+  // Both halves, because `hydrate` reads both: the key it builds the query
+  // under, and `state.data` / `state.dataUpdatedAt` off the entry. An entry
+  // carrying a key and no state parses, passes a key-only check, and throws
+  // inside the restore.
+  return state.queries.every((query) => {
+    if (typeof query !== 'object' || query === null) return false;
+    const entry = query as { queryKey?: unknown; state?: unknown };
+    if (!Array.isArray(entry.queryKey)) return false;
+    return typeof entry.state === 'object' && entry.state !== null;
+  });
 }
 
 /**
@@ -290,6 +294,48 @@ export interface BootCache {
 }
 
 /**
+ * Claim this cockpit's slot in browser storage, or decide there is none.
+ *
+ * **Every line in here can throw in a browser we do not control.** Reading
+ * `window.localStorage` raises a `SecurityError` where storage is blocked (a
+ * sandboxed frame, a locked-down profile); `getItem` and the prune's iteration
+ * can throw for the same reason; and `new URL(apiBaseUrl, origin)` throws
+ * outright when the origin is not one — a page the browser gives an opaque
+ * origin reports the literal string `"null"`. The desktop shell normally serves
+ * the cockpit from `http://localhost:<port>`, but its last-resort path
+ * (`loadFile` of the built `index.html`, in `window-manager.ts`) is a `file://`
+ * page, and that is exactly the moment nothing else is going right either.
+ *
+ * None of that may escape, because {@link createBootCache} is called at MODULE
+ * SCOPE in `main.tsx`, before React exists and outside every error boundary.
+ * A throw there is not a degraded cockpit, it is a blank window — the shape of
+ * failure v0.63.0 shipped for a different reason (DOR-1448). Booting cold is a
+ * first paint with skeletons; there is no version of this worth a black screen.
+ *
+ * @param provided - The caller's storage, if it passed one.
+ * @param apiBaseUrl - The base URL the entry is keyed by.
+ * @returns The storage and the key to use, or `null` to boot with no memory.
+ */
+function claimStorageSlot(
+  provided: Storage | undefined,
+  apiBaseUrl: string
+): { storage: Storage; key: string } | null {
+  try {
+    const storage = provided ?? window.localStorage;
+    // Switched off for this session — see {@link BOOT_CACHE_DISABLED_KEY}.
+    // Checked before anything is read, written or pruned, so a disabled session
+    // leaves the storage exactly as it found it.
+    if (storage.getItem(BOOT_CACHE_DISABLED_KEY) !== null) return null;
+    const key = bootCacheStorageKey(apiBaseUrl);
+    pruneForeignBootCaches(key, storage);
+    return { storage, key };
+  } catch (err) {
+    console.error('[dorkos] This browser has no usable local memory; booting cold.', err);
+    return null;
+  }
+}
+
+/**
  * Build the sidebar's local memory, or decide this surface has none.
  *
  * @param options.transport - How this surface talks to its server. Only
@@ -303,7 +349,8 @@ export interface BootCache {
  *   a payload looks like, so it starts from an empty memory rather than
  *   hydrating yesterday's shape into today's components.
  * @param options.storage - Where to keep it. Defaults to `localStorage`.
- * @returns The cache, or `null` when this surface must not persist.
+ * @returns The cache, or `null` when this surface must not persist — or cannot,
+ *   see {@link claimStorageSlot}. Never throws: the caller runs at module scope.
  */
 export function createBootCache(options: {
   transport: Transport;
@@ -314,13 +361,9 @@ export function createBootCache(options: {
   const { transport, apiBaseUrl, buster } = options;
   if (!(transport instanceof HttpTransport)) return null;
 
-  const storage = options.storage ?? window.localStorage;
-  // Switched off for this session — see {@link BOOT_CACHE_DISABLED_KEY}. Checked
-  // before anything is read, written or pruned, so a disabled session leaves the
-  // storage exactly as it found it.
-  if (storage.getItem(BOOT_CACHE_DISABLED_KEY) !== null) return null;
-  const key = bootCacheStorageKey(apiBaseUrl);
-  pruneForeignBootCaches(key, storage);
+  const claimed = claimStorageSlot(options.storage, apiBaseUrl);
+  if (claimed === null) return null;
+  const { storage, key } = claimed;
 
   const persister = createSyncStoragePersister({
     storage,

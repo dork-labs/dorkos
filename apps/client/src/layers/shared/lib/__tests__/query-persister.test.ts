@@ -155,6 +155,55 @@ describe('the sidebar’s local memory', () => {
       expect(BOOT_CACHE_DISABLED_KEY).toBe('dorkos:boot-cache-disabled');
     });
 
+    it('keeps none when the browser refuses to hand over its storage', () => {
+      // Blocked storage raises a SecurityError on ACCESS — a locked-down
+      // profile, a sandboxed frame. This runs at module scope in `main.tsx`,
+      // outside every error boundary, so a throw here is a window that never
+      // paints. Cold is the only acceptable answer.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const hostile = {
+        get length(): number {
+          throw new Error('The operation is insecure.');
+        },
+        key: () => null,
+        getItem: () => {
+          throw new Error('The operation is insecure.');
+        },
+        setItem: () => {},
+        removeItem: () => {},
+        clear: () => {},
+      } as Storage;
+
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage: hostile,
+      });
+
+      expect(cache).toBeNull();
+      expect(logged).toHaveBeenCalled();
+    });
+
+    it('keeps none when the page has no origin to key one by', () => {
+      // A page with an opaque origin reports the literal string "null", and
+      // `new URL('/api', 'null')` throws. The desktop shell reaches that only
+      // on its `loadFile` last resort, which is precisely when a blank window
+      // is least affordable. Same module scope, same blank window.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.stubGlobal('location', { origin: 'null' } as Location);
+
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage: fakeStorage(),
+      });
+
+      expect(cache).toBeNull();
+      expect(logged).toHaveBeenCalled();
+    });
+
     it('keeps none for the Obsidian embed, whose server is in the same process', () => {
       // The embed’s transport needs no services to answer this question — the
       // decision is made on the transport’s identity, before a call is made.
@@ -284,6 +333,24 @@ describe('the sidebar’s local memory', () => {
           buster: BUSTER,
           timestamp: Date.now(),
           clientState: { mutations: [], queries: [{ state: { data: 1 } }] },
+        }),
+      ],
+      [
+        // `hydrate` reads `state.data` and `state.dataUpdatedAt` off every
+        // entry, so a key on its own is not enough to hydrate from.
+        'a query with a key and no state',
+        JSON.stringify({
+          buster: BUSTER,
+          timestamp: Date.now(),
+          clientState: { mutations: [], queries: [{ queryKey: ['team'] }] },
+        }),
+      ],
+      [
+        'a query whose state is not an object',
+        JSON.stringify({
+          buster: BUSTER,
+          timestamp: Date.now(),
+          clientState: { mutations: [], queries: [{ queryKey: ['team'], state: 'ready' }] },
         }),
       ],
       [

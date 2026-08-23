@@ -7,7 +7,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build && tsx scripts/build-server.ts",
+    "build": "electron-vite build && tsx scripts/check-renderer-defines.ts && tsx scripts/build-server.ts",
     "preview": "electron-vite preview",
     "pack": "tsx scripts/rebuild-natives.ts && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
     "dist": "tsx scripts/rebuild-natives.ts && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
