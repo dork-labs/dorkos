@@ -1,7 +1,8 @@
 /**
  * Checks that every API leg is on a throwaway data directory, then puts the
  * first-run interruptions away — the onboarding wizard, its follow-up role
- * prompt, and the telemetry-consent modal — all before any spec runs.
+ * prompt, the telemetry-consent modal, and the full-power consent door — all
+ * before any spec runs.
  *
  * The isolation check comes first and is the reason this file may write at all:
  * see {@link assertThrowawayHome}.
@@ -141,6 +142,13 @@ async function readConfigWhenReady(
  * ever sees it, and no spec has to know it exists. Channels stay off; the
  * defaults are already `false`, so `userHasDecided: true` alone closes it.
  *
+ * The full-power consent door is the fourth, and it bites the same way: a launch
+ * modal on the same rail, eligible whenever `ui.fullPowerDecidedAt` is null and
+ * onboarding is settled — this suite's steady state. Settling a "supervised"
+ * decision makes it ineligible without flipping any consent-gated value, so the
+ * suite keeps its safe defaults; the opt-in `full-power-door.spec.ts` re-opens it
+ * deliberately on a serial run.
+ *
  * Reads before it writes so a re-run against a persistent `DORK_HOME` is a no-op
  * rather than a redundant write.
  *
@@ -150,15 +158,21 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
   const context = await request.newContext({ baseURL });
   try {
     const current = await readConfigWhenReady(context, baseURL);
-    const { onboarding, profile, telemetry, dorkHome } = (await current.json()) as {
+    const { onboarding, profile, telemetry, ui, dorkHome } = (await current.json()) as {
       onboarding?: { dismissedAt?: string };
       profile?: { rolePromptDismissedAt?: string | null };
       telemetry?: { userHasDecided?: boolean };
+      ui?: { fullPowerDecidedAt?: string | null };
       dorkHome?: string;
     };
     // Before the first write, and on the same read that was already happening.
     assertThrowawayHome(baseURL, dorkHome);
-    if (onboarding?.dismissedAt && profile?.rolePromptDismissedAt && telemetry?.userHasDecided) {
+    if (
+      onboarding?.dismissedAt &&
+      profile?.rolePromptDismissedAt &&
+      telemetry?.userHasDecided &&
+      ui?.fullPowerDecidedAt
+    ) {
       return;
     }
 
@@ -175,6 +189,20 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
         // idempotent: on a persistent home that already decided, this rewrites
         // the same `true`, and the channels it does not name keep their values.
         telemetry: { userHasDecided: true },
+        // The full-power consent door is the second launch modal on the moments
+        // rail (spec `full-power-defaults` D3), eligible whenever onboarding is
+        // settled and `ui.fullPowerDecidedAt` is still null — which is EXACTLY
+        // this suite's steady state, so without this every spec is ambushed by
+        // it the way telemetry once ambushed them. Settle a real "supervised"
+        // decision: it records that the question was answered WITHOUT flipping
+        // any consent-gated value (no autonomy stop, no standing grants, no open
+        // mesh), so the suite runs at the same safe defaults it always has. The
+        // opt-in `full-power-door.spec.ts` re-opens the door on its own serial
+        // run; nothing else should see it.
+        ui: {
+          fullPowerDecidedAt: ui?.fullPowerDecidedAt ?? now,
+          fullPowerChoice: 'supervised',
+        },
       },
     });
     if (!res.ok()) {

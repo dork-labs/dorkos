@@ -236,7 +236,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{heading}</DialogTitle>
+        <DialogTitle data-testid="full-power-door">{heading}</DialogTitle>
         <DialogDescription>
           Unlock full power and DorkOS stops asking before it acts. Here&apos;s what that turns on:
         </DialogDescription>
@@ -245,10 +245,10 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
       <ul className="space-y-2 text-sm">
         {FULL_POWER_POINTS.map((point) => (
           <li key={point.lead} className="flex items-start gap-2">
-            <Zap
-              className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-              aria-hidden
-            />
+            {/* The same success token the dial caption, status strip and
+                session row read full power in (`trust-tone.ts`), so the door's
+                green never drifts from theirs. */}
+            <Zap className="text-status-success mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               <span className="font-medium">{point.lead}</span> <span>{point.rest}</span>
             </span>
@@ -286,9 +286,14 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
             size="sm"
             onClick={accept}
             disabled={busy}
+            // Full power is the reward, so the CTA fills with the success token
+            // rather than the neutral primary — the same green the dial reads at
+            // its top stop. `text-status-success-bg` is that token's tint, which
+            // flips near-white in light and near-black in dark, so the label
+            // stays legible on the fill in both themes without a raw colour.
             className={cn(
-              'bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-600/40',
-              'dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-400'
+              'bg-status-success text-status-success-bg',
+              'hover:bg-status-success/90 focus-visible:ring-status-success/40'
             )}
           >
             <Zap aria-hidden />
