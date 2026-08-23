@@ -20,6 +20,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { ROOM_TURN_LIMIT_BOUNDS } from './config-schema.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
 import { SignalTypeSchema } from './relay-envelope-schemas.js';
 import { SessionActivitySchema, type SessionActivity } from './session-stream.js';
@@ -408,6 +409,61 @@ export type RoomBridgeInfo = z.infer<typeof RoomBridgeInfoSchema>;
  */
 export const TEAM_ROOM_WELL_KNOWN = 'team';
 
+/**
+ * What one room may say about its own automatic-reply limits, where every field
+ * is nullable and `null` means "inherit whatever Settings says" (DOR-1429).
+ *
+ * **One definition, two meanings for `null`, and both are honest.** On a room
+ * being READ, `null` is the stored state — this room has no opinion, so it
+ * follows the install. On an UPDATE, `null` is the instruction that puts a room
+ * back into that state, and an ABSENT field leaves whatever is there alone. The
+ * shapes are identical because the values are, and one definition is what stops
+ * a bound being widened on the write side without the read side noticing.
+ *
+ * Bounds come from {@link ROOM_TURN_LIMIT_BOUNDS}, the same object the
+ * install-wide `rooms.*` config fields are built from, so a room can never be
+ * set to a number Settings would refuse.
+ */
+const roomLimitOverrideFields = {
+  turnLimitsEnabled: z
+    .boolean()
+    .nullable()
+    .optional()
+    .describe(
+      'Whether automatic replies are limited in THIS room. `false` makes it unlimited even when the install limits every other room; `true` keeps it limited when the install does not; `null` inherits `rooms.turnLimitsEnabled`. A room opts out of its own bounds, never out of the install-wide hourly ceiling — that one still applies unless it is turned off in Settings.'
+    ),
+  maxAgentDepth: z
+    .number()
+    .int()
+    .min(ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.min)
+    .max(ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.max)
+    .nullable()
+    .optional()
+    .describe(
+      'How many replies in a row agents may send each other in this room before it stops them, or `null` to inherit `rooms.maxAgentDepth`.'
+    ),
+  maxTurnsPerAgentPerCascade: z
+    .number()
+    .int()
+    .min(ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min)
+    .max(ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.max)
+    .nullable()
+    .optional()
+    .describe(
+      'How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`.'
+    ),
+  maxAutoTurnsPerHour: z
+    .number()
+    .int()
+    .min(ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.min)
+    .max(ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.max)
+    .nullable()
+    .optional()
+    .describe(
+      'The most automatic replies this room may run in an hour, or `null` to inherit `rooms.maxAutomaticTurnsPerRoomPerHour`. There is no per-room twin of the install-wide hourly total: that one bounds the whole install and is set in Settings alone.'
+    ),
+} as const;
+
 export const RoomSchema = z
   .object({
     id: z.string().min(1),
@@ -441,6 +497,7 @@ export const RoomSchema = z
       .describe(
         'The one member that answers a message somebody typed in this room without addressing anybody — #team\'s default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member\'s `always` mode, because a person may set any agent to "Everything" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`.'
       ),
+    ...roomLimitOverrideFields,
     createdAt: z.string(),
     lastActivityAt: z.string(),
     bridge: RoomBridgeInfoSchema.nullable()
@@ -1073,6 +1130,12 @@ export const UpdateRoomRequestSchema = z
       .describe(
         "The one per-bridge override for outbound notices (chats-as-channels spec §6.2, D-6 Q5): whether a turn_failed or halted notice reaches this room's bridged chat. Valid only on a bridged room; a room with no bridge refuses this field with NOT_A_BRIDGED_ROOM."
       ),
+    // Person-only, enforced by the route: a caller presenting `X-DorkOS-Agent`
+    // is refused `PEOPLE_ONLY` before any of these is written, and no room
+    // capability tool exposes them at all. An agent that could raise its own
+    // reply allowance is an agent with no allowance (DOR-1429; the same posture
+    // `config-write-policy.ts` takes on the install-wide fields).
+    ...roomLimitOverrideFields,
   })
   .openapi('UpdateRoomRequest');
 
