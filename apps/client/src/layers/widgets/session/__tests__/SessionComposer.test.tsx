@@ -689,6 +689,52 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
     await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
   });
 
+  it('restores a queued edit exactly ONCE when Stop cancels the item under edit (DOR-1323)', async () => {
+    // Reproduces the flag-on finding: queue a message, open its edit (the
+    // composer now shows the item's own text as the "live" edit), then Stop
+    // and confirm. The server hands back the whole cancelled queue — INCLUDING
+    // the edited item, with the same text — and `restoreToComposer` used to
+    // append that onto whatever the composer already held, landing the edited
+    // item's words twice.
+    //
+    // `setInput` here writes THROUGH to the store, the way the real
+    // session-chat hook wires it (`ChatPanel` hands this composer the same
+    // `setInput` its `useSessionChat`/store pairing returns) — every other
+    // case in this describe block uses a bare spy and drives the store by hand
+    // instead, which cannot see this bug: it is specifically about what the
+    // FIX's own `setInput(draftRef.current)` call does to the store that
+    // `restoreToComposer` reads a moment later.
+    seedQueue('one', 'two');
+    const stop = vi.fn().mockResolvedValue({
+      ok: true,
+      cancelled: [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ],
+    });
+    const setInput = vi.fn((value: string) => {
+      useSessionChatStore.getState().updateSession('test-session', { input: value });
+    });
+    render(
+      <SessionComposerBench {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+    );
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[0]!.id));
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    // Exactly once, not 'one\n\none\n\ntwo'.
+    await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
+    expect(setInput).not.toHaveBeenCalledWith('one\n\none\n\ntwo');
+  });
+
   it('preserves text typed WHILE the Stop is in flight, appending the cleared messages after it', async () => {
     // The data-safety guarantee stated directly: a person who keeps typing during
     // the interrupt round-trip must not lose those words, and the cleared messages

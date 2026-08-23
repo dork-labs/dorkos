@@ -543,6 +543,36 @@ describe('pending interaction snapshots', () => {
     expect(pending?.snapshot).toEqual({ questions });
   });
 
+  it('pushes a LIVE question_prompt event carrying a real deadline, not remainingMs: 0 (DOR-1323)', () => {
+    // Flag-on finding: a live question_prompt reached the client with
+    // remainingMs: 0 while the recovery snapshot for the SAME interaction
+    // carried the real countdown. `handleToolApproval` and `handleElicitation`
+    // both push `startedAt`/`timeoutMs` on the event `data` — the normalizer
+    // (`toQuestionEvent` in session-event-normalizer.ts) falls back to
+    // `remainingMs ?? timeoutMs ?? 0`, so a question missing BOTH landed dead
+    // on arrival. This handler was the one that omitted them.
+    const session = makeBareSession();
+    const questions: QuestionItem[] = [
+      {
+        header: 'Pick',
+        question: 'Which one?',
+        multiSelect: false,
+        options: [{ label: 'A', description: 'first' }],
+      },
+    ];
+
+    void handleAskUserQuestion(session, 'question-1', { questions });
+
+    const pushed = session.eventQueue.find((e) => e.type === 'question_prompt');
+    expect(pushed?.type).toBe('question_prompt');
+    const data = pushed?.data as { startedAt?: number; timeoutMs?: number } | undefined;
+    expect(typeof data?.startedAt).toBe('number');
+    // The budget itself — this is what the normalizer's fallback needs present
+    // to compute a nonzero `remainingMs` on the live event. `0`, `undefined`,
+    // or absent all reproduce the flag-on symptom.
+    expect(data?.timeoutMs).toBeGreaterThan(0);
+  });
+
   it('cancels a pending question when the SDK aborts it (F5 — steer/interrupt)', async () => {
     // Acceptance run 20260610-173202, F5: a mid-turn steered message cancels a
     // pending AskUserQuestion SDK-side. This handler had NO abort wiring, so

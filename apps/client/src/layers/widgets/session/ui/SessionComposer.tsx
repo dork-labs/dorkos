@@ -320,7 +320,26 @@ export function SessionComposer({
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
+  const leaveQueueForStop = chatQueue.leaveQueueForStop;
+  // A fresh read of the editing cursor at the moment Stop is pressed, for the
+  // same reason `isStreamingRef` exists below `performStop` reads it inside a
+  // `useCallback` whose deps deliberately do not include `chatQueue` itself.
+  const editingIndexRef = useRef(chatQueue.editingIndex);
+  useEffect(() => {
+    editingIndexRef.current = chatQueue.editingIndex;
+  }, [chatQueue.editingIndex]);
   const performStop = useCallback(() => {
+    // Stop cancels the WHOLE queue, including whatever item is open for edit —
+    // and that item's text is already sitting in the composer as the "live"
+    // edit. Left uncommitted, the cancelled message comes back from the server
+    // carrying the SAME text and `restoreToComposer` appends it on top of what
+    // is already there: the edited item's words, twice. Committing the edit and
+    // handing the composer back its draft FIRST is what keeps the composer's
+    // "existing" text (read fresh from the store below) from being the item's
+    // own echo. Gated on actually editing — with nothing under edit,
+    // `leaveQueueForStop` would still fire `setInput(draftRef.current)`, and an
+    // untouched draft ref is `''`, silently wiping whatever the person had typed.
+    if (editingIndexRef.current !== null) leaveQueueForStop();
     stopLockSessionIdRef.current = sessionId;
     setStopInFlightSessionId(sessionId);
     void stop()
@@ -342,7 +361,7 @@ export function SessionComposer({
         // path.
         clearSettledStop();
       });
-  }, [sessionId, stop, restoreToComposer, clearSettledStop]);
+  }, [sessionId, stop, restoreToComposer, clearSettledStop, leaveQueueForStop]);
   const handleStop = useCallback(() => {
     // Single-flight for THIS session: a Stop already in flight cannot be
     // re-fired by a second click, Enter's Escape binding, or a rapid

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import { SESSIONS } from '../../../../../config/constants.js';
+import { logger } from '../../../../../lib/logger.js';
 import {
   SessionPumpRegistry,
   shutdownSessionPumps,
@@ -363,6 +364,26 @@ describe('the process idle timer', () => {
     expect(registry.warmth('s1')).toBe('cold');
     expect(queries[0]!.closed).toBe(1);
     expect(registry.size).toBe(0);
+  });
+
+  // Purpose: the idle reap used to be invisible at info level (DOR-1323,
+  // flag-on run L-11) — nothing in the log distinguished a process given back
+  // for lack of use from one that crashed or was evicted. One line, naming the
+  // session and the idle window it sat for, is what makes it greppable.
+  it('logs at info when the idle timer retires a warm process', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const queries: FakeQuery[] = [];
+    const registry = new SessionPumpRegistry(identity);
+    await registry.acquire('s1', launchOpts(queries)).warm();
+
+    await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
+
+    expect(registry.warmth('s1')).toBe('cold');
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[SessionPumpRegistry] retired an idle warm process',
+      expect.objectContaining({ session: 's1', idleMs: IDLE_MS })
+    );
+    infoSpy.mockRestore();
   });
 
   // Purpose: the two halves of "armed on a window close, disarmed on the next

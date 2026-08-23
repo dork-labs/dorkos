@@ -88,6 +88,17 @@ interface UseChatQueueReturn {
   handleQueueMoveUp: (id: string) => void;
   handleQueueNavigateUp: () => void;
   handleQueueNavigateDown: () => void;
+  /**
+   * Leave whatever queue item is under edit — commit the rewrite into it, drop
+   * the editing cursor, and hand the composer back its parked draft. The same
+   * exit `handleQueueNavigateUp`/`Down` take at the queue's boundary, exposed
+   * so a caller outside this hook (Stop) can take it too: Stop cancels the
+   * whole queue, including the item on screen, and the composer already shows
+   * that item's text as the "live" edit. Left uncommitted, the cancelled
+   * message comes back from the server carrying the SAME text and lands on
+   * top of what is already there — the edited item's words, twice.
+   */
+  leaveQueueForStop: () => void;
 }
 
 /**
@@ -449,5 +460,6 @@ export function useChatQueue({
     handleQueueMoveUp,
     handleQueueNavigateUp,
     handleQueueNavigateDown,
+    leaveQueueForStop: leaveQueue,
   };
 }
