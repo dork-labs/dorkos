@@ -58,7 +58,7 @@ const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: 
  * resolve the runtime from the binding (or its agent) and pass it in, not to
  * widen this constant.
  */
-const BINDING_RUNTIME = 'claude-code';
+export const BINDING_RUNTIME = 'claude-code';
 
 export interface BindingAdvancedSectionProps {
   strategy: SessionStrategy;

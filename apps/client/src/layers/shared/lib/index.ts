@@ -79,6 +79,7 @@ export {
   findWorkingMode,
   type TrustStop,
 } from '@dorkos/shared/permission-semantics';
+export { operatorStopForRuntime, resolveConfiguredStopMode } from './unattended-form-defaults';
 export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
