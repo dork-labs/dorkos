@@ -1,7 +1,7 @@
 name: test
 
-# Runs the unit test suite of every package that declares one, on every PR and
-# on push to main.
+# Runs the unit test suite of every package that declares one, on merge groups
+# only, as a REQUIRED check of the merge queue (ruleset "main: merge queue").
 #
 # Before this workflow existed, NO CI job ran the tests. The only enforcement
 # was the lefthook `pre-push` gate — and that gate ran all 18 package suites in
@@ -39,21 +39,31 @@ name: test
 # failure into a green check. Flake that shows up here should be fixed, not
 # retried. (This does mean the same commit can pass one gate and fail the other
 # — the retry setting is the reason, and it is intentional.)
-# `merge_group` is what lets this become a REQUIRED check. Until now the full
-# suite ran on every pull request and could block nothing, which is the exact
-# inversion the repo had: the cheapest policy checks gated `main` while its most
-# expensive and most valuable signal was advisory. A required check must report
-# on merge groups or the queue blocks forever, so the trigger comes first and the
-# branch-protection change follows it.
+# MERGE-GROUP ONLY, and REQUIRED there, as of 2026-08-23. The `merge_group`
+# trigger was added first precisely so this could one day become a required
+# check (a required check must report on merge groups or the queue blocks
+# forever); the ruleset toggle is now flipped, which un-inverts the old shape
+# where the cheapest policy checks gated `main` while the most expensive and
+# most valuable signal was advisory — on 2026-08-23 this suite failed twice in
+# a merge group and the entries merged anyway.
 #
-# The queue run is not redundant with the pull-request run. A pull request only
-# ever tests its own diff against the base it branched from; the merge group
-# tests `main` plus everything ahead of it in the queue plus this pull request.
-# That difference is the #488/#489 class — two changes green apart, red together.
+# The pull_request and push-to-main triggers were dropped the same day, for
+# capacity: three full-suite runs per merged PR on a Free-plan org capped at 20
+# concurrent hosted jobs had CI 88-runs-deep in queue and the merge queue two
+# hours long (browser-test.yml's header carries the full measurements). What
+# each dropped trigger was for, and where that need went:
+#
+#   * pull_request: fast feedback during review. That now comes from the
+#     lefthook pre-push `--affected` gate (the survivable local half of
+#     DOR-544's fix) plus typecheck and the policy checks on the PR. The full
+#     sweep still stands between every PR and main — it runs in the queue,
+#     where a red kicks the entry out and the PR cannot land.
+#   * push to main: proving main is green. The queue already proved it — the
+#     merge-group run tests `main` plus everything ahead in the queue plus this
+#     PR (the #488/#489 class: two changes green apart, red together), and the
+#     squash that lands rewrites the SHA, not the content. A direct push to
+#     main bypasses this, but it bypasses the queue and every other gate too.
 on:
-  push:
-    branches: [main]
-  pull_request:
   merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -61,24 +71,17 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only. For push events, group
-# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
-# time, so several quick merges to main sharing a `test-refs/heads/main` group
-# would cancel each other's queued runs and only the final push would actually
-# get tested. Per-SHA groups give every push-to-main its own slot.
-#
-# This job is slow (14 minutes on a runner), so a queue is the normal case here
-# rather than a rare one, and a dropped run means a commit reaches main with
-# the tests never executed against it — the exact hole this workflow closes.
-#
-# Deliberately IDENTICAL in form to typecheck.yml's group as fixed by #543
-# (DOR-517), which found the same defect from the other end and cited four real
-# merges on 2026-07-26 where two commits' runs were cancelled before they ever
-# started. Two CI workflows with different concurrency semantics is the kind of
-# divergence nobody notices until a run goes missing — keep these in step.
+# Every merge-group build gets its own unique ref
+# (gh-readonly-queue/main/pr-<n>-<sha>), so grouping by ref means no two runs
+# ever share a group and nothing is ever cancelled by this block — the queue
+# itself supersedes builds, by dequeuing them, and a dequeued entry's run is
+# cancelled by GitHub. The block stays (deliberately IDENTICAL in form to
+# browser-test.yml — keep them in step) so that a future re-added trigger
+# inherits sane grouping instead of none; the history of why grouping semantics
+# matter here is #543 (DOR-517), where real merges' runs were cancelled before
+# they ever started.
 concurrency:
-  group: test-${{ github.event_name == 'push' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: test-${{ github.ref }}
 
 permissions:
   contents: read

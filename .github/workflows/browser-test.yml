@@ -1,7 +1,7 @@
 name: browser-test
 
-# Runs the Playwright browser suite (apps/e2e) on every PR, on push to main, and
-# on merge groups.
+# Runs the Playwright browser suite (apps/e2e) on merge groups only, as a
+# REQUIRED check of the merge queue (ruleset "main: merge queue").
 #
 # Before this workflow existed, NOTHING in CI ran it. `grep -rlE
 # 'playwright|e2e|browser' .github/workflows/` returned nothing across sixteen
@@ -15,6 +15,29 @@ name: browser-test
 # three-way matrix that runs a third of the suite each; `browser-test` is a
 # fan-in gate that needs all three and fails if any of them did not pass. The
 # reasoning for both the split and the shape is on those jobs.
+#
+# MERGE-GROUP ONLY, deliberately (2026-08-23). This workflow used to fire on
+# every PR push, every merge group AND every push to main — three full
+# ~60-runner-minute suite runs per merged PR, on a Free-plan org capped at 20
+# concurrent hosted jobs. On 2026-08-23 that saturation had 88 workflow runs
+# queued against 14 running and a two-hour merge queue: shards waited 15-40
+# minutes for a runner before executing a single test (run 32663568051 has the
+# receipts). The merge-group run is the only one that sees the combined tree —
+# the two-PR interaction class (each green alone against its own base, red
+# together) that reached main as DOR-656 — so it is the one that stays, and the
+# other two triggers are gone:
+#
+#   * `pull_request`: dropped. Every PR still cannot land without passing this
+#     suite — it passes it in the queue, once, instead of on every push. PR-time
+#     feedback is typecheck, the policy checks and the lefthook pre-push
+#     affected tests; a browser regression surfaces when the PR queues, which
+#     under a healthy queue is minutes after it would have surfaced before.
+#   * `push` to main: dropped. The tree the queue merges is byte-identical to
+#     the tree it just tested (squash rewrites the SHA, not the content), so the
+#     post-merge run re-proved what was already proven, at full price, per
+#     merge. A direct push to main bypasses this — but it bypasses the queue
+#     and every other gate too, which is already what an emergency bypass
+#     means here.
 #
 # FULL MONOREPO TRIGGER, NO `paths:` FILTER. Two independent reasons, and either
 # alone would be enough.
@@ -38,42 +61,27 @@ name: browser-test
 #      option of ever making this required are mutually exclusive.
 #
 # The trade this accepts, stated plainly: a docs-only or changelog-only PR pays
-# for a browser run it cannot possibly break. The `concurrency` block below
-# cancels superseded PR runs, which is what keeps that from compounding.
+# for a browser run it cannot possibly break — once, in the queue, where the
+# runner cost is bounded per merge rather than per push.
 #
-# `merge_group` IS in the trigger list even though this check is NOT required
-# today (see the note on required-ness below). ADR 260728-112203 makes reporting
-# on `merge_group` a hard prerequisite for any required check, and says it should
-# land first and separately. Doing that here means the day somebody decides this
-# should be required, it is a branch-protection toggle rather than a code change
-# — and cannot deadlock the queue on the way in. It is also the only trigger that
-# can catch the two-PR interaction class (two PRs each green alone against the
-# base they branched from, red once combined), which is precisely the shape of
-# the regression that reached main.
-#
-# THIS IS NOT A REQUIRED CHECK, and adding it to the required contexts is
-# deliberately NOT part of the change that adds this file. Branch protection is
-# settings, not files, and "reports on merge_group" is a claim to verify rather
-# than assume: a required check that never reports blocks the queue until
-# `check_response_timeout_minutes` (60) expires, on every merge, for everybody.
-# So the trigger lands first, it runs green on a few real PRs and a real merge
-# group, and the branch-protection change is a separate deliberate act after
-# that. (Confirmed still true on 2026-08-19: ruleset "main: merge queue" requires
-# typecheck, fragment-present, no-fragment-under-skip-label and
-# version-outranks-base, and nothing else.) It is enforced-in-practice sooner:
-# merge-tail.yml's arming gate (scripts/should-arm-automerge.sh) refuses to arm
-# auto-merge while ANY check on the PR is failing, required or not — the same
-# path scripts-test took. The `browser-test` NAME is load-bearing for that future
-# toggle, which is why sharding put the matrix under a different job id and kept
-# a fan-in job called `browser-test`: the context that would be required is the
-# same string it has always been, on the same three triggers.
+# THIS IS A REQUIRED CHECK on the merge queue, as of 2026-08-23 — the deliberate
+# second act the previous version of this header planned for. The trigger landed
+# first (per ADR 260728-112203, a required check must report on `merge_group` or
+# the queue blocks until `check_response_timeout_minutes` expires), it ran green
+# on real merge groups for weeks, and the ruleset toggle followed. Until the
+# toggle, `test` failed twice in a merge group on 2026-08-23 and the entries
+# merged anyway — the queue's most expensive signal was advisory, which is the
+# same inversion DOR-544 named at the PR level. The `browser-test` NAME is
+# load-bearing for the ruleset: sharding put the matrix under a different job id
+# precisely so the fan-in job could keep the context string the ruleset
+# requires. Rename it and the queue deadlocks on a check that never reports.
 #
 # ONE LIVE EXTERNAL DEPENDENCY, STATED SO NOBODY DISCOVERS IT MID-INCIDENT. The
 # site leg's /marketplace pages fetch the dork-labs/marketplace registry from
 # raw.githubusercontent.com SERVER-side on every run, and the marketplace specs
 # need that registry reachable and NON-EMPTY to find a card. A bad push to that
-# OTHER repository — or the registry going empty — reds this check on every PR
-# here, and if this check is ever made required, blocks this repo's merges on a
+# OTHER repository — or the registry going empty — reds this check on every
+# queue entry, and since this check is required, blocks this repo's merges on a
 # file it does not contain. That coupling is accepted: the specs' whole point is
 # that the live pages work, GitHub runners reaching GitHub is the one network
 # assumption CI already makes everywhere, and the failure is legible (the
@@ -81,9 +89,6 @@ name: browser-test
 # and where to go). If it ever fires in anger, the decision to revisit is
 # "pin a fixture registry for CI", not "delete the specs".
 on:
-  push:
-    branches: [main]
-  pull_request:
   merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -91,21 +96,15 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only. For push events, group by
-# SHA instead of ref: GitHub only lets one run per group be *pending* at a time,
-# so several quick merges to main sharing a `browser-test-refs/heads/main` group
-# would cancel each other's queued runs and only the final push would be tested.
-#
-# Deliberately IDENTICAL in form to test.yml and typecheck.yml, which arrived at
-# this after #543 (DOR-517) found real merges whose runs were cancelled before
-# they started. CI workflows with different concurrency semantics is the kind of
-# divergence nobody notices until a run goes missing — keep them in step.
-#
-# Workflow-level, so a superseded PR run takes all three shards AND the gate with
-# it rather than leaving orphans behind.
+# Every merge-group build gets its own unique ref
+# (gh-readonly-queue/main/pr-<n>-<sha>), so grouping by ref means no two runs
+# ever share a group and nothing is ever cancelled by this block — the queue
+# itself supersedes builds, by dequeuing them, and a dequeued entry's run is
+# cancelled by GitHub. The block stays (deliberately IDENTICAL in form to
+# test.yml — keep them in step) so that a future re-added trigger inherits
+# sane grouping instead of none.
 concurrency:
-  group: browser-test-${{ github.event_name == 'push' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: browser-test-${{ github.ref }}
 
 permissions:
   contents: read
