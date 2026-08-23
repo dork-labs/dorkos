@@ -8,9 +8,18 @@ type TimelineNodeData = Extract<WidgetNode, { type: 'timeline' }>;
 type TimelineItem = TimelineNodeData['items'][number];
 type TimelineStatus = NonNullable<TimelineItem['status']>;
 
-/** Dot styling per status; `upcoming`/undefined share the hollow, muted look. */
+/**
+ * Dot styling per status; `upcoming`/undefined share the hollow, muted look.
+ *
+ * `done`'s icon sits on a FILLED `bg-status-success`, not the light wash — so it
+ * needs the same inverted-on-fill pairing as the full-power door's CTA
+ * (`text-white` in light, `dark:text-status-success-bg` in dark), not
+ * `-fg`, which is defined to equal the fill colour itself and is meant for text
+ * ON the `-bg` wash, not on the solid fill (DOR-1431: it made the icon invisible,
+ * green-on-green).
+ */
 const DOT_CLASS: Record<TimelineStatus, string> = {
-  done: 'border-status-success bg-status-success text-status-success-fg',
+  done: 'border-status-success bg-status-success text-white dark:text-status-success-bg',
   active: 'border-primary bg-primary text-primary-foreground',
   upcoming: 'border-border bg-background text-muted-foreground',
 };
