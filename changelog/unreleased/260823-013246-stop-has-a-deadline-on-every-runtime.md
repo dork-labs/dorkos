@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'fix(server): a stuck OpenCode Stop no longer strands your queued messages (DOR-1299)'
+  - 'fix(server): stopping an agent now has a deadline on OpenCode too (DOR-1299)'
+  - 'fix(server): review follow-ups on the OpenCode Stop bound (DOR-1299)'
 ---
 
 ### Fixed
