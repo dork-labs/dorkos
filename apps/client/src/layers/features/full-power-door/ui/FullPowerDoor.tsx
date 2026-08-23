@@ -29,12 +29,17 @@ export interface FullPowerDoorProps {
    */
   onClose: () => void;
   /**
-   * Open the surface that holds the whole power picture — Settings → Runtimes
-   * today, the Control Center once it lands. Called by "Customize…" after the
-   * supervised decision is recorded. This is the one seam the Control Center PR
-   * re-points; the door itself is destination-agnostic.
+   * Open the surface that holds the whole power picture — the Control Center.
+   * Called by "Customize…" after the supervised decision is recorded.
+   *
+   * Optional: when omitted, the "Customize…" link is not rendered at all. The
+   * onboarding host omits it because the Control Center is not mounted during
+   * first-run setup — AppShell renders the onboarding overlay INSTEAD of the main
+   * app, and the flyout lives in the main-app branch — so the link would open
+   * nothing there. A new user reaches the Control Center any time afterwards from
+   * its persistent glyph.
    */
-  onCustomize: () => void;
+  onCustomize?: () => void;
 }
 
 /** Turn a failed config write into one sentence a person can act on. */
@@ -100,10 +105,11 @@ const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
  * ## Keep asking me first / Customize…
  *
  * Both record `{ fullPowerDecidedAt, fullPowerChoice: 'supervised' }` and nothing
- * else — no stop, no grants, no mesh. Customize… then opens the power surface so
- * the person can pick specifics; moving to full power later from there is a
- * normal, supported path. Dismissing the dialog (the X) writes nothing, and the
- * moment re-arbitrates on the next launch.
+ * else — no stop, no grants, no mesh. Customize… (shown only when the host passes
+ * `onCustomize`) then opens the power surface so the person can pick specifics;
+ * moving to full power later from there is a normal, supported path. Dismissing
+ * the dialog (the X) writes nothing, and the moment re-arbitrates on the next
+ * launch.
  */
 export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorProps) {
   const { data: config } = useConfig();
@@ -189,7 +195,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
 
   const customize = useCallback(async () => {
     if (await recordSupervised()) {
-      onCustomize();
+      onCustomize?.();
       onClose();
     }
   }, [recordSupervised, onCustomize, onClose]);
@@ -258,17 +264,19 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
 
       <PermissionModeScopeNote mode="bypassPermissions" />
 
-      <div>
-        <Button
-          variant="link"
-          size="sm"
-          className="text-muted-foreground h-auto p-0"
-          onClick={customize}
-          disabled={busy}
-        >
-          Customize… — pick the pieces yourself in Settings
-        </Button>
-      </div>
+      {onCustomize && (
+        <div>
+          <Button
+            variant="link"
+            size="sm"
+            className="text-muted-foreground h-auto p-0"
+            onClick={customize}
+            disabled={busy}
+          >
+            Customize… — pick the pieces yourself in Settings
+          </Button>
+        </div>
+      )}
 
       <DialogFooter className="items-center gap-2 sm:justify-between">
         {configError ? (

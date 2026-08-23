@@ -103,6 +103,31 @@ describe('FullPowerDoor', () => {
     // The scope note is reused, not rewritten — the same sentence every mode
     // picker shows about DorkOS-level approvals.
     expect(screen.getByText(/tools inside the session/i)).toBeInTheDocument();
+    // A host that provides `onCustomize` gets the Customize… link.
+    expect(screen.getByRole('button', { name: CUSTOMIZE })).toBeInTheDocument();
+  });
+
+  it('omits the Customize… link when the host provides no onCustomize', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Dialog open>
+          <DialogContent>
+            <FullPowerDoor heading="Choose your power level" onClose={onClose} />
+          </DialogContent>
+        </Dialog>
+      </QueryClientProvider>
+    );
+
+    // Both answers are always on offer...
+    expect(screen.getByRole('button', { name: ACCEPT })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: DECLINE })).toBeInTheDocument();
+    // ...but Customize is not, because a host without `onCustomize` (the
+    // onboarding stage) has nowhere to send it — the Control Center is unmounted
+    // during setup.
+    expect(screen.queryByRole('button', { name: CUSTOMIZE })).not.toBeInTheDocument();
   });
 
   it('accept sends ONE config PATCH carrying the acknowledgement WITH the stop, then opens the mesh', async () => {
