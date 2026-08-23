@@ -6,7 +6,12 @@
  *
  * @module services/runtimes/claude-code/session-store
  */
-import { forkSession as sdkForkSession, type Query } from '@anthropic-ai/claude-agent-sdk';
+import {
+  forkSession as sdkForkSession,
+  type PermissionUpdate,
+  type PermissionUpdateDestination,
+  type Query,
+} from '@anthropic-ai/claude-agent-sdk';
 import type {
   PermissionMode,
   EffortLevel,
@@ -60,6 +65,33 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
     if (now - pending.startedAt < ceilingMs) return true;
   }
   return false;
+}
+
+/**
+ * The one permission-update scope DorkOS mirrors into its own session state.
+ *
+ * The SDK's other destinations name settings FILES — the operator's, the
+ * project's, the machine-local override — and a mode written there outlives the
+ * conversation the card was answered in. `'session'` is the only one whose
+ * lifetime matches the row DorkOS keeps per session.
+ */
+const SESSION_SCOPED: PermissionUpdateDestination = 'session';
+
+/**
+ * The mode a batch of accepted permission suggestions leaves the session in, or
+ * `undefined` when none of them touches the mode.
+ *
+ * Last one wins, for the same reason the SDK applies them in order: a batch that
+ * names the mode twice ends at the second value, not the first.
+ *
+ * @param suggestions - The SDK permission updates being forwarded verbatim.
+ */
+function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
+  let mode: PermissionMode | undefined;
+  for (const update of suggestions) {
+    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
+  }
+  return mode;
 }
 
 /**
@@ -540,15 +572,70 @@ export class SessionStore {
   ): boolean {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
-    if (!pending || pending.type !== 'approval') return false;
+    if (!session || !pending || pending.type !== 'approval') return false;
 
     if (approved && options?.alwaysAllow && pending.suggestions?.length) {
-      // "Always Allow" — pass the SDK permission suggestions array
+      // "Always Allow" — pass the SDK permission suggestions array, and keep
+      // DorkOS's own copy of the mode in step with what that array does.
+      this.adoptSuggestedMode(session, pending.suggestions);
       pending.resolve(pending.suggestions);
     } else {
       pending.resolve(approved, approved ? undefined : options?.denyReason);
     }
     return true;
+  }
+
+  /**
+   * Record the permission mode an accepted "Always Allow" switches the session
+   * to, so DorkOS's copy of the mode is the one the CLI is actually running.
+   *
+   * On a file-edit card the SDK's suggestion for "don't ask me again" is not a
+   * tool rule at all — it is `{ type: 'setMode', mode: 'acceptEdits',
+   * destination: 'session' }`, and forwarding it really does move the live CLI
+   * into that mode (measured: the next `user` row in the transcript records
+   * `acceptEdits`, and the Write after it ran with no card). DorkOS used to
+   * forward that and forget it, which left three surfaces disagreeing: the
+   * status line and the Session inspector read the mode back off the
+   * transcript and said "Accept edits", the stored session settings still said
+   * `default`, and so the next process DorkOS launched for that same session
+   * ran `--permission-mode default` and asked again. The label was not lying
+   * about the mode; DorkOS was dropping the grant on relaunch (DOR-1316).
+   *
+   * Scope is exactly the SDK's own: only a `session`-scoped `setMode` is
+   * mirrored. `userSettings`/`projectSettings`/`localSettings` updates are
+   * wider than this conversation and belong to the operator's global default,
+   * which one click on one approval card must not move. Rules (`addRules` and
+   * friends) are not modes and are left to the SDK — mirroring them would
+   * change what the button grants.
+   *
+   * Write-through is best-effort in the same spirit as {@link updateSession}:
+   * the in-memory mode changes immediately (the launch resolver reads it), and
+   * a store that fails to take the row is logged rather than surfaced, because
+   * the approval itself has already been answered and must not fail behind it.
+   *
+   * @param session - The session whose approval was just answered.
+   * @param suggestions - The SDK permission updates being forwarded verbatim.
+   */
+  private adoptSuggestedMode(session: AgentSession, suggestions: PermissionUpdate[]): void {
+    const mode = sessionScopedMode(suggestions);
+    if (!mode || mode === session.permissionMode) return;
+    logger.debug('[approveTool] always-allow switched the session mode', {
+      session: session.sdkSessionId,
+      from: session.permissionMode,
+      to: mode,
+    });
+    session.permissionMode = mode;
+    // Persisted under the canonical id, the one key every reader asks by — see
+    // the module doc on `session-settings-overlay.ts`.
+    void this.settingsPort
+      ?.saveSessionSettings(session.sdkSessionId, { permissionMode: mode })
+      .catch((err: unknown) => {
+        logger.warn('[approveTool] could not persist the always-allow mode', {
+          session: session.sdkSessionId,
+          mode,
+          err,
+        });
+      });
   }
 
   /** Submit answers to a pending AskUserQuestion interaction. */
