@@ -74,5 +74,6 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   // `activeAccount`, which destroyed a billing choice permanently. Once this
   // merges, the key is frozen and a further change of mind opens `'0.66.0'`.
   '0.65.0': 'f3f900081b2149cc',
-  '0.66.0': '575c7fb2080dfd03',
+  '0.66.0': '719826021e47d7bd',
+  '0.67.0': '892aacc2b5582bae',
 };

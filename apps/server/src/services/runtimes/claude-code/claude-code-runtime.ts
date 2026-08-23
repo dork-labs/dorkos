@@ -46,6 +46,7 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
+import { ControlRequestTimeoutError } from './sessions/bounded-control.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -1009,6 +1010,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  getSessionCwd(sessionId: string): string | undefined {
+    return this.sessionStore.findSession(sessionId)?.cwd;
+  }
+
+  /** @inheritdoc */
   async getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null> {
     try {
       const session = this.sessionStore.findSession(sessionId);
@@ -1369,6 +1375,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
+      // A timeout is NOT the `null` case (DOR-1301). `null` means "no query to
+      // ask", which the route answers with "send a message first" — a sentence
+      // that is simply false about a session whose query existed and did not
+      // answer in time. Rethrown so the route can say the true thing.
+      if (err instanceof ControlRequestTimeoutError) throw err;
       return null;
     }
   }

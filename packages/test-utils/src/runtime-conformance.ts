@@ -18,7 +18,7 @@
  * @module test-utils/runtime-conformance
  */
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AgentRuntime,
   RuntimeCapabilities,
@@ -217,6 +217,43 @@ export interface RuntimeConformanceOpts {
     heldWhileInteractionPending: boolean;
     ranAfterInteractionResolved: boolean;
   }>;
+  /**
+   * Stages a session with a GENUINELY ACTIVE turn whose interrupt call the
+   * backend will never acknowledge, then hands control back — the driver
+   * behind this suite's C11 bounded-interrupt case.
+   *
+   * **This C11 is not `meta/chat-capabilities.md`'s C-11 row.** The doc's
+   * C-11 is "Add context" (a capability id in its numbered matrix); this
+   * suite's numbering is its own, separate sequence of conformance CASES —
+   * the two happen to collide on the number by coincidence, not by any
+   * shared meaning. Read `C11` here as "this file's eleventh case."
+   *
+   * "Stop is bounded" (`meta/chat-capabilities.md` C-10 matrix preamble;
+   * DOR-1244) is only provable against a turn whose backend has gone quiet:
+   * a runtime's own `interruptQuery` on an idle session already answers
+   * `false` at once, which proves nothing about a WEDGED one. Arranging the
+   * hang is adapter-specific — an SDK control promise nothing settles for
+   * claude-code, an HTTP call to a stuck sidecar for opencode — so this
+   * driver is that half only; the suite races `interruptQuery` against a
+   * clock once it hands back.
+   *
+   * Provided only by runtimes whose interrupt path awaits a backend ack that
+   * can go unanswered. Omit it and C11 still runs, AT REST rather than
+   * skipping: a runtime with no round trip to wait on — codex's synchronous
+   * `controller.abort()`, test-mode's in-process abort — proves the property
+   * by construction, and the case asserts exactly that shape instead.
+   *
+   * @returns The EXACT value `interruptQuery` must settle to once the suite
+   *   advances past the bound — not merely "some boolean". The two shipped
+   *   drivers disagree on purpose: claude-code escalates an unacked
+   *   interrupt to `query.close()` and reports `true` (the process WAS
+   *   stopped, just not gracefully); opencode has no session-scoped
+   *   escalation to reach for and reports `false` (honest, not a lie of
+   *   omission). Pinning the value, rather than accepting either, is what
+   *   would catch a runtime that silently started returning the wrong one
+   *   on expiry.
+   */
+  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<boolean>;
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
@@ -860,6 +897,7 @@ export function runtimeConformance(
     dispositionTurn,
     terminalOnce,
     queueDurability,
+    hangingInterrupt,
     autonomyDefaultReason,
     sessionListSilentReason,
     userLastMessageAtSession,
@@ -1029,6 +1067,50 @@ export function runtimeConformance(
         }
 
         await expect(runtime.getSession(projectDir, nextSessionId())).resolves.toBeNull();
+      });
+
+      it('C10: getSessionCwd answers without a directory lookup, never throws, and follows a warmed binding', async (ctx) => {
+        // The cwd-free counterpart of getSession (DOR-1322): a route resolving
+        // a session's messages without a caller-supplied cwd asks this FIRST.
+        // Optional: a runtime with no live per-session binding (or none at
+        // all) omits it, and callers fall back to an explicit projectDir.
+        const runtime = makeRuntime();
+        const getSessionCwd = runtime.getSessionCwd?.bind(runtime);
+        if (getSessionCwd === undefined) {
+          // A SKIP, not a pass, for C7's reason: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'this runtime does not implement `getSessionCwd`, so callers fall back to an ' +
+              'explicit `projectDir` (see AgentRuntime.getSessionCwd)'
+          );
+          return;
+        }
+
+        // (1) ANSWERABLE for a session it has never heard of, never a throw —
+        // a route on a graceful-degradation path cannot afford a lookup that
+        // dereferences a missing entry.
+        const strangerId = nextSessionId();
+        expect(
+          () => getSessionCwd(strangerId),
+          'getSessionCwd must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        expect(
+          getSessionCwd(strangerId),
+          'an id this runtime has never heard of must answer undefined, never a guessed directory'
+        ).toBeUndefined();
+
+        // (2) The answer FOLLOWS THE MECHANISM — checkable exactly where the
+        // suite can move a session into the state that binding lives in.
+        if (!warmSession) return;
+
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await warmSession(runtime, sessionId);
+
+        expect(
+          getSessionCwd(sessionId),
+          'a warmed session`s live binding must be answered, matching the directory it was warmed with'
+        ).toBe(projectDir);
       });
 
       it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
@@ -1578,6 +1660,84 @@ export function runtimeConformance(
         expect(typeof result).toBe('boolean');
         // Contract: true only when an active query was interrupted.
         expect(result).toBe(false);
+      });
+
+      it('C11: interruptQuery against a backend that never answers still resolves within a bound', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        if (!hangingInterrupt) {
+          // No driver: this runtime's interrupt path has no backend round
+          // trip to wait on — codex's is a synchronous `controller.abort()`,
+          // test-mode's never leaves the process — so nothing here can be
+          // made to hang. Prove that deterministically rather than against a
+          // wall-clock budget (flaky under load, and a fixed millisecond
+          // figure is a number to argue with): arm fake timers and never
+          // advance them, so any path that needs even one real timer tick —
+          // a `setTimeout`-based bound included — can never settle no matter
+          // how long this waits. Then drain only MICROTASKS. A truly
+          // synchronous interrupt settles within a handful of `await
+          // Promise.resolve()` hops; a sentinel that is still NOT_SETTLED
+          // after many says this runtime silently grew a real async hop and
+          // is now owed a `hangingInterrupt` driver instead of this branch.
+          const NOT_SETTLED = Symbol('not-settled');
+          onTestFinished(() => {
+            vi.useRealTimers();
+          });
+          vi.useFakeTimers();
+          let settled: boolean | typeof NOT_SETTLED = NOT_SETTLED;
+          void runtime.interruptQuery(sessionId).then((result) => {
+            settled = result;
+          });
+          for (let i = 0; i < 50 && settled === NOT_SETTLED; i++) {
+            await Promise.resolve();
+          }
+          expect(
+            settled,
+            'no hangingInterrupt driver was wired for this runtime, which claims its interrupt ' +
+              'has nothing to await — with fake timers armed and never advanced, only a real ' +
+              'microtask hop could settle this, and none did (see ' +
+              'RuntimeConformanceOpts.hangingInterrupt)'
+          ).not.toBe(NOT_SETTLED);
+          expect(typeof settled).toBe('boolean');
+          return;
+        }
+
+        // Staged BEFORE fake timers arm: a driver's own setup can lean on real
+        // macrotask delays (a persistent double's simulated IPC round trip,
+        // `vi.waitFor`'s polling) that fake time would freeze right along
+        // with the wall clock this case exists to race — hanging the SETUP
+        // instead of the property under test, and (worse) leaving fake timers
+        // armed for every test after this one once the suite's own timeout
+        // abandons a stuck `it` without ever reaching a `finally`.
+        const expectedSettle = await hangingInterrupt(runtime, sessionId);
+
+        // A `finally` is not enough here: when the mutant under test (the
+        // bound removed) makes this hang, vitest's own test-timeout abandons
+        // the `it` WITHOUT ever resuming this async function — so a `finally`
+        // below the await never runs, and fake timers stay armed for every
+        // test after this one in the same file (measured: 4 collateral reds).
+        // `onTestFinished` is vitest's own teardown hook, invoked on the
+        // abandonment path too, so it is what actually restores the clock.
+        onTestFinished(() => {
+          vi.useRealTimers();
+        });
+        vi.useFakeTimers();
+        const result = runtime.interruptQuery(sessionId);
+        // A ceiling every runtime's OWN ack bound must clear, not any one
+        // runtime's specific number — each justifies its own near where it
+        // lives (`bounded-stop.ts` for claude-code, `runtime-constants.ts`
+        // for opencode).
+        await vi.advanceTimersByTimeAsync(10_000);
+        await expect(
+          result,
+          'a bounded interrupt must settle once the suite has advanced well past any ' +
+            'reasonable ack timeout — an unbounded one hangs here until the TEST ITSELF ' +
+            'times out, which is the mutant this case exists to catch. It must also settle to ' +
+            'EXACTLY the value the driver declared, not merely some boolean — a runtime that ' +
+            'silently flips true/false on expiry is a lie this pin exists to catch.'
+        ).resolves.toBe(expectedSettle);
       });
     });
 

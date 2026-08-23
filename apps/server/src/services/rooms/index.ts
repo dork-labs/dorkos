@@ -131,6 +131,34 @@ function readMaxAgentDepth(): number {
 }
 
 /**
+ * The live per-agent ceiling inside one cascade, degrading the same way and for
+ * the same reason as {@link readMaxAgentDepth}.
+ */
+function readMaxTurnsPerAgentPerCascade(): number {
+  try {
+    return configManager.get('rooms').maxTurnsPerAgentPerCascade;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxTurnsPerAgentPerCascade;
+  }
+}
+
+/**
+ * Whether automatic-reply limits are on at all.
+ *
+ * Degrades to `true` — the shipped value — and that direction is the whole
+ * point: an unreadable config must never be the thing that takes every bound
+ * off. The failure mode is "the limits used the defaults", never "the limits
+ * were absent".
+ */
+function readTurnLimitsEnabled(): boolean {
+  try {
+    return configManager.get('rooms').turnLimitsEnabled;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.turnLimitsEnabled;
+  }
+}
+
+/**
  * The live hourly ceilings on automatic turns — per room, and across the whole
  * install — degrading the same way and for the same reason as
  * {@link readMaxAgentDepth}.
@@ -339,6 +367,12 @@ export function createRoomSubsystem(opts: {
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,
+    // Read per dispatch for the same reason: raising how many turns one agent
+    // may take in an exchange has to bind the exchange already running.
+    maxTurnsPerAgentPerCascade: readMaxTurnsPerAgentPerCascade,
+    // Read per dispatch for the same reason, and one more: turning limits back
+    // ON is the direction that must never wait for a restart.
+    turnLimitsEnabled: readTurnLimitsEnabled,
     // Read per dispatch, for the same reason: shortening the window in Settings
     // has to bind the very next message, not the next server start.
     engagedWindow: readEngagedWindow,

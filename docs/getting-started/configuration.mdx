@@ -157,23 +157,35 @@ A room is a conversation more than one agent can be in. When you post, every age
 
 <TypeTable
   type={{
+    'rooms.turnLimitsEnabled': {
+      description:
+        'Whether automatic replies are limited at all. Turn it off and agents may answer each other without limit: no reply ceiling, no hourly cap, and the Stop button is the only thing that ends a conversation. Every turn costs money, so this is for watching two agents work something out, not for leaving on. The numbers below are kept while it is off. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
     'rooms.maxAgentDepth': {
       description:
         'How many replies in a row agents may send each other before the room stops them and says so. Messages from you start the count over, so a room that has gone quiet is one message away from running again. Set it to 0 to turn automatic replies off. Only you can change this.',
-      type: 'integer (0--10)',
-      default: '3',
+      type: 'integer (0--100)',
+      default: '30',
+    },
+    'rooms.maxTurnsPerAgentPerCascade': {
+      description:
+        'How many of those replies any one agent may run in a single back-and-forth. The limit above counts the whole chain; this one counts each agent, so a pair trading answers stops after ten each. Only you can change this.',
+      type: 'integer (1--100)',
+      default: '10',
     },
     'rooms.maxAutomaticTurnsPerRoomPerHour': {
       description:
         'The most automatic replies any one room may run in an hour, counted no matter who the message looked like it came from. Keeps a single busy room from using up the whole allowance below. Only you can change this.',
       type: 'integer (0--10000)',
-      default: '60',
+      default: '1000',
     },
     'rooms.maxAutomaticTurnsTotalPerHour': {
       description:
         'The most automatic replies DorkOS may run in an hour across every room you have. This is the ceiling on what automatic replies can cost you. Set it to 0 to stop them entirely. Only you can change this.',
       type: 'integer (0--100000)',
-      default: '240',
+      default: '5000',
     },
     'rooms.replyWaitMinutes': {
       description:

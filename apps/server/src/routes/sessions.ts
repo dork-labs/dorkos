@@ -71,6 +71,11 @@ import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
+// A control request that outlived its bound is not a claude-code-only idea, but
+// claude-code is the only runtime with one today, so the class still lives with
+// its clock. A second runtime growing one is the signal to move it somewhere
+// runtime-neutral rather than to import a second class here.
+import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/sessions/bounded-control.js';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -399,7 +404,83 @@ router.get('/:id/tasks', async (req, res) => {
   }
 });
 
-// GET /api/sessions/:id/messages - Get message history from SDK transcript
+/**
+ * Resolve the project directory to read a session's messages from, without
+ * requiring the caller to already know it (DOR-1322).
+ *
+ * An explicit `cwdParam` always wins. Otherwise, the verify-before-trust
+ * ladder below applies ONLY to a runtime that implements `getSessionCwd` —
+ * today, only claude-code, because its storage is the one that is genuinely
+ * KEYED BY DIRECTORY: a JSONL transcript lives under a slug derived from cwd,
+ * so guessing the wrong directory silently reads back empty (the original
+ * DOR-1322 bug). For such a runtime: try its live binding first, then fall
+ * back to the server's default project directory, but — unlike the old
+ * unconditional fallback — verify the session actually lives there before
+ * trusting it.
+ *
+ * A runtime that does NOT implement `getSessionCwd` trusts the default
+ * project directory outright, exactly like the pre-DOR-1322 code, with no
+ * verification step. This is not a gap reopened: every shipped runtime in
+ * that category answers `getMessageHistory` independent of the directory
+ * argument, so passing the "wrong" one cannot reproduce the silent-empty bug
+ * this function exists to prevent. Codex's reads are keyed purely by session
+ * id (`registry.get(id)`, the directory parameter is unused). OpenCode's
+ * directory-scoped read falls back to a durable, id-keyed EventLog read on
+ * failure. Test-mode's `getMessageHistory` reads the same id-keyed EventLog
+ * directly and never consults its registry at all — which is also why
+ * `getSession` cannot stand in as a verification probe for it: test-mode's
+ * `getSession` reflects the SEPARATE in-memory registry (session "known" to
+ * the runtime's own bookkeeping), not the durable store `getMessageHistory`
+ * actually reads, so a session with zero registry presence can still have
+ * real message history. Gating a verified-fallback on `getSession` for THIS
+ * class of runtime does not add safety — it produces false negatives on
+ * exactly the reads that used to work (found via the review round on PR
+ * #1191: `sessions-kickoff-filter.test.ts`, `sessions-multi-runtime.test.ts`).
+ *
+ * @param runtime - The resolved runtime for this session
+ * @param internalSessionId - Backend-internal session id
+ * @param cwdParam - The caller-supplied `?cwd=`, if any
+ * @returns The resolved directory, or `null` when none could be confirmed
+ */
+async function resolveMessagesCwd(
+  runtime: AgentRuntime,
+  internalSessionId: string,
+  cwdParam: string | undefined
+): Promise<string | null> {
+  if (cwdParam) return cwdParam;
+
+  if (runtime.getSessionCwd === undefined) return vaultRoot;
+
+  const liveCwd = runtime.getSessionCwd(internalSessionId);
+  if (liveCwd) return liveCwd;
+
+  // Guarded: getSession is a graceful-degradation probe here, not a trusted
+  // read — a runtime whose lookup throws for reasons unrelated to "session
+  // not found" (e.g. an uninitialized boundary) must still fall through to
+  // the honest 404 below rather than 500 on a path whose whole job is to
+  // degrade gracefully. Its own null case (session genuinely absent at
+  // vaultRoot) already means the same thing, so both collapse to `null` here.
+  try {
+    // A successful read here guarantees `readTranscript`/`getMessageHistory`
+    // below will find the SAME file — both key off the identical
+    // (vaultRoot, internalSessionId) pair via the runtime's own transcript
+    // lookup — so returning the bare `vaultRoot` string (not `found.cwd`) is
+    // safe. This branch is only reached for a runtime that implements
+    // `getSessionCwd` (claude-code today), whose `getSession` genuinely does
+    // reflect directory-scoped disk presence — unlike test-mode's, gated out
+    // above.
+    const found = await runtime.getSession(vaultRoot, internalSessionId);
+    return found ? vaultRoot : null;
+  } catch {
+    return null;
+  }
+}
+
+// GET /api/sessions/:id/messages - Get message history from SDK transcript.
+// No `?cwd=` is required for a session the server can already place — see
+// resolveMessagesCwd. A session it genuinely cannot place answers 404 rather
+// than an empty list, so "no messages yet" and "wrong/missing cwd" are never
+// the same response (DOR-1322).
 router.get('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -408,11 +489,19 @@ router.get('/:id/messages', async (req, res) => {
 
   if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
-  const cwd = cwdParam || vaultRoot;
-
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+
+  const cwd = await resolveMessagesCwd(runtime, internalSessionId, cwdParam);
+  if (!cwd) {
+    return sendError(
+      res,
+      404,
+      "Could not determine this session's working directory. Pass ?cwd= with the session's project directory.",
+      'SESSION_CWD_REQUIRED'
+    );
+  }
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {
@@ -680,7 +769,20 @@ router.post('/:id/reload-plugins', async (req, res) => {
       );
     }
     res.json(result);
-  } catch {
+  } catch (err) {
+    // Told apart from a plain failure because the two are different facts, and
+    // the difference is the whole of what the caller can do next (DOR-1301). A
+    // reload the agent never confirmed may still have happened — it was written
+    // to a process that stopped answering, not refused — so the honest answer is
+    // "no confirmation", not "failed".
+    if (err instanceof ControlRequestTimeoutError) {
+      return sendError(
+        res,
+        504,
+        "The agent didn't confirm the plugin reload in time — it may still apply; try again if the new plugin doesn't appear",
+        'RELOAD_TIMEOUT'
+      );
+    }
     sendError(res, 500, 'Plugin reload failed', 'RELOAD_ERROR');
   }
 });

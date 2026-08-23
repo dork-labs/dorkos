@@ -4813,7 +4813,7 @@ describe('config.json holds the EFFECTIVE config, not what was set (DOR-1267)', 
   });
 });
 
-describe('the 0.66.0 bodies (spec full-power-defaults)', () => {
+describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
   describe('seedFullPowerDecision', () => {
     it('reserves both halves of the answer, unanswered', () => {
       const store = createMockStore({ ui: { theme: 'system' } });
@@ -4947,7 +4947,7 @@ describe('the 0.66.0 bodies (spec full-power-defaults)', () => {
     });
   });
 
-  it('composes all three under the 0.66.0 key, and writes nothing consent-gated', () => {
+  it('composes all three under the 0.67.0 key, and writes nothing consent-gated', () => {
     const store = createMockStore({
       ui: { theme: 'system', autonomyAcknowledgedAt: null },
       scheduler: { maxConcurrentRuns: 1 },
@@ -4956,7 +4956,7 @@ describe('the 0.66.0 bodies (spec full-power-defaults)', () => {
       mesh: { scanRoots: [] },
     });
 
-    CONFIG_MIGRATIONS['0.66.0'](store);
+    CONFIG_MIGRATIONS['0.67.0'](store);
 
     expect(store.data.ui).toEqual({
       theme: 'system',

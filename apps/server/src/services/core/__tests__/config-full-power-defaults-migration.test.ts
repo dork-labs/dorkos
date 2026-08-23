@@ -1,12 +1,12 @@
 /**
- * The `0.66.0` migration (spec `full-power-defaults`, D2) across the real
+ * The `0.67.0` migration (spec `full-power-defaults`, D2) across the real
  * `conf`/Ajv seam.
  *
  * ## Why this is a file of its own
  *
  * `conf` selects a migration only when its key is `<= projectVersion`, and
  * `SERVER_VERSION` resolves to `apps/server/package.json`'s version in a dev
- * tree — `0.63.0` as this is written — so a `0.66.0` body runs under NO default
+ * tree — `0.63.0` as this is written — so a `0.67.0` body runs under NO default
  * test environment. `DORKOS_VERSION_OVERRIDE` has to be set before
  * `lib/version.ts` is imported, which means before this file's imports, which
  * means a separate module registry. The same reasoning
@@ -35,7 +35,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // Hoisted above the imports below: `SERVER_VERSION` is a module-level const, so
 // the override has to be in the environment before `lib/version.ts` loads.
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.66.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.67.0';
 });
 
 import fs from 'fs';
@@ -45,7 +45,7 @@ import { ConfigManager } from '../config-manager.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 
 /** A config written by the release immediately before this key. */
-const STORED_VERSION = '0.65.0';
+const STORED_VERSION = '0.66.0';
 
 const dirs: string[] = [];
 
@@ -116,9 +116,9 @@ function seedUpgradeBoot(overrides: Record<string, unknown> = {}): string {
   return dir;
 }
 
-describe('the 0.66.0 migration on an upgrade boot (real conf + Ajv)', () => {
-  it('really is running the 0.66.0 migration, or none of the rest of this file means anything', () => {
-    expect(SERVER_VERSION).toBe('0.66.0');
+describe('the 0.67.0 migration on an upgrade boot (real conf + Ajv)', () => {
+  it('really is running the 0.67.0 migration, or none of the rest of this file means anything', () => {
+    expect(SERVER_VERSION).toBe('0.67.0');
   });
 
   it('reserves both halves of the power-door answer, unanswered, ON DISK', () => {
@@ -262,7 +262,7 @@ describe('the 0.66.0 migration on an upgrade boot (real conf + Ajv)', () => {
   });
 });
 
-describe('the 0.66.0 migration and invariant A1 (nothing consent-gated flips)', () => {
+describe('the 0.67.0 migration and invariant A1 (nothing consent-gated flips)', () => {
   it('leaves every consent-gated value exactly as it found it', () => {
     const manager = new ConfigManager(seedUpgradeBoot());
 

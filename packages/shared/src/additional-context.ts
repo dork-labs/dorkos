@@ -578,12 +578,24 @@ export interface RoomContextData {
    * spend it deliberately.
    */
   budget: {
-    /** Automatic turns this room may still run this hour. */
-    automaticRepliesLeftInThisRoomThisHour: number;
-    /** Automatic turns the whole install may still run this hour. */
-    automaticRepliesLeftInTotalThisHour: number;
-    /** The cascade ceiling minus this turn's depth. */
-    repliesLeftInThisChain: number;
+    /**
+     * Automatic turns this room may still run this hour, or `null` when the
+     * person turned automatic-reply limits off — see
+     * {@link RoomContextData.budget.repliesLeftInThisChain}.
+     */
+    automaticRepliesLeftInThisRoomThisHour: number | null;
+    /** Automatic turns the whole install may still run this hour, or `null`. */
+    automaticRepliesLeftInTotalThisHour: number | null;
+    /**
+     * The cascade ceiling minus this turn's depth, or `null` when the person
+     * turned automatic-reply limits off.
+     *
+     * All three are `null` together, and `null` means "nothing is counting"
+     * rather than "none left". A number would be invented in that state, and an
+     * agent that reads its own headroom to decide how freely to answer would be
+     * deciding against a fiction.
+     */
+    repliesLeftInThisChain: number | null;
   };
 }
 
@@ -818,9 +830,9 @@ export const RoomContextDataSchema = z.object({
     addressedNow: z.boolean(),
   }),
   budget: z.object({
-    automaticRepliesLeftInThisRoomThisHour: z.number().int(),
-    automaticRepliesLeftInTotalThisHour: z.number().int(),
-    repliesLeftInThisChain: z.number().int(),
+    automaticRepliesLeftInThisRoomThisHour: z.number().int().nullable(),
+    automaticRepliesLeftInTotalThisHour: z.number().int().nullable(),
+    repliesLeftInThisChain: z.number().int().nullable(),
   }),
 });
 

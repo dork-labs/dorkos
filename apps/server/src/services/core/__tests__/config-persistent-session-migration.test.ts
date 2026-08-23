@@ -145,7 +145,7 @@ describe('runtimes.claudeCode.persistentSession on an upgrade boot (real conf + 
     // The schema default flipped to `true` when the flag graduated out of
     // Experiments (spec `full-power-defaults`, D1). The `0.59.0` body above did
     // not change — it still seeds `false` onto a config that predates the leaf,
-    // which is what an upgrader stamped 0.59.0 really ran — and the `0.66.0`
+    // which is what an upgrader stamped 0.59.0 really ran — and the `0.67.0`
     // key is what moves those seeded `false`s on to `true`. That key is above
     // this file's `DORKOS_VERSION_OVERRIDE`, so it deliberately does not run
     // here; `config-full-power-defaults-migration.test.ts` is where it does.

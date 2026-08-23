@@ -130,16 +130,21 @@ describe('a room gathers a burst into one turn', () => {
    * @param scripted - The runner standing in for the turn machinery.
    * @param collect - The window and cap this scenario is about.
    * @param agentPaths - Who is in the room. Ana alone by default.
+   * @param maxTurnsPerAgentPerCascade - How many turns one agent may take in an
+   *   exchange. Left to the harness default of one unless a scenario is about
+   *   the counter itself, in which case it pins its own.
    */
   function open(
     scripted: ScriptedTurnRunner,
     collect: { debounceMs: number; maxEntries: number },
-    agentPaths = ['/agents/ana']
+    agentPaths = ['/agents/ana'],
+    maxTurnsPerAgentPerCascade?: number
   ): void {
     ({ service, authors, runner, human } = createRoomHarness({
       agents,
       runner: scripted,
       collect,
+      ...(maxTurnsPerAgentPerCascade !== undefined && { maxTurnsPerAgentPerCascade }),
     }));
     room = service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths },
@@ -415,6 +420,10 @@ describe('a room gathers a burst into one turn', () => {
       }
       await service.triggersIdle();
       const afterBurst = runner.turns[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
+      // `null` is the limits-off reading, and this harness counts. Narrowed
+      // here rather than asserted away, so a regression that stopped counting
+      // fails as itself instead of as an arithmetic error below.
+      if (afterBurst === null) throw new Error('the room reported no automatic-turn count');
 
       service.post(room.id, { authorId: human, text: '@ana four' });
       await service.triggersIdle();
@@ -573,6 +582,101 @@ describe('a room gathers a burst into one turn', () => {
       const refusals = notices().filter((entry) => entry.body.notice === 'cascade_stopped');
       expect(refusals).toHaveLength(1);
       expect(refusals[0].body.subjectAuthorId).toBe(ana);
+      held.release(ana);
+      await service.triggersIdle();
+    });
+
+    it('counts the turn that ran while the batch waited, and refuses on the number', async () => {
+      // **Why re-asking matters MORE under a counter** (ADR 260823-000217). The
+      // verdict a batch was collected under is measured against a count that
+      // keeps moving while it waits, so a batch judged once, at collect time,
+      // would let an agent through on a number that had since been spent.
+      //
+      // Ana is allowed three turns here. Two are already behind her when Bo's
+      // reply joins her batch — so the batch is ALLOWED in — and her running
+      // turn posts the third before her claim releases. The re-ask is the only
+      // thing standing between that and a fourth.
+      const held = heldRunner((request) =>
+        request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
+      );
+      open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo'], 3);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      const seed = service.post(room.id, {
+        authorId: human,
+        text: '@ana @bo what broke the build?',
+      });
+      await settleUntil(
+        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
+        'both agents mid-turn'
+      );
+
+      // Ana's running turn says two things through the rooms tool. They are
+      // hers, in this cascade, so they are two of her three.
+      for (const text of ['looking at the migration', 'the step before it is fine']) {
+        service.post(room.id, {
+          authorId: ana,
+          text,
+          trigger: { root: seed.cascadeRoot, depth: 1 },
+        });
+      }
+
+      // Bo answers and names Ana. ALLOWED into her batch: she is at two of
+      // three when this is collected.
+      held.release(bo);
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+
+      // Her own turn now lands its answer — the third — and only then does her
+      // claim release and the batch run.
+      held.release(ana);
+      await settleUntil(
+        () => notices().some((entry) => entry.body.notice === 'cascade_stopped'),
+        'the batch to be judged against the count it waited through'
+      );
+
+      // One turn for Ana, not two, and the room said why.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      const refusals = notices().filter((entry) => entry.body.notice === 'cascade_stopped');
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0].body.subjectAuthorId).toBe(ana);
+      await service.triggersIdle();
+    });
+
+    it('lets the same batch through when the count has room left', async () => {
+      // The control for the test above, and the reason it is not measuring
+      // "Ana has spoken": the identical script, one higher ceiling, and Bo's
+      // reply becomes a turn instead of a notice. Without this, a guard that had
+      // regressed to refusing any repeat would pass up there.
+      const held = heldRunner((request) =>
+        request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
+      );
+      open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo'], 4);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      const seed = service.post(room.id, {
+        authorId: human,
+        text: '@ana @bo what broke the build?',
+      });
+      await settleUntil(
+        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
+        'both agents mid-turn'
+      );
+      for (const text of ['looking at the migration', 'the step before it is fine']) {
+        service.post(room.id, {
+          authorId: ana,
+          text,
+          trigger: { root: seed.cascadeRoot, depth: 1 },
+        });
+      }
+      held.release(bo);
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+
+      held.release(ana);
+      await settleUntil(
+        () => runner.turns.filter((turn) => turn.authorId === ana).length === 2,
+        'the held batch to become a second turn for Ana'
+      );
+      expect(notices().filter((entry) => entry.body.notice === 'cascade_stopped')).toEqual([]);
       held.release(ana);
       await service.triggersIdle();
     });

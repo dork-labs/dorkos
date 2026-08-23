@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { EffortLevel } from '@dorkos/shared/types';
 import {
   PIN_DISPOSITIONS,
   RELAUNCH_PINS,
@@ -16,6 +17,7 @@ import {
   compareLaunchFingerprints,
   type LaunchParams,
 } from '../launch-fingerprint.js';
+import { resolveThinkingOptions } from '../../messaging/thinking-config.js';
 
 /** The account a paying client's session belongs to. */
 const CLIENT_ROOT = '/staged/claude-client';
@@ -43,6 +45,8 @@ function params(overrides: Partial<LaunchParams> = {}): LaunchParams {
     options: options(),
     credentialEnv: { ANTHROPIC_API_KEY: 'sk-client' },
     agentIdentity: { agentPath: '/repo', displayName: 'Scout', attributed: true },
+    effortInput: 'high',
+    capabilityResolved: true,
     ...overrides,
   };
 }
@@ -50,6 +54,40 @@ function params(overrides: Partial<LaunchParams> = {}): LaunchParams {
 /** Capture a fingerprint from `overrides` on top of the baseline launch. */
 function capture(overrides: Partial<LaunchParams> = {}) {
   return captureLaunchFingerprint(params(overrides));
+}
+
+/**
+ * Capture a fingerprint whose `options.effort`/`.thinking` are derived by the
+ * REAL `resolveThinkingOptions` — the same function `launch-resolver.ts`
+ * calls — from the given raw effort setting and capability state, rather than
+ * hand-picked independently of it.
+ *
+ * A prior version of these tests moved `effortInput` while leaving
+ * `options.effort`/`.thinking` fixed, which can only describe a launch the
+ * real resolver never produces; that gap is exactly what let the `minimal`→
+ * `low` false-relaunch (review finding S2) slip through unnoticed. Driving
+ * every DOR-1308 fixture through the real resolver closes it.
+ *
+ * @param args - The raw effort setting, whether the model's capability is
+ *   known, and (only if known) whether it supports adaptive thinking
+ */
+function captureReasoning(args: {
+  effortInput: EffortLevel | undefined;
+  capabilityResolved: boolean;
+  supportsAdaptiveThinking?: boolean;
+}) {
+  const { effortInput, capabilityResolved, supportsAdaptiveThinking } = args;
+  const { effort, thinking } = resolveThinkingOptions({
+    effort: effortInput,
+    capability: capabilityResolved
+      ? { supportsAdaptiveThinking: supportsAdaptiveThinking ?? false }
+      : undefined,
+  });
+  return capture({
+    effortInput,
+    capabilityResolved,
+    options: options({ effort, thinking }),
+  });
 }
 
 describe('the pin list', () => {
@@ -233,8 +271,11 @@ describe('the relaunch pins', () => {
         options: options({ env: { PATH: '/usr/bin', EXTRA: '1', CLAUDE_CONFIG_DIR: CLIENT_ROOT } }),
       },
     ],
-    ['effort', { options: options({ effort: 'low' }) }],
-    ['effort', { options: options({ thinking: { type: 'adaptive', display: 'summarized' } }) }],
+    // `options.effort` moves in lockstep with `effortInput`, exactly as the
+    // real resolver would produce (S5) — `'low'`/`undefined` are their own
+    // canonical SDK values, so this is not one of the aliasing pairs S2 found.
+    ['effort', { effortInput: 'low', options: options({ effort: 'low' }) }],
+    ['effort', { effortInput: undefined, options: options({ effort: undefined }) }],
     ['fastMode', { options: options({ settings: { fastMode: true } }) }],
   ];
 
@@ -281,6 +322,110 @@ describe('the relaunch pins', () => {
       'cwd',
       'settingSources',
     ]);
+  });
+});
+
+describe('the effort pin and the model-capability cache (DOR-1308)', () => {
+  it('does not relaunch a session-first launch into its own second dispatch once its capability resolves', () => {
+    // The regression: launch 1 resolves `thinking-config.ts` against an
+    // UNRESOLVED model-capability cache (`capabilityResolved: false`,
+    // `options.thinking` comes back bare), and dispatch 2 resolves the SAME
+    // session setting against a now-resolved one (`capabilityResolved: true`,
+    // `options.thinking` gets `{ type: 'adaptive', display: 'summarized' }`).
+    // Nothing the user controls changed, so this must not relaunch.
+    const launch1 = captureReasoning({ effortInput: 'high', capabilityResolved: false });
+    const dispatch2 = captureReasoning({
+      effortInput: 'high',
+      capabilityResolved: true,
+      supportsAdaptiveThinking: true,
+    });
+    const decision = compareLaunchFingerprints(launch1, dispatch2);
+    expect(decision.action).toBe('reuse');
+  });
+
+  it('still relaunches when the session effort setting itself changes, capability unresolved on both sides', () => {
+    // The guard the fix must not break: a REAL effort change is still a pin,
+    // even while the capability stays unresolved throughout.
+    const decision = compareLaunchFingerprints(
+      captureReasoning({ effortInput: 'high', capabilityResolved: false }),
+      captureReasoning({ effortInput: 'low', capabilityResolved: false })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
+  });
+
+  it('still relaunches when the session effort setting itself changes, capability resolved on both sides', () => {
+    const decision = compareLaunchFingerprints(
+      captureReasoning({ effortInput: 'high', capabilityResolved: true }),
+      captureReasoning({ effortInput: 'low', capabilityResolved: true })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
+  });
+
+  it('relaunches on a capability-driven reasoning change once both sides have a resolved capability', () => {
+    // The invariant `NOTES.md` documents for `setModel`: a live model swap
+    // that would resolve DIFFERENT reasoning options must still relaunch, as
+    // long as the capability is actually known on both sides — the DOR-1308
+    // carve-out only covers the unresolved-capability case above. Mutation M3
+    // (making `reasoningChanged` never consult the derived shape once
+    // capability is known) turns this red.
+    const decision = compareLaunchFingerprints(
+      captureReasoning({
+        effortInput: 'high',
+        capabilityResolved: true,
+        supportsAdaptiveThinking: false,
+      }),
+      captureReasoning({
+        effortInput: 'high',
+        capabilityResolved: true,
+        supportsAdaptiveThinking: true,
+      })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
+  });
+
+  it('relaunches when a live model swap moves onto an uncached model, even though only `wanted` is unresolved (S3)', () => {
+    // The DOR-1308 race is strictly live-unresolved → wanted-resolved. The
+    // reverse — `live` resolved, `wanted` not — only happens from a REAL
+    // model change (a live `setModel` onto a model the cache has never seen),
+    // so it must still relaunch rather than silently riding a process whose
+    // reasoning options no longer match what a fresh launch would resolve.
+    const decision = compareLaunchFingerprints(
+      captureReasoning({
+        effortInput: 'high',
+        capabilityResolved: true,
+        supportsAdaptiveThinking: true,
+      }),
+      captureReasoning({ effortInput: 'high', capabilityResolved: false })
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
+  });
+
+  it('does not relaunch when `minimal` and `low` are the same SDK effort (S2)', () => {
+    // `toSdkEffort` maps DorkOS `minimal` to the SDK's `low`, so a session
+    // moving between the two never changes what the process actually runs
+    // under. Comparing the raw setting (an earlier version of this fix) read
+    // this as a change and tore down a warm process for an edit with zero
+    // observable effect.
+    const decision = compareLaunchFingerprints(
+      captureReasoning({ effortInput: 'minimal', capabilityResolved: true }),
+      captureReasoning({ effortInput: 'low', capabilityResolved: true })
+    );
+    expect(decision.action).toBe('reuse');
+  });
+
+  it('does not relaunch when unset and `none` resolve to the same bare effort on a non-adaptive model (S2)', () => {
+    // Both map to `toSdkEffort` returning `undefined`, and on a non-adaptive
+    // model neither ever attaches a `thinking` block — so the two settings
+    // are indistinguishable to the process either way.
+    const decision = compareLaunchFingerprints(
+      captureReasoning({ effortInput: undefined, capabilityResolved: true }),
+      captureReasoning({ effortInput: 'none', capabilityResolved: true })
+    );
+    expect(decision.action).toBe('reuse');
   });
 });
 

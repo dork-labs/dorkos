@@ -2,6 +2,7 @@ import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
+import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { previewListeners } from './services/workbench-serve/index.js';
 import {
   CodexRuntime,
@@ -311,8 +312,10 @@ import { sessionListBroadcaster } from './services/session/session-list-broadcas
 import {
   MessageQueueStore,
   SessionEventStore,
+  StagedContextStore,
   setMessageQueueStore,
   setSessionEventStore,
+  setStagedContextStore,
   onProjectorRekey,
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
@@ -462,6 +465,17 @@ async function start() {
   }
   releaseInstanceLock = lock.release;
 
+  // End the warm agent processes a previous run of THIS data directory left
+  // behind (DOR-1310). Deliberately here: after the instance lock, so no live
+  // server's processes are in scope, and long before any session can be warmed,
+  // so the sweep never races a process this run just spawned. Never fatal — a
+  // boot must not fail over a cleanup.
+  await reapOrphanedWarmProcesses().catch((error: unknown) => {
+    logger.warn('[DorkOS] could not sweep leftover agent processes', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
   try {
     initConfigManager(dorkHome);
   } catch (error) {
@@ -563,6 +577,11 @@ async function start() {
   // a message somebody typed and was told was accepted must outlive the request
   // that accepted it, a second window, a failed turn and a restart.
   setMessageQueueStore(new MessageQueueStore(db));
+
+  // The durable hold for staged words, on the same beat again: the server tells
+  // the person "Added context for the next reply" on a stream that survives a
+  // restart, so what that receipt points at has to survive one too (DOR-1324).
+  setStagedContextStore(new StagedContextStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read

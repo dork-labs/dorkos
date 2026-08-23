@@ -177,6 +177,7 @@ describe('offers in #team', () => {
     runner: ScriptedTurnRunner;
     maxAutomaticTurnsPerRoomPerHour?: number;
     budgetNow?: () => number;
+    turnLimitsEnabled?: boolean | (() => boolean);
     offers?: WelcomeBackOfferSource;
   }): WelcomeBackGreeter {
     ({ service, authors, runner, human } = createRoomHarness({
@@ -184,6 +185,9 @@ describe('offers in #team', () => {
       runner: opts.runner,
       ...(opts.maxAutomaticTurnsPerRoomPerHour !== undefined && {
         maxAutomaticTurnsPerRoomPerHour: opts.maxAutomaticTurnsPerRoomPerHour,
+      }),
+      ...(opts.turnLimitsEnabled !== undefined && {
+        turnLimitsEnabled: opts.turnLimitsEnabled,
       }),
       ...(opts.budgetNow && { budgetNow: opts.budgetNow }),
     }));
@@ -461,6 +465,53 @@ describe('offers in #team', () => {
     service.post(room.id, { authorId: human, text: '@tangerines and now?' });
     await service.triggersIdle();
     expect(budgetNotices()).toHaveLength(2);
+  });
+
+  it('asks with limits off, spends nothing, and tells the agent nothing is counting', async () => {
+    // The offer path has its own copy of the budget branch, and a mutation that
+    // deleted it left every other test in this suite green. So this one puts an
+    // offer through a room whose hourly allowance is ONE, with limits off, and
+    // then turns limits back on to read the allowance back.
+    let limited = false;
+    const greeter = harnessWith({
+      runner: scriptedRunner(() => 'Want me to open the PR?'),
+      maxAutomaticTurnsPerRoomPerHour: 1,
+      turnLimitsEnabled: () => limited,
+    });
+    // Only tangerines answers here, so every turn below is accounted for by
+    // name. With limits off the offer's own post is no longer refused by the
+    // depth stamp, so leaving the other two on `always` would have them answer
+    // it — and nothing in the product would then stop them, which is the state
+    // ADR 260823-000218 accepts and not the thing this test is measuring.
+    for (const authorId of [ana, authors.resolveAgent(BO, 'Bo').id]) {
+      service.updateMembership(room.id, human, authorId, 'mention-only');
+    }
+    work = [workFor(tangerines, { sessions: 2 })];
+
+    await greeter.greet(returned);
+    await service.triggersIdle();
+
+    // It ran, and it ran with nothing to report about what is left.
+    expect(asked).toEqual([tangerines]);
+    expect(runner.turns).toHaveLength(1);
+    const offerTurn = runner.turns[0];
+    expect(offerTurn.roomContext.budget).toEqual({
+      automaticRepliesLeftInThisRoomThisHour: null,
+      automaticRepliesLeftInTotalThisHour: null,
+      repliesLeftInThisChain: null,
+    });
+    expect(budgetNotices()).toEqual([]);
+
+    // **The room's one turn for this hour is still there.** Every turn above
+    // would have reserved if the branch were missing — the offer's first, at a
+    // cap of one — and the question below would then be refused with a
+    // `budget_reached` line instead of answered.
+    limited = true;
+    service.post(room.id, { authorId: human, text: '@tangerines are we green?' });
+    await service.triggersIdle();
+
+    expect(runner.turns).toHaveLength(2);
+    expect(budgetNotices()).toEqual([]);
   });
 
   it('starts no conversation with an offer, and leaves no refusal behind', async () => {

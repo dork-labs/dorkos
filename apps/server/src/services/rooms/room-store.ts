@@ -1570,23 +1570,31 @@ export class RoomStore {
   }
 
   /**
-   * The distinct authors already in one cascade — the ancestry rule's input.
+   * How many entries each author already has in one cascade — the repeat rule's
+   * input.
+   *
+   * A count per author rather than the distinct set the ancestry rule used to
+   * ask for (DOR-1428): the rule now fires at `maxTurnsPerAgentPerCascade`
+   * rather than at the first repeat, so "has this author spoken" is no longer
+   * the question. Same single indexed read of `idx_room_entries_cascade_root`,
+   * grouped instead of de-duplicated.
    *
    * **Scoped to the room, which now includes its threads.** A thread reply
    * carries the channel's `room_id` (ADR 260728-022013), so a cascade that opens
-   * a thread stays inside one ancestry set instead of resetting at a room
+   * a thread keeps counting inside one cascade instead of resetting at a room
    * boundary the way a child-room thread did (room-participation spec §3.4).
    *
    * @param roomId - The room.
    * @param cascadeRoot - The entry id that began the cascade.
    */
-  authorsInCascade(roomId: string, cascadeRoot: string): string[] {
+  turnsByAuthorInCascade(roomId: string, cascadeRoot: string): Map<string, number> {
     const rows = this.db
-      .selectDistinct({ authorId: roomEntries.authorId })
+      .select({ authorId: roomEntries.authorId, turns: count() })
       .from(roomEntries)
       .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.cascadeRoot, cascadeRoot)))
+      .groupBy(roomEntries.authorId)
       .all();
-    return rows.map((row) => row.authorId);
+    return new Map(rows.map((row) => [row.authorId, row.turns]));
   }
 
   // === Per-room agent sessions ===
