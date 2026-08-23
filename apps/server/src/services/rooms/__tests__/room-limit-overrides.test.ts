@@ -254,20 +254,138 @@ describe('what an unlimited room tells the agent about its headroom', () => {
 });
 
 describe('who may set a room limit', () => {
+  /**
+   * A room on an OWNED install, plus a human author who is not that owner.
+   *
+   * The shape a second person takes — an invited member, or a cached remote
+   * member from a community (ADR 260727-184933 D6). A harness without an
+   * `ownerUserId` cannot express it: with no account anywhere the local human
+   * IS the owner, so a test built on that could never tell an operator gate
+   * from a person gate.
+   */
+  function ownedRoom(): { wired: Wired; priya: string; ana: string } {
+    const wired = openLoudRoom({ agents: AGENTS, ownerUserId: 'user-dorian' });
+    const priya = wired.authors.human('user-priya').id;
+    wired.service.addMember(wired.room.id, wired.human, { authorId: priya });
+    return { wired, priya, ana: wired.authors.resolveAgent('/agents/ana', 'Ana').id };
+  }
+
+  it('lets the owner set one', () => {
+    const { wired } = ownedRoom();
+    expect(
+      wired.service.updateRoom(wired.room.id, wired.human, { maxAgentDepth: 4 }).maxAgentDepth
+    ).toBe(4);
+  });
+
   it('refuses an agent, and leaves the room untouched', () => {
-    const wired = openLoudRoom({ agents: AGENTS });
-    const ana = wired.authors.resolveAgent('/agents/ana', 'Ana').id;
-    expect(() => wired.service.updateRoom(wired.room.id, ana, { maxAgentDepth: 99 })).toThrowError(
-      /Only people/
+    const { wired, ana } = ownedRoom();
+    expect(() => wired.service.updateRoom(wired.room.id, ana, { maxAgentDepth: 99 })).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
     );
     expect(wired.service.getRoom(wired.room.id, wired.human)?.maxAgentDepth).toBeNull();
   });
 
-  it('lets the same agent patch a topic, so the gate is the fields', () => {
-    const wired = openLoudRoom({ agents: AGENTS });
-    const ana = wired.authors.resolveAgent('/agents/ana', 'Ana').id;
+  it('refuses a HUMAN who is not the owner — these fields are spend authority', () => {
+    // The reason this gate is `requireOperator` and not a person-kind check. A
+    // second person in the room could otherwise take the guard and the hourly
+    // ceiling off, and every turn that followed would be billed to the owner.
+    const { wired, priya } = ownedRoom();
+    expect(() =>
+      wired.service.updateRoom(wired.room.id, priya, { turnLimitsEnabled: false })
+    ).toThrow(expect.objectContaining({ code: 'OPERATOR_ONLY' }));
+    expect(wired.service.getRoom(wired.room.id, wired.human)?.turnLimitsEnabled).toBeNull();
+  });
+
+  it('refuses her CLEARING one too — a clear is a write', () => {
+    const { wired, priya } = ownedRoom();
+    wired.service.updateRoom(wired.room.id, wired.human, { maxAgentDepth: 4 });
+    expect(() => wired.service.updateRoom(wired.room.id, priya, { maxAgentDepth: null })).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(wired.service.getRoom(wired.room.id, wired.human)?.maxAgentDepth).toBe(4);
+  });
+
+  it('still lets both of them patch a topic, so the gate is the fields', () => {
+    // Only the limit fields tightened. Describing what a room is for stays
+    // ordinary participation for everyone who can see the room.
+    const { wired, priya, ana } = ownedRoom();
     expect(wired.service.updateRoom(wired.room.id, ana, { topic: 'the API' }).topic).toBe(
       'the API'
+    );
+    expect(wired.service.updateRoom(wired.room.id, priya, { topic: 'the API v2' }).topic).toBe(
+      'the API v2'
+    );
+  });
+});
+
+describe('an uncounted turn does not re-arm the budget notice', () => {
+  it('keeps the room memory of being out of budget across an unlimited stretch', async () => {
+    // **The consumer of `BudgetDecision.counted`, and the reason it is a field
+    // rather than an assumption.** `claimCollected` re-arms the once-per-
+    // exhaustion budget notice after a successful reservation, because spending
+    // again means the hourly window rolled. A turn that spent NOTHING — because
+    // every cap was off — rolled no window, so re-arming on it would say the
+    // room recovered when it did not, and the next real refusal would be
+    // announced a second time about the same unspent hour.
+    //
+    // Deleting the `if (afford.counted)` guard leaves every other test in this
+    // domain green. This is the one that goes red.
+    let limited = true;
+    const wired = openLoudRoom(
+      {
+        agents: AGENTS,
+        turnLimitsEnabled: () => limited,
+        maxAgentDepth: 30,
+        maxTurnsPerAgentPerCascade: 10,
+        maxAutomaticTurnsPerRoomPerHour: 1_000,
+        // One turn for the whole install, so the second target of the very
+        // first message is refused and the room says so once.
+        maxAutomaticTurnsTotalPerHour: 1,
+      },
+      // Bounded, because the middle stretch runs with no limits at all and
+      // nothing else would end it.
+      4
+    );
+
+    await seed(wired);
+    const afterFirst = notices(wired).filter((n) => n.body.notice === 'budget_reached');
+    expect(afterFirst).toHaveLength(1);
+
+    // Limits off install-wide: turns run, nothing is charged, nothing recovers.
+    limited = false;
+    await seed(wired);
+    expect(notices(wired).filter((n) => n.body.notice === 'budget_reached')).toHaveLength(1);
+
+    // Limits back on, with the same spent hour still in the window. The room is
+    // refused again — and stays quiet about it, because it never stopped being
+    // out of budget and it already said so.
+    limited = true;
+    await seed(wired);
+    expect(notices(wired).filter((n) => n.body.notice === 'budget_reached')).toHaveLength(1);
+  });
+
+  it('does re-arm once the window actually rolls and a real turn is charged', async () => {
+    // The other half: `counted` must not become a way to never re-arm. A turn
+    // that IS charged clears the memory, so the next exhaustion is news again.
+    let now = 1_000_000;
+    const wired = openLoudRoom({
+      agents: AGENTS,
+      maxAgentDepth: 30,
+      maxTurnsPerAgentPerCascade: 10,
+      maxAutomaticTurnsPerRoomPerHour: 1_000,
+      maxAutomaticTurnsTotalPerHour: 1,
+      budgetNow: () => now,
+    });
+
+    await seed(wired);
+    expect(notices(wired).filter((n) => n.body.notice === 'budget_reached')).toHaveLength(1);
+
+    // A fresh hour: the next turn is charged against an empty window, which
+    // re-arms — and the exhaustion that follows it is announced again.
+    now += 60 * 60_000 + 1;
+    await seed(wired);
+    expect(notices(wired).filter((n) => n.body.notice === 'budget_reached').length).toBeGreaterThan(
+      1
     );
   });
 });

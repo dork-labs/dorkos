@@ -290,7 +290,7 @@ export interface RoomServiceDeps {
 const REACTION_LOOKUP_CHUNK = 500;
 
 /**
- * The fields of an update that only a person may send (DOR-1429).
+ * The fields of an update that only the install's OWNER may send (DOR-1429).
  *
  * Listed rather than inferred, because the gate has to fire on a key that is
  * PRESENT AND `null` — clearing an override is a write like any other — and
@@ -1751,13 +1751,29 @@ export class RoomService {
    * DOR-608 forbids. The topic is deliberately NOT covered: describing what a
    * room is for is ordinary participation, and #team is a room agents live in.
    *
-   * **The four turn-limit overrides are person-only, in every room** (DOR-1429),
-   * because an agent that can raise its own reply allowance has no allowance —
-   * the same posture `config-write-policy.ts` takes on the install-wide fields,
-   * and the reason no room capability tool exposes them at all. Checked AFTER
-   * visibility and BEFORE any write, so an agent probing a room it is not in
-   * learns 404 exactly as it would from reading it, and a member that is not a
-   * person learns 403 about a room it can genuinely see.
+   * **The four turn-limit overrides are OPERATOR-only, in every room**
+   * (DOR-1429) — the same gate the roster writes take, and for the same reason
+   * they were corrected off `kind === 'human'`. These fields are spend
+   * authority: `turnLimitsEnabled: false` removes this room's cascade guard and
+   * its hourly ceiling in one write, and everything that happens next is billed
+   * to the person who owns the install. A person-kind check would have been
+   * enough while an install minted exactly one human author, and wrong the
+   * moment a second one exists — an invited member, or a cached remote member
+   * from a community (ADR 260727-184933 D6) — because either could then uncap a
+   * room on somebody else's account. The install-wide twins of these fields are
+   * already `operator-only` in `config-write-policy.ts`; this is the same
+   * decision at the room's grain, and it is why no room capability tool exposes
+   * them at all.
+   *
+   * Checked AFTER visibility and BEFORE any write, so a caller probing a room it
+   * is not in learns 404 exactly as it would from reading it, and only somebody
+   * who can genuinely see the room learns 403 `OPERATOR_ONLY`.
+   *
+   * **Only the limit fields tighten.** Title, topic and archive keep the gate
+   * they had — `updateRoom` still has no blanket operator check, because adding
+   * one breaks `createRoom`'s DM un-archive path (see
+   * {@link RoomService.requireSystemRoomWritable}), and this refusal cannot
+   * reach that path: it fires only on fields that call never sends.
    *
    * **An omitted override and an explicit `null` are different instructions.**
    * Absent leaves the stored value alone; `null` clears the override, putting
@@ -1773,7 +1789,7 @@ export class RoomService {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const { deliverNotices, ...roomPatch } = patch;
     if (ROOM_TURN_LIMIT_FIELDS.some((field) => Object.hasOwn(roomPatch, field))) {
-      this.requirePersonAuthor(viewerAuthorId, "change a room's automatic-reply limits");
+      this.requireOperator(viewerAuthorId, 'how much a room may spend on automatic replies');
     }
     this.requireSystemRoomWritable(room, viewerAuthorId, roomPatch);
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {

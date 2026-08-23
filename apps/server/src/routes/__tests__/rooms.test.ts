@@ -435,8 +435,11 @@ describe('/api/rooms', () => {
       expect(cleared.body.turnLimitsEnabled).toBeNull();
     });
 
-    it('refuses an agent with PEOPLE_ONLY, and writes nothing', async () => {
-      // An agent that can raise its own reply allowance has no allowance.
+    it('refuses an agent with OPERATOR_ONLY, and writes nothing', async () => {
+      // An agent that can raise its own reply allowance has no allowance. The
+      // gate is the OPERATOR one rather than a person check, because these
+      // fields are spend authority — `room-limit-overrides.test.ts` measures the
+      // half this route cannot reach, a human who is not the owner.
       const room = await createChannel();
       const token = await anaIn(room.id);
       const res = await request(app)
@@ -444,7 +447,7 @@ describe('/api/rooms', () => {
         .set('X-DorkOS-Agent', token)
         .send({ maxAgentDepth: 99 });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('OPERATOR_ONLY');
       const read = await request(app).get(`/api/rooms/${room.id}`);
       expect(read.body.maxAgentDepth).toBeNull();
     });
@@ -458,7 +461,7 @@ describe('/api/rooms', () => {
         .set('X-DorkOS-Agent', token)
         .send({ maxAgentDepth: null });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('OPERATOR_ONLY');
     });
 
     it('still lets an agent patch a topic, so the gate is the fields and not the route', async () => {

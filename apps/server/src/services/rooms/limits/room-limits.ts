@@ -104,6 +104,14 @@ export interface ResolvedRoomLimits {
  * it is safe to fail in — the failure mode is "the limits used their defaults",
  * never "the limits were absent".
  *
+ * **That guarantee covers a missing rung, not a corrupt one.** A `turn_limits_enabled`
+ * column holding something other than 0 or 1 — which only a hand-edited
+ * database produces, since nothing in DorkOS writes one — is read by Drizzle's
+ * boolean mode as `false`, and this function will faithfully report an
+ * unlimited room. Left unclamped deliberately: a runtime clamp here would be a
+ * guess about what a corrupt row meant, and somebody with write access to the
+ * SQLite file can lift every ceiling more directly than by writing a `2`.
+ *
  * @param room - The room's stored overrides, or `null` for a room that could
  *   not be read. Any `null`/absent field falls through to the next rung.
  * @param config - The install-wide `rooms` settings, or `null` when config is

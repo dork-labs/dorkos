@@ -972,9 +972,19 @@ export class RoomTriggerDispatcher {
    * install that still counts reports `{ room: null, global: 4998,
    * repliesLeftInThisChain: null }` — the room's own two bounds are gone and
    * the install's wallet is not, which is exactly what `resolveRoomLimits`
-   * decided. The two that ARE tied stay tied by construction: the room's hourly
-   * headroom and its chain headroom are both `null` precisely when this room's
-   * `turnLimitsEnabled` is false, because one ladder reading decides both.
+   * decided. The two that ARE tied are the room's hourly headroom and its chain
+   * headroom: both are `null` precisely when this room's `turnLimitsEnabled` is
+   * false.
+   *
+   * **They are tied by both readings landing in one tick, not by a single
+   * read.** This resolves the ladder twice — once here, once inside
+   * {@link RoomTurnBudget.remaining} through `TurnBudgetLimits.perRoom` — and
+   * nothing between them can move: the ladder's two rungs are a synchronous
+   * `better-sqlite3` row read and a synchronous `conf` read, with no `await`
+   * between the two calls, so no toggle can land in the gap. If either rung ever
+   * becomes asynchronous, this is the pair that has to be resolved once and
+   * threaded, because half a verdict here is a turn told it has no chain budget
+   * while it still has a room budget.
    *
    * @param roomId - The room the turn is about to run in.
    * @param depth - The depth the turn being assembled carries, or `'ceiling'`

@@ -153,14 +153,16 @@ router.get('/:id', (req, res) => {
  * spec §6.2). `NOT_A_BRIDGED_ROOM` (409) when `deliverNotices` is sent for a
  * room with no bridge.
  *
- * **The four limit fields are person-only** (DOR-1429): a caller presenting
- * `X-DorkOS-Agent` is refused 403 `PEOPLE_ONLY`, an unverifiable token is
- * refused 401 by `resolveCaller` before this handler runs, and no room
- * capability tool offers them at all. The gate lives in `RoomService.updateRoom`
- * rather than here, one line after the visibility check — so an agent probing a
- * room it cannot see gets the same 404 reading it would, and only a member that
- * is not a person sees the 403. Sending one of these fields as `null` clears
- * the room's override; omitting it leaves whatever is stored alone.
+ * **The four limit fields are operator-only** (DOR-1429): anyone but the person
+ * who owns this install is refused 403 `OPERATOR_ONLY`, an unverifiable agent
+ * token is refused 401 by `resolveCaller` before this handler runs, and no room
+ * capability tool offers them at all. Not merely person-only — these fields are
+ * spend authority, and a second human author (an invited member, a cached
+ * remote one) must not be able to uncap a room on the owner's account. The gate
+ * lives in `RoomService.updateRoom` rather than here, one line after the
+ * visibility check, so a caller probing a room it cannot see gets the same 404
+ * reading it would. Sending one of these fields as `null` clears the room's
+ * override; omitting it leaves whatever is stored alone.
  */
 router.patch('/:id', (req, res) => {
   const body = parseBody(UpdateRoomRequestSchema, req.body, res);
