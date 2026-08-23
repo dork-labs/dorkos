@@ -16,6 +16,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { initBoundary } from '../../../../../lib/boundary.js';
+import { logger } from '../../../../../lib/logger.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
@@ -1200,6 +1201,56 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     expect(windows).toHaveLength(1);
     expect(windows[0]!.types.at(-1)).toBe('turn_end');
     expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+  });
+
+  /**
+   * The `capped` flag on the close line, or undefined when the window closed
+   * some other way. Read from the log because that is the only place it exists
+   * — it is a debugging signal, not state (DOR-1438).
+   *
+   */
+  function cappedFlag(): unknown {
+    const line = vi
+      .mocked(logger.debug)
+      .mock.calls.find((call) => String(call[0]).includes('no continuation began')) as
+      | [string, { capped?: unknown }]
+      | undefined;
+    return line?.[1].capped;
+  }
+
+  it('reports a close that ran out of cap as capped, not as a grace expiry', async () => {
+    // The DOR-1438 shape: a 500ms grace against a 200ms cap, so the FIRST arm
+    // is already shortened to the cap and the timer expires exactly at it.
+    // Computing the flag at arming reads "200ms still to go" and calls this an
+    // ordinary grace expiry — for the very close that reaching the cap causes.
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    try {
+      const h = harness({ graceMs: 500, capMs: 200 });
+      await steeredAndAnswered(h);
+
+      await settled(h, 1);
+      expect(h.windowsOnStream()).toHaveLength(1);
+      expect(cappedFlag()).toBe(true);
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
+  it('reports an ordinary grace expiry as uncapped', async () => {
+    // The other half of the same flag: a 40ms grace inside a 5s cap runs out
+    // with seconds of budget left, and saying `capped` about that would make
+    // the signal useless in the direction that matters.
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    try {
+      const h = harness({ graceMs: 40, capMs: 5_000 });
+      await steeredAndAnswered(h);
+
+      await settled(h, 1);
+      expect(h.windowsOnStream()).toHaveLength(1);
+      expect(cappedFlag()).toBe(false);
+    } finally {
+      debug.mockRestore();
+    }
   });
 
   it('does not cut short a continuation that outruns the cap', async () => {

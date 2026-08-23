@@ -223,8 +223,31 @@ const CONTINUATION_GRACE_MS = 500;
  * Measured from the first arming, and reset only by a discrete new reason to
  * expect a continuation — another `result` deferred, or another steer — never
  * by the process's own chatter, which is the whole point of having a cap.
+ *
+ * **What reaching the cap costs the person, stated plainly.** The window closes
+ * on the `result` it is holding, so the TURN is settled honestly. But a
+ * continuation that starts after this point starts with no window open, so
+ * `PersistentDispatch` drains it into nothing and logs
+ * `dropped model output nobody could project` at ERROR with a per-type census
+ * (`persistent-dispatch.ts`). Those words never reach the live stream — the
+ * person watching sees a finished turn and nothing more. They are not lost from
+ * the session: the CLI wrote them to its own transcript, so they reappear the
+ * next time the session is hydrated from disk. A healthy run must therefore
+ * never produce that error line, and it is the signal to raise this number
+ * (DOR-1438).
  */
 const CONTINUATION_CAP_MS = 5_000;
+
+/**
+ * How much a timer may fire ahead of its deadline before {@link armGrace}'s
+ * expiry check stops believing the clock.
+ *
+ * Node's timers round to whole milliseconds, so a timer armed for exactly the
+ * remaining cap can land a fraction under it. Without the slack a close that
+ * really did reach the cap would report itself as an ordinary grace expiry —
+ * the same wrong answer the arm-time computation used to give.
+ */
+const TIMER_EARLY_FIRE_SLACK_MS = 1;
 
 /** The per-window accounting fetched from the still-live process at its close. */
 export interface WindowUsage {
@@ -994,8 +1017,8 @@ export class SessionTurnWindows {
     // closing inline, because this runs inside the pump's synchronous read loop
     // and a close re-entering it there would attribute the next message to a
     // window that no longer exists.
-    const remaining = Math.max(0, record.graceDeadline - Date.now());
-    const capped = remaining === 0;
+    const deadline = record.graceDeadline;
+    const remaining = Math.max(0, deadline - Date.now());
     const delay = wait === 'until-cap' ? remaining : Math.min(grace, remaining);
     record.grace = setTimeout(() => {
       record.grace = undefined;
@@ -1005,6 +1028,12 @@ export class SessionTurnWindows {
       if (this.current !== record) return;
       const deferred = record.deferred;
       if (deferred === undefined) return;
+      // Asked HERE rather than at arming, because arming cannot know the answer
+      // (DOR-1438). A grace armed with less than a full grace of cap left runs
+      // out exactly AT the cap — the arm-time reading called that an ordinary
+      // grace expiry, so the one line that says "this process talked past its
+      // budget" never appeared for the shape that reaches the cap most often.
+      const capped = Date.now() >= deadline - TIMER_EARLY_FIRE_SLACK_MS;
       logger.debug('[SessionTurnWindows] no continuation began; closing the steered turn', {
         sessionId: this.opts.sessionId,
         steered: [...record.steered],
