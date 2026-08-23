@@ -99,8 +99,8 @@ describe('OnboardingPowerStep', () => {
   it('renders the door with the onboarding heading', () => {
     renderStage();
     expect(screen.getByText('Choose your power level')).toBeInTheDocument();
-    // The shared promise copy, not a second copy written here.
-    expect(screen.getByText(/runs without asking/i)).toBeInTheDocument();
+    // The shared door copy, not a second copy written here.
+    expect(screen.getByText(/no approval prompts/i)).toBeInTheDocument();
   });
 
   it('accept performs the door writes, completes the step, and advances', async () => {
