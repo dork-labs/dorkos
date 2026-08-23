@@ -512,9 +512,12 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   stage still landed. Distinct from `unsupported`, which claimed the adapter
  *   could not stage at all and so contradicted its own declared capability on
  *   every default claude-code install (DOR-1307).
- * - `turn-owned-elsewhere` — a turn IS open and a DIFFERENT window started it, so
- *   this sender may not write into it (a steer is a write, gated by the same
- *   lock a send passes). The message waits in the queue instead. It replaced
+ * - `turn-owned-elsewhere` — a turn IS open (checked against the session's own
+ *   projection, never assumed) and a DIFFERENT caller started it, so this sender
+ *   may not write into it: a steer is a write, gated by the same lock a send
+ *   passes. The caller need not be another window — a room, an MCP client and an
+ *   embedded surface all hold the lock under their own ids — so nothing built on
+ *   this may name one. The message waits in the queue instead. It replaced
  *   `no-open-turn`, which folded this together with "the turn had ended" and so
  *   let the cockpit tell a person their task had finished while it was visibly
  *   running (DOR-1315).

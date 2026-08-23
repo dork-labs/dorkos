@@ -66,11 +66,18 @@ const DOWNGRADE_NOTICE: Record<
   // sentence here would be a duplicate at best, and at worst it would imply a
   // failure where the design simply chose the later of two honest routes.
   'not-stageable': null,
-  // Says who is holding the task, and nothing about whether it finished. The
-  // sentence this replaced — "Queued. The task had already finished." — asserted
-  // an ending the server had never checked for, and a person watching the task
-  // run in their other window was told it was over (DOR-1315).
-  'turn-owned-elsewhere': "Couldn't cut in. Another window is running this task.",
+  // Says the task is still running and where the words went, and claims nothing
+  // about it ending. The sentence this replaced — "Queued. The task had already
+  // finished." — asserted an ending the server had never checked for, and a
+  // person watching the task run was told it was over (DOR-1315).
+  //
+  // "Something else" rather than "another window", deliberately: the holder is a
+  // client id, and plenty of them are not windows. A room runs turns under
+  // `ROOMS.CLIENT_ID`, an MCP sign-in resume under its own flow id, Obsidian
+  // under the embedded transport's. Naming a window would put back exactly the
+  // kind of unchecked claim this line was rewritten to remove.
+  'turn-owned-elsewhere':
+    "Couldn't cut in. Something else is running this task, so it's waiting in line.",
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
 

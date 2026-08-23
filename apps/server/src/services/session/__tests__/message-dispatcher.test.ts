@@ -1085,7 +1085,7 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(result.queued).toBe(false);
   });
 
-  it('tells a second window that the OTHER window is running the task (DOR-1315)', async () => {
+  it('tells a second sender that something else is still running the task (DOR-1315)', async () => {
     // The reported failure: a steer posted ~5s into a visibly running turn came
     // back `no-open-turn`, and the composer chip said "Queued. The task had
     // already finished." It had not. The refusal was the write-lock — a steer is
@@ -1098,7 +1098,7 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
     await send('long turn');
     await settle();
-    // The turn really is running, in the other window, exactly as the operator
+    // The turn really is running, under the other client, exactly as the operator
     // saw it: this is the state the old copy called "already finished".
     expect(projectorStatus()).toBe('streaming');
     runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
@@ -1144,6 +1144,28 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
 
     first.open();
     await settle();
+  });
+
+  it('does not claim a stranger is running a task when no turn is open', async () => {
+    // A held lock is NOT proof of a running turn. It outlives its turn until the
+    // release, the SSE close, or `SESSIONS.LOCK_TTL_MS` — five minutes — so a
+    // steer refused by the lock alone could land in a session where nothing is
+    // producing. Saying "something else is running this task" there would be the
+    // very defect DOR-1315 was filed for, one refusal to the left. Nothing is
+    // open, so nothing was lost by not cutting in, and the message just runs.
+    withCapabilities({ supportsSteer: true });
+    runtime.withScenarios([quickTurn()]);
+    expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull();
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await send('course-correct', {
+      disposition: 'steer',
+      clientId: 'window-b',
+    });
+    await settle();
+
+    expect(result.outcome.degradedBecause).toBe('session-idle');
+    expect(result.queued).toBe(false);
   });
 
   it('publishes whether the session can be steered, once, before the ladder runs', async () => {
@@ -1295,6 +1317,41 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(ingest).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'context_staged', content: 'attach this' })
     );
+  });
+
+  it('queues a stage the write-lock refused, naming the holder rather than a missing turn (DOR-1315)', async () => {
+    // The stage half of the same relabel, and until now nothing pinned it: the
+    // reason on this line could be set to any other member of the enum and the
+    // whole session suite stayed green (adversarial review, mutant M2). A stage
+    // has exactly ONE undelivered path — `deliverStage`'s `isLocked` refusal —
+    // so this is the only input that reaches it, and the receipt it produces is
+    // what a person reads.
+    withCapabilities({ supportsContextStaging: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    expect(projectorStatus()).toBe('streaming');
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await send('attach this', {
+      disposition: 'stage',
+      clientId: 'window-b',
+    });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'queue',
+      degradedBecause: 'turn-owned-elsewhere',
+    });
+    // It waits rather than being lost, which is the promise the reason explains.
+    expect(result.queued).toBe(true);
+    // Refused at the gate: the runtime was never asked to stage.
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+
+    first.open();
+    await settle();
   });
 
   it('folds a declared-but-undeliverable stage exactly once (no double-fold)', async () => {

@@ -474,7 +474,12 @@ export class PersistentDispatch {
    *
    * A steer does not open a turn: it pushes into the held input stream of the
    * one already running, reaching the CLI's own queue so the message is
-   * delivered within the live turn. So this returns a RECEIPT — the resulting
+   * delivered within the live turn — provided that turn reaches a tool boundary
+   * to fold it in at. A turn that only writes prose reaches none and answers the
+   * message afterwards as its own turn; `sdk/sdk-utils.ts` (`HeldUserPrompt.push`)
+   * carries the evidence and the two rejected alternatives. A `delivered` receipt
+   * here means the words reached the process, never that they cut in.
+   * So this returns a RECEIPT — the resulting
    * events surface on that turn's already-running stream (`streamTurnWindow`),
    * which another consumer is already draining, and a second generator here
    * would be two feeds fighting over one turn.
