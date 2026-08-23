@@ -7,6 +7,19 @@ import { Dialog, DialogContent } from '@/layers/shared/ui';
 import { useMoments } from '../model/use-moments';
 import type { MomentDescriptor } from '../model/moment-descriptor';
 
+/**
+ * When this app load began, sampled once at module evaluation — which happens
+ * during initial bundle load, before any config request goes out.
+ *
+ * It is the reference for "did the server confirm this answer during THIS
+ * launch". A config answer restored from a previous session's persisted cache
+ * carries the `dataUpdatedAt` from when it was originally fetched — always older
+ * than this — while an answer a fetch produced this session is always newer. So
+ * a plain `dataUpdatedAt > LAUNCH_STARTED_AT` tells the two apart, and it does so
+ * without depending on WHEN the rail happens to mount (see the class docblock).
+ */
+const LAUNCH_STARTED_AT = Date.now();
+
 /** Props for {@link MomentHost}. */
 interface MomentHostProps {
   /**
@@ -47,11 +60,36 @@ function pickWinner(descriptors: MomentDescriptor[]): MomentDescriptor | null {
  * deliberately dismissed — a first-run install is being asked plenty already.
  * Staying quiet does not spend the launch, so the moment simply waits its turn.
  *
+ * ## The config in hand must be this launch's, confirmed by the server
+ *
+ * `['config','current']` is on the warm-boot persister's allow-list, so a reload
+ * paints from `localStorage` and — inside the 30s `staleTime` — may serve that
+ * copy without asking the server. Opening a moment off it re-asks a question
+ * answered in another window, at the CLI or by hand, then overwrites the real
+ * answer with the reply. So a moment opens only once the answer in hand is one
+ * the server produced THIS launch.
+ *
+ * **Why a timestamp and not `isFetchedAfterMount`.** The obvious signal —
+ * "config was fetched after this component mounted" — is per-observer, and this
+ * rail mounts late: `AppShell` withholds it behind a config-loaded gate, so on a
+ * cold load the config request has already resolved by the time the rail's own
+ * observer attaches, and `isFetchedAfterMount` stays false for the rest of the
+ * launch. The moment then never opens on that load — and a cold load is not an
+ * edge case: every DorkOS update changes the persister's build-version buster,
+ * which discards the cache and makes the very next launch cold, which is exactly
+ * the launch a one-time upgrade door is shipped for (measured; see
+ * `fetch-gate.test.tsx`). Comparing the query's `dataUpdatedAt` to when this
+ * launch began sidesteps mount timing entirely: a persisted answer carries the
+ * `dataUpdatedAt` of its ORIGINAL fetch (always before this launch), a fetch
+ * this session carries a newer one, and hydration preserves the old stamp rather
+ * than restamping to now — so the same check that opens for a cold undecided user
+ * still refuses to open off a stale restored cache until the server confirms.
+ *
  * @param onboardingOverlayVisible - True while the onboarding overlay is mounted.
  */
 export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps) {
   const moments = useMoments();
-  const { data: config, isFetchedAfterMount } = useConfig();
+  const { data: config, dataUpdatedAt } = useConfig();
   const momentShownThisLaunch = useAppStore((s) => s.momentShownThisLaunch);
   const markMomentShown = useAppStore((s) => s.markMomentShown);
 
@@ -69,7 +107,12 @@ export function MomentHost({ onboardingOverlayVisible = false }: MomentHostProps
   const onboardingSettled =
     config?.onboarding != null &&
     (config.onboarding.completedAt != null || config.onboarding.dismissedAt != null);
-  const quiet = onboardingOverlayVisible || !isFetchedAfterMount || !onboardingSettled;
+  // The config in hand must be an answer the server confirmed THIS launch, not a
+  // copy restored from a previous session's persisted cache — see the class
+  // docblock for why this is a timestamp and not `isFetchedAfterMount`. A
+  // never-fetched query reports `dataUpdatedAt: 0`, safely before the launch.
+  const confirmedThisLaunch = dataUpdatedAt > LAUNCH_STARTED_AT;
+  const quiet = onboardingOverlayVisible || !confirmedThisLaunch || !onboardingSettled;
   const winner = quiet ? null : pickWinner(moments);
 
   // Open the winner by adjusting state during render (React's recommended
