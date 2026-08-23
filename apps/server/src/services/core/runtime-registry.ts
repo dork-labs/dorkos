@@ -56,6 +56,25 @@ function rowToSettings(row: SettingsRow): SessionSettings {
   return settings;
 }
 
+/**
+ * How many session ids one `WHERE session_id IN (...)` may carry. Every id
+ * spends one of SQLite's compiled-in bound variables (~32k), so a list past the
+ * ceiling would fail the whole read rather than part of it — the same ceiling,
+ * and the same 500, the queue store chunks its deletes at.
+ */
+const BOUND_RUNTIME_CHUNK_SIZE = 500;
+
+/** One session's ownership row, as a caller that must not guess reads it. */
+export interface SessionBinding {
+  /** The runtime type the row names. Never inferred, never a default. */
+  runtime: string;
+  /**
+   * When the row was written, epoch ms; `null` when the stored timestamp cannot
+   * be parsed, which a caller must treat as "unknown", never as "long ago".
+   */
+  boundAt: number | null;
+}
+
 /** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
 function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata.$inferInsert> {
   const patch: Partial<typeof sessionMetadata.$inferInsert> = {};
@@ -626,6 +645,58 @@ export class RuntimeRegistry {
     logger.debug(
       `[RuntimeRegistry] Re-keyed session_metadata '${fromId}' -> '${toId}'${destination ? ' (merged into existing row)' : ''}`
     );
+  }
+
+  /**
+   * Batch-read the binding of each of these sessions — which runtime owns it
+   * and when the row was written — with no inference whatsoever.
+   *
+   * The deliberate opposite of {@link getSessionRuntimeType}, which answers
+   * every unbound session with the registered default so a read never 503s. A
+   * caller about to DELETE something needs the other answer: a session with no
+   * row, or a row whose `runtime` is still NULL, is owned by nobody as far as
+   * this table is concerned, and it is simply absent from this map rather than
+   * quietly attributed to claude-code. The boot reconcile
+   * (`reconcile-session-rows.ts`) is that caller: an absent id keeps its rows.
+   *
+   * `boundAt` travels with it because the same caller must be able to tell a
+   * binding older than this process from one this process just wrote — the
+   * second is a session being created right now, whatever the disk says yet.
+   *
+   * Chunked, because every id spends one of SQLite's bound variables and the
+   * caller's list is as long as the backlog it is reconciling. The chunking
+   * lives here rather than at the caller so no future caller has to remember it.
+   *
+   * @param ids - Session identifiers to read
+   */
+  getSessionBindings(ids: string[]): Map<string, SessionBinding> {
+    const result = new Map<string, SessionBinding>();
+    if (ids.length === 0) return result;
+    const db = this.requireDb('getSessionBindings');
+    for (let i = 0; i < ids.length; i += BOUND_RUNTIME_CHUNK_SIZE) {
+      const rows = db
+        .select({
+          sessionId: sessionMetadata.sessionId,
+          runtime: sessionMetadata.runtime,
+          createdAt: sessionMetadata.createdAt,
+        })
+        .from(sessionMetadata)
+        .where(inArray(sessionMetadata.sessionId, ids.slice(i, i + BOUND_RUNTIME_CHUNK_SIZE)))
+        .all();
+      for (const row of rows) {
+        if (!row.runtime) continue;
+        // `created_at` is free-form TEXT that this class writes as ISO 8601.
+        // Anything that does not parse is reported as unknown rather than as a
+        // number a caller would compare against — the same treatment
+        // `rowToSettings` gives an unreadable effort level.
+        const parsed = Date.parse(row.createdAt);
+        result.set(row.sessionId, {
+          runtime: row.runtime,
+          boundAt: Number.isFinite(parsed) ? parsed : null,
+        });
+      }
+    }
+    return result;
   }
 
   /**
