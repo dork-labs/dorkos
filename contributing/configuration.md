@@ -801,7 +801,7 @@ The cascade guard from ADR 260726-170127, as amended by ADR 260823-000217. A roo
 
 `maxAgentDepth` is how deep that whole chain may run. `maxTurnsPerAgentPerCascade` counts each agent separately, and it is the rule that actually bounds ping-pong: two agents trading answers stop after ten each rather than running the chain out between them, and it fires well below the depth ceiling. It used to be an ancestry rule — one turn per agent per conversation, ever — which was too tight to hold a real exchange and is now a counter with a number a person can move.
 
-`maxTurnsPerAgentPerCascade` counts **messages that agent posted** in the cascade, not turns it took — an agent that posts progress notes through the rooms tool while it works spends its allowance faster than one that answers once and stops.
+`maxTurnsPerAgentPerCascade` counts **turns, not messages** (DOR-1434). Every entry one turn writes carries that turn's `dispatch_id`, so an agent that posts three progress notes through the rooms tool and then answers has spent one, not four. Entries with no turn behind them — a person's post, an agent post with nothing in flight, and every row written before the column existed — count one each, which is what they cost under the message counting this replaced.
 
 A post by a **human** always starts a fresh cascade at depth 0, so a room the guard has quietened is always one message from running again. `maxAgentDepth: 0` refuses every automatic reply, which is the way to turn room triggering off without leaving a room.
 

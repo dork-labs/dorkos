@@ -53,3 +53,17 @@ The re-ask on held batches (`chooseTrigger`) matters MORE under a counter than i
 - **The rule is weaker per hop.** Ping-pong now costs up to N turns per agent before it stops, where it used to cost one. That is spend, deliberately bought, and it lands on the hourly caps — which is why those were raised in the same change and argued separately in ADR 260823-000218.
 - A count is a slightly costlier read than a distinct set on a very hot cascade. Same index, same row set, one aggregation; measured as unremarkable beside the model turn it precedes.
 - Historical entries stamped at the OLD depth ceiling (3) are below the new one (30), so a cold cascade from before this change is re-triggerable one more hop if somebody posts into it. Harmless, and pinned by the guard tests rather than left to be discovered.
+
+## Amendment, 2026-08-23 — the unit is a turn (DOR-1434)
+
+The Decision bullet above headed "**The unit is a message, not a turn**" is superseded. It named a dispatch-scoped count as a follow-up rather than a silent re-interpretation, and this is that follow-up, taken deliberately and in the open.
+
+The rest of that bullet was right about what `COUNT(*)` meant and wrong about it erring safely. It errs against the agents that behave best. An agent that says "looking at the migration" before it answers spends two of its ten for one model call; an agent that answers in one line spends one. The number a person sets is meant to bound how much of a conversation one agent may take, and under row counting it bounded how legible that agent was willing to be — which is a tax on the exact behaviour `.claude/rules/room-conduct.md` asks for.
+
+**What changes.** `room_entries` gains a nullable `dispatch_id`, stamped with the dispatcher's correlation id on every entry a turn writes: the answer the dispatcher delivers, the mid-turn posts an agent makes through the rooms tool, and a welcome-back aside's posts. `RoomStore.turnsByAuthorInCascade` becomes `COUNT(DISTINCT dispatch_id) + SUM(dispatch_id IS NULL)` over the same `idx_room_entries_cascade_root` read — one turn counts once however many entries it wrote.
+
+**What does not change.** `evaluateCascade` is untouched: it takes counts and refuses at the ceiling, and it never knew what a count was made of. The rule is still a mechanism and never a prompt, still fires below the depth ceiling, still resets on a person's message, and is still operator-only. `chooseTrigger`'s re-ask on held batches matters for exactly the reason written above — the count still moves while a batch waits, it now moves a turn at a time.
+
+**Null counts one, on purpose.** A person's post, an agent post with no trigger behind it (already stamped at the depth ceiling, so its cascade is spent regardless), and every row written before the column existed all carry null and cost one each. That is precisely what they cost under row counting, so an existing install is not re-interpreted by an upgrade — the new unit applies to turns taken from here on.
+
+**The rule is weaker per hop again, and by less than it looks.** A ping-pong still costs at most N turns per agent, and a turn is one model call, which is the thing being bounded. What is no longer counted is the extra rows one call writes, which never cost anything to run.

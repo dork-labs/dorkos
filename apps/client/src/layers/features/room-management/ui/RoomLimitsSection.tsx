@@ -165,7 +165,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
         />
         <RoomLimitRow
           label="Replies from one agent"
-          description="How many of those replies any one agent may send here."
+          description="How many turns any one agent may take here. Progress notes it posts while it works don't count extra."
           value={room.maxTurnsPerAgentPerCascade ?? null}
           fallback={installLimits?.maxTurnsPerAgentPerCascade ?? null}
           min={ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min}

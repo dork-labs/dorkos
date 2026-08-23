@@ -4843,7 +4843,9 @@
       "affects": [
         "apps/server/src/services/rooms/cascade-guard.ts",
         "apps/server/src/services/rooms/room-trigger.ts",
-        "apps/server/src/services/rooms/room-store.ts"
+        "apps/server/src/services/rooms/room-store.ts",
+        "apps/server/src/services/rooms/room-service.ts",
+        "packages/db/src/schema/rooms.ts"
       ]
     },
     {
