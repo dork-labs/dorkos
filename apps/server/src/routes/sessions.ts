@@ -71,6 +71,11 @@ import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
+// A control request that outlived its bound is not a claude-code-only idea, but
+// claude-code is the only runtime with one today, so the class still lives with
+// its clock. A second runtime growing one is the signal to move it somewhere
+// runtime-neutral rather than to import a second class here.
+import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/sessions/bounded-control.js';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -680,7 +685,20 @@ router.post('/:id/reload-plugins', async (req, res) => {
       );
     }
     res.json(result);
-  } catch {
+  } catch (err) {
+    // Told apart from a plain failure because the two are different facts, and
+    // the difference is the whole of what the caller can do next (DOR-1301). A
+    // reload the agent never confirmed may still have happened — it was written
+    // to a process that stopped answering, not refused — so the honest answer is
+    // "no confirmation", not "failed".
+    if (err instanceof ControlRequestTimeoutError) {
+      return sendError(
+        res,
+        504,
+        "The agent didn't confirm the plugin reload in time — it may still apply; try again if the new plugin doesn't appear",
+        'RELOAD_TIMEOUT'
+      );
+    }
     sendError(res, 500, 'Plugin reload failed', 'RELOAD_ERROR');
   }
 });

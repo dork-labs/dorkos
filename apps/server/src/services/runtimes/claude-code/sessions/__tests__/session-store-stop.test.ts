@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import { SessionStore } from '../session-store.js';
-import { STOP_ACK_TIMEOUT_MS } from '../bounded-stop.js';
+import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ forkSession: vi.fn() }));
 vi.mock('../../../../../lib/logger.js', () => ({
