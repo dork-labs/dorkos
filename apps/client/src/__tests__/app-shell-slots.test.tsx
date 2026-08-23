@@ -212,6 +212,13 @@ vi.mock('@/layers/features/tours', () => ({
   TourHost: () => null,
 }));
 
+// The moments rail draws nothing in this suite's world (onboarding is settled
+// but no moment is eligible). Stubbed anyway: this file fakes the app store with
+// a hand-written state object, and the rail's launch latch lives there.
+vi.mock('@/layers/widgets/moments', () => ({
+  MomentHost: () => null,
+}));
+
 // Keep the real AppBannerSlot so this suite can prove *where* the global banner
 // lands in the shell (DOR-389): inside SidebarInset, below the header — never
 // above the shell where the fixed sidebar would paint over it. `useAppBanners` is

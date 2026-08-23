@@ -1,63 +1,23 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-import { TelemetryConsentBanner } from '../ui/TelemetryConsentBanner';
 
-// motion (used by the Banner details region) reads matchMedia for reduced-motion,
-// which jsdom does not implement.
-beforeAll(() => {
-  Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
-});
+import { useUpdateConfig } from '@/layers/entities/config';
+import { TelemetryConsentMoment } from '@/layers/features/telemetry-consent';
+import { Dialog, DialogContent } from '@/layers/shared/ui';
 
-// The banner reads from `useConfig` and writes via `useUpdateConfig`; both are
-// mocked so no TransportProvider or QueryClient is needed. Other exports
-// (the TelemetryPayload* components) are preserved via importOriginal.
+// The moment writes via `useUpdateConfig` and reads nothing — eligibility is the
+// descriptor hook's job. Mocking the write means no TransportProvider or
+// QueryClient is needed; the TelemetryPayload* components are preserved via
+// importOriginal because the disclosure really renders them.
 vi.mock('@/layers/entities/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/config')>();
-  return { ...actual, useConfig: vi.fn(), useUpdateConfig: vi.fn() };
+  return { ...actual, useUpdateConfig: vi.fn() };
 });
-
-interface TelemetryConfigState {
-  userHasDecided?: boolean;
-  install?: boolean;
-  heartbeat?: boolean;
-}
-
-function setConfigState(telemetry: TelemetryConfigState | null) {
-  vi.mocked(useConfig).mockReturnValue({
-    data:
-      telemetry === null
-        ? undefined
-        : {
-            telemetry: {
-              userHasDecided: telemetry.userHasDecided ?? false,
-              install: telemetry.install ?? false,
-              heartbeat: telemetry.heartbeat ?? false,
-              errorReporting: false,
-            },
-          },
-    isLoading: false,
-    error: null,
-    refetch: vi.fn(),
-  } as unknown as ReturnType<typeof useConfig>);
-}
 
 const updateMutate = vi.fn();
 
@@ -73,21 +33,28 @@ function setUpdateConfigState(isPending = false) {
   } as unknown as ReturnType<typeof useUpdateConfig>);
 }
 
-describe('TelemetryConsentBanner', () => {
+/** The moment as the host mounts it — inside the rail's dialog. */
+function renderMoment() {
+  return render(
+    <Dialog open>
+      <DialogContent>
+        <TelemetryConsentMoment />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+describe('TelemetryConsentMoment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     updateMutate.mockReset();
     setUpdateConfigState();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
-  it('renders the disclosure and consent buttons, with the payload collapsed by default', () => {
-    setConfigState({ userHasDecided: false });
-
-    render(<TelemetryConsentBanner />);
+  it('renders the invitation and consent buttons, with the payload collapsed by default', () => {
+    renderMoment();
 
     expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
     // Progressive disclosure: the payload stays hidden until asked for.
@@ -99,31 +66,17 @@ describe('TelemetryConsentBanner', () => {
 
   it('reveals the heartbeat payload verbatim after clicking "See what\'s sent"', async () => {
     const user = userEvent.setup();
-    setConfigState({ userHasDecided: false });
+    renderMoment();
 
-    render(<TelemetryConsentBanner />);
     await user.click(screen.getByRole('button', { name: /see what.s sent/i }));
 
     expect(await screen.findByText(/runtimesConfigured/)).toBeInTheDocument();
   });
 
-  it('renders defensively when config has not loaded yet', () => {
-    setConfigState(null);
-    render(<TelemetryConsentBanner />);
-    expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
-  });
-
-  it('does not render once the user has decided', () => {
-    setConfigState({ userHasDecided: true });
-    const { container } = render(<TelemetryConsentBanner />);
-    expect(container).toBeEmptyDOMElement();
-  });
-
   it('accepting turns on every channel it covers and records the decision', async () => {
     const user = userEvent.setup();
-    setConfigState({ userHasDecided: false });
+    renderMoment();
 
-    render(<TelemetryConsentBanner />);
     await user.click(screen.getByRole('button', { name: /share anonymously/i }));
 
     expect(updateMutate).toHaveBeenCalledTimes(1);
@@ -136,19 +89,30 @@ describe('TelemetryConsentBanner', () => {
 
   it('declining writes every channel off and records the decision', async () => {
     const user = userEvent.setup();
-    setConfigState({ userHasDecided: false });
+    renderMoment();
 
-    render(<TelemetryConsentBanner />);
     await user.click(screen.getByRole('button', { name: /no thanks/i }));
 
+    expect(updateMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate).toHaveBeenCalledWith({
       telemetry: { install: false, heartbeat: false, usage: false, userHasDecided: true },
     });
   });
 
+  it('never stamps lastPromptedVersion — that field is the server’s', async () => {
+    const user = userEvent.setup();
+    renderMoment();
+
+    await user.click(screen.getByRole('button', { name: /share anonymously/i }));
+
+    // `hasTier1SendGate` opens on a non-null `lastPromptedVersion` too, so a
+    // client-side stamp would open the send gate for someone who never answered.
+    const [patch] = updateMutate.mock.calls[0] as [{ telemetry: Record<string, unknown> }];
+    expect(patch.telemetry).not.toHaveProperty('lastPromptedVersion');
+  });
+
   it('links to the public telemetry contract with safe attributes', () => {
-    setConfigState({ userHasDecided: false });
-    render(<TelemetryConsentBanner />);
+    renderMoment();
 
     const link = screen.getByRole('link', { name: /full contract/i });
     expect(link).toHaveAttribute('href', 'https://dorkos.ai/telemetry');
@@ -156,11 +120,10 @@ describe('TelemetryConsentBanner', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
-  it('disables both buttons while the update is pending', () => {
-    setConfigState({ userHasDecided: false });
+  it('disables both buttons while the update is in flight', () => {
     setUpdateConfigState(true);
 
-    render(<TelemetryConsentBanner />);
+    renderMoment();
 
     expect(screen.getByRole('button', { name: /no thanks/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /share anonymously/i })).toBeDisabled();
