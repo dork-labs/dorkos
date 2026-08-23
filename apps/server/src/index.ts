@@ -2,6 +2,7 @@ import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
+import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { previewListeners } from './services/workbench-serve/index.js';
 import {
   CodexRuntime,
@@ -463,6 +464,17 @@ async function start() {
     process.exit(1);
   }
   releaseInstanceLock = lock.release;
+
+  // End the warm agent processes a previous run of THIS data directory left
+  // behind (DOR-1310). Deliberately here: after the instance lock, so no live
+  // server's processes are in scope, and long before any session can be warmed,
+  // so the sweep never races a process this run just spawned. Never fatal — a
+  // boot must not fail over a cleanup.
+  await reapOrphanedWarmProcesses().catch((error: unknown) => {
+    logger.warn('[DorkOS] could not sweep leftover agent processes', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 
   try {
     initConfigManager(dorkHome);

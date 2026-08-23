@@ -329,6 +329,23 @@ export class WarmProcessLedger {
   }
 }
 
+/** This data directory's ledger, built on first use. */
+let shared: WarmProcessLedger | undefined;
+
+/**
+ * The one ledger this server writes to.
+ *
+ * A module-level singleton rather than a constructor-threaded dependency
+ * because both of its users sit at opposite ends of the process — the spawn
+ * seam deep inside a pump launch, and the sweep at the top of boot — and the
+ * single-instance lock already guarantees one server per data directory, which
+ * is precisely the scope of this object.
+ */
+export function sharedWarmProcessLedger(): WarmProcessLedger {
+  shared ??= new WarmProcessLedger(resolveDorkHome());
+  return shared;
+}
+
 /** What one boot-time sweep did. */
 export interface WarmProcessReapReport {
   /** Records that named a process we proved we own, and therefore ended. */
@@ -424,7 +441,7 @@ export async function reapOrphanedWarmProcesses(
   input: ReapOrphanedWarmProcessesInput = {}
 ): Promise<WarmProcessReapReport> {
   const probe = input.probe ?? systemProcessProbe;
-  const ledger = input.ledger ?? new WarmProcessLedger(resolveDorkHome(), probe);
+  const ledger = input.ledger ?? sharedWarmProcessLedger();
   const sleep = input.sleep ?? realSleep;
 
   const file = ledger.read();
