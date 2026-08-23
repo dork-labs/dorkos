@@ -1450,12 +1450,22 @@ export class RoomTriggerDispatcher {
    * exactly: the claim on the room the entry lands in IS the turn writing there,
    * and there is never more than one. No heuristic, one map lookup.
    *
+   * **So it answers for the TRIGGERING room only, and that is the accepted
+   * trade.** An agent mid-turn in room A that posts a note into room B holds no
+   * claim in B, so the note stamps null and costs one message against its author
+   * there. Read that as correct rather than as a gap: nothing in B asked for that
+   * turn, and B's own allowance is the one the note spends. Within A — where the
+   * turn was triggered and where its answer lands — every entry it writes
+   * collapses to one.
+   *
    * **Aside turns count here, and do not count there.** An aside has no cascade
    * to hand on ({@link ActiveClaim.aside}), which is why `deepestClaimOf` skips
-   * it — but it is unambiguously a turn, and the two posts a welcome-back turn
-   * writes are two entries of one turn like any other. Nothing about the cascade
-   * it does not have changes that; each of those entries is its own cascade root
-   * anyway, so this only makes the record honest.
+   * it — but it is unambiguously a turn, so its `post_to_room` writes carry its
+   * id like any other turn's. Note the limit: this covers what the aside TURN
+   * writes while its claim is held, not what the welcome-back greeter writes
+   * around it. The greeter's status line goes in before `askAside` is called and
+   * its offer goes in after the claim is released, so both are un-stamped — each
+   * being its own cascade root, that costs nothing.
    *
    * @param roomId - The room the entry is being written into.
    * @param authorId - The author writing it.
@@ -1862,12 +1872,14 @@ export class RoomTriggerDispatcher {
       authorId: target.authorId,
       text,
       sessionId: opts.sessionId,
-      // The dispatch is passed rather than looked up, and that is not belt and
-      // braces: a late answer's claim has been held for minutes, long enough for
-      // a halt plus a fresh message to hand this `(room, agent)` key to another
-      // turn — and reading the key at delivery time would then stamp this
-      // answer with somebody else's turn. The id this turn was minted with is
-      // the only one that is right for it.
+      // The dispatch is passed rather than looked up, as defence in depth. The
+      // worry is a late answer, whose claim has been held for minutes: if this
+      // `(room, agent)` key could be handed to another turn while it waited,
+      // reading the key here would stamp this answer with somebody else's turn.
+      // Traced, and today it cannot — a halt marks the turn and `releaseOwnClaim`
+      // refuses a release from a dispatch that is not the holder, so nothing
+      // re-keys under a live claim. Passing the id keeps the stamp right if that
+      // guard ever moves, and costs one field to do it.
       trigger: { root: entry.cascadeRoot, depth: target.depth, dispatchId: target.dispatchId },
       // Answer where you were asked. `threadRootEntryId` is already a validated
       // top-level entry — every reply carries the root, never another reply —

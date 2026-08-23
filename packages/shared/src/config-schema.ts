@@ -60,7 +60,7 @@ export const MAX_TRUST_WINDOW_MINUTES = 1440;
 export const ROOM_TURN_LIMIT_BOUNDS = {
   /** How many automatic replies one chain may run. */
   maxAgentDepth: { min: 0, max: 100 },
-  /** How many of those replies any ONE agent may run. */
+  /** How many TURNS any ONE agent may take inside one chain. */
   maxTurnsPerAgentPerCascade: { min: 1, max: 100 },
   /** How many automatic replies one room may run in an hour. */
   maxAutoTurnsPerHour: { min: 0, max: 10_000 },

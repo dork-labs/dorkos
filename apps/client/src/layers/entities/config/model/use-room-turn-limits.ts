@@ -23,7 +23,7 @@ export interface RoomTurnLimits {
   turnLimitsEnabled: boolean;
   /** How many replies in a row agents may trade before the room pauses them. */
   maxAgentDepth: number;
-  /** How many of those replies any ONE agent may post in one back-and-forth. */
+  /** How many TURNS any ONE agent may take in one back-and-forth. */
   maxTurnsPerAgentPerCascade: number;
   /** The most automatic replies one room may run in an hour. */
   maxAutomaticTurnsPerRoomPerHour: number;

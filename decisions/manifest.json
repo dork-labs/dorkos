@@ -4845,6 +4845,8 @@
         "apps/server/src/services/rooms/room-trigger.ts",
         "apps/server/src/services/rooms/room-store.ts",
         "apps/server/src/services/rooms/room-service.ts",
+        "apps/server/src/services/rooms/room-rows.ts",
+        "apps/server/src/services/rooms/notices/notice-log.ts",
         "packages/db/src/schema/rooms.ts"
       ]
     },
