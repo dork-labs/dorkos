@@ -512,9 +512,15 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   stage still landed. Distinct from `unsupported`, which claimed the adapter
  *   could not stage at all and so contradicted its own declared capability on
  *   every default claude-code install (DOR-1307).
- * - `no-open-turn` — there is no turn this caller may join: it ended between the
- *   request and the delivery, its input stream had closed, or a DIFFERENT client
- *   owns the live turn. The message waits in the queue instead.
+ * - `turn-owned-elsewhere` — a turn IS open (checked against the session's own
+ *   projection, never assumed) and a DIFFERENT caller started it, so this sender
+ *   may not write into it: a steer is a write, gated by the same lock a send
+ *   passes. The caller need not be another window — a room, an MCP client and an
+ *   embedded surface all hold the lock under their own ids — so nothing built on
+ *   this may name one. The message waits in the queue instead. It replaced
+ *   `no-open-turn`, which folded this together with "the turn had ended" and so
+ *   let the cockpit tell a person their task had finished while it was visibly
+ *   running (DOR-1315).
  * - `pending-interaction` — the turn is waiting on a person (a permission ask,
  *   a question), and delivering into that would answer something nobody was
  *   asked.
@@ -525,7 +531,7 @@ export const DispositionDowngradeReasonSchema = z
     'session-idle',
     'not-steerable',
     'not-stageable',
-    'no-open-turn',
+    'turn-owned-elsewhere',
     'pending-interaction',
   ])
   .openapi('DispositionDowngradeReason');
@@ -2288,6 +2294,16 @@ export const ElicitationPartSchema = z
      * resetting. Client-only — never serialized to the transcript.
      */
     remainingMs: z.number().optional(),
+    /**
+     * The full budget the prompt was given — what `remainingMs` is a remainder
+     * OF, so a card can anchor to `startedAt + timeoutMs` instead of counting
+     * from whenever it was built. Carried for the same reason the tool-call part
+     * carries it, and kept in step with it: the wire member carries the budget
+     * for all three interaction kinds (DOR-1442), and a fold that dropped it
+     * here would make the elicitation the one kind whose deadline stopped at the
+     * client.
+     */
+    timeoutMs: z.number().optional(),
   })
   .openapi('ElicitationPart');
 

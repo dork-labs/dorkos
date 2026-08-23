@@ -179,6 +179,33 @@ describe('projectInProgressTurn', () => {
     expect((parts[0] as { questions: unknown[] }).questions).toHaveLength(1);
   });
 
+  it('carries the question timeout onto the part, exactly as an approval does', () => {
+    // Purpose: a question is answered on the same card as an approval and is
+    // given the same deadline, but its stream member used to drop the budget —
+    // so the card could only count from the remainder it happened to arrive
+    // with, and the countdown restarted every time the card was rebuilt
+    // (DOR-1442).
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'question_prompt',
+        id: 'q1',
+        startedAt: 2000,
+        remainingMs: 30_000,
+        timeoutMs: 600_000,
+        questions: [
+          { header: 'a', question: 'Pick one', options: [{ label: 'X' }], multiSelect: false },
+        ],
+      },
+    ];
+    expect(projectInProgressTurn(events)[0]).toMatchObject({
+      toolCallId: 'q1',
+      interactiveType: 'question',
+      timeoutMs: 600_000,
+      approvalStartedAt: 2000,
+    });
+  });
+
   it('surfaces an elicitation_prompt interaction as a pending elicitation part', () => {
     // Purpose: a recovered MCP elicitation must render as a pending elicitation
     // part keyed by interactionId.
@@ -199,6 +226,30 @@ describe('projectInProgressTurn', () => {
       interactionId: 'e1',
       serverName: 'github',
       status: 'pending',
+    });
+  });
+
+  it('carries the elicitation timeout onto the part, like the other two folds', () => {
+    // Purpose: the budget rides all three wire members, and all three folds must
+    // carry it — this was the one that stopped it at the client, which would
+    // have left the elicitation as the only kind with no deadline to anchor to
+    // (DOR-1442).
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'elicitation_prompt',
+        id: 'e1',
+        serverName: 'github',
+        message: 'Authorize?',
+        startedAt: 3000,
+        remainingMs: 60_000,
+        timeoutMs: 600_000,
+      },
+    ];
+    expect(projectInProgressTurn(events)[0]).toMatchObject({
+      type: 'elicitation',
+      interactionId: 'e1',
+      timeoutMs: 600_000,
     });
   });
 
@@ -861,6 +912,48 @@ describe('projectSessionMessages', () => {
       approvalRemainingMs: 61_000,
       approvalStartedAt: askedAt,
       timeoutMs: 600_000,
+    });
+  });
+
+  it('takes a recovered QUESTION’s budget too, not just an approval’s', () => {
+    // Purpose: the recovery hold used to read `timeoutMs` only off an approval
+    // DTO, so a question rebuilt from a snapshot kept whatever budget the
+    // replayed turn carried — or, before the member carried one at all, none —
+    // and its card had nothing to anchor a countdown to (DOR-1442).
+    const askedAt = 1_700_000_000_000;
+    const staleAsk: SessionEvent = {
+      seq: 2,
+      type: 'question_prompt',
+      id: 'rec-q',
+      startedAt: askedAt,
+      remainingMs: 600_000,
+      timeoutMs: 600_000,
+      questions: [{ header: 'a', question: 'Pick', options: [{ label: 'X' }], multiSelect: false }],
+    };
+    const freshDto: PendingInteractionDTO = {
+      type: 'question',
+      id: 'rec-q',
+      startedAt: askedAt,
+      remainingMs: 61_000,
+      timeoutMs: 120_000,
+      questions: [{ header: 'a', question: 'Pick', options: [{ label: 'X' }], multiSelect: false }],
+    };
+
+    const messages = projectSessionMessages(
+      history,
+      [{ seq: 1, type: 'turn_start' }, staleAsk],
+      [freshDto]
+    );
+    const parts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(parts).toHaveLength(1);
+    // The DTO's budget, not the turn's stale copy of it.
+    expect(parts[0]).toMatchObject({
+      toolCallId: 'rec-q',
+      interactiveType: 'question',
+      status: 'pending',
+      approvalStartedAt: askedAt,
+      approvalRemainingMs: 61_000,
+      timeoutMs: 120_000,
     });
   });
 

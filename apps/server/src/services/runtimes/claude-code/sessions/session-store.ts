@@ -6,7 +6,12 @@
  *
  * @module services/runtimes/claude-code/session-store
  */
-import { forkSession as sdkForkSession, type Query } from '@anthropic-ai/claude-agent-sdk';
+import {
+  forkSession as sdkForkSession,
+  type PermissionUpdate,
+  type PermissionUpdateDestination,
+  type Query,
+} from '@anthropic-ai/claude-agent-sdk';
 import type {
   PermissionMode,
   EffortLevel,
@@ -19,7 +24,9 @@ import type {
   SessionSettingsPort,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
+import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
@@ -60,6 +67,52 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
     if (now - pending.startedAt < ceilingMs) return true;
   }
   return false;
+}
+
+/**
+ * The one permission-update scope DorkOS mirrors into its own session state.
+ *
+ * The SDK's other destinations name settings FILES — the operator's, the
+ * project's, the machine-local override — and a mode written there outlives the
+ * conversation the card was answered in. `'session'` is the only one whose
+ * lifetime matches the row DorkOS keeps per session.
+ */
+const SESSION_SCOPED: PermissionUpdateDestination = 'session';
+
+/**
+ * The mode a batch of accepted permission suggestions leaves the session in, or
+ * `undefined` when none of them touches the mode.
+ *
+ * Last one wins, for the same reason the SDK applies them in order: a batch that
+ * names the mode twice ends at the second value, not the first.
+ *
+ * @param suggestions - The SDK permission updates being forwarded verbatim.
+ */
+function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
+  let mode: PermissionMode | undefined;
+  for (const update of suggestions) {
+    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
+  }
+  return mode;
+}
+
+/**
+ * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
+ * an approval card.
+ *
+ * Two questions, both asked of the runtime's own declaration rather than of the
+ * id's name. Does claude-code declare this mode at all — persisting an
+ * undeclared id would make the settings overlay display a posture the runtime
+ * never adopted (`PATCH /api/sessions/:id`, same check). And does it need the
+ * consent ritual — `needsConsentRitual` is the single rule behind the route's
+ * `428 AUTONOMY_ACK_REQUIRED` door, and a card that says "Always Allow" over one
+ * Write is not a person agreeing to a session that never asks again.
+ *
+ * @param mode - The mode an accepted suggestion asks for.
+ */
+function isAdoptableMode(mode: PermissionMode): boolean {
+  const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
+  return descriptor !== undefined && !needsConsentRitual(descriptor);
 }
 
 /**
@@ -540,15 +593,107 @@ export class SessionStore {
   ): boolean {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
-    if (!pending || pending.type !== 'approval') return false;
+    if (!session || !pending || pending.type !== 'approval') return false;
 
     if (approved && options?.alwaysAllow && pending.suggestions?.length) {
-      // "Always Allow" — pass the SDK permission suggestions array
+      // "Always Allow" — pass the SDK permission suggestions array, and keep
+      // DorkOS's own copy of the mode in step with what that array does.
+      this.adoptSuggestedMode(session, pending.suggestions);
       pending.resolve(pending.suggestions);
     } else {
       pending.resolve(approved, approved ? undefined : options?.denyReason);
     }
     return true;
+  }
+
+  /**
+   * Record the permission mode an accepted "Always Allow" switches the session
+   * to, so DorkOS's copy of the mode is the one the CLI is actually running.
+   *
+   * On a file-edit card the SDK's suggestion for "don't ask me again" is not a
+   * tool rule at all — it is `{ type: 'setMode', mode: 'acceptEdits',
+   * destination: 'session' }`, and forwarding it really does move the live CLI
+   * into that mode (measured: the next `user` row in the transcript records
+   * `acceptEdits`, and the Write after it ran with no card). DorkOS used to
+   * forward that and forget it, which left three surfaces disagreeing: the
+   * status line and the Session inspector read the mode back off the
+   * transcript and said "Accept edits", the stored session settings still said
+   * `default`, and so the next process DorkOS launched for that same session
+   * ran `--permission-mode default` and asked again. The label was not lying
+   * about the mode; DorkOS was dropping the grant on relaunch (DOR-1316).
+   *
+   * **DorkOS mirrors only the SESSION scope, and only a mode it may make
+   * durable.** Neither is a filter on the grant. The suggestions array is
+   * forwarded to the SDK verbatim — a deliberate decision, because what the
+   * button grants is settled ground (the Asks/permission-modes programme) and
+   * this change is about DorkOS's own honesty. So a wider-scope suggestion in
+   * that array can still move the CLI's own settings files, and an
+   * unconsented mode is still applied by the CLI to its own live process.
+   * What DorkOS refuses is to make an unconsented escalation DURABLE.
+   *
+   * Which modes may be adopted is {@link isAdoptableMode}: declared by this
+   * runtime, and not one the consent ritual gates. Anything else is logged and
+   * dropped, because writing it to the session row would carry it into every
+   * later launch (`launch-resolver` reads `session.permissionMode` straight
+   * into `sdkOptions.permissionMode`) — past a door whose whole point is that
+   * it cannot be walked around by a client (`routes/sessions.ts`, `428
+   * AUTONOMY_ACK_REQUIRED`). Rules (`addRules` and friends) are not modes and
+   * are left to the SDK entirely.
+   *
+   * Write-through is best-effort in the same spirit as {@link updateSession}:
+   * the in-memory mode changes immediately (the launch resolver reads it), and
+   * a store that fails to take the row is logged rather than surfaced, because
+   * the approval itself has already been answered and must not fail behind it.
+   *
+   * Two known limits, both narrow enough to name rather than paper over:
+   *
+   * - **The adoption is recorded before the answer is known to have landed.**
+   *   `pending.resolve` hands the result back to the SDK with no ack, and on a
+   *   session whose stdin DorkOS has already ended the SDK drops the write in
+   *   silence (the case `bounded-control.ts` documents). In that window DorkOS
+   *   records a mode the CLI never applied — the same drift inverted. Recording
+   *   it afterwards would not help: nothing in the resolve path reports
+   *   delivery, so there is no "succeeded" to wait for. The next turn relaunches
+   *   with the recorded mode, which is the mode the person asked for, so the
+   *   window closes itself.
+   * - **No fan-out.** Unlike `PATCH /api/sessions/:id`, this path emits no
+   *   event, so another open window's toolbar shows the previous mode until it
+   *   refetches the session.
+   *
+   * @param session - The session whose approval was just answered.
+   * @param suggestions - The SDK permission updates being forwarded verbatim.
+   */
+  private adoptSuggestedMode(session: AgentSession, suggestions: PermissionUpdate[]): void {
+    const mode = sessionScopedMode(suggestions);
+    if (!mode || mode === session.permissionMode) return;
+    if (!isAdoptableMode(mode)) {
+      // info, not debug: a person clicked one button and a mode change went
+      // unrecorded. That is the kind of divergence this ticket existed about,
+      // and the line is what lets a reader see it happened.
+      logger.info('[approveTool] always-allow suggested a mode DorkOS will not make durable', {
+        session: session.sdkSessionId,
+        mode,
+        keeping: session.permissionMode,
+      });
+      return;
+    }
+    logger.debug('[approveTool] always-allow switched the session mode', {
+      session: session.sdkSessionId,
+      from: session.permissionMode,
+      to: mode,
+    });
+    session.permissionMode = mode;
+    // Persisted under the canonical id, the one key every reader asks by — see
+    // the module doc on `session-settings-overlay.ts`.
+    void this.settingsPort
+      ?.saveSessionSettings(session.sdkSessionId, { permissionMode: mode })
+      .catch((err: unknown) => {
+        logger.warn('[approveTool] could not persist the always-allow mode', {
+          session: session.sdkSessionId,
+          mode,
+          err,
+        });
+      });
   }
 
   /** Submit answers to a pending AskUserQuestion interaction. */

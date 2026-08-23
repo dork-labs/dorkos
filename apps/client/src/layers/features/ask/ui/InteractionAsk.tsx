@@ -73,9 +73,15 @@ export function InteractionAsk({
   // `remainingMs` is the budget minus the time already spent, so
   // `startedAt + remainingMs` lands in the past for anything more than half way
   // through — a question listed six minutes into its ten was born expired
-  // (DOR-1330 review). The server now stamps `timeoutMs` on every kind for
-  // exactly this; a DTO recorded before it existed falls back to counting from
-  // NOW, which is the only honest reading of a bare remainder.
+  // (DOR-1330 review). The server stamps `timeoutMs` on every kind for exactly
+  // this.
+  //
+  // No live DTO reaches the fallback below: `listPendingInteractions` is the
+  // sole producer and it stamps a budget on every unparked one, computing it
+  // fresh on each read rather than replaying a stored value — so even a DTO
+  // rebuilt from a durable event that predates the field arrives with one. The
+  // branch is kept only so a hand-built or third-party DTO renders honestly,
+  // counting from NOW, which is the only honest reading of a bare remainder.
   //
   // A prompt is PARKED once its countdown is out, and a card that ARRIVES parked
   // must read exactly like one that parked while somebody was looking at it

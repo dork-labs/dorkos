@@ -162,6 +162,28 @@ describe('SessionPumpRegistry', () => {
     expect(queries.filter((query) => query.closed > 0)).toHaveLength(1);
   });
 
+  // Purpose: a warm process going away tells ONE story at ONE level. The idle
+  // reap logs at `info`; this — the rarer, more surprising exit, where a session
+  // loses its process so another one can launch — sat at `debug`, so the routine
+  // case was louder than the contended one and the contended one was invisible
+  // in a default-level log (DOR-1442).
+  it('logs at info when the warm ceiling reclaims a slot', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const queries: FakeQuery[] = [];
+    const registry = new SessionPumpRegistry(identity);
+    const opts = launchOpts(queries, { maxWarmSessions: 1 });
+    await registry.acquire('s1', opts).warm();
+
+    await registry.acquire('s2', opts).warm();
+
+    expect(registry.warmth('s1')).toBe('cold');
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[SessionPumpRegistry] reclaimed a warm slot',
+      expect.objectContaining({ reaped: 's1', asking: 's2' })
+    );
+    infoSpy.mockRestore();
+  });
+
   // Purpose: a RUNNING pump is mid-turn with somebody watching it. Reclaiming
   // one would kill a live turn to warm a different session, which is never the
   // trade — the refusal is the honest answer instead.

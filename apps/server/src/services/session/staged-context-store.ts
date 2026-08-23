@@ -230,6 +230,22 @@ export class StagedContextStore {
   }
 
   /**
+   * Every session id that is holding at least one staged note.
+   *
+   * The boot reconcile's input (`reconcile-session-rows.ts`), alongside the
+   * queue's own list: a hold whose session vanished while this server was down
+   * was never announced to anybody, so the rows are the only place it can be
+   * found.
+   */
+  listSessionIds(): string[] {
+    return this.db
+      .selectDistinct({ sessionId: sessionStagedContext.sessionId })
+      .from(sessionStagedContext)
+      .all()
+      .map((row) => row.sessionId);
+  }
+
+  /**
    * Delete every held note belonging to any of the named sessions, and report
    * how many rows went — the storage half of session teardown, so an abandoned
    * session cannot hold words for the life of the install.

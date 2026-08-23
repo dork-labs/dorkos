@@ -6,6 +6,7 @@ import { useOnboarding } from '../model/use-onboarding';
 import { useOnboardingStage } from '../model/use-onboarding-stage';
 import { OnboardingNavBar } from './OnboardingNavBar';
 import { SystemRequirementsStep } from './SystemRequirementsStep';
+import { OnboardingPowerStep } from './OnboardingPowerStep';
 import { WelcomeStep } from './WelcomeStep';
 import { OnboardingConversation } from './OnboardingConversation';
 
@@ -71,9 +72,11 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
   // pops the forward push (mirroring browser-Back) rather than pushing again,
   // and falls back to requirements when the user landed here via refresh.
   const goToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
+  const goToPower = useCallback(() => goToStage('power'), [goToStage]);
   const goToConversation = useCallback(() => goToStage('conversation'), [goToStage]);
   const backToWelcome = useCallback(() => goBack('welcome'), [goBack]);
   const backToRequirements = useCallback(() => goBack('requirements'), [goBack]);
+  const backToPower = useCallback(() => goBack('power'), [goBack]);
 
   if (stage === 'welcome') {
     return (
@@ -97,10 +100,24 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
         <OnboardingNavBar onBack={backToWelcome} onSkipAll={handleSkipAll} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex min-h-full w-full items-center justify-center p-4 pb-10">
-            <SystemRequirementsStep
-              onContinue={goToConversation}
-              renderConnect={renderRuntimeConnect}
-            />
+            <SystemRequirementsStep onContinue={goToPower} renderConnect={renderRuntimeConnect} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // The power stage carries the same nav bar and frame as the requirements
+  // stage, so Back and the whole-flow exit stay in the same place. It hosts the
+  // shared full-power door (spec `full-power-defaults` D3); answering it or
+  // deciding later advances into the conversation.
+  if (stage === 'power') {
+    return (
+      <div className="bg-background flex h-full w-full flex-col">
+        <OnboardingNavBar onBack={backToRequirements} onSkipAll={handleSkipAll} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex min-h-full w-full items-center justify-center p-4 pb-10">
+            <OnboardingPowerStep onAdvance={goToConversation} />
           </div>
         </div>
       </div>
@@ -109,7 +126,7 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
 
   return (
     <div className="bg-background flex h-full w-full flex-col">
-      <OnboardingNavBar onBack={backToRequirements} onSkipAll={handleSkipAll} />
+      <OnboardingNavBar onBack={backToPower} onSkipAll={handleSkipAll} />
       <div className="min-h-0 flex-1">
         <OnboardingConversation onComplete={onComplete} />
       </div>

@@ -1,0 +1,56 @@
+{
+  "spec": "specs/comparison-pages/02-specification.md",
+  "slug": "comparison-pages",
+  "generatedAt": "2026-08-23T17:45:00Z",
+  "mode": "full",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Phase A — Foundation (PR 1)",
+      "subject": "[comparison-pages] A.1 — comparisons.ts data model + dimensions + invariant tests + /compare hub + [slug] template + Cursor flagship + full SEO wiring",
+      "description": "Spec §3–§5, batch A of §6. New lib/comparisons.ts in the marketing slice with ComparisonDimension/Competitor/dorkosCellFor (demo-claim gate derived from feature status), invariant test suite (prove the gate can fail by seeding a fake alpha feature), routes (marketing)/compare/{page.tsx,[slug]/page.tsx,[slug]/opengraph-image.tsx}, JSON-LD (BreadcrumbList + SoftwareApplication pair + ItemList on hub + FAQPage where visible), sitemap + llms.txt + site-index registration, Cursor entry as the flagship competitor page, changelog fragment.",
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Phase B — Runtime pages (PR 2)",
+      "subject": "[comparison-pages] B.1 — runtime framing + Claude Code, Codex, OpenCode entries",
+      "description": "Spec §4 runtime template branch + three runtime entries ('DorkOS + X' framing, never adversarial). Sourced from research/20260823_comparison-pages-competitor-verification.md.",
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Phase C — Tier-1 competitors batch 1 (PR 3)",
+      "subject": "[comparison-pages] C.1 — GitHub Copilot Agent HQ, Devin, Conductor, Emdash, Claude Squad entries",
+      "description": "Five competitor entries with sourced cells, theirStrengths, FAQs. Disambiguate Melty Labs Conductor from Microsoft Conductor.",
+      "issue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Phase D — Tier-1 competitors batch 2 (PR 4)",
+      "subject": "[comparison-pages] D.1 — Omnara, Amp, Cline, Factory Droid, DeepSeek Harness entries",
+      "description": "Five competitor entries with sourced cells, theirStrengths, FAQs.",
+      "issue": null
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "Phase E — Adjacent + alternatives (PR 5)",
+      "subject": "[comparison-pages] E.1 — OpenClaw, Hermes, Buzz (adjacent) + Terragon, Roo Code (discontinued)",
+      "description": "Adjacent framing with scope banners (Buzz scoped to rooms/coordination); discontinued framing with dated shutdown facts and honest successor mentions.",
+      "issue": null
+    },
+    {
+      "id": "6.1",
+      "phase": 6,
+      "phaseName": "Phase F — Positioning correction (PR 6, docs-only)",
+      "subject": "[comparison-pages] F.1 — correct the stale Cowork machine-must-stay-awake claim",
+      "description": "Spec §8. Update research/20260227_competitive_landscape_agent_infrastructure.md and any meta/positioning-202607 copy leaning on the claim; cite July 2026 Cowork cloud scheduled-tasks sources; keep the Claude-Code-specific nuance unverified.",
+      "issue": null
+    }
+  ]
+}
