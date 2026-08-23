@@ -1899,7 +1899,9 @@
                 "enum": [
                   "create",
                   "update",
-                  "snapshot"
+                  "snapshot",
+                  "id_assigned",
+                  "remove"
                 ]
               },
               "task": {
@@ -1910,6 +1912,9 @@
                 "items": {
                   "$ref": "#/components/schemas/TaskItem"
                 }
+              },
+              "previousId": {
+                "type": "string"
               }
             },
             "required": [
@@ -9922,7 +9927,9 @@
                           "enum": [
                             "create",
                             "update",
-                            "snapshot"
+                            "snapshot",
+                            "id_assigned",
+                            "remove"
                           ]
                         },
                         "task": {
@@ -9933,6 +9940,9 @@
                           "items": {
                             "$ref": "#/components/schemas/TaskItem"
                           }
+                        },
+                        "previousId": {
+                          "type": "string"
                         }
                       },
                       "required": [

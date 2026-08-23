@@ -21,6 +21,10 @@
       "types": "./src/schemas.ts",
       "default": "./dist/schemas.js"
     },
+    "./task-fold": {
+      "types": "./src/task-fold.ts",
+      "default": "./dist/task-fold.js"
+    },
     "./transport": {
       "types": "./src/transport.ts",
       "default": "./dist/transport.js"

@@ -118,6 +118,7 @@ export async function* mapStreamEvent(
     } else if (toolState.inTool) {
       const wasTaskTool = TASK_TOOL_NAMES.has(toolState.currentToolName);
       const taskToolName = toolState.currentToolName;
+      const taskToolId = toolState.currentToolId;
       yield {
         type: 'tool_call_end',
         data: {
@@ -133,7 +134,7 @@ export async function* mapStreamEvent(
           const taskEvent =
             taskToolName === 'TodoWrite'
               ? buildTodoWriteEvent(input)
-              : buildTaskEvent(taskToolName, input);
+              : buildTaskEvent(taskToolName, input, taskToolId);
           if (taskEvent) {
             yield { type: 'task_update', data: taskEvent };
           }

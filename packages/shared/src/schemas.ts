@@ -1456,9 +1456,15 @@ export type TaskItem = z.infer<typeof TaskItemSchema>;
 
 export const TaskUpdateEventSchema = z
   .object({
-    action: z.enum(['create', 'update', 'snapshot']),
+    action: z.enum(['create', 'update', 'snapshot', 'id_assigned', 'remove']),
     task: TaskItemSchema,
     tasks: z.array(TaskItemSchema).optional(),
+    /**
+     * For `id_assigned`: the provisional key (`pending:<toolUseId>`) being
+     * replaced by `task.id`, the SDK's confirmed real id. Unused by every
+     * other action.
+     */
+    previousId: z.string().optional(),
   })
   .openapi('TaskUpdateEvent');
 
