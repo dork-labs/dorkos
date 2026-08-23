@@ -415,6 +415,10 @@ describe('a room gathers a burst into one turn', () => {
       }
       await service.triggersIdle();
       const afterBurst = runner.turns[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
+      // `null` is the limits-off reading, and this harness counts. Narrowed
+      // here rather than asserted away, so a regression that stopped counting
+      // fails as itself instead of as an arithmetic error below.
+      if (afterBurst === null) throw new Error('the room reported no automatic-turn count');
 
       service.post(room.id, { authorId: human, text: '@ana four' });
       await service.triggersIdle();

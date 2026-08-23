@@ -814,6 +814,9 @@ describe('a claim lives until its turn is done', () => {
       service.post(room.id, { authorId: human, text: '@bo can you take it?' });
       await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn');
       const whileHeld = turnsBy(bo)[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
+      // `null` is the limits-off reading, and this harness counts (see the same
+      // narrowing in `room-collect.test.ts`).
+      if (whileHeld === null) throw new Error('the room reported no automatic-turn count');
 
       // Ana's turn lands, and the two held messages become her ONE next turn.
       runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });

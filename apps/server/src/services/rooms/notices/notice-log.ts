@@ -434,7 +434,7 @@ export class RoomNoticeLog {
     entry: RoomEntry,
     authorId: string,
     body: RoomEntryBody,
-    cause: 'cascade_depth' | 'cascade_ancestry',
+    cause: 'cascade_depth' | 'cascade_repeat',
     dispatchId: string | null
   ): void {
     const key = cascadeNoticeKey(room.id, entry.cascadeRoot, authorId);

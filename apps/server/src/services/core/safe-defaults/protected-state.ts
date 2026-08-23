@@ -247,6 +247,12 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     reason: 'How far agents may reply to each other before a room stops them; spends real money.',
   },
   {
+    path: 'rooms.maxTurnsPerAgentPerCascade',
+    direction: 'lower',
+    reason:
+      'How many of those replies any ONE agent may run in an exchange. The same bound read per agent instead of per chain, and a person can set a smaller one for the same reason: it spends real money.',
+  },
+  {
     path: 'rooms.maxAutomaticTurnsPerRoomPerHour',
     direction: 'lower',
     reason: 'Per-room automatic-turn spend cap.',

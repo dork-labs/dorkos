@@ -583,14 +583,14 @@ describe('RoomService', () => {
   });
 });
 
-describe('RoomService — the ancestry rule holds across a thread boundary', () => {
+describe('RoomService — the repeat rule holds across a thread boundary', () => {
   /**
    * The one place the thread change makes a real bound TIGHTER
    * (room-participation spec §3.4, ADR 260728-022013).
    *
    * `authorsInCascade` is scoped `(room_id, cascade_root)`. Under the child-room
    * shape, a cascade that went from a channel into a thread crossed a `room_id`
-   * boundary, the ancestry set reset, and the same authors could be triggered a
+   * boundary, the per-cascade turn count reset, and the same authors could be triggered a
    * second time inside one exchange — the cross-room carve-out
    * ADR 260726-170127 documented and could not close. A thread reply now carries
    * the CHANNEL's `room_id`, so the set does not reset and A → thread → A is
@@ -610,8 +610,8 @@ describe('RoomService — the ancestry rule holds across a thread boundary', () 
       agents,
       runner: scriptedRunner(() => 'on it'),
       // Well clear of anything this exchange can reach, so a refusal below is
-      // the ancestry rule and never the depth ceiling wearing its clothes. It is
-      // also what makes a broken ancestry rule LOUD here rather than subtle: an
+      // the repeat rule and never the depth ceiling wearing its clothes. It is
+      // also what makes a broken repeat rule LOUD here rather than subtle: an
       // A → B → A loop that is not stopped runs to this number.
       maxAgentDepth: 10,
     });
@@ -661,7 +661,7 @@ describe('RoomService — the ancestry rule holds across a thread boundary', () 
 
     // Exactly one turn: Bo answered Ana, in the thread. Ana was then refused on
     // Bo's answer, because her thread reply put her in this cascade — the
-    // ancestry rule holding across a boundary it used to reset at
+    // repeat rule holding across a boundary it used to reset at
     // (room-participation spec §3.4). A set that skipped thread replies would
     // never have found her, and A → B → A would have run to `maxAgentDepth`.
     expect(harness.runner.turns).toHaveLength(1);
@@ -673,7 +673,7 @@ describe('RoomService — the ancestry rule holds across a thread boundary', () 
       .listEntries(room.id, harness.human, { limit: 50 })
       .find((entry) => entry.authorId === boId && entry.kind === 'post');
     expect(bosAnswer?.threadRootEntryId).toBe(root.id);
-    expect(harness.service.authorsInCascade(room.id, root.id).sort()).toEqual(
+    expect([...harness.service.turnsByAuthorInCascade(room.id, root.id).keys()].sort()).toEqual(
       // The exact set: both agents, the person, and the system author that wrote
       // the refusal notice. Naming it beats "contains Ana", which would still
       // pass if Bo had fallen out of his own cascade.
@@ -1265,7 +1265,7 @@ describe('RoomService — only the operator changes a roster', () => {
   it('lets an agent reply in a thread beside a second agent, and keeps the bound that mattered', () => {
     // The seeding gate used to cover `createThread`, because a thread was a new
     // room: a fresh roster, a fresh budget window and — the real prize — a fresh
-    // `(room_id, cascade_root)` namespace the ancestry rule had never seen.
+    // `(room_id, cascade_root)` namespace the repeat rule had never seen.
     //
     // A thread reply buys none of those any more (ADR 260728-022013), so the
     // gate has nothing left to protect and replying is exactly as allowed as
@@ -1283,7 +1283,9 @@ describe('RoomService — only the operator changes a roster', () => {
 
     expect(reply.roomId).toBe(roomId);
     expect(reply.threadRootEntryId).toBe(entry.id);
-    expect(service.authorsInCascade(roomId, entry.cascadeRoot).sort()).toEqual([human, ana].sort());
+    expect([...service.turnsByAuthorInCascade(roomId, entry.cascadeRoot).keys()].sort()).toEqual(
+      [human, ana].sort()
+    );
   });
 
   it('lets the operator do all three', () => {
@@ -1892,7 +1894,7 @@ describe('RoomService — a committed post never fails because dispatching from 
     // The whole dispatch, not one target: whatever else in there learns to throw
     // later is covered by the same guard.
     const harness = open();
-    const ancestry = vi.spyOn(harness.store, 'authorsInCascade').mockImplementation(() => {
+    const provenance = vi.spyOn(harness.store, 'turnsByAuthorInCascade').mockImplementation(() => {
       throw new Error('SQLITE_BUSY: database is locked');
     });
 
@@ -1901,7 +1903,7 @@ describe('RoomService — a committed post never fails because dispatching from 
       text: '@ana can you look?',
     });
     await harness.service.triggersIdle();
-    ancestry.mockRestore();
+    provenance.mockRestore();
 
     expect(
       harness.service.listEntries(harness.roomId, harness.human, { limit: 10 })

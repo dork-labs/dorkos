@@ -183,7 +183,7 @@ describe('salvageProtectedState', () => {
 
   it('carries a tightened bound, and only when it is actually tighter', () => {
     const salvaged = salvageProtectedState(
-      { rooms: { maxAgentDepth: 1, maxAutomaticTurnsTotalPerHour: 1000 } },
+      { rooms: { maxAgentDepth: 1, maxAutomaticTurnsTotalPerHour: 20_000 } },
       fresh
     );
     expect(salvaged.leaves['rooms.maxAgentDepth']).toBe(1);
@@ -283,9 +283,11 @@ describe('applyProtectedState', () => {
     const store = createStore(USER_CONFIG_DEFAULTS as unknown as Record<string, unknown>);
     applyProtectedState(store, { leaves: { 'rooms.maxAgentDepth': 1 }, dropped: [] });
     expect(store.data.rooms).toEqual({
+      turnLimitsEnabled: true,
       maxAgentDepth: 1,
-      maxAutomaticTurnsPerRoomPerHour: 60,
-      maxAutomaticTurnsTotalPerHour: 240,
+      maxTurnsPerAgentPerCascade: 10,
+      maxAutomaticTurnsPerRoomPerHour: 1000,
+      maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
@@ -459,7 +461,7 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
         // Dropped, not clamped: we do not invent a value the person never chose.
         expect(manager.get('approvals').trustWindowMinutes).toBe(480);
         expect(manager.get('approvals').standingGrantsVoidBefore).toBeNull();
-        expect(manager.get('rooms').maxAgentDepth).toBe(3);
+        expect(manager.get('rooms').maxAgentDepth).toBe(30);
       });
     }
 
@@ -515,10 +517,13 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     });
 
     it('does not carry a bound the person had loosened', () => {
-      const { dir } = seedInvalidConfig({ uploads: { maxFiles: 50 }, rooms: { maxAgentDepth: 9 } });
+      const { dir } = seedInvalidConfig({
+        uploads: { maxFiles: 50 },
+        rooms: { maxAgentDepth: 90 },
+      });
       const manager = new ConfigManager(dir);
       expect(manager.get('uploads').maxFiles).toBe(10);
-      expect(manager.get('rooms').maxAgentDepth).toBe(3);
+      expect(manager.get('rooms').maxAgentDepth).toBe(30);
     });
 
     it('says in the log which tightened setting it could not keep', () => {

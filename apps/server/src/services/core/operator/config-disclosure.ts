@@ -204,7 +204,9 @@ export const CONFIG_DISCLOSURE = {
 
   'mesh.scanRoots': 'expose',
 
+  'rooms.turnLimitsEnabled': 'expose',
   'rooms.maxAgentDepth': 'expose',
+  'rooms.maxTurnsPerAgentPerCascade': 'expose',
   'rooms.maxAutomaticTurnsPerRoomPerHour': 'expose',
   'rooms.maxAutomaticTurnsTotalPerHour': 'expose',
   'rooms.replyWaitMinutes': 'expose',
