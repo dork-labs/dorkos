@@ -131,6 +131,12 @@ function fingerprintAfter(
  * opens either way. Nothing here decides that a stale pin is acceptable; it
  * decides that the caller finds out, which the hang made impossible.
  *
+ * These bounds are a USER-FACING budget, not a background one: this call sits
+ * between pressing send and the turn opening. The four run concurrently, so the
+ * worst case is the largest bound and not their sum — today 8 s
+ * (`PLUGIN_RELOAD_ACK_TIMEOUT_MS`), which is how long a message can appear to do
+ * nothing before it starts. Anyone raising that number is spending it here.
+ *
  * @param query - The live process's control channel (`SessionPump.controlQuery`)
  * @param decision - A reuse decision from {@link prepareDispatch}
  * @returns Which pins moved, which did not, and the fingerprint the process now holds

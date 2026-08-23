@@ -1031,7 +1031,11 @@ describe('RuntimeCache', () => {
       await first;
 
       const answered = {
-        supportedModels: vi.fn().mockResolvedValue([{ value: 'claude-opus-4-6', displayName: 'Opus', description: 'the big one' }]),
+        supportedModels: vi
+          .fn()
+          .mockResolvedValue([
+            { value: 'claude-opus-4-6', displayName: 'Opus', description: 'the big one' },
+          ]),
         close: vi.fn(),
       };
       vi.mocked(query).mockReturnValue(answered as never);

@@ -79,11 +79,24 @@ export const STOP_ACK_TIMEOUT_MS = 3_000;
  *
  * The same one-line control round-trip as an interrupt, so the same three
  * seconds, and for the same reason: a person is sitting in front of this one,
- * watching a control they just moved. Expiring costs strictly less here than it
- * does for a Stop — the new mode is already persisted before the live call is
- * made (write-through, ADR-0260), so a request that times out loses the change
- * for the turn in flight and nothing beyond it. Nothing is killed, nothing is
- * reverted; the mode takes effect on the next turn either way.
+ * watching a control they just moved. Nothing is killed and nothing is reverted
+ * when it expires — the new mode is already persisted before the live call is
+ * made (write-through, ADR-0260), so it takes effect on the next turn either
+ * way.
+ *
+ * **What expiring costs is not symmetric, and the expensive direction is the
+ * safety-relevant one.** LOOSENING an unanswered mode costs a turn of extra
+ * prompts and nothing else. TIGHTENING one — `bypassPermissions` back to
+ * `default` — leaves the gate held by the CLI, not by DorkOS: under bypass the
+ * CLI never calls `canUseTool` at all (`launch-resolver.ts`,
+ * `phantom-cancellation.ts`), so no in-memory mode on this side can put the
+ * approval prompts back for the turn already running. The PATCH still answers
+ * `200 {permissionMode:'default'}`, which is true of what DorkOS has stored and
+ * NOT of what the running turn will do. Two follow-ups are filed against that
+ * gap: reporting whether the live change actually applied (an `AgentRuntime`
+ * shape change, so not free), and whether a tightening that goes unanswered
+ * should escalate — end the turn rather than let it keep bypassing. Neither is
+ * decided here; the bound only makes the failure visible instead of a hang.
  */
 export const PERMISSION_MODE_ACK_TIMEOUT_MS = 3_000;
 

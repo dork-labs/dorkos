@@ -376,8 +376,10 @@ export class PersistentDispatch {
         bundle.fingerprint = undefined;
       } else {
         try {
-          await reuse.apply(control);
-          bundle.fingerprint = reuse.to;
+          // What the process HOLDS, which is not always what was wanted: a
+          // setter that went unanswered inside its bound leaves its pin where it
+          // was, and the next dispatch has to see that (DOR-1301).
+          bundle.fingerprint = await reuse.apply(control);
         } catch (err) {
           if (err instanceof AccountPinViolationError) {
             logger.error('[persistent-dispatch] refused a cross-account dispatch', {

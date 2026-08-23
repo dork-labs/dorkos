@@ -238,12 +238,13 @@ describe('applyLiveChanges is bounded (DOR-1301)', () => {
 
     const applying = reuse.apply(query);
     await vi.advanceTimersByTimeAsync(LIVE_SETTING_ACK_TIMEOUT_MS);
-    await applying;
+    const held = await applying;
 
-    // `persistent-dispatch` stores `reuse.to` as the live fingerprint. It must
-    // not claim the model moved, or the next dispatch rides a stale process.
-    expect(reuse.to.live.model).toBe('claude-opus-4-6');
-    const next = decideProcessReuse(reuse.to, wanted);
+    // `persistent-dispatch` stores what `apply` answers as the live fingerprint.
+    // It must not claim the model moved, or the next dispatch rides a stale
+    // process.
+    expect(held.live.model).toBe('claude-opus-4-6');
+    const next = decideProcessReuse(held, wanted);
     expect(next.action).toBe('adjust');
   });
 });

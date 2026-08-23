@@ -110,14 +110,12 @@ export type ProcessReuse =
   /**
    * Move the live process onto new values first — awaited, never fired blind.
    *
-   * `to` is the fingerprint to store for the process, and it is read AFTER
-   * `apply` resolves, because that is when it is known. Before the call it names
-   * what this dispatch wants; afterwards it names what the process actually took
-   * (DOR-1301) — the two differ when a setter is refused or goes unanswered
-   * inside its bound, and storing the wanted one then would leave DorkOS
-   * believing a stale process is current.
+   * `apply` ANSWERS with the fingerprint to store for the process, because only
+   * the call knows it: a setter that is refused or goes unanswered inside its
+   * bound leaves its pin where it was (DOR-1301), and storing what the dispatch
+   * wanted would leave DorkOS believing a stale process is current.
    */
-  | { action: 'adjust'; apply: (query: PumpControlQuery) => Promise<void>; to: LaunchFingerprint }
+  | { action: 'adjust'; apply: (query: PumpControlQuery) => Promise<LaunchFingerprint> }
   /** Replace the process: a pin the SDK cannot set live has moved. */
   | { action: 'replace'; reason: string };
 
@@ -143,15 +141,8 @@ export function decideProcessReuse(
   const decision: DispatchDecision = prepareDispatch(live, wanted);
   if (decision.action === 'relaunch') return { action: 'replace', reason: decision.reason };
   if (decision.liveChanges.length === 0) return { action: 'ride' };
-  // Starts as what this dispatch wants, and narrows to what the process took.
-  let held: LaunchFingerprint = decision.to;
   return {
     action: 'adjust',
-    apply: async (control) => {
-      held = (await applyLiveChanges(control, decision)).fingerprint;
-    },
-    get to(): LaunchFingerprint {
-      return held;
-    },
+    apply: async (control) => (await applyLiveChanges(control, decision)).fingerprint,
   };
 }

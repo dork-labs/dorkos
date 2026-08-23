@@ -40,10 +40,11 @@ type ProbeQuery = Pick<
  * Not being awaited is not the same as being free (DOR-1301). A probe sent to a
  * subprocess that can no longer hear DorkOS is dropped in silence against a
  * promise nothing will settle, and since nobody is waiting, nobody notices: the
- * promise, its query and its closures simply stay alive for as long as the
- * server does, once per probe per launch. Each one is bounded for that reason
- * alone — the bound cannot rescue an answer nobody is waiting for, it just lets
- * the wait end.
+ * promise chain built here, and the callbacks it closes over, simply stay alive
+ * for as long as the server does, once per probe per launch. (What the SDK
+ * retains on its own side for the unanswered request is its business and is not
+ * what this releases.) Each probe is bounded for that reason alone — the bound
+ * cannot rescue an answer nobody is waiting for, it just lets the wait end.
  *
  * @param agentQuery - The live query just returned by `query()`
  * @param opts - The runtime's cache callbacks

@@ -1592,6 +1592,38 @@ describe('ClaudeCodeRuntime', () => {
       // The broadcast still fires so other clients/sessions can re-sync.
       expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
     });
+
+    it('reports a reload the CLI never confirmed as a timeout, not as "no query" (DOR-1301)', async () => {
+      // `null` is the route's "send a message first" answer. Saying that about a
+      // session that HAS a query which did not answer tells the operator to do
+      // something they already did, so the timeout must stay distinguishable all
+      // the way out to the route.
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      // From the SAME registry the runtime under test was imported from:
+      // `vi.resetModules()` in `beforeEach` means a top-level import of this
+      // module would be a DIFFERENT class object, and `instanceof` would fail
+      // against an error that is in every other respect the right one.
+      const { ControlRequestTimeoutError, PLUGIN_RELOAD_ACK_TIMEOUT_MS } =
+        await import('../sessions/bounded-control.js');
+      const queryResult = wrapSdkQuery(sdkSimpleText(''));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+      agentManager.ensureSession('reload-deaf', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('reload-deaf', 'hello')) {
+        // drain
+      }
+
+      queryResult.reloadPlugins.mockImplementation(() => new Promise<never>(() => {}));
+
+      vi.useFakeTimers();
+      try {
+        const reloading = agentManager.reloadPlugins('reload-deaf');
+        const settled = reloading.catch((err: unknown) => err);
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS);
+        expect(await settled).toBeInstanceOf(ControlRequestTimeoutError);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('getCommands() warm-on-open (cold-cache plugin discovery)', () => {
