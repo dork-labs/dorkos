@@ -42,6 +42,7 @@ import {
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
 } from '../services/tasks/task-write-policy.js';
+import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
 import fs from 'node:fs/promises';
 
 /**
@@ -418,6 +419,48 @@ export function createTasksRouter(
     const existing = store.getTask(req.params.id);
     if (!existing) {
       return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // A caller that cannot NAME `bypassPermissions` must not be able to KEEP one
+    // by rewriting what the approved run does (security re-review). `permissionMode`
+    // is operator-only, so `refusedOperatorOnlyTaskWrite` has already 403'd any
+    // non-trusted caller that tried to set the mode — but `prompt`, `cron`, and
+    // `name` are agent-writable, and this route writes the file and the row
+    // TOGETHER: it keeps the file's `permissions: bypassPermissions` and updates
+    // only the changed fields, so both end up holding the new work in sync. That is
+    // exactly the state {@link keepsApprovedBypass} reads as "still the approved
+    // work", so the grant would survive the next reconciler sync — an approved
+    // full-autonomy cron now running with an agent's changes.
+    //
+    // `name` belongs here beside `prompt` and `cron` because it is not inert: a
+    // scheduled run's system prompt tells the agent `Job: ${task.name}`
+    // (`services/tasks/task-append.ts`), so the name is part of what the unattended
+    // run is told. `UpdateTaskRequestSchema` now also bounds `name` to a slug, so a
+    // multiline injection payload is refused before this point; the clamp is the
+    // second, behavioral half — any non-trusted change to the approved run's
+    // identity drops the grant, exactly as a cron change does.
+    //
+    // So bind the grant to that work and, when a non-trusted caller changes any of
+    // it, clamp the mode away through the SAME seam the create and file-sync paths
+    // use. The edit still lands (these fields are agent-writable); the unattended
+    // run just gets its approval prompts back. Setting it on `data` lands it on both
+    // the rewritten file (below) and the row (`store.updateTask`), so the file no
+    // longer declares a grant and `keepsApprovedBypass` has no bypass left in the
+    // row to keep.
+    //
+    // A trusted caller — the person editing their own task in the cockpit — is left
+    // untouched: their approval is what the write-order protects, and it still
+    // round-trips through disk exactly as before.
+    const promptChangesApprovedWork = data.prompt !== undefined && data.prompt !== existing.prompt;
+    const cronChangesApprovedWork =
+      data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '');
+    const nameChangesApprovedWork = data.name !== undefined && data.name !== existing.name;
+    if (
+      !trusted &&
+      (promptChangesApprovedWork || cronChangesApprovedWork || nameChangesApprovedWork)
+    ) {
+      const clamp = clampSchedulePermissionMode(existing.permissionMode);
+      if (clamp.clamped) data.permissionMode = clamp.mode;
     }
 
     // If there's a file on disk, update it

@@ -12,6 +12,7 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { TaskNameSchema } from '@dorkos/shared/schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 import {
@@ -382,7 +383,15 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
       'Update an existing Tasks schedule. Only provided fields are updated.',
       {
         id: z.string().describe('Schedule ID to update'),
-        name: z.string().optional().describe('New name'),
+        // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
+        // is on the REST route (`@dorkos/shared`). A task's name is read back to
+        // an unattended run in its system prompt (`Job: ${task.name}` via
+        // `task-append.ts`), so an unbounded name was a prompt-injection primitive
+        // on this surface too — and this handler writes the row directly, so a
+        // multiline/over-64 name would ride the window before the reconciler could
+        // clamp it. The SDK parses this shape before the handler runs, so a bad
+        // name is refused here just as `parseBody` refuses it on REST.
+        name: TaskNameSchema.optional().describe('New name (lowercase kebab-case slug)'),
         prompt: z.string().optional().describe('New prompt'),
         cron: z.string().optional().describe('New cron expression'),
         enabled: z.boolean().optional().describe('Enable or disable the schedule'),

@@ -366,12 +366,14 @@ describe('Tasks routes', () => {
 
   describe('PATCH /api/tasks/:id', () => {
     it('updates a schedule', async () => {
-      const sched = store.createTask(taskInput({ name: 'Old', prompt: 'p', cron: '0 * * * *' }));
+      const sched = store.createTask(taskInput({ name: 'old', prompt: 'p', cron: '0 * * * *' }));
 
-      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ name: 'Updated' });
+      // `name` on an update must be a slug — it is written straight into the
+      // SKILL.md frontmatter, which enforces that rule (`UpdateTaskRequest.name`).
+      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ name: 'updated' });
 
       expect(res.status).toBe(200);
-      expect(res.body.name).toBe('Updated');
+      expect(res.body.name).toBe('updated');
       // The patch response is a task like any other, so it carries the same
       // derived fields the list does — and for an active task that means no
       // preview, exactly as the list reports.
@@ -431,7 +433,7 @@ describe('Tasks routes', () => {
     });
 
     it('returns 404 for nonexistent schedule', async () => {
-      const res = await request(app).patch('/api/tasks/nonexistent').send({ name: 'X' });
+      const res = await request(app).patch('/api/tasks/nonexistent').send({ name: 'x' });
 
       expect(res.status).toBe(404);
     });
