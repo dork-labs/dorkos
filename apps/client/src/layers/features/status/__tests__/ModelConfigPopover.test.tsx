@@ -47,6 +47,21 @@ const mockModels = [
     supportsFastMode: true,
     supportsAutoMode: false,
   },
+  {
+    // Claims effort but names no levels — the half-answer a runtime catalog can
+    // legitimately give. There is nothing to offer and nothing to advertise, so
+    // both the control and the badge must treat it as "no effort". Without this
+    // row the length half of the capability check is untested.
+    value: 'claude-halfclaim-1',
+    displayName: 'Halfclaim',
+    description: 'Declares effort, offers no levels',
+    isDefault: false,
+    contextWindow: 200_000,
+    supportsEffort: true,
+    supportedEffortLevels: [] as EffortLevel[],
+    supportsFastMode: false,
+    supportsAutoMode: false,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -282,6 +297,16 @@ describe('ModelConfigPopover', () => {
       expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
     });
 
+    it('drops the effort badge for a model that claims effort but offers no levels (DOR-1445)', () => {
+      // Both halves of the capability check matter: a model with no levels to
+      // pick has no Effort control either, so advertising one is the same lie.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-halfclaim-1', effort: 'high' })} />
+      );
+      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('High');
+      expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
+    });
+
     it('keeps the effort badge for a model that does take effort', () => {
       // The guard must not swallow the honest case: Opus declares effort levels.
       render(
@@ -453,7 +478,8 @@ describe('ModelConfigPopover', () => {
     it('renders context window badges', () => {
       render(<ModelConfigPopover {...defaultProps()} />);
       const badges = screen.getAllByText('200K');
-      expect(badges.length).toBe(3);
+      // One per model in the catalog — all four fixtures declare a 200K window.
+      expect(badges.length).toBe(mockModels.length);
     });
 
     it('renders model card list with radiogroup role', () => {
