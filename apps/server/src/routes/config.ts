@@ -173,11 +173,13 @@ router.get('/', async (_req, res) => {
       lockedByEnv: RELAY_LOCKED_BY_ENV,
       ...(getRelayInitError() && { initError: getRelayInitError() }),
     },
-    scheduler: configManager.get('scheduler') ?? {
-      maxConcurrentRuns: 1,
-      timezone: null,
-      retentionCount: 100,
-    },
+    // Read from the schema rather than re-typed here, which is the same idiom
+    // `agents`, `rooms` and `welcomeBack` already use above and below. It used to
+    // be a hand-written copy, and a hand-written copy of a default is a fourth
+    // declaration sitting outside the guard that keeps the other three in step —
+    // so raising `maxConcurrentRuns` would have left this one answering `1`
+    // (spec `full-power-defaults`, D1).
+    scheduler: configManager.get('scheduler') ?? USER_CONFIG_DEFAULTS.scheduler,
     logging: configManager.get('logging') ?? {
       level: 'info',
       maxLogSizeKb: 500,
@@ -321,6 +323,14 @@ router.get('/', async (_req, res) => {
       // opens without a second dialog, and Settings shows the date back with a
       // way to clear it. `?? null` covers the pre-migration read window only.
       autonomyAcknowledgedAt: configManager.get('ui')?.autonomyAcknowledgedAt ?? null,
+      // The power-door answer (spec `full-power-defaults`, D1). Both halves go
+      // out because the cockpit decides from them whether the door is put up at
+      // all: `fullPowerDecidedAt` is the "already asked" signal for both the
+      // onboarding stage and the one-time modal, and `fullPowerChoice` is what
+      // pre-selects `canInitiate` on a new binding. `?? null` covers the
+      // pre-migration read window only.
+      fullPowerDecidedAt: configManager.get('ui')?.fullPowerDecidedAt ?? null,
+      fullPowerChoice: configManager.get('ui')?.fullPowerChoice ?? null,
     },
     // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
     // because curation is not free: `runtimes.claudeCode.persistentSession`

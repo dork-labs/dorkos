@@ -141,13 +141,20 @@ describe('runtimes.claudeCode.persistentSession on an upgrade boot (real conf + 
     expect(new ConfigManager(dir).getDot('runtimes.claudeCode.persistentSession')).toBe(true);
   });
 
-  it('a fresh install gets the leaf from the schema, off', () => {
+  it('a fresh install gets the leaf from the schema, on', () => {
+    // The schema default flipped to `true` when the flag graduated out of
+    // Experiments (spec `full-power-defaults`, D1). The `0.59.0` body above did
+    // not change — it still seeds `false` onto a config that predates the leaf,
+    // which is what an upgrader stamped 0.59.0 really ran — and the `0.66.0`
+    // key is what moves those seeded `false`s on to `true`. That key is above
+    // this file's `DORKOS_VERSION_OVERRIDE`, so it deliberately does not run
+    // here; `config-full-power-defaults-migration.test.ts` is where it does.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-persistent-session-fresh-'));
     dirs.push(dir);
 
     const manager = new ConfigManager(dir);
 
-    expect(manager.get('runtimes').claudeCode.persistentSession).toBe(false);
+    expect(manager.get('runtimes').claudeCode.persistentSession).toBe(true);
     expect(manager.validate()).toEqual({ valid: true });
   });
 

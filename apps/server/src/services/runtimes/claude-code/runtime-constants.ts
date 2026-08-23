@@ -33,10 +33,12 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // `persistent-session-runtime` §P3).
   //
   // The capability says the adapter is able to, not that every session does.
-  // Whether a given session holds its process is the operator's per-session
-  // opt-in `runtimes.claudeCode.persistentSession`, which ships OFF — so a
-  // default install still starts one process per message, and `getSessionWarmth`
-  // honestly answers `cold` for every session on it.
+  // Whether a given session holds its process is the operator's setting
+  // `runtimes.claudeCode.persistentSession`, which ships ON since it graduated
+  // (spec `full-power-defaults`, D1) — so on a default install sessions DO go
+  // warm, and `getSessionWarmth` reports the real thing rather than a uniform
+  // `cold`. It is still per session and still readable as `false`: a chat keeps
+  // the path it started on, so a `cold` answer stays a normal one.
   //
   // Two consequences of how that opt-in is read, both deliberate, both spelled
   // out in `sessions/persistent-dispatch.ts`: turning it ON takes effect at a

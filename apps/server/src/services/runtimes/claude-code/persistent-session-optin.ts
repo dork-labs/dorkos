@@ -5,10 +5,11 @@
  *
  * ## What the setting means
  *
- * Off — how it ships — a Claude Code chat starts a fresh agent process for every
- * message and lets it exit when the turn ends, which is what DorkOS has always
- * done. On, the session's pump holds that process open between messages, so the
- * next message reaches an agent that is already running.
+ * On — how it ships since the flag graduated (spec `full-power-defaults`, D1) —
+ * the session's pump holds one agent process open between messages, so the next
+ * message reaches an agent that is already running. Off, a Claude Code chat
+ * starts a fresh process for every message and lets it exit when the turn ends,
+ * which is what DorkOS did for its first year.
  *
  * ## Why a reader rather than a value
  *

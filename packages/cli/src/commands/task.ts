@@ -15,6 +15,8 @@
  * @module commands/task
  */
 import { parseArgs } from 'node:util';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import { isUnattendedAutonomy } from '@dorkos/shared/permission-semantics';
 import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 
@@ -62,6 +64,69 @@ interface TaskSchedule {
   enabled: boolean;
   status?: string;
   nextRun?: string | null;
+  /** How much the run may do without asking, as the server resolved it. */
+  permissionMode?: string | null;
+}
+
+/**
+ * The runtime a scheduled run executes on.
+ *
+ * The same assumption the server and the task form both make, written down in a
+ * third place rather than imported, because this package is the published CLI
+ * bundle and reaching into server internals for a constant would drag the module
+ * graph with it. The reasoning lives once, in
+ * `apps/server/src/services/tasks/scheduled-run-power.ts`: a task carries no
+ * runtime of its own and the scheduler's is fixed at boot to Claude Code, so the
+ * registry default is the wrong thing to read. If that stops being true, all
+ * three move together.
+ */
+const TASK_RUNTIME = 'claude-code';
+
+/** What `GET /api/capabilities` answers, narrowed to the part read here. */
+interface CapabilitiesResponse {
+  capabilities?: Record<
+    string,
+    { permissionModes?: { values?: readonly PermissionModeDescriptor[] } }
+  >;
+}
+
+/**
+ * One plain sentence naming the level a task will run at, when that level never
+ * stops to ask — and nothing at all otherwise.
+ *
+ * `dorkos task create` has no flag for the permission mode, so it ALWAYS omits
+ * it and the server always resolves one from the operator's configured trust
+ * stop (spec `full-power-defaults`, D6). On an install sitting at full autonomy
+ * that quietly arms a cron nothing will ever pause to ask about, and a person
+ * who typed six flags about a schedule deserves to be told which of them they
+ * did not type mattered most.
+ *
+ * **The judgement is the runtime's, never this id's.** The mode is looked up in
+ * the profile its runtime published and put to `isUnattendedAutonomy` — the same
+ * rule the cockpit's standing banner uses — because reading "bypassPermissions"
+ * as dangerous by its name is the substrate mistake this codebase keeps
+ * refusing to make. A mode the profile does not describe says nothing.
+ *
+ * Advisory only: any failure reaching the server, and any shape it does not
+ * recognise, answers `null`. Telling somebody about a task is not worth failing
+ * the create that already succeeded.
+ *
+ * @param permissionMode - The mode the server stored on the new task.
+ * @returns The line to print, or `null` when there is nothing worth saying.
+ */
+async function describeUnattendedLevel(
+  permissionMode: string | null | undefined
+): Promise<string | null> {
+  if (!permissionMode) return null;
+  try {
+    const { capabilities } = await apiCall<CapabilitiesResponse>('GET', '/api/capabilities');
+    const declared = capabilities?.[TASK_RUNTIME]?.permissionModes?.values ?? [];
+    const descriptor = declared.find((mode) => mode.id === permissionMode);
+    if (!descriptor || !isUnattendedAutonomy(descriptor)) return null;
+    return `Runs at full power — no approval prompts (from your default trust level). Change it in Settings, or per task.`;
+  } catch {
+    return null;
+  }
 }
 
 /** Parsed arguments for `task create`. */
@@ -251,6 +316,11 @@ export async function runTaskCreate(args: TaskCreateArgs): Promise<number> {
       return 0;
     }
     console.log(`Created task ${created.displayName ?? created.name} (${created.id})`);
+    // Printed after the success line, and only when there is something a person
+    // would want to have been told. `--json` callers get the mode in the payload
+    // and no prose.
+    const level = await describeUnattendedLevel(created.permissionMode);
+    if (level) console.log(level);
     return 0;
   } catch (err) {
     printError(err);

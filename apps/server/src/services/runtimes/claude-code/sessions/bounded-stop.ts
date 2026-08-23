@@ -57,9 +57,12 @@
  * turn ended by an escalated close is reported as `interrupted` rather than as
  * finished (`messaging/message-sender.ts`, DOR-1244); the persistent pump does
  * not run that loop and still settles a killed process as a crash, which is a
- * named DOR-1244 follow-up (`persistentSession` ships OFF). So on the path that
- * ships, a premature escalation costs the CLI's transcript marker and a warm
- * process, not the operator's understanding of what just happened.
+ * named DOR-1244 follow-up. **That follow-up got more urgent when
+ * `persistentSession` graduated to ON** (spec `full-power-defaults`, D1): the
+ * pump is now the path a default install takes, so the honest-settle gap is on
+ * the common path rather than the opt-in one. On the resume path a premature
+ * escalation still costs only the CLI's transcript marker and a warm process,
+ * not the operator's understanding of what just happened.
  *
  * Revisit this number with measurements of real ack latency under load, not
  * with an argument.

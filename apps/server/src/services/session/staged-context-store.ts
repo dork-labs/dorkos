@@ -14,15 +14,21 @@
  * (ADR-0273). The `queue_note` mechanism is the precedent: a small per-turn note
  * the person's action produced, carried in the bag rather than concatenated.
  *
- * **Two different absences route here, and the second is the common one.** The
- * runtime may have no such seam at all — codex and opencode declare
- * `supportsContextStaging: false` — or it may have one that this SESSION is not
- * holding open. Claude-code is the second case and it is the default: its native
- * stage appends to a process held between turns, and
- * `runtimes.claudeCode.persistentSession` ships OFF, so `canStageSession`
- * answers `false` and the words fold (`degradedBecause: 'not-stageable'`,
- * DOR-1307). This store is therefore not a minority path serving two adapters —
- * on a default install it is where every Add context goes.
+ * **Two different absences route here.** The runtime may have no such seam at
+ * all — codex and opencode declare `supportsContextStaging: false` — or it may
+ * have one that this SESSION is not holding open. Claude-code is the second
+ * case: its native stage appends to a process held between turns, so
+ * `canStageSession` answers `false` for a session holding none and the words
+ * fold (`degradedBecause: 'not-stageable'`, DOR-1307).
+ *
+ * **The second case used to be the default and is not any more.** This note
+ * read "on a default install it is where every Add context goes", which was
+ * true while `runtimes.claudeCode.persistentSession` shipped OFF. It ships ON
+ * since that flag graduated (spec `full-power-defaults`, D1), so a fresh
+ * claude-code session goes warm and takes its native stage. This store still
+ * serves codex and opencode, every install that turned warmth back off, and
+ * every claude-code session that has not booted its process yet — a live path
+ * everywhere, no longer the one carrying nearly all the traffic.
  *
  * ## What this is NOT
  *

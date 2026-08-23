@@ -249,6 +249,16 @@ export const CONFIG_WRITE_POLICY = {
   // /api/sessions/:id` can put `acknowledgedAutonomy: true` on the request and
   // open the same door once. What this stops is the durable, silent version.
   'ui.autonomyAcknowledgedAt': 'operator-only',
+  // The power-door answer, refused for exactly the reason above: these record
+  // that a PERSON was asked a consent question and what they said. An agent that
+  // could write them could close the door on a question nobody ever saw — and
+  // then, having recorded `'full'`, hand the binding form a pre-selected
+  // `canInitiate`. They grant nothing by themselves, which is why they are
+  // `no-risk` in the safe-defaults table; a consent record an agent can write is
+  // still a consent record an agent can forge, which is why they are refused
+  // here. The two verdicts answer different questions and are meant to differ.
+  'ui.fullPowerDecidedAt': 'operator-only',
+  'ui.fullPowerChoice': 'operator-only',
 
   // Every way the operator finds out that something is waiting on them. An agent
   // that could write these could turn off the knock, stop the phone ever ringing
@@ -695,6 +705,12 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.codex.defaultTrustStop',
       'runtimes.opencode.defaultTrustStop',
       'ui.autonomyAcknowledgedAt',
+      // The power-door answer. Filed under `approvals` rather than a stake of
+      // its own because that is what the question was about: whether the person
+      // is asked before work happens. The record grants nothing by itself, but
+      // writing it is how the asking stops.
+      'ui.fullPowerDecidedAt',
+      'ui.fullPowerChoice',
     ],
   },
   {

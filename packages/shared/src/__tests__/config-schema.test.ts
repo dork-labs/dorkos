@@ -9,6 +9,7 @@ import {
   SENSITIVE_CONFIG_KEYS,
   LOG_LEVEL_MAP,
   ONBOARDING_STEPS,
+  OnboardingStepSchema,
   SidebarGroupSchema,
   SidebarPrefsSchema,
   SIDEBAR_PREFS_DEFAULTS,
@@ -52,6 +53,8 @@ describe('UserConfigSchema', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         autonomyAcknowledgedAt: null,
+        fullPowerDecidedAt: null,
+        fullPowerChoice: null,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -66,7 +69,7 @@ describe('UserConfigSchema', () => {
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
-      scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
+      scheduler: { enabled: true, maxConcurrentRuns: 4, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
         maxAgentDepth: 3,
@@ -133,7 +136,7 @@ describe('UserConfigSchema', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
-          persistentSession: false,
+          persistentSession: true,
         },
         opencode: {
           enabled: true,
@@ -405,6 +408,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         autonomyAcknowledgedAt: null,
+        fullPowerDecidedAt: null,
+        fullPowerChoice: null,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -419,7 +424,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
-      scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
+      scheduler: { enabled: true, maxConcurrentRuns: 4, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
         maxAgentDepth: 3,
@@ -486,7 +491,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
-          persistentSession: false,
+          persistentSession: true,
         },
         opencode: {
           enabled: true,
@@ -639,17 +644,145 @@ describe('LOG_LEVEL_MAP', () => {
   });
 });
 
+/**
+ * The two-declaration rule (spec `full-power-defaults`, D1).
+ *
+ * Every leaf's default is written twice — once per-field on the Zod object, once
+ * inside its section's `.default(() => ({ … }))` factory — and `conf` reaches a
+ * different one depending on how much of the section is already on disk. A
+ * FRESH install has no section, so the factory answers; an UPGRADE whose stored
+ * section predates the leaf has the section but not the key, so the per-field
+ * default answers. Declaring only one of the two is a silent disagreement
+ * between those two populations, and nothing else in the suite would see it,
+ * because every other fixture parses `{ version: 1 }` and only ever exercises
+ * the factory.
+ *
+ * Pinned for the leaves this program adds or moves. It is deliberately not a
+ * whole-schema sweep: a generic walker would need to know which sections are
+ * `z.preprocess`-wrapped and which carry `z.record`s, and a guard nobody can
+ * read is a guard nobody maintains.
+ */
+describe('per-field and section-literal defaults agree', () => {
+  /**
+   * The top-level section factory's answer: nothing of the section is on disk.
+   * For `runtimes` that is the literal which inlines a whole `claudeCode` block,
+   * NOT `claudeCode`'s own factory — see the third case below for that one.
+   */
+  const fromFactory = UserConfigSchema.parse({ version: 1 });
+  /** The per-field answer: the section is on disk, but empty of these leaves. */
+  const fromFields = UserConfigSchema.parse({
+    version: 1,
+    ui: {},
+    scheduler: {},
+    runtimes: { claudeCode: {} },
+  });
+
+  it('ui.fullPowerDecidedAt is null either way', () => {
+    expect(fromFactory.ui.fullPowerDecidedAt).toBeNull();
+    expect(fromFields.ui.fullPowerDecidedAt).toBeNull();
+  });
+
+  it('ui.fullPowerChoice is null either way', () => {
+    expect(fromFactory.ui.fullPowerChoice).toBeNull();
+    expect(fromFields.ui.fullPowerChoice).toBeNull();
+  });
+
+  it('scheduler.maxConcurrentRuns is 4 either way', () => {
+    expect(fromFactory.scheduler.maxConcurrentRuns).toBe(4);
+    expect(fromFields.scheduler.maxConcurrentRuns).toBe(4);
+  });
+
+  it('runtimes.claudeCode.persistentSession is true either way', () => {
+    expect(fromFactory.runtimes.claudeCode.persistentSession).toBe(true);
+    expect(fromFields.runtimes.claudeCode.persistentSession).toBe(true);
+  });
+
+  it('the claudeCode section literal agrees with the other two declarations', () => {
+    // Three declarations carry `persistentSession`, not two, and the three shapes
+    // that reach them are worth naming because it is easy to get backwards:
+    //
+    // - `{ version: 1 }` — no `runtimes` at all, so the RUNTIMES factory runs and
+    //   answers from the whole `claudeCode` block it inlines. That is
+    //   `fromFactory` above.
+    // - `{ runtimes: { claudeCode: {} } }` — the section is there and the leaf is
+    //   not, so the PER-FIELD default answers. That is `fromFields` above.
+    // - `{ runtimes: {} }` — `runtimes` is there and `claudeCode` is not, so
+    //   `claudeCode`'s OWN factory answers. That is this case, the third one, and
+    //   nothing else in the suite reaches it.
+    expect(
+      UserConfigSchema.parse({ version: 1, runtimes: {} }).runtimes.claudeCode.persistentSession
+    ).toBe(true);
+  });
+
+  it('keeps the scheduler bounds it always had', () => {
+    expect(
+      UserConfigSchema.safeParse({ version: 1, scheduler: { maxConcurrentRuns: 0 } }).success
+    ).toBe(false);
+    expect(
+      UserConfigSchema.safeParse({ version: 1, scheduler: { maxConcurrentRuns: 10 } }).success
+    ).toBe(true);
+    expect(
+      UserConfigSchema.safeParse({ version: 1, scheduler: { maxConcurrentRuns: 11 } }).success
+    ).toBe(false);
+  });
+
+  it('accepts both answers at the power door and nothing else', () => {
+    expect(
+      UserConfigSchema.parse({ version: 1, ui: { fullPowerChoice: 'supervised' } }).ui
+        .fullPowerChoice
+    ).toBe('supervised');
+    expect(
+      UserConfigSchema.parse({ version: 1, ui: { fullPowerChoice: 'full' } }).ui.fullPowerChoice
+    ).toBe('full');
+    expect(UserConfigSchema.safeParse({ version: 1, ui: { fullPowerChoice: 'yes' } }).success).toBe(
+      false
+    );
+  });
+
+  it('takes an ISO timestamp for the decision, and refuses a loose string', () => {
+    expect(
+      UserConfigSchema.parse({ version: 1, ui: { fullPowerDecidedAt: '2026-08-22T10:00:00.000Z' } })
+        .ui.fullPowerDecidedAt
+    ).toBe('2026-08-22T10:00:00.000Z');
+    expect(
+      UserConfigSchema.safeParse({ version: 1, ui: { fullPowerDecidedAt: 'yesterday' } }).success
+    ).toBe(false);
+  });
+
+  it('leaves every consent-gated default exactly where it was (invariant A1)', () => {
+    // The list a reviewer checks this diff against. Nothing in this program may
+    // move any of them; they are written by the door's accept, with a person
+    // looking at it.
+    expect(fromFactory.runtimes.defaultTrustStop).toBeNull();
+    expect(fromFactory.runtimes.claudeCode.defaultTrustStop).toBeNull();
+    expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
+    expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
+    expect(fromFactory.ui.autonomyAcknowledgedAt).toBeNull();
+    expect(fromFactory.approvals.standingGrants).toBe(false);
+    expect(fromFactory.mesh.scanRoots).toEqual([]);
+  });
+});
+
 describe('ONBOARDING_STEPS', () => {
   it('includes meet-dorkbot', () => {
     expect(ONBOARDING_STEPS).toContain('meet-dorkbot');
   });
 
-  it('has meet-dorkbot as the first step', () => {
-    expect(ONBOARDING_STEPS[0]).toBe('meet-dorkbot');
+  it('leads with the power choice, which the flow puts before the DorkBot conversation', () => {
+    expect(ONBOARDING_STEPS[0]).toBe('power');
   });
 
   it('contains all expected steps', () => {
-    expect(ONBOARDING_STEPS).toEqual(['meet-dorkbot', 'profile', 'discovery']);
+    expect(ONBOARDING_STEPS).toEqual(['power', 'meet-dorkbot', 'profile', 'discovery']);
+  });
+
+  it('is a widening, so every step id an older config could have stored still parses', () => {
+    // Why no scrub migration ships with `'power'`: the 0.55.0 body filters
+    // persisted step arrays down to whatever this set holds, so a WIDER set only
+    // ever keeps more. Narrowing is the move that needs a migration.
+    for (const step of ['meet-dorkbot', 'profile', 'discovery'] as const) {
+      expect(OnboardingStepSchema.safeParse(step).success).toBe(true);
+    }
   });
 });
 
@@ -778,7 +911,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        persistentSession: false,
+        persistentSession: true,
       },
       opencode: {
         enabled: true,
@@ -812,7 +945,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        persistentSession: false,
+        persistentSession: true,
       },
       opencode: {
         enabled: true,
@@ -1004,7 +1137,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
-      persistentSession: false,
+      persistentSession: true,
     });
   });
 
@@ -1021,7 +1154,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
-      persistentSession: false,
+      persistentSession: true,
     });
   });
 
@@ -1047,7 +1180,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
-      persistentSession: false,
+      persistentSession: true,
     });
   });
 

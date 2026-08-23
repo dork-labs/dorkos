@@ -305,6 +305,19 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     reason:
       'How long you have to be away before coming back counts as a return. The protective direction is HIGHER here — a longer threshold means fewer returns qualify — so someone who set a week and lands back on four hours is greeted several times as often as they chose, without ever being asked.',
   },
+  {
+    path: 'runtimes.claudeCode.persistentSession',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Warm agents default ON (spec `full-power-defaults`). Holding a process open between messages costs memory — up to about 1 GB per warm agent — so somebody who turned it off did so to get that memory back, on a machine that presumably needed it. A wipe that handed the default back would take it away again with nothing on screen to say why.',
+  },
+  {
+    path: 'scheduler.maxConcurrentRuns',
+    direction: 'lower',
+    reason:
+      'How many scheduled runs may be in flight at once. It used to ship at its schema minimum, so there was nothing below the default to tighten to and the leaf was exempt; it ships at 4 now, and a person who set it back to 1 chose one run at a time on purpose — a wipe must not put three more alongside it.',
+  },
 ] as const;
 
 /**

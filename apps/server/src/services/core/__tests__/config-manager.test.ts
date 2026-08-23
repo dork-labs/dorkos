@@ -51,6 +51,9 @@ import {
   backfillNotificationDefaults,
   migrateClaudeAccountRegistry,
   backfillPromoDismissals,
+  seedFullPowerDecision,
+  raiseSchedulerConcurrencyFloor,
+  warmClaudeCodeSessionsByDefault,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -75,9 +78,11 @@ const RUNTIMES_DEFAULTS = {
     defaultModel: null,
     defaultEffort: null,
     defaultTrustStop: null,
-    // Off: one process per message, exactly as claude-code has always run
-    // (spec `persistent-session-runtime` §P3).
-    persistentSession: false,
+    // On: a chat's agent stays running between messages. Graduated out of
+    // Experiments and flipped by the schema default (spec
+    // `full-power-defaults`, D1); the `0.59.0` backfill that seeded it OFF is
+    // unchanged and still pinned below.
+    persistentSession: true,
   },
   opencode: {
     enabled: true,
@@ -1930,7 +1935,7 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        persistentSession: false,
+        persistentSession: true,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -4805,5 +4810,166 @@ describe('config.json holds the EFFECTIVE config, not what was set (DOR-1267)', 
           clearInvalidConfig: false,
         })
     ).toThrow(/Config schema violation.*required property 'collectDebounceMs'/);
+  });
+});
+
+describe('the 0.66.0 bodies (spec full-power-defaults)', () => {
+  describe('seedFullPowerDecision', () => {
+    it('reserves both halves of the answer, unanswered', () => {
+      const store = createMockStore({ ui: { theme: 'system' } });
+
+      seedFullPowerDecision(store);
+
+      expect(store.data.ui).toEqual({
+        theme: 'system',
+        fullPowerDecidedAt: null,
+        fullPowerChoice: null,
+      });
+    });
+
+    it('never overwrites an answer somebody already gave', () => {
+      const store = createMockStore({
+        ui: { fullPowerDecidedAt: '2026-08-22T09:00:00.000Z', fullPowerChoice: 'full' },
+      });
+
+      seedFullPowerDecision(store);
+      seedFullPowerDecision(store);
+
+      expect(store.data.ui).toEqual({
+        fullPowerDecidedAt: '2026-08-22T09:00:00.000Z',
+        fullPowerChoice: 'full',
+      });
+    });
+
+    it('does nothing at all when there is no ui block to seed into', () => {
+      const store = createMockStore({});
+
+      seedFullPowerDecision(store);
+
+      expect(store.data.ui).toBeUndefined();
+    });
+
+    it('touches no consent-gated value (invariant A1)', () => {
+      const store = createMockStore({
+        ui: { autonomyAcknowledgedAt: null },
+        runtimes: { defaultTrustStop: null },
+        approvals: { standingGrants: false },
+      });
+
+      seedFullPowerDecision(store);
+
+      expect((store.data.ui as Record<string, unknown>).autonomyAcknowledgedAt).toBeNull();
+      expect(store.data.runtimes).toEqual({ defaultTrustStop: null });
+      expect(store.data.approvals).toEqual({ standingGrants: false });
+    });
+  });
+
+  describe('raiseSchedulerConcurrencyFloor', () => {
+    it('moves exactly the shipped value, and nothing else in the section', () => {
+      const store = createMockStore({
+        scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
+      });
+
+      raiseSchedulerConcurrencyFloor(store);
+
+      expect(store.data.scheduler).toEqual({
+        enabled: true,
+        maxConcurrentRuns: 4,
+        timezone: null,
+        retentionCount: 100,
+      });
+    });
+
+    it('leaves any other number alone, including one set after the bump', () => {
+      const store = createMockStore({ scheduler: { maxConcurrentRuns: 7 } });
+
+      raiseSchedulerConcurrencyFloor(store);
+      // Idempotent: the second call sees 4, not 1, so it does nothing either.
+      raiseSchedulerConcurrencyFloor(store);
+
+      expect(store.data.scheduler).toEqual({ maxConcurrentRuns: 7 });
+    });
+
+    it('is a no-op with no scheduler section', () => {
+      const store = createMockStore({});
+
+      raiseSchedulerConcurrencyFloor(store);
+
+      expect(store.data.scheduler).toBeUndefined();
+    });
+  });
+
+  describe('warmClaudeCodeSessionsByDefault', () => {
+    it('turns on exactly the value the 0.59.0 backfill wrote', () => {
+      const store = createMockStore({
+        runtimes: {
+          default: 'claude-code',
+          claudeCode: { accounts: [], persistentSession: false },
+          codex: { enabled: true },
+        },
+      });
+
+      warmClaudeCodeSessionsByDefault(store);
+
+      expect(store.data.runtimes).toEqual({
+        default: 'claude-code',
+        claudeCode: { accounts: [], persistentSession: true },
+        // Untouched: the setting is claude-code's, and no other section has one.
+        codex: { enabled: true },
+      });
+    });
+
+    it('is idempotent, so an off chosen afterwards is permanent', () => {
+      const store = createMockStore({
+        runtimes: { claudeCode: { persistentSession: false } },
+      });
+
+      warmClaudeCodeSessionsByDefault(store);
+      (
+        store.data.runtimes as Record<string, Record<string, unknown>>
+      ).claudeCode.persistentSession = false;
+      warmClaudeCodeSessionsByDefault(store);
+      warmClaudeCodeSessionsByDefault(store);
+
+      // Two more runs after a deliberate off would flip it back only if the body
+      // read a version rather than the value. It reads the value.
+      expect(store.data.runtimes).toEqual({ claudeCode: { persistentSession: true } });
+    });
+
+    it('is a no-op with no runtimes or no claudeCode block', () => {
+      const empty = createMockStore({});
+      warmClaudeCodeSessionsByDefault(empty);
+      expect(empty.data.runtimes).toBeUndefined();
+
+      const noSection = createMockStore({ runtimes: { default: 'codex' } });
+      warmClaudeCodeSessionsByDefault(noSection);
+      expect(noSection.data.runtimes).toEqual({ default: 'codex' });
+    });
+  });
+
+  it('composes all three under the 0.66.0 key, and writes nothing consent-gated', () => {
+    const store = createMockStore({
+      ui: { theme: 'system', autonomyAcknowledgedAt: null },
+      scheduler: { maxConcurrentRuns: 1 },
+      runtimes: { defaultTrustStop: null, claudeCode: { persistentSession: false } },
+      approvals: { standingGrants: false },
+      mesh: { scanRoots: [] },
+    });
+
+    CONFIG_MIGRATIONS['0.66.0'](store);
+
+    expect(store.data.ui).toEqual({
+      theme: 'system',
+      autonomyAcknowledgedAt: null,
+      fullPowerDecidedAt: null,
+      fullPowerChoice: null,
+    });
+    expect(store.data.scheduler).toEqual({ maxConcurrentRuns: 4 });
+    expect(store.data.runtimes).toEqual({
+      defaultTrustStop: null,
+      claudeCode: { persistentSession: true },
+    });
+    expect(store.data.approvals).toEqual({ standingGrants: false });
+    expect(store.data.mesh).toEqual({ scanRoots: [] });
   });
 });

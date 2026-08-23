@@ -119,6 +119,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'tunnel.domain',
       'tunnel.enabled',
       'ui.autonomyAcknowledgedAt',
+      'ui.fullPowerChoice',
+      'ui.fullPowerDecidedAt',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.enabled',
       'welcomeBack.maxPosts',

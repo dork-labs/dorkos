@@ -142,6 +142,133 @@ describe('runTaskCreate', () => {
   });
 });
 
+/**
+ * The honesty line on `task create` (spec `full-power-defaults`, D6).
+ *
+ * This command has no flag for the permission mode, so the server always
+ * resolves one from the operator's configured trust stop — which on a
+ * full-power install arms a cron that will never pause to ask. The line exists
+ * so that is said out loud, and these cases pin that it is said only when true,
+ * and never at the cost of the create.
+ */
+describe('runTaskCreate — naming an unattended level', () => {
+  /** The create arguments every case below shares. */
+  const args = {
+    name: 'nightly',
+    description: 'd',
+    prompt: 'p',
+    target: 'global',
+    cron: '0 2 * * *',
+    timezone: undefined,
+    displayName: undefined,
+    json: false,
+  };
+
+  /** Claude Code's real declarations for the two modes these cases resolve to. */
+  const CAPABILITIES = {
+    capabilities: {
+      'claude-code': {
+        permissionModes: {
+          values: [
+            {
+              id: 'acceptEdits',
+              label: 'Accept edits',
+              stop: 'act',
+              asks: 'risky',
+              reach: 'write',
+            },
+            {
+              id: 'bypassPermissions',
+              label: 'Full autonomy',
+              stop: 'autonomy',
+              asks: 'never',
+              reach: 'all',
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  /**
+   * Answer the create POST, then the capabilities GET.
+   *
+   * @param permissionMode - The mode the server resolved onto the new task.
+   */
+  function mockCreateResolving(permissionMode: string): void {
+    apiCallMock.mockImplementation((method: string, path: string) =>
+      Promise.resolve(
+        path === '/api/capabilities'
+          ? CAPABILITIES
+          : { id: 't1', name: 'nightly', enabled: true, permissionMode }
+      )
+    );
+  }
+
+  it('says so plainly when the resolved level never stops to ask', async () => {
+    mockCreateResolving('bypassPermissions');
+
+    expect(await runTaskCreate(args)).toBe(0);
+
+    const said = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
+    expect(said.some((line) => line.includes('Runs at full power'))).toBe(true);
+  });
+
+  it('stays quiet when the resolved level still stops for the risky parts', async () => {
+    mockCreateResolving('acceptEdits');
+
+    expect(await runTaskCreate(args)).toBe(0);
+
+    const said = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
+    expect(said.some((line) => line.includes('full power'))).toBe(false);
+    // The success line is still printed — the advisory is additive.
+    expect(said.some((line) => line.includes('Created task'))).toBe(true);
+  });
+
+  it('reads the judgement off the runtime, not off the mode id', async () => {
+    // The substrate rule. A runtime that files this id at the middle stop with
+    // ordinary asking gets no scary line, however the id reads to a human.
+    apiCallMock.mockImplementation((method: string, path: string) =>
+      Promise.resolve(
+        path === '/api/capabilities'
+          ? {
+              capabilities: {
+                'claude-code': {
+                  permissionModes: {
+                    values: [
+                      {
+                        id: 'bypassPermissions',
+                        label: 'Sandboxed',
+                        stop: 'act',
+                        asks: 'risky',
+                        reach: 'write',
+                      },
+                    ],
+                  },
+                },
+              },
+            }
+          : { id: 't1', name: 'nightly', enabled: true, permissionMode: 'bypassPermissions' }
+      )
+    );
+
+    expect(await runTaskCreate(args)).toBe(0);
+
+    const said = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
+    expect(said.some((line) => line.includes('full power'))).toBe(false);
+  });
+
+  it('never fails a create it has already made, when the lookup goes wrong', async () => {
+    apiCallMock.mockImplementation((method: string, path: string) =>
+      path === '/api/capabilities'
+        ? Promise.reject(new ApiError(500, { error: 'boom' }))
+        : Promise.resolve({ id: 't1', name: 'nightly', enabled: true, permissionMode: 'whatever' })
+    );
+
+    expect(await runTaskCreate(args)).toBe(0);
+  });
+});
+
 describe('runTaskTrigger', () => {
   it('POSTs the trigger route and returns 0', async () => {
     apiCallMock.mockResolvedValue({ runId: 'r1' });

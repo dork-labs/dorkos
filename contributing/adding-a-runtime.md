@@ -377,7 +377,7 @@ So: absence passes, fabrication fails — **the strip omits rather than lies.** 
 
 The rules live in `validatePresenceReport` (`packages/test-utils/src/runtime-conformance.ts`). `packages/test-utils/src/__tests__/runtime-conformance-presence.test.ts` proves the predicate rejects each fabrication; the suite cases themselves were proved by seeding a stuck-`streaming` and an empty-turn defect into `test-mode` and watching them go red.
 
-**If your adapter holds a process open between turns, warmth is a third presence question.** `supportsPersistentSession` says the adapter CAN keep one backend process serving many turns — not that every session does; whether a given session does is normally an operator setting, and claude-code's is `runtimes.claudeCode.persistentSession`, off by default. Declaring the capability commits you to three things:
+**If your adapter holds a process open between turns, warmth is a third presence question.** `supportsPersistentSession` says the adapter CAN keep one backend process serving many turns — not that every session does; whether a given session does is normally an operator setting, and claude-code's is `runtimes.claudeCode.persistentSession`, on by default since it graduated (spec `full-power-defaults`). Declaring the capability commits you to three things:
 
 | Method                       | What it must answer                                                                                                                                |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
