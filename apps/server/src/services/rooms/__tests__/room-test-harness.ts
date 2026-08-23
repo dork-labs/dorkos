@@ -399,6 +399,18 @@ export interface RoomHarness {
  * @param opts.maxAgentDepth - The cascade ceiling. Pinned to a literal on
  *   purpose — a test that read the same config the code reads could only prove
  *   the two agree, never that they agree on the right number.
+ * @param opts.maxTurnsPerAgentPerCascade - How many automatic turns ONE agent
+ *   may run inside one cascade. Defaults to **1**, which is the shape every
+ *   scenario in this suite was written against and is still a real setting a
+ *   person can choose: at 1 the repeat rule fires on an agent's second turn, so
+ *   a two-agent ping-pong stops at the first repeat and a refusal is one message
+ *   away in any test that wants one. A test ABOUT the counter pins its own N.
+ * @param opts.turnLimitsEnabled - Whether automatic-reply limits apply at all.
+ *   Defaults to `true`, the shipped posture. A test that passes `false` is
+ *   testing the unlimited path, where neither the guard nor the budget is asked.
+ *   Pass a FUNCTION to move it mid-test, the way the live config reader does —
+ *   that is how a test proves an unlimited stretch left the hourly window
+ *   unspent, by turning limits back on and finding the allowance intact.
  * @param opts.maxAutomaticTurnsPerRoomPerHour - The per-room spend cap. Also a
  *   literal, and high enough by default that it never silently masks a cascade
  *   test — a budget refusal and a guard refusal look alike from the outside.
@@ -433,6 +445,8 @@ export function createRoomHarness(opts: {
   agents: RoomAgentLookup | ((db: Db) => RoomAgentLookup);
   runner?: ScriptedTurnRunner;
   maxAgentDepth?: number;
+  maxTurnsPerAgentPerCascade?: number;
+  turnLimitsEnabled?: boolean | (() => boolean);
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
@@ -454,6 +468,10 @@ export function createRoomHarness(opts: {
   const authors = new AuthorRegistry(db, agentLookup);
   const runner = opts.runner ?? scriptedRunner();
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
+  const maxTurnsPerAgentPerCascade = opts.maxTurnsPerAgentPerCascade ?? 1;
+  const limitsOption = opts.turnLimitsEnabled ?? true;
+  const turnLimitsEnabled: () => boolean =
+    typeof limitsOption === 'function' ? limitsOption : () => limitsOption;
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
@@ -505,6 +523,8 @@ export function createRoomHarness(opts: {
         afterOrdinal: afterSeq,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     maxAgentDepth: () => maxAgentDepth,
+    maxTurnsPerAgentPerCascade: () => maxTurnsPerAgentPerCascade,
+    turnLimitsEnabled,
     engagedWindow: () => engagedWindow,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,

@@ -4766,6 +4766,34 @@
       "specSlug": "billing-account-ladder",
       "amends": null,
       "supersedes": null
+    },
+    {
+      "id": "260823-000217",
+      "slug": "the-ancestry-rule-becomes-a-per-agent-turn-counter",
+      "title": "The cascade guard's ancestry rule becomes a per-agent turn counter",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "amends": "260726-170127",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/cascade-guard.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/room-store.ts"
+      ]
+    },
+    {
+      "id": "260823-000218",
+      "slug": "room-turn-limits-ship-loose-and-can-be-turned-off",
+      "title": "Room turn limits ship loose, and a person may turn them off entirely",
+      "status": "proposed",
+      "created": "2026-08-23",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/config-schema.ts",
+        "apps/server/src/services/core/config-manager.ts",
+        "apps/server/src/services/core/safe-defaults/default-verdicts.ts"
+      ]
     }
   ]
 }

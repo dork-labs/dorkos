@@ -89,7 +89,7 @@ describe('cascade guard, wired', () => {
     expect(log().filter((e) => e.kind === 'post' && e.authorId !== human)).toHaveLength(2);
   });
 
-  it('fires the ancestry rule, and fires it below the depth ceiling', async () => {
+  it('fires the repeat rule, and fires it below the depth ceiling', async () => {
     await seedAndSettle('thoughts?');
 
     // Nothing ever reached the ceiling: the deepest thing in the room is a
@@ -102,7 +102,7 @@ describe('cascade guard, wired', () => {
 
   it('triggers each agent once per cascade, even before either has answered', async () => {
     // Both turns are in flight when the first reply lands, so the durable
-    // ancestry query cannot see either of them yet. The claim is what closes
+    // turn-count query cannot see either of them yet. The claim is what closes
     // that window; without it each agent is triggered twice per human message.
     await seedAndSettle('thoughts?');
 
@@ -116,13 +116,14 @@ describe('cascade guard, wired', () => {
 
     // A ping-pong stops for ONE reason, twice, and RP8 is why it is now the
     // same reason both times. The agent that has already spoken is refused by
-    // the ancestry rule. The agent that was still working when the other's reply
-    // landed is not refused at all any more — its collection is held and run
-    // when its claim releases (`room-collect.ts`) — and by then it has spoken
-    // too, so the ancestry rule answers it as well. That second refusal is a
-    // strictly better answer than the busy line it replaced: the guard's
-    // ancestry query is durable, so it could not see a turn that was still in
-    // flight, and the claim was standing in for it.
+    // the repeat rule (this harness counts one turn per agent per cascade). The
+    // agent that was still working when the other's reply landed is not refused
+    // at all any more — its collection is held and run when its claim releases
+    // (`room-collect.ts`) — and by then it has spoken too, so the repeat rule
+    // answers it as well. That second refusal is a strictly better answer than
+    // the busy line it replaced: the guard's turn count is durable, so it could
+    // not see a turn that was still in flight, and the claim was standing in
+    // for it.
     const notices = log().filter((entry) => entry.kind === 'notice');
     expect(notices.map((entry) => entry.body.notice).sort()).toEqual([
       'cascade_stopped',
@@ -149,7 +150,7 @@ describe('cascade guard, wired', () => {
     const seed = await seedAndSettle('thoughts?');
 
     expect(log().every((entry) => entry.cascadeRoot === seed.id)).toBe(true);
-    expect(service.authorsInCascade(room.id, seed.id).sort()).toEqual(
+    expect([...service.turnsByAuthorInCascade(room.id, seed.id).keys()].sort()).toEqual(
       [human, ana, bo, authors.system().id].sort()
     );
   });
@@ -407,7 +408,7 @@ describe('cascade guard, wired', () => {
     expect(capped.runner.turns).toHaveLength(1);
   });
 
-  it('speaks for an ancestry refusal even while staying silent for a synthesized one', async () => {
+  it('speaks for a repeat refusal even while staying silent for a synthesized one', async () => {
     // The two live side by side and must not collapse into one rule. An agent
     // posting with nothing behind it is refused against a STAMP — silent. A
     // room-mate already in the cascade is refused against a chain that really
@@ -418,7 +419,7 @@ describe('cascade guard, wired', () => {
 
     await seedAndSettle('what do you two think?');
     const notices = log().filter((e) => e.kind === 'notice');
-    // The ancestry refusal SPEAKS, and it speaks as itself. The other notice
+    // The repeat refusal SPEAKS, and it speaks as itself. The other notice
     // here is the busy one — a different refusal, with its own words — so
     // asserting that every notice is a `cascade_stopped` would pass for the
     // wrong reason the moment the two are confused.
@@ -538,69 +539,226 @@ describe('triggering', () => {
   });
 });
 
+describe('the counter, wired', () => {
+  /**
+   * Two agents that answer everything, in a room that allows each of them three
+   * turns per exchange. The old rule allowed one, so a run that stops at one
+   * each would pass a counter test written only against the refusal.
+   */
+  function openTradingRoom(maxTurnsPerAgentPerCascade: number) {
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: scriptedRunner(() => 'on it'),
+      maxAgentDepth: 30,
+      maxTurnsPerAgentPerCascade,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      harness.human
+    );
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    const boId = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
+    harness.service.updateMembership(room.id, harness.human, anaId, 'always');
+    harness.service.updateMembership(room.id, harness.human, boId, 'always');
+    return { harness, room, anaId, boId };
+  }
+
+  it('lets each agent answer N times and stops it on the next', async () => {
+    const { harness, room, anaId, boId } = openTradingRoom(3);
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'what do you two think?' });
+    await harness.service.triggersIdle();
+
+    // Three each, and then the room stopped them — not one each, which is what
+    // the ancestry rule this replaced would have produced, and not forever,
+    // which is what no rule at all produces.
+    expect(harness.runner.turns.filter((t) => t.authorId === anaId)).toHaveLength(3);
+    expect(harness.runner.turns.filter((t) => t.authorId === boId)).toHaveLength(3);
+    const notices = harness.service
+      .listEntries(room.id, harness.human, { limit: 200 })
+      .filter((entry) => entry.kind === 'notice');
+    expect(notices.map((entry) => entry.body.notice)).toContain('cascade_stopped');
+  });
+
+  it('starts the count over on the person own next message', async () => {
+    const { harness, room, anaId } = openTradingRoom(2);
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'round one' });
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns.filter((t) => t.authorId === anaId)).toHaveLength(2);
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'round two' });
+    await harness.service.triggersIdle();
+
+    // A person's message mints its own cascade, so the counts it is measured
+    // against are its own — a room the counter quietened is one message away
+    // from running again.
+    expect(harness.runner.turns.filter((t) => t.authorId === anaId)).toHaveLength(4);
+  });
+});
+
+describe('limits off', () => {
+  it('runs past every bound, reserves nothing, and says nothing', async () => {
+    // The room is set up so that ANY of the three bounds would have stopped it:
+    // one turn per agent per cascade, a depth ceiling of three, and a per-room
+    // hourly allowance of one. With limits off none of them is asked.
+    let answered = 0;
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      // Answers six times and then goes quiet, which is what ends the run —
+      // deliberately, because with limits off nothing else would.
+      runner: scriptedRunner(() => {
+        answered += 1;
+        return answered <= 6 ? 'on it' : '';
+      }),
+      turnLimitsEnabled: false,
+      maxAgentDepth: 3,
+      maxTurnsPerAgentPerCascade: 1,
+      maxAutomaticTurnsPerRoomPerHour: 1,
+      maxAutomaticTurnsTotalPerHour: 1,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      harness.human
+    );
+    for (const [path, name] of [
+      ['/agents/ana', 'Ana'],
+      ['/agents/bo', 'Bo'],
+    ] as const) {
+      const id = harness.authors.resolveAgent(path, name).id;
+      harness.service.updateMembership(room.id, harness.human, id, 'always');
+    }
+
+    harness.service.post(room.id, { authorId: harness.human, text: 'talk it through' });
+    await harness.service.triggersIdle();
+
+    // **Every one of the six answers the runner was willing to give reached the
+    // room**, which is the exact number and the load-bearing one: one turn per
+    // agent per cascade, a depth ceiling of three and an hourly allowance of one
+    // would each have stopped this at or before the second. The count of TURNS
+    // is deliberately not asserted — a turn also runs for a trigger the runner
+    // answers with silence, and which agent is holding a claim when the last
+    // answer lands decides whether there is one such turn or two.
+    const entries = harness.service.listEntries(room.id, harness.human, { limit: 200 });
+    const agentPosts = entries.filter(
+      (entry) => entry.kind === 'post' && entry.authorId !== harness.human
+    );
+    expect(agentPosts).toHaveLength(6);
+    // And it really was a cascade between the two of them, not one agent
+    // answering itself six times.
+    expect(new Set(agentPosts.map((entry) => entry.authorId)).size).toBe(2);
+    // Nothing was refused, so the room said nothing about limits.
+    const notices = entries.filter((entry) => entry.kind === 'notice');
+    expect(notices.map((entry) => entry.body.notice)).not.toContain('cascade_stopped');
+    expect(notices.map((entry) => entry.body.notice)).not.toContain('budget_reached');
+    // The agents were told the truth about it rather than a number: `null` is
+    // "nothing is counting", and a fake finite figure here is what this asserts
+    // against.
+    for (const turn of harness.runner.turns) {
+      expect(turn.roomContext.budget).toEqual({
+        automaticRepliesLeftInThisRoomThisHour: null,
+        automaticRepliesLeftInTotalThisHour: null,
+        repliesLeftInThisChain: null,
+      });
+    }
+  });
+});
+
 describe('evaluateCascade', () => {
-  const provenance = { root: 'E0', depth: 0, authorsInCascade: ['human'] as string[] };
+  /** Ten turns each, the shipped number, so the counter is the thing measured. */
+  const limits = { maxAgentDepth: 30, maxTurnsPerAgentPerCascade: 10 };
+  const provenance = { root: 'E0', depth: 0, turnsByAuthor: new Map([['human', 1]]) };
 
   it('allows a first trigger', () => {
-    expect(evaluateCascade('ana', provenance, { maxAgentDepth: 3 })).toEqual({
-      allowed: true,
-      depth: 1,
-    });
+    expect(evaluateCascade('ana', provenance, limits)).toEqual({ allowed: true, depth: 1 });
   });
 
   it('refuses past the depth ceiling even when nobody repeats', () => {
     const decision = evaluateCascade(
       'fresh-agent',
-      { root: 'E0', depth: 3, authorsInCascade: ['human', 'a', 'b', 'c'] },
-      { maxAgentDepth: 3 }
+      { root: 'E0', depth: 30, turnsByAuthor: new Map([['a', 12]]) },
+      limits
     );
-    expect(decision).toEqual({ allowed: false, depth: 4, reason: 'depth' });
+    expect(decision).toEqual({ allowed: false, depth: 31, reason: 'depth' });
   });
 
-  it('refuses a repeat author well inside the ceiling', () => {
+  it('allows the Nth turn and refuses the one after it', () => {
+    // The whole of the counter, at the boundary that matters. N-1 turns behind
+    // it, the agent may take its Nth; with N behind it, it may not. Asserting
+    // only the refusal would pass for a guard that refused the first repeat,
+    // which is the rule this replaced.
+    const ninth = evaluateCascade(
+      'ana',
+      { ...provenance, turnsByAuthor: new Map([['ana', 9]]) },
+      limits
+    );
+    expect(ninth).toEqual({ allowed: true, depth: 1 });
+
+    const tenth = evaluateCascade(
+      'ana',
+      { ...provenance, turnsByAuthor: new Map([['ana', 10]]) },
+      limits
+    );
+    expect(tenth).toEqual({ allowed: false, depth: 1, reason: 'repeat' });
+  });
+
+  it('counts each author separately', () => {
+    // Bo is spent; Ana has said nothing. A rule that read the cascade as a whole
+    // — the old ancestry set did not, but a naive counter over it would — would
+    // stop Ana on Bo's spending.
+    const busy = new Map([
+      ['human', 1],
+      ['bo', 10],
+    ]);
+    expect(evaluateCascade('ana', { ...provenance, turnsByAuthor: busy }, limits)).toEqual({
+      allowed: true,
+      depth: 1,
+    });
+    expect(evaluateCascade('bo', { ...provenance, turnsByAuthor: busy }, limits)).toMatchObject({
+      allowed: false,
+      reason: 'repeat',
+    });
+  });
+
+  it('refuses the second turn when a person allows only one each', () => {
+    // One per agent per cascade is the rule this file used to enforce for
+    // everybody, and it is still a setting somebody can choose.
     expect(
       evaluateCascade(
         'ana',
-        { ...provenance, authorsInCascade: ['human', 'ana'] },
-        { maxAgentDepth: 3 }
+        { ...provenance, turnsByAuthor: new Map([['ana', 1]]) },
+        { maxAgentDepth: 3, maxTurnsPerAgentPerCascade: 1 }
       )
-    ).toEqual({ allowed: false, depth: 1, reason: 'ancestry' });
+    ).toEqual({ allowed: false, depth: 1, reason: 'repeat' });
   });
 
   it('honours a caller-supplied ceiling', () => {
-    expect(evaluateCascade('ana', provenance, { maxAgentDepth: 0 }).reason).toBe('depth');
+    expect(evaluateCascade('ana', provenance, { ...limits, maxAgentDepth: 0 }).reason).toBe(
+      'depth'
+    );
   });
 });
 
 describe('deriveCascade', () => {
-  it('starts a HUMAN untriggered post fresh, at its own id and depth 0', () => {
-    expect(deriveCascade('E7', { authorKind: 'human', maxAgentDepth: 3 })).toEqual({
-      cascadeRoot: 'E7',
+  it('starts a human post fresh and stamps an un-provenanced agent post at the ceiling', () => {
+    // Unchanged by the counter, and pinned at the RAISED ceiling: an agent
+    // posting with no turn behind it is stamped where nothing it addresses can
+    // be triggered, whatever that ceiling has been moved to.
+    expect(deriveCascade('E9', { authorKind: 'human', maxAgentDepth: 30 })).toEqual({
+      cascadeRoot: 'E9',
       cascadeDepth: 0,
     });
-  });
-
-  it('refuses an agent a fresh cascade, stamping it at the ceiling instead', () => {
-    // The rule is who is writing, not whether a `trigger` argument was passed.
-    // `POST /api/rooms/:id/entries` passes none and resolves an agent bearer to
-    // that agent, so keying on call shape let any agent with a shell mint depth
-    // 0 at will — 30 hops, 30 roots, max depth 0, no notice.
-    expect(deriveCascade('E7', { authorKind: 'agent', maxAgentDepth: 3 })).toEqual({
-      cascadeRoot: 'E7',
-      cascadeDepth: 3,
+    expect(deriveCascade('E9', { authorKind: 'agent', maxAgentDepth: 30 })).toEqual({
+      cascadeRoot: 'E9',
+      cascadeDepth: 30,
     });
-    // The room's own voice gets no reset either.
-    expect(deriveCascade('E7', { authorKind: 'system', maxAgentDepth: 3 })).toEqual({
-      cascadeRoot: 'E7',
-      cascadeDepth: 3,
-    });
-  });
-
-  it('inherits the trigger provenance when there is one, whoever is writing', () => {
-    for (const authorKind of ['human', 'agent', 'system'] as const) {
-      expect(
-        deriveCascade('E7', { trigger: { root: 'E0', depth: 2 }, authorKind, maxAgentDepth: 3 })
-      ).toEqual({ cascadeRoot: 'E0', cascadeDepth: 2 });
-    }
+    // A turn that really is mid-cascade carries its own stamp instead.
+    expect(
+      deriveCascade('E9', {
+        authorKind: 'agent',
+        maxAgentDepth: 30,
+        trigger: { root: 'E0', depth: 4 },
+      })
+    ).toEqual({ cascadeRoot: 'E0', cascadeDepth: 4 });
   });
 });

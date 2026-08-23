@@ -190,10 +190,17 @@ export interface RoomContextInput {
   lastReadSeq: number;
   /** Other agents holding a turn claim in this room right now. */
   working: ReadonlyArray<{ authorId: string; since: string }>;
-  /** Automatic turns still available this hour, per room and in total. */
-  budget: { room: number; global: number };
-  /** The cascade ceiling minus this turn's depth. */
-  repliesLeftInThisChain: number;
+  /**
+   * Automatic turns still available this hour, per room and in total, or `null`
+   * when the person turned automatic-reply limits off.
+   */
+  budget: { room: number; global: number } | null;
+  /**
+   * The cascade ceiling minus this turn's depth, or `null` alongside a `null`
+   * {@link RoomContextInput.budget} — nothing is counting, so there is no
+   * honest number to report.
+   */
+  repliesLeftInThisChain: number | null;
   /**
    * This agent's open engaged window here, or `null` when it is not in one — a
    * `responseMode` other than `engaged` is always `null`, because saying
@@ -654,8 +661,8 @@ export function buildRoomContext(
       addressedNow: input.entry.mentions.includes(input.agentAuthorId),
     },
     budget: {
-      automaticRepliesLeftInThisRoomThisHour: input.budget.room,
-      automaticRepliesLeftInTotalThisHour: input.budget.global,
+      automaticRepliesLeftInThisRoomThisHour: input.budget?.room ?? null,
+      automaticRepliesLeftInTotalThisHour: input.budget?.global ?? null,
       repliesLeftInThisChain: input.repliesLeftInThisChain,
     },
   };

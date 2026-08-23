@@ -201,6 +201,18 @@ export interface RoomServiceDeps {
   findMessages: RoomMessageFinder;
   /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
   maxAgentDepth(): number;
+  /**
+   * The live `rooms.maxTurnsPerAgentPerCascade` — how many automatic turns one
+   * agent may run inside one exchange. Injected for the same reason, and passed
+   * straight through to the trigger dispatcher: this service stamps cascades,
+   * it does not judge them.
+   */
+  maxTurnsPerAgentPerCascade(): number;
+  /**
+   * The live `rooms.turnLimitsEnabled` — whether automatic replies are limited
+   * at all. Injected for the same reason, and read only by the dispatcher.
+   */
+  turnLimitsEnabled(): boolean;
   /** The live `rooms.engagedWindow*` ceilings, injected for the same reason. */
   engagedWindow(): EngagedWindow;
   /** The live `rooms.collect*` ceilings, injected for the same reason. */
@@ -524,6 +536,8 @@ export class RoomService {
       runner: deps.turns,
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,
+      maxTurnsPerAgentPerCascade: deps.maxTurnsPerAgentPerCascade,
+      turnLimitsEnabled: deps.turnLimitsEnabled,
       engagedWindow: deps.engagedWindow,
       collect: deps.collect,
       holdCeilingMs: deps.holdCeilingMs,
@@ -3065,14 +3079,14 @@ export class RoomService {
   }
 
   /**
-   * The distinct authors already in one cascade — the ancestry rule's input,
-   * read here so R3's trigger path does not have to know the schema.
+   * How many entries each author already has in one cascade — the repeat rule's
+   * input, read here so R3's trigger path does not have to know the schema.
    *
    * @param roomId - The room.
    * @param cascadeRoot - The entry id that began the cascade.
    */
-  authorsInCascade(roomId: string, cascadeRoot: string): string[] {
-    return this.store.authorsInCascade(roomId, cascadeRoot);
+  turnsByAuthorInCascade(roomId: string, cascadeRoot: string): Map<string, number> {
+    return this.store.turnsByAuthorInCascade(roomId, cascadeRoot);
   }
 
   // === Reactions ===

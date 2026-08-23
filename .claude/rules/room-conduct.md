@@ -28,7 +28,7 @@ question be the only thing bounding cost or loops.
 
 ## Bounds are mechanisms, never prompts
 
-The cascade guard (depth + ancestry), the two-ceiling turn budget, the hourly
+The cascade guard (depth + the per-agent turn counter), the two-ceiling turn budget, the hourly
 reaction ceiling (`reaction-budget.ts`), and the halt path are **mechanisms**. Do not replace any of them with an instruction in a
 prompt, and do not weaken one because a prompt "already says" not to do the
 thing. Block's Buzz learned this from a real 21-reply agent storm and wrote down
@@ -186,8 +186,9 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   start and then failed carries a seq and keeps its existing path — do not cut
   that one short.
   **The guard is re-asked when a held batch finally runs**, and it has to be:
-  the ancestry rule is a durable query that could not see the in-flight turn the
-  batch was waiting for, and by then it can. That is what still terminates a
+  the repeat rule counts a durable query that could not see the in-flight turn
+  the batch was waiting for, and by then it can — and under a counter the number
+  it reads moves while the batch waits. That is what still terminates a
   two-agent ping-pong now that the claim no longer refuses outright.
 - **Stopping is a control action and is never inferred.** It also drops the
   gathered messages, before it drops the claims — releasing a claim is what runs

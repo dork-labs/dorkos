@@ -10,9 +10,20 @@
  * guard would re-add the per-endpoint file writes and per-endpoint watchers the
  * multi-user research already rejected, to buy thirty lines of arithmetic.
  *
- * Two rules, and the second is the load-bearing one. A pure depth counter
- * permits N-1 wasted model calls before it fires; the ancestry rule kills
- * A→B→A at the first repeat.
+ * Two rules, and the second is the one that bounds ping-pong. The depth rule
+ * counts the whole chain however many agents are in it, so it only ever fires
+ * for a long run of DISTINCT agents (or when the ceiling is 0). The repeat rule
+ * counts each author separately and refuses the one that has already answered
+ * often enough, which is what stops A→B→A→B running the chain out between two
+ * agents while every other member waits.
+ *
+ * **The repeat rule used to be an ancestry rule** — a target already anywhere
+ * in the cascade was refused, so A→B→A died at the first repeat. That was one
+ * turn per agent per conversation, forever, and it was too tight to hold a real
+ * exchange: two agents working something out cannot do it in one sentence each.
+ * It is now a counter (`rooms.maxTurnsPerAgentPerCascade`), so the same
+ * mechanism fires at N instead of at 1. Nothing about its standing changed: it
+ * is still a bound in code and never a prompt (ADR 260726-170127, amended).
  *
  * Pure — the caller supplies the provenance it read, and the ceiling it is
  * measuring against. There is deliberately no default ceiling here: the number
@@ -28,7 +39,7 @@
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 
 /** Why a trigger was refused. */
-export type CascadeRefusalReason = 'depth' | 'ancestry';
+export type CascadeRefusalReason = 'depth' | 'repeat';
 
 /**
  * The provenance a trigger carries, read off the entry that would trigger it
@@ -40,10 +51,15 @@ export interface CascadeProvenance {
   /** `cascadeDepth` of the triggering entry. The triggered turn inherits this + 1. */
   depth: number;
   /**
-   * Distinct author ids already in this cascade
-   * (`SELECT DISTINCT author_id FROM room_entries WHERE room_id = ? AND cascade_root = ?`).
+   * How many entries each author already has in this cascade
+   * (`SELECT author_id, COUNT(*) FROM room_entries WHERE room_id = ? AND
+   * cascade_root = ? GROUP BY author_id`).
+   *
+   * A count rather than a set, because the repeat rule fires at
+   * `maxTurnsPerAgentPerCascade` rather than at the first repeat. An author
+   * absent from the map has spoken zero times here.
    */
-  authorsInCascade: readonly string[];
+  turnsByAuthor: ReadonlyMap<string, number>;
 }
 
 /** The verdict on one prospective trigger. */
@@ -60,23 +76,27 @@ export interface CascadeDecision {
  * provenance.
  *
  * @param targetAuthorId - The agent author the trigger would run.
- * @param provenance - The triggering entry's cascade root, depth, and prior authors.
+ * @param provenance - The triggering entry's cascade root, depth, and per-author
+ *   turn counts.
  * @param opts.maxAgentDepth - How many automatic replies deep a cascade may run
  *   (`rooms.maxAgentDepth`). Required: this module holds no default, so the
  *   number a person can change is the only one in play.
+ * @param opts.maxTurnsPerAgentPerCascade - How many of those replies one author
+ *   may run (`rooms.maxTurnsPerAgentPerCascade`). Required for the same reason.
  * @returns Whether to trigger, the depth it would carry, and the refusal reason.
  */
 export function evaluateCascade(
   targetAuthorId: string,
   provenance: CascadeProvenance,
-  opts: { maxAgentDepth: number }
+  opts: { maxAgentDepth: number; maxTurnsPerAgentPerCascade: number }
 ): CascadeDecision {
-  const { maxAgentDepth } = opts;
+  const { maxAgentDepth, maxTurnsPerAgentPerCascade } = opts;
   const depth = provenance.depth + 1;
 
   if (depth > maxAgentDepth) return { allowed: false, depth, reason: 'depth' };
-  if (provenance.authorsInCascade.includes(targetAuthorId)) {
-    return { allowed: false, depth, reason: 'ancestry' };
+  const taken = provenance.turnsByAuthor.get(targetAuthorId) ?? 0;
+  if (taken >= maxTurnsPerAgentPerCascade) {
+    return { allowed: false, depth, reason: 'repeat' };
   }
   return { allowed: true, depth };
 }
@@ -110,8 +130,8 @@ export function evaluateCascade(
  * the token sits in every spawned session's environment — so any agent with a
  * shell could mint `cascadeDepth: 0` at will. Measured: two `always` agents
  * posting through that path ran 30 hops, 30 turns, 30 distinct cascade roots,
- * max depth 0 and not one refusal notice. Unbounded by depth, unbounded by
- * ancestry, invisible in the room, one model call per hop. This is the exact
+ * max depth 0 and not one refusal notice. Unbounded by depth, unbounded by the
+ * repeat rule, invisible in the room, one model call per hop. This is the exact
  * failure ADR 260726-170127 predicted — "a path that forgets to carry it is
  * unguarded and looks fine in tests".
  *
