@@ -25,12 +25,14 @@ import {
 } from '@/layers/features/settings/ui/tabs/AppearanceTab';
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { NotificationsTab } from '@/layers/features/settings/ui/tabs/NotificationsTab';
+import { RoomsTab } from '@/layers/features/settings/ui/tabs/RoomsTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
 import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
 import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
+import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
   LiveRuntimeCard,
   MockedQueryProvider,
@@ -57,7 +59,30 @@ export function SettingsShowcases() {
       <MobileDrillInSection />
       <LoadingEmptyStatesSection />
       <PrimitivesSection />
+      <ControlCenterShowcaseSection />
     </>
+  );
+}
+
+/**
+ * The Control Center flyout's contents (spec `full-power-defaults`, D7): the
+ * global Trust Dial, the power switches, the overrides ledger and the
+ * unattended-status line. Shown here as the body without its popover shell, on
+ * the playground's mock data — an install with no exceptions renders the calm
+ * empty ledger.
+ */
+function ControlCenterShowcaseSection() {
+  return (
+    <PlaygroundSection
+      title="Control Center"
+      description="See and change the fleet's power at a glance — the dial, the switches and the overrides ledger."
+    >
+      <ShowcaseDemo>
+        <div className="max-w-sm">
+          <ControlCenterBody />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 
@@ -281,6 +306,15 @@ function IndividualTabsSection() {
         <MockedQueryProvider>
           <TabShell value="tools" title="Tools" actions={<ToolsResetAction />}>
             <ToolsTab />
+          </TabShell>
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Rooms Tab</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider>
+          <TabShell value="rooms" title="Rooms">
+            <RoomsTab />
           </TabShell>
         </MockedQueryProvider>
       </ShowcaseDemo>

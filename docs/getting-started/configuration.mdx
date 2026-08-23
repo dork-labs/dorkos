@@ -155,6 +155,8 @@ Mesh is always on. It scans your projects for agent-capable directories and buil
 
 A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers — and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.
 
+You do not have to edit the file for these. **Settings → Rooms** has the switch and all four numbers, and a single room can be given limits of its own from the panel beside it — open a room, choose Members, then Automatic replies. A room you have not touched follows what you set here.
+
 <TypeTable
   type={{
     'rooms.turnLimitsEnabled': {
@@ -403,11 +405,13 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
 
 **You can also say which model a new chat should start with, and how hard it should think.** Each runtime has its own pair of settings — `defaultModel` and `defaultEffort` — because a model name only means something to the runtime that offers it. Leave them `null`, which is how they ship, and each runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there; chats you already have keep what they are running with. Effort is one of `none`, `minimal`, `low`, `medium`, `high`, `max`, or `xhigh`. OpenCode has a model setting but no effort setting: OpenCode gives no way to ask for more or less thinking, so DorkOS does not pretend to offer one. If you edit the file by hand, only add settings that exist. A setting DorkOS has never heard of, like `runtimes.opencode.defaultEffort`, is left alone and skipped: it stays in your file, and nothing reads it, so it will not do what you hoped. Settings is the safer place to change any of this.
 
-**Claude Code chats can keep their agent running between messages.** Normally, every message you send starts the agent up again, and it shuts down when the reply is finished. Turn on `runtimes.claudeCode.persistentSession` and the agent stays running in between, so your next message reaches an agent that is already awake instead of one that has to start from scratch.
+**Claude Code chats keep their agent running between messages.** Your next message reaches an agent that is already awake instead of one that has to start from scratch, so replies from the second message on come back about four times faster. That is `runtimes.claudeCode.persistentSession`. New setups start with it on; if you have been running DorkOS for a while, an upcoming update turns it on for you.
 
-It ships off. When you turn it on, it applies to the next message you send in each chat — nothing you have open changes underneath you. Turning it back off works the same way round, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps at most twelve of these running at once and gives back the one you have used least when it needs room.
+Changing it applies to the next message you send in each chat — nothing you have open changes underneath you. That is true in both directions, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps at most twelve of these running at once and gives back the one you have used least when it needs room.
 
-This is new, and it is off by default because it is new. Everything else works the same either way.
+**What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, set `runtimes.claudeCode.persistentSession` to `false` and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
+
+There is no switch for this one on any screen yet — it used to sit in Settings under Experiments, and it left that list when it stopped being an experiment. Until its new switch arrives, change it with `dorkos config set runtimes.claudeCode.persistentSession false`, or edit `~/.dork/config.json`. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
 
 **And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 
@@ -481,9 +485,9 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.claudeCode.persistentSession': {
       description:
-        'Keep a Claude Code chat’s agent running between messages instead of starting it again for each one. Applies to the next message in each chat; a chat whose agent is already running keeps it until that agent is shut down for being idle, the chat is closed, or DorkOS restarts.',
+        'Keep a Claude Code chat’s agent running between messages instead of starting it again for each one. Applies to the next message in each chat; a chat whose agent is already running keeps it until that agent is shut down for being idle, the chat is closed, or DorkOS restarts. Costs up to about a gigabyte of memory per waiting agent, and at most twelve wait at once.',
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
     'runtimes.claudeCode.defaultTrustStop': {
       description:
@@ -625,7 +629,7 @@ Turning a conversation up to Full autonomy asks you to confirm what that means f
 
 If you tick **Don't show this again** in that dialog, DorkOS writes down the date and stops asking — one answer covers all of it. Settings → Security shows the date back with a **Reset** button; resetting brings the dialog back the next time you reach for a setting that never asks. **Resetting also turns off any Full-autonomy default for new chats** — that note is what let new chats start without asking, so it goes when the note does. Nothing about a conversation you already have changes either way; only the asking comes back.
 
-You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start without asking, and Settings keeps a note saying so with a link to change it back. This covers the chats you open yourself; scheduled runs, integrations, and rooms have their own settings and their own, stricter rules.
+You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start without asking, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; if you never chose one, it starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Integrations and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
 
 Reset takes effect everywhere within about half a minute. A browser tab you left open reads your settings from a copy it refreshes every 30 seconds, so a tab open at the moment you reset can still skip the dialog once before it catches up. Nothing is lost by that — it only means the confirmation returns a few seconds later on that tab than on the one you pressed Reset in.
 
@@ -635,6 +639,18 @@ Reset takes effect everywhere within about half a minute. A browser tab you left
       description:
         'When you read what Full autonomy means and asked not to be shown it again. DorkOS writes this itself when you tick the box; Reset in Settings clears it back to null and turns off any Full-autonomy default for new chats.',
       type: 'string | null',
+      default: 'null',
+    },
+    'ui.fullPowerDecidedAt': {
+      description:
+        'When you answered the question about how much power your agents run with — whichever way you answered. DorkOS writes this itself, and once it is set you are never asked again.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'ui.fullPowerChoice': {
+      description:
+        'What you chose: full power, or keep asking me first. Saying "keep asking me first" changes nothing anywhere, and you can move to full power later without being asked again.',
+      type: '"full" | "supervised" | null',
       default: 'null',
     },
   }}
@@ -740,7 +756,7 @@ DorkOS sends us nothing unless you turn it on. Two anonymous channels are availa
   type={{
     'telemetry.userHasDecided': {
       description:
-        'True once you have answered a telemetry consent prompt either way. Stops the first-run banner from reappearing.',
+        'True once you have answered a telemetry consent prompt either way. Stops the first-run dialog from asking again.',
       type: 'boolean',
       default: 'false',
     },

@@ -44,7 +44,7 @@ export type DialogStep = 'preset-picker' | 'form';
  * resolves to no profile at all, which the form says out loud rather than
  * guessing.
  */
-const TASK_RUNTIME = 'claude-code';
+export const TASK_RUNTIME = 'claude-code';
 
 export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
@@ -77,11 +77,25 @@ function msToRuntimeStr(ms: number): string {
  * its prompt and pressing Save widened what that task may do, without the person
  * touching the setting or being told. Widening is a choice somebody has to make
  * on purpose.
+ *
+ * A NEW task (preset or blank) starts at the operator's own configured stop
+ * rather than a hardcoded `acceptEdits` (spec `full-power-defaults`, D6), so a
+ * person who set their default to Full autonomy is not asked to re-choose it on
+ * every schedule. The caller resolves that mode from config; `defaultMode` falls
+ * back to `'acceptEdits'` for anyone who never set a stop — byte-for-byte the old
+ * behaviour. The edit branch never reads it: an existing task keeps its own mode.
+ *
+ * @param editTask - The task being edited, if any.
+ * @param preset - The template a new task starts from, if any.
+ * @param initialAgentId - The agent to pre-select for a new task.
+ * @param defaultMode - The mode a new task opens at; the operator's configured
+ *   stop mapped to the runtime, or `'acceptEdits'` when none is configured.
  */
 export function buildFormValues(
   editTask?: Task,
   preset?: TaskTemplate | null,
-  initialAgentId?: string
+  initialAgentId?: string,
+  defaultMode: PermissionMode = 'acceptEdits'
 ): ScheduleFormValues {
   if (editTask) {
     return {
@@ -103,7 +117,7 @@ export function buildFormValues(
       cron: preset.cron,
       agentId: initialAgentId ?? '',
       timezone: preset.timezone ?? '',
-      permissionMode: 'acceptEdits',
+      permissionMode: defaultMode,
       maxRuntime: DEFAULT_MAX_RUNTIME,
     };
   }
@@ -114,7 +128,7 @@ export function buildFormValues(
     cron: '',
     agentId: initialAgentId ?? '',
     timezone: '',
-    permissionMode: 'acceptEdits',
+    permissionMode: defaultMode,
     maxRuntime: DEFAULT_MAX_RUNTIME,
   };
 }

@@ -63,10 +63,14 @@ export { isBypassPermissionMode, permissionModeLabel } from './permission-mode';
 // The permission-mode derivation rules live in `@dorkos/shared` so the server's
 // tests can run every runtime's declared modes through the real functions (see
 // that module's header). Re-exported here so client code has one import path.
+// `warnTier`/`TrustWarnTier` used to be re-exported here. They were the
+// client's severity ladder while a permission mode could earn red; the colour
+// economy reads the stop instead now (`shared/ui/trust-tone`), which left them
+// with no caller anywhere, so they are gone from `@dorkos/shared` too rather
+// than left standing as a suggestion to reach for the retired rule.
 export {
   stopExpectation,
   isDivergent,
-  warnTier,
   isBypassSemantics,
   isAutonomyStop,
   needsConsentRitual,
@@ -74,8 +78,8 @@ export {
   resolveTrustStops,
   findWorkingMode,
   type TrustStop,
-  type TrustWarnTier,
 } from '@dorkos/shared/permission-semantics';
+export { operatorStopForRuntime, resolveConfiguredStopMode } from './unattended-form-defaults';
 export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { ShieldOff } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import {
   AlertDialog,
@@ -15,8 +14,9 @@ import {
   consentAsksNote,
   Label,
   PermissionModeScopeNote,
+  TrustModeIcon,
+  trustToneText,
 } from '@/layers/shared/ui';
-import { warnTier } from '@/layers/shared/lib';
 
 interface AutonomyConfirmDialogProps {
   /**
@@ -142,15 +142,11 @@ export function AutonomyConfirmDialog({
     setRememberChoice(false);
   }
 
-  // Red is spent on the one combination a person cannot walk back — never asks,
-  // reaches everything — and amber on the rest of this door's traffic, which is
-  // bounded to a workspace. The same three tones the dial's caption uses, for
-  // the same reason: a middle stop drawn in the colour of Full autonomy teaches
-  // people that the colour means nothing.
-  const tone =
-    descriptor && warnTier(descriptor) === 'danger'
-      ? 'text-red-500'
-      : 'text-amber-600 dark:text-amber-400';
+  // The same tones the dial's caption uses, from the same rule: green at the top
+  // stop, amber where this door's other traffic bends a promise. A door is not an
+  // accusation — the person is turning on the thing the product is for, and the
+  // sentences below already tell them exactly what it means.
+  const tone = trustToneText(descriptor ?? undefined);
   const asksNote = descriptor ? consentAsksNote(descriptor) : null;
 
   return (
@@ -158,7 +154,13 @@ export function AutonomyConfirmDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <ShieldOff className={`size-4 ${tone}`} />
+            {/* The stop's OWN shape, never a fixed one: this door opens for the
+                middle stop too (Codex's workspace-write), and a title reading
+                "Turn on Act" beside the full-autonomy bolt would claim a
+                position the person is not taking. Same table the dial draws
+                from, so the icon beside the title and the icon on the segment
+                they just pressed are the same shape. */}
+            <TrustModeIcon descriptor={descriptor ?? undefined} className={`size-4 ${tone}`} />
             {descriptor && consentActionLabel(descriptor)}
           </AlertDialogTitle>
           <AlertDialogDescription>

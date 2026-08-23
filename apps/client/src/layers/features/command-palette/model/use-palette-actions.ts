@@ -326,6 +326,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'switchShape':
           useAppStore.getState().setShapeSwitcherOpen(true);
           return;
+        case 'openControlCenter':
+          useAppStore.getState().setControlCenterOpen(true);
+          return;
         case 'toggleCanvas':
           // Read current value at dispatch time so we flip, not set.
           setCanvasOpen(!useAppStore.getState().canvasOpen);

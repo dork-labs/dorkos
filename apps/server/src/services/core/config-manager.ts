@@ -2629,6 +2629,150 @@ export function migrateClaudeAccountRegistry(store: {
 }
 
 /**
+ * Migration body: reserve both halves of the power-door answer on an existing
+ * `ui` block (spec `full-power-defaults`, D2).
+ *
+ * `ui.fullPowerDecidedAt` records WHEN the person answered the door — either
+ * way — and `ui.fullPowerChoice` records what they said. Seeded `null`, which
+ * means "not asked yet", so the door goes up once on the next launch and never
+ * again after they answer.
+ *
+ * **Nothing consent-gated is touched here, and that is the whole point of the
+ * key** (the program's A1 invariant). `runtimes.defaultTrustStop`,
+ * `ui.autonomyAcknowledgedAt`, `approvals.standingGrants`, the mesh access rules
+ * and `canInitiate` are written by the door's ACCEPT and by nothing else. A
+ * reviewer finding any of them in a migration should treat it as a defect.
+ *
+ * **This one is LOAD-BEARING, not an anchor**, and the distinction is worth
+ * stating because several bodies above it really are anchors. Two facts about
+ * `conf@15` combine here, and both were measured rather than read off the types:
+ *
+ * 1. Validation is skipped for the whole migration window (`#isInMigration`
+ *    guards `_validate` in both the store getter and the store setter), so
+ *    Ajv's `useDefaults` fills nothing while this runs. The only merge that
+ *    happens first is `Object.assign({}, defaults, fileStore)`, which is
+ *    TOP-LEVEL and shallow — a stored `ui` object wins wholesale, so it does not
+ *    gain a leaf it has never held.
+ * 2. After the migration, `useDefaults` still never reaches the file: the `store`
+ *    getter re-reads and re-parses `config.json` on every access and validates
+ *    that throwaway copy, so Ajv's mutation is discarded with it.
+ *
+ * Measured on an upgrade boot with this body suppressed: `ui` on disk keeps
+ * exactly its stored keys and neither leaf appears, while `getDot` still answers
+ * `null` — because the read is answered from the copy Ajv just filled. So a test
+ * that only asserts the read is vacuous here; the one in
+ * `config-full-power-defaults-migration.test.ts` asserts the FILE.
+ *
+ * Additive + idempotent: each leaf is written only when it is absent, so a
+ * re-run can never erase an answer somebody already gave.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedFullPowerDecision(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui == null || typeof ui !== 'object') return;
+  const block = ui as Record<string, unknown>;
+  const next = { ...block };
+  let changed = false;
+  if (!('fullPowerDecidedAt' in block)) {
+    next.fullPowerDecidedAt = null;
+    changed = true;
+  }
+  if (!('fullPowerChoice' in block)) {
+    next.fullPowerChoice = null;
+    changed = true;
+  }
+  if (changed) store.set('ui', next);
+}
+
+/**
+ * Migration body: move a stored `scheduler.maxConcurrentRuns` of exactly `1` up
+ * to the new default of `4` (spec `full-power-defaults`, D1/D2).
+ *
+ * Needed because a schema default alone would reach nobody who has upgraded:
+ * conf builds Ajv with `useDefaults`, so a declared default is written only
+ * where the key is ABSENT, and every install that has ever booted carries this
+ * key at `1`.
+ *
+ * **The honest caveat, recorded on purpose.** A stored `1` is indistinguishable
+ * from an explicit choice of `1`, because `1` is what shipped — there is no
+ * evidence anywhere on disk that separates "never touched it" from "set it back
+ * deliberately". This body raises both. That trade is made with open eyes: the
+ * setting is a resource throttle rather than a capability, four is still inside
+ * the range the schema has always enforced (1–10), the changelog names the
+ * change in plain words, and the number is already in front of the person in
+ * Settings -> Tools, one field away from being set back.
+ *
+ * Additive + idempotent: only the exact value `1` moves, so a re-run changes
+ * nothing and any other number — including one somebody lowered to `1` after
+ * this ran — is left alone the second time.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function raiseSchedulerConcurrencyFloor(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const scheduler = store.get('scheduler');
+  if (scheduler == null || typeof scheduler !== 'object') return;
+  const block = scheduler as Record<string, unknown>;
+  if (block.maxConcurrentRuns !== 1) return;
+  store.set('scheduler', { ...block, maxConcurrentRuns: 4 });
+}
+
+/**
+ * Migration body: turn warm agents ON for an upgrade that stored them OFF (spec
+ * `full-power-defaults`, D1/D2).
+ *
+ * `runtimes.claudeCode.persistentSession` graduated out of the experiments
+ * registry and now ships `true`. The schema flip alone would reach nobody who
+ * has upgraded, and for a sharper reason than usual: the `0.59.0` backfill
+ * ({@link backfillClaudeCodePersistentSession}) explicitly wrote `false` into
+ * every upgraded config, so the key is present and Ajv's `useDefaults` will
+ * never revisit it.
+ *
+ * **Safety-neutral, which is why it may flip in a migration at all.** A warm
+ * agent is the same executable with the same permissions and the same
+ * per-dispatch boundary check, held open between messages; nothing about what it
+ * may DO changes. What it spends is memory, bounded in code by the warm ceiling
+ * and the idle reaper.
+ *
+ * **The same honest caveat as the scheduler bump above, and it bites harder
+ * here:** a stored `false` is indistinguishable from a person who tried the
+ * experiment and turned it off, because `false` is what shipped. This raises
+ * both. The changelog says so — and says the other half too, which is that this
+ * leaf has no switch in the product between the graduation and the Control
+ * Center (task 2.2): the way back is `PATCH /api/config` or the file.
+ *
+ * Additive + idempotent: only the exact value `false` moves, so a re-run does
+ * nothing and an off somebody chooses AFTER this key has run is permanent.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function warmClaudeCodeSessionsByDefault(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const current = runtimes as Record<string, unknown>;
+  const claudeCode = current.claudeCode;
+  if (claudeCode == null || typeof claudeCode !== 'object') return;
+  const block = claudeCode as Record<string, unknown>;
+  if (block.persistentSession !== false) return;
+  store.set('runtimes', {
+    ...current,
+    claudeCode: { ...block, persistentSession: true },
+  });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3107,6 +3251,39 @@ export const CONFIG_MIGRATIONS = {
     // that already exist — which is why it only ever touches one that still
     // equals the default it was seeded with. See `raiseRoomTurnLimits`.
     raiseRoomTurnLimits(store);
+  },
+  // 0.66.0 has merged (DOR-1428, room-turn limits), so 0.67.0 is the next key.
+  // Frozen from merge, not from the release bump, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.68.0'`.
+  //
+  // This key is INDEPENDENT of 0.66.0 above and order-immaterial with it: that
+  // one rewrites `rooms.*`, this one touches `ui.*`, `scheduler.*` and
+  // `runtimes.claudeCode.*` — disjoint sections, so sequencing them either way
+  // lands the same config.
+  //
+  // ALL THREE BODIES ARE SAFETY-NEUTRAL BY DESIGN (spec `full-power-defaults`,
+  // invariant A1). This key seeds a record and raises two throttles. It does not
+  // write `runtimes.defaultTrustStop`, `ui.autonomyAcknowledgedAt`,
+  // `approvals.standingGrants`, a mesh access rule or `canInitiate` — those are
+  // consent-gated and are written by the power door's accept, with a person
+  // looking at it. A migration that touched one of them would be a defect.
+  '0.67.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `ui.fullPowerDecidedAt` / `ui.fullPowerChoice` — whether this person has
+    // been asked how much power their agents run with, and what they said.
+    // Seeded `null` ("not asked yet"), so the door goes up once.
+    seedFullPowerDecision(store);
+    // `scheduler.maxConcurrentRuns` 1 -> 4. Only the exact shipped value moves,
+    // and the body's docs record the one thing this cannot know: a stored `1`
+    // and a chosen `1` look the same on disk.
+    raiseSchedulerConcurrencyFloor(store);
+    // `runtimes.claudeCode.persistentSession` false -> true. Same shape and same
+    // caveat as the bump above, and needed for a sharper reason: the `0.59.0`
+    // backfill wrote `false` into every upgraded config, so Ajv's `useDefaults`
+    // will never revisit the key.
+    warmClaudeCodeSessionsByDefault(store);
   },
 } as const;
 

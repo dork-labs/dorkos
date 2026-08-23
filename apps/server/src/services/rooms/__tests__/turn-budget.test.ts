@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { roomTurnSpend } from '@dorkos/db';
-import { RoomTurnBudget } from '../turn-budget.js';
+import { RoomTurnBudget } from '../limits/turn-budget.js';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -159,7 +159,11 @@ describe('RoomTurnBudget — surviving a restart (DOR-1205)', () => {
     // The whole point: a caller who can restart the server used to clear both
     // windows, roughly 36 times an hour through the rate-limited admin route.
     const rebooted = restart();
-    expect(rebooted.tryReserve('room-1')).toEqual({ allowed: false, scope: 'room' });
+    expect(rebooted.tryReserve('room-1')).toEqual({
+      allowed: false,
+      scope: 'room',
+      counted: false,
+    });
   });
 
   it('carries the global ceiling across too, not just the per-room one', () => {
@@ -168,7 +172,11 @@ describe('RoomTurnBudget — surviving a restart (DOR-1205)', () => {
 
     // A DIFFERENT room after the restart, so only the global window can refuse
     // it — which is the window that has to be exact.
-    expect(restart().tryReserve('room-b')).toEqual({ allowed: false, scope: 'global' });
+    expect(restart().tryReserve('room-b')).toEqual({
+      allowed: false,
+      scope: 'global',
+      counted: false,
+    });
   });
 
   it('reports the surviving spend through remaining(), not only through refusals', () => {
@@ -290,5 +298,94 @@ describe('RoomTurnBudget.remaining', () => {
     for (let i = 0; i < 5; i += 1) budget.tryReserve('room-1');
     cap = 2;
     expect(budget.remaining('room-1').room).toBe(0);
+  });
+});
+
+describe('RoomTurnBudget — per-room caps and the unlimited state (DOR-1429)', () => {
+  /**
+   * A budget whose per-room cap is looked up per room, exactly as the ladder
+   * looks it up. `null` in the table is a room whose own limits are off.
+   */
+  function perRoomBudget(caps: Record<string, number | null>, global: number | null = 100_000) {
+    return new RoomTurnBudget({
+      db: createTestDb(),
+      limits: {
+        // `hasOwn`, not `??`: a `null` in the table is "this room is
+        // unlimited", and `?? 1_000` would silently turn it into a ceiling.
+        perRoom: (roomId) => (Object.hasOwn(caps, roomId) ? caps[roomId] : 1_000),
+        global: () => global,
+      },
+      windowMs: 60_000,
+      now: () => 1_000_000,
+    });
+  }
+
+  it('asks the cap of the room being charged, not one cap for every room', () => {
+    const budget = perRoomBudget({ 'room-tight': 1, 'room-loose': 3 });
+    expect(budget.tryReserve('room-tight').allowed).toBe(true);
+    expect(budget.tryReserve('room-tight').allowed).toBe(false);
+    // The other room is untouched by the first one running out — which is the
+    // whole point of a per-room override.
+    expect([1, 2, 3].map(() => budget.tryReserve('room-loose').allowed)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(budget.tryReserve('room-loose').allowed).toBe(false);
+  });
+
+  it('lets an unlimited room past its own ceiling — and still charges the global one', () => {
+    // The asymmetry, measured: a room opts out of its own bounds, not out of
+    // the install's wallet. Two turns past any plausible per-room ceiling, then
+    // the global cap of 3 stops it.
+    const budget = perRoomBudget({ 'room-free': null }, 3);
+    expect([1, 2, 3].map(() => budget.tryReserve('room-free').allowed)).toEqual([true, true, true]);
+    expect(budget.tryReserve('room-free')).toEqual({
+      allowed: false,
+      scope: 'global',
+      counted: false,
+    });
+  });
+
+  it('charges nothing at all when both caps are off', () => {
+    // Not a reservation against a huge number: an hour spent unlimited must
+    // leave the window exactly where it was, so turning limits back on resumes
+    // the hour rather than finding it spent.
+    const db = createTestDb();
+    let global: number | null = null;
+    let roomCap: number | null = null;
+    const budget = new RoomTurnBudget({
+      db,
+      limits: { perRoom: () => roomCap, global: () => global },
+      windowMs: 60_000,
+      now: () => 1_000_000,
+    });
+    for (let i = 0; i < 10; i += 1) {
+      expect(budget.tryReserve('room-1')).toEqual({ allowed: true, counted: false });
+    }
+    expect(db.select().from(roomTurnSpend).all()).toHaveLength(0);
+    // Limits back on: the full allowance is there, because nothing was counted.
+    roomCap = 2;
+    global = 10;
+    expect(budget.remaining('room-1')).toEqual({ room: 2, global: 10 });
+  });
+
+  it('reports an unlimited room honestly, with the install still numeric', () => {
+    const budget = perRoomBudget({ 'room-free': null }, 10);
+    budget.tryReserve('room-free');
+    expect(budget.remaining('room-free')).toEqual({ room: null, global: 9 });
+  });
+
+  it('reports an unlimited install with a room that kept its own limits', () => {
+    // The other mixed state: `turn_limits_enabled = true` on a room whose
+    // install turned limits off.
+    const budget = perRoomBudget({ 'room-strict': 4 }, null);
+    budget.tryReserve('room-strict');
+    expect(budget.remaining('room-strict')).toEqual({ room: 3, global: null });
+  });
+
+  it('marks a charged reservation as counted, so the notice re-arm can tell', () => {
+    const budget = perRoomBudget({ 'room-1': 2 }, 10);
+    expect(budget.tryReserve('room-1')).toEqual({ allowed: true, counted: true });
   });
 });

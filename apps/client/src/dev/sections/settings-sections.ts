@@ -95,6 +95,9 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'server',
       'tools',
       'advanced',
+      'rooms',
+      'limits',
+      'automatic replies',
       'tab',
       'isolated',
     ],
@@ -176,5 +179,21 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     page: 'settings',
     category: 'Primitives',
     keywords: ['fieldcard', 'settingrow', 'switch', 'row', 'card', 'wrapper'],
+  },
+  // Control Center
+  {
+    id: 'control-center',
+    title: 'Control Center',
+    page: 'settings',
+    category: 'Control Center',
+    keywords: [
+      'control center',
+      'power',
+      'trust dial',
+      'warm agents',
+      'standing permissions',
+      'overrides',
+      'flyout',
+    ],
   },
 ];

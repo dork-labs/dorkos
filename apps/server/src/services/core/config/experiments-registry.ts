@@ -82,14 +82,14 @@ export interface ExperimentEntry {
  * design, and the most useful thing to try goes first.
  */
 export const EXPERIMENTS: readonly ExperimentEntry[] = [
-  {
-    path: 'runtimes.claudeCode.persistentSession',
-    title: 'Keep agents warm between messages',
-    description:
-      'Your agent stays running between messages, so replies from the second message on start about 4× faster. Applies to chats started after you turn it on.',
-    costNote: 'Keeps up to about 1 GB of memory per warm agent, and at most 12 stay warm.',
-    graduationIssue: 'DOR-1290',
-  },
+  // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
+  // `full-power-defaults`): warm agents ship on by default, so the entry went
+  // out in the same change that flipped the default, exactly as the contract
+  // above requires. The setting itself did not go away — its switch lives in the
+  // Control Center (task 2.2), which has NOT landed yet — so between that PR
+  // and this one the setting is reachable only through `PATCH /api/config` or
+  // the config file. That gap is deliberate and short, and the changelog says so
+  // rather than implying a switch that is not there.
   {
     path: 'a2a.enabled',
     title: 'Let outside agents reach yours',

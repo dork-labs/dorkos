@@ -123,6 +123,7 @@ import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './aut
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
+import type { RoomLimitsResolver } from './limits/room-limits.js';
 import { resolveAddressing } from './mentions.js';
 import type { ReactionBudget } from './reactions/reaction-budget.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
@@ -141,7 +142,7 @@ import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
-import type { RoomTurnBudget } from './turn-budget.js';
+import type { RoomTurnBudget } from './limits/turn-budget.js';
 
 /** Everything {@link RoomService} is constructed from. */
 /**
@@ -199,20 +200,16 @@ export interface RoomServiceDeps {
    * the thread filter are applied by the code that already owns them.
    */
   findMessages: RoomMessageFinder;
-  /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
-  maxAgentDepth(): number;
   /**
-   * The live `rooms.maxTurnsPerAgentPerCascade` — how many automatic turns one
-   * agent may run inside one exchange. Injected for the same reason, and passed
-   * straight through to the trigger dispatcher: this service stamps cascades,
-   * it does not judge them.
+   * What bounds automatic replies in one room — the room's own overrides where
+   * it has them, Settings otherwise (`resolveRoomLimits`, DOR-1429). Injected
+   * so this domain reads no config.
+   *
+   * This service reads exactly one field of it, `maxAgentDepth`, and only to
+   * STAMP a cascade: it does not judge them. The dispatcher it hands the
+   * resolver to is what judges.
    */
-  maxTurnsPerAgentPerCascade(): number;
-  /**
-   * The live `rooms.turnLimitsEnabled` — whether automatic replies are limited
-   * at all. Injected for the same reason, and read only by the dispatcher.
-   */
-  turnLimitsEnabled(): boolean;
+  limitsFor: RoomLimitsResolver;
   /** The live `rooms.engagedWindow*` ceilings, injected for the same reason. */
   engagedWindow(): EngagedWindow;
   /** The live `rooms.collect*` ceilings, injected for the same reason. */
@@ -226,7 +223,7 @@ export interface RoomServiceDeps {
   /**
    * The live `uploads.maxFiles` — how many files one post may carry.
    *
-   * Injected in the same style as {@link RoomServiceDeps.maxAgentDepth}, so this
+   * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
    * domain still reads no config. Read PER POST rather than captured, because a
    * person may change the limit between two messages. Deliberately not
    * `ROOM_ATTACHMENT_MAX_PER_ENTRY`, which is the schema's static 50-ceiling on
@@ -236,7 +233,7 @@ export interface RoomServiceDeps {
   /**
    * Whether this author is the person who owns the install.
    *
-   * Injected in the same style as {@link RoomServiceDeps.maxAgentDepth}, so this
+   * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
    * domain still reads no config and no auth module: who the owner is depends on
    * whether an account exists, which is not a room's business to know.
    */
@@ -271,7 +268,7 @@ export interface RoomServiceDeps {
    * Whether the operator has muted this room (spec `notification-system`
    * task T11).
    *
-   * Injected in the same style as {@link RoomServiceDeps.maxAgentDepth}, so this
+   * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
    * domain still reads no config: mute lives in `ui.sidebar.muted`, which is a
    * client-organization concern, not a rooms one. Read per post, not captured,
    * so toggling mute in the sidebar takes effect on the very next message —
@@ -291,6 +288,22 @@ export interface RoomServiceDeps {
  * into exactly one query, which is the case that runs constantly.
  */
 const REACTION_LOOKUP_CHUNK = 500;
+
+/**
+ * The fields of an update that only the install's OWNER may send (DOR-1429).
+ *
+ * Listed rather than inferred, because the gate has to fire on a key that is
+ * PRESENT AND `null` — clearing an override is a write like any other — and
+ * `Object.hasOwn` over a named list is the only reading of "did they send this"
+ * that a `null` cannot slip past. Constrained to {@link UpdateRoomRequest}'s own
+ * keys, so a renamed field turns this red instead of silently guarding nothing.
+ */
+const ROOM_TURN_LIMIT_FIELDS = [
+  'turnLimitsEnabled',
+  'maxAgentDepth',
+  'maxTurnsPerAgentPerCascade',
+  'maxAutoTurnsPerHour',
+] as const satisfies ReadonlyArray<keyof UpdateRoomRequest>;
 
 /**
  * The most entries either history tool will return in one page
@@ -444,8 +457,11 @@ export class RoomService {
   private readonly broadcaster: RoomBroadcaster;
   private readonly roster: RoomRoster;
   private readonly triggers: RoomTriggerDispatcher;
-  /** The live `rooms.maxAgentDepth`. Read per write, so a change takes effect. */
-  private readonly maxAgentDepth: () => number;
+  /**
+   * What bounds automatic replies in one room. Read per write, so a change in
+   * Settings or on the room takes effect on the very next message.
+   */
+  private readonly limitsFor: RoomLimitsResolver;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
@@ -496,7 +512,7 @@ export class RoomService {
     this.attachments = deps.attachments;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
-    this.maxAgentDepth = deps.maxAgentDepth;
+    this.limitsFor = deps.limitsFor;
     this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.isOwnerRecord = deps.isOwnerRecord;
@@ -535,9 +551,7 @@ export class RoomService {
       attachmentsFor: (roomId, entryIds) => this.attachments.listFor(roomId, entryIds),
       runner: deps.turns,
       budget: deps.budget,
-      maxAgentDepth: deps.maxAgentDepth,
-      maxTurnsPerAgentPerCascade: deps.maxTurnsPerAgentPerCascade,
-      turnLimitsEnabled: deps.turnLimitsEnabled,
+      limitsFor: deps.limitsFor,
       engagedWindow: deps.engagedWindow,
       collect: deps.collect,
       holdCeilingMs: deps.holdCeilingMs,
@@ -1737,6 +1751,35 @@ export class RoomService {
    * DOR-608 forbids. The topic is deliberately NOT covered: describing what a
    * room is for is ordinary participation, and #team is a room agents live in.
    *
+   * **The four turn-limit overrides are OPERATOR-only, in every room**
+   * (DOR-1429) — the same gate the roster writes take, and for the same reason
+   * they were corrected off `kind === 'human'`. These fields are spend
+   * authority: `turnLimitsEnabled: false` removes this room's cascade guard and
+   * its hourly ceiling in one write, and everything that happens next is billed
+   * to the person who owns the install. A person-kind check would have been
+   * enough while an install minted exactly one human author, and wrong the
+   * moment a second one exists — an invited member, or a cached remote member
+   * from a community (ADR 260727-184933 D6) — because either could then uncap a
+   * room on somebody else's account. The install-wide twins of these fields are
+   * already `operator-only` in `config-write-policy.ts`; this is the same
+   * decision at the room's grain, and it is why no room capability tool exposes
+   * them at all.
+   *
+   * Checked AFTER visibility and BEFORE any write, so a caller probing a room it
+   * is not in learns 404 exactly as it would from reading it, and only somebody
+   * who can genuinely see the room learns 403 `OPERATOR_ONLY`.
+   *
+   * **Only the limit fields tighten.** Title, topic and archive keep the gate
+   * they had — `updateRoom` still has no blanket operator check, because adding
+   * one breaks `createRoom`'s DM un-archive path (see
+   * {@link RoomService.requireSystemRoomWritable}), and this refusal cannot
+   * reach that path: it fires only on fields that call never sends.
+   *
+   * **An omitted override and an explicit `null` are different instructions.**
+   * Absent leaves the stored value alone; `null` clears the override, putting
+   * the room back to following Settings. Zod strips absent optional keys, so
+   * the distinction survives all the way to `RoomStore.updateRoom`'s `set`.
+   *
    * @param roomId - The room id.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
@@ -1745,6 +1788,9 @@ export class RoomService {
   updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const { deliverNotices, ...roomPatch } = patch;
+    if (ROOM_TURN_LIMIT_FIELDS.some((field) => Object.hasOwn(roomPatch, field))) {
+      this.requireOperator(viewerAuthorId, 'how much a room may spend on automatic replies');
+    }
     this.requireSystemRoomWritable(room, viewerAuthorId, roomPatch);
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
       throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
@@ -2766,7 +2812,7 @@ export class RoomService {
           // conservative read, since the only thing this decides is whether the
           // writer may reset a spend limit.
           authorKind: author?.kind ?? 'agent',
-          maxAgentDepth: this.maxAgentDepth(),
+          maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
         }),
         createdAt: new Date().toISOString(),
       },
@@ -3027,7 +3073,10 @@ export class RoomService {
       ...this.threadPointers(roomId, undefined),
       // The shipped rule rather than a hand-stamped number: a non-human write
       // with no trigger behind it starts a cascade that is already spent.
-      ...deriveCascade(id, { authorKind: 'system', maxAgentDepth: this.maxAgentDepth() }),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
       createdAt: new Date().toISOString(),
     });
     this.publishEntry(entry);

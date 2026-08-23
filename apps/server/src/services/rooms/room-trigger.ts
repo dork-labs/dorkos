@@ -188,7 +188,8 @@ import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './noti
 import type { RoomAgentLookup } from './room-errors.js';
 import type { LateRoomReply, RoomTurnReply, RoomTurnRunner } from './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
-import type { RoomTurnBudget } from './turn-budget.js';
+import type { RoomLimitsResolver } from './limits/room-limits.js';
+import type { RoomTurnBudget } from './limits/turn-budget.js';
 
 // Re-exported rather than redefined. The turn port moved to its own module
 // (`room-turn-port.ts`), and the room service plus every rooms test imports it
@@ -284,20 +285,22 @@ export interface RoomTriggerDeps {
    * only as strong as the posture; this is not.
    */
   budget: RoomTurnBudget;
-  /** The live `rooms.maxAgentDepth`, read per dispatch so a change takes effect. */
-  maxAgentDepth(): number;
   /**
-   * The live `rooms.maxTurnsPerAgentPerCascade` — how many automatic turns one
-   * agent may run inside one cascade. Read per dispatch for the same reason.
+   * What bounds automatic replies in ONE room: the room's own overrides where
+   * it has them, Settings otherwise (`resolveRoomLimits`, DOR-1429).
+   *
+   * One seam rather than the three loose config readers it replaced, because
+   * the three were never independent — `turnLimitsEnabled` decides whether the
+   * other two are consulted at all, and a caller that read them one at a time
+   * could assemble half a verdict while somebody toggled a setting between two
+   * of the reads.
+   *
+   * Resolved per dispatch, so a change in Settings or on the room binds the
+   * very next message rather than the next server start. The hourly ceilings
+   * are NOT read here: {@link RoomTriggerDeps.budget} owns those, through the
+   * same ladder.
    */
-  maxTurnsPerAgentPerCascade(): number;
-  /**
-   * The live `rooms.turnLimitsEnabled`. `false` means the person turned every
-   * automatic-reply limit off, and this dispatcher skips BOTH the cascade guard
-   * and the turn budget — see {@link RoomTriggerDispatcher.selectCandidates}.
-   * Read per dispatch, so turning limits back on binds the very next message.
-   */
-  turnLimitsEnabled(): boolean;
+  limitsFor: RoomLimitsResolver;
   /**
    * The live engaged-window ceilings, read per dispatch for the same reason:
    * shortening the window in Settings has to bind the very next message.
@@ -776,20 +779,16 @@ export class RoomTriggerDispatcher {
       return [];
     }
 
-    // **The whole of "limits off", for the guard half.** `turnLimitsEnabled`
-    // is read HERE rather than inside `cascade-guard.ts`, which stays
-    // limit-agnostic and fully tested: a pure function that sometimes decides
-    // not to decide is a worse thing to reason about than a caller that decides
-    // not to ask. Unlimited means no provenance query, no verdict, and no
-    // notice — nothing was refused, so there is nothing to say. The stamped
-    // depth still advances, so an exchange that ran unlimited is still readable
-    // as a chain afterwards, and turning limits back on judges it normally.
-    const limits = this.deps.turnLimitsEnabled()
-      ? {
-          maxAgentDepth: this.deps.maxAgentDepth(),
-          maxTurnsPerAgentPerCascade: this.deps.maxTurnsPerAgentPerCascade(),
-        }
-      : null;
+    // **The whole of "limits off", for the guard half**, now asked of THIS
+    // room. `turnLimitsEnabled` is read HERE rather than inside
+    // `cascade-guard.ts`, which stays limit-agnostic and fully tested: a pure
+    // function that sometimes decides not to decide is a worse thing to reason
+    // about than a caller that decides not to ask. Unlimited means no
+    // provenance query, no verdict, and no notice — nothing was refused, so
+    // there is nothing to say. The stamped depth still advances, so an exchange
+    // that ran unlimited is still readable as a chain afterwards, and turning
+    // limits back on judges it normally.
+    const limits = this.cascadeLimitsFor(room.id);
     const provenance = limits
       ? {
           root: entry.cascadeRoot,
@@ -935,9 +934,32 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * The cascade guard's two numbers for one room, or `null` when this room's
+   * limits are off.
+   *
+   * One reading of the ladder per call, which is the point: the three loose
+   * config readers this replaced were not independent — a person toggling
+   * `turnLimitsEnabled` between two of them would have assembled half a
+   * verdict. Resolved fresh every time, so a change binds the very next
+   * message.
+   *
+   * @param roomId - The room being judged.
+   */
+  private cascadeLimitsFor(
+    roomId: string
+  ): { maxAgentDepth: number; maxTurnsPerAgentPerCascade: number } | null {
+    const limits = this.deps.limitsFor(roomId);
+    if (!limits.turnLimitsEnabled) return null;
+    return {
+      maxAgentDepth: limits.maxAgentDepth,
+      maxTurnsPerAgentPerCascade: limits.maxTurnsPerAgentPerCascade,
+    };
+  }
+
+  /**
    * Everything one turn is told about what is left to spend — the room's hourly
-   * headroom and its remaining replies in this chain — or `null` for all of it
-   * when the person turned automatic-reply limits off.
+   * headroom, the install's, and its remaining replies in this chain — with
+   * `null` standing for every one of those that nothing is counting.
    *
    * `null` rather than a large number, because this is what an agent reads in
    * `room_context.budget` and decides how freely to answer against. With
@@ -945,12 +967,24 @@ export class RoomTriggerDispatcher {
    * that does not exist and a small one implies a squeeze that is not
    * happening. "No limit" is the only true thing to say.
    *
-   * **One helper rather than two, because the promise is that they are `null`
-   * TOGETHER.** `RoomContextData.budget` says so, and the block renders one
-   * sentence or the other off that. Two helpers each reading
-   * `turnLimitsEnabled()` for themselves would document the invariant and not
-   * enforce it: the flag is a live config read, so a person toggling it between
-   * the two calls would assemble half a verdict. Read once, here, per context.
+   * **The three are no longer `null` together, and that is the per-room
+   * override showing through** (DOR-1429). A room with its own limits off on an
+   * install that still counts reports `{ room: null, global: 4998,
+   * repliesLeftInThisChain: null }` — the room's own two bounds are gone and
+   * the install's wallet is not, which is exactly what `resolveRoomLimits`
+   * decided. The two that ARE tied are the room's hourly headroom and its chain
+   * headroom: both are `null` precisely when this room's `turnLimitsEnabled` is
+   * false.
+   *
+   * **They are tied by both readings landing in one tick, not by a single
+   * read.** This resolves the ladder twice — once here, once inside
+   * {@link RoomTurnBudget.remaining} through `TurnBudgetLimits.perRoom` — and
+   * nothing between them can move: the ladder's two rungs are a synchronous
+   * `better-sqlite3` row read and a synchronous `conf` read, with no `await`
+   * between the two calls, so no toggle can land in the gap. If either rung ever
+   * becomes asynchronous, this is the pair that has to be resolved once and
+   * threaded, because half a verdict here is a turn told it has no chain budget
+   * while it still has a room budget.
    *
    * @param roomId - The room the turn is about to run in.
    * @param depth - The depth the turn being assembled carries, or `'ceiling'`
@@ -960,14 +994,18 @@ export class RoomTriggerDispatcher {
     roomId: string,
     depth: number | 'ceiling'
   ): {
-    budget: { room: number; global: number } | null;
+    budget: { room: number | null; global: number | null };
     repliesLeftInThisChain: number | null;
   } {
-    if (!this.deps.turnLimitsEnabled()) return { budget: null, repliesLeftInThisChain: null };
+    const limits = this.cascadeLimitsFor(roomId);
     return {
       budget: this.deps.budget.remaining(roomId),
       repliesLeftInThisChain:
-        depth === 'ceiling' ? 0 : Math.max(0, this.deps.maxAgentDepth() - depth),
+        limits === null
+          ? null
+          : depth === 'ceiling'
+            ? 0
+            : Math.max(0, limits.maxAgentDepth - depth),
     };
   }
 
@@ -1033,15 +1071,10 @@ export class RoomTriggerDispatcher {
     collection: RoomCollection
   ): { held: CollectedTrigger; decision: CascadeDecision; index: number } | null {
     const { room, authorId, displayName } = collection;
-    // Limits off: nothing to re-ask. The newest message is the trigger, and no
-    // notice is written because nothing was refused (see
+    // Limits off in THIS room: nothing to re-ask. The newest message is the
+    // trigger, and no notice is written because nothing was refused (see
     // {@link RoomTriggerDispatcher.selectCandidates} for the whole of it).
-    const limits = this.deps.turnLimitsEnabled()
-      ? {
-          maxAgentDepth: this.deps.maxAgentDepth(),
-          maxTurnsPerAgentPerCascade: this.deps.maxTurnsPerAgentPerCascade(),
-        }
-      : null;
+    const limits = this.cascadeLimitsFor(room.id);
     if (!limits) {
       const held = collection.entries.at(-1);
       if (!held) return null;
@@ -1214,23 +1247,25 @@ export class RoomTriggerDispatcher {
     //
     // **Limits off means no reservation at all**, not a reservation against a
     // huge number: an hour spent unlimited must not leave a room out of budget
-    // the moment the person turns limits back on, and a counter nothing reads
-    // is a counter that lies. The window keeps whatever was already spent, so
-    // turning limits back on resumes the hour where it was left.
-    if (this.deps.turnLimitsEnabled()) {
-      const afford = this.deps.budget.tryReserve(room.id);
-      if (!afford.allowed) {
-        // This one CAN be correlated: the target survived the guard and was
-        // given its id above, so the refusal belongs to a real dispatch that
-        // never ran.
-        this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
-        this.settleCollection(collection, 'refused');
-        return null;
-      }
-      // Spending again means the window moved, so re-arm the notice: the next
-      // exhaustion is news, not a repeat.
-      this.notices.budgetRecovered(room.id);
+    // the moment somebody turns limits back on, and a counter nothing reads is
+    // a counter that lies. The budget owns that decision now, rather than a
+    // branch here reading a flag the budget would then read again — one seam,
+    // so an unlimited ROOM on a counting install is still charged against the
+    // install's wallet and cannot be made unlimited by a caller that forgot the
+    // second half of the rule (DOR-1429).
+    const afford = this.deps.budget.tryReserve(room.id);
+    if (!afford.allowed) {
+      // This one CAN be correlated: the target survived the guard and was
+      // given its id above, so the refusal belongs to a real dispatch that
+      // never ran.
+      this.notices.reportBudget(room, entry, afford.scope ?? 'room', target.dispatchId);
+      this.settleCollection(collection, 'refused');
+      return null;
     }
+    // Spending again means the window moved, so re-arm the notice: the next
+    // exhaustion is news, not a repeat. Only when something was actually
+    // charged — with nothing counting there is no window to have rolled.
+    if (afford.counted) this.notices.budgetRecovered(room.id);
 
     // Bind the session BEFORE claiming it. Reading the binding inside `runOne`
     // and writing it on completion left a window: two posts before the first
@@ -1975,27 +2010,27 @@ export class RoomTriggerDispatcher {
       });
       return null;
     }
-    // Reserved only while the person is counting — the same branch
-    // `claimTargets` makes, for the same reason: with limits off there is no
-    // window to spend from and nothing to re-arm.
-    if (this.deps.turnLimitsEnabled()) {
-      if (!this.deps.budget.tryReserve(room.id).allowed) {
-        logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
-          roomId: room.id,
-          authorId,
-        });
-        return null;
-      }
-      // **The re-arm, exactly as `claimTargets` does it, and it is not optional
-      // here.** Spending again means the hourly window moved, so the next
-      // exhaustion is news rather than a repeat. Without this line an offer
-      // silently consumes the freshly-rolled window and leaves the memory of the
-      // LAST refusal standing — so the next person to be refused is refused with
-      // no notice at all. An invisible refusal of a message somebody addressed is
-      // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
-      // asked for must not be the thing that causes it.
-      this.notices.budgetRecovered(room.id);
+    // Charged through the same seam `claimCollected` uses, which is what keeps
+    // an offer from being the one path that spends without counting: with every
+    // cap off the budget allows it and charges nothing, and there is then no
+    // window to re-arm.
+    const afford = this.deps.budget.tryReserve(room.id);
+    if (!afford.allowed) {
+      logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
+        roomId: room.id,
+        authorId,
+      });
+      return null;
     }
+    // **The re-arm, exactly as `claimCollected` does it, and it is not optional
+    // here.** Spending again means the hourly window moved, so the next
+    // exhaustion is news rather than a repeat. Without this line an offer
+    // silently consumes the freshly-rolled window and leaves the memory of the
+    // LAST refusal standing — so the next person to be refused is refused with
+    // no notice at all. An invisible refusal of a message somebody addressed is
+    // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
+    // asked for must not be the thing that causes it.
+    if (afford.counted) this.notices.budgetRecovered(room.id);
 
     let sessionId: string;
     try {
@@ -2030,7 +2065,7 @@ export class RoomTriggerDispatcher {
       // and it is why nothing this turn writes can inherit a root either. Both
       // fields are read: this one by the diagnostic claim view, that one by
       // `deepestClaimOf`.
-      depth: this.deps.maxAgentDepth(),
+      depth: this.deps.limitsFor(room.id).maxAgentDepth,
       // Nothing in the room asked for this turn, so it has no cascade to hand
       // to a post the agent makes while it runs. See {@link ActiveClaim.aside}.
       aside: true,

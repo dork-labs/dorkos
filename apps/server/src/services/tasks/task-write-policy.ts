@@ -127,7 +127,13 @@ export const TASK_WRITE_POLICY = {
   target: 'agent-writable',
   // Turning a schedule on and off. It cannot promote one past its approval:
   // `enabled: true` on a `pending_approval` task still does not run it, because
-  // the scheduler registers on `enabled && status === 'active'`.
+  // the scheduler registers on `enabled && status === 'active'`. NOTE: that
+  // reasoning is about the `pending_approval` gate. An operator-DISABLED but
+  // already-approved task (`enabled: false, status: 'active'`) is re-armed by an
+  // agent flipping `enabled` back on — but it then runs the operator's OWN
+  // unchanged prompt, so it is a nuisance, not an escalation, and `enabled` stays
+  // agent-writable. Changing WHAT it runs is the escalation, and that is clamped
+  // at `PATCH /api/tasks/:id` (prompt/cron/name), not here.
   enabled: 'agent-writable',
   // A CAP on how long a run may take. Raising it makes a run longer, not more
   // permitted, so it is not an escalation. See the module TSDoc in
@@ -165,9 +171,13 @@ export const OPERATOR_ONLY_TASK_CODE = 'operator_only_task_field';
  * `bypassPermissions`, and answering "that one was harmless" would mean this
  * guard has an opinion about values, which it deliberately does not.
  *
- * Call this on the RAW body, before Zod parses it. `CreateTaskRequestSchema`
- * defaults `permissionMode` to `acceptEdits`, so a parsed body always carries the
- * key and this function would refuse every create.
+ * Call this on the RAW body, before Zod parses it and before the route resolves
+ * an omitted `permissionMode` from the operator's own trust stop
+ * (`services/tasks/scheduled-run-power.ts`). Read after either step, the key is
+ * present on every create and this function would refuse them all. The schema
+ * used to supply that key with a hardcoded `'acceptEdits'` default; the default
+ * is gone and the ladder replaced it, so the ordering rule is the same one for a
+ * new reason.
  *
  * @param body - The write body a caller supplied (any shape; a non-object
  *   reaches for nothing).

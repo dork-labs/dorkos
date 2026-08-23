@@ -23,6 +23,7 @@ export type SettingsTab =
   | 'security'
   | 'account'
   | 'runtimes'
+  | 'rooms'
   | 'privacy'
   | 'advanced'
   | 'experiments'
@@ -107,6 +108,19 @@ export interface PanelsSlice {
   onboardingHiddenForSession: boolean;
   setOnboardingHiddenForSession: (hidden: boolean) => void;
 
+  /**
+   * True once the moments rail has opened its one modal for this page life. Two
+   * one-time modals in a single sitting is an interrogation, and the second gets
+   * dismissed unread — so the first to open spends the launch.
+   *
+   * Never persisted, and deliberately not a record of WHICH moment was shown: a
+   * reload is a new launch, and every moment's eligibility is a real state field
+   * it already owns, so nothing is lost by waiting for the next one.
+   */
+  momentShownThisLaunch: boolean;
+  /** Record that the rail has spent this launch's one moment. One-way. */
+  markMomentShown: () => void;
+
   globalPaletteOpen: boolean;
   setGlobalPaletteOpen: (open: boolean) => void;
   toggleGlobalPalette: () => void;
@@ -117,6 +131,19 @@ export interface PanelsSlice {
   shortcutsPanelOpen: boolean;
   setShortcutsPanelOpen: (open: boolean) => void;
   toggleShortcutsPanel: () => void;
+
+  /**
+   * The Control Center flyout — the one top-level place to see and change the
+   * fleet's power posture (spec `full-power-defaults`, D7). Transient like every
+   * flag here: a refresh closes it.
+   *
+   * This flag is also the open-seam the full-power consent door wires its
+   * "Customize…" link to (task 2.1): a caller anywhere flips it to open the
+   * flyout, exactly as the command palette and the keyboard shortcut do.
+   */
+  controlCenterOpen: boolean;
+  setControlCenterOpen: (open: boolean) => void;
+  toggleControlCenter: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +208,9 @@ export const createPanelsSlice: StateCreator<
   onboardingHiddenForSession: false,
   setOnboardingHiddenForSession: (hidden) => set({ onboardingHiddenForSession: hidden }),
 
+  momentShownThisLaunch: false,
+  markMomentShown: () => set({ momentShownThisLaunch: true }),
+
   globalPaletteOpen: false,
   setGlobalPaletteOpen: (open) => set({ globalPaletteOpen: open }),
   toggleGlobalPalette: () => set((s) => ({ globalPaletteOpen: !s.globalPaletteOpen })),
@@ -192,4 +222,8 @@ export const createPanelsSlice: StateCreator<
   shortcutsPanelOpen: false,
   setShortcutsPanelOpen: (open) => set({ shortcutsPanelOpen: open }),
   toggleShortcutsPanel: () => set((s) => ({ shortcutsPanelOpen: !s.shortcutsPanelOpen })),
+
+  controlCenterOpen: false,
+  setControlCenterOpen: (open) => set({ controlCenterOpen: open }),
+  toggleControlCenter: () => set((s) => ({ controlCenterOpen: !s.controlCenterOpen })),
 });

@@ -1,6 +1,7 @@
 /**
  * Checks that every API leg is on a throwaway data directory, then puts the
- * first-run onboarding wizard away — both before any spec runs.
+ * first-run interruptions away — the onboarding wizard, its follow-up role
+ * prompt, and the telemetry-consent modal — all before any spec runs.
  *
  * The isolation check comes first and is the reason this file may write at all:
  * see {@link assertThrowawayHome}.
@@ -130,6 +131,16 @@ async function readConfigWhenReady(
  * way when the card shipped). Suppressing it here is the shipped "Don't ask
  * again" write, so the suite tests the settled state, not the one-time ask.
  *
+ * Telemetry consent is the third first-run interruption, and the one that bites
+ * hardest now. It used to be a banner — harmless to ignore — but is now a launch
+ * MODAL on the moments rail (spec `full-power-defaults` D5), which focus-traps
+ * and sets `pointer-events: none` on the app body. A spec that clicks or opens a
+ * dialog right after boot is ambushed by it (runtimes-tab, settings-dialog and
+ * room-entry-actions all failed this way). Settling it here — a real, opted-out
+ * decision, matching `capture/seed.ts` — makes the moment ineligible so no spec
+ * ever sees it, and no spec has to know it exists. Channels stay off; the
+ * defaults are already `false`, so `userHasDecided: true` alone closes it.
+ *
  * Reads before it writes so a re-run against a persistent `DORK_HOME` is a no-op
  * rather than a redundant write.
  *
@@ -139,25 +150,36 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
   const context = await request.newContext({ baseURL });
   try {
     const current = await readConfigWhenReady(context, baseURL);
-    const { onboarding, profile, dorkHome } = (await current.json()) as {
+    const { onboarding, profile, telemetry, dorkHome } = (await current.json()) as {
       onboarding?: { dismissedAt?: string };
       profile?: { rolePromptDismissedAt?: string | null };
+      telemetry?: { userHasDecided?: boolean };
       dorkHome?: string;
     };
     // Before the first write, and on the same read that was already happening.
     assertThrowawayHome(baseURL, dorkHome);
-    if (onboarding?.dismissedAt && profile?.rolePromptDismissedAt) return;
+    if (onboarding?.dismissedAt && profile?.rolePromptDismissedAt && telemetry?.userHasDecided) {
+      return;
+    }
 
     const now = new Date().toISOString();
     const res = await context.patch('/api/config', {
       data: {
         onboarding: { dismissedAt: onboarding?.dismissedAt ?? now },
         profile: { rolePromptDismissedAt: profile?.rolePromptDismissedAt ?? now },
+        // Record a settled decision so the launch modal never renders. NOT
+        // `?? true` like the two above: `userHasDecided` defaults to an explicit
+        // `false` (unlike `dismissedAt`, which is absent until set), and
+        // `false ?? true` is `false` — which would write the unset value back
+        // and leave the modal to ambush the next spec. The write is
+        // idempotent: on a persistent home that already decided, this rewrites
+        // the same `true`, and the channels it does not name keep their values.
+        telemetry: { userHasDecided: true },
       },
     });
     if (!res.ok()) {
       throw new Error(
-        `Could not dismiss onboarding at ${baseURL}: ${res.status()} ${await res.text()}`
+        `Could not dismiss first-run prompts at ${baseURL}: ${res.status()} ${await res.text()}`
       );
     }
   } finally {
@@ -195,8 +217,8 @@ async function warmClient(baseURL: string): Promise<void> {
 }
 
 /**
- * Dismiss onboarding on every distinct API leg the run will use, then warm each
- * client so no spec pays Vite's cold start.
+ * Settle the first-run prompts on every distinct API leg the run will use, then
+ * warm each client so no spec pays Vite's cold start.
  *
  * @param config - The resolved Playwright config, read for its projects' base URLs.
  */
@@ -204,8 +226,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURLs = new Set(
     config.projects.map((project) => project.use.baseURL).filter((url): url is string => !!url)
   );
-  // Onboarding first, and on every leg: the warm-up waits for the app shell,
-  // which the first-run wizard renders instead of.
+  // Prompts first, and on every leg: the warm-up waits for the app shell, which
+  // the first-run wizard renders instead of, and which the consent modal covers.
   await Promise.all([...baseURLs].map(dismissOnboarding));
   await Promise.all([...baseURLs].map(warmClient));
 }

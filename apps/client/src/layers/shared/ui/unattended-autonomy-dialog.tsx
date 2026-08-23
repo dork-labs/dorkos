@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react';
-import { ShieldOff } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { warnTier } from '@/layers/shared/lib';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +12,8 @@ import {
 } from './alert-dialog';
 import { consentActionLabel, consentAsksNote } from './consent-ritual-copy';
 import { PermissionModeScopeNote } from './permission-mode-scope-note';
+import { TrustModeIcon } from './trust-dial';
+import { trustToneText } from './trust-tone';
 
 export interface UnattendedAutonomyDialogProps {
   /**
@@ -74,10 +74,11 @@ export function UnattendedAutonomyDialog({
   onCancel,
   onConfirm,
 }: UnattendedAutonomyDialogProps) {
-  // Red for the one combination a person cannot walk back — never asks, reaches
-  // everything — and amber for a mode bounded to a workspace. Spending red on
-  // both is how red stops meaning anything (spec `trust-dial`, decision 3).
-  const danger = descriptor !== null && warnTier(descriptor) === 'danger';
+  // The dial's own tones: green at the top stop, amber for a mode that bends its
+  // stop's promise. The confirm button is the plain primary one every other
+  // dialog uses — a red button here would make turning on the product's headline
+  // capability look like deleting something (spec `full-power-defaults`, D8).
+  const tone = trustToneText(descriptor ?? undefined);
   const asksNote = descriptor ? consentAsksNote(descriptor) : null;
 
   return (
@@ -85,9 +86,10 @@ export function UnattendedAutonomyDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <ShieldOff
-              className={`size-4 ${danger ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'}`}
-            />
+            {/* The stop's own shape — see the session door's note. A runtime
+                may file a never-asking mode at the MIDDLE stop, and this door
+                opens for it. */}
+            <TrustModeIcon descriptor={descriptor ?? undefined} className={`size-4 ${tone}`} />
             {descriptor && consentActionLabel(descriptor)}
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -115,10 +117,7 @@ export function UnattendedAutonomyDialog({
         {descriptor && <PermissionModeScopeNote mode={descriptor.id} descriptor={descriptor} />}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            {...(danger ? { className: 'bg-red-600 hover:bg-red-700 focus:ring-red-600' } : {})}
-          >
+          <AlertDialogAction onClick={onConfirm}>
             {descriptor && consentActionLabel(descriptor)}
           </AlertDialogAction>
         </AlertDialogFooter>

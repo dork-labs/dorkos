@@ -155,9 +155,10 @@ async function resolveTestModeRuntime(
  * `POST /api/test/persistent` — put ONE session on the held-process path, or
  * take it off (DOR-1326).
  *
- * The test-mode equivalent of the operator turning "Keep agents warm between
- * messages" on for a chat, and the lever that makes the persistent path
- * reachable from a browser at all. With it on, the session's next turn boots a
+ * The test-mode equivalent of `runtimes.claudeCode.persistentSession` being on
+ * for a chat, and the lever that makes the persistent path reachable from a
+ * browser at all. Per SESSION on purpose, which the config setting is not: a
+ * browser test needs both paths alive in one server. With it on, the session's next turn boots a
  * scripted process and keeps it: `getSessionWarmth` climbs to `warm`,
  * `canSteerSession` and `canStageSession` answer `true` for THAT session, a
  * steer joins its live turn, and a stage appends to it. With it off — the

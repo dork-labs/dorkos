@@ -17,7 +17,10 @@
  *
  * @module dev/showcases/settings-mock-data
  */
-import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  NOTIFICATION_PREFS_DEFAULTS,
+  ROOM_TURN_LIMIT_DEFAULTS,
+} from '@dorkos/shared/config-schema';
 import type { EffortLevel, ModelOption, ServerConfig } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type {
@@ -49,6 +52,13 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   // The shipped defaults, so the Notifications tab renders its out-of-the-box
   // state: the knock and the all-clear on, the every-turn chime off.
   notifications: NOTIFICATION_PREFS_DEFAULTS,
+  // The shipped defaults again, so the Rooms tab renders its out-of-the-box
+  // state rather than the skeleton it shows before the numbers have been read.
+  rooms: {
+    engagedWindowMinutes: 10,
+    engagedWindowPosts: 5,
+    ...ROOM_TURN_LIMIT_DEFAULTS,
+  },
   port: 4242,
   uptime: 12_345,
   workingDirectory: '/Users/dev/dorkos',
@@ -79,25 +89,22 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   // say a restart is pending.
   tasks: { enabled: true, enabledInConfig: true, lockedByEnv: false },
   relay: { enabled: true, enabledInConfig: true, lockedByEnv: false },
-  // The two experiments as they ship: both off, both switchable. The A2A one
-  // carries no cost note and the warm-agents one does, so the playground shows
-  // both row shapes. Locked-by-env is the third shape and gets its own showcase
-  // rather than being baked in here, because it is the rarer state.
+  // The registry as it ships: one experiment, off and switchable. It used to
+  // hold two — the warm-agents flag GRADUATED (spec `full-power-defaults`), and
+  // a playground row for a switch the product no longer has is a mock that
+  // teaches the wrong shape. The survivor carries a cost note and the
+  // environment variable that can overrule it, matching its real registry entry,
+  // so the two derived fixtures below (locked-by-env, and the empty registry
+  // every graduation moves the list towards) both render what actually ships.
   experiments: [
-    {
-      key: 'runtimes.claudeCode.persistentSession',
-      title: 'Keep agents warm between messages',
-      description:
-        'Your agent stays running between messages, so replies from the second message on start about 4× faster. Applies to chats started after you turn it on.',
-      costNote: 'Keeps up to about 1 GB of memory per warm agent, and at most 12 stay warm.',
-      enabled: false,
-      lockedByEnv: false,
-    },
     {
       key: 'a2a.enabled',
       title: 'Let outside agents reach yours',
       description:
         'Agents built by other people, on other systems, can send work to the agents here.',
+      costNote:
+        'Early alpha, and it opens a door: only turn it on when you know what is on the other side of it.',
+      envOverride: 'DORKOS_A2A_ENABLED',
       enabled: false,
       lockedByEnv: false,
     },

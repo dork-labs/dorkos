@@ -139,7 +139,14 @@ router.get('/', async (_req, res) => {
     // `CLAUDE_CONFIG_DIR`, so it would otherwise show an empty field where the
     // effective default belongs. The reader falls back to the section defaults on
     // its own, which covers the pre-migration read window.
-    claudeCode: describeClaudeCodeAccounts(),
+    claudeCode: {
+      ...describeClaudeCodeAccounts(),
+      // Read so the Control Center can show the warm-agents switch's real state:
+      // the setting graduated out of Settings → Experiments (DOR-1290) and its
+      // only curated read went with it, leaving nothing for the new switch to
+      // reflect. Written through PATCH /api/config exactly as before.
+      persistentSession: configManager.get('runtimes')?.claudeCode?.persistentSession ?? true,
+    },
     // What a new session starts with — the runtime, and the model and effort per
     // runtime. Writable through PATCH already; this is the read the Defaults card
     // needs, because a curated view is the only config the cockpit ever sees.
@@ -173,11 +180,13 @@ router.get('/', async (_req, res) => {
       lockedByEnv: RELAY_LOCKED_BY_ENV,
       ...(getRelayInitError() && { initError: getRelayInitError() }),
     },
-    scheduler: configManager.get('scheduler') ?? {
-      maxConcurrentRuns: 1,
-      timezone: null,
-      retentionCount: 100,
-    },
+    // Read from the schema rather than re-typed here, which is the same idiom
+    // `agents`, `rooms` and `welcomeBack` already use above and below. It used to
+    // be a hand-written copy, and a hand-written copy of a default is a fourth
+    // declaration sitting outside the guard that keeps the other three in step —
+    // so raising `maxConcurrentRuns` would have left this one answering `1`
+    // (spec `full-power-defaults`, D1).
+    scheduler: configManager.get('scheduler') ?? USER_CONFIG_DEFAULTS.scheduler,
     logging: configManager.get('logging') ?? {
       level: 'info',
       maxLogSizeKb: 500,
@@ -274,17 +283,29 @@ router.get('/', async (_req, res) => {
       standingGrants: false,
       trustWindowMinutes: 480,
     },
-    // The two engaged-window ceilings, and only those two. The cockpit prints
-    // them inside the sentence that describes the `engaged` response mode —
-    // "keeps answering for 10 more minutes or 5 more messages" — so an operator
-    // who tuned them would otherwise be reading a sentence about somebody
-    // else's install. The rest of the `rooms` block (turn budgets, reply waits)
-    // is nothing the cockpit says out loud, so it stays off the wire.
+    // The two engaged-window ceilings, and the five automatic-reply limits.
+    //
+    // The ceilings are READ-ONLY here: the cockpit prints them inside the
+    // sentence that describes the `engaged` response mode — "keeps answering for
+    // 10 more minutes or 5 more messages" — so an operator who tuned them would
+    // otherwise be reading a sentence about somebody else's install.
+    //
+    // The five limits ride along because Settings → Rooms offers them, and
+    // because a room's own override is shown as "Use default (N)" where N is
+    // whatever is set HERE (DOR-1430). Writing them is still operator-only —
+    // `config-write-policy.ts` decides that, not this read. The rest of the
+    // block (reply waits) is nothing the cockpit says out loud, so it stays off
+    // the wire.
     rooms: (() => {
       const rooms = configManager.get('rooms') ?? USER_CONFIG_DEFAULTS.rooms;
       return {
         engagedWindowMinutes: rooms.engagedWindowMinutes,
         engagedWindowPosts: rooms.engagedWindowPosts,
+        turnLimitsEnabled: rooms.turnLimitsEnabled,
+        maxAgentDepth: rooms.maxAgentDepth,
+        maxTurnsPerAgentPerCascade: rooms.maxTurnsPerAgentPerCascade,
+        maxAutomaticTurnsPerRoomPerHour: rooms.maxAutomaticTurnsPerRoomPerHour,
+        maxAutomaticTurnsTotalPerHour: rooms.maxAutomaticTurnsTotalPerHour,
       };
     })(),
     // Whether agents may greet you when you come back, whether a greeting may
@@ -321,6 +342,14 @@ router.get('/', async (_req, res) => {
       // opens without a second dialog, and Settings shows the date back with a
       // way to clear it. `?? null` covers the pre-migration read window only.
       autonomyAcknowledgedAt: configManager.get('ui')?.autonomyAcknowledgedAt ?? null,
+      // The power-door answer (spec `full-power-defaults`, D1). Both halves go
+      // out because the cockpit decides from them whether the door is put up at
+      // all: `fullPowerDecidedAt` is the "already asked" signal for both the
+      // onboarding stage and the one-time modal, and `fullPowerChoice` is what
+      // pre-selects `canInitiate` on a new binding. `?? null` covers the
+      // pre-migration read window only.
+      fullPowerDecidedAt: configManager.get('ui')?.fullPowerDecidedAt ?? null,
+      fullPowerChoice: configManager.get('ui')?.fullPowerChoice ?? null,
     },
     // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
     // because curation is not free: `runtimes.claudeCode.persistentSession`

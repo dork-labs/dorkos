@@ -5,6 +5,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { ROOM_TURN_LIMIT_DEFAULTS } from '@dorkos/shared/config-schema';
 
 // Mock tunnel-manager and agent-manager to avoid side effects
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -969,11 +970,26 @@ describe('GET /api/config', () => {
   // `engaged` response mode — "keeps answering for 10 more minutes or 5 more
   // messages". They are settings, so the sentence is only true if the cockpit
   // reads the numbers actually in force rather than the shipped defaults.
-  describe('rooms — the engaged-window numbers the cockpit says out loud', () => {
-    it('reports the shipped ceilings when nobody has changed them', async () => {
+  describe('rooms — the numbers the cockpit says out loud', () => {
+    /** Every `rooms` field the wire carries, and nothing more. */
+    const WIRE_FIELDS = [
+      'engagedWindowMinutes',
+      'engagedWindowPosts',
+      'maxAgentDepth',
+      'maxAutomaticTurnsPerRoomPerHour',
+      'maxAutomaticTurnsTotalPerHour',
+      'maxTurnsPerAgentPerCascade',
+      'turnLimitsEnabled',
+    ];
+
+    it('reports the shipped numbers when nobody has changed them', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.rooms).toEqual({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
+      expect(res.body.rooms).toEqual({
+        engagedWindowMinutes: 10,
+        engagedWindowPosts: 5,
+        ...ROOM_TURN_LIMIT_DEFAULTS,
+      });
     });
 
     it('reports what an operator actually set, not what ships', async () => {
@@ -982,23 +998,28 @@ describe('GET /api/config', () => {
         ...configManager.get('rooms')!,
         engagedWindowMinutes: 3,
         engagedWindowPosts: 2,
+        maxAgentDepth: 4,
+        turnLimitsEnabled: false,
       });
 
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.rooms).toEqual({ engagedWindowMinutes: 3, engagedWindowPosts: 2 });
+      expect(res.body.rooms).toMatchObject({
+        engagedWindowMinutes: 3,
+        engagedWindowPosts: 2,
+        maxAgentDepth: 4,
+        turnLimitsEnabled: false,
+      });
     });
 
-    it('carries the two ceilings and nothing else out of the rooms block', async () => {
-      // The rest of `rooms` is turn budgets and reply waits — real settings the
-      // cockpit never states out loud. Widening this to the whole block would
-      // put an operator's spend limits on a wire that did not need them.
+    it('carries the ceilings and the limits, and nothing else out of the rooms block', async () => {
+      // Settings offers the five limits, so they ride (DOR-1430) — but the rest
+      // of `rooms` is reply waits and collect timings, real settings the cockpit
+      // never states out loud. Widening this to the whole block would put
+      // settings on a wire that has no reader for them.
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(Object.keys(res.body.rooms).sort()).toEqual([
-        'engagedWindowMinutes',
-        'engagedWindowPosts',
-      ]);
+      expect(Object.keys(res.body.rooms).sort()).toEqual(WIRE_FIELDS);
     });
   });
 
@@ -1231,20 +1252,20 @@ describe('GET /api/config', () => {
       }
     });
 
-    it('reports both shipped experiments off and switchable on a fresh install', async () => {
+    it('reports every shipped experiment off and switchable on a fresh install', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
       const byKey = Object.fromEntries(
         res.body.experiments.map((e: { key: string }) => [e.key, e])
       );
-      expect(byKey['runtimes.claudeCode.persistentSession']).toMatchObject({
-        enabled: false,
-        lockedByEnv: false,
-      });
       expect(byKey['a2a.enabled']).toMatchObject({ enabled: false, lockedByEnv: false });
-      // The memory cost rides along, because the switch has to be able to state
-      // it before somebody flips it.
-      expect(byKey['runtimes.claudeCode.persistentSession'].costNote).toContain('1 GB');
+      // Warm agents used to be the second entry here and are not any more: the
+      // flag GRADUATED, which means its registry entry went out in the same
+      // change that flipped the default (spec `full-power-defaults`). Its switch
+      // is due in the Control Center (task 2.2); until then the setting is
+      // reachable through `PATCH /api/config` alone. The absence here is the
+      // success state for the REGISTRY, which is what this case is about.
+      expect(byKey['runtimes.claudeCode.persistentSession']).toBeUndefined();
     });
 
     it('reports the setting a person turned on', async () => {
@@ -1276,13 +1297,17 @@ describe('GET /api/config', () => {
         lockedByEnv: true,
         envOverride: 'DORKOS_A2A_ENABLED',
       });
-      // The other entry has no variable at all, so it stays switchable — the two
-      // are resolved independently, and no variable name is invented for it.
-      const warm = res.body.experiments.find(
-        (e: { key: string }) => e.key === 'runtimes.claudeCode.persistentSession'
-      );
-      expect(warm.lockedByEnv).toBe(false);
-      expect(warm).not.toHaveProperty('envOverride');
+      // An entry with no variable of its own is resolved independently and gets
+      // no invented variable name. Asserted over whatever else is registered,
+      // because the registry is designed to shrink and a named second entry
+      // would red the day it graduates — which is exactly what happened to the
+      // warm-agents flag this used to name.
+      for (const other of res.body.experiments.filter(
+        (e: { key: string }) => e.key !== 'a2a.enabled'
+      )) {
+        expect(other.lockedByEnv).toBe(false);
+        expect(other).not.toHaveProperty('envOverride');
+      }
     });
 
     it('locks it ON when the variable says true, whatever the setting says', async () => {
@@ -1332,6 +1357,8 @@ describe('GET /api/config', () => {
         resolvedAccount: '/tmp/inherited-claude',
         inherited: true,
         accounts: [],
+        // Warm agents default on, exposed here for the Control Center switch.
+        persistentSession: true,
       });
     });
 
@@ -1367,6 +1394,8 @@ describe('GET /api/config', () => {
           { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
           { id: 'gone', path: missing, label: null, isAccountRoot: false },
         ],
+        // The warm-agents value flows through from config to the Control Center.
+        persistentSession: false,
       });
     });
 
@@ -1466,6 +1495,41 @@ describe('GET /api/config', () => {
 
     const res = await request(server).get('/api/config').expect(200);
     expect(res.body.ui.autonomyAcknowledgedAt).toBe(acknowledgedAt);
+  });
+
+  it('reports the power door unanswered on a fresh install', async () => {
+    const res = await request(server).get('/api/config').expect(200);
+
+    expect(res.body.ui.fullPowerDecidedAt).toBeNull();
+    expect(res.body.ui.fullPowerChoice).toBeNull();
+  });
+
+  it('records either answer at the power door, and reads it back on the next GET', async () => {
+    // The round trip the door relies on: it writes the answer and every later
+    // launch decides from this read whether to put the modal up again.
+    const decidedAt = '2026-08-22T11:15:00.000Z';
+    await request(server)
+      .patch('/api/config')
+      .send({ ui: { fullPowerDecidedAt: decidedAt, fullPowerChoice: 'supervised' } })
+      .expect(200);
+
+    const res = await request(server).get('/api/config').expect(200);
+    expect(res.body.ui.fullPowerDecidedAt).toBe(decidedAt);
+    expect(res.body.ui.fullPowerChoice).toBe('supervised');
+  });
+
+  it('recording the answer alone unlocks nothing (invariant A1)', async () => {
+    // "Supervised" is a first-class answer and changes nothing anywhere; and
+    // even `'full'` is only a record — the capabilities ride on the OTHER keys
+    // the door's accept sends in the same request, each through its own gate.
+    await request(server)
+      .patch('/api/config')
+      .send({ ui: { fullPowerDecidedAt: '2026-08-22T11:15:00.000Z', fullPowerChoice: 'full' } })
+      .expect(200);
+
+    const res = await request(server).get('/api/config').expect(200);
+    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
+    expect(res.body.executionDefaults.trustStop).toBeNull();
   });
 
   it('refuses Full autonomy as a default until the person has acknowledged it', async () => {

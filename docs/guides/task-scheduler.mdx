@@ -120,7 +120,7 @@ curl -X POST http://localhost:4242/api/tasks \
   }'
 ```
 
-`target` is either an agent id (the schedule runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, and `reason` are optional here, with one exception: a caller creating a schedule it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. That schedule then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
+`target` is either an agent id (the schedule runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, and `reason` are optional here. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime the scheduler drives — or, if you never chose one, at the level scheduled runs have always started at, able to edit files but stopping for anything riskier. There is one exception to the optional list: a caller creating a schedule it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. That schedule then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
 
 Pause or resume a schedule:
 
@@ -217,7 +217,7 @@ Tasks uses standard five-field cron expressions:
 
 Click any run in the history to open the full agent conversation, every tool call, response, and output the agent produced during that run.
 
-Tasks enforces a configurable concurrency cap on simultaneous runs (1 by default, configurable up to 10 in Settings). If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) stops a schedule from starting a new run while its previous run is still active.
+Tasks enforces a configurable concurrency cap on simultaneous runs (4 by default, and anything from 1 to 10 in Settings). If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) stops a schedule from starting a new run while its previous run is still active.
 
 ### Schedule States
 

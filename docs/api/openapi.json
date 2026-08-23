@@ -4498,7 +4498,8 @@
           },
           "description": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 1024
           },
           "prompt": {
             "type": "string",
@@ -4529,7 +4530,9 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "minLength": 1,
+            "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
@@ -4550,7 +4553,9 @@
         "properties": {
           "name": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
           },
           "displayName": {
             "type": [
@@ -6610,6 +6615,40 @@
             ],
             "description": "The one member that answers a message somebody typed in this room without addressing anybody — #team's default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member's `always` mode, because a person may set any agent to \"Everything\" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
           },
+          "turnLimitsEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether automatic replies are limited in THIS room. `false` makes it unlimited even when the install limits every other room; `true` keeps it limited when the install does not; `null` inherits `rooms.turnLimitsEnabled`. A room opts out of its own bounds, never out of the install-wide hourly ceiling — that one still applies unless it is turned off in Settings."
+          },
+          "maxAgentDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "How many replies in a row agents may send each other in this room before it stops them, or `null` to inherit `rooms.maxAgentDepth`."
+          },
+          "maxTurnsPerAgentPerCascade": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 100,
+            "description": "How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`."
+          },
+          "maxAutoTurnsPerHour": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "The most automatic replies this room may run in an hour, or `null` to inherit `rooms.maxAutomaticTurnsPerRoomPerHour`. There is no per-room twin of the install-wide hourly total: that one bounds the whole install and is set in Settings alone."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -6997,6 +7036,40 @@
           "deliverNotices": {
             "type": "boolean",
             "description": "The one per-bridge override for outbound notices (chats-as-channels spec §6.2, D-6 Q5): whether a turn_failed or halted notice reaches this room's bridged chat. Valid only on a bridged room; a room with no bridge refuses this field with NOT_A_BRIDGED_ROOM."
+          },
+          "turnLimitsEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether automatic replies are limited in THIS room. `false` makes it unlimited even when the install limits every other room; `true` keeps it limited when the install does not; `null` inherits `rooms.turnLimitsEnabled`. A room opts out of its own bounds, never out of the install-wide hourly ceiling — that one still applies unless it is turned off in Settings."
+          },
+          "maxAgentDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "How many replies in a row agents may send each other in this room before it stops them, or `null` to inherit `rooms.maxAgentDepth`."
+          },
+          "maxTurnsPerAgentPerCascade": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 100,
+            "description": "How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`."
+          },
+          "maxAutoTurnsPerHour": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "The most automatic replies this room may run in an hour, or `null` to inherit `rooms.maxAutomaticTurnsPerRoomPerHour`. There is no per-room twin of the install-wide hourly total: that one bounds the whole install and is set in Settings alone."
           }
         }
       },

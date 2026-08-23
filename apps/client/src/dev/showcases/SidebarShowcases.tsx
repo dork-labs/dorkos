@@ -417,7 +417,7 @@ function SessionRowShowcase() {
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Bypass permissions</ShowcaseLabel>
+      <ShowcaseLabel>Full power — green bolt, not a red shield</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
           <SessionRow

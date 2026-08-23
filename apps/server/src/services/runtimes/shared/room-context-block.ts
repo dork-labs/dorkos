@@ -987,22 +987,44 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
     lines.push(`Working right now: ${working}.`);
   }
 
-  // **A number here is a claim, so "no limit" is said as itself.** All three
-  // headroom fields go `null` together when the person turned automatic-reply
-  // limits off (`rooms.turnLimitsEnabled`), and printing a stand-in figure would
-  // tell an agent it was being counted when nothing is counting it. The second
-  // sentence is the honest half of that state: nothing will stop this exchange
-  // except a person.
-  const { automaticRepliesLeftInThisRoomThisHour: inRoom, repliesLeftInThisChain: inChain } =
-    data.budget;
+  // **A number here is a claim, so "no limit" is said as itself.** A headroom
+  // field is `null` when nothing is counting that particular ceiling, and
+  // printing a stand-in figure would tell an agent it was being counted when
+  // nothing is.
+  //
+  // **The three do not go `null` together any more** (DOR-1429). A room may
+  // have its own limits off while the install still counts every automatic
+  // reply against one hourly total, so the honest sentence is per clause: the
+  // room's two bounds read "no limit" and the install's still reads a number.
+  // Rendered as three clauses rather than two whole sentences for exactly that
+  // reason — a single either/or could only ever describe two of the four
+  // reachable states.
+  const {
+    automaticRepliesLeftInThisRoomThisHour: inRoom,
+    automaticRepliesLeftInTotalThisHour: inTotal,
+    repliesLeftInThisChain: inChain,
+  } = data.budget;
   lines.push(
-    inRoom === null || inChain === null || data.budget.automaticRepliesLeftInTotalThisHour === null
-      ? `Automatic replies left: no limit — this DorkOS is not counting them. ` +
-          `Nothing will end this exchange for you, so keep it as short as the work needs.`
-      : `Automatic replies left: ${inRoom} in this room, ` +
-          `${data.budget.automaticRepliesLeftInTotalThisHour} across DorkOS, ` +
-          `${inChain} more in this back-and-forth.`
+    `Automatic replies left: ${[
+      inRoom === null ? 'no limit in this room' : `${inRoom} in this room`,
+      inTotal === null ? 'no limit across DorkOS' : `${inTotal} across DorkOS`,
+      inChain === null
+        ? 'no limit in this back-and-forth'
+        : `${inChain} more in this back-and-forth`,
+    ].join(', ')}.`
   );
+  // The honest half of an unlimited room: nothing HERE will end the exchange.
+  // Said only when this room's own bounds are off, because those are the two
+  // that stop a back-and-forth — the install's hourly total is a wallet, and it
+  // runs out somewhere far away from this conversation.
+  if (inRoom === null && inChain === null) {
+    lines.push(
+      inTotal === null
+        ? `Nothing will end this exchange for you, so keep it as short as the work needs.`
+        : `Nothing in this room will end this exchange for you — only the limit across all of ` +
+            `DorkOS — so keep it as short as the work needs.`
+    );
+  }
   return lines;
 }
 

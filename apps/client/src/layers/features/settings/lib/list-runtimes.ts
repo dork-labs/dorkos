@@ -3,7 +3,7 @@
  *
  * Lifted out of the retired settings trust-stop section when that setting split
  * into the shared `GlobalTrustRow` and each card's `TrustRow`: both halves
- * of that split can end up saying "New sessions on X and Y run without asking",
+ * of that split can end up saying "New sessions on X and Y run at full power",
  * and two copies of the comma-and-conjunction rule would drift the first time
  * either surface reworded it.
  *

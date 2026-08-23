@@ -100,10 +100,19 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
   const [landed, setLanded] = useState(false);
   const [landedOn, setLandedOn] = useState<string | null>(null);
 
+  // The last row handed to `onTopRow`, so a repeated report of the same resting
+  // position is a no-op — the settle path (below) can fire many times for one
+  // place the reader has come to rest.
+  const lastReportedRef = useRef<string | undefined>(undefined);
+
   useLayoutEffect(() => {
     if (!measured || !landingReady || anchoredRef.current === conversationId) return;
     if (rows.length === 0) return;
     anchoredRef.current = conversationId;
+    // A new conversation has its own rows and its own resume memory; forget the
+    // last row reported for the previous one so the first genuine report here is
+    // never mistaken for a repeat.
+    lastReportedRef.current = undefined;
     /* eslint-disable react-hooks/set-state-in-effect -- landing is a one-shot event guarded by `anchoredRef`, and what it decided has to be readable from the DOM (`data-landed-on`); it cannot be derived during render because it depends on the virtualizer having geometry */
     // A reader coming back belongs on the row they were reading. Asked for by
     // INDEX rather than by offset, because the virtualizer's total height is an
@@ -150,7 +159,14 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
       const top = scroller?.scrollTop ?? 0;
       const visible = virtualizer.getVirtualItems().find((item) => item.end > top);
       const id = visible === undefined ? undefined : rows[visible.index]?.id;
-      onTopRow?.(atBottom ? undefined : id);
+      const next = atBottom ? undefined : id;
+      // Idempotent, because the settle path calls this on every recompute the
+      // virtualizer makes while at rest, not only on scroll. The host holds the
+      // answer in a ref, so a redundant write costs no render, but skipping it
+      // keeps this from being busywork on every measured token.
+      if (next === lastReportedRef.current) return;
+      lastReportedRef.current = next;
+      onTopRow?.(next);
     },
     [virtualizer, rows, onTopRow]
   );

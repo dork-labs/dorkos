@@ -86,12 +86,14 @@ export {
   useArchiveRoom,
   useUnarchiveRoom,
   useSetDeliverNotices,
+  useSetRoomLimits,
 } from './model/use-room-settings';
 export type {
   RenameRoomInput,
   SetRoomTopicInput,
   UnarchiveRoomInput,
   SetDeliverNoticesInput,
+  SetRoomLimitsInput,
 } from './model/use-room-settings';
 export {
   useAddRoomMember,

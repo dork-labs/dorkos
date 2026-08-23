@@ -519,6 +519,13 @@
       "when": 1787442146398,
       "tag": "0073_fresh_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1787455262381,
+      "tag": "0074_amusing_ikaris",
+      "breakpoints": true
     }
   ]
 }
