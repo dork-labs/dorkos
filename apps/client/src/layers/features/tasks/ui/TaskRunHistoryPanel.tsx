@@ -268,11 +268,12 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
   // while you are three pages down updates in place rather than spinning forever.
   // The filter is part of the query key, so changing it starts a fresh list at
   // page one without this component tracking an offset at all.
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteTaskRuns({
-    scheduleId,
-    status,
-    limit: LIMIT,
-  });
+  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteTaskRuns({
+      scheduleId,
+      status,
+      limit: LIMIT,
+    });
   const cancelTaskRun = useCancelTaskRun();
   const [, setActiveSession] = useSessionId();
   const [selectedCwd, setSelectedCwd] = useDirectoryState();
@@ -303,6 +304,27 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
         <RunRowSkeleton />
         <RunRowSkeleton />
         <RunRowSkeleton />
+      </div>
+    );
+  }
+
+  // Before the empty state, never after it: a history we could not read is not
+  // a history with nothing in it, and "No runs yet" for a failed fetch is the
+  // panel inventing an answer it does not have.
+  if (isError && allRuns.length === 0) {
+    return (
+      <div className="space-y-2">
+        <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
+        <div className="py-4 text-center">
+          <p className="text-muted-foreground text-xs">Couldn&rsquo;t load this run history.</p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="text-muted-foreground hover:text-foreground mt-1 text-xs underline-offset-4 hover:underline"
+          >
+            Try again
+          </button>
+        </div>
       </div>
     );
   }

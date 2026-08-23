@@ -338,6 +338,45 @@ describe('TaskRunHistoryPanel', () => {
     });
   });
 
+  it('says it could not load, rather than claiming there are no runs', async () => {
+    // "No runs yet" for a fetch that failed is the panel inventing an answer it
+    // does not have — a schedule with a long history reads as never having run.
+    const transport = createMockTransport({
+      listTaskRuns: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+    const Wrapper = createWrapper(transport);
+
+    render(
+      <Wrapper>
+        <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+      </Wrapper>
+    );
+
+    await waitFor(() => expect(screen.getByText(/Couldn’t load this run history/)).toBeTruthy());
+    expect(screen.queryByText('No runs yet')).toBeNull();
+    expect(screen.getByText('Try again')).toBeTruthy();
+  });
+
+  it('retries the fetch when Try again is pressed', async () => {
+    const listTaskRuns = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue([createMockRun({ id: 'run-1', status: 'completed' })]);
+    const transport = createMockTransport({ listTaskRuns });
+    const Wrapper = createWrapper(transport);
+
+    render(
+      <Wrapper>
+        <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+      </Wrapper>
+    );
+
+    await waitFor(() => expect(screen.getByText('Try again')).toBeTruthy());
+    fireEvent.click(screen.getByText('Try again'));
+
+    await waitFor(() => expect(screen.getByTitle('Completed')).toBeTruthy());
+  });
+
   it('shows loading state', () => {
     const transport = createMockTransport({
       listTaskRuns: vi.fn().mockReturnValue(new Promise(() => {})),

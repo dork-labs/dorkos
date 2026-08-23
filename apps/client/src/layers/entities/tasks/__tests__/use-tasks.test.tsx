@@ -16,6 +16,7 @@ import {
   useDeleteTask,
   useTriggerTask,
 } from '../model/use-tasks';
+import { useTaskRuns } from '../model/use-task-runs';
 
 function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
@@ -283,6 +284,38 @@ describe('the tasks-list invalidation is exact', () => {
 
     await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2));
     expect(sessionTodoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('useDeleteTask also refreshes run queries, because the server erases the runs too', async () => {
+    // Deleting a schedule cascades to its runs server-side. The old
+    // prefix-matching invalidation swept the run queries in by accident; making
+    // the list invalidation `exact` took that away, and the top-nav health dot
+    // (a failed-runs query that does not poll, on a nav that stays mounted while
+    // Tasks is only a dialog) went on counting runs that no longer exist.
+    const listTaskRuns = vi.fn().mockResolvedValue([]);
+    const transport = createMockTransport({
+      listTasks: vi.fn().mockResolvedValue([]),
+      deleteTask: vi.fn().mockResolvedValue({ ok: true }),
+      listTaskRuns,
+    });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(
+      () => ({
+        tasks: useTasks(),
+        failedRuns: useTaskRuns({ status: 'failed' }),
+        remove: useDeleteTask(),
+      }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.failedRuns.isSuccess).toBe(true));
+    expect(listTaskRuns).toHaveBeenCalledTimes(1);
+
+    result.current.remove.mutate('task-1');
+
+    await waitFor(() => expect(listTaskRuns).toHaveBeenCalledTimes(2));
   });
 });
 

@@ -70,6 +70,13 @@ export function useDeleteTask() {
     mutationFn: (id: string) => transport.deleteTask(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
+      // Deleting a schedule erases its runs too — the server cascades them
+      // (`task-store.ts`). The old prefix-matching invalidation refreshed the run
+      // queries by accident; now that the list invalidation is `exact`, this has
+      // to say so out loud. Without it the top-nav health dot keeps a red count
+      // for runs that no longer exist (its failed-runs query does not poll, and
+      // the nav stays mounted while Tasks is only a dialog).
+      queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
     },
     meta: { errorLabel: "Couldn't delete the schedule" },
   });

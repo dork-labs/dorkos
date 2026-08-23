@@ -316,6 +316,23 @@ export function ScheduleForm({
             </div>
           </details>
 
+          {/* The cron warning lives inside the Schedule section, which collapses
+              — and a collapsed section plus a disabled Create button is a dead
+              end with its reason hidden. This sits OUTSIDE the <details>, so the
+              reason is on screen either way. Deliberately not forcing the
+              section open instead: React only writes `open` when the prop
+              changes, so a person who collapses it again would never see it
+              reopen. */}
+          <form.Subscribe selector={(s) => !isCronValid(s.values.cron)}>
+            {(cronIsBroken) =>
+              cronIsBroken ? (
+                <p role="alert" data-testid="cron-blocks-save" className="text-destructive text-xs">
+                  Fix the cron expression under Schedule before saving.
+                </p>
+              ) : null
+            }
+          </form.Subscribe>
+
           {/* ── Advanced settings (collapsed by default) ── */}
           <details className="group">
             <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-sm">

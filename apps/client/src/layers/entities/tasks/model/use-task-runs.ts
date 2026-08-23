@@ -44,6 +44,16 @@ export type InfiniteTaskRunsOptions = Omit<Partial<ListTaskRunsQuery>, 'offset'>
  * The key sits under {@link TASK_RUNS_KEY}, so the invalidations in
  * `useCancelTaskRun` and `useTriggerTask` reach it like any other run query.
  *
+ * **No `maxPages`, deliberately.** Refetching every page is what keeps old rows
+ * honest, and it costs one request per loaded page per poll tick — five pages of
+ * history with something still running is five requests every ten seconds.
+ * Capping with `maxPages` would bound that, but TanStack bounds it by DROPPING
+ * the page at the far end, so pressing "Load more" a sixth time would silently
+ * delete the twenty rows at the top of a list the person is reading. Losing rows
+ * to save requests is the wrong trade for a panel that only exists while a
+ * schedule row is expanded and only polls while a run is actually going. Revisit
+ * if run history ever grows an always-mounted surface.
+ *
  * @param opts - Filters plus the page size.
  * @param enabled - When false, the query is skipped entirely (Tasks feature gate).
  */

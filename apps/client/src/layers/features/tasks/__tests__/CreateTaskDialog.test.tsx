@@ -304,6 +304,44 @@ describe('CreateTaskDialog', () => {
       await waitFor(() => expect(transport.createTask).not.toHaveBeenCalled());
     });
 
+    it('says why Create is dead, outside the section that can hide the warning', async () => {
+      // The red cron warning lives inside the collapsible Schedule section. With
+      // it collapsed, a disabled Create button had no visible reason at all.
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fillFormWithCron('invalid');
+
+      const note = screen.getByTestId('cron-blocks-save');
+      expect(note).toHaveTextContent(/Fix the cron expression under Schedule/);
+      // Outside the <details>, so collapsing the section cannot take it away.
+      expect(note.closest('details')).toBeNull();
+    });
+
+    it('takes the reason away once the expression reads back', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fillFormWithCron('invalid');
+      expect(screen.getByTestId('cron-blocks-save')).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
+        target: { value: '0 0 * * *' },
+      });
+
+      await waitFor(() => expect(screen.queryByTestId('cron-blocks-save')).toBeNull());
+    });
+
     it('releases the save once the expression reads back', async () => {
       const transport = createMockTransport({
         createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' })),
@@ -362,6 +400,56 @@ describe('CreateTaskDialog', () => {
         })
       );
       await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+    });
+
+    it('cannot issue a second change while the first is still in flight', async () => {
+      // The rollback race. Two overlapping `mutate()` calls on one observer
+      // detach the first, so the FIRST call's `onError` never runs. Off→on with
+      // both failing then left the switch reading "off" while the server's
+      // schedule was still ON — the exact false-off lie this fix exists to
+      // remove, and worse than doing nothing. Two locks hold it shut: the switch
+      // is disabled while a change is in flight, and the rollback goes to the
+      // server's answer rather than a stale pre-click snapshot.
+      const schedule = createMockSchedule({ id: 'sched-1', name: 'Nightly', enabled: true });
+      let rejectFirst: (reason: Error) => void = () => {};
+      const updateTask = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectFirst = reject;
+            })
+        )
+        .mockRejectedValue(new Error('Server said no'));
+      const transport = createMockTransport({ updateTask });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+
+      // First toggle: off. It hangs, so the change is in flight.
+      fireEvent.click(screen.getByRole('switch'));
+      expect(screen.getByRole('switch')).not.toBeChecked();
+      await waitFor(() => expect(screen.getByRole('switch')).toBeDisabled());
+
+      // Second toggle, mid-flight. The disabled switch must swallow it — this is
+      // the click that used to detach the first mutation's observer.
+      fireEvent.click(screen.getByRole('switch'));
+      expect(updateTask).toHaveBeenCalledTimes(1);
+
+      // Now let the first one fail.
+      rejectFirst(new Error('Server said no'));
+
+      // The switch goes back to what the server actually holds: ON.
+      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+      expect(screen.getByRole('switch')).not.toBeDisabled();
+      expect(updateTask).toHaveBeenCalledTimes(1);
+      expect(updateTask).toHaveBeenCalledWith('sched-1', { enabled: false });
     });
 
     it('stays where the click put it when the change did save', async () => {
