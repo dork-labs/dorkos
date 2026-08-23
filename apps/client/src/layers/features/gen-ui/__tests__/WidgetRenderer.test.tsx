@@ -324,6 +324,28 @@ describe('Tier-1 utility nodes', () => {
     expect(container.querySelector('.bg-status-success')).not.toBeNull();
   });
 
+  it('gives a done dot icon a foreground that is not its own fill colour (DOR-1431)', () => {
+    // Regression guard: `bg-status-success` paired with `text-status-success-fg`
+    // is invisible — those two tokens resolve to the identical colour, so the
+    // icon painted on the filled dot disappeared (green-on-green).
+    const { container } = render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: {
+            type: 'timeline',
+            items: [{ title: 'Depart', status: 'done', icon: 'check' }],
+          },
+        }}
+      />,
+      { wrapper: Wrapper }
+    );
+    const dot = container.querySelector('.bg-status-success');
+    expect(dot).not.toBeNull();
+    expect(dot!.querySelector('svg')).not.toBeNull();
+    expect(dot).not.toHaveClass('text-status-success-fg');
+  });
+
   it('toggles checklist items and posts checked/unchecked labels on submit', async () => {
     const user = userEvent.setup();
     mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
