@@ -259,6 +259,38 @@ describe('ModelConfigPopover', () => {
       expect(badgesInTrigger.length).toBe(0);
     });
 
+    it('drops the effort badge when the active model has no effort to give (DOR-1445)', () => {
+      // Haiku in the mock catalog declares `supportsEffort: false`, so the
+      // popover hides its Effort control. The status line used to keep
+      // advertising the carried-over level anyway — "Haiku · High" for a
+      // setting the person could no longer see or change.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5', effort: 'high' })} />
+      );
+      const trigger = screen.getByTestId('model-config-trigger');
+      expect(trigger).toHaveTextContent('Haiku');
+      expect(trigger).not.toHaveTextContent('High');
+    });
+
+    it('badge and Effort control agree: both absent for an effortless model (DOR-1445)', () => {
+      // The point of the fix is that these two cannot disagree — one capability
+      // source drives both — so assert them together rather than apart.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5', effort: 'high' })} />
+      );
+      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('High');
+      expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
+    });
+
+    it('keeps the effort badge for a model that does take effort', () => {
+      // The guard must not swallow the honest case: Opus declares effort levels.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6', effort: 'high' })} />
+      );
+      expect(screen.getByTestId('model-config-trigger')).toHaveTextContent('High');
+      expect(screen.getByRole('radiogroup', { name: 'Effort level' })).toBeInTheDocument();
+    });
+
     it('falls back to extracting label from model id when model is not in list', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-unknown-1' })} />);
       expect(screen.getByText('Unknown')).toBeInTheDocument();
