@@ -22,18 +22,25 @@ function useTelemetryBannerDescriptor(): BannerDescriptor | null {
 }
 
 /**
- * Unattended-autonomy descriptor — warning severity, eligible whenever at least
- * one live binding or scheduled task is set to run without asking. Reads the
- * server's single cheap aggregate rather than the binding and task lists, which
- * is what lets a banner about them be app-wide at all.
+ * Unattended-autonomy descriptor — info severity, eligible whenever at least one
+ * live binding or scheduled task is set to run at full power. Reads the server's
+ * single cheap aggregate rather than the binding and task lists, which is what
+ * lets a banner about them be app-wide at all.
+ *
+ * Info and not warning: full power is a chosen, expected state after the
+ * defaults flip, and a permanent amber row over a normal setting is how a person
+ * learns to stop reading the row (spec `full-power-defaults`, D8). The variant
+ * here mirrors the rendered banner's on purpose — the slot ranks descriptors, so
+ * the two disagreeing would rank this against other banners at a severity it
+ * does not draw.
  */
 function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
   const state = useUnattendedAutonomy();
   if (!state || state.drivers.length === 0) return null;
   return {
     id: 'unattended-autonomy',
-    variant: 'warning',
-    priority: BANNER_PRIORITY.warning,
+    variant: 'info',
+    priority: BANNER_PRIORITY.info,
     render: () => <UnattendedAutonomyBanner drivers={state.drivers} />,
   };
 }

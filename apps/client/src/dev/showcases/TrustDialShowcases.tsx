@@ -368,7 +368,7 @@ function LivePlanChip() {
  * The consent door, opened on demand.
  *
  * Two modes reach it and they must not look identical: Codex's full access is
- * red and names itself, while its middle stop is amber, keeps the dial's word
+ * green and names itself, while its middle stop is amber, keeps the dial's word
  * ("Act"), and carries the sentence that says what the word does not.
  */
 function LiveAutonomyDialog({
@@ -428,6 +428,13 @@ export function TrustDialShowcases() {
           <LiveDial descriptors={CODEX} initial="acceptEdits" />
         </ShowcaseDemo>
 
+        <ShowcaseLabel>
+          Full autonomy — green, because full power is what the product is for
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <LiveDial descriptors={CLAUDE} initial="bypassPermissions" />
+        </ShowcaseDemo>
+
         <ShowcaseLabel>OpenCode — three stops, nothing to warn about</ShowcaseLabel>
         <ShowcaseDemo>
           <LiveDial descriptors={OPENCODE} initial="default" />
@@ -472,7 +479,9 @@ export function TrustDialShowcases() {
         title="Trust Dial — the door into a mode that never asks"
         description="A stop that stops the asking cannot be walked back, so it asks twice — and that is not only the top of the dial. On a runtime that cannot pause mid-turn, the MIDDLE stop never asks either, and it goes through the same door in its own words. The consequence sentence is always the runtime's own; the scope note says what it does not cover."
       >
-        <ShowcaseLabel>Full autonomy, on a Codex session — red, and it names itself</ShowcaseLabel>
+        <ShowcaseLabel>
+          Full autonomy, on a Codex session — green, and it names itself
+        </ShowcaseLabel>
         <ShowcaseDemo>
           <LiveAutonomyDialog descriptor={CODEX[2]!} trigger="Choose Full autonomy (Codex)" />
         </ShowcaseDemo>

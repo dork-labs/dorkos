@@ -2,7 +2,7 @@ import { Sparkles } from 'lucide-react';
 import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { permissionModeLabel, resolveTrustStops, warnTier } from '@/layers/shared/lib';
+import { permissionModeLabel, resolveTrustStops } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
 import { MakeDefaultStopLine, type MakeDefaultStopLineProps } from './MakeDefaultStopLine';
 import {
@@ -16,28 +16,11 @@ import {
   TooltipContent,
   TrustDial,
   TrustModeIcon,
+  trustToneAccent,
 } from '@/layers/shared/ui';
 
 /** Copy shown in the tooltip when a refinement is hidden because the model can't run it. */
 const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode requires Opus 4.6+ or Sonnet 4.6';
-
-/**
- * Whether a declared mode is marked red here.
- *
- * Only the `'danger'` tier — a mode that never asks about anything, anywhere.
- * `'caution'` (never asks, but bounded, like Codex's workspace-write) gets the
- * caption's amber inside the dial instead; giving it the same red as full
- * autonomy would make two very different promises look identical.
- *
- * A mode with no descriptor yet — capabilities still loading, or a mode this
- * runtime no longer declares — is not marked, matching every other item on this
- * line: data hasn't arrived, so no claim.
- *
- * @param descriptor - The mode as its runtime declared it, if resolved.
- */
-function isMarkedDangerous(descriptor: PermissionModeDescriptor | undefined): boolean {
-  return descriptor !== undefined && warnTier(descriptor) === 'danger';
-}
 
 interface PermissionModeItemProps {
   mode: PermissionMode;
@@ -99,10 +82,12 @@ interface PermissionModeItemProps {
  * the Trust Dial behind it.
  *
  * The line's job is the temperature: the current mode's stop icon, the runtime's
- * own word for it, red only when the mode never asks about anything, anywhere
- * (spec `trust-dial`, decision 3A — the app-wide banner that used to shout the
- * same fact is gone, so this is the signal). Everything about *changing* it is
- * in {@link TrustDial}, one popover away.
+ * own word for it, green when the session is at full power (spec `trust-dial`,
+ * decision 3A — the app-wide banner that used to shout the same fact is gone, so
+ * this is the signal). The other stops keep the line's own colour and say what
+ * they are with the stop icon's padlock; red is not spent here at all, so it
+ * still means something where the product does spend it. Everything about
+ * *changing* it is in {@link TrustDial}, one popover away.
  *
  * While a way of working (Plan) holds the session, this item has no trust stop
  * to report — see the caller (`status-item-nodes.tsx`), which omits it from the
@@ -144,7 +129,11 @@ export function PermissionModeItem({
   // never call the same mode two different things.
   const fullLabel = currentDescriptor?.label ?? permissionModeLabel(mode);
   const currentLabel = compact ? compactStatusValue(fullLabel) : fullLabel;
-  const currentIsDangerous = isMarkedDangerous(currentDescriptor);
+  // Green when the session is at full power, and nothing otherwise: the word
+  // keeps the line's own colour at every other stop, and the padlock on the
+  // stop icon is what marks the limited ones. Divergence is deliberately silent
+  // here — see `trustToneAccent`.
+  const toneAccent = trustToneAccent(currentDescriptor);
   // The hidden refinement is only worth mentioning where it would have been —
   // beside the stop that holds it.
   // `mode === 'auto'` matters as much as the stop: a session ALREADY in auto on a
@@ -160,7 +149,7 @@ export function PermissionModeItem({
       // The full label stays the accessible name: a bounded value is a smaller
       // drawing of the same state, never a different answer to "what mode is on?".
       aria-label={`Permissions: ${fullLabel}`}
-      className={`hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${currentIsDangerous ? 'text-red-500' : ''}`}
+      className={`hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${toneAccent}`}
     >
       <TrustModeIcon descriptor={currentDescriptor} className="size-(--size-icon-xs) shrink-0" />
       <span className="truncate">{currentLabel}</span>

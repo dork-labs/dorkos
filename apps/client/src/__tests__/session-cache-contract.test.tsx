@@ -552,13 +552,13 @@ describe('session permission mode: the fresher answer wins', () => {
       expect(queryClient.isFetching({ queryKey: sessionKeys.recentRoot })).toBe(0)
     );
 
-    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
   });
 
   it('warns when a session starts bypassing after the person moved on from it', async () => {
     // Red when: the row prefers a detail row nothing refreshes over the list row
-    // the `/api/events` bridge just wrote. The shield sits in the always-visible
-    // header, so a bypassing session loses its warning in the rail at a glance —
+    // the `/api/events` bridge just wrote. The mark sits in the always-visible
+    // header, so a full-power session loses it in the rail at a glance —
     // the inverse of the property this indicator exists for (DOR-496).
     const getSession = vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' }));
     const { wrapper } = createHarness([makeSession({ permissionMode: 'default' })], { getSession });
@@ -567,7 +567,7 @@ describe('session permission mode: the fresher answer wins', () => {
     await waitFor(() =>
       expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
     );
-    expect(screen.queryByLabelText('Permissions bypassed')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Full power — runs without asking')).not.toBeInTheDocument();
 
     // The person moves on. Their detail row stays in the cache: the rail's own
     // read keeps a live observer on it, so it is never collected — and it is
@@ -586,7 +586,7 @@ describe('session permission mode: the fresher answer wins', () => {
       });
     });
 
-    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
   });
 
   it('warns about a bypass only the runtime profile can name', async () => {
@@ -648,7 +648,7 @@ describe('session permission mode: the fresher answer wins', () => {
       });
     });
 
-    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
   });
 
   it('warns about a session the person has never opened, without fetching it', async () => {
@@ -663,7 +663,7 @@ describe('session permission mode: the fresher answer wins', () => {
 
     render(<Rail openSessionId={null} />, { wrapper });
 
-    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
     expect(getSession).not.toHaveBeenCalled();
   });
 
@@ -688,13 +688,13 @@ describe('session permission mode: the fresher answer wins', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Switch to bypass' }));
 
-    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
     // Not merely the optimistic flash: the row must still warn once the PATCH
     // has settled and the optimistic override has been dropped.
     await waitFor(() =>
       expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
     );
-    expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(screen.getByLabelText('Full power — runs without asking')).toBeInTheDocument();
   });
 
   it('keeps that bypass when a list answer older than the change lands after it', async () => {
@@ -738,7 +738,7 @@ describe('session permission mode: the fresher answer wins', () => {
     await waitFor(() =>
       expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
     );
-    expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(screen.getByLabelText('Full power — runs without asking')).toBeInTheDocument();
 
     // Now the older answer arrives. The sync is a synchronous call INSIDE the
     // query function, so waiting for the refetch to settle is a guarantee it has
@@ -756,6 +756,6 @@ describe('session permission mode: the fresher answer wins', () => {
     await waitFor(() =>
       expect(screen.getByTestId('status-line-mode')).toHaveTextContent('bypassPermissions')
     );
-    expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(screen.getByLabelText('Full power — runs without asking')).toBeInTheDocument();
   });
 });

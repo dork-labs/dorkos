@@ -16,7 +16,7 @@
  * @module entities/session/ui/SessionRowSidebar
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { GitFork, Info, Pencil, ShieldOff } from 'lucide-react';
+import { GitFork, Info, Pencil, Zap } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
@@ -25,6 +25,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TRUST_TONE_TEXT,
   statusDotClass,
   type SidebarMenuNode,
 } from '@/layers/shared/ui';
@@ -33,6 +34,7 @@ import type { StatusSignal } from '@/layers/shared/ui';
 import { useSessionBorderState, type SessionBorderKind } from '../model/use-session-border-state';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
 import { sessionDisplayTitle } from '../lib/session-display-title';
+import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
 import { AccountMark } from './AccountMark';
 import { SessionContextGauge } from './SessionContextGauge';
 import { SessionDetailsPanel } from './SessionDetailsPanel';
@@ -284,11 +286,15 @@ export function SessionRowSidebar({
           {isUnsafe && (
             // Presentational, unlike the full row's version of this mark, which
             // is a `<button>` carrying a tooltip. `trailing` renders inside the
-            // row's own `<button>`, so the warning is an icon with a name.
-            <ShieldOff
+            // row's own `<button>`, so the mark is an icon with a name.
+            //
+            // Green and a bolt, the same pair every other full-power surface
+            // uses. Red here would have marked most rows in the list once the
+            // defaults flipped (spec `full-power-defaults`, D8).
+            <Zap
               role="img"
-              aria-label="Permissions bypassed — agent can run any command without approval"
-              className="size-(--size-icon-xs) shrink-0 text-red-500"
+              aria-label={FULL_POWER_MARK_LABEL}
+              className={`size-(--size-icon-xs) shrink-0 ${TRUST_TONE_TEXT.power}`}
             />
           )}
           <SessionContextGauge session={session} />

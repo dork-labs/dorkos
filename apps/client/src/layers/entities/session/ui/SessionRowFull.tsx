@@ -1,14 +1,15 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, type TargetAndTransition, type Transition } from 'motion/react';
-import { ChevronDown, Pencil, ShieldOff, Hand } from 'lucide-react';
+import { ChevronDown, Pencil, Zap, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { Tooltip, TooltipContent, TooltipTrigger, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
 import { usePulseMotion } from '../model/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
+import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionContextGauge } from './SessionContextGauge';
@@ -148,7 +149,7 @@ export function SessionRowFull({
                       aria-label="Awaiting your approval"
                     />
                   )}
-                  {isUnsafe && <BypassPermissionsIcon />}
+                  {isUnsafe && <FullPowerIcon />}
                   {onRename && !isRenaming && (
                     <button
                       type="button"
@@ -242,21 +243,32 @@ export function SessionRowFull({
   );
 }
 
-function BypassPermissionsIcon() {
+/**
+ * The mark on a row whose session runs at full power.
+ *
+ * Green and a lightning bolt, the same pair the dial and the status strip use
+ * for this stop, because it is the same fact: somebody chose the setting the
+ * product is for. It used to be a red `ShieldOff`, and after the defaults flip
+ * that would have put an alarm colour on most rows in the list — which is how a
+ * list stops being read (spec `full-power-defaults`, D8).
+ *
+ * @internal
+ */
+function FullPowerIcon() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
           className="inline-flex cursor-help"
-          aria-label="Permissions bypassed"
+          aria-label={FULL_POWER_MARK_LABEL}
           onClick={(e) => e.stopPropagation()}
         >
-          <ShieldOff className="size-(--size-icon-xs) text-red-500" />
+          <Zap className={`size-(--size-icon-xs) ${TRUST_TONE_TEXT.power}`} />
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
-        Permissions bypassed — agent can run any command without approval
+        This chat runs any command without asking.
       </TooltipContent>
     </Tooltip>
   );

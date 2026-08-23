@@ -19,20 +19,19 @@
  * @module shared/ui/trust-dial
  */
 import { useId, type ReactNode } from 'react';
-import { ClipboardList, Shield, Sparkles, Zap } from 'lucide-react';
+import { ClipboardList, Lock, Shield, Sparkles, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
   cn,
-  isDivergent,
   isWorkingMode,
   permissionModeLabel,
   resolveTrustStops,
-  warnTier,
   type TrustStop,
 } from '@/layers/shared/lib';
 import { SegmentedControl, SegmentedControlItem } from './segmented-control';
 import { Switch } from './switch';
+import { trustToneText } from './trust-tone';
 
 /**
  * The three stops, in the person's words. Fixed across every runtime on purpose
@@ -79,8 +78,9 @@ export function stopLabel(stop: PermissionStop): string {
  * The `promise` sentences are the stops' canonical meaning — what a person is
  * entitled to expect from the position they picked, before any runtime speaks
  * ({@link stopExpectation} is the same claim in machine form). `reach` on the
- * autonomy stop is `'everything'` so the caption reads in the red a person
- * should see at the moment they choose it.
+ * autonomy stop is `'everything'` because that is what the stop canonically
+ * means, not because any colour hangs off it: the caption's green comes from the
+ * stop itself ({@link trustToneText}).
  */
 export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
   {
@@ -113,9 +113,16 @@ export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
  * One icon per stop, not per mode. The old table gave every mode id its own
  * glyph, which meant a runtime's unfamiliar mode name drew a shield and a
  * familiar one drew a lock, saying nothing. Three positions, three shapes.
+ *
+ * The padlock on "Ask first" is the whole of that stop's marking, and it is
+ * deliberately a shape rather than a colour. Asking first is limited — the agent
+ * cannot get on with the work until somebody answers — and the padlock says so
+ * in the same mental model the rest of the product uses for a capability that is
+ * held back. Painting the safe resting state in the alarm colour would say
+ * something else entirely: that the cautious choice is a mistake.
  */
 const STOP_ICONS: Record<PermissionStop, LucideIcon> = {
-  ask: Shield,
+  ask: Lock,
   act: Sparkles,
   autonomy: Zap,
 };
@@ -127,7 +134,8 @@ const STOP_ICONS: Record<PermissionStop, LucideIcon> = {
  * A way of working gets the clipboard, because it is not a point on the trust
  * axis and drawing it as one would be a lie in one glyph. A mode with no
  * descriptor in hand — capabilities still loading, or a mode the runtime dropped
- * — gets the shield, the resting shape, rather than nothing.
+ * — gets the shield, which belongs to no stop: it is the shape for "we do not
+ * know yet", and it says nothing about how much this agent may do.
  *
  * @param props - The mode as its runtime declared it (if resolved), and classes.
  */
@@ -235,9 +243,9 @@ export interface TrustDialProps {
  *   "this agent cannot do that", which the missing stop already says.
  * - **The caption is the runtime's own sentence**, rendered verbatim. It turns
  *   amber when the runtime asks less often than the stop promised — Codex's
- *   workspace-write is the case the whole design exists for — and red at the one
- *   stop that never asks about anything, anywhere, so the moment of choosing it
- *   does not look identical to the moment of choosing Act.
+ *   workspace-write is the case the whole design exists for — and green at the
+ *   top stop, because full power is what this product is for and the moment of
+ *   choosing it should not read like a mistake ({@link trustToneText}).
  * - **The current state is always visible.** A session sitting at a mode with no
  *   stop (one the runtime dropped, or one this model cannot run) shows no
  *   selection AND a line naming the mode, because a dial with nothing lit and no
@@ -311,7 +319,7 @@ export function TrustDial({
       <p
         id={captionId}
         data-testid="trust-dial-caption"
-        className={cn('px-1 text-xs leading-relaxed', captionTone(current))}
+        className={cn('px-1 text-xs leading-relaxed', trustToneText(current))}
       >
         {current?.promise}
         {frozen && current && (
@@ -349,24 +357,6 @@ export function TrustDial({
       ))}
     </div>
   );
-}
-
-/**
- * How loudly the caption reads, from what the selected mode does.
- *
- * Three tones, and no more: red for the one combination a person cannot walk
- * back (never asks, reaches everything), amber where the runtime asks less often
- * than the stop promised, muted for everything else. Ask first is deliberately
- * colourless — safety is the resting state, not a third colour to spend.
- *
- * @param descriptor - The selected mode, if the runtime declares it.
- * @internal
- */
-function captionTone(descriptor: PermissionModeDescriptor | undefined): string {
-  if (!descriptor) return 'text-muted-foreground';
-  if (warnTier(descriptor) === 'danger') return 'text-red-600 dark:text-red-400';
-  if (isDivergent(descriptor)) return 'text-amber-600 dark:text-amber-400';
-  return 'text-muted-foreground';
 }
 
 /**

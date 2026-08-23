@@ -10,7 +10,6 @@ import {
   needsConsentRitual,
   resolveTrustStops,
   stopExpectation,
-  warnTier,
 } from '../permission-semantics.js';
 
 /** A declared mode, with only the semantics under test spelled out. */
@@ -64,28 +63,6 @@ describe('isDivergent', () => {
     // Codex's read-only default. It never asks because it cannot write, run, or
     // reach the network. Plain inequality would amber the safest mode on offer.
     expect(isDivergent(descriptor({ stop: 'ask', asks: 'never', reach: 'read' }))).toBe(false);
-  });
-});
-
-describe('warnTier', () => {
-  it('marks never-asking-and-reaching-everything as danger', () => {
-    expect(warnTier(descriptor({ asks: 'never', reach: 'everything' }))).toBe('danger');
-  });
-
-  it('marks never-asking within a bounded reach as caution', () => {
-    expect(warnTier(descriptor({ asks: 'never', reach: 'workspace' }))).toBe('caution');
-    expect(warnTier(descriptor({ asks: 'never', reach: 'edit' }))).toBe('caution');
-  });
-
-  it('leaves a read-only mode alone even though it never asks', () => {
-    // It has nothing to ask about. Warning about the safest setting on offer is
-    // how a warning stops being read.
-    expect(warnTier(descriptor({ asks: 'never', reach: 'read' }))).toBe('none');
-  });
-
-  it('leaves anything that still stops for the person alone', () => {
-    expect(warnTier(descriptor({ asks: 'always', reach: 'everything' }))).toBe('none');
-    expect(warnTier(descriptor({ asks: 'when-risky', reach: 'everything' }))).toBe('none');
   });
 });
 
@@ -143,15 +120,14 @@ describe('needsConsentRitual', () => {
   });
 
   it('is strictly wider than the door it replaced and than the banner’s rule', () => {
-    // The three predicates are allowed to disagree, and this is the disagreement
-    // that matters: the never-asking middle stop is gated by the door, marked
-    // `caution` rather than `danger`, and reported by neither of the others.
+    // The predicates are allowed to disagree, and this is the disagreement that
+    // matters: the never-asking middle stop is gated by the door, and reported
+    // by none of the others.
     const neverAskingMiddle = descriptor({ stop: 'act', asks: 'never', reach: 'workspace' });
     expect(needsConsentRitual(neverAskingMiddle)).toBe(true);
     expect(isAutonomyStop(neverAskingMiddle)).toBe(false);
     expect(isBypassSemantics(neverAskingMiddle)).toBe(false);
     expect(isUnattendedAutonomy(neverAskingMiddle)).toBe(false);
-    expect(warnTier(neverAskingMiddle)).toBe('caution');
   });
 });
 
