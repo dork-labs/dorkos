@@ -215,6 +215,20 @@ export interface TrustDialProps {
    */
   strandsWorkingMode?: boolean;
   /**
+   * Offer a quiet way to leave the ask stop, for a surface that has somewhere to
+   * send them — the Control Center, or the full-power door.
+   *
+   * When the dial is resting at the ask stop and this is supplied, a neutral
+   * "Limited — unlock" affordance appears beneath the caption. It is a shape and
+   * a pointer, never an alarm: asking first is a limited posture (the agent
+   * cannot get on until somebody answers), and the padlock says so in the same
+   * mental model the rest of the product uses — painting the cautious choice red
+   * would shame it (design `full-power-defaults` §6). Omitted on surfaces with no
+   * unlock destination — a task or binding form, where the choice is saved, not
+   * unlocked — so nothing appears there.
+   */
+  onUnlock?: () => void;
+  /**
    * Re-word one or more stops for a surface that reads in a different voice.
    *
    * The vocabulary is still fixed per surface, which is what decision 2A is
@@ -263,6 +277,7 @@ export function TrustDial({
   strandedNote,
   strandsWorkingMode,
   stopLabels,
+  onUnlock,
 }: TrustDialProps) {
   const captionId = useId();
   /** This dial's word for each stop: the caller's where it has one, ours otherwise. */
@@ -326,6 +341,24 @@ export function TrustDial({
           <span className="text-muted-foreground"> Turn off {current.label} to change this.</span>
         )}
       </p>
+
+      {/* The ask stop is limited — the agent waits for an answer before it can
+          get on — and this says so with a padlock and a quiet way out, never a
+          colour. Only where the caller has an unlock destination to point at. */}
+      {selected?.stop === 'ask' && onUnlock && !locked && (
+        <button
+          type="button"
+          data-testid="trust-dial-limited-unlock"
+          onClick={onUnlock}
+          aria-label="Unlock full power in the Control Center"
+          className="focus-ring text-muted-foreground hover:text-foreground -mx-0.5 flex w-fit items-center gap-1.5 rounded-sm px-1 text-xs leading-relaxed transition-colors"
+        >
+          <Lock className="size-3 shrink-0" aria-hidden />
+          <span>
+            Limited — <span className="underline underline-offset-2">unlock</span>
+          </span>
+        </button>
+      )}
 
       {stranded && (
         <p

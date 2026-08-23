@@ -91,6 +91,16 @@ export const SHORTCUTS = {
     label: 'Profile',
     group: 'navigation',
   },
+  // The Control Center flyout — see and change the fleet's power at a glance
+  // (spec `full-power-defaults`, D7). NOT `mod+shift+p`: Firefox reserves that
+  // for its private window, so it never reaches the page. `mod+shift+l` is free
+  // in this registry and unbound in Chrome, Firefox and Safari.
+  CONTROL_CENTER: {
+    id: 'control-center',
+    key: 'mod+shift+l',
+    label: 'Control Center',
+    group: 'navigation',
+  },
   // In-window tabs (DOR-540), registered by `useAppTabShortcuts` — in the
   // desktop app and nowhere else (DOR-568). The tabs they drive are a desktop
   // feature: a browser owns its own tabs, and these keys already address them

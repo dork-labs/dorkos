@@ -2,6 +2,7 @@ import { Sparkles } from 'lucide-react';
 import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useAppStore } from '@/layers/shared/model';
 import { permissionModeLabel, resolveTrustStops } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
 import { MakeDefaultStopLine, type MakeDefaultStopLineProps } from './MakeDefaultStopLine';
@@ -111,6 +112,10 @@ export function PermissionModeItem({
   // Static per-runtime lookup — nullish runtime (no session context, or the
   // display runtime is still resolving) falls back to the server default.
   const caps = useCapabilitiesForRuntime(runtime);
+  // The ask stop's quiet unlock affordance points here: the Control Center is
+  // where a person opens up power for new sessions (spec `full-power-defaults`
+  // §6). Read unconditionally, before the early returns below.
+  const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
 
   // Hide the item entirely when the runtime does not support permission modes at
   // all (some runtimes have no notion of one).
@@ -182,6 +187,7 @@ export function PermissionModeItem({
           descriptors={descriptors}
           onChangeMode={(next) => onChangeMode(next as PermissionMode)}
           planActive={planActive}
+          onUnlock={() => setControlCenterOpen(true)}
         />
         {/* Directly under the dial, in a row that is always there: the offer
             arrives while a person is still pointing at the control, so it must

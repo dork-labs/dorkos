@@ -28,12 +28,18 @@ import {
   AlertDialogTrigger,
   FieldDescription,
 } from '@/layers/shared/ui';
-import { getAgentDisplayName } from '@/layers/shared/lib';
+import {
+  getAgentDisplayName,
+  operatorStopForRuntime,
+  resolveConfiguredStopMode,
+} from '@/layers/shared/lib';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
+import { useConfig } from '@/layers/entities/config';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { PermissionMode } from '@dorkos/shared/schemas';
-import { BindingAdvancedSection } from './BindingAdvancedSection';
+import { BindingAdvancedSection, BINDING_RUNTIME } from './BindingAdvancedSection';
 import {
   buildPreviewSentence,
   CHAT_TYPE_OPTIONS,
@@ -109,10 +115,33 @@ export function BindingDialog({
   );
   const [advancedOpen, setAdvancedOpen] = useState(() => hasNonDefaultAdvanced(initialValues));
 
+  // A NEW binding opens from the operator's own power level (spec
+  // `full-power-defaults`, D6): its dial starts at the operator's configured
+  // stop mapped to the binding runtime, and "agent can initiate" is pre-selected
+  // when the operator chose full power. Both are FORM pre-selections only — the
+  // wire defaults (`'default'` mode, `canInitiate: false`) are untouched, so an
+  // edited binding keeps its own stored values and nothing changes on the API.
+  const { data: config } = useConfig();
+  const bindingCaps = useCapabilitiesForRuntime(BINDING_RUNTIME);
+
   // Snapshot the initial defaults once — used for value-based dirty tracking in edit mode.
   // TanStack Form's built-in isDirty is a one-way ratchet (never resets on revert),
-  // so we compare current values against this snapshot ourselves.
-  const [defaultValues] = useState(() => buildDefaultValues(initialValues));
+  // so we compare current values against this snapshot ourselves. These consumers
+  // mount the dialog only on open, by which point config has loaded.
+  const [defaultValues] = useState(() =>
+    buildDefaultValues(
+      initialValues,
+      isEdit
+        ? undefined
+        : {
+            defaultPermissionMode: resolveConfiguredStopMode(
+              operatorStopForRuntime(config?.executionDefaults, BINDING_RUNTIME),
+              bindingCaps?.permissionModes.values ?? []
+            ),
+            defaultCanInitiate: config?.ui?.fullPowerChoice === 'full',
+          }
+    )
+  );
 
   const form = useAppForm({
     defaultValues,

@@ -139,7 +139,14 @@ router.get('/', async (_req, res) => {
     // `CLAUDE_CONFIG_DIR`, so it would otherwise show an empty field where the
     // effective default belongs. The reader falls back to the section defaults on
     // its own, which covers the pre-migration read window.
-    claudeCode: describeClaudeCodeAccounts(),
+    claudeCode: {
+      ...describeClaudeCodeAccounts(),
+      // Read so the Control Center can show the warm-agents switch's real state:
+      // the setting graduated out of Settings → Experiments (DOR-1290) and its
+      // only curated read went with it, leaving nothing for the new switch to
+      // reflect. Written through PATCH /api/config exactly as before.
+      persistentSession: configManager.get('runtimes')?.claudeCode?.persistentSession ?? true,
+    },
     // What a new session starts with — the runtime, and the model and effort per
     // runtime. Writable through PATCH already; this is the read the Defaults card
     // needs, because a curated view is the only config the cockpit ever sees.

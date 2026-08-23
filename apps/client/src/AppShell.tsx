@@ -64,6 +64,7 @@ import {
   SidebarRail,
 } from '@/layers/shared/ui';
 import { MobileTabsLayout, useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
+import { ControlCenter, useControlCenterShortcut } from '@/layers/widgets/control-center';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -246,6 +247,7 @@ export function AppShell() {
   useShortcutsPanel();
   useRightPanelShortcut();
   useProfileShortcut();
+  useControlCenterShortcut();
   // Mounted at the shell, not inside the panel: a link that opens the profile
   // has to work when the profile is not already what you are looking at.
   useLegacyProfileLinkRedirect();
@@ -630,6 +632,12 @@ export function AppShell() {
                           </motion.div>
                         )}
                       </AnimatePresence>
+                      {/* The Control Center glyph, in the persistent cluster so
+                            it is present on every route and on both desktop and
+                            mobile — the honest "always visible" anchor (spec
+                            D7). Outside the cross-fade like the cluster, so it
+                            never blinks on navigation. */}
+                      <ControlCenter />
                       {/* ── Search · inbox · right-panel toggle. Outside the
                             cross-fade and after it, which is both halves of
                             I1: they stay mounted so the corner never blinks on

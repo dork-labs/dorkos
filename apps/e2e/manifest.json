@@ -1031,153 +1031,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "control-center": {
+      "specFile": "tests/control-center/control-center.spec.ts",
+      "feature": "control-center",
+      "description": "the ⚡ glyph opens the flyout with sane focus, a power switch writes its config patch, an overrides row deep-links to its owning surface, the ⚡ glyph opens the flyout with sane focus, a power switch writes its config patch, an overrides row deep-links to its owning surface, the ⚡ glyph opens the flyout with sane focus, a power switch writes its config patch, an overrides row deep-links to its owning surface",
+      "lastRun": "2026-08-23T09:57:37.298Z",
+      "lastStatus": "passed",
+      "runCount": 4,
+      "passCount": 2,
+      "failCount": 2,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-07T02-12-57",
-      "timestamp": "2026-08-07T02:12:57.019Z",
-      "total": 4,
-      "passed": 4,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 24934
-    },
-    {
-      "id": "2026-08-07T09-53-20",
-      "timestamp": "2026-08-07T09:53:20.277Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 49814
-    },
-    {
-      "id": "2026-08-07T11-13-21",
-      "timestamp": "2026-08-07T11:13:21.004Z",
-      "total": 5,
-      "passed": 0,
-      "failed": 5,
-      "skipped": 0,
-      "duration": 62497
-    },
-    {
-      "id": "2026-08-07T11-23-48",
-      "timestamp": "2026-08-07T11:23:48.016Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 16189
-    },
-    {
-      "id": "2026-08-07T11-27-46",
-      "timestamp": "2026-08-07T11:27:46.692Z",
-      "total": 10,
-      "passed": 10,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 155583
-    },
-    {
-      "id": "2026-08-07T23-57-01",
-      "timestamp": "2026-08-07T23:57:01.343Z",
-      "total": 13,
-      "passed": 13,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 31393
-    },
-    {
-      "id": "2026-08-08T16-08-01",
-      "timestamp": "2026-08-08T16:08:01.847Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 176536
-    },
-    {
-      "id": "2026-08-08T16-19-53",
-      "timestamp": "2026-08-08T16:19:53.977Z",
-      "total": 62,
-      "passed": 62,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 189686
-    },
-    {
-      "id": "2026-08-08T21-20-59",
-      "timestamp": "2026-08-08T21:20:59.547Z",
-      "total": 2,
-      "passed": 2,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 56312
-    },
-    {
-      "id": "2026-08-08T21-22-25",
-      "timestamp": "2026-08-08T21:22:25.053Z",
-      "total": 2,
-      "passed": 1,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 70879
-    },
-    {
-      "id": "2026-08-08T21-24-21",
-      "timestamp": "2026-08-08T21:24:21.469Z",
-      "total": 63,
-      "passed": 63,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 104614
-    },
-    {
-      "id": "2026-08-08T21-25-32",
-      "timestamp": "2026-08-08T21:25:32.483Z",
-      "total": 21,
-      "passed": 21,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 54056
-    },
-    {
-      "id": "2026-08-08T23-54-34",
-      "timestamp": "2026-08-08T23:54:34.849Z",
-      "total": 8,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 7,
-      "duration": 40307
-    },
-    {
-      "id": "2026-08-08T23-56-18",
-      "timestamp": "2026-08-08T23:56:18.451Z",
-      "total": 8,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 7,
-      "duration": 22575
-    },
-    {
-      "id": "2026-08-08T23-56-57",
-      "timestamp": "2026-08-08T23:56:57.238Z",
-      "total": 8,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 7,
-      "duration": 23630
-    },
-    {
-      "id": "2026-08-08T23-57-51",
-      "timestamp": "2026-08-08T23:57:51.332Z",
-      "total": 8,
-      "passed": 7,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 29034
-    },
     {
       "id": "2026-08-08T23-59-04",
       "timestamp": "2026-08-08T23:59:04.702Z",
@@ -2041,6 +1909,42 @@
       "failed": 0,
       "skipped": 0,
       "duration": 29477
+    },
+    {
+      "id": "2026-08-23T09-05-47",
+      "timestamp": "2026-08-23T09:05:47.856Z",
+      "total": 9,
+      "passed": 0,
+      "failed": 3,
+      "skipped": 6,
+      "duration": 64183
+    },
+    {
+      "id": "2026-08-23T09-07-33",
+      "timestamp": "2026-08-23T09:07:33.473Z",
+      "total": 9,
+      "passed": 6,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 45711
+    },
+    {
+      "id": "2026-08-23T09-11-07",
+      "timestamp": "2026-08-23T09:11:07.370Z",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 30341
+    },
+    {
+      "id": "2026-08-23T09-57-37",
+      "timestamp": "2026-08-23T09:57:37.298Z",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 32117
     }
   ]
 }
