@@ -66,6 +66,35 @@ export const ROOM_TURN_LIMIT_BOUNDS = {
   maxAutoTurnsPerHour: { min: 0, max: 10_000 },
 } as const;
 
+/**
+ * The bound on the one turn limit no room may override:
+ * `rooms.maxAutomaticTurnsTotalPerHour`.
+ *
+ * Its own constant rather than a fourth key in {@link ROOM_TURN_LIMIT_BOUNDS},
+ * because that object's contract is "what a per-room override must satisfy" and
+ * this number has no per-room form. It is exported for the same reason the
+ * others are: Settings offers all four numbers in one panel and must not
+ * re-declare a ceiling the schema would refuse.
+ */
+export const MAX_TOTAL_TURNS_PER_HOUR_BOUNDS = { min: 0, max: 100_000 } as const;
+
+/**
+ * What the `rooms.*` turn limits are before anybody changes them.
+ *
+ * The schema below builds its `.default()` calls from this object, so the
+ * shipped value has one definition. Settings reads the same object to tell a
+ * person what the default IS while showing them the number they set instead
+ * (DOR-1430) — a sentence that would otherwise be a hand-copied constant
+ * quietly going stale next to the schema it describes.
+ */
+export const ROOM_TURN_LIMIT_DEFAULTS = {
+  turnLimitsEnabled: true,
+  maxAgentDepth: 30,
+  maxTurnsPerAgentPerCascade: 10,
+  maxAutomaticTurnsPerRoomPerHour: 1000,
+  maxAutomaticTurnsTotalPerHour: 5000,
+} as const;
+
 /** Sensitive fields that trigger a warning when set via CLI or API */
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
@@ -1478,7 +1507,7 @@ export const UserConfigSchema = z.object({
        * kept while it is off, so turning it back on restores exactly what you
        * had.
        */
-      turnLimitsEnabled: z.boolean().default(true),
+      turnLimitsEnabled: z.boolean().default(ROOM_TURN_LIMIT_DEFAULTS.turnLimitsEnabled),
       /**
        * How many replies in a row agents may send each other before the room
        * stops them (ADR 260726-170127). Your own messages always start the
@@ -1490,7 +1519,7 @@ export const UserConfigSchema = z.object({
         .int()
         .min(ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.min)
         .max(ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.max)
-        .default(30),
+        .default(ROOM_TURN_LIMIT_DEFAULTS.maxAgentDepth),
       /**
        * How many of those replies any ONE agent may run inside a single
        * back-and-forth.
@@ -1509,7 +1538,7 @@ export const UserConfigSchema = z.object({
         .int()
         .min(ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min)
         .max(ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.max)
-        .default(10),
+        .default(ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade),
       /**
        * The most automatic replies any ONE room may run in an hour, counted
        * whoever asked for them.
@@ -1530,7 +1559,7 @@ export const UserConfigSchema = z.object({
         .int()
         .min(ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.min)
         .max(ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.max)
-        .default(1000),
+        .default(ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsPerRoomPerHour),
       /**
        * The most automatic replies this DorkOS may run in an hour, across every
        * room that exists.
@@ -1539,7 +1568,12 @@ export const UserConfigSchema = z.object({
        * care how many rooms or threads exist, or who the messages appeared to
        * come from. `0` stops automatic replies entirely.
        */
-      maxAutomaticTurnsTotalPerHour: z.number().int().min(0).max(100_000).default(5000),
+      maxAutomaticTurnsTotalPerHour: z
+        .number()
+        .int()
+        .min(MAX_TOTAL_TURNS_PER_HOUR_BOUNDS.min)
+        .max(MAX_TOTAL_TURNS_PER_HOUR_BOUNDS.max)
+        .default(ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsTotalPerHour),
       /**
        * How long a room waits for an agent's answer before it carries on
        * without it.
