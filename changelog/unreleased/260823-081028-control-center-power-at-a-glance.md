@@ -1,6 +1,8 @@
 ---
 covers:
   - "feat(client,server,shared): Control Center — see and change your agents' power at a glance (DOR-1431)"
+  - 'fix(client,e2e): Control Center review fixes — ref idiom, non-reserved shortcut, e2e spec (DOR-1431)'
+  - 'fix(client,e2e): Control Center stage-2 fixes — close flyout on deep-link, drop phantom override row (DOR-1431)'
 ---
 
 ### Added
