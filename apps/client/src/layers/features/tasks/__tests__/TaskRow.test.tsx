@@ -51,6 +51,7 @@ const activeSchedule: Task = {
   proposedBySessionId: null,
   proposedByAgentPath: null,
   proposedByName: null,
+  origin: null,
   nextRuns: [],
 };
 
@@ -158,6 +159,24 @@ describe('ScheduleRow', () => {
     renderScheduleRow(pendingSchedule);
 
     expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  // The Approve button is right here, so the reason to approve — or the reason
+  // this one cannot run as written — has to be here too (DOR-1485).
+  it('says why a parked schedule is waiting', () => {
+    renderScheduleRow({
+      ...pendingSchedule,
+      origin: 'file',
+      reason: 'Its "cron" setting is not something DorkOS can read.',
+    });
+
+    expect(screen.getByText('Its "cron" setting is not something DorkOS can read.')).toBeTruthy();
+  });
+
+  it('says nothing extra about a schedule that is already running', () => {
+    renderScheduleRow({ ...activeSchedule, reason: 'A reason nobody needs to see now.' });
+
+    expect(screen.queryByText('A reason nobody needs to see now.')).toBeNull();
   });
 
   it('opens dropdown menu with Edit, Run Now, Delete items', async () => {

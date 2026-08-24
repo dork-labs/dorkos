@@ -93,8 +93,8 @@ import {
   agentTaskRoots,
   ensureGlobalSkillsRoot,
   globalTaskRoots,
-  type TaskRoot,
 } from './services/tasks/skills-roots.js';
+import { attachAgentRoots, attachTaskRoot } from './services/tasks/attach-task-roots.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
 import { createTasksRouter } from './routes/tasks.js';
@@ -2209,24 +2209,17 @@ async function start() {
     const scheduleIdentities = new ScheduleIdentityRegistry();
     taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
     taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
-
-    /** Watch and reconcile one root. Idempotent — both halves ignore a repeat. */
-    const attachTaskRoot = (root: TaskRoot): void => {
-      taskFileWatcher?.watch(root);
-      taskReconciler?.addRoot(root);
-    };
+    const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
 
     // `~/.dork/skills/` is created rather than merely watched, so that a person
     // looking for where to put a global schedule finds it already there.
     await ensureGlobalSkillsRoot(dorkHome);
-    for (const root of globalTaskRoots(dorkHome)) attachTaskRoot(root);
+    for (const root of globalTaskRoots(dorkHome)) attachTaskRoot(discovery, root);
 
     if (meshCore) {
       for (const agent of meshCore.list()) {
         const projectPath = meshCore.getProjectPath(agent.id);
-        if (projectPath) {
-          for (const root of agentTaskRoots(projectPath, agent.id)) attachTaskRoot(root);
-        }
+        if (projectPath) attachAgentRoots(discovery, projectPath, agent.id);
       }
 
       // Agents that register AFTER boot get their roots watched immediately.
@@ -2239,7 +2232,7 @@ async function start() {
       // marketplace install, discovery adoption) and it carries the project
       // path, so nothing has to be looked up.
       attachAgentTaskRoots = (projectPath: string, agentId: string): void => {
-        for (const root of agentTaskRoots(projectPath, agentId)) attachTaskRoot(root);
+        attachAgentRoots(discovery, projectPath, agentId);
         logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
       };
     }

@@ -98,6 +98,7 @@ function schedule(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
     nextRuns: [],
     ...overrides,
   };

@@ -184,6 +184,20 @@ export function TaskRow({
                 {task.nextRun && <> &middot; Next: {new Date(task.nextRun).toLocaleString()}</>}
               </div>
             )}
+            {/* Why this one is waiting. A schedule DorkOS found in a file says
+                so here — including what is wrong with the file, when something
+                is — because the row is where a person meets it first and the
+                Approve button is right there. Without this line, a schedule
+                parked over a typo in its cron looks identical to one parked
+                only for a look. */}
+            {task.status === 'pending_approval' && task.reason && (
+              <div
+                data-slot="task-park-reason"
+                className="text-muted-foreground min-w-0 text-xs break-words"
+              >
+                {task.reason}
+              </div>
+            )}
           </div>
 
           {/* Actions — vary by size */}

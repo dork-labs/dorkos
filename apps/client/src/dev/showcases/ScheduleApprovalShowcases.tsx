@@ -50,6 +50,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: 'ses-42',
     proposedByAgentPath: '/Users/dev/agents/dorkbot',
     proposedByName: 'DorkBot',
+    origin: null,
     nextRuns: [minutesFromLoad(180), minutesFromLoad(1620), minutesFromLoad(3060)],
     ...overrides,
   };

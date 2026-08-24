@@ -101,6 +101,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
     nextRuns: [],
     nextRun: null,
     ...overrides,

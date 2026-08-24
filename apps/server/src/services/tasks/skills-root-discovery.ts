@@ -38,10 +38,12 @@
  * @module services/tasks/skills-root-discovery
  */
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { hasSchedule, scheduleProblem } from '@dorkos/skills';
 import type { ScheduleBlock, SkillFrontmatter, TaskDefinition } from '@dorkos/skills';
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import type { TaskFrontmatter } from '@dorkos/skills/task-schema';
@@ -265,6 +267,54 @@ export async function readTaskRootFile(
 }
 
 /**
+ * The skills a directory scan cannot see, because they are symlinks.
+ *
+ * `scanSkillDirectory` skips any entry `readdir` does not report as a real
+ * directory, and a symlink to one is not — which is precisely the shape an
+ * installed marketplace plugin takes in `.agents/skills/` (`pkg__name` pointing
+ * into `.dork/plugins/`). Without this the watcher would discover a plugin's
+ * schedule (chokidar follows links) and the reconciler never would, so the
+ * safety net had a hole exactly where the ecosystem case lives.
+ *
+ * Fixed here rather than in `scanSkillDirectory` deliberately: that scanner is
+ * shared with harness projection, marketplace validation and the Codex palette,
+ * and teaching it to follow links changes what every one of them enumerates.
+ * This walk is local to the tasks subsystem and additive — it only ever looks at
+ * entries the shared scan already declined.
+ *
+ * Every failure is per-entry and silent: a dangling link is a plugin mid-
+ * uninstall, not a schedule to complain about.
+ */
+async function scanSymlinkedSkills<T>(
+  dir: string,
+  schema: Parameters<typeof parseSkillFile<T>>[2]
+): Promise<{ filePath: string; result: ReturnType<typeof parseSkillFile<T>> }[]> {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    // The caller's own scan already threw or returned for this directory; a
+    // second opinion about it is not this helper's to give.
+    return [];
+  }
+
+  const found: { filePath: string; result: ReturnType<typeof parseSkillFile<T>> }[] = [];
+  for (const entry of entries) {
+    if (!entry.isSymbolicLink()) continue;
+    if (entry.name.startsWith('.') || RESERVED_TASK_DIRNAMES.includes(entry.name)) continue;
+    const filePath = path.join(dir, entry.name, SKILL_FILENAME);
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      found.push({ filePath, result: parseSkillFile(filePath, content, schema) });
+    } catch {
+      // A link to something that is not a skill directory, or one whose target
+      // has gone. Neither is a schedule, and neither is news.
+    }
+  }
+  return found;
+}
+
+/**
  * Read every SKILL.md in one root.
  *
  * Throws only when the DIRECTORY could not be enumerated — EACCES, EMFILE —
@@ -284,9 +334,13 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
   // five minutes, forever.
   const results =
     root.kind === 'skills'
-      ? await scanSkillDirectory(root.dir, SkillFrontmatterSchema, {
-          ignoreDirs: RESERVED_TASK_DIRNAMES,
-        })
+      ? [
+          ...(await scanSkillDirectory(root.dir, SkillFrontmatterSchema, {
+            ignoreDirs: RESERVED_TASK_DIRNAMES,
+          })),
+          // Installed plugin skills are symlinks, which the shared scan skips.
+          ...(await scanSymlinkedSkills(root.dir, SkillFrontmatterSchema)).map((f) => f.result),
+        ]
       : await scanSkillDirectory(root.dir, TaskFrontmatterSchema, {
           ignoreDirs: RESERVED_TASK_DIRNAMES,
         });

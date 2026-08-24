@@ -67,6 +67,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: 'ses-42',
     proposedByAgentPath: '/Users/dev/agents/dorkbot',
     proposedByName: 'DorkBot',
+    origin: null,
     nextRuns: [minutesFromLoad(120), minutesFromLoad(1560), minutesFromLoad(3000)],
     ...overrides,
   };
@@ -249,6 +250,41 @@ describe('ScheduleApprovalCard — what it says', () => {
 
     expect(await screen.findByText('Requested without an agent identity')).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
+  });
+
+  // A schedule DorkOS found in a skills root had no asker at all (DOR-1485).
+  // Crediting "an agent" would be inventing a proposer, which is the one thing
+  // the test above exists to forbid.
+  it('names the file a discovered schedule came from instead of a proposer', async () => {
+    renderCard(
+      proposal({
+        origin: 'file',
+        proposedByAgentPath: null,
+        proposedByName: null,
+        proposedBySessionId: null,
+        filePath: '/Users/dev/project/.agents/skills/nightly-sweep/SKILL.md',
+      })
+    );
+
+    expect(await findSlot('schedule-file-origin')).toHaveTextContent(
+      '.agents/skills/nightly-sweep/SKILL.md'
+    );
+    expect(slot('ask-detail')).toHaveTextContent('Found in a file on this computer');
+    expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
+    expect(screen.queryByText('Requested without an agent identity')).toBeNull();
+  });
+
+  it('shows why a discovered schedule is parked, unquoted — they are our words', async () => {
+    renderCard(
+      proposal({
+        origin: 'file',
+        reason: '"cron" is not a schedule DorkOS can read.',
+      })
+    );
+
+    const reason = await findSlot('schedule-reason');
+    expect(reason).toHaveTextContent('"cron" is not a schedule DorkOS can read.');
+    expect(reason).not.toHaveClass('italic');
   });
 });
 

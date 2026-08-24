@@ -240,6 +240,7 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
     nextRuns: [],
     ...overrides,
   };

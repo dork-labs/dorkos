@@ -18,7 +18,7 @@ import type {
 import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
-import { resolveFileArmStatus, resolveFilePermissionMode } from './schedule-permission-clamp.js';
+import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
@@ -75,33 +75,14 @@ export interface ScheduleReliability {
 }
 
 /**
- * What {@link TaskStore.upsertFromFile} needs to know beyond the file itself.
+ * What {@link TaskStore.upsertFromFile} needs to know beyond the file itself:
+ * who is writing, and what is wrong with the file.
  *
- * Both fields exist for one reason: the same method now serves two callers with
- * opposite trust. A route write is a person deciding; a discovered file is not.
+ * Defined by the module that acts on it — see {@link FileSyncSource}, which
+ * documents both fields — and re-exported here under the name its one caller
+ * uses.
  */
-export interface UpsertFromFileOptions {
-  /**
-   * Who is writing.
-   *
-   * - `operator` (the default) — a route, an install, or anything else a person
-   *   set in motion through DorkOS. The write IS the approval, so the row's
-   *   status is left alone, exactly as it was before the arm gate existed.
-   * - `discovery` — the file watcher or the reconciler, syncing a file found on
-   *   disk. Subject to the arm gate: it parks unless a person's approval
-   *   already covers this exact content.
-   */
-  source?: 'operator' | 'discovery';
-  /**
-   * What is wrong with the file, when something is — an unreadable `schedule:`
-   * block, or a cron croner refuses.
-   *
-   * A schedule carrying a problem never arms, and the problem becomes the row's
-   * `reason`, which is what the approval card shows a person. Only meaningful
-   * alongside `source: 'discovery'`.
-   */
-  problem?: string | null;
-}
+export type UpsertFromFileOptions = FileSyncSource;
 
 /** Fields that can be updated on a run. */
 interface RunUpdate {
@@ -175,13 +156,11 @@ export class TaskStore {
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
   /**
-   * The last refused version of each task file that asked for a permission mode
-   * it cannot have (see {@link resolveFilePermissionMode}) — absolute file path
-   * to the declared mode and content that were refused. Dropped when the file
-   * stops asking, when its task is deleted, and when the file goes away, so the
-   * refusal is stated once per standing conflict rather than once per sync.
+   * The content gates every file-sourced write passes: the permission clamp and
+   * the arm gate, plus the memory that keeps a standing refusal from writing a
+   * log line every five minutes (`file-sync-gates.ts`).
    */
-  private readonly refusedFileGrants = new Map<string, string>();
+  private readonly fileGates = new FileSyncGates();
 
   constructor(db: Db) {
     this.db = db;
@@ -359,7 +338,7 @@ export class TaskStore {
       return result.changes > 0;
     });
 
-    if (deleted && filePath) this.refusedFileGrants.delete(filePath);
+    if (deleted && filePath) this.fileGates.forget(filePath);
     return deleted;
   }
 
@@ -811,53 +790,10 @@ export class TaskStore {
       .get();
 
     const incomingCron = def.meta.cron ?? '';
-    const { mode: permissionMode, clamped } = resolveFilePermissionMode(
-      def.meta.permissions,
-      existing && {
-        permissionMode: existing.permissionMode as PermissionMode,
-        status: existing.status,
-        prompt: existing.prompt,
-        cron: existing.cron,
-      },
-      { prompt: def.body, cron: incomingCron }
-    );
-    // Said once per refused VERSION of a file, not once per sync and not once
-    // per path. The reconciler re-reads every task file every five minutes, so
-    // warning per sync turns one standing refusal into a log line every five
-    // minutes; but keying on the path alone would swallow the line that matters
-    // most — a file rewritten under a grant it used to hold is a NEW refusal,
-    // and it must not be silenced by an earlier one at the same path.
-    //
-    // Serialized rather than concatenated: a prompt can hold any text at
-    // all, and a separator the prompt can also hold lets two different
-    // files share one key — swallowing exactly the warning this keying
-    // exists to preserve.
-    const refusal = JSON.stringify([def.meta.permissions, def.body, incomingCron]);
-    if (clamped && this.refusedFileGrants.get(def.filePath) !== refusal) {
-      this.refusedFileGrants.set(def.filePath, refusal);
-      logger.warn(
-        `TaskStore: ${def.filePath} asked to run with every approval prompt turned off. ` +
-          `DorkOS synced it with the normal prompts instead; you can change that on the task.`
-      );
-    }
-    if (!clamped) this.refusedFileGrants.delete(def.filePath);
-
-    // The arm gate. Only discovery is subject to it: a file DorkOS found is
-    // nobody's decision to run, while a route write is a person's (ADR
-    // `260823-200726`).
-    const arm =
-      options?.source === 'discovery'
-        ? resolveFileArmStatus(
-            existing && {
-              permissionMode: existing.permissionMode as PermissionMode,
-              status: existing.status,
-              prompt: existing.prompt,
-              cron: existing.cron,
-            },
-            { prompt: def.body, cron: incomingCron },
-            options.problem
-          )
-        : null;
+    // What a file on disk may do to this row, decided in one place so the
+    // permission clamp and the arm gate cannot disagree — see
+    // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
+    const { permissionMode, arm } = this.fileGates.resolve(def, existing, options);
 
     if (existing) {
       this.db
@@ -948,7 +884,7 @@ export class TaskStore {
    */
   markRemovedByFilePath(filePath: string): number {
     // A file that came back is a fresh conflict, worth stating again.
-    this.refusedFileGrants.delete(filePath);
+    this.fileGates.forget(filePath);
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)
