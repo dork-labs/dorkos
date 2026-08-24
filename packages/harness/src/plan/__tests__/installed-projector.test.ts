@@ -24,8 +24,18 @@ const projectPlugin: InstalledPlugin = {
   scope: 'project',
   relDir: '.dork/plugins/acme',
   skills: [
-    { name: 'alpha', sourceDir: '.dork/plugins/acme/skills/alpha', usesPluginRoot: false },
-    { name: 'beta', sourceDir: '.dork/plugins/acme/.dork/tasks/beta', usesPluginRoot: false },
+    {
+      name: 'alpha',
+      sourceDir: '.dork/plugins/acme/skills/alpha',
+      usesPluginRoot: false,
+      hasSchedule: false,
+    },
+    {
+      name: 'beta',
+      sourceDir: '.dork/plugins/acme/.dork/tasks/beta',
+      usesPluginRoot: false,
+      hasSchedule: false,
+    },
   ],
   commands: [
     {
@@ -174,6 +184,7 @@ describe('installed-plugin projection via buildPlan', () => {
                 name: 'alpha',
                 sourceDir: '.dork/plugins/acme/skills/alpha',
                 usesPluginRoot: true,
+                hasSchedule: false,
               },
             ],
           },
@@ -202,6 +213,7 @@ describe('installed-plugin projection via buildPlan', () => {
                 name: 'alpha',
                 sourceDir: '.dork/plugins/acme/skills/alpha',
                 usesPluginRoot: false,
+                hasSchedule: false,
               },
             ],
           },
@@ -497,6 +509,132 @@ describe('buildPlan hook gate (DOR-522)', () => {
       const commands = plannedCommands(plan).join('\n');
       expect(commands).toContain('echo from-other');
       expect(commands).not.toContain('echo from-plugin');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('schedule-bearing plugin skills reach the watched skills root', () => {
+  /** The manifest a stock project has: Claude Code only, which never sees `.agents/skills`. */
+  const CLAUDE_ONLY = parseHarnessManifest({ version: 1, harnesses: ['claude-code'] });
+
+  /** A plugin shipping one scheduled skill and one ordinary one (the flow plugin's shape). */
+  const withScheduledSkill: InstalledPlugin = {
+    ...projectPlugin,
+    commands: [],
+    skills: [
+      {
+        name: 'drain',
+        sourceDir: '.dork/plugins/acme/skills/drain',
+        usesPluginRoot: false,
+        hasSchedule: true,
+      },
+      {
+        name: 'alpha',
+        sourceDir: '.dork/plugins/acme/skills/alpha',
+        usesPluginRoot: false,
+        hasSchedule: false,
+      },
+    ],
+  };
+
+  /** Every planned symlink target, in plan order. */
+  function symlinkTargets(plan: ReturnType<typeof buildPlan>): string[] {
+    return plan.actions
+      .filter((a) => a.provenance === 'installed' && a.kind === 'symlink')
+      .map((a) => a.target as string);
+  }
+
+  it('links a scheduled skill into .agents/skills even when only claude-code is enabled', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: CLAUDE_ONLY,
+        agentsMdExists: false,
+        installedPlugins: [withScheduledSkill],
+      });
+
+      const link = plan.actions.find((a) => a.target === '.agents/skills/acme__drain');
+      expect(link).toBeDefined();
+      expect(link?.kind).toBe('symlink');
+      expect(link?.source).toBe('.dork/plugins/acme/skills/drain');
+      expect(link?.provenance).toBe('installed');
+      // The report says why a link exists in a directory no enabled harness reads.
+      expect(link?.reason).toContain('scheduler');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves an unscheduled plugin skill to the enabled harnesses alone', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: CLAUDE_ONLY,
+        agentsMdExists: false,
+        installedPlugins: [withScheduledSkill],
+      });
+
+      // `alpha` has no schedule: Claude Code still gets it, nothing else does.
+      expect(symlinkTargets(plan)).toContain('.claude/skills/acme__alpha');
+      expect(symlinkTargets(plan)).not.toContain('.agents/skills/acme__alpha');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('plans the .agents/skills link exactly once when codex is also enabled', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST, // claude-code + codex + cursor
+        agentsMdExists: false,
+        installedPlugins: [withScheduledSkill],
+      });
+
+      // Codex's own per-harness rule already links it; the scheduler rule stands
+      // down rather than planning the same target a second time.
+      expect(symlinkTargets(plan).filter((t) => t === '.agents/skills/acme__drain')).toHaveLength(
+        1
+      );
+      // And the harness rule still covers the unscheduled skill, as before.
+      expect(symlinkTargets(plan)).toContain('.agents/skills/acme__alpha');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('warns about an unresolved plugin-root token in a scheduled skill it links', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: CLAUDE_ONLY,
+        agentsMdExists: false,
+        installedPlugins: [
+          {
+            ...withScheduledSkill,
+            skills: [
+              {
+                name: 'drain',
+                sourceDir: '.dork/plugins/acme/skills/drain',
+                usesPluginRoot: true,
+                hasSchedule: true,
+              },
+            ],
+          },
+        ],
+      });
+
+      const warned = plan.warnings.filter(
+        (w) => w.name === 'acme__drain' && w.reason.includes('${CLAUDE_PLUGIN_ROOT}')
+      );
+      // One for the Claude Code projection, one for the scheduler link.
+      expect(warned).toHaveLength(2);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
