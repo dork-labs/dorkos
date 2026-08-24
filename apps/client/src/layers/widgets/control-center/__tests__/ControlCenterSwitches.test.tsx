@@ -29,6 +29,15 @@ function makeConfig(over: Partial<ServerConfig> = {}): ServerConfig {
     auth: { enabled: true },
     claudeCode: { persistentSession: true },
     scheduler: { maxConcurrentRuns: 4 },
+    // All five or none: `useRoomTurnLimits` reads them as a set, so a partial
+    // block is the "server too old to say" state rather than a smaller answer.
+    rooms: {
+      turnLimitsEnabled: true,
+      maxAgentDepth: 30,
+      maxTurnsPerAgentPerCascade: 10,
+      maxAutomaticTurnsPerRoomPerHour: 1000,
+      maxAutomaticTurnsTotalPerHour: 5000,
+    },
     ...over,
   } as unknown as ServerConfig;
 }
@@ -94,6 +103,68 @@ describe('ControlCenterSwitches', () => {
       name: 'Let all my agents talk to each other',
     });
     await waitFor(() => expect(mesh).toBeChecked());
+  });
+
+  it('limit automatic replies reflects config and writes the rooms patch', async () => {
+    const transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue(makeConfig()),
+      getMeshTopology: vi.fn().mockResolvedValue(CLOSED_MESH),
+      updateConfig: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<ControlCenterSwitches />, { wrapper: harness(transport) });
+
+    const limits = await screen.findByRole('switch', { name: 'Limit automatic replies' });
+    await waitFor(() => expect(limits).toBeEnabled());
+    expect(limits).toBeChecked();
+    fireEvent.click(limits);
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        rooms: { turnLimitsEnabled: false },
+      })
+    );
+  });
+
+  it('says what turning the limits off costs, in the words Settings uses', async () => {
+    const transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue(
+        makeConfig({
+          rooms: {
+            turnLimitsEnabled: false,
+            maxAgentDepth: 30,
+            maxTurnsPerAgentPerCascade: 10,
+            maxAutomaticTurnsPerRoomPerHour: 1000,
+            maxAutomaticTurnsTotalPerHour: 5000,
+          },
+        } as unknown as Partial<ServerConfig>)
+      ),
+      getMeshTopology: vi.fn().mockResolvedValue(CLOSED_MESH),
+    });
+    render(<ControlCenterSwitches />, { wrapper: harness(transport) });
+
+    const limits = await screen.findByRole('switch', { name: 'Limit automatic replies' });
+    await waitFor(() => expect(limits).not.toBeChecked());
+    expect(
+      screen.getByText(
+        'Agents can reply to each other without limit. The Stop button is the only brake.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('holds the limits switch until the server has said what it is', async () => {
+    // A server too old to report `rooms.*` cannot be described, and a switch
+    // drawn from a guess is a switch somebody flips into a write they did not
+    // mean. Held rather than hidden, so the panel does not change shape.
+    const transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue(makeConfig({ rooms: undefined })),
+      getMeshTopology: vi.fn().mockResolvedValue(CLOSED_MESH),
+      updateConfig: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<ControlCenterSwitches />, { wrapper: harness(transport) });
+
+    const limits = await screen.findByRole('switch', { name: 'Limit automatic replies' });
+    await waitFor(() => expect(limits).toBeDisabled());
+    fireEvent.click(limits);
+    expect(transport.updateConfig).not.toHaveBeenCalled();
   });
 
   it('the concurrency stepper writes a valid value and refuses one out of range', async () => {

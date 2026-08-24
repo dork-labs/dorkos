@@ -262,9 +262,12 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     const runtime = new TestModeRuntime();
     await runTurn(runtime, SESSION_A, 'Hello');
 
-    expect(runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toBe(true);
+    expect(runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toEqual({ updated: true });
     expect((await runtime.getSession('/projects/test', SESSION_A))?.permissionMode).toBe('plan');
-    expect(runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toBe(false);
+    // An untracked session is the one "does not exist" case on this runtime.
+    expect(runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toEqual({
+      updated: false,
+    });
   });
 });
 

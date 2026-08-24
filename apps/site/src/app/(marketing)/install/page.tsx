@@ -5,6 +5,7 @@ import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingChrome } from '@/layers/features/marketing';
 import { DownloadButton, InstallCommand } from './_components/InstallPageActions';
+import { MacInstallSteps } from './_components/MacInstallSteps';
 
 const CURL_COMMAND = 'curl -fsSL https://dorkos.ai/install | bash';
 
@@ -70,7 +71,8 @@ export default function InstallPage() {
             <p className="text-warm-gray-light mt-3 font-mono text-xs tracking-[0.02em]">
               Apple Silicon · no terminal needed
             </p>
-            <p className="text-warm-gray mt-3 text-sm">
+            <MacInstallSteps />
+            <p className="text-warm-gray mt-6 text-sm">
               On an Intel Mac? Use the{' '}
               <a href="#terminal" className="text-charcoal hover:text-brand-orange underline">
                 terminal install

@@ -26,6 +26,7 @@
  * posted first, and they survive an offer path that fails in any of those ways.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { Db } from '@dorkos/db';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
@@ -538,6 +539,7 @@ describe('asking one agent aside', () => {
   let human: string;
   let tangerines: string;
   let entry: RoomEntry;
+  let db: Db;
 
   /** Stand a room up with one agent in it and one entry to frame a turn on. */
   function standUp(opts: {
@@ -551,7 +553,7 @@ describe('asking one agent aside', () => {
         maxAutomaticTurnsPerRoomPerHour: opts.maxAutomaticTurnsPerRoomPerHour,
       }),
     });
-    ({ service, runner, human } = harness);
+    ({ db, service, runner, human } = harness);
     room = service.createRoom(
       { kind: 'channel', title: 'Team', members: [], agentPaths: [TANGERINES] },
       human
@@ -559,6 +561,50 @@ describe('asking one agent aside', () => {
     tangerines = harness.authors.resolveAgent(TANGERINES, 'tangerines').id;
     entry = service.post(room.id, { authorId: tangerines, text: 'Worked on two sessions.' });
   }
+
+  /**
+   * One entry's `dispatch_id` column. Read off the table because the column
+   * deliberately does not ride the wire — `toEntry` drops it.
+   */
+  function dispatchIdOf(entryId: string): string | null {
+    const row = (db as unknown as { $client: import('better-sqlite3').Database }).$client
+      .prepare('SELECT dispatch_id FROM room_entries WHERE id = ?')
+      .get(entryId) as { dispatch_id: string | null } | undefined;
+    return row?.dispatch_id ?? null;
+  }
+
+  it('carries its own dispatch onto what the turn posts mid-flight', async () => {
+    // `dispatchFor` does NOT filter on `aside` and `deepestClaimOf` does, which
+    // is the one place the two lookups deliberately disagree (DOR-1434). An
+    // aside has no cascade to hand on — nothing in the room asked for it — but
+    // it is unambiguously a turn, so what it posts through the rooms tool is one
+    // turn's writing like any other.
+    //
+    // And the limit of that, in the same test: the greeter's OWN writes are not
+    // an aside turn's writes. `entry` below stands for the status line, posted
+    // before this turn exists, and it stays null — as does the offer the greeter
+    // posts once the claim here has already been released.
+    let claimed: string | undefined;
+    let posted = '';
+    standUp({
+      runner: scriptedRunner(() => {
+        claimed = service.listActiveClaims()[0]?.dispatchId;
+        posted = service.post(room.id, { authorId: tangerines, text: 'one moment' }).id;
+        return 'Want me to open the PR?';
+      }),
+    });
+
+    await service.askAside({
+      roomId: room.id,
+      authorId: tangerines,
+      aboutEntryId: entry.id,
+      prompt: 'do you have a next step?',
+    });
+
+    expect(claimed).toMatch(/^dsp_/);
+    expect(dispatchIdOf(posted)).toBe(claimed);
+    expect(dispatchIdOf(entry.id)).toBeNull();
+  });
 
   it('runs the turn and hands back what the agent said', () => {
     standUp({ runner: scriptedRunner(() => 'Want me to open the PR?') });

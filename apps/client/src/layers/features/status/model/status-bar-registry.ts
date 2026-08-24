@@ -371,7 +371,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'permission',
     label: 'Permissions',
-    description: 'How much the agent may do without asking',
+    description: 'How much the agent may do before it checks with you',
     cluster: 'right',
     group: 'session',
     icon: Shield,

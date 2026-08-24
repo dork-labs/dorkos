@@ -450,7 +450,7 @@ const roomLimitOverrideFields = {
     .nullable()
     .optional()
     .describe(
-      'How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`.'
+      'How many TURNS any ONE agent may take here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`. Progress notes an agent posts mid-turn do not count extra.'
     ),
   maxAutoTurnsPerHour: z
     .number()

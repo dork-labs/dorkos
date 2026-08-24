@@ -3,6 +3,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import type { CommandEntry, CommandRegistry } from '@dorkos/shared/types';
 import { CommandFrontmatterSchema } from '@dorkos/skills/command-schema';
+import { isUserInvocable, readYamlBoolean } from '@dorkos/skills';
 import { logger } from '../../../../lib/logger.js';
 
 /**
@@ -31,6 +32,11 @@ function parseFrontmatterFallback(content: string): Record<string, string> {
  * Parses YAML frontmatter via gray-matter with a fallback for malformed YAML,
  * then validates against the shared CommandFrontmatterSchema. Results are cached
  * until `invalidateCache()`.
+ *
+ * A command marked `user-invocable: false` is left out of the registry
+ * entirely: this list IS the `/` palette a person picks from, and that field
+ * exists to say "not for the menu". Claude Code enforces it natively for its
+ * own palette; the cockpit's palette makes the same promise.
  */
 class CommandRegistryService {
   private cache: CommandRegistry | null = null;
@@ -70,13 +76,15 @@ class CommandRegistryService {
             const filePath = path.join(nsPath, file);
             const parsed = await this.parseCommandFile(filePath);
             if (!parsed) continue;
+            const { userInvocable, ...fields } = parsed;
+            if (!userInvocable) continue;
 
             const commandName = file.replace('.md', '');
             commands.push({
               namespace: entry.name,
               command: commandName,
               fullCommand: `/${entry.name}:${commandName}`,
-              ...parsed,
+              ...fields,
             });
           }
         } else if (entry.name.endsWith('.md')) {
@@ -84,12 +92,14 @@ class CommandRegistryService {
           const filePath = path.join(this.commandsDir, entry.name);
           const parsed = await this.parseCommandFile(filePath);
           if (!parsed) continue;
+          const { userInvocable, ...fields } = parsed;
+          if (!userInvocable) continue;
 
           const commandName = entry.name.replace('.md', '');
           commands.push({
             command: commandName,
             fullCommand: `/${commandName}`,
-            ...parsed,
+            ...fields,
           });
         }
       }
@@ -111,14 +121,16 @@ class CommandRegistryService {
    * Falls back to a simple key:value parser when gray-matter's YAML parser fails
    * on unquoted special characters.
    *
-   * @returns Partial command fields, or `null` if the file could not be read.
+   * @returns Partial command fields plus whether a person may see this
+   *   command in the palette, or `null` if the file could not be read.
    */
-  private async parseCommandFile(
-    filePath: string
-  ): Promise<Pick<
-    CommandEntry,
-    'description' | 'argumentHint' | 'allowedTools' | 'filePath'
-  > | null> {
+  private async parseCommandFile(filePath: string): Promise<
+    | (Pick<CommandEntry, 'description' | 'argumentHint' | 'allowedTools' | 'filePath'> & {
+        /** `false` only when the file says `user-invocable: false`. */
+        userInvocable: boolean;
+      })
+    | null
+  > {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
 
@@ -135,7 +147,16 @@ class CommandRegistryService {
       const meta = validated.success ? validated.data : frontmatter;
 
       const allowedToolsRaw = meta['allowed-tools'];
+      // Read the flag off the RAW frontmatter, not the validated copy:
+      // `.partial()` strips the schema's `user-invocable` default, and a file
+      // that fell back to `parseFrontmatterFallback` never met the schema at
+      // all (its values are all strings). `readYamlBoolean` applies the same
+      // reading the schema would — absent or unreadable means visible.
+      const userInvocable = isUserInvocable({
+        'user-invocable': readYamlBoolean(meta['user-invocable']),
+      });
       return {
+        userInvocable,
         description: (meta.description as string) || '',
         argumentHint: meta['argument-hint'] as string | undefined,
         allowedTools:

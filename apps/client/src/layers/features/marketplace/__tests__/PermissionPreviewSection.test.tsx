@@ -148,7 +148,7 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText('nightly-sweep')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'At 03:00 AM, starts switched on. This job can run any command without asking you.'
+        'At 03:00 AM, starts switched on. This job can run any command without a permission prompt.'
       )
     ).toBeInTheDocument();
     expect(screen.queryByText(/bypassPermissions/)).not.toBeInTheDocument();

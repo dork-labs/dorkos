@@ -17,7 +17,7 @@ import { MockServerProcess, type SpawnOptions } from './server-child-mock';
  * test files. Faithful enough to `app` (including `app.dock`,
  * `setAboutPanelOptions`, and `setAsDefaultProtocolClient`), `BrowserWindow`
  * (including `webContents` with `send`, a unique `id`, and an `on`/`emit`
- * event bus), `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
+ * event bus), `session`, `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
  * invoke a registered handler directly from its mock call args), `screen`,
  * `dialog`, `Menu`, `Tray`, `nativeImage`, `nativeTheme`, `shell`, and
  * `utilityProcess` (the production server-spawn path) to drive the
@@ -212,6 +212,18 @@ export const app = {
   /** Test helper — invokes every registered listener for `event`, awaiting async ones. */
   emit: (event: string, ...args: unknown[]): Promise<void> => appBus.emit(event, ...args),
   removeAllListeners: (): void => appBus.clear(),
+};
+
+/**
+ * Test double for `session`. Only `defaultSession.clearCache` is modelled —
+ * the one session call the main process makes (see `cache-hygiene.ts`), and
+ * one whose *failure* has to be drivable, since swallowing it is the behavior
+ * under test.
+ */
+export const session = {
+  defaultSession: {
+    clearCache: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  },
 };
 
 export const ipcMain = {
@@ -414,6 +426,8 @@ export function resetElectronMock(): void {
   app.setAboutPanelOptions = vi.fn();
   app.setAsDefaultProtocolClient = vi.fn(() => true);
   app.dock = { setMenu: vi.fn(), setBadge: vi.fn() };
+
+  session.defaultSession.clearCache = vi.fn(() => Promise.resolve());
 
   ipcMain.on = vi.fn();
   ipcMain.handle = vi.fn();

@@ -350,10 +350,22 @@ function bridgeInfo(bridge: Bridge | null | undefined): RoomBridgeInfo | null {
   };
 }
 
-/** Provenance a post carries when a trigger produced it. */
+/**
+ * Provenance a post carries when a trigger produced it.
+ *
+ * Server-internal, and only ever built by the dispatcher: no request body
+ * reaches this shape, which is what keeps `cascadeDepth: 0` — and now
+ * `dispatch_id` — something the room observed rather than something a caller
+ * claimed.
+ */
 export interface PostTrigger {
   root: string;
   depth: number;
+  /**
+   * The turn this post belongs to, for the repeat rule's per-turn count
+   * (DOR-1434). Set by the dispatcher on every answer it delivers.
+   */
+  dispatchId?: string;
 }
 
 /**
@@ -2256,6 +2268,11 @@ export class RoomService {
    * root — silent, triggering nobody. Speaking on purpose is not a way to reset a
    * bound.
    *
+   * What it also does not add is a turn. A post made mid-turn carries that turn's
+   * `dispatch_id`, so an agent that says what it is doing three times before it
+   * answers has taken one turn against `maxTurnsPerAgentPerCascade`, not four
+   * (DOR-1434). Being legible is not a thing this room charges for.
+   *
    * @param roomId - The channel to post into.
    * @param input.authorId - The agent posting, resolved from its identity by the
    *   capability — never read off the tool's arguments.
@@ -2756,6 +2773,26 @@ export class RoomService {
     const author = this.authors.getById(input.authorId);
     const trigger = input.trigger ?? this.triggers.activeTurnFor(input.authorId);
 
+    // WHICH TURN wrote this, which is a different question from which cascade it
+    // belongs to (DOR-1434). The dispatcher hands its own id down with the
+    // trigger it delivers under; every other write inside a turn — the progress
+    // notes an agent posts through the rooms tool, an aside turn's `post_to_room`
+    // writes included — is found by asking the claim held on THIS room. Anything
+    // with no turn behind it stamps `null` and costs one turn on its own, which
+    // is what every row cost before this column existed.
+    //
+    // Two writes that look like they belong to a turn and honestly do not. The
+    // welcome-back greeter's own posts — the status line, and the offer it posts
+    // once the aside turn's claim is already released — are the greeter speaking
+    // for an agent rather than a turn writing, and no claim is held at either
+    // moment. And a cross-room `post_to_room`: the lookup is keyed on the room
+    // the entry lands in, so an agent mid-turn in room A posting a note into
+    // room B holds no claim in B and the note counts as one message there. Both
+    // are accepted rather than overlooked — see the DOR-1434 amendment on
+    // ADR 260823-000217.
+    const dispatchId =
+      input.trigger?.dispatchId ?? this.triggers.dispatchFor(roomId, input.authorId) ?? null;
+
     // Resolved ONCE, here, and both halves of the answer are kept: who this
     // message reached, and who it named but could not reach because that
     // member's agent is gone. The second half is what stops a released name
@@ -2805,6 +2842,7 @@ export class RoomService {
         // re-parsing the body (`.claude/rules/room-conduct.md`).
         mentionSpans: addressed.spans,
         sessionId: input.sessionId ?? null,
+        dispatchId,
         ...this.threadPointers(roomId, input.replyTo),
         ...deriveCascade(id, {
           trigger,
@@ -3128,8 +3166,9 @@ export class RoomService {
   }
 
   /**
-   * How many entries each author already has in one cascade — the repeat rule's
-   * input, read here so R3's trigger path does not have to know the schema.
+   * How many turns each author has already taken in one cascade — the repeat
+   * rule's input, read here so R3's trigger path does not have to know the
+   * schema. See {@link RoomStore.turnsByAuthorInCascade} for what a turn is.
    *
    * @param roomId - The room.
    * @param cascadeRoot - The entry id that began the cascade.

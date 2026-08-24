@@ -420,17 +420,25 @@ export function ModelConfigPopover({
   const modelList = models ?? [];
   const selectedModel = modelList.find((m) => m.value === model);
 
-  const showEffort =
-    selectedModel?.supportsEffort &&
-    selectedModel.supportedEffortLevels &&
-    selectedModel.supportedEffortLevels.length > 0;
+  // The ONE answer to "can this model be given a thinking effort at all" — read
+  // by the Effort control below AND by the trigger's effort badge, deliberately
+  // the same expression rather than two. Switching to a model with no effort
+  // support used to take the control away while the status line kept reading
+  // `Haiku 4.5 · High`: a setting the person could no longer change, still
+  // being advertised as in force (DOR-1445). A model that is not in the
+  // catalogue yet (still loading, or unknown to this runtime) counts as "no",
+  // because a claim we cannot back is worse than a badge that arrives a beat
+  // late.
+  const showEffort = Boolean(
+    selectedModel?.supportsEffort && (selectedModel.supportedEffortLevels?.length ?? 0) > 0
+  );
 
   const showModes = selectedModel?.supportsFastMode ?? false;
 
   // Badges are the first thing the status line gives up when it narrows: effort
   // and Fast are settings, and this popover plus the Session panel both still
   // report them. The model's NAME is what the line is for, so it always stays.
-  const effortLabel = !compact && effort ? EFFORT_LABELS[effort].label : null;
+  const effortLabel = !compact && showEffort && effort ? EFFORT_LABELS[effort].label : null;
   const showFastBadge = !compact && fastMode;
 
   // Build status bar trigger content

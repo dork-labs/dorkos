@@ -9,7 +9,13 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockRun } from '@dorkos/test-utils';
-import { useTaskRuns, useTaskRun, useCancelTaskRun } from '../model/use-task-runs';
+import type { ListTaskRunsQuery } from '@dorkos/shared/types';
+import {
+  useTaskRuns,
+  useInfiniteTaskRuns,
+  useTaskRun,
+  useCancelTaskRun,
+} from '../model/use-task-runs';
 
 function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
@@ -24,6 +30,134 @@ function createWrapper(transport: Transport) {
     </QueryClientProvider>
   );
 }
+
+/**
+ * An infinite query needs its pages to survive between fetches, so this wrapper
+ * keeps the default `gcTime` rather than the zero the single-shot tests use —
+ * at `gcTime: 0` a page is collected the moment it has no observer and the
+ * accumulated list resets to one page.
+ */
+function createInfiniteWrapper(transport: Transport) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+describe('useInfiniteTaskRuns', () => {
+  const PAGE_SIZE = 2;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** A paginated server whose run list the test can rewrite between fetches. */
+  function paginatedTransport(runs = [createMockRun({ id: 'run-1' })]) {
+    const store = { runs };
+    const listTaskRuns = vi.fn((opts?: Partial<ListTaskRunsQuery>) => {
+      const offset = opts?.offset ?? 0;
+      const limit = opts?.limit ?? 50;
+      return Promise.resolve(store.runs.slice(offset, offset + limit));
+    });
+    return { transport: createMockTransport({ listTaskRuns }), store, listTaskRuns };
+  }
+
+  it('asks for the first page at offset 0', async () => {
+    const { transport, listTaskRuns } = paginatedTransport();
+
+    const { result } = renderHook(
+      () => useInfiniteTaskRuns({ scheduleId: 'sched-1', limit: PAGE_SIZE }),
+      { wrapper: createInfiniteWrapper(transport) }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(listTaskRuns).toHaveBeenCalledWith({
+      scheduleId: 'sched-1',
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+  });
+
+  it('walks the offset forward while pages come back full, then stops', async () => {
+    const { transport, listTaskRuns } = paginatedTransport([
+      createMockRun({ id: 'run-1' }),
+      createMockRun({ id: 'run-2' }),
+      createMockRun({ id: 'run-3' }),
+    ]);
+
+    const { result } = renderHook(() => useInfiniteTaskRuns({ limit: PAGE_SIZE }), {
+      wrapper: createInfiniteWrapper(transport),
+    });
+
+    // A full page means there may be more behind it.
+    await waitFor(() => expect(result.current.hasNextPage).toBe(true));
+
+    act(() => {
+      void result.current.fetchNextPage();
+    });
+
+    await waitFor(() => expect(result.current.data!.pages).toHaveLength(2));
+    expect(listTaskRuns).toHaveBeenLastCalledWith({ limit: PAGE_SIZE, offset: PAGE_SIZE });
+    expect(result.current.data!.pages.flat().map((r) => r.id)).toEqual(['run-1', 'run-2', 'run-3']);
+    // A short page is the last one — nothing left to ask for.
+    expect(result.current.hasNextPage).toBe(false);
+  });
+
+  it('refetches EVERY loaded page, so an earlier page cannot go stale', async () => {
+    // This is the whole reason the panel uses an infinite query instead of
+    // concatenating pages into component state: a run goes `running` →
+    // `completed` while it is on screen, and page one has to hear about it.
+    const { transport, store } = paginatedTransport([
+      createMockRun({ id: 'run-1', status: 'running' }),
+      createMockRun({ id: 'run-2', status: 'completed' }),
+      createMockRun({ id: 'run-3', status: 'completed' }),
+    ]);
+
+    const { result } = renderHook(() => useInfiniteTaskRuns({ limit: PAGE_SIZE }), {
+      wrapper: createInfiniteWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    act(() => {
+      void result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.data!.pages).toHaveLength(2));
+
+    store.runs = store.runs.map((run) =>
+      run.id === 'run-1' ? { ...run, status: 'completed' as const } : run
+    );
+    act(() => {
+      void result.current.refetch();
+    });
+
+    // The run on the FIRST page is the one that moved.
+    await waitFor(() =>
+      expect(result.current.data!.pages.flat().find((r) => r.id === 'run-1')!.status).toBe(
+        'completed'
+      )
+    );
+    // ...and page two is still there, not dropped by the refetch.
+    expect(result.current.data!.pages).toHaveLength(2);
+    expect(result.current.data!.pages.flat()).toHaveLength(3);
+  });
+
+  it('is skipped entirely when disabled', () => {
+    const { transport, listTaskRuns } = paginatedTransport();
+
+    renderHook(() => useInfiniteTaskRuns({ limit: PAGE_SIZE }, false), {
+      wrapper: createInfiniteWrapper(transport),
+    });
+
+    expect(listTaskRuns).not.toHaveBeenCalled();
+  });
+});
 
 describe('useTaskRuns', () => {
   beforeEach(() => {

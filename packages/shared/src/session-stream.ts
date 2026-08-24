@@ -259,14 +259,34 @@ const seqShape = { seq: z.number().int().nonnegative() } as const;
 
 /**
  * Shared interaction countdown fields preserved on the recoverable interaction
- * events. Both are server-assigned and required so a reconnecting client
- * resumes the countdown at the true offset without resetting it (ADR-0264).
+ * events. All three are server-assigned. `startedAt` and `remainingMs` are
+ * required, so a reconnecting client resumes the countdown at the true offset
+ * without resetting it (ADR-0264); `timeoutMs` is optional for the reasons on
+ * the field itself.
  */
 const interactionTimerShape = {
   /** Server timestamp (ms since epoch) when the interaction timer started. */
   startedAt: z.number(),
   /** Server-authoritative ms left before auto-deny, for drift-free resume. */
   remainingMs: z.number(),
+  /**
+   * The full budget this prompt was given, from the runtime that enforces the
+   * auto-deny. `remainingMs` says how much is left; this says of what — and it
+   * is what lets a card anchor its countdown to `startedAt + timeoutMs` rather
+   * than to whatever was left when the event happened to arrive. Without it a
+   * remounted card can only count from NOW, which restarts a countdown that
+   * should have kept decaying (DOR-1442).
+   *
+   * On ALL THREE interaction members, not just the approval: a question and an
+   * elicitation are answered on the same cards and carry the same deadline, and
+   * an asymmetry here is one the client has to paper over (DOR-810, DOR-1323).
+   *
+   * Optional: a replay of an event recorded before the field existed must still
+   * parse, and a runtime that declares no budget must not have one invented for
+   * it — an emission without it renders an ask with no visible deadline rather
+   * than a deadline nothing enforces.
+   */
+  timeoutMs: z.number().optional(),
 } as const;
 
 /**
@@ -318,7 +338,7 @@ export function isBlockingInteractionEvent<T extends { type: string }>(
  * monotonic stream. Each member carries an integer non-negative `seq`. The
  * three interaction members (`approval_required`, `question_prompt`,
  * `elicitation_prompt`) additionally carry the server-assigned
- * `startedAt`/`remainingMs` countdown fields (ADR-0264), reusing the
+ * `startedAt`/`remainingMs`/`timeoutMs` countdown fields (ADR-0264), reusing the
  * `PendingInteractionDTO` field shapes. Tool and turn payloads reuse the
  * existing StreamEvent shapes rather than introducing parallel types.
  *
@@ -352,14 +372,6 @@ export const SessionEventSchema = z
       type: z.literal('approval_required'),
       ...interactionTimerShape,
       id: z.string(),
-      /**
-       * The full budget this ask was given, from the runtime that enforces the
-       * auto-deny. The card's countdown and draining bar are both gated on it,
-       * so an emission without it renders an ask with no visible deadline
-       * (DOR-810). Optional: a replay of an event recorded before the field
-       * existed must still parse.
-       */
-      timeoutMs: z.number().optional(),
       toolName: z.string(),
       input: z.string(),
       title: z.string().optional(),
@@ -418,9 +430,11 @@ export const SessionEventSchema = z
     z.object({
       ...seqShape,
       type: z.literal('todo_update'),
-      action: z.enum(['create', 'update', 'snapshot']),
+      action: z.enum(['create', 'update', 'snapshot', 'id_assigned', 'remove']),
       task: TaskItemSchema,
       tasks: z.array(TaskItemSchema).optional(),
+      /** For `id_assigned`: the provisional key being replaced by `task.id`. */
+      previousId: z.string().optional(),
     }),
     // A subagent lifecycle update.
     z.object({

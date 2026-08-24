@@ -768,6 +768,10 @@ export class RoomStore {
             sessionId: entry.sessionId,
             cascadeRoot: entry.cascadeRoot,
             cascadeDepth: entry.cascadeDepth,
+            // Which turn wrote this, when a turn did — the repeat rule's unit
+            // (DOR-1434). Every writer that is not inside a turn omits it, and
+            // `null` is the honest record of "no turn behind this write".
+            dispatchId: entry.dispatchId ?? null,
             parentEntryId: entry.parentEntryId,
             threadRootEntryId: entry.threadRootEntryId,
             signature: null,
@@ -1595,14 +1599,32 @@ export class RoomStore {
   }
 
   /**
-   * How many entries each author already has in one cascade — the repeat rule's
-   * input.
+   * How many TURNS each author has already taken in one cascade — the repeat
+   * rule's input.
    *
    * A count per author rather than the distinct set the ancestry rule used to
-   * ask for (DOR-1428): the rule now fires at `maxTurnsPerAgentPerCascade`
-   * rather than at the first repeat, so "has this author spoken" is no longer
-   * the question. Same single indexed read of `idx_room_entries_cascade_root`,
+   * ask for (DOR-1428): the rule fires at `maxTurnsPerAgentPerCascade` rather
+   * than at the first repeat, so "has this author spoken" is no longer the
+   * question. Same single indexed read of `idx_room_entries_cascade_root`,
    * grouped instead of de-duplicated.
+   *
+   * **The unit is a turn, not a message** (DOR-1434, amending ADR 260823-000217,
+   * which shipped this as `COUNT(*)` and named the change as its own follow-up).
+   * One turn writes as many entries as it likes — progress notes through the
+   * rooms tool, then the answer the dispatcher delivers — and all of them carry
+   * that turn's `dispatch_id`, so they collapse to one. Counting rows instead
+   * made an agent that thinks out loud spend its allowance several times faster
+   * than one that answers in a single line, which is a tax on being legible.
+   *
+   * So the sum is two halves:
+   *
+   * - `COUNT(DISTINCT dispatch_id)` — one per marked turn. SQLite's `COUNT
+   *   DISTINCT` ignores nulls, so unmarked rows cannot leak in here.
+   * - `SUM(dispatch_id IS NULL)` — one per unmarked row. That is a person's
+   *   post (irrelevant: only agents are ever guard targets), an agent post with
+   *   no trigger behind it (already stamped at the depth ceiling, so its cascade
+   *   is spent anyway), and every row written before the column existed. Each
+   *   costing one preserves exactly what those rows shipped under.
    *
    * **Scoped to the room, which now includes its threads.** A thread reply
    * carries the channel's `room_id` (ADR 260728-022013), so a cascade that opens
@@ -1614,7 +1636,12 @@ export class RoomStore {
    */
   turnsByAuthorInCascade(roomId: string, cascadeRoot: string): Map<string, number> {
     const rows = this.db
-      .select({ authorId: roomEntries.authorId, turns: count() })
+      .select({
+        authorId: roomEntries.authorId,
+        // `IS NULL` yields 1/0 in SQLite, so the second half needs no CASE.
+        turns: sql<number>`COUNT(DISTINCT ${roomEntries.dispatchId})
+          + SUM(${roomEntries.dispatchId} IS NULL)`,
+      })
       .from(roomEntries)
       .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.cascadeRoot, cascadeRoot)))
       .groupBy(roomEntries.authorId)

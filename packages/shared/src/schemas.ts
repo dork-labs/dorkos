@@ -389,6 +389,26 @@ export const SessionSchema = z
 export type Session = z.infer<typeof SessionSchema>;
 
 /**
+ * What `PATCH /api/sessions/:id` answers with: the session as it now stands,
+ * plus — on a `202` — the one thing the session itself cannot say.
+ *
+ * The extra field is deliberately NOT part of {@link SessionSchema}. It is a
+ * fact about one write at one moment, not a property of the session, and a
+ * session carrying it around would go stale the instant the next turn started.
+ */
+export const SessionUpdateResponseSchema = SessionSchema.extend({
+  /**
+   * The stricter permission mode is saved, but the reply already in flight
+   * keeps the looser one it started under — the new mode applies from the next
+   * reply. Present only on a `202`, and only for a tightening.
+   */
+  permissionModePendingUntilNextTurn: z.literal(true).optional(),
+}).openapi('SessionUpdateResponse');
+
+/** Inferred type for {@link SessionUpdateResponseSchema}. */
+export type SessionUpdateResponse = z.infer<typeof SessionUpdateResponseSchema>;
+
+/**
  * The mutable per-session settings an operator can change. Defined once and
  * reused for the update request, the runtime `MessageOpts`/`SessionOpts`, and
  * the persisted `session_metadata` columns (ADR-0260). An omitted field means
@@ -512,9 +532,15 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  *   stage still landed. Distinct from `unsupported`, which claimed the adapter
  *   could not stage at all and so contradicted its own declared capability on
  *   every default claude-code install (DOR-1307).
- * - `no-open-turn` — there is no turn this caller may join: it ended between the
- *   request and the delivery, its input stream had closed, or a DIFFERENT client
- *   owns the live turn. The message waits in the queue instead.
+ * - `turn-owned-elsewhere` — a turn IS open (checked against the session's own
+ *   projection, never assumed) and a DIFFERENT caller started it, so this sender
+ *   may not write into it: a steer is a write, gated by the same lock a send
+ *   passes. The caller need not be another window — a room, an MCP client and an
+ *   embedded surface all hold the lock under their own ids — so nothing built on
+ *   this may name one. The message waits in the queue instead. It replaced
+ *   `no-open-turn`, which folded this together with "the turn had ended" and so
+ *   let the cockpit tell a person their task had finished while it was visibly
+ *   running (DOR-1315).
  * - `pending-interaction` — the turn is waiting on a person (a permission ask,
  *   a question), and delivering into that would answer something nobody was
  *   asked.
@@ -525,7 +551,7 @@ export const DispositionDowngradeReasonSchema = z
     'session-idle',
     'not-steerable',
     'not-stageable',
-    'no-open-turn',
+    'turn-owned-elsewhere',
     'pending-interaction',
   ])
   .openapi('DispositionDowngradeReason');
@@ -1323,6 +1349,46 @@ export const TerminalReasonSchema = z
 
 export type TerminalReason = z.infer<typeof TerminalReasonSchema>;
 
+/**
+ * The terminal reasons that mean a turn was CUT SHORT rather than finishing or
+ * failing — the SDK's two abort reasons, plus the `interrupted` DorkOS supplies
+ * itself when a stop killed the process before the SDK could name one.
+ *
+ * **One source, because two readings of one turn may not disagree.** The
+ * session projector settles these as the `interrupted` lifecycle, and the
+ * claude-code result mapper uses them to decide whether a non-success `result`
+ * is a failure or a stop. Those two lived as byte-identical hand-kept copies in
+ * different service domains until DOR-1320's review; a set that drifts would
+ * mean a turn shown as stopped whose error frame says it crashed.
+ *
+ * **Shape, never intent.** These say a turn was aborted, NOT who aborted it.
+ * The CLI collapses nine distinct abort causes — an operator interrupt, a
+ * shutdown, an API refusal fallback, an unlabelled internal teardown — into
+ * these same two strings, and the distinction never reaches the SDK surface. So
+ * a caller that needs "a PERSON stopped this" must AND this with its own record
+ * of having asked (see `claude-code/agent-types.ts`, `stoppedQueries`).
+ */
+export const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'interrupted',
+  'aborted_streaming',
+  'aborted_tools',
+]);
+
+/**
+ * Whether a terminal reason says the turn was cut short rather than finishing
+ * or failing.
+ *
+ * Read defensively rather than by narrowing: {@link TerminalReasonSchema} is a
+ * forward-open union, so an unfamiliar value is simply not an abort. See
+ * {@link INTERRUPTED_TERMINAL_REASONS} for why this answers shape and never
+ * intent.
+ *
+ * @param terminalReason - The reason a turn ended, if it carried one
+ */
+export function isInterruptedTerminalReason(terminalReason: string | undefined): boolean {
+  return terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason);
+}
+
 // === Runtime-neutral Usage / Cost Status ===
 
 /** Utilization health for a subscription window (drives amber/red styling). */
@@ -1450,9 +1516,15 @@ export type TaskItem = z.infer<typeof TaskItemSchema>;
 
 export const TaskUpdateEventSchema = z
   .object({
-    action: z.enum(['create', 'update', 'snapshot']),
+    action: z.enum(['create', 'update', 'snapshot', 'id_assigned', 'remove']),
     task: TaskItemSchema,
     tasks: z.array(TaskItemSchema).optional(),
+    /**
+     * For `id_assigned`: the provisional key (`pending:<toolUseId>`) being
+     * replaced by `task.id`, the SDK's confirmed real id. Unused by every
+     * other action.
+     */
+    previousId: z.string().optional(),
   })
   .openapi('TaskUpdateEvent');
 
@@ -2288,6 +2360,16 @@ export const ElicitationPartSchema = z
      * resetting. Client-only — never serialized to the transcript.
      */
     remainingMs: z.number().optional(),
+    /**
+     * The full budget the prompt was given — what `remainingMs` is a remainder
+     * OF, so a card can anchor to `startedAt + timeoutMs` instead of counting
+     * from whenever it was built. Carried for the same reason the tool-call part
+     * carries it, and kept in step with it: the wire member carries the budget
+     * for all three interaction kinds (DOR-1442), and a fold that dropped it
+     * here would make the elicitation the one kind whose deadline stopped at the
+     * client.
+     */
+    timeoutMs: z.number().optional(),
   })
   .openapi('ElicitationPart');
 
@@ -3583,7 +3665,7 @@ export const ServerConfigSchema = z
         }),
         maxTurnsPerAgentPerCascade: z.number().int().optional().openapi({
           description:
-            'How many of those replies any ONE agent may send in a single back-and-forth, counted as messages it posted. Writable from Settings',
+            'How many TURNS any ONE agent may take in a single back-and-forth. Progress notes it posts mid-turn belong to that turn and do not count extra; posts with no turn behind them count one each. Writable from Settings',
         }),
         maxAutomaticTurnsPerRoomPerHour: z.number().int().optional().openapi({
           description: 'The most automatic replies any one room may run in an hour',

@@ -12,7 +12,14 @@
  */
 
 // Schemas
-export { SkillFrontmatterSchema, SkillKindSchema, SkillNameSchema } from './schema.js';
+export {
+  SkillFrontmatterSchema,
+  SkillKindSchema,
+  SkillNameSchema,
+  isUserInvocable,
+  isModelInvocable,
+  readYamlBoolean,
+} from './schema.js';
 export type { SkillFrontmatter, SkillKind } from './schema.js';
 
 export { TaskFrontmatterSchema } from './task-schema.js';

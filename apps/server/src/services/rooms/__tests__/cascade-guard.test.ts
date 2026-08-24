@@ -9,6 +9,7 @@
  * only stand-in is the turn runner, whose alternative is a model call.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Db } from '@dorkos/db';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { deriveCascade, evaluateCascade } from '../cascade-guard.js';
 import { buildCascadeNotice } from '../notices/notice-copy.js';
@@ -34,6 +35,23 @@ const alwaysAgents = agentLookupFor({
  * the two agree; it could never prove they agree on the right number.
  */
 const MAX_AGENT_DEPTH = 3;
+
+/**
+ * One author's `dispatch_id` column in one room, oldest first.
+ *
+ * Read straight off the table because the column deliberately does not ride the
+ * wire — `toEntry` drops it, so a `RoomEntry` cannot answer this and a test that
+ * inferred the stamp from a COUNT could not tell "stamped with the wrong turn"
+ * from "stamped with the right one".
+ */
+function dispatchIdsIn(db: Db, roomId: string, authorId: string): Array<string | null> {
+  return (db as unknown as { $client: import('better-sqlite3').Database }).$client
+    .prepare(
+      'SELECT dispatch_id FROM room_entries WHERE room_id = ? AND author_id = ? ORDER BY seq'
+    )
+    .all(roomId, authorId)
+    .map((row) => (row as { dispatch_id: string | null }).dispatch_id);
+}
 
 describe('cascade guard, wired', () => {
   let service: RoomService;
@@ -298,6 +316,164 @@ describe('cascade guard, wired', () => {
       await service.triggersIdle();
     }
     expect(runner.turns).toHaveLength(0);
+  });
+
+  it('charges a turn that narrates its work one turn, not one per message', async () => {
+    // DOR-1434, wired: an agent posts three progress notes while it works and
+    // then answers, so the cascade gains four entries from one model call. The
+    // shipped `COUNT(*)` read that as four of its allowance, which made an agent
+    // that thinks out loud run out four times faster than one that answers in a
+    // single line — a tax on being legible about what it is doing.
+    //
+    // Only Ana answers here: a second `always` agent would ping-pong, and the
+    // thing being measured is one agent's own spend.
+    const turns: RecordedTurn[] = [];
+    let postAsAgent: (roomId: string, authorId: string, text: string) => void = () => {};
+
+    const narrating: ScriptedTurnRunner = {
+      turns,
+      interrupted: [],
+      interrupt: () => Promise.resolve(),
+      run(req) {
+        turns.push({
+          roomId: req.room.id,
+          authorId: req.authorId,
+          agentPath: req.agentPath,
+          sessionId: req.sessionId,
+          prompt: req.entry.body.text,
+          roomContext: req.roomContext,
+          attachmentProjection: req.attachmentProjection,
+        });
+        // Written mid-turn through the ordinary post path — the shape of an
+        // agent calling `POST /api/rooms/:id/entries` while it answers, which
+        // carries no provenance of its own and inherits the turn's.
+        for (const note of ['looking', 'reading the migration', 'found it']) {
+          postAsAgent(req.room.id, req.authorId, note);
+        }
+        // And the answer the dispatcher posts for it, which is the fourth entry.
+        return Promise.resolve({ sessionId: 'session-1', text: 'the migration broke it' });
+      },
+    };
+
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: narrating,
+      maxAgentDepth: MAX_AGENT_DEPTH,
+      maxTurnsPerAgentPerCascade: 3,
+    });
+    postAsAgent = (roomId, authorId, text) => {
+      harness.service.post(roomId, { authorId, text });
+    };
+    const quiet = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      harness.human
+    );
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    harness.service.updateMembership(quiet.id, harness.human, anaId, 'always');
+
+    const seed = harness.service.post(quiet.id, { authorId: harness.human, text: 'what broke?' });
+    await harness.service.triggersIdle();
+
+    const log = harness.service.listEntries(quiet.id, harness.human, { limit: 100 });
+    const mine = log.filter((entry) => entry.authorId === anaId);
+    // Four entries — the count is not being made true by writing less.
+    expect(mine.map((entry) => entry.body.text)).toEqual([
+      'looking',
+      'reading the migration',
+      'found it',
+      'the migration broke it',
+    ]);
+    expect(mine.every((entry) => entry.cascadeRoot === seed.id)).toBe(true);
+    // One turn. Under message counting this was four, and Ana's three would
+    // already be spent.
+    expect(harness.service.turnsByAuthorInCascade(quiet.id, seed.id).get(anaId)).toBe(1);
+    // One model call, and nothing was refused, so the room said nothing about
+    // limits either.
+    expect(turns).toHaveLength(1);
+    expect(log.filter((entry) => entry.kind === 'notice')).toEqual([]);
+  });
+
+  it('stamps the turn only in the room that triggered it', async () => {
+    // The keying, pinned. `dispatchFor` is `(room, agent)` — not "this author's
+    // deepest claim", which is how the CASCADE is attributed next door in
+    // `deepestClaimOf`. One turn writing into two rooms is what tells the two
+    // apart: an author-keyed lookup would carry this turn's id into the second
+    // room, where nothing asked for it.
+    //
+    // The second room's null is the ACCEPTED behaviour, not a gap (see the
+    // DOR-1434 amendment on ADR 260823-000217): a note dropped into a room
+    // mid-turn is not part of any turn that room asked for, so it spends one of
+    // that room's messages.
+    const turns: RecordedTurn[] = [];
+    let postAsAgent: (roomId: string, authorId: string, text: string) => void = () => {};
+    let elsewhereId = '';
+
+    const twoRooms: ScriptedTurnRunner = {
+      turns,
+      interrupted: [],
+      interrupt: () => Promise.resolve(),
+      run(req) {
+        turns.push({
+          roomId: req.room.id,
+          authorId: req.authorId,
+          agentPath: req.agentPath,
+          sessionId: req.sessionId,
+          prompt: req.entry.body.text,
+          roomContext: req.roomContext,
+          attachmentProjection: req.attachmentProjection,
+        });
+        // Once only: this turn runs in the first room, and the trigger its answer
+        // sets off must not recurse.
+        if (turns.length === 1) {
+          postAsAgent(req.room.id, req.authorId, 'looking here');
+          postAsAgent(elsewhereId, req.authorId, 'heads up, working on the build');
+        }
+        return Promise.resolve({ sessionId: 'session-1', text: 'the migration broke it' });
+      },
+    };
+
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: twoRooms,
+      maxAgentDepth: MAX_AGENT_DEPTH,
+      maxTurnsPerAgentPerCascade: 5,
+    });
+    postAsAgent = (roomId, authorId, text) => {
+      harness.service.post(roomId, { authorId, text });
+    };
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    const rooms = (['Backend', 'Ops'] as const).map((title) => {
+      const made = harness.service.createRoom(
+        { kind: 'channel', title, members: [], agentPaths: ['/agents/ana'] },
+        harness.human
+      );
+      harness.service.updateMembership(made.id, harness.human, anaId, 'always');
+      return made;
+    });
+    const [triggering, elsewhere] = rooms;
+    elsewhereId = elsewhere.id;
+
+    const seed = harness.service.post(triggering.id, {
+      authorId: harness.human,
+      text: 'what broke?',
+    });
+    await harness.service.triggersIdle();
+
+    // In the triggering room: the note and the answer are one turn.
+    expect(dispatchIdsIn(harness.db, triggering.id, anaId)).toEqual([
+      expect.stringMatching(/^dsp_/),
+      expect.stringMatching(/^dsp_/),
+    ]);
+    expect(new Set(dispatchIdsIn(harness.db, triggering.id, anaId)).size).toBe(1);
+    expect(harness.service.turnsByAuthorInCascade(triggering.id, seed.id).get(anaId)).toBe(1);
+
+    // In the other room: unstamped, and one message of its own allowance. If the
+    // lookup were author-keyed this would carry the id asserted above.
+    const [aside] = harness.service.listEntries(elsewhere.id, harness.human, { limit: 10 });
+    expect(dispatchIdsIn(harness.db, elsewhere.id, anaId)).toEqual([null]);
+    expect(harness.service.turnsByAuthorInCascade(elsewhere.id, aside.cascadeRoot).get(anaId)).toBe(
+      1
+    );
   });
 
   it('still lets the operator start a conversation the agents answer', async () => {

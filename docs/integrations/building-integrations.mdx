@@ -37,7 +37,14 @@ interface Transport {
   // Sessions
   listSessions(cwd?: string): Promise<SessionListResponse>;
   getSession(id: string, cwd?: string): Promise<Session>;
-  updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
+  updateSession(
+    id: string,
+    opts: UpdateSessionRequest,
+    cwd?: string
+  ): Promise<SessionUpdateResponse>;
+  // SessionUpdateResponse is the session, plus `permissionModePendingUntilNextTurn`
+  // when a STRICTER permission mode was saved but could not reach the reply that
+  // is already running — that reply keeps the mode it started under.
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
   getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot>;
   subscribeSession(sessionId, sinceCursor?, cwd?, signal?): AsyncIterable<SessionEvent>;

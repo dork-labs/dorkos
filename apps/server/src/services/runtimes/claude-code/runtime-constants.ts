@@ -101,7 +101,8 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
-        promise: 'Runs everything without asking, including outside this project.',
+        promise:
+          'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
       },
       {
         // Research preview, and the middle stop's intelligence rather than a

@@ -316,7 +316,7 @@ export const CONFIG_WRITE_POLICY = {
   // strictly more than raising any single number could do.
   'rooms.turnLimitsEnabled': 'operator-only',
   'rooms.maxAgentDepth': 'operator-only',
-  // How many of those replies one agent may run in an exchange. Operator-only
+  // How many TURNS one agent may take in an exchange. Operator-only
   // for exactly the reason above it: an agent that could raise this is an agent
   // voting itself more turns in the conversation it is already in.
   'rooms.maxTurnsPerAgentPerCascade': 'operator-only',

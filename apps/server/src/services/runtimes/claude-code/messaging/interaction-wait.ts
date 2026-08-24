@@ -382,9 +382,33 @@ export function elicitationTimeoutNotice(serverName: string, waited: string): st
  * scheduled task, and only the scheduler passes this flag. The difference is
  * whether anybody can still answer: a scheduled run's prompt reaches nobody,
  * while a bridged agent's prompt is listed fleet-wide and is answerable from
- * the cockpit by the same person the room is talking to. It does NOT reach
- * Slack or Telegram (spec "What is not done" #1), so a bridged Ask parks
- * quietly and is answerable in the cockpit only.
+ * the cockpit by the same person the room is talking to.
+ *
+ * **Many of them are answerable from the chat itself, and this used to claim
+ * otherwise** (DOR-1440). There are two relay paths and they carry different
+ * rules, which is what the old "cockpit only" sentence flattened away:
+ *
+ * - **Direct-bound** — an agent addressed over the relay. Its
+ *   `approval_required` is published straight to the envelope's `replyTo`
+ *   (`relay/adapters/claude-code/publish.ts`), enriched with the agent and
+ *   session ids so the adapter can encode them in button values; Slack and
+ *   Telegram render real Approve/Deny buttons for it. There is no chat-shape
+ *   restriction at all — a group channel gets the card — and the approver
+ *   allowlist is enforced at the CLICK (`mayApprove` in each adapter), not at
+ *   the send.
+ * - **Room-bound** — an agent answering for a room through a bridge.
+ *   `chat-bridge/ask-card.ts` sends the same card, under much tighter rules,
+ *   because that card carries the Ask's DETAIL into a chat DorkOS does not own
+ *   the roster of: only an `approval`, only into a live one-to-one DM whose
+ *   single outside member arrived through THIS adapter instance and is on its
+ *   approver allowlist (`chat-bridge/ask-audience.ts`), and with `initiate`
+ *   provenance so an operator who switched that off receives none. Everything
+ *   else — a group chat, a question, an elicitation, a card the consent gate
+ *   refuses — gets only the room's waiting sentence and is answered in the
+ *   cockpit.
+ *
+ * Either way the wait is the same wait; what differs is how many places can end
+ * it.
  *
  * @param session - The session holding the prompt.
  */

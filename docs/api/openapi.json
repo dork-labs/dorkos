@@ -1139,6 +1139,9 @@
           },
           "remainingMs": {
             "type": "number"
+          },
+          "timeoutMs": {
+            "type": "number"
           }
         },
         "required": [
@@ -1655,11 +1658,11 @@
               "remainingMs": {
                 "type": "number"
               },
-              "id": {
-                "type": "string"
-              },
               "timeoutMs": {
                 "type": "number"
+              },
+              "id": {
+                "type": "string"
               },
               "toolName": {
                 "type": "string"
@@ -1716,6 +1719,9 @@
               "remainingMs": {
                 "type": "number"
               },
+              "timeoutMs": {
+                "type": "number"
+              },
               "id": {
                 "type": "string"
               },
@@ -1752,6 +1758,9 @@
                 "type": "number"
               },
               "remainingMs": {
+                "type": "number"
+              },
+              "timeoutMs": {
                 "type": "number"
               },
               "id": {
@@ -1890,7 +1899,9 @@
                 "enum": [
                   "create",
                   "update",
-                  "snapshot"
+                  "snapshot",
+                  "id_assigned",
+                  "remove"
                 ]
               },
               "task": {
@@ -1901,6 +1912,9 @@
                 "items": {
                   "$ref": "#/components/schemas/TaskItem"
                 }
+              },
+              "previousId": {
+                "type": "string"
               }
             },
             "required": [
@@ -3606,7 +3620,7 @@
           "session-idle",
           "not-steerable",
           "not-stageable",
-          "no-open-turn",
+          "turn-owned-elsewhere",
           "pending-interaction"
         ]
       },
@@ -3709,6 +3723,24 @@
         },
         "required": [
           "toolName"
+        ]
+      },
+      "SessionUpdateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Session"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "permissionModePendingUntilNextTurn": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            }
+          }
         ]
       },
       "UpdateSessionRequest": {
@@ -6638,7 +6670,7 @@
             ],
             "minimum": 1,
             "maximum": 100,
-            "description": "How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`."
+            "description": "How many TURNS any ONE agent may take here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`. Progress notes an agent posts mid-turn do not count extra."
           },
           "maxAutoTurnsPerHour": {
             "type": [
@@ -7060,7 +7092,7 @@
             ],
             "minimum": 1,
             "maximum": 100,
-            "description": "How many of those replies any ONE agent may run here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`."
+            "description": "How many TURNS any ONE agent may take here, or `null` to inherit `rooms.maxTurnsPerAgentPerCascade`. Progress notes an agent posts mid-turn do not count extra."
           },
           "maxAutoTurnsPerHour": {
             "type": [
@@ -9243,7 +9275,7 @@
           "Sessions"
         ],
         "summary": "Update session settings",
-        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.",
+        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.",
         "parameters": [
           {
             "schema": {
@@ -9271,6 +9303,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Saved, but a stricter permission mode did not reach the reply already in flight — it applies from the next reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUpdateResponse"
                 }
               }
             }
@@ -9672,11 +9714,11 @@
                         "remainingMs": {
                           "type": "number"
                         },
-                        "id": {
-                          "type": "string"
-                        },
                         "timeoutMs": {
                           "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
                         },
                         "toolName": {
                           "type": "string"
@@ -9733,6 +9775,9 @@
                         "remainingMs": {
                           "type": "number"
                         },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -9769,6 +9814,9 @@
                           "type": "number"
                         },
                         "remainingMs": {
+                          "type": "number"
+                        },
+                        "timeoutMs": {
                           "type": "number"
                         },
                         "id": {
@@ -9907,7 +9955,9 @@
                           "enum": [
                             "create",
                             "update",
-                            "snapshot"
+                            "snapshot",
+                            "id_assigned",
+                            "remove"
                           ]
                         },
                         "task": {
@@ -9918,6 +9968,9 @@
                           "items": {
                             "$ref": "#/components/schemas/TaskItem"
                           }
+                        },
+                        "previousId": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -11435,7 +11488,7 @@
                                         "trust",
                                         "working"
                                       ],
-                                      "description": "Which question this mode answers: `trust` (how much the agent may do without asking — the modes the three dial positions select between) or `working` (how it goes about the work, whatever the trust level, e.g. Claude’s `plan`). **Absent means `trust`**, so a runtime that says nothing gets the common answer and keeps its place on the dial. Declare `working` only for a mode that is not a point on the trust axis at all."
+                                      "description": "Which question this mode answers: `trust` (how much the agent may do before it checks with you — the modes the three dial positions select between) or `working` (how it goes about the work, whatever the trust level, e.g. Claude’s `plan`). **Absent means `trust`**, so a runtime that says nothing gets the common answer and keeps its place on the dial. Declare `working` only for a mode that is not a point on the trust axis at all."
                                     },
                                     "native": {
                                       "type": "string",

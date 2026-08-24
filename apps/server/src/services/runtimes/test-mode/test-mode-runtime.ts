@@ -13,6 +13,7 @@ import type {
   McpAppServerConnection,
   InteractionAnswerOptions,
   ToolDecisionOptions,
+  SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -159,11 +160,13 @@ export class TestModeRuntime implements AgentRuntime {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): boolean {
-    return this.registry.applySettings(sessionId, {
-      ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-    });
+  ): SessionUpdateResult {
+    return {
+      updated: this.registry.applySettings(sessionId, {
+        ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
+        ...(opts.model !== undefined ? { model: opts.model } : {}),
+      }),
+    };
   }
 
   async *sendMessage(

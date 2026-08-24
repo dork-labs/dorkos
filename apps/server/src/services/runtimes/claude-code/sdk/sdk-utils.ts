@@ -131,6 +131,38 @@ export interface HeldUserPrompt {
    * delivers it at its next opportunity within the live turn; messages arrive in
    * the order they were pushed.
    *
+   * **"Next opportunity" is a tool boundary, and a turn may never reach one.**
+   * The CLI's only mid-turn fold site sits AFTER tool execution: a turn that
+   * calls tools folds the pushed message in at the next boundary and answers it
+   * inside the same `result`, which is what a person sees as a steer cutting in.
+   * A turn that writes prose and stops never reaches that site — its no-tool-use
+   * branch returns before it — so the message waits out the whole turn and runs
+   * as its own afterwards. Measured live (DOR-1315, 2026-08-23): 11/11 inline
+   * into tool-using turns, 0/2 into text-only ones.
+   *
+   * That is CLI BEHAVIOR pinned to `@anthropic-ai/claude-agent-sdk@0.3.224`, read
+   * out of the bundled binary — the published types do not promise it either way
+   * (the closest is the `isFoldInFlight` aside at `sdk.d.ts:3618`). It
+   * corroborates the independent binary read recorded in
+   * `messaging/phantom-cancellation.ts`, but treat it as version-pinned
+   * observation, not contract: verify by execution before building on it.
+   *
+   * Two routes into a tool-free turn EXIST and were rejected, so nobody has to
+   * rediscover them:
+   *
+   * - **A `Stop` hook returning `additionalContext`** (`sdk.d.ts:7069-7075`):
+   *   non-error feedback delivered to the model with the conversation continuing,
+   *   so the model acts on it inside the same `query()`. DorkOS registers
+   *   `PreToolUse` only (`messaging/launch-resolver.ts`) and no `Stop` hook
+   *   anywhere. Rejected here only as out of scope for a receipt fix — it is the
+   *   real candidate for making a text-only turn steerable, and wants its own
+   *   ticket rather than a footnote.
+   * - **`interrupt()` then resend**, already plumbed (`claude-code-runtime.ts`,
+   *   `sessions/bounded-control.ts`). Rejected on behavior: it truncates the
+   *   reply mid-sentence and writes `[Request interrupted by user]` into the
+   *   transcript (`sessions/tool-result-outcome.ts`), which is a different
+   *   product than cutting in.
+   *
    * @param content - The message text, exactly as it will reach the model.
    * @param messageId - The server-minted correlation id, stamped as the SDK
    *   message's `uuid`. The SDK echoes it back on the `result` it answers with

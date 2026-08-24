@@ -64,7 +64,12 @@ export function useTodoEvents(
     for (const event of inProgressTurn) {
       if (event.seq <= mark.seen) continue;
       if (event.type === 'todo_update') {
-        onTaskEventRef.current?.({ action: event.action, task: event.task, tasks: event.tasks });
+        onTaskEventRef.current?.({
+          action: event.action,
+          task: event.task,
+          tasks: event.tasks,
+          previousId: event.previousId,
+        });
       }
       mark.seen = event.seq;
     }

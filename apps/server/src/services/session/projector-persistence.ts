@@ -55,11 +55,51 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * exactly as long as the browser tab, and reopening the conversation showed a
  * tool with no sign it had ever been gated. A handful of bytes per decision,
  * against the one record a person most wants when reviewing what an agent did.
+ *
+ * The three PROMPT events ride along for the mirror-image reason (DOR-1439): a
+ * resolution is only ever written for an ask that ended, so an ask still parked
+ * when the process died left no row at all and the tool came back looking as
+ * though nobody had ever been asked. The prompt row is what
+ * {@link EAGERLY_RECORDED_EVENT_TYPES} makes durable in time to matter, and what
+ * the boot sweep in `expire-orphaned-asks` reads to close the ask out.
  */
 export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_start',
   'turn_end',
   'error',
+  'approval_required',
+  'question_prompt',
+  'elicitation_prompt',
+  'interaction_resolved',
+]);
+
+/**
+ * Event types written to the store the INSTANT they are ingested, rather than
+ * waiting for their turn to end.
+ *
+ * Everything else is flushed turn-granularly on `turn_end`, which is the right
+ * trade for history: one transaction per turn instead of one per delta. An ask
+ * cannot afford it. A turn parked on an ask is a turn that may never reach a
+ * `turn_end` — the person walks away, the four-hour ceiling outlives the
+ * process, or the operator restarts the server — and a flush that never runs
+ * writes nothing. That is exactly the case DOR-1439 reported: after a restart
+ * the parked Ask was simply gone, from the fleet-wide list (in memory, so empty)
+ * AND from the transcript (never written), leaving a gated tool with no sign it
+ * had ever been asked about.
+ *
+ * So both halves of an ask are eager. The PROMPT, so an unanswered ask exists on
+ * disk; and the RESOLUTION, so an ask that WAS answered inside the same turn
+ * cannot be mistaken for an unanswered one by the boot sweep — without it, every
+ * answered-then-interrupted ask would be re-closed as expired over the top of a
+ * real decision.
+ *
+ * Cheap by construction: at most two extra transactions per ask, on a path that
+ * has just stopped to wait for a human being.
+ */
+export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'approval_required',
+  'question_prompt',
+  'elicitation_prompt',
   'interaction_resolved',
 ]);
 

@@ -8,6 +8,7 @@
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 const optIn = vi.hoisted(() => ({ persistentSession: false }));
@@ -133,6 +134,22 @@ function spokenText(events: StreamEvent[]): string[] {
   return events.flatMap((event) =>
     event.type === 'text_delta' ? [(event.data as { text: string }).text] : []
   );
+}
+
+/**
+ * The `result` the CLI sends for a turn that was CUT SHORT — an error subtype
+ * with an abort terminal reason. The CLI produces this shape for a stop it
+ * acked AND for aborts nobody asked for, which is why the error-frame
+ * suppression needs DorkOS's own stop record too (DOR-1320).
+ */
+function abortedResult(userMessageUuid: string): SDKMessage {
+  return {
+    ...(resultMessage(userMessageUuid) as unknown as Record<string, unknown>),
+    subtype: 'error_during_execution',
+    is_error: true,
+    terminal_reason: 'aborted_streaming',
+    errors: ['[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null'],
+  } as unknown as SDKMessage;
 }
 
 /** Run one turn to completion and collect everything it said. */
@@ -490,6 +507,41 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     // And the pump reports the crash honestly, the same as a running Stop whose
     // interrupt rejected and escalated to close.
     expect(runtime.getSessionWarmth(sessionId)).toBe('crashed');
+  });
+
+  // DOR-1320. The stop RECORD is a WeakSet keyed by query. On the resume path
+  // one query is one turn, so it is per-turn for free; a pump runs many turns
+  // on ONE query object, so without a per-turn clear a single Stop marks every
+  // later turn on that warm process as stopped — and the error-frame
+  // suppression it gates would swallow a genuine failure turns later.
+  it('does not let one turn Stop suppress a LATER turn failure', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    // Turn 2: the person stops it, and the CLI acks and winds down.
+    const stopped = turn(sessionId, 'stop this one');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    process.emit(abortedResult(process.received[1]!));
+    const stoppedEvents = await stopped;
+    expect(
+      stoppedEvents.some((e) => e.type === 'error'),
+      'the stopped turn kept an error frame'
+    ).toBe(false);
+
+    // Turn 3 on the SAME warm process genuinely fails, and its `result` carries
+    // the same abort shape the CLI reuses. Nobody stopped this one.
+    const failing = turn(sessionId, 'this one really breaks');
+    await vi.waitFor(() => expect(process.received).toHaveLength(3));
+    process.emit(abortedResult(process.received[2]!));
+    const failedEvents = await failing;
+
+    expect(
+      failedEvents.some((e) => e.type === 'error'),
+      'a Stop two turns ago silenced this failure'
+    ).toBe(true);
   });
 });
 

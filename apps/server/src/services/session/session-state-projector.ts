@@ -38,6 +38,7 @@ import type {
   TaskItem,
 } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
+import { INTERRUPTED_TERMINAL_REASONS } from '@dorkos/shared/schemas';
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
@@ -48,6 +49,7 @@ import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
 import {
+  EAGERLY_RECORDED_EVENT_TYPES,
   RECORDED_EVENT_TYPES,
   type ProjectorPersistence,
   type ProjectorPersistenceMode,
@@ -194,17 +196,10 @@ const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
  */
 const TERMINAL_REASON_ERROR = 'error';
 
-/**
- * `turn_end.terminalReason` values that mean the turn was interrupted/aborted
- * rather than completing. Includes the explicit `interrupted` plus the SDK's
- * abort reasons (`TerminalReason`), so an aborted turn settles to the
- * `interrupted` lifecycle (not idle) and a cold hydrate shows it was cut short.
- */
-const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
-  'interrupted',
-  'aborted_streaming',
-  'aborted_tools',
-]);
+// `INTERRUPTED_TERMINAL_REASONS` — the reasons that settle a turn to the
+// `interrupted` lifecycle rather than idle — is imported from `@dorkos/shared`,
+// which is also where the claude-code result mapper reads it. It used to be a
+// hand-kept copy in each place (DOR-1320 review).
 
 /** A fully-zeroed {@link SessionContextUsage}; the base for the first delta. */
 const ZERO_CONTEXT_USAGE: SessionContextUsage = {
@@ -611,6 +606,10 @@ export class SessionStateProjector {
     // persistence failure only forfeits cross-restart durability, never live
     // streaming.
     if (turnToFlush !== null) this.flushTurn(turnToFlush);
+    // An ask does not wait for its turn to end to become durable — the turn it
+    // parked may never end at all (DOR-1439). Same placement and same reason as
+    // the turn flush above: the event has already reached every live subscriber.
+    if (EAGERLY_RECORDED_EVENT_TYPES.has(event.type)) this.flushTurn([event]);
     // Three ways this event can be worth telling the fleet about, in the order
     // they take precedence:
     //
@@ -767,6 +766,12 @@ export class SessionStateProjector {
    * In `'record'` mode the turn is narrowed to {@link RECORDED_EVENT_TYPES}
    * first, so the row count per turn is a constant rather than a function of how
    * much the model said.
+   *
+   * Also called with a SINGLE event, by the eager-record path in
+   * {@link SessionStateProjector.ingest} — an ask writes itself down before its
+   * turn ends, because the turn may never end (DOR-1439). Idempotent either way:
+   * `appendTurn` is `INSERT OR IGNORE` on `(session_id, seq)`, so the turn flush
+   * that later re-offers the same event writes nothing twice.
    *
    * Rows key by the LIVE {@link sessionId} — see the {@link ProjectorPersistence}
    * rekey note.

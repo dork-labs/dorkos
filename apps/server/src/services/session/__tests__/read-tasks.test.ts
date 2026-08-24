@@ -28,6 +28,31 @@ import fs from 'fs/promises';
 
 const mockFs = vi.mocked(fs);
 
+/** Build an `assistant` JSONL line with a single tool_use block. */
+function toolUseLine(name: string, id: string, input: Record<string, unknown>): string {
+  return JSON.stringify({
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', name, id, input }] },
+  });
+}
+
+/** Build a `user` JSONL line with a single tool_result block (the SDK's real shape). */
+function toolResultLine(toolUseId: string, content: string, isError = false): string {
+  return JSON.stringify({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content,
+          ...(isError ? { is_error: true } : {}),
+        },
+      ],
+    },
+  });
+}
+
 describe('TranscriptReader.readTasks', () => {
   let reader: TranscriptReader;
   const vaultRoot = '/test/vault';
@@ -50,38 +75,17 @@ describe('TranscriptReader.readTasks', () => {
     expect(tasks).toEqual([]);
   });
 
-  it('parses TaskCreate tool_use blocks', async () => {
+  it('parses TaskCreate once its tool_result confirms the real SDK id (real-shaped transcript)', async () => {
+    // Drawn from a real recorded transcript's TaskCreate/tool_result pair shape.
     const lines = [
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'TaskCreate',
-              id: 'tc1',
-              input: {
-                subject: 'First task',
-                description: 'Do something',
-                activeForm: 'Doing something',
-              },
-            },
-          ],
-        },
+      toolUseLine('TaskCreate', 'toolu_01L95htozh6DZGjbiQFWL3BD', {
+        subject: 'First task',
+        description: 'Do something',
+        activeForm: 'Doing something',
       }),
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'TaskCreate',
-              id: 'tc2',
-              input: { subject: 'Second task' },
-            },
-          ],
-        },
-      }),
+      toolResultLine('toolu_01L95htozh6DZGjbiQFWL3BD', 'Task #1 created successfully: First task'),
+      toolUseLine('TaskCreate', 'toolu_01UTa6VafF6MD1phwbhw4eAT', { subject: 'Second task' }),
+      toolResultLine('toolu_01UTa6VafF6MD1phwbhw4eAT', 'Task #2 created successfully: Second task'),
     ];
 
     mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
@@ -102,42 +106,28 @@ describe('TranscriptReader.readTasks', () => {
     });
   });
 
-  it('applies TaskUpdate to existing tasks', async () => {
+  it('drops a TaskCreate whose tool_result reports failure', async () => {
     const lines = [
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', name: 'TaskCreate', id: 'tc1', input: { subject: 'Task A' } },
-          ],
-        },
+      toolUseLine('TaskCreate', 'toolu_fail', { subject: 'Never happens' }),
+      toolResultLine('toolu_fail', 'Error: permission denied', true),
+    ];
+
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+
+    const tasks = await reader.readTasks(vaultRoot, 'session-1');
+    expect(tasks).toEqual([]);
+  });
+
+  it('applies TaskUpdate to a task confirmed by its tool_result', async () => {
+    const lines = [
+      toolUseLine('TaskCreate', 'toolu_a', { subject: 'Task A' }),
+      toolResultLine('toolu_a', 'Task #1 created successfully: Task A'),
+      toolUseLine('TaskUpdate', 'toolu_b', {
+        taskId: '1',
+        status: 'in_progress',
+        activeForm: 'Working on A',
       }),
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'TaskUpdate',
-              id: 'tc2',
-              input: { taskId: '1', status: 'in_progress', activeForm: 'Working on A' },
-            },
-          ],
-        },
-      }),
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'TaskUpdate',
-              id: 'tc3',
-              input: { taskId: '1', status: 'completed' },
-            },
-          ],
-        },
-      }),
+      toolUseLine('TaskUpdate', 'toolu_c', { taskId: '1', status: 'completed' }),
     ];
 
     mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
@@ -149,6 +139,37 @@ describe('TranscriptReader.readTasks', () => {
       subject: 'Task A',
       status: 'completed',
       activeForm: 'Working on A',
+    });
+  });
+
+  /**
+   * DOR-1441 wrong-hit regression: dense sequential SDK ids that diverge from
+   * this reader's naive tool_use call count by one (a create whose tool_result
+   * never confirmed a real id) must not let a later update land on the wrong
+   * task.
+   */
+  it('does not let a later TaskUpdate land on the wrong task when an earlier TaskCreate never resolved', async () => {
+    const lines = [
+      toolUseLine('TaskCreate', 'toolu_alpha', { subject: 'Alpha' }),
+      // Alpha's tool_result never arrives (e.g. an interrupted transcript) —
+      // Alpha stays under its provisional key and never claims a real id, so
+      // the SDK's real id "1" for Beta below cannot collide with it.
+      toolUseLine('TaskCreate', 'toolu_beta', { subject: 'Beta' }),
+      toolResultLine('toolu_beta', 'Task #1 created successfully: Beta'),
+      toolUseLine('TaskUpdate', 'toolu_update', { taskId: '1', status: 'completed' }),
+    ];
+
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
+
+    const tasks = await reader.readTasks(vaultRoot, 'session-1');
+    expect(tasks).toHaveLength(2);
+    expect(tasks.find((t) => t.subject === 'Beta')).toMatchObject({
+      id: '1',
+      status: 'completed',
+    });
+    expect(tasks.find((t) => t.subject === 'Alpha')).toMatchObject({
+      id: 'pending:toolu_alpha',
+      status: 'pending',
     });
   });
 
@@ -176,21 +197,7 @@ describe('TranscriptReader.readTasks', () => {
   });
 
   it('ignores TaskUpdate for nonexistent tasks', async () => {
-    const lines = [
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'TaskUpdate',
-              id: 'tc1',
-              input: { taskId: '99', status: 'completed' },
-            },
-          ],
-        },
-      }),
-    ];
+    const lines = [toolUseLine('TaskUpdate', 'tc1', { taskId: '99', status: 'completed' })];
 
     mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
 
@@ -201,14 +208,8 @@ describe('TranscriptReader.readTasks', () => {
   it('handles malformed JSON lines gracefully', async () => {
     const lines = [
       'not valid json',
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', name: 'TaskCreate', id: 'tc1', input: { subject: 'Valid task' } },
-          ],
-        },
-      }),
+      toolUseLine('TaskCreate', 'tc1', { subject: 'Valid task' }),
+      toolResultLine('tc1', 'Task #1 created successfully: Valid task'),
     ];
 
     mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));

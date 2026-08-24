@@ -14,8 +14,9 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import { logger } from '../../../../../lib/logger.js';
 import { SessionStore } from '../session-store.js';
-import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
+import { STOP_ACK_SLOW_MS, STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ forkSession: vi.fn() }));
 vi.mock('../../../../../lib/logger.js', () => ({
@@ -198,5 +199,52 @@ describe('Stop is bounded (DOR-1244)', () => {
     expect(calls.stopTask).toEqual(['task-7']);
     expect(stamp(store)).toBeDefined();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('a slow Stop says how long it waited to be heard (DOR-1319)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Every `[interruptQuery] the stop took a long time to be heard` line. */
+  function slowAckWarnings(): Array<Record<string, unknown>> {
+    const calls = vi.mocked(logger.warn).mock.calls as Array<[string, Record<string, unknown>]>;
+    return calls
+      .filter(([message]) => message.includes('long time to be heard'))
+      .map(([, meta]) => meta);
+  }
+
+  it('names the ack latency when the CLI is slow to hear the stop', async () => {
+    // A Stop measured at 7.6s could have been a 3s ack plus a 4.5s unwind, or a
+    // fast ack and a very slow unwind. Nothing on record could tell them apart,
+    // so nobody could say which number was the one to change. Now the first
+    // segment is on the record with the bound beside it.
+    const { query } = fakeQuery({ interrupt: 'never-settles' });
+    const store = storeWithLiveTurn(query);
+
+    const stopped = store.interruptQuery(SESSION_ID);
+    await vi.advanceTimersByTimeAsync(STOP_ACK_TIMEOUT_MS);
+    await expect(stopped).resolves.toBe(true);
+
+    const warnings = slowAckWarnings();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.ackMs).toBeGreaterThanOrEqual(STOP_ACK_SLOW_MS);
+    expect(warnings[0]!.boundMs).toBe(STOP_ACK_TIMEOUT_MS);
+  });
+
+  it('stays quiet about a Stop the CLI heard at once', async () => {
+    // Every Stop is measured; only a slow one is worth a line. A warning on
+    // every healthy Stop is how a log stops being read.
+    const { query } = fakeQuery({ interrupt: 'acks' });
+    const store = storeWithLiveTurn(query);
+
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
+
+    expect(slowAckWarnings()).toEqual([]);
   });
 });

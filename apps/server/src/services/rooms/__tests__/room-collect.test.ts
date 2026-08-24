@@ -594,10 +594,67 @@ describe('a room gathers a burst into one turn', () => {
       // keeps moving while it waits, so a batch judged once, at collect time,
       // would let an agent through on a number that had since been spent.
       //
-      // Ana is allowed three turns here. Two are already behind her when Bo's
-      // reply joins her batch — so the batch is ALLOWED in — and her running
-      // turn posts the third before her claim releases. The re-ask is the only
-      // thing standing between that and a fourth.
+      // Ana is allowed two turns here. One is behind her when the third message
+      // joins her batch — so the batch is ALLOWED in — and the turn she is
+      // running lands its answer, her second, before her claim releases. The
+      // re-ask is the only thing standing between that and a third.
+      //
+      // The count moves by a TURN, which is the DOR-1434 unit: what makes it
+      // tick over is Ana's second turn writing at all, not how many entries it
+      // writes. A turn that posted five progress notes on the way to the same
+      // answer would move it by exactly the same one.
+      const held = heldRunner((request) =>
+        request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
+      );
+      open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo'], 2);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      const seed = service.post(room.id, {
+        authorId: human,
+        text: '@ana @bo what broke the build?',
+      });
+      await settleUntil(
+        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
+        'both agents mid-turn'
+      );
+
+      // Ana's first turn answers. That is one of her two.
+      held.release(ana);
+      await settleUntil(() => postsBy(ana).length === 1, 'Ana answered once');
+
+      // Bo answers and names Ana, which is her second turn — allowed, and held.
+      held.release(bo);
+      await settleUntil(() => held.holdsFor(ana) === 1, 'Ana mid-turn on Bo reply');
+
+      // A third message names her while that turn is still running, so it is
+      // collected behind her claim. At collect time she is at one of two.
+      service.post(room.id, {
+        authorId: bo,
+        text: '@ana and the cache too?',
+        trigger: { root: seed.cascadeRoot, depth: 1 },
+      });
+
+      // Her running turn now lands its answer — her second — and only then does
+      // her claim release and the batch run.
+      held.release(ana);
+      await settleUntil(
+        () => notices().some((entry) => entry.body.notice === 'cascade_stopped'),
+        'the batch to be judged against the count it waited through'
+      );
+
+      // Two turns for Ana, not three, and the room said why.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(2);
+      const refusals = notices().filter((entry) => entry.body.notice === 'cascade_stopped');
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0].body.subjectAuthorId).toBe(ana);
+      await service.triggersIdle();
+    });
+
+    it('lets the same batch through when the count has room left', async () => {
+      // The control for the test above, and the reason it is not measuring
+      // "Ana has spoken": the identical script, one higher ceiling, and the
+      // parked message becomes a turn instead of a notice. Without this, a guard
+      // that had regressed to refusing any repeat would pass up there.
       const held = heldRunner((request) =>
         request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
       );
@@ -613,70 +670,20 @@ describe('a room gathers a burst into one turn', () => {
         'both agents mid-turn'
       );
 
-      // Ana's running turn says two things through the rooms tool. They are
-      // hers, in this cascade, so they are two of her three.
-      for (const text of ['looking at the migration', 'the step before it is fine']) {
-        service.post(room.id, {
-          authorId: ana,
-          text,
-          trigger: { root: seed.cascadeRoot, depth: 1 },
-        });
-      }
-
-      // Bo answers and names Ana. ALLOWED into her batch: she is at two of
-      // three when this is collected.
-      held.release(bo);
-      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
-
-      // Her own turn now lands its answer — the third — and only then does her
-      // claim release and the batch run.
       held.release(ana);
-      await settleUntil(
-        () => notices().some((entry) => entry.body.notice === 'cascade_stopped'),
-        'the batch to be judged against the count it waited through'
-      );
-
-      // One turn for Ana, not two, and the room said why.
-      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
-      const refusals = notices().filter((entry) => entry.body.notice === 'cascade_stopped');
-      expect(refusals).toHaveLength(1);
-      expect(refusals[0].body.subjectAuthorId).toBe(ana);
-      await service.triggersIdle();
-    });
-
-    it('lets the same batch through when the count has room left', async () => {
-      // The control for the test above, and the reason it is not measuring
-      // "Ana has spoken": the identical script, one higher ceiling, and Bo's
-      // reply becomes a turn instead of a notice. Without this, a guard that had
-      // regressed to refusing any repeat would pass up there.
-      const held = heldRunner((request) =>
-        request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
-      );
-      open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo'], 4);
-      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
-
-      const seed = service.post(room.id, {
-        authorId: human,
-        text: '@ana @bo what broke the build?',
+      await settleUntil(() => postsBy(ana).length === 1, 'Ana answered once');
+      held.release(bo);
+      await settleUntil(() => held.holdsFor(ana) === 1, 'Ana mid-turn on Bo reply');
+      service.post(room.id, {
+        authorId: bo,
+        text: '@ana and the cache too?',
+        trigger: { root: seed.cascadeRoot, depth: 1 },
       });
-      await settleUntil(
-        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
-        'both agents mid-turn'
-      );
-      for (const text of ['looking at the migration', 'the step before it is fine']) {
-        service.post(room.id, {
-          authorId: ana,
-          text,
-          trigger: { root: seed.cascadeRoot, depth: 1 },
-        });
-      }
-      held.release(bo);
-      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
 
       held.release(ana);
       await settleUntil(
-        () => runner.turns.filter((turn) => turn.authorId === ana).length === 2,
-        'the held batch to become a second turn for Ana'
+        () => runner.turns.filter((turn) => turn.authorId === ana).length === 3,
+        'the held batch to become a third turn for Ana'
       );
       expect(notices().filter((entry) => entry.body.notice === 'cascade_stopped')).toEqual([]);
       held.release(ana);

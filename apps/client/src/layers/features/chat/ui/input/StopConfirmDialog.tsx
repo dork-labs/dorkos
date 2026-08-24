@@ -12,7 +12,15 @@ import {
 interface StopConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** How many messages are waiting on the queue — named in the copy. */
+  /**
+   * How many messages were waiting when the question was asked — named in the
+   * copy.
+   *
+   * A snapshot, not a live count. The server keeps dispatching the queue while
+   * this is up, so a live number could decay under the reader's eyes and, worse,
+   * fade out at zero (DOR-1443). Frozen, the copy keeps naming the question that
+   * was actually asked.
+   */
   queuedCount: number;
   /** Called when the user confirms — interrupts the turn and empties the queue. */
   onConfirm: () => void;
@@ -24,7 +32,11 @@ interface StopConfirmDialogProps {
  * A Stop stops everything queued, so it names the cost before it happens: how
  * many messages come back. A confirmation that hides the consequence is not one.
  * The messages return to the composer rather than vanishing, so this asks about
- * a pause, not a loss. A Stop with nothing queued never reaches this dialog.
+ * a pause, not a loss. A Stop with nothing queued never reaches this dialog —
+ * and neither does a Stop whose queue drains while the question is on screen:
+ * the host takes this down as soon as the queue it asked about empties, and
+ * `queuedCount` is frozen at the asking, so the copy is never left asking about
+ * no messages at all — not even on its way out (DOR-1443).
  */
 export function StopConfirmDialog({
   open,

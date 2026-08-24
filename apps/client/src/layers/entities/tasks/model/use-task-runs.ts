@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import type { ListTaskRunsQuery } from '@dorkos/shared/types';
+import type { ListTaskRunsQuery, TaskRun } from '@dorkos/shared/types';
 
 /** Query-key prefix for every Task-runs cache. Exported so cross-cutting freshness bridges can invalidate it. */
 export const TASK_RUNS_KEY = ['tasks', 'runs'] as const;
@@ -19,6 +19,60 @@ export function useTaskRuns(opts?: Partial<ListTaskRunsQuery>, enabled = true) {
     queryFn: () => transport.listTaskRuns(opts),
     refetchInterval: (query) =>
       query.state.data?.some((r) => r.status === 'running') ? 10_000 : false,
+    refetchIntervalInBackground: false,
+    enabled,
+  });
+}
+
+/** Options for {@link useInfiniteTaskRuns} — the same filters as {@link useTaskRuns}, minus the offset it owns. */
+export type InfiniteTaskRunsOptions = Omit<Partial<ListTaskRunsQuery>, 'offset'> & {
+  /** Page size. Also the "is there another page?" test: a short page is the last one. */
+  limit: number;
+};
+
+/**
+ * Fetch Task runs a page at a time, keeping every loaded page live.
+ *
+ * **Why an infinite query and not accumulated state.** The run-history panel used
+ * to freeze each loaded page into a `useState` array and concatenate. A run's
+ * status is not a fixed fact — it goes `running` → `completed`/`failed` while you
+ * are looking at it — and a frozen page can never hear about that, so scrolling
+ * past twenty runs left a permanently spinning row for a run that had finished
+ * minutes ago. TanStack refetches every page of an infinite query together, so a
+ * run that goes terminal updates in place wherever it is on the list.
+ *
+ * The key sits under {@link TASK_RUNS_KEY}, so the invalidations in
+ * `useCancelTaskRun` and `useTriggerTask` reach it like any other run query.
+ *
+ * **No `maxPages`, deliberately.** Refetching every page is what keeps old rows
+ * honest, and it costs one request per loaded page per poll tick — five pages of
+ * history with something still running is five requests every ten seconds.
+ * Capping with `maxPages` would bound that, but TanStack bounds it by DROPPING
+ * the page at the far end, so pressing "Load more" a sixth time would silently
+ * delete the twenty rows at the top of a list the person is reading. Losing rows
+ * to save requests is the wrong trade for a panel that only exists while a
+ * schedule row is expanded and only polls while a run is actually going. Revisit
+ * if run history ever grows an always-mounted surface.
+ *
+ * @param opts - Filters plus the page size.
+ * @param enabled - When false, the query is skipped entirely (Tasks feature gate).
+ */
+export function useInfiniteTaskRuns(opts: InfiniteTaskRunsOptions, enabled = true) {
+  const transport = useTransport();
+  const { limit } = opts;
+
+  return useInfiniteQuery({
+    queryKey: [...TASK_RUNS_KEY, 'infinite', opts],
+    queryFn: ({ pageParam }) => transport.listTaskRuns({ ...opts, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage: TaskRun[], _pages, lastPageParam: number) =>
+      lastPage.length < limit ? undefined : lastPageParam + limit,
+    // Same poll as `useTaskRuns`, asked across every loaded page: one run still
+    // going anywhere in the history keeps the whole list refreshing.
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) => page.some((run) => run.status === 'running'))
+        ? 10_000
+        : false,
     refetchIntervalInBackground: false,
     enabled,
   });

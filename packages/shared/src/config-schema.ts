@@ -60,7 +60,7 @@ export const MAX_TRUST_WINDOW_MINUTES = 1440;
 export const ROOM_TURN_LIMIT_BOUNDS = {
   /** How many automatic replies one chain may run. */
   maxAgentDepth: { min: 0, max: 100 },
-  /** How many of those replies any ONE agent may run. */
+  /** How many TURNS any ONE agent may take inside one chain. */
   maxTurnsPerAgentPerCascade: { min: 1, max: 100 },
   /** How many automatic replies one room may run in an hour. */
   maxAutoTurnsPerHour: { min: 0, max: 10_000 },
@@ -1602,9 +1602,11 @@ export const UserConfigSchema = z.object({
        * after ten each rather than running the chain out between them. Your own
        * messages start both counts over.
        *
-       * It counts MESSAGES the agent posted in that back-and-forth, not turns
-       * it took: an agent that posts progress notes while it works spends its
-       * allowance faster than one that answers once and stops.
+       * It counts TURNS, not messages. One turn may say several things — an
+       * agent often posts a note or two about what it is doing before it
+       * answers — and the whole lot spends one. Posts DorkOS cannot tie to a
+       * turn, which means anything written before this was measured this way,
+       * count one each.
        */
       maxTurnsPerAgentPerCascade: z
         .number()

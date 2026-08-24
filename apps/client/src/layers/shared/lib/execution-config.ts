@@ -30,6 +30,14 @@
  * as "unknown" here would make this the one surface that offers an effort the
  * rest of the app refuses to.
  *
+ * Note the two absences are about different questions, which is why they resolve
+ * opposite ways. `ModelConfigPopover` extends its reading to the status line's
+ * effort badge as well as its control (DOR-1445), and a model missing from the
+ * catalog ENTIRELY takes the same "no" there — a one-line strip has nowhere to
+ * caveat a claim, so it says nothing rather than something it cannot back. This
+ * module's surfaces can caveat, and do: they report a deviation only when the
+ * evidence is present and says so.
+ *
  * @module shared/lib/execution-config
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';

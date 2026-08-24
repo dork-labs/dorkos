@@ -13,6 +13,7 @@ import type {
   RecentSessionsResponse,
   SessionDailyCountsResponse,
   UpdateSessionRequest,
+  SessionUpdateResponse,
   BrowseDirectoryResponse,
   CommandRegistry,
   HealthResponse,
@@ -570,8 +571,20 @@ export interface Transport extends RoomTransport {
    * @param sessionId - Session identifier
    */
   getSessionRuntimeType(sessionId: string): Promise<string>;
-  /** Update session settings (permission mode, model). */
-  updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
+  /**
+   * Update session settings (permission mode, model).
+   *
+   * The answer is the session as it now stands. It carries
+   * `permissionModePendingUntilNextTurn` when a STRICTER permission mode was
+   * saved but could not be delivered to the reply already in flight — that
+   * reply keeps the looser mode it started under, and a surface showing the new
+   * one has to say so (DOR-1435).
+   */
+  updateSession(
+    id: string,
+    opts: UpdateSessionRequest,
+    cwd?: string
+  ): Promise<SessionUpdateResponse>;
   /** Fork a session, creating a new independent copy. */
   forkSession(
     id: string,

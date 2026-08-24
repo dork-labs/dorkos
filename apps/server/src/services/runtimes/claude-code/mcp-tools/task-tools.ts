@@ -13,8 +13,11 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { TaskNameSchema } from '@dorkos/shared/schemas';
+import type { UpdateTaskRequest } from '@dorkos/shared/types';
+import { slugify, validateSlug } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
+import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -198,13 +201,31 @@ export function createCreateScheduleHandler(
     const reason = args.reason?.trim();
     if (!reason) return jsonContent({ error: MISSING_REASON_ERROR }, true);
 
+    // Mirror the REST create path (routes/tasks.ts): the name becomes a SKILL.md
+    // slug, and a name with no usable slug in it is refused. A scheduled run is
+    // told `Job: ${task.name}` in its system prompt (`services/tasks/task-append.ts`),
+    // so a raw, unbounded name was a prompt-injection primitive on this surface
+    // too — `tasks_update.name` already carries the slug rule through `TaskNameSchema`,
+    // and this bounds the create door the same way. Slugified rather than rejected
+    // outright, exactly as REST does, so "Nightly sweep" still works and only a
+    // name with nothing usable in it (e.g. "!!!") is turned away.
+    const slug = slugify(args.name);
+    if (!validateSlug(slug)) {
+      return jsonContent(
+        {
+          error: `"${args.name}" has no usable name in it. Use letters or numbers — "Nightly sweep" becomes "nightly-sweep".`,
+        },
+        true
+      );
+    }
+
     // Resolved now, not when this handler was built: the SDK rekeys a session
     // to its canonical id mid-first-turn (see {@link TaskProvenanceResolver}).
     const provenance = resolveProvenance?.() ?? {};
 
     const schedule = deps.taskStore!.createTask({
-      name: args.name,
-      description: args.description ?? args.name,
+      name: slug,
+      description: args.description ?? slug,
       prompt: args.prompt,
       cron: args.cron,
       timezone: args.timezone ?? null,
@@ -290,6 +311,12 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
 
+    // Read the row BEFORE the write, both to answer 404 the same way this handler
+    // always has and — below — to decide whether this edit changes the work a
+    // person approved.
+    const existing = deps.taskStore!.getTask(args.id);
+    if (!existing) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+
     // The patch is assembled field by field rather than spread from the rest of
     // `args`, so there is no code here that could carry `permissionMode` to the
     // store even if the guard above were removed. The spread this replaces is how
@@ -298,14 +325,49 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     // straight into the permission-mode enum without validating it. A new
     // agent-writable field now has to be added in both places, which is the
     // trade: a forgotten field is a visible bug, a forwarded one was a hole.
-    const updated = deps.taskStore!.updateTask(args.id, {
+    const patch: UpdateTaskRequest = {
       ...(args.name !== undefined && { name: args.name }),
       ...(args.prompt !== undefined && { prompt: args.prompt }),
       ...(args.cron !== undefined && { cron: args.cron }),
       ...(args.enabled !== undefined && { enabled: args.enabled }),
       ...(args.timezone !== undefined && { timezone: args.timezone }),
       ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
-    });
+    };
+
+    // A non-trusted caller cannot KEEP an approved task's `bypassPermissions` by
+    // rewriting the work it does — the same escalation `PATCH /api/tasks/:id`
+    // clamps (routes/tasks.ts), routed through the SAME seam
+    // (`clampSchedulePermissionMode`) so the two agent doors cannot drift.
+    //
+    // On this surface the caller is ALWAYS the non-trusted case: an MCP tool call
+    // IS the agent surface, so there is no operator branch to spare (the reasoning
+    // `refuseOperatorOnlyTaskFields` states unconditionally, one level up). And
+    // this handler writes the ROW ONLY — it never rewrites the SKILL.md, so the
+    // file-watcher never fires and the reconciler's `keepsApprovedBypass` clamp is
+    // up to five minutes away. Until that resync the row sat at
+    // `bypassPermissions` holding the NEW prompt/cron/name, and a cron firing in
+    // that window dispatched an agent's instructions at full power. Clamping the
+    // row here makes the drop immediate, closing the window; the edit itself still
+    // lands (prompt/cron/name are agent-writable), the unattended run just gets its
+    // approval prompts back.
+    //
+    // `name` belongs beside prompt and cron because it is not inert: a scheduled
+    // run is told `Job: ${task.name}` in its system prompt
+    // (`services/tasks/task-append.ts`), so a rename changes what the unattended
+    // run reads. A metadata-only edit (enabled/timezone/maxRuntime) changes no
+    // approved work, so it never clamps — a legitimate on/off toggle keeps the
+    // grant. The change must be REAL: a field re-sent at its current value is not
+    // a new piece of work, mirroring the route's `!== existing` predicate.
+    const changesApprovedWork =
+      (args.prompt !== undefined && args.prompt !== existing.prompt) ||
+      (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? '')) ||
+      (args.name !== undefined && args.name !== existing.name);
+    if (changesApprovedWork) {
+      const clamp = clampSchedulePermissionMode(existing.permissionMode);
+      if (clamp.clamped) patch.permissionMode = clamp.mode;
+    }
+
+    const updated = deps.taskStore!.updateTask(args.id, patch);
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
     broadcastTasksChanged();
     return jsonContent({ schedule: updated });

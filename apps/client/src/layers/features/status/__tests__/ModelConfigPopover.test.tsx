@@ -47,6 +47,21 @@ const mockModels = [
     supportsFastMode: true,
     supportsAutoMode: false,
   },
+  {
+    // Claims effort but names no levels — the half-answer a runtime catalog can
+    // legitimately give. There is nothing to offer and nothing to advertise, so
+    // both the control and the badge must treat it as "no effort". Without this
+    // row the length half of the capability check is untested.
+    value: 'claude-halfclaim-1',
+    displayName: 'Halfclaim',
+    description: 'Declares effort, offers no levels',
+    isDefault: false,
+    contextWindow: 200_000,
+    supportsEffort: true,
+    supportedEffortLevels: [] as EffortLevel[],
+    supportsFastMode: false,
+    supportsAutoMode: false,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -259,6 +274,48 @@ describe('ModelConfigPopover', () => {
       expect(badgesInTrigger.length).toBe(0);
     });
 
+    it('drops the effort badge when the active model has no effort to give (DOR-1445)', () => {
+      // Haiku in the mock catalog declares `supportsEffort: false`, so the
+      // popover hides its Effort control. The status line used to keep
+      // advertising the carried-over level anyway — "Haiku · High" for a
+      // setting the person could no longer see or change.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5', effort: 'high' })} />
+      );
+      const trigger = screen.getByTestId('model-config-trigger');
+      expect(trigger).toHaveTextContent('Haiku');
+      expect(trigger).not.toHaveTextContent('High');
+    });
+
+    it('badge and Effort control agree: both absent for an effortless model (DOR-1445)', () => {
+      // The point of the fix is that these two cannot disagree — one capability
+      // source drives both — so assert them together rather than apart.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5', effort: 'high' })} />
+      );
+      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('High');
+      expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
+    });
+
+    it('drops the effort badge for a model that claims effort but offers no levels (DOR-1445)', () => {
+      // Both halves of the capability check matter: a model with no levels to
+      // pick has no Effort control either, so advertising one is the same lie.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-halfclaim-1', effort: 'high' })} />
+      );
+      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('High');
+      expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
+    });
+
+    it('keeps the effort badge for a model that does take effort', () => {
+      // The guard must not swallow the honest case: Opus declares effort levels.
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6', effort: 'high' })} />
+      );
+      expect(screen.getByTestId('model-config-trigger')).toHaveTextContent('High');
+      expect(screen.getByRole('radiogroup', { name: 'Effort level' })).toBeInTheDocument();
+    });
+
     it('falls back to extracting label from model id when model is not in list', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-unknown-1' })} />);
       expect(screen.getByText('Unknown')).toBeInTheDocument();
@@ -421,7 +478,8 @@ describe('ModelConfigPopover', () => {
     it('renders context window badges', () => {
       render(<ModelConfigPopover {...defaultProps()} />);
       const badges = screen.getAllByText('200K');
-      expect(badges.length).toBe(3);
+      // One per model in the catalog — all four fixtures declare a 200K window.
+      expect(badges.length).toBe(mockModels.length);
     });
 
     it('renders model card list with radiogroup role', () => {

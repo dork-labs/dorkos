@@ -48,9 +48,17 @@ import { finalizeApp } from '../app.js';
 describe('finalizeApp — production SPA fallback (Express 5)', () => {
   let app: express.Express;
 
+  /** A bundle named the way Vite names them: content hash in the filename. */
+  const HASHED_ASSET = 'index-a1b2c3d4.js';
+
   beforeAll(() => {
     holder.dist = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-spa-fallback-'));
     fs.writeFileSync(path.join(holder.dist, 'index.html'), '<!doctype html><div id="root"></div>');
+    // A Vite-shaped dist: content-hashed bundles under assets/, unhashed
+    // static files at the root.
+    fs.mkdirSync(path.join(holder.dist, 'assets'));
+    fs.writeFileSync(path.join(holder.dist, 'assets', HASHED_ASSET), 'console.log(1);');
+    fs.writeFileSync(path.join(holder.dist, 'favicon.ico'), 'icon');
     app = express();
     app.get('/api/ping', (_req, res) => res.json({ ok: true }));
     finalizeApp(app);
@@ -86,5 +94,45 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
   it('does not serve the SPA shell for non-GET requests', async () => {
     const res = await request(app).post('/agents/deep/route');
     expect(res.status).toBe(404);
+  });
+
+  /**
+   * Cache hygiene (DOR-1452). A shell held in a browser's HTTP cache across an
+   * app update names hashed bundles the new build no longer ships — the blank
+   * window every Electron shell eventually hits. `no-store` on the shell and
+   * `immutable` on the hashed bundles is what makes that impossible, and both
+   * were the `max-age=0` default before.
+   */
+  describe('cache headers', () => {
+    it('never stores the shell served at /', async () => {
+      const res = await request(app).get('/');
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+
+    it('never stores the shell requested by name', async () => {
+      const res = await request(app).get('/index.html');
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+
+    it('never stores the shell served through the deep-link fallback', async () => {
+      const res = await request(app).get('/agents/deep/route');
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+
+    it('caches a content-hashed bundle for a year, immutably', async () => {
+      const res = await request(app).get(`/assets/${HASHED_ASSET}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    });
+
+    it('leaves unhashed root files (favicon) on the revalidating default', async () => {
+      const res = await request(app).get('/favicon.ico');
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).not.toContain('no-store');
+      expect(res.headers['cache-control']).not.toContain('immutable');
+    });
   });
 });
