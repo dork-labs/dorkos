@@ -333,7 +333,7 @@ describe('cascade guard, wired', () => {
     const narrating: ScriptedTurnRunner = {
       turns,
       interrupted: [],
-      interrupt: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(true),
       run(req) {
         turns.push({
           roomId: req.room.id,
@@ -411,7 +411,7 @@ describe('cascade guard, wired', () => {
     const twoRooms: ScriptedTurnRunner = {
       turns,
       interrupted: [],
-      interrupt: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(true),
       run(req) {
         turns.push({
           roomId: req.room.id,
