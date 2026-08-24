@@ -41,6 +41,28 @@ describe('ComparisonVerdict', () => {
     expect(screen.getByText('Open, you can read it')).toBeTruthy();
   });
 
+  it('does not invite the reader to go and look at a product that has shut down', () => {
+    render(<ComparisonVerdict competitor={entry({ framing: 'discontinued', name: 'Terragon' })} />);
+    // "See Terragon for yourself" promises a product that is still there to look
+    // at. It is not: the link goes to whatever the shutdown left behind, which
+    // for Terragon is a page reading only "Terragon Shutdown".
+    expect(screen.queryByText(/See Terragon for yourself/)).toBeNull();
+    expect(screen.getByText(/See what is left of Terragon/)).toBeTruthy();
+  });
+
+  it('still sends the reader to the product itself on every other framing', () => {
+    for (const framing of ['competitor', 'adjacent', 'runtime'] as const) {
+      const { unmount } = render(
+        <ComparisonVerdict competitor={entry({ framing, name: 'Amp' })} />
+      );
+      expect(
+        screen.getByText(/See Amp for yourself/),
+        `${framing} lost its outbound link`
+      ).toBeTruthy();
+      unmount();
+    }
+  });
+
   it('prefers the authored wording where a product is open in part only', () => {
     const note = 'The command-line tool is open. The cloud service, apps and models are not.';
     render(<ComparisonVerdict competitor={entry({ openSource: true, openSourceNote: note })} />);

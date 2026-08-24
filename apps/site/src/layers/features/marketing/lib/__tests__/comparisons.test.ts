@@ -220,6 +220,36 @@ describe('comparison catalog data integrity', () => {
     expect(COMPARISON_FRAMING_COPY.runtime.headline('Claude Code')).toBe('DorkOS + Claude Code');
     expect(COMPARISON_FRAMING_COPY.discontinued.headline('Terragon')).toBe('Terragon alternatives');
   });
+
+  it('never promises that a shut-down product’s own announcement is still reachable', () => {
+    // A shut-down product takes its website down with it. Terragon's notice went
+    // offline with its documentation site — the certificate expired — so a banner
+    // telling the reader the details come from an announcement "linked at the
+    // bottom of this page" was a promise the page could not keep. The banner says
+    // what the page covers instead, and the sources list says where we looked.
+    const note = COMPARISON_FRAMING_COPY.discontinued.scopeNote?.('Terragon');
+    expect(note, 'the discontinued framing has no scope note').toBeDefined();
+    expect(note).toContain('Terragon');
+    expect(
+      note,
+      'the banner points at an announcement that may have gone offline with the product'
+    ).not.toMatch(/announcement/i);
+  });
+
+  it('gives every framing its own wording for the link out to the other product', () => {
+    for (const framing of FRAMINGS) {
+      const label = COMPARISON_FRAMING_COPY[framing].outboundLabel('Example');
+      expect(label.length, `${framing} has no outbound link label`).toBeGreaterThan(0);
+      expect(label, `${framing} outbound label does not name the product`).toContain('Example');
+    }
+    // A live product is there to be looked at; a dead one is not.
+    expect(COMPARISON_FRAMING_COPY.competitor.outboundLabel('Cursor')).toBe(
+      'See Cursor for yourself'
+    );
+    expect(COMPARISON_FRAMING_COPY.discontinued.outboundLabel('Terragon')).not.toContain(
+      'for yourself'
+    );
+  });
 });
 
 describe('dorkosAdvantages', () => {

@@ -23,7 +23,10 @@ export function CompetitorCard({ competitor }: { competitor: Competitor }) {
         {copy.headline(competitor.name)}
       </span>
       <span className="text-warm-gray mt-3 text-sm leading-relaxed">{competitor.oneLiner}</span>
-      <span className="text-2xs text-warm-gray mt-4 inline-flex items-center gap-1 font-mono tracking-[0.04em]">
+      {/* Pushed to the bottom of the card: the cards in a row share a height, so
+          without this the prompt sits wherever the summary above it happens to
+          end and the row reads as ragged. */}
+      <span className="text-2xs text-warm-gray mt-auto inline-flex items-center gap-1 pt-4 font-mono tracking-[0.04em]">
         Read the comparison <ArrowRight size={10} />
       </span>
     </Link>

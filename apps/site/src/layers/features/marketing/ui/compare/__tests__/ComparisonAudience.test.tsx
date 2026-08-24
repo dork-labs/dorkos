@@ -53,6 +53,17 @@ describe('ComparisonAudience', () => {
     expect(screen.getByText(`you want ${COMPARISON_DIMENSIONS[0].wantPhrase}`)).toBeTruthy();
   });
 
+  it('lets each column end at its own height instead of stretching the shorter one', () => {
+    render(<ComparisonAudience competitor={entry({ framing: 'competitor', name: 'Cline' })} />);
+    const columns = screen.getByText('Use Cline if').closest('div')?.parentElement;
+    // DorkOS's column is derived, so on most pages it is honestly shorter than
+    // the other product's. Stretching it to match filled the card with dead
+    // space, which read as a weak answer rather than a short one.
+    expect(columns?.className, 'the recommendation columns stretch to equal height').toContain(
+      'items-start'
+    );
+  });
+
   it('renders nothing for a product that has shut down', () => {
     const { container } = render(
       <ComparisonAudience competitor={entry({ framing: 'discontinued', theirStrengths: [] })} />
