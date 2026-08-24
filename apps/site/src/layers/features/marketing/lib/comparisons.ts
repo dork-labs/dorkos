@@ -290,7 +290,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can several agents find each other and pass work along?',
     wantPhrase: 'agents that can hand work to each other instead of working alone',
     dorkosDetail:
-      'Agents share rooms the way people share a group chat: they can see each other, answer each other, and pass a job along. This is the newest part of DorkOS and the part we are least willing to oversell, so the table says "partly" until everyday use proves it.',
+      'Your agents share rooms the way people share a group chat. They can see each other, answer each other, and hand a job along. You set how often they may reply, per room, so a busy channel never turns into a runaway bill.',
   },
   {
     id: 'local-first',
