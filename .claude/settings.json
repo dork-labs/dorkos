@@ -66,10 +66,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/format-changed.sh"
-          },
-          {
-            "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/typecheck-changed.sh"
           },
           {
@@ -102,6 +98,10 @@
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-docs-changed.sh"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/format-changed.sh"
           }
         ]
       }

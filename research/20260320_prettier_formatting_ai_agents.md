@@ -2,7 +2,8 @@
 title: 'Prettier Formatting Strategy with AI Coding Agents (Claude Code, Cursor)'
 date: 2026-03-20
 type: external-best-practices
-status: active
+status: superseded-in-part
+superseded_by: research/20260824_agent_post_edit_formatting_stale_context.md
 tags:
   [
     prettier,
@@ -21,6 +22,36 @@ tags:
 searches_performed: 14
 sources_count: 28
 ---
+
+> **Layer 1 was reversed on 2026-08-24; layers 2, 3 and the git-blame guidance still hold.**
+> Re-examined from the opposite direction by
+> `research/20260824_agent_post_edit_formatting_stale_context.md`, which found
+> that formatting a file immediately after an agent edits it is a well-evidenced
+> cause of agent **edit failures** — the agent's in-context copy of the file goes
+> stale, and its next string-replace edit fails to match text prettier already
+> rewrote. That report reproduced the failure live in this repo, twice, while
+> being written.
+>
+> Two specific recommendations below are no longer the repo's practice:
+>
+> - **Key Finding 5 and "Step 1: Add the PostToolUse formatter"** — the formatter
+>   is no longer a `PostToolUse` hook on `Write|Edit|MultiEdit`. It moved to the
+>   `Stop` event (`.claude/hooks/format-changed.sh`), so it runs once per turn
+>   over the working tree's changed files instead of once per edit. The change is
+>   affordable precisely because layers 2 and 3 below shipped: prettier already
+>   runs at lefthook `pre-commit` with `stage_fixed: true`, and `prettier --check .`
+>   is a required CI gate (DOR-485), so the per-edit pass was buying tidiness that
+>   was already guaranteed, at the cost of a reproduced failure mode.
+> - **`async: true`** (Key Finding 5, Steps 1 and the settings snippets) — dropped,
+>   not carried over. Async does not fix staleness: the rewrite still lands under
+>   the agent's feet, just at an unpredictable moment. It trades a known window
+>   for a race.
+>
+> Everything else in this report stands, and layers 2 and 3 are now load-bearing
+> rather than supplementary: the pre-commit hook, the CI `prettier --check` gate,
+> `.git-blame-ignore-revs`, the `--no-verify` analysis, and the tool comparison.
+> Read this report for the enforcement architecture; read the August report before
+> putting a formatter back on the per-edit path.
 
 ## Research Summary
 
