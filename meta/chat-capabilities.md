@@ -189,6 +189,20 @@ opened the file on the FIRST `Read` and answered with the word that exists only
 inside it. It is the clearest thing this table has to say about the difference
 between assembling a payload and an agent being able to use it.
 
+### 7.1 Cross-surface memory — not built, untested (named gaps)
+
+X-01…X-08 probe recall of the **current room's** context block. Nothing probes recall **across surfaces** — the scenario users actually hit (reported 2026-08-24): set an agent up in a direct session, add it to a channel, ask it in the channel about the direct-session conversation. It knows nothing. That is designed behavior today — every surface is a separate runtime session, there is no agent-scoped memory layer, no tool lists or searches an agent's other sessions, and the search index covers rooms only (`services/search/registry.ts` — `SEARCH_SOURCES = [roomsSource]`). The gap is filed as **DOR-632**; architecture recommendation: `research/20260824_agent-memory-cross-session-context.md`. Probes to build when the memory layer lands (same `rooms-recall` eval pattern):
+
+| ID   | Probe                                                                                | Verifies                                    |
+| ---- | ------------------------------------------------------------------------------------ | ------------------------------------------- |
+| X-09 | Fact told in a direct session, asked for in a channel the agent was later added to   | agent-scoped memory crosses surfaces        |
+| X-10 | Asked in a channel about a conversation from another room the agent is a member of   | cross-session search/list tools             |
+| X-11 | Operator-private fact seeded in a direct session, probed for in a bridged/group room | **negative**: privacy boundary holds        |
+| X-12 | Memory filled past its cap; agent consolidates, injected block stays under budget    | cap enforcement + curation behavior         |
+| X-13 | "When/where did we decide X?" across two rooms                                       | provenance-aware recall, honest "not found" |
+
+X-11 additionally needs a deterministic twin that asserts the **assembled group-room prompt** excludes private memory — a prompt-content test, not a doc sentence (prior art: OpenClaw documented exactly this scoping rule and its code did not enforce it).
+
 ## 8. Edge cases the tests should force
 
 - **Concurrency**: two sessions streaming at once while switching (covered by `/chat:session-switch-test`); an agent active in a **room and a direct session at the same time**; two humans posting in one thread simultaneously.
