@@ -988,7 +988,20 @@ export class TaskStore {
                 ...(arm.status === 'pending_approval' ? { approvedContentKey: null } : {}),
               }
             : existing.status === 'paused'
-              ? { status: 'active' as const }
+              ? {
+                  status: 'active' as const,
+                  // ...and with a grant, because this branch ARMS the row. An
+                  // operator write that un-pauses a schedule is the operator's
+                  // approval of it, exactly as the insert branch treats a create;
+                  // leaving the key null would put the row live and ungranted
+                  // until the next sync noticed and parked it (DOR-1485 review,
+                  // R2). Reachable through `shape-schedule-service` and through a
+                  // route write over a path whose file had been deleted.
+                  approvedContentKey: scheduleContentKey({
+                    prompt: def.body,
+                    cron: incomingCron,
+                  }),
+                }
               : {}),
           tags: '[]',
           updatedAt: now,

@@ -57,7 +57,11 @@ describe('TaskFileWatcher (real chokidar)', () => {
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = new FakeScheduler();
-    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler }), new ScheduleIdentityRegistry());
+    watcher = new TaskFileWatcher(
+      store,
+      new TaskRegistrar({ store, scheduler }),
+      new ScheduleIdentityRegistry()
+    );
   });
 
   afterEach(async () => {

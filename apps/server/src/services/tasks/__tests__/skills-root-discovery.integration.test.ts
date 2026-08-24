@@ -218,7 +218,10 @@ describe('schedules discovered in skills roots', () => {
     // them there left an approved schedule firing forever off a file that no
     // longer claims to be a schedule (DOR-1485 review, B3).
     it('retires an approved schedule whose block was removed while nobody watched', async () => {
-      const filePath = await writeSkill('was-scheduled', scheduledSkill('was-scheduled', { cron: '0 9 * * *' }));
+      const filePath = await writeSkill(
+        'was-scheduled',
+        scheduledSkill('was-scheduled', { cron: '0 9 * * *' })
+      );
       await reconciler.reconcile();
       const row = rowFor('was-scheduled');
       approve(row.id);
@@ -397,7 +400,15 @@ describe('schedules discovered in skills roots', () => {
       expect(await isPackageOwned(path.join(link, 'SKILL.md'), roots)).toBe(true);
 
       // A project-scoped install counts too.
-      const projectSkill = path.join(projectPath, '.dork', 'plugins', 'p', 'skills', 'y', 'SKILL.md');
+      const projectSkill = path.join(
+        projectPath,
+        '.dork',
+        'plugins',
+        'p',
+        'skills',
+        'y',
+        'SKILL.md'
+      );
       await mkdir(path.dirname(projectSkill), { recursive: true });
       await writeFile(projectSkill, scheduledSkill('y', { cron: '0 9 * * *' }), 'utf-8');
       expect(await isPackageOwned(projectSkill, roots)).toBe(true);
@@ -489,8 +500,11 @@ describe('schedules discovered in skills roots', () => {
       const row = rowFor('planted');
       expect(row.status).toBe('pending_approval');
 
-      // Unregistering pauses every one of the agent's schedules — including the
-      // ones nobody has approved.
+      // Unregistering an agent pauses every one of its schedules — including the
+      // ones nobody has approved. This is the second writer that used to mint
+      // consent by writing a status, and the reason the grant is stored rather
+      // than inferred: guarding writers one at a time was always going to miss
+      // the next one.
       store.disableTasksByAgentId(AGENT_ID);
       expect(store.getTask(row.id)?.status).toBe('paused');
 
@@ -499,10 +513,15 @@ describe('schedules discovered in skills roots', () => {
 
       expect(store.getTask(row.id)?.status).toBe('pending_approval');
       expect(scheduler.isRegistered(row.id)).toBe(false);
+      // Nothing anywhere recorded an approval, because nobody made one.
+      expect(store.backfillApprovalGrants()).toBe(0);
     });
 
     it('does not arm a parked schedule that is deleted and restored', async () => {
-      const filePath = await writeSkill('planted', scheduledSkill('planted', { cron: '0 2 * * *' }));
+      const filePath = await writeSkill(
+        'planted',
+        scheduledSkill('planted', { cron: '0 2 * * *' })
+      );
       await reconciler.reconcile();
       const row = rowFor('planted');
 
@@ -531,7 +550,10 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('withdraws the grant when the content drifts, and says so in our own words', async () => {
-      const filePath = await writeSkill('drifter', scheduledSkill('drifter', { cron: '0 2 * * *' }));
+      const filePath = await writeSkill(
+        'drifter',
+        scheduledSkill('drifter', { cron: '0 2 * * *' })
+      );
       await reconciler.reconcile();
       const row = rowFor('drifter');
       approve(row.id);
@@ -555,7 +577,10 @@ describe('schedules discovered in skills roots', () => {
     // The upgrade path: every alpha user has active rows written before the
     // grant column existed.
     it('keeps schedules that were already live approved across the upgrade', async () => {
-      const filePath = await writeSkill('legacy-live', scheduledSkill('legacy-live', { cron: '0 8 * * *' }));
+      const filePath = await writeSkill(
+        'legacy-live',
+        scheduledSkill('legacy-live', { cron: '0 8 * * *' })
+      );
       // A row exactly as an older build left it: active, no grant.
       const seeded = store.createTask({
         name: 'legacy-live',
@@ -574,6 +599,83 @@ describe('schedules discovered in skills roots', () => {
       await reconciler.reconcile();
 
       expect(store.getTask(seeded.id)?.status).toBe('active');
+    });
+
+    // R2: the operator branch of `upsertFromFile` un-pauses a row. That ARMS it,
+    // so it has to carry a grant — otherwise the row is live and ungranted, and
+    // the next sync parks the schedule an install just stood up. Reachable
+    // through `shape-schedule-service` and through a route write over a path
+    // whose file had been deleted.
+    it('arms an un-paused operator write WITH a grant, not without one', async () => {
+      // Never approved — which is the case that discriminates. A row that HAD
+      // been approved still carries its key through a pause, so it would look
+      // fine either way; a row with no grant is the one that goes live holding
+      // nothing.
+      const filePath = await writeSkill('shaped', scheduledSkill('shaped', { cron: '0 6 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('shaped');
+      expect(store.getTask(row.id)?.status).toBe('pending_approval');
+
+      // The file goes; the row is paused.
+      await rm(filePath);
+      await reconciler.reconcile();
+      expect(store.getTask(row.id)?.status).toBe('paused');
+
+      // An install writes the same path again, as an operator action.
+      await writeFile(filePath, scheduledSkill('shaped', { cron: '0 6 * * *' }), 'utf-8');
+      const resolved = await realPath(filePath);
+      store.upsertFromFile(
+        {
+          name: 'shaped',
+          body: 'Do the thing.',
+          filePath: resolved,
+          dirPath: path.dirname(resolved),
+          scope: 'project',
+          projectPath,
+          meta: {
+            name: 'shaped',
+            description: 'A skill named shaped',
+            cron: '0 6 * * *',
+            timezone: 'UTC',
+            enabled: true,
+            permissions: 'acceptEdits',
+          },
+        },
+        AGENT_ID
+      );
+      expect(store.getTask(row.id)?.status).toBe('active');
+
+      // The proof: a sync right afterwards leaves it alone. Without a grant the
+      // row is live and ungranted — armed now, parked within five minutes — and
+      // an install would stand up a schedule that switched itself off.
+      await reconciler.reconcile();
+      expect(store.getTask(row.id)?.status).toBe('active');
+    });
+
+    // The park clears the grant, and that clearing is load-bearing: without it a
+    // row keeps the key for content it was approved at, so editing a schedule
+    // away and back again would silently re-arm it with nobody looking.
+    it('does not re-arm when a drifted file is reverted to the approved content', async () => {
+      const filePath = await writeSkill(
+        'reverted',
+        scheduledSkill('reverted', { cron: '0 6 * * *' })
+      );
+      await reconciler.reconcile();
+      const row = rowFor('reverted');
+      approve(row.id);
+
+      // Drift to different content — the grant is withdrawn here.
+      await writeFile(filePath, scheduledSkill('reverted', { cron: '0 23 * * *' }), 'utf-8');
+      await reconciler.reconcile();
+      expect(store.getTask(row.id)?.status).toBe('pending_approval');
+
+      // Back to exactly what was approved. The row must NOT arm itself: the
+      // approval ended when the content changed, and nobody has looked since.
+      await writeFile(filePath, scheduledSkill('reverted', { cron: '0 6 * * *' }), 'utf-8');
+      await reconciler.reconcile();
+
+      expect(store.getTask(row.id)?.status).toBe('pending_approval');
+      expect(scheduler.isRegistered(row.id)).toBe(false);
     });
 
     it('gives no grant to a row that was merely parked or paused', async () => {

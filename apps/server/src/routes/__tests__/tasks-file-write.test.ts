@@ -64,6 +64,9 @@ import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
+import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
+import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
+import { legacyRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
@@ -417,7 +420,9 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('nightly', filePath, '0 9 * * *');
 
-    const res = await request(app).patch(`/api/tasks/${id}`).send({ status: 'active', enabled: true });
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ status: 'active', enabled: true });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
@@ -429,7 +434,9 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('broken', filePath, '');
 
-    const res = await request(app).patch(`/api/tasks/${id}`).send({ status: 'active', enabled: true });
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ status: 'active', enabled: true });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('permissions');
@@ -496,10 +503,124 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
       return realUpdate(taskId, data);
     });
 
-    const res = await request(app).patch(`/api/tasks/${id}`).send({ status: 'active', cron: '0 21 * * *' });
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ status: 'active', cron: '0 21 * * *' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
     vi.restoreAllMocks();
     expect(store.getTask(id)!.status).toBe('active');
+  });
+});
+
+/**
+ * Editing a live schedule must not quietly disarm it (DOR-1485 review, R1).
+ *
+ * The arm grant is keyed on the schedule's content, so any edit invalidates it.
+ * That is right for a file DorkOS found and wrong for a person using the
+ * cockpit: they changed the prompt, they are standing right there, and the next
+ * sync five minutes later would park their own schedule and tell them its file
+ * had changed. Re-issuing the grant is the route's job and only for a caller
+ * that cleared the agent bar — an agent that rewrites an approved schedule must
+ * still send it back for a look.
+ */
+describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let dorkHome: string;
+  let scheduler: TaskSchedulerService;
+  let registrar: TaskRegistrar;
+  let reconciler: TaskReconciler;
+
+  beforeEach(async () => {
+    state.writeFailure = null;
+    scheduler = createMockScheduler();
+    db = createTestDb();
+    store = new TaskStore(db);
+    registrar = new TaskRegistrar({ store, scheduler });
+    reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-approval-'));
+    await fs.mkdir(path.join(dorkHome, 'tasks'), { recursive: true });
+    reconciler.addRoot(legacyRoot(path.join(dorkHome, 'tasks'), 'global'));
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/tasks', createTasksRouter(store, scheduler, registrar, dorkHome));
+  });
+
+  afterEach(async () => {
+    store.close();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  /** An operator-created, already-live schedule. */
+  async function liveSchedule(): Promise<string> {
+    const res = await request(app).post('/api/tasks').send({
+      name: 'nightly-sweep',
+      description: 'sweeps the backlog',
+      prompt: 'sweep the backlog',
+      cron: '0 3 * * *',
+      target: 'global',
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.status).toBe('active');
+    return res.body.id as string;
+  }
+
+  it('keeps a schedule armed when a person edits what it does', async () => {
+    const id = await liveSchedule();
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ prompt: 'sweep the backlog and file anything stale' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.status).toBe('active');
+
+    // The five minutes later that used to undo it.
+    await reconciler.reconcile();
+
+    expect(store.getTask(id)!.status).toBe('active');
+    expect(store.getTask(id)!.reason).toBeNull();
+  });
+
+  it('keeps a schedule armed when a person edits when it runs', async () => {
+    const id = await liveSchedule();
+
+    await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    await reconciler.reconcile();
+
+    expect(store.getTask(id)!.status).toBe('active');
+    expect(store.getTask(id)!.cron).toBe('0 21 * * *');
+  });
+
+  // The other half, and the reason this lives in the route rather than in
+  // `updateTask`: `prompt` and `cron` are agent-writable, so re-keying on every
+  // content write would let an agent rewrite an approved schedule and keep it
+  // armed — the substitution the bypass clamp exists to refuse.
+  it('sends a schedule back for approval when an AGENT edits what it does', async () => {
+    const id = await liveSchedule();
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ prompt: 'sweep the backlog and then delete everything' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    await reconciler.reconcile();
+
+    const after = store.getTask(id)!;
+    expect(after.status).toBe('pending_approval');
+    expect(after.reason).toMatch(/changed since/i);
+  });
+
+  it('does not re-approve a schedule that was already waiting', async () => {
+    const id = await liveSchedule();
+    await request(app).patch(`/api/tasks/${id}`).send({ status: 'pending_approval' });
+
+    await request(app).patch(`/api/tasks/${id}`).send({ prompt: 'something else' });
+    await reconciler.reconcile();
+
+    expect(store.getTask(id)!.status).toBe('pending_approval');
   });
 });

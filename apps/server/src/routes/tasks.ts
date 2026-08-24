@@ -782,6 +782,27 @@ export function createTasksRouter(
       updated = store.updateTask(req.params.id, { status: intendedStatus }) ?? updated;
     }
 
+    // **A person editing their own live schedule re-approves it.**
+    //
+    // The grant is keyed on the schedule's content, so any edit to what it does
+    // or when it runs invalidates it. Without this line the cockpit's ordinary
+    // edit — change the prompt, save — left a live schedule holding a grant for
+    // content that no longer existed, and the next sync within five minutes
+    // parked it with "this file changed since it was last approved". The person
+    // is the one who changed it, and they are standing right there.
+    //
+    // **Here and not in `updateTask`, deliberately.** `prompt` and `cron` are
+    // agent-writable (`task-write-policy.ts`); only `status` is operator-only.
+    // Re-keying on every content write would therefore let an agent rewrite an
+    // approved schedule and carry its approval across — which is precisely the
+    // substitution the bypass clamp exists to refuse, reintroduced one layer up.
+    // So the grant is re-issued only for a caller that cleared the agent bar. An
+    // agent's edit still re-parks, and a person still has to look at it.
+    if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
+      store.recordApproval(updated.id);
+      updated = store.getTask(updated.id) ?? updated;
+    }
+
     // Re-register or unregister the cron job to match the new state, through the
     // shared seam — see the note on the create path above.
     registrar.syncTask(updated.id);

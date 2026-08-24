@@ -37,7 +37,11 @@ function makeWatcher(store: TaskStore = makeStore()): {
   scheduler: FakeScheduler;
 } {
   const scheduler = new FakeScheduler();
-  const watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler }), new ScheduleIdentityRegistry());
+  const watcher = new TaskFileWatcher(
+    store,
+    new TaskRegistrar({ store, scheduler }),
+    new ScheduleIdentityRegistry()
+  );
   return { watcher, scheduler };
 }
 

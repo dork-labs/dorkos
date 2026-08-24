@@ -101,7 +101,11 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     db = createTestDb();
     store = new TaskStore(db);
     watcherScheduler = new FakeScheduler();
-    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler: watcherScheduler }), new ScheduleIdentityRegistry());
+    watcher = new TaskFileWatcher(
+      store,
+      new TaskRegistrar({ store, scheduler: watcherScheduler }),
+      new ScheduleIdentityRegistry()
+    );
   });
 
   afterEach(async () => {

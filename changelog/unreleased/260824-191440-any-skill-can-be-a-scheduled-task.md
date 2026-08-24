@@ -4,6 +4,7 @@ covers:
   - 'test(server,client): cover skills-root discovery, the arm gate and file provenance'
   - 'fix(server,client): approving a schedule no longer rewrites its file'
   - 'fix(server,db,client): store the schedule arm grant instead of inferring it from status'
+  - 'fix(server): editing your own live schedule keeps it running'
 ---
 
 ### Added
@@ -19,3 +20,4 @@ covers:
 - Schedules that came with an installed package are found. They arrive as a shortcut into the package's own folder, and DorkOS was quietly skipping every one of them, so a package could ship a schedule that never appeared anywhere (DOR-1485)
 - DorkOS now records your approval of a schedule directly, rather than working it out from whether the schedule is switched on. Switching a schedule off, or removing the agent it belongs to, no longer has any bearing on whether it counts as approved — so a schedule you never approved cannot end up running because something else switched it around. Schedules you had already approved stay approved when you upgrade (DOR-1485)
 - When a schedule is waiting because its file changed, DorkOS says so in its own voice instead of appearing to quote an agent that never said it (DOR-1485)
+- Editing a schedule that is already running keeps it running. Changing what it does, or when it runs, no longer sends your own schedule back to you for approval a few minutes later. If an agent makes the change instead of you, it still comes back for a look (DOR-1485)
