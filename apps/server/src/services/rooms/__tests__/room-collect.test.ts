@@ -1012,6 +1012,7 @@ describe('one agent, several waiting rooms, one clock reading', () => {
       entry: entry(`${roomId}-1`),
       depth: 0,
       engaged: null,
+      reason: 'mention',
       duringTurnHere: false,
       park: true,
       arrivedAt: at,

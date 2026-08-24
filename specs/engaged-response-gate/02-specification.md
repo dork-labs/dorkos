@@ -177,7 +177,7 @@ export function routeAmbient(opts: {
 
 ### 4.1 The rules
 
-A rule fires only if it holds for **every** entry in the collection. One entry that no rule covers is enough to pass the whole collection on, because a turn answers the moment, not the message.
+**Every message in the burst must be excusable, and they need not be excusable for the same reason.** One entry that no rule covers is enough to pass the whole collection on, because a turn answers the moment, not the message; a burst where one post named a colleague and the next was that colleague's reply is silence twice over. The reported rule is the one that excused the **newest** message, since that is the message the turn would have been answering.
 
 **R1 — `named_other_agent`.** The entry names at least one agent member, and none of them is this agent.
 
@@ -270,6 +270,8 @@ detail: {
 ```
 
 **No rationale, ever.** The refusal contract says `detail` holds _"ids, counts, durations, coarse enums — never content"_, and a judge's one-line reason is content: it is a paraphrase of somebody's message, written to a log file. It is also why tier 2's output is two tokens rather than a sentence (§8.3). Rationale is an eval-only affordance (§10.4), where the corpus is committed on purpose.
+
+**`detail` reaches the LOG, never the 256-entry ring — and that boundary is load-bearing.** `GET /api/debug/refusals` answers without a credential while login is off, so `RecentRefusal` carries identifiers a reader correlates with and nothing a call site composed; `detail` holds error strings and file paths on other refusal paths, and `dispatch-buffers.test.ts` fails if it ever arrives there. The ring therefore gains `entryId` (an id, like every field beside it) and the **rule lives on the JSONL line only**. That is the right place for it anyway: the ring answers _"why has nothing replied for ten minutes"_, and tuning is `jq 'select(.reason=="not_addressed_to_me") | .rule'` over the durable log.
 
 ---
 
