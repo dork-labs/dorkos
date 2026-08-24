@@ -1,5 +1,5 @@
-import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import prettier from 'prettier';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
@@ -27,13 +27,27 @@ import { runArchive } from '../archive.js';
  * @module capture/__tests__/json
  */
 
-/** Re-format `text` the way `prettier --check` would at `filePath`. */
+/**
+ * Re-format `text` the way the CI gate would.
+ *
+ * The config is resolved from the REAL published manifest path, never from the
+ * caller's target. That asymmetry is the whole point: these tests compare what a
+ * writer produced against what `prettier --check .` demands, so the expectation
+ * side must be anchored to the repo's own `.prettierrc` independently of
+ * wherever the writer happened to write.
+ *
+ * Resolving from the target instead makes every assertion here self-referential
+ * — writer and expectation resolve the SAME config, agree with each other, and
+ * pass even when both are wrong. That is the "parity test that pins one of the
+ * two inputs it compares" shape in `.claude/rules/testing.md`, and it was real:
+ * with the config resolved from a `/tmp` target, `resolveConfig` returned `null`,
+ * both sides silently fell back to Prettier's default `printWidth: 80` instead of
+ * this repo's `100`, and the suite stayed green while proving nothing about the
+ * gate. Verified by seeding exactly that and watching it pass.
+ */
 async function prettierWould(text: string, filePath: string): Promise<string> {
-  return prettier.format(text, {
-    ...(await prettier.resolveConfig(filePath)),
-    filepath: filePath,
-    parser: 'json',
-  });
+  const gateConfig = await prettier.resolveConfig(path.join(OUTPUT_DIR, 'manifest.json'));
+  return prettier.format(text, { ...gateConfig, filepath: filePath, parser: 'json' });
 }
 
 /** A value whose short arrays are exactly what `JSON.stringify` gets wrong. */
@@ -44,12 +58,36 @@ const FIXTURE = {
     { id: 'topology', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   ],
   assets: [{ file: 'cockpit-light.png', surface: 'cockpit', bytes: 3 }],
+  // Collapses to a 94-column line: inside this repo's `printWidth: 100`, past
+  // Prettier's built-in default of 80. Every other array here collapses under
+  // BOTH widths, so this entry is the only thing that can tell the two configs
+  // apart — it is what gives the `writeJsonFile` case below its teeth. Proven:
+  // move REPO_SCRATCH_DIR outside the repo and that test goes red; delete this
+  // entry and it goes green again while the writer is still wrong.
+  widthSensitive: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'],
 };
+
+/**
+ * Scratch space for the writer tests, INSIDE the repo (`apps/e2e/.temp`,
+ * gitignored) rather than in `os.tmpdir()`.
+ *
+ * This is load-bearing, not incidental. `formatJson` resolves Prettier's config
+ * by walking up from the file it is writing, so a target under `/tmp` finds no
+ * `.prettierrc` at all — `resolveConfig` returns `null` and Prettier falls back
+ * to its built-in defaults (`printWidth: 80`, not this repo's `100`). The
+ * assertions here compare a writer's output against `prettierWould` of that same
+ * output, so under `/tmp` both sides would resolve the same WRONG config and the
+ * suite would prove internal consistency while saying nothing about the
+ * `prettier --check` gate it exists to pin. Keeping the target inside the repo
+ * makes the tests exercise the exact resolution production uses.
+ */
+const REPO_SCRATCH_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../.temp');
 
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-capture-json-test-'));
+  await fs.mkdir(REPO_SCRATCH_DIR, { recursive: true });
+  tmpDir = await fs.mkdtemp(path.join(REPO_SCRATCH_DIR, 'capture-json-test-'));
 });
 
 afterEach(async () => {
