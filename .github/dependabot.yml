@@ -1,0 +1,64 @@
+# Dependabot: routine dependency freshness, tamed for a monorepo with a
+# 40-minute merge pipeline and a deliberate upgrade process for the risky part.
+#
+# WHAT THIS COVERS: weekly patch+minor bumps for the whole pnpm workspace,
+# grouped into ONE pull request, and a monthly grouped bump of GitHub Actions
+# versions. Each PR rides the normal pipeline (cheap PR checks -> merge queue
+# runs the full suites) and merge-tail arms it once green like any other PR.
+#
+# WHAT THIS DELIBERATELY DOES NOT COVER:
+#
+#   * MAJOR versions — excluded below. Majors change behavior and need the
+#     strategic pass /app:upgrade exists for (changelog categorization, impact
+#     assessment, adoption decisions), not a blind bump.
+#   * The agent-runtime SDKs — excluded by name. Each sits behind an adapter
+#     boundary (Hard Rule 2 in AGENTS.md) and upgrades through the
+#     upgrading-runtime-dependencies skill, which reads the changelog and
+#     decides what to adopt. A bot bump would bypass exactly that judgment.
+#
+# Security-CVE updates are configured separately (repo setting, enabled
+# 2026-08-24) and are NOT rate-limited by this file — a CVE fix PR opens as
+# soon as GitHub publishes the advisory, any day of the week.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    # One PR for everything, or it's 30 PRs x one queue build each.
+    groups:
+      npm-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Majors go through /app:upgrade, quarterly and deliberately.
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      # Runtime SDKs go through the upgrading-runtime-dependencies skill.
+      - dependency-name: '@anthropic-ai/claude-agent-sdk'
+      - dependency-name: '@openai/codex-sdk'
+      - dependency-name: '@opencode-ai/sdk'
+    # The queue merges it; nobody needs a review ping for a patch bump that
+    # 13,000 tests are about to vet anyway.
+    open-pull-requests-limit: 5
+    labels:
+      - skip-changelog
+      - review:light
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - '*'
+    labels:
+      - skip-changelog
+      - review:light
