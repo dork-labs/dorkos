@@ -534,8 +534,8 @@ describe('AgentsList', () => {
       { wrapper: createWrapper() }
     );
 
-    expect(screen.getByText('7 tasks')).toBeInTheDocument();
-    expect(screen.getByText('1 task')).toBeInTheDocument();
+    expect(screen.getByText('7 schedules')).toBeInTheDocument();
+    expect(screen.getByText('1 schedule')).toBeInTheDocument();
     // Exactly one row says nothing is scheduled. Scoped away from the Managed
     // by column, which draws the same dash for an agent nobody owns.
     const scheduledDashes = screen

@@ -273,7 +273,7 @@ describe('ScheduleRow', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Delete task')).toBeTruthy();
+      expect(screen.getByText('Delete scheduled task')).toBeTruthy();
     });
 
     // Dialog body mentions the schedule name — allow multiple matches (schedule row + dialog)

@@ -212,7 +212,7 @@ export function createAgentColumns(
         if (count === 0) return <span className="text-muted-foreground text-xs">—</span>;
         return (
           <Badge variant="outline" className="text-xs whitespace-nowrap">
-            {count} {count === 1 ? 'task' : 'tasks'}
+            {count} {count === 1 ? 'schedule' : 'schedules'}
           </Badge>
         );
       },

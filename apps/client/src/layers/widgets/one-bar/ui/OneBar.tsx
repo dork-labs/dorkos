@@ -17,7 +17,7 @@ interface OneBarProps {
   fill?: ReactNode;
   /** State chips that describe the identity — working, archived, bridged, origin. */
   chips?: ReactNode;
-  /** Page actions (New Agent, New Task), at the right edge before the fixed cluster. */
+  /** Page actions (New Agent, New Schedule), at the right edge before the fixed cluster. */
   actions?: ReactNode;
 }
 

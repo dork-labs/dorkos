@@ -58,7 +58,7 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
             <div className="space-y-3">
               <p>This will permanently delete all DorkOS data, including:</p>
               <ul className="list-inside list-disc space-y-1 text-sm">
-                <li>All Tasks schedules and run history</li>
+                <li>All scheduled tasks and their run history</li>
                 <li>All Relay configuration and messages</li>
                 <li>All Mesh agent registry data</li>
                 <li>Your config file and preferences</li>

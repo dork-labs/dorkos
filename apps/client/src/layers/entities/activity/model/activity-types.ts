@@ -38,7 +38,7 @@ export const CATEGORY_CONFIG: Record<
   'tasks' | 'relay' | 'agent' | 'config' | 'system',
   CategoryConfig
 > = {
-  tasks: { text: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Tasks' },
+  tasks: { text: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Schedules' },
   relay: { text: 'text-teal-500', bg: 'bg-teal-500/10', label: 'Relay' },
   agent: { text: 'text-indigo-500', bg: 'bg-indigo-500/10', label: 'Agent' },
   config: { text: 'text-amber-500', bg: 'bg-amber-500/10', label: 'Config' },

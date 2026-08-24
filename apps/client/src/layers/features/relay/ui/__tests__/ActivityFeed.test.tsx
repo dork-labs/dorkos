@@ -236,7 +236,7 @@ describe('ActivityFeed', () => {
       );
     });
 
-    it('filters to only tasks jobs when "Tasks jobs" is selected', () => {
+    it('filters to only tasks jobs when "Scheduled runs" is selected', () => {
       const conversations = [
         makeConversation('conv-1', 'relay.agent.session-1'),
         makeConversation('conv-2', 'relay.system.tasks.schedule-1'),
@@ -248,7 +248,7 @@ describe('ActivityFeed', () => {
 
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Tasks jobs' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Scheduled runs' }));
 
       expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
       expect(screen.getByTestId('conversation-row')).toHaveAttribute(

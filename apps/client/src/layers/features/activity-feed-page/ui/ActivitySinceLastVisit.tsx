@@ -48,7 +48,7 @@ function countByCategory(
  */
 function buildDigestLine(counts: Partial<Record<ActivityCategory, number>>): string {
   const CATEGORY_SUFFIXES: Record<ActivityCategory, string> = {
-    tasks: 'Tasks run',
+    tasks: 'Scheduled run',
     relay: 'Relay event',
     agent: 'Agent update',
     config: 'Config change',

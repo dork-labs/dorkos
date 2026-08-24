@@ -32,7 +32,7 @@ export function TasksDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[80vh] max-w-3xl flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Tasks — {agentName}</DialogTitle>
+          <DialogTitle>Schedules · {agentName}</DialogTitle>
         </DialogHeader>
         <div className="flex-1 overflow-auto">
           <TasksList

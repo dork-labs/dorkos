@@ -1,10 +1,13 @@
 /**
- * Tasks — what this agent runs on a schedule, and what those runs did (spec
+ * Schedules — what this agent runs on a timer, and what those runs did (spec
  * `profile-unification` §1.5, D7).
  *
- * "Tasks", never "Schedule": a schedule is the clock, and what an operator cares
- * about is the work. Presets appear only when there is nothing here yet, which
- * is the one moment they answer a question rather than take up room.
+ * The row said "Tasks" until DOR-1490, on the reasoning that a schedule is the
+ * clock and the work is what an operator cares about. The rename overrules it
+ * for a reason that outranks it: the bare word "task" already names the to-do
+ * list a chat turn keeps, and one word cannot mean both. Presets appear only
+ * when there is nothing here yet, which is the one moment they answer a
+ * question rather than take up room.
  *
  * @module features/profile/ui/pages/TasksPage
  */

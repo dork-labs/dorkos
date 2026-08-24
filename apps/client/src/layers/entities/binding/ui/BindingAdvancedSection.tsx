@@ -291,13 +291,13 @@ export function BindingAdvancedSection({
           <p className="text-muted-foreground text-xs font-medium">Notifications</p>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label htmlFor="notify-task-complete" className="cursor-pointer text-xs font-normal">
-              Message me when tasks finish
+              Message me when scheduled tasks finish
             </Label>
             <Switch
               id="notify-task-complete"
               checked={notifyOnTaskComplete}
               onCheckedChange={onNotifyOnTaskCompleteChange}
-              aria-label="Message me when tasks finish"
+              aria-label="Message me when scheduled tasks finish"
             />
           </div>
           <p className="text-muted-foreground text-xs">

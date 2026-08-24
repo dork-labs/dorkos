@@ -72,8 +72,8 @@ export function TasksPage() {
     return (
       <FeatureDisabledState
         icon={icons.tasks}
-        name="Tasks"
-        description="Tasks runs AI agent tasks on a schedule. Start DorkOS with the --tasks flag to enable it."
+        name="Scheduled tasks"
+        description="Scheduled tasks run your agents on a timer. Start DorkOS with the --tasks flag to turn them on."
         command="dorkos --tasks"
       />
     );
@@ -86,9 +86,9 @@ export function TasksPage() {
           <TriangleAlert className="text-destructive size-6" />
         </div>
         <div className="space-y-1">
-          <p className="text-sm font-medium">Could not load tasks</p>
+          <p className="text-sm font-medium">Could not load your scheduled tasks</p>
           <p className="text-muted-foreground mt-1 text-xs">
-            The tasks API is unreachable. Check that the server is running correctly.
+            The scheduler is unreachable. Check that the server is running correctly.
           </p>
         </div>
         <Button size="sm" onClick={() => void refetch()} className="mt-1">

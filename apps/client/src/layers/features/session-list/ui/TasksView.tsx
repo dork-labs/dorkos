@@ -226,12 +226,12 @@ export function TasksView({ toolStatus, agentId }: TasksViewProps) {
   if (toolStatus === 'disabled-by-agent') {
     return (
       <div className="flex flex-col items-center justify-center gap-3 px-4 py-8">
-        <p className="text-muted-foreground/60 text-sm">Tasks disabled for this agent</p>
+        <p className="text-muted-foreground/60 text-sm">Scheduled tasks are off for this agent</p>
         <button
           onClick={openTasks}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
-          Open Tasks →
+          Open Schedules →
         </button>
       </div>
     );
@@ -265,7 +265,7 @@ export function TasksView({ toolStatus, agentId }: TasksViewProps) {
           onClick={openTasks}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
-          Open Tasks →
+          Open Schedules →
         </button>
       </div>
     );
@@ -333,7 +333,7 @@ export function TasksView({ toolStatus, agentId }: TasksViewProps) {
             onClick={openTasks}
             className="text-muted-foreground hover:text-foreground text-xs transition-colors"
           >
-            Open Tasks →
+            Open Schedules →
           </button>
         </div>
       </div>

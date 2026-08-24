@@ -187,7 +187,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
       key: 'tasks',
       configKey: 'tasksTools',
       label: 'Scheduling',
-      description: 'Create and run scheduled agent tasks',
+      description: 'Create and run scheduled tasks',
       tools: toolNamesForDomain('tasks'),
       serverDisabled: !tasksEnabled,
       serverDisabledReason: 'Disabled globally by server configuration.',

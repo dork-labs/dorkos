@@ -96,6 +96,6 @@ export function useTriggerTask() {
       // is not underneath it, so the prefix match cannot reach that.
       queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
     },
-    meta: { errorLabel: "Couldn't run the task" },
+    meta: { errorLabel: "Couldn't run the scheduled task" },
   });
 }

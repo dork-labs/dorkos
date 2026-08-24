@@ -21,10 +21,10 @@ export function TasksDialogWrapper({ open, onOpenChange }: DialogWrapperProps) {
         <ResponsiveDialogFullscreenToggle />
         <ResponsiveDialogHeader className="border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">
-            Tasks Scheduler
+            Scheduled tasks
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
-            Manage scheduled AI agent tasks
+            See and change your scheduled tasks
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <div className="flex min-h-0 flex-1 flex-col">

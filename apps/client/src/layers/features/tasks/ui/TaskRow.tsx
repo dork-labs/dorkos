@@ -323,7 +323,7 @@ export function TaskRow({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete task</DialogTitle>
+              <DialogTitle>Delete scheduled task</DialogTitle>
               <DialogDescription>
                 Delete &ldquo;{task.name}&rdquo;? This will also remove all run history. This action
                 cannot be undone.

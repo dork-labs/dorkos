@@ -266,7 +266,7 @@ vi.mock('../model/use-palette-items', () => ({
     rooms: noRooms,
     allAgents: mockAgents,
     features: [
-      { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
+      { id: 'tasks', label: 'Scheduled tasks', icon: 'Clock', action: 'openTasks' },
       { id: 'relay', label: 'Connections', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
@@ -300,7 +300,7 @@ vi.mock('../model/use-palette-items', () => ({
         data: a,
       })),
       ...[
-        { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
+        { id: 'tasks', label: 'Scheduled tasks', icon: 'Clock', action: 'openTasks' },
         { id: 'relay', label: 'Connections', icon: 'Radio', action: 'openRelay' },
         { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
         { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
@@ -652,9 +652,9 @@ describe('CommandPaletteDialog', () => {
     });
   }
 
-  it('opens Tasks dialog and closes palette when Tasks Scheduler is selected', () => {
-    searchThen('Tasks Scheduler');
-    const item = screen.getByText('Tasks Scheduler').closest('[data-slot="command-item"]');
+  it('opens Tasks dialog and closes palette when Scheduled tasks is selected', () => {
+    searchThen('Scheduled tasks');
+    const item = screen.getByText('Scheduled tasks').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);

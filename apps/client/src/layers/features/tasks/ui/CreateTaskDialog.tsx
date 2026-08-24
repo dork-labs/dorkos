@@ -229,7 +229,7 @@ export function CreateTaskDialog({
             )}
           </div>
           <ResponsiveDialogDescription className="sr-only">
-            {editTask ? 'Edit an existing Tasks schedule' : 'Create a new Tasks schedule'}
+            {editTask ? 'Edit an existing scheduled task' : 'Create a new scheduled task'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 

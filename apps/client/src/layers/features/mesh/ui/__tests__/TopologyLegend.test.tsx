@@ -84,7 +84,7 @@ describe('TopologyLegend', () => {
     it('renders Relay and Tasks indicator entries', () => {
       render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
       expect(screen.getByText('Relay-enabled')).toBeInTheDocument();
-      expect(screen.getByText('Tasks schedules')).toBeInTheDocument();
+      expect(screen.getByText('Scheduled tasks')).toBeInTheDocument();
     });
 
     it('renders zoom hint text', () => {

@@ -6,7 +6,7 @@ describe('HOME_TABS', () => {
     expect(HOME_TABS.map((tab) => [tab.label, tab.path])).toEqual([
       ['Home', '/'],
       ['Activity', '/activity'],
-      ['Scheduled', '/tasks'],
+      ['Schedules', '/tasks'],
       ['Workspaces', '/workspaces'],
     ]);
   });
