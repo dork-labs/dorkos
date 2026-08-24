@@ -2056,6 +2056,107 @@ export const comparisons: Competitor[] = [
     relatedFeatures: ['telegram-adapter', 'slack-adapter', 'task-scheduler', 'rooms'],
   },
   {
+    slug: 'grok-bot',
+    name: 'Grok Bot',
+    maker: 'xAI',
+    homepage: 'https://docs.x.ai/grok-bot/overview',
+    framing: 'adjacent',
+    category: 'Cloud coworker with a computer of its own',
+    oneLiner:
+      'Grok Bot is xAI’s cloud coworker with a computer of its own. DorkOS is a cockpit for coding agents on your machine. Here is the shared ground.',
+    pricing:
+      'It needs a paid plan, and not the cheapest one. The plans xAI lists as eligible are SuperGrok Plus or SuperGrok Heavy, which the App Store prices at $100 and $300 a month, or on the Cursor side Pro+ at $60, Ultra at $200, or a Teams seat from $40. Plain SuperGrok at $30 and Cursor Pro at $20 are not on that list.',
+    openSource: false,
+    verdict:
+      'Grok Bot and DorkOS both take a job off your hands and carry on without you, and that is about where the resemblance stops. Grok Bot is a coworker xAI runs for you: each bot lives on a cloud computer with a browser, a terminal and files, signs into your tools with your own accounts, and keeps working after you shut your laptop. The jobs xAI puts forward for it are office ones: sales outbound, recruiting, expenses, a chief of staff. Working on the code in your own repository is not among them. On one row it is plainly ahead of us: several of its bots run at once, message each other and hand a job along, and that works today, while our rooms are still marked early. What it does not do is run Claude Code, Codex or OpenCode against the projects on your own machine, which is the whole of what DorkOS is for.',
+    theirStrengths: [
+      'you want a working computer in the cloud with nothing to install and nothing to keep running yourself',
+      'the work you want handed over is sales, recruiting, expenses or reporting rather than code',
+      'you already pay for Cursor Pro+, Ultra or a Teams seat, because it comes with those',
+      'you want several bots that message each other and pass work along, working now rather than marked early',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'It is xAI’s own bot and only that. There is no putting Claude Code on one job and Codex on the next, because the bot is the product.',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. You teach a bot a job once and it keeps that as a skill, and a routine then runs that skill on a schedule, on xAI’s computer rather than yours.',
+        detail:
+          'Worth knowing before you switch one on: xAI’s own advice is to test a routine first, and its warning is that a test run performs real work. In its words, it can navigate websites, change files, and call connected tools, so a test is a real send rather than a rehearsal. The difference from ours is where the job runs. Theirs runs in xAI’s cloud whether or not your laptop is open; ours needs your own machine to be awake.',
+        source: 'https://docs.x.ai/grok-bot/skills-routines-and-automations',
+      },
+      coordination: {
+        verdict: 'yes',
+        note: 'Yes, and this is the row where it beats us. Several bots run at once, message each other, share context in threads or group chats, and pass ownership of a job along.',
+        detail:
+          'Straight about the scoreboard: this works for them today and ours is still marked early. One thing to know about the shape of it, from xAI’s own security page. Every bot on your account uses the same cloud computer, so files and signed-in browser sessions are shared between them, and the page says plainly not to treat separate bots as a security boundary. So it is many bots on one machine rather than many machines. DorkOS puts agents in shared rooms instead, and we hold that at "partly" until everyday use proves it.',
+        source: 'https://docs.x.ai/grok-bot/overview',
+      },
+      'local-first': {
+        verdict: 'no',
+        note: 'No. The work happens on a computer xAI runs. It can reach your own machine, but only for commands you switch on and approve under a local-computer policy.',
+        detail:
+          'This is the deepest difference between the two, and neither answer is wrong; they are answers to different questions. Grok Bot’s computer is the product: it is already set up, it holds your files and your signed-in browser sessions between jobs, and turning off what it may do on your laptop does not stop it working in the cloud. DorkOS has no cloud of ours for your work to sit in. Your projects, your sessions and your history stay on your own computer, under the accounts already signed in there.',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes. A desktop app for Mac and Windows and an iPhone app, so you can pick a job up from your pocket. There is no Linux desktop app.',
+        detail:
+          'The phone is a real one rather than a viewer: you can start work, answer a bot’s questions, approve steps and review results from the iPhone app. xAI is straight about where it stops, though. Some advanced desktop controls and teach-by-demonstration are not on iPhone, and editing a routine’s schedule, changing a bot’s instructions, reviewing run history or deleting a routine all send you back to a desktop. It is iPhone only, too, not iPad or Android. So this row is close rather than level: both let you approve work from your pocket, and theirs asks you to finish some of it at a desk.',
+        source: 'https://docs.x.ai/grok-bot/get-started',
+      },
+      extensibility: {
+        verdict: 'partial',
+        note: 'Partly. A Plugins screen installs supported connectors and packaged skills, and connectors are how a bot reaches an outside tool. What its documentation does not describe is a public marketplace, or a way to hand your setup to someone else.',
+        detail:
+          'Skills are reusable instructions a bot can keep and reuse, which is the same idea we build on, and connectors are installed for the whole account. Its overview page adds that a bot can use connectors and MCP tools where they are available, so the common standard for reaching outside tools is in the picture. The half we could not find any account of is sharing: nothing in its documentation describes publishing a skill for other people, or installing one somebody else wrote. That may simply be early. It is why this row is "partly" rather than a yes, and we would rather say we could not find it than say it does not exist.',
+        source: 'https://docs.x.ai/grok-bot/skills-routines-and-automations',
+      },
+      pricing: {
+        verdict: 'no',
+        note: 'Neither free nor readable. The cheapest way in is a Cursor Teams seat at $40 a month, or Cursor Pro+ at $60 for one person, and none of it is open source.',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Grok Bot included in Cursor?',
+        a: 'On some Cursor plans, yes. xAI lists Cursor Pro+, Cursor Ultra and Cursor Teams, Standard or Premium, among the plans that can use it. Plain Cursor Pro, the $20 one, is not on that list. Pro+ is $60 a month, Ultra is $200, and Teams starts at $40 a seat. If you are already on one of those, Grok Bot is not an extra bill.',
+      },
+      {
+        q: 'Does Grok Bot work with my local code?',
+        a: 'Not in the way you probably mean. It works on its own computer in xAI’s cloud, and it only touches your machine if you switch that on and approve each command, or set it to always allow. Even then, the jobs xAI puts forward for it are office work rather than software work. For an agent working through your own repository, you want a coding agent, which is what DorkOS runs.',
+      },
+      {
+        q: 'Is Grok Bot a coding agent?',
+        a: 'No. The eight jobs xAI uses to describe it are sales outbound, talent scout, paid media, expense manager, product performance, bug reproduction, account health and chief of staff. Bug reproduction is the closest it gets to software, and even that is about turning a bug report into steps someone can follow, not writing the fix.',
+      },
+      {
+        q: 'Which Grok plan do I actually need?',
+        a: 'SuperGrok Plus or SuperGrok Heavy, going by xAI’s own list of eligible plans. On the App Store those are $100 and $300 a month. The cheaper Grok subscriptions, SuperGrok at $30 and SuperGrok Lite at $10, are not on the list, so paying for Grok does not by itself get you Grok Bot.',
+      },
+      {
+        q: 'Can I use Grok Bot and DorkOS together?',
+        a: 'Yes, and they are not after the same job. Grok Bot takes the office work: the outreach, the expenses, the weekly report. DorkOS is where you start a coding job on your own machine, watch it run, and pick it up again from your phone.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://docs.x.ai/grok-bot/overview',
+      'https://docs.x.ai/grok-bot/get-started',
+      'https://docs.x.ai/grok-bot/mobile',
+      'https://docs.x.ai/grok-bot/computer-and-apps',
+      'https://docs.x.ai/grok-bot/skills-routines-and-automations',
+      'https://docs.x.ai/grok-bot/approvals-security-and-privacy',
+      'https://docs.x.ai/grok-bot/use-cases',
+      'https://docs.x.ai/developers/release-notes',
+      'https://cursor.com/docs/account/pricing',
+      'https://apps.apple.com/us/app/grok/id6670324846',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'cli', 'task-scheduler', 'rooms'],
+  },
+  {
     slug: 'terragon',
     name: 'Terragon',
     maker: 'Terragon Labs',
