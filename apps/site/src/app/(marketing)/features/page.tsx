@@ -45,8 +45,7 @@ export default async function FeaturesPage(props: {
         <header className="mb-12">
           <h1 className="text-charcoal font-mono text-4xl font-bold tracking-tight">Features</h1>
           <p className="text-warm-gray mt-3 max-w-2xl text-lg">
-            Mission control for every coding agent you run: the full catalog, organized by what each
-            part does.
+            Everything DorkOS does, grouped by the part of your day it helps with.
           </p>
         </header>
 

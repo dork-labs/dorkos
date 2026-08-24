@@ -140,7 +140,7 @@ function OtherWaysToInstall({
           )}
           <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
             <span className="text-charcoal">Linux</span> — install with the one-liner or npm; the
-            web cockpit runs the same everywhere.
+            web app runs the same everywhere.
           </li>
           <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
             <span className="text-charcoal">Server</span> — running DorkOS somewhere other than your
@@ -446,7 +446,7 @@ export function InstallMoment() {
           variants={REVEAL}
           className="text-warm-gray mb-6 text-lg leading-[1.5] md:text-xl"
         >
-          Your fleet is one step away.
+          Your whole team is one step away.
         </motion.p>
 
         <motion.p

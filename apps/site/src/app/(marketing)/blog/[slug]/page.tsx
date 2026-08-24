@@ -259,7 +259,7 @@ export default async function BlogPost(props: { params: Promise<{ slug: string }
             <ReleaseInstallFooter title={page.data.title} slug={params.slug} />
           )}
 
-          {/* Newsletter CTA — release notes + fleet reports, ~2/month */}
+          {/* Newsletter CTA — release notes + agent reports, ~2/month */}
           <aside className="border-warm-gray-light/30 mt-16 rounded-xl border p-6">
             <p className="text-charcoal mb-1 font-mono text-sm font-bold tracking-tight">
               Get posts like this by email
