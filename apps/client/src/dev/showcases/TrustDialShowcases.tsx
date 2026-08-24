@@ -55,7 +55,8 @@ const CLAUDE: PermissionModeDescriptor[] = [
     stop: 'autonomy',
     asks: 'never',
     reach: 'everything',
-    promise: 'Runs everything without asking, including outside this project.',
+    promise:
+      'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
   },
   {
     id: 'auto',
@@ -93,7 +94,8 @@ const CODEX: PermissionModeDescriptor[] = [
     stop: 'autonomy',
     asks: 'never',
     reach: 'everything',
-    promise: 'Runs everything without asking, anywhere on your machine, network included.',
+    promise:
+      "Acts without approval prompts, anywhere on your machine, network included — and can't pause to ask.",
     native: 'danger-full-access',
   },
 ];
@@ -122,7 +124,8 @@ const OPENCODE: PermissionModeDescriptor[] = [
     stop: 'autonomy',
     asks: 'never',
     reach: 'everything',
-    promise: 'Runs everything without asking, including outside this project.',
+    promise:
+      'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
   },
 ];
 
@@ -414,7 +417,7 @@ export function TrustDialShowcases() {
     <>
       <PlaygroundSection
         title="Trust Dial — one question, three stops"
-        description="How much this agent may do without asking, rendered from what each runtime declared about its own modes. The words never change; the caption underneath does all the truth-telling."
+        description="How much this agent may do before it checks with you, rendered from what each runtime declared about its own modes. The words never change; the caption underneath does all the truth-telling."
       >
         <ShowcaseLabel>Claude Code — Act carries the Auto refinement inside it</ShowcaseLabel>
         <ShowcaseDemo>

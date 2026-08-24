@@ -1107,7 +1107,7 @@ const PermissionModeDescriptorSchema = z.object({
     .optional()
     .openapi({
       description:
-        'Which question this mode answers: `trust` (how much the agent may do without asking — ' +
+        'Which question this mode answers: `trust` (how much the agent may do before it checks with you — ' +
         'the modes the three dial positions select between) or `working` (how it goes about the ' +
         'work, whatever the trust level, e.g. Claude’s `plan`). **Absent means `trust`**, so a ' +
         'runtime that says nothing gets the common answer and keeps its place on the dial. ' +

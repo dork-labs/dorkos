@@ -36,6 +36,7 @@ import {
   resolveSessionForCwd,
   sessionKeys,
   SessionRow,
+  FULL_POWER_MARK_LABEL,
 } from '@/layers/entities/session';
 import { sessionRouteLoader } from '../router';
 
@@ -552,7 +553,7 @@ describe('session permission mode: the fresher answer wins', () => {
       expect(queryClient.isFetching({ queryKey: sessionKeys.recentRoot })).toBe(0)
     );
 
-    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(await screen.findByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
   });
 
   it('warns when a session starts bypassing after the person moved on from it', async () => {
@@ -567,7 +568,7 @@ describe('session permission mode: the fresher answer wins', () => {
     await waitFor(() =>
       expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
     );
-    expect(screen.queryByLabelText('Full power — runs without asking')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(FULL_POWER_MARK_LABEL)).not.toBeInTheDocument();
 
     // The person moves on. Their detail row stays in the cache: the rail's own
     // read keeps a live observer on it, so it is never collected — and it is
@@ -586,7 +587,7 @@ describe('session permission mode: the fresher answer wins', () => {
       });
     });
 
-    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(await screen.findByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
   });
 
   it('warns about a bypass only the runtime profile can name', async () => {
@@ -648,7 +649,7 @@ describe('session permission mode: the fresher answer wins', () => {
       });
     });
 
-    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(await screen.findByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
   });
 
   it('warns about a session the person has never opened, without fetching it', async () => {
@@ -663,7 +664,7 @@ describe('session permission mode: the fresher answer wins', () => {
 
     render(<Rail openSessionId={null} />, { wrapper });
 
-    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(await screen.findByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
     expect(getSession).not.toHaveBeenCalled();
   });
 
@@ -688,13 +689,13 @@ describe('session permission mode: the fresher answer wins', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Switch to bypass' }));
 
-    expect(await screen.findByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(await screen.findByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
     // Not merely the optimistic flash: the row must still warn once the PATCH
     // has settled and the optimistic override has been dropped.
     await waitFor(() =>
       expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
     );
-    expect(screen.getByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(screen.getByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
   });
 
   it('keeps that bypass when a list answer older than the change lands after it', async () => {
@@ -738,7 +739,7 @@ describe('session permission mode: the fresher answer wins', () => {
     await waitFor(() =>
       expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
     );
-    expect(screen.getByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(screen.getByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
 
     // Now the older answer arrives. The sync is a synchronous call INSIDE the
     // query function, so waiting for the refetch to settle is a guarantee it has
@@ -756,6 +757,6 @@ describe('session permission mode: the fresher answer wins', () => {
     await waitFor(() =>
       expect(screen.getByTestId('status-line-mode')).toHaveTextContent('bypassPermissions')
     );
-    expect(screen.getByLabelText('Full power — runs without asking')).toBeInTheDocument();
+    expect(screen.getByLabelText(FULL_POWER_MARK_LABEL)).toBeInTheDocument();
   });
 });

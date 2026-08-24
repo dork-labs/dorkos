@@ -49,8 +49,14 @@ function describeWriteFailure(err: unknown): string {
 
 /** The full-power promise, one line each, in plain words. */
 const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
-  { lead: 'Runs without asking.', rest: 'Agents do the work instead of waiting for your OK.' },
-  { lead: 'Agents talk to each other.', rest: 'Across every project, not just within one.' },
+  {
+    lead: 'No approval prompts.',
+    rest: "Agents carry out edits and commands without stopping for your OK each time. They still ask when something genuinely needs your call — and always follow anything you've told them to check with you first.",
+  },
+  {
+    lead: 'Agents reach across projects.',
+    rest: 'They can already message each other within a project; this lets them coordinate across your other projects too.',
+  },
   { lead: 'Approvals stick.', rest: 'Say yes once and it stays yes.' },
   {
     lead: 'Scheduled runs use your power level.',
@@ -244,7 +250,8 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
       <DialogHeader>
         <DialogTitle data-testid="full-power-door">{heading}</DialogTitle>
         <DialogDescription>
-          Unlock full power and DorkOS stops asking before it acts. Here&apos;s what that turns on:
+          Unlock full power and DorkOS stops pausing for your approval before each action.
+          Here&apos;s what changes:
         </DialogDescription>
       </DialogHeader>
 

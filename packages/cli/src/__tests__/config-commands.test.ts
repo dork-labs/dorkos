@@ -350,7 +350,7 @@ describe('handleConfigAcknowledgeAutonomy', () => {
         // The text has to be on screen BEFORE the question, or it is a dialog
         // whose body renders after the button.
         expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
-          'your agents stop asking first'
+          'turns off the approval prompts'
         );
         return false;
       },
