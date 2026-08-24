@@ -275,6 +275,16 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
       'Each chat picks its own agent tool, so you can start a job on Claude Code, run the next on Codex, and keep a third on OpenCode without leaving the tab or changing any setup. Sessions from all three land in one list, and they keep running for as long as DorkOS does.',
   },
   {
+    id: 'your-own-subscriptions',
+    label: 'Runs on the plans you already pay for',
+    featureSlugs: ['multi-runtime-cockpit', 'runtime-accounts'],
+    question:
+      'Does it work through the plans you already pay for, or sell you the model use again?',
+    wantPhrase: 'to keep paying your own Claude or ChatGPT plan, with nothing added on top',
+    dorkosNote:
+      'Your own Claude, ChatGPT and OpenCode sign-ins do the work, so DorkOS adds nothing to your bill. You can send one agent, or one chat, to a different Claude account.',
+  },
+  {
     id: 'scheduling',
     label: 'Work that runs on a schedule',
     featureSlugs: ['task-scheduler', 'notifications'],
@@ -282,6 +292,15 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     wantPhrase: 'work that happens while you are asleep or away',
     dorkosDetail:
       'You write the job once and say when it should run: every night, every Monday, every hour. DorkOS starts the agent at that time on your own machine and messages you when it finishes or needs a decision, so you are not the thing that has to remember.',
+  },
+  {
+    id: 'self-scheduling-trust',
+    label: 'Agents that book their own work',
+    featureSlugs: ['schedule-approvals', 'task-scheduler', 'control-center'],
+    question: 'Can an agent set up a repeating job, with you approving it first?',
+    wantPhrase: 'agents that can book repeating work, but only with your say-so',
+    dorkosDetail:
+      'An agent can propose a repeating job, and it never starts one on its own. You get a card naming the agent, quoting the reason it gave, and showing the next three run times and the exact instructions. There is a button to run it once, supervised, before you agree to it forever.',
   },
   {
     id: 'coordination',
@@ -293,6 +312,15 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
       'Your agents share rooms the way people share a group chat. They can see each other, answer each other, and hand a job along. You set how often they may reply, per room, so a busy channel never turns into a runaway bill.',
   },
   {
+    id: 'spend-guardrails',
+    label: 'Limits on agents talking to agents',
+    featureSlugs: ['room-reply-limits', 'control-center', 'rooms'],
+    question: 'When your agents talk to each other, can you stop the bill running away?',
+    wantPhrase: 'a limit that stops your agents answering each other all night',
+    dorkosDetail:
+      'Four dials cap the replies your agents may trade: how many in a row, how much of one conversation a single agent may take, how many per room each hour, and how many across every room each hour. Set them once, or set them room by room. The dial covering everything is the one no room can skip.',
+  },
+  {
     id: 'local-first',
     label: 'Runs on your machine',
     featureSlugs: ['cli', 'workspaces', 'tunnel'],
@@ -302,11 +330,38 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
       'DorkOS runs on your own machine: your projects, your sessions and your history stay there, under your own accounts.',
   },
   {
+    id: 'open-and-yours',
+    label: 'Open, and yours to run',
+    featureSlugs: ['cli', 'tunnel', 'workspaces'],
+    question: 'Can you read the source, run it yourself, and skip making an account?',
+    wantPhrase: 'to read the code, run it yourself, and never make an account',
+    dorkosNote:
+      'Free and open source under the MIT licence. It runs on your own machine, and there is no DorkOS account to make.',
+  },
+  {
     id: 'surfaces',
     label: 'Where you can use it',
     featureSlugs: ['mobile', 'chat-interface', 'notifications'],
     question: 'Can you check in and approve work away from your desk?',
     wantPhrase: 'to check in and approve work from your phone',
+  },
+  {
+    id: 'approvals-anywhere',
+    label: 'Saying yes from anywhere',
+    featureSlugs: ['action-approvals', 'tool-approval', 'mobile', 'telegram-adapter'],
+    question: 'When an agent stops to ask permission, can you answer from wherever you are?',
+    wantPhrase: 'to say yes or no from your phone or your chat app, not just your desk',
+    dorkosDetail:
+      'An agent that needs permission asks, and the question follows you: the browser on your phone, a Telegram or Slack message, or a notification banner on your Mac. Only the person you name gets asked, so it is never broadcast to every chat you have connected.',
+  },
+  {
+    id: 'attention-management',
+    label: 'One list of what needs you',
+    featureSlugs: ['notification-inbox', 'notifications', 'escalation-ladder'],
+    question: 'Is there one place holding everything waiting on your answer?',
+    wantPhrase: 'one list of everything waiting on you, instead of hunting through tabs',
+    dorkosDetail:
+      'One bell holds every question, approval and finished run, with the things waiting on you above the things that merely happened. What you have read stays read on your other devices. If a question sits unanswered for the few minutes you chose, it rings your phone.',
   },
   {
     id: 'extensibility',
@@ -430,6 +485,30 @@ export const comparisons: Competitor[] = [
       'you want the bigger crowd, so answers and shared habits are easy to find',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'no',
+        note: 'You pay Cursor for the model use. The Claude or ChatGPT plan you already have does not carry the work.',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'There is no scheduler here at all, so no agent can ask you for one.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its agents work in separate copies of your project and never answer each other, so there is no such limit and nothing asking for one.',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'The code is closed, and you sign in to Cursor to use it.',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'Its phone app and Slack are for starting agents, following along, and reviewing the pull request at the end. Neither answers a permission prompt mid-run.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its dashboard lists the agents you started. There is no one list of the things waiting on your answer.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'Cursor runs its own agents inside Cursor. It does not drive Claude Code, Codex or OpenCode for you.',
@@ -526,6 +605,35 @@ export const comparisons: Competitor[] = [
       'you want the security checks your repositories already run applied to the agents’ work too',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'no',
+        note: 'Everything is billed to your Copilot seat, even the work Claude or Codex does, and metered on top of it.',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You set an automation up yourself. No agent asks you to book one.',
+      },
+      'spend-guardrails': {
+        verdict: 'partial',
+        note: 'A budget caps what agent work may spend, though at organisation level it only stops the work if you switch the hard stop on. There is no dial for agents answering each other, because they do not.',
+        source:
+          'https://docs.github.com/en/copilot/tutorials/budgets/getting-started-with-budget-controls',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Closed, and the whole thing runs on GitHub, under a GitHub account.',
+      },
+      'approvals-anywhere': {
+        verdict: 'partial',
+        note: 'Its phone app and Slack let you review an agent’s work and approve the pull request it opened. That is review after the fact, not a question mid-run.',
+        source: 'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent',
+      },
+      'attention-management': {
+        verdict: 'partial',
+        note: 'Its Agents page gathers every session in one list, including ones someone else started. Its documentation describes no way to narrow that down to what is waiting on your answer.',
+        source:
+          'https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/manage-and-track-agents',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'Yes. An issue can go to Copilot, to Anthropic’s Claude, to OpenAI’s Codex, or to all three at once. Both outside agents were still marked a preview when we checked.',
@@ -629,6 +737,33 @@ export const comparisons: Competitor[] = [
       'you need enterprise paperwork: single sign-on, audit logs, access lists and a private deployment',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'partial',
+        note: 'In its desktop editor you run agents you installed yourself, on your own accounts. The cloud Devin most people mean is metered by Cognition.',
+        source: 'https://docs.devin.ai/desktop/acp',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You set its automations up yourself. Nothing puts an agent’s own proposal in front of you first.',
+      },
+      'spend-guardrails': {
+        verdict: 'yes',
+        note: 'Each automation can carry a maximum budget per session, and Devin stops the session when it reaches the limit.',
+        source: 'https://docs.devin.ai/product-guides/automations',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Closed, and it wants an account before anything runs.',
+      },
+      'approvals-anywhere': {
+        verdict: 'yes',
+        note: 'Devin asks its questions in Slack and Teams, so you can answer one from a phone.',
+        source: 'https://docs.devin.ai/integrations/slack',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its sessions page shows what is running. There is no separate list of what is waiting on you.',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'Yes, in its desktop editor, which can run five other coding agents alongside its own: Claude, Codex, OpenCode, Gemini and JetBrains’ Junie. Devin’s cloud sessions still only ever run Devin.',
@@ -731,6 +866,31 @@ export const comparisons: Competitor[] = [
       'you are happy to pay so the work keeps going in their cloud after you close the laptop',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'Running agents on your own Mac uses the sign-ins already there, and costs nothing.',
+        source: 'https://www.conductor.build/pricing',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'Nothing here runs on a clock, so there is no repeating job for an agent to ask about.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its workspaces are independent and never message each other, so there is no such limit and nothing asking for one.',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Running agents on your own Mac is free, and the code is closed.',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'Its prompts live in the Mac app, so answering one means going back to that Mac.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its background-tasks view shows when an agent is waiting, and only inside that Mac app.',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'Yes. Claude Code, Codex, Cursor and OpenCode all run in it, and the first three are built into the app rather than installed separately.',
@@ -829,6 +989,32 @@ export const comparisons: Competitor[] = [
       'you want a job to run on another machine over SSH, on your own server or in a container',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It drives the agents you already installed, so the plan you already pay for does the work.',
+        source: 'https://emdash.com/docs/providers',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You write the automation yourself. Nothing in its documentation lets an agent propose one and wait for your answer.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its lanes work alone, so there is no agent chatter to cap and no setting for it.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the Apache licence, on your own machine, with no Emdash account at all.',
+        source: 'https://emdash.com/docs/installation',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'Desktop only. It can send the work to another machine, but you still have to be at your desk to answer it.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its task list shows what ran. Nothing gathers the things that need you into one place.',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'Yes, and more widely than DorkOS: its documentation lists 34 command-line agents it can drive, each signed in on your own machine under your own account.',
@@ -932,6 +1118,32 @@ export const comparisons: Competitor[] = [
       'you want what it makes to outlive it: plain terminal sessions and plain git branches, still there if you stop using it',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It starts whatever agent you name, on the plan or the key you already have.',
+        source: 'https://github.com/smtg-ai/claude-squad',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'It has no scheduler, so there is nothing for an agent to ask for.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Each session is its own lane and none of them talk, so there is nothing to cap.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the AGPL. One small program, a settings file, no account, and no server.',
+        source: 'https://github.com/smtg-ai/claude-squad/blob/main/LICENSE.md',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'Terminal only. Nothing reaches you anywhere else.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its list shows your sessions. Whether one is stuck waiting is something you notice by looking.',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'Yes. It starts whatever terminal command you name, so Claude Code, Codex, Gemini and Aider all work, and a brand new agent works the day it ships.',
@@ -1025,6 +1237,34 @@ export const comparisons: Competitor[] = [
       'you want the work to run wherever suits: your own laptop, a server of yours, or a sandbox made on demand',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'partial',
+        note: 'Its phone app steers the Claude Code and Codex on your own laptop, on your own plans. The platform it leads with runs agents you build, on keys you supply.',
+        source: 'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You create the trigger yourself. Nothing describes an agent asking to schedule itself.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Agents run as separate conversations, and nothing caps how much they may say to each other.',
+      },
+      'open-and-yours': {
+        verdict: 'partial',
+        note: 'Open under the Apache licence, and you can run all of it yourself. The phone apps are not published, and the agent lives in a control plane rather than on your machine.',
+        source: 'https://github.com/omnara-ai/omnara',
+      },
+      'approvals-anywhere': {
+        verdict: 'partial',
+        note: 'It documents an approvals and questions flow, answered from its dashboard or from Slack. The phone app that steered agents on your own laptop is no longer part of what it documents.',
+        source: 'https://docs.omnara.com/events/interactions',
+      },
+      'attention-management': {
+        verdict: 'partial',
+        note: 'Its approvals and questions flow gathers what needs an answer, which is close. Whether what you have read stays read across your devices is not something its documentation spells out.',
+        source: 'https://docs.omnara.com/events/interactions',
+      },
       'multi-runtime': {
         verdict: 'partial',
         note: 'Its phone app watches and steers Claude Code and Codex running on your own laptop. The platform they now lead with is about swapping models rather than agents, and its documentation mentions neither one.',
@@ -1126,6 +1366,32 @@ export const comparisons: Competitor[] = [
       'you want to hand a colleague the whole transcript of a piece of work as a link',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'partial',
+        note: 'Amp sells you the agent use, and there is no free plan. You can link your own ChatGPT subscription, or bring an Anthropic key, instead of spending its credits.',
+        source: 'https://ampcode.com/manual',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'Its agent arranges to wake itself up later, and does not ask you first.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its helper agents run inside one piece of work. We found no setting capping what they may spend between them.',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Amp itself is closed, and you sign in to use it.',
+      },
+      'approvals-anywhere': {
+        verdict: 'partial',
+        note: 'It reaches you in Slack and in a browser on your phone, so a question need not wait for your desk.',
+        source: 'https://ampcode.com/news/agents-everywhere',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its threads list what you have worked on. There is no inbox of things waiting on your answer.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'Amp runs its own agent and picks between several companies’ models for you. It does not start Claude Code, Codex or OpenCode.',
@@ -1223,6 +1489,32 @@ export const comparisons: Competitor[] = [
       'you want to build an agent into your own product, on the same kit they build on',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It can sign in through the Claude tool you already installed, so your Claude plan pays for the work. Your own key works too.',
+        source: 'https://docs.cline.bot/provider-config/anthropic',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You save the job yourself. Nothing puts an agent’s proposed schedule in front of you to approve.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its agent teams share a task board and a mailbox. We found no setting capping how many messages they may trade.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the Apache licence, and with your own key it needs no Cline account at all.',
+        source: 'https://cline.bot/faq',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'Answering happens in the editor or the terminal in front of you. Its board reaches a phone only if you open it up to your network yourself.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its task board runs on your own machine and shows the work. It is not a list of what needs you.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'Cline is one agent that works with a very long list of models, local ones included. It does not run Claude Code, Codex or OpenCode as agents.',
@@ -1324,6 +1616,32 @@ export const comparisons: Competitor[] = [
       'you want machines that keep their state between sessions, so nothing has to be set up twice',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'partial',
+        note: 'You can bring your own model keys, but a paid Factory plan is still required, and those keys do not reach its hosted surfaces.',
+        source: 'https://docs.factory.ai/cli/byok/overview',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You set the automation up. No approval step stands between an agent and a repeating job.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its missions pass work between workers. We found no dial capping that traffic; the limits it publishes are per plan.',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Closed, and an account is required.',
+      },
+      'approvals-anywhere': {
+        verdict: 'partial',
+        note: 'It reaches you in Slack, in Teams and on a phone. Whether you can answer an agent mid-run from the phone is not something its documentation spells out.',
+        source: 'https://docs.factory.ai/factory-app/overview',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Sessions turn up across its many surfaces. None of them is one list of what is waiting on you.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'Droid is one agent you can point at models from Anthropic, OpenAI, Google and xAI, plus a set of open ones. It does not start Claude Code, Codex or OpenCode.',
@@ -1422,6 +1740,33 @@ export const comparisons: Competitor[] = [
       'you want one command, a local address, no account, and the MIT licence',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'You bring your own key, and the Claude Code it starts is the one signed in on your machine.',
+        source:
+          'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.md',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'Its reminders are set by the agent inside a session that is already open, with no approval step, and they do nothing once it closes.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its agent teams are marked experimental, and we found no cap on the messages they leave each other.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the MIT licence. One command, a local address, and no account.',
+        source: 'https://github.com/deepseek-ai/deepseek-harness/blob/master/LICENSE',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'A web page on your own machine and a command line. Its worker runs cannot stop to ask you anything at all.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its sessions cannot stop to ask you anything, so there is nothing to collect.',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'Yes, and it is the point of the thing: plugins start a real Claude Code, through Anthropic’s own kit, or a real Codex, as workers inside a session. Both are optional, and off until you switch them on.',
@@ -1526,6 +1871,32 @@ export const comparisons: Competitor[] = [
       'you want a deep set of add-ons: skills, hooks, plugins and outside tool connections',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It is your Claude plan doing the work, which is exactly the arrangement DorkOS keeps.',
+        source: 'https://claude.com/pricing',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You create the routine or the task. Nothing asks your permission on an agent’s behalf.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its agent teams are experimental and off until you turn them on. We found no setting capping how much they may say to each other.',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Its code is not open, and it needs an Anthropic account.',
+      },
+      'approvals-anywhere': {
+        verdict: 'yes',
+        note: 'Its phone app reaches a running session, so you can answer one from anywhere.',
+        source: 'https://code.claude.com/docs/en/mobile',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its view of background sessions is a research preview showing what is running. There is no cross-device list of what needs you.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'Claude Code runs Claude sessions. Its own guide is direct about it: to bring another tool in, you connect that tool to Claude rather than run the two side by side.',
@@ -1619,6 +1990,33 @@ export const comparisons: Competitor[] = [
       'you want to kick off work from Slack, GitHub or your phone without opening a terminal',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It is your ChatGPT plan doing the work, or your own key if you would rather.',
+        source: 'https://learn.chatgpt.com/docs/pricing',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You create the automation. There is no step where an agent asks to book one.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its parallel jobs never talk to each other, so there is nothing to cap.',
+      },
+      'open-and-yours': {
+        verdict: 'partial',
+        note: 'The command-line tool is open under the Apache licence. You still sign in to ChatGPT or bring a key, and the cloud half is closed.',
+        source: 'https://github.com/openai/codex',
+      },
+      'approvals-anywhere': {
+        verdict: 'yes',
+        note: 'Its iPhone app lets you review changes and approve steps away from your desk.',
+        source: 'https://learn.chatgpt.com/docs/changelog?type=codex-app',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its apps show the jobs you started. There is no single list of things waiting on your answer.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'Codex runs OpenAI’s own models and its own jobs. It does not start a Claude Code or OpenCode session for you.',
@@ -1712,6 +2110,32 @@ export const comparisons: Competitor[] = [
       'you like working in the terminal, or in your editor through its extension',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'Your own keys and your own choice of model, and a model on your own machine costs nothing at all.',
+        source: 'https://opencode.ai/docs/providers/',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'There is no scheduler, so there is nothing for an agent to ask about.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'A helper agent answers its own main agent and nobody else, so there is no traffic to limit.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the MIT licence, no account, and it can work offline against a model on your own machine.',
+        source: 'https://github.com/anomalyco/opencode',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'A terminal, a desktop app and an editor extension. All three sit at your desk.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Nothing here gathers what needs you into one place.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'OpenCode works with more than 75 model providers, which is a different kind of choice: one agent, many models. It does not run Claude Code or Codex for you.',
@@ -1804,6 +2228,32 @@ export const comparisons: Competitor[] = [
       'you want a desktop app on Mac, Windows and Linux',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'The agent in a channel is one you installed and signed in yourself, so your own plan does the work.',
+        source: 'https://github.com/block/buzz/blob/main/docs/remote-agents.md',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'Its workflows are set up by a person. Nothing describes an agent proposing one and waiting for an answer.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Mentions are lined up per channel, so an agent works through them in turn. We found no setting capping how often agents may reply to each other.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the Apache licence, and you run the server and the database yourself.',
+        source: 'https://github.com/block/buzz',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'Its phone apps are still being wired up, and its own notes say the approval step for scheduled work is unfinished.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Unread marks live per channel, the way a chat app does it. There is no list of what is waiting on your answer.',
+      },
       'multi-runtime': {
         verdict: 'partial',
         note: 'Its agent bridge will drive Goose, Codex or Claude Code. It runs them out of sight, though: there is no screen for picking one or watching them side by side.',
@@ -1896,6 +2346,33 @@ export const comparisons: Competitor[] = [
       'you want something you can reach from your phone today, through an app you already have',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'You point it at your own plan or your own key, and pay nothing for the assistant itself.',
+        source: 'https://github.com/openclaw/openclaw',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'It keeps its own list of jobs, and its documentation does not describe asking you before adding one.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its assistants join a group chat only when named. We found no cap on what they may say to each other.',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the MIT licence, and you host it on your own machine.',
+        source: 'https://github.com/openclaw/openclaw/blob/main/LICENSE',
+      },
+      'approvals-anywhere': {
+        verdict: 'yes',
+        note: 'It asks in whichever chat app you already use, so answering takes nothing new on your phone.',
+        source: 'https://github.com/openclaw/openclaw/tree/main/docs/channels',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'It messages you in your chat apps, so anything waiting on you is spread across whichever ones you connected.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'It chooses which model answers you, not which coding agent runs. Claude Code, Codex and OpenCode are not engines it swaps between.',
@@ -1988,6 +2465,34 @@ export const comparisons: Competitor[] = [
       'you want something that will run happily on a very small server',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'Point it at any model you like, including one on your own hardware. Nous sells credits if you would rather not.',
+        source: 'https://github.com/NousResearch/hermes-agent',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You set the schedule up yourself. No agent asks you for one.',
+      },
+      'spend-guardrails': {
+        verdict: 'partial',
+        note: 'Its Bot Mode caps a group of bots at ten messages a turn and three rounds, so a room cannot spin. That is in its desktop app, not its chat platforms.',
+        source: 'https://github.com/NousResearch/Hermes-Bot-Mode',
+      },
+      'open-and-yours': {
+        verdict: 'yes',
+        note: 'Open under the MIT licence, and it runs on anything from a cheap server upwards.',
+        source: 'https://github.com/NousResearch/hermes-agent/blob/main/LICENSE',
+      },
+      'approvals-anywhere': {
+        verdict: 'yes',
+        note: 'It lives in your chat apps, so its questions arrive where you already type.',
+        source: 'https://github.com/NousResearch/hermes-agent',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'It reaches you in chat, so anything waiting on you sits in whichever chat app it used.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'It swaps models, not coding agents. Nothing in it puts Claude Code on one job and Codex on the next.',
@@ -2076,6 +2581,31 @@ export const comparisons: Competitor[] = [
       'you want several bots that message each other and pass work along, working now rather than marked early',
     ],
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'no',
+        note: 'It needs a paid xAI or Cursor plan. The Claude or ChatGPT plan you already pay for buys you nothing here.',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'You teach a bot a job and set a routine running. Nothing in its documentation puts a proposed schedule in front of you to approve first.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its bots message each other and share one computer. We found no dial capping how much of that they may do.',
+      },
+      'open-and-yours': {
+        verdict: 'no',
+        note: 'Closed, and it runs on xAI’s computer under a paid plan.',
+      },
+      'approvals-anywhere': {
+        verdict: 'yes',
+        note: 'Its iPhone app lets you answer a bot’s questions and approve steps. Editing a routine still sends you back to a desk.',
+        source: 'https://docs.x.ai/grok-bot/get-started',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'Its app shows each bot and its runs. There is no one list of everything waiting on you.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'It is xAI’s own bot and only that. There is no putting Claude Code on one job and Codex on the next, because the bot is the product.',
@@ -2173,6 +2703,32 @@ export const comparisons: Competitor[] = [
     verdict:
       'Terragon closed in February 2026, and if you liked it, that was a real loss: you handed it a task, it worked in its own cloud machine against your repository, and you reviewed a pull request at the end. Two things are worth knowing before you pick a replacement. The first is that Terragon did not tell anyone where to go next. Its own parting words recommend nothing, and the pairing you may have seen suggested online came from a commenter, not from Terragon, so treat it as someone’s opinion rather than the company’s advice. The second is that the code did not vanish. Terragon published an open snapshot under the Apache licence, so self-hosting it is genuinely possible, with nobody maintaining it. As for DorkOS: it fits if what you want back is the part where agents get on with work and you review the result, and it does not fit if what you liked was that none of it ran on your own computer. That was Terragon’s whole shape, and it is the opposite of ours.',
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It did. You brought your own subscription or your own keys, which is the part DorkOS carries on.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'Its automations were set up by a person, never proposed by an agent.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its feature list named multi-agent support without describing any limit on it.',
+      },
+      'open-and-yours': {
+        verdict: 'partial',
+        note: 'The code is open under the Apache licence, and nobody maintains it. While it ran, it was a cloud service you signed in to.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'There was no phone app, and nothing we found describes approving an agent’s action from one.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'It reported into Slack and GitHub, so whatever needed you landed wherever those did.',
+      },
       'multi-runtime': {
         verdict: 'yes',
         note: 'It did, and this is the part DorkOS carries on. You could point it at Claude Code, OpenAI Codex, Amp or Gemini, bringing your own subscription or your own keys.',
@@ -2259,6 +2815,32 @@ export const comparisons: Competitor[] = [
     verdict:
       'Roo Code was a good agent in the editor with a following to match, and losing it stung, because a lot of people had it set up exactly how they liked. It shut down on 15 May 2026, and its old address now forwards to a different product called Roomote. Start with what Roo Code itself said, because the internet has muddled this badly. Its own notice, still readable today on GitHub and on the Marketplace listing, names exactly two alternatives: Cline, which Roo Code was originally forked from, and ZooCode, a fork the community started. Kilo Code is the name you will see most often in write-ups, and it published its own guide for moving across, but Roo Code never named it. Now the honest part about us: DorkOS is not a VS Code extension and will not put an agent back in your editor. It is the room around agents like that one. If what you miss is the agent inside VS Code, take the notice’s advice first, and come back for the part it never did.',
     cells: {
+      'your-own-subscriptions': {
+        verdict: 'yes',
+        note: 'It did. The extension was free and ran on your own key.',
+        source: 'https://github.com/RooCodeInc/Roo-Code',
+      },
+      'self-scheduling-trust': {
+        verdict: 'no',
+        note: 'It had no scheduler at all, so there was nothing to approve.',
+      },
+      'spend-guardrails': {
+        verdict: 'no',
+        note: 'Its Orchestrator mode handed work to itself, and nothing capped how much.',
+      },
+      'open-and-yours': {
+        verdict: 'partial',
+        note: 'It was open under the Apache licence and ran in your own editor. The repository is archived now, so what is left is code to read.',
+        source: 'https://github.com/RooCodeInc/Roo-Code',
+      },
+      'approvals-anywhere': {
+        verdict: 'no',
+        note: 'It asked before it changed anything, but only in the editor window on your desk.',
+      },
+      'attention-management': {
+        verdict: 'no',
+        note: 'It asked inside the editor, and nothing collected those requests anywhere else.',
+      },
       'multi-runtime': {
         verdict: 'no',
         note: 'No. It was one agent living in your editor. It could talk to plenty of model providers, but it did not run other companies’ coding agents for you.',
