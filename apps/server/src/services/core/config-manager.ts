@@ -933,8 +933,10 @@ export function backfillAuthDefaults(store: {
 /**
  * Migration body: backfill the `approvals` section (standing permissions,
  * DOR-501) for configs persisted before it existed. Additive + idempotent: only
- * writes when the key is absent, and the schema default yields the same shape on
- * read, so this just writes the key through on the upgrade where it lands.
+ * writes when the key is absent. A whole TOP-LEVEL section, so it is a genuine
+ * anchor for the reason {@link backfillProfileDefaults} spells out: conf writes
+ * its merged `defaults` to the file before the first migration key runs, and
+ * `approvals` lands there whether or not this body exists.
  *
  * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
  * by an upgrade — nothing changes for an existing user until they ask for it.
@@ -2233,10 +2235,16 @@ export function scrubRetiredOnboardingSteps(store: {
 /**
  * Migration body: backfill the `profile` section (who the user is — roles,
  * tools, display name; spec `user-profile-onboarding`) for configs persisted
- * before it existed. Additive + idempotent: only writes when the key is absent;
- * conf's top-level defaults-merge also yields this object on read, so this is a
- * no-op anchor that writes the key through on the upgrade where it lands. Seeds
- * everything empty/null: DorkOS knows nothing about the person until they say.
+ * before it existed. Additive + idempotent: only writes when the key is absent.
+ *
+ * A genuine no-op anchor, and it is worth saying WHY, because the same sentence
+ * was copied onto bodies where it is false (see {@link backfillPromoDismissals}).
+ * `profile` is a whole TOP-LEVEL section. Before conf runs a single migration key
+ * it merges `defaults` under the parsed file and WRITES the result when the two
+ * differ, so a section the file has never carried lands on disk whatever this
+ * table says. That is a file write, not Ajv's read-time fill — the distinction
+ * that decides whether a body like this can be deleted. Seeds everything
+ * empty/null: DorkOS knows nothing about the person until they say.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
@@ -2258,10 +2266,12 @@ export function backfillProfileDefaults(store: {
  * conf merges top-level defaults SHALLOWLY, so a `runtimes` object already on
  * disk never inherits a newly-added nested section on its own, and every install
  * upgraded past the `0.45.0` backfill has one. Ajv does fill the key in at READ
- * time, but that fill is not written back (conf's `Object.assign` shares the
- * section object, so the `deepEqual` short-circuit leaves the file sparse), which
- * is why this writes it through on the upgrade where it lands — the same
- * no-op-anchor role {@link backfillProfileDefaults} plays for its section.
+ * time, and that fill is never written back: conf's `store` getter re-reads the
+ * file, validates the object it just parsed, and returns it, so `useDefaults`
+ * only ever decorates a copy on its way out the door. This body is therefore the
+ * one thing that puts the section on disk — NOT the no-op-anchor role
+ * {@link backfillProfileDefaults} plays, which holds only because `profile` is a
+ * whole top-level section and this is a nested one.
  *
  * Additive + idempotent: only writes when `claudeCode` is absent, and never
  * touches `default`, `opencode` or `codex`. The whole-`runtimes`-absent case
@@ -2402,12 +2412,18 @@ export function backfillDefaultTrustStops(store: {
  *
  * Needed for the same reason {@link backfillRuntimeExecutionDefaults} is: conf's
  * defaults-merge is SHALLOW, so a `runtimes.claudeCode` object already on disk
- * never gains a newly-added nested key from the schema default alone. Ajv's
- * `useDefaults` does fill it in during validation, which makes this body an
- * anchor rather than the only thing standing between an upgrade and a missing
- * key — the same standing {@link backfillComposerPrefs} has, and for the same
- * reason: the intent (seeded OFF) stays reviewable in the migration table
- * instead of being implicit in a schema default.
+ * never gains a newly-added nested key from the schema default alone.
+ *
+ * This docblock used to go on to call the body an ANCHOR — something Ajv's
+ * `useDefaults` would do anyway, kept only so the intent stays reviewable. That
+ * was wrong, and measuring it is what settled it (DOR-1496): suppress this body
+ * and `persistentSession` never reaches the file at all. Ajv does fill the leaf
+ * during validation, but the object it fills is the throwaway copy conf's
+ * `store` getter built from a fresh read and is about to hand back — the getter
+ * re-reads and re-validates on EVERY access, and writes nothing. This body is
+ * the only thing that puts the leaf on disk, so an upgrade-boot test for it has
+ * to read `config.json` rather than call `get`. See "Which of these bodies is a
+ * real no-op, and which only looks like one" above `CONFIG_MIGRATIONS`.
  *
  * Seeds `false`, so an upgrade leaves every chat running exactly the way it runs
  * today — one process per message. Turning it on is the operator's choice.
@@ -2449,11 +2465,12 @@ export function backfillClaudeCodePersistentSession(store: {
  * now either.
  *
  * Unlike the nested backfills above, this is a TOP-LEVEL section, and conf's
- * defaults-merge does reach those — so the body is an anchor, not the only thing
- * standing between an upgrade and a missing key. It earns its place for the
- * reason {@link backfillClaudeCodePersistentSession} does: a gate that ships
- * closed should say so somewhere a reviewer looks, rather than only in a schema
- * default.
+ * defaults-merge does reach those: it runs before the first migration key and
+ * WRITES the merged result to the file, so `a2a` arrives on disk with or without
+ * this body — measured with the body suppressed (DOR-1496). So this really is an
+ * anchor, not the only thing standing between an upgrade and a missing key. It
+ * earns its place because a gate that ships closed should say so somewhere a
+ * reviewer looks, rather than only in a schema default.
  *
  * Additive + idempotent: written only when the section is absent, so re-running
  * never closes a gate somebody opened.
@@ -2480,14 +2497,19 @@ export function seedA2aDisabled(store: {
  * whatever the old browser key holds the first time it reads the new list, and
  * that import is per browser, which is the only place those ids exist.
  *
- * This is a no-op ANCHOR, in the same sense {@link backfillProfileDefaults} and
- * {@link seedA2aDisabled} are, and the distinction is worth stating because the
- * nested backfills above it are not: conf builds Ajv with `useDefaults`, so
- * `ui.promos` is written into a stored `ui` block during validation whether or
- * not this runs — measured, not assumed. What the body buys is that the seed is
- * reviewable in the table rather than implicit in a schema default, and that the
- * section is written through on the upgrade where it lands. Do not describe it
- * as the thing that makes the field reachable.
+ * This body is the ONLY thing that puts `ui.promos` on disk, and this docblock
+ * used to say the opposite — that it was a no-op anchor like
+ * {@link backfillProfileDefaults} and {@link seedA2aDisabled}, because Ajv's
+ * `useDefaults` writes the section into a stored `ui` block whether or not the
+ * migration runs, "measured, not assumed". Re-measured in DOR-1496, that is
+ * false, and the two it named are not comparable: `profile` and `a2a` are whole
+ * TOP-LEVEL sections, which conf writes to the file from `defaults` before any
+ * key runs, whereas `promos` is a leaf inside a `ui` object the file already
+ * has. Conf's merge is shallow, so it never reaches that leaf, and Ajv's fill
+ * lands in the throwaway copy the `store` getter is about to return, which is
+ * discarded. Suppress this body and `ui.promos` is absent from `config.json`
+ * for every upgrading install. See "Which of these bodies is a real no-op, and
+ * which only looks like one" above `CONFIG_MIGRATIONS`.
  *
  * Additive + idempotent: seeds only when `promos` is missing, so re-running can
  * never erase a dismissal.
@@ -2835,6 +2857,44 @@ export function warmClaudeCodeSessionsByDefault(store: {
  *   lets it hold inside the window where no tag exists yet.
  *
  * `config-manager.test.ts` runs both over the real repository on every CI run.
+ *
+ * ## Which of these bodies is a real no-op, and which only looks like one
+ *
+ * Several bodies below describe themselves as "no-op anchors": the claim is that
+ * conf's own defaults would produce the same config, so the body exists to keep
+ * the intent reviewable rather than to make the value reachable. That claim is
+ * true for exactly one of the two shapes, and the difference is not the one the
+ * older comments in this file assumed. Both halves are measured
+ * (`config-manager.test.ts`, and the per-migration files beside it), not
+ * reasoned from conf's documentation.
+ *
+ * - **A whole TOP-LEVEL section** (`a2a`, `notifications`, `profile`,
+ *   `approvals`) really is covered. Before it runs a single key, conf's
+ *   `#runMigrations` builds `Object.assign({}, defaults, fileStore)` and WRITES
+ *   it when it differs from the file, so a section the file has never heard of
+ *   arrives on disk whatever the table says. Delete such a body and nothing
+ *   about the resulting file changes.
+ * - **A nested leaf inside a section the file already has** (`ui.composer`,
+ *   `ui.promos`, `runtimes.claudeCode.persistentSession`) is NOT covered, and a
+ *   body that seeds one is the only thing that writes it. The merge above is
+ *   shallow, so a stored `ui` object wins wholesale and never gains a new
+ *   member. Ajv's `useDefaults` does fill the leaf in — but only into the object
+ *   `conf`'s `store` GETTER just built: that getter re-reads and re-parses the
+ *   file on every access, validates the copy it is about to hand back, and
+ *   throws the copy away. A boot that only READS leaves the file sparse. (A
+ *   later `set` of any kind does persist the fill, because `Conf.set` assigns
+ *   the validated object straight back — see "`config.json` holds the effective
+ *   config" in `contributing/configuration.md`. That is a different event from
+ *   the upgrade this table is responsible for.)
+ *
+ * The consequence for tests is sharp enough to state here, because it is what
+ * the DOR-1496 audit found: reading such a leaf back through
+ * `configManager.get`/`getDot` proves NOTHING about a migration, since the fill
+ * happens on the way out. One whole upgrade-boot suite (`ui.composer`) and two
+ * further cases (`rooms`' two added leaves, and the `ui.statusBar` composition
+ * check inside the approvals full-conf-path test) stayed green with their
+ * bodies suppressed, and `ui.promos` had no on-disk case at all. An upgrade-boot
+ * test for a nested seed has to read `config.json` itself.
  */
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
@@ -3090,6 +3150,19 @@ export const CONFIG_MIGRATIONS = {
   // body is byte-frozen; the correction is here and in the docblock above the
   // table. A merged body is append-only, and `merged-migration-hashes.ts` now
   // holds every key to that.
+  //
+  // A SECOND stale sentence in the body below, same reason, same remedy. It
+  // calls `backfillComposerPrefs` "a no-op anchor in the same sense
+  // `backfillProfileDefaults` is", on the grounds that Ajv's `useDefaults`
+  // writes the declared default into a stored `ui` block. It does not.
+  // `profile` is a whole top-level section, which conf's pre-migration defaults
+  // merge really does write to the file; `ui.composer` is a leaf inside a `ui`
+  // object the file already has, which that shallow merge never touches, and
+  // Ajv's fill lands only in the throwaway copy conf's `store` getter is about
+  // to hand back. Suppress this body and `ui.composer` reaches nobody's
+  // `config.json` — measured that way in DOR-1496. The body is the mechanism,
+  // not an anchor. See "Which of these bodies is a real no-op, and which only
+  // looks like one" in the docblock above the table.
   '0.59.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;

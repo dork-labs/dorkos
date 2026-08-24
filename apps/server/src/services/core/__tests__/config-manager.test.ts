@@ -550,6 +550,63 @@ describe('backfillPromoDismissals migration (sidebar-simplification D4)', () => 
     backfillPromoDismissals(store);
     expect(store.data.ui).toBeUndefined();
   });
+
+  it('a real pre-0.63.0 config file gains ui.promos on disk (full conf path)', () => {
+    // The half the mock store cannot reach, and the half a `getDot` assertion
+    // cannot reach either. `backfillPromoDismissals` was documented for a while
+    // as a no-op anchor — something Ajv's `useDefaults` would supply whether or
+    // not it ran — and no test contradicted that, because none of them looked at
+    // the file. Measured in DOR-1496, the claim is false: conf's `store` getter
+    // re-parses `config.json` on every access and validates the throwaway copy
+    // it is about to return, so `useDefaults` fills `ui.promos` into that copy
+    // and the copy is discarded, and conf's own `defaults` merge is shallow, so
+    // a `ui` object already on disk never gains a new member from it. This body
+    // is the only thing that puts the section on the file.
+    //
+    // The counterfactual, measured both ways: suppress the body and this case
+    // goes red, while the same upgrade boot read back as `store.get('ui').promos`
+    // still answers `{ dismissedIds: [] }`. That in-memory form is what the
+    // "anchor" belief rested on, and it could not have told the two apart.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-promos-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          ui: { theme: 'dark', statusBar: { pins: ['git'] } },
+          __internal__: { migrations: { version: '0.62.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        // The shipped schema, tolerances included — never rebuilt here (see CONF_JSON_SCHEMA).
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.63.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        ui: Record<string, unknown>;
+      };
+      expect(onDisk.ui.promos).toEqual({ dismissedIds: [] });
+      // The upgrade adds a section; it changes nothing the person had set.
+      expect(onDisk.ui.theme).toBe('dark');
+      expect(onDisk.ui.statusBar).toEqual({ pins: ['git'] });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('backfillNotificationDefaults migration (notification-system, DOR-1385)', () => {
@@ -3268,6 +3325,14 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // file from an earlier version, run through the real migration chain.
     // projectVersion is stated explicitly because SERVER_VERSION lags the
     // unreleased key this migration is filed under.
+    //
+    // What this does NOT prove is that `backfillApprovalsDefaults` ran: suppress
+    // that body and every assertion here still passes (measured, DOR-1496).
+    // `approvals` is a whole TOP-LEVEL section, and conf merges `defaults` under
+    // the parsed file and WRITES the result before its first migration key, so
+    // the section reaches disk either way — unlike a nested seed such as
+    // `ui.promos`, where the body is the only writer. The body is pinned by the
+    // mock-store cases above; this one is about the upgrade boot surviving.
     const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
@@ -3294,7 +3359,11 @@ describe('approvals section — standing permissions (DOR-501)', () => {
       migrations: CONFIG_MIGRATIONS,
     });
 
-    expect(store.get('approvals')).toEqual({
+    const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+      approvals: unknown;
+      ui: Record<string, unknown>;
+    };
+    expect(onDisk.approvals).toEqual({
       standingGrants: false,
       trustWindowMinutes: 480,
       standingGrantsVoidBefore: null,
@@ -3303,9 +3372,15 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // setting standing permissions depend on.
     expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
     expect((store.get('server') as { port: number }).port).toBe(5000);
-    expect((store.get('ui') as { theme: string }).theme).toBe('dark');
+    expect(onDisk.ui.theme).toBe('dark');
     // The composite key's other body still ran, so composing did not drop it.
-    expect(store.get('ui')).toMatchObject({ statusBar: { pins: [] } });
+    // Read off the FILE, unlike the rest: `ui.statusBar` is a NESTED seed into a
+    // `ui` object the stored config already has, so `store.get('ui')` would show
+    // it whether or not `migrateStatusBarToPins` ran — Ajv fills it into the copy
+    // conf's getter is about to hand back, and the copy is thrown away. That form
+    // could not have detected the composition being dropped, which is the one
+    // thing this line is here to detect.
+    expect(onDisk.ui.statusBar).toEqual({ pins: [] });
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
