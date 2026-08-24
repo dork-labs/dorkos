@@ -96,6 +96,12 @@ export interface Competitor {
   pricing: string;
   /** Whether the product's own source code is public. */
   openSource: boolean;
+  /**
+   * Replaces the plain open/closed wording where that would overstate things —
+   * a product whose command-line tool is open but whose cloud service is not,
+   * for one. Written as the whole answer, not an aside.
+   */
+  openSourceNote?: string;
   /** Two-to-four-sentence honest verdict; it leads the page. */
   verdict: string;
   /**
@@ -295,7 +301,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can you add your own tools and share the setup with other people?',
     wantPhrase: 'to add your own tools and share the setup with other people',
     dorkosDetail:
-      'This is the row where a code editor wins on breadth: nothing here replaces years of editor add-ons. What DorkOS adds is the other half — you can package up a working agent, with its instructions and its tools, and hand the whole thing to someone else in one command. Signing those tools in to outside services is the part still finding its feet.',
+      'Nothing here replaces a marketplace of editor add-ons built up over years. What DorkOS adds is the other half — you can package up a working agent, with its instructions and its tools, and hand the whole thing to someone else in one command. Signing those tools in to outside services is the part still finding its feet.',
   },
   {
     id: 'pricing',
@@ -588,6 +594,7 @@ export const comparisons: Competitor[] = [
     pricing:
       'Included with ChatGPT plans, starting with the free one. Go is $8 a month, Plus $20, Pro from $100, and Business $20 per person. You can also skip the plan and pay per use with an API key.',
     openSource: true,
+    openSourceNote: 'The command-line tool is open. The cloud service, apps and models are not.',
     verdict:
       'Codex is a strong coding agent and one of the three engines DorkOS drives. On its own it already schedules work, runs jobs in parallel in the cloud, and reaches you on the web, in Slack and on your phone, so this page is not a list of things it cannot do. What DorkOS adds is the one thing Codex will not do for you: run it beside Claude Code and OpenCode, in a single list, on your own machine. Your ChatGPT plan stays exactly as it is.',
     theirStrengths: [
@@ -700,6 +707,9 @@ export const comparisons: Competitor[] = [
       scheduling: {
         verdict: 'no',
         note: 'There is no built-in scheduler. It can run as a background server, so you could wire it to your computer’s own timer, but that is a job you do rather than a feature it ships.',
+        detail:
+          'The pieces are there if you want to build it: OpenCode runs headless as a server with an HTTP interface, so your computer’s own timer can start a job on a schedule. What you would be signing up for is the plumbing around it — deciding what runs where, keeping a record of what happened, and arranging to hear about it when something needs you.',
+        source: 'https://opencode.ai/docs/server/',
       },
       coordination: {
         verdict: 'partial',

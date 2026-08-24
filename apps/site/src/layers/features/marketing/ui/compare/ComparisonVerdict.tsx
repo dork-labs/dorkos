@@ -38,7 +38,12 @@ export function ComparisonVerdict({ competitor }: { competitor: Competitor }) {
         <Fact label="Price" value={competitor.pricing} />
         <Fact
           label="Source code"
-          value={competitor.openSource ? 'Open, you can read it' : 'Closed, you cannot read it'}
+          value={
+            // A product can be open in one part and closed in another, and the
+            // plain yes/no would overstate it.
+            competitor.openSourceNote ??
+            (competitor.openSource ? 'Open, you can read it' : 'Closed, you cannot read it')
+          }
         />
       </dl>
 

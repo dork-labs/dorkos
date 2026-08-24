@@ -2,6 +2,7 @@
 covers:
   - 'feat(site): /compare runtime pages — Claude Code, Codex, OpenCode (DOR-1465)'
   - 'fix(site): /compare reads and works on a phone — contrast, pinned labels, anchors that land (DOR-1465)'
+  - 'fix(site): /compare stacks on a phone instead of truncating columns (DOR-1465)'
 ---
 
 ### Added
@@ -11,7 +12,8 @@ covers:
 
 ### Fixed
 
-- The comparison tables now work on a phone. The row label stays put while you scroll sideways, so you can always see which point you are reading, and the edge of the table fades to show there is more to the right. Before, the whole second column was hidden with nothing to hint at it (DOR-1465)
+- The comparison tables now work on a phone. Each point becomes its own block, with both answers stacked underneath and labelled, so every word fits on screen and there is nothing to scroll sideways. Before, most of the second column sat off the edge of the screen with nothing to hint at it. On a tablet or a computer it stays a table, with the row label pinned as you scroll across and the edge fading to show there is more to see (DOR-1465)
 - Small grey text on the comparison pages is darker, so table headings, links and labels are easier to read and meet accessibility contrast standards (DOR-1465)
 - Links like "More on this" and "Back to the table" now land where they should. They used to jump to a spot hidden behind the top bar (DOR-1465)
 - The Cursor comparison now says that Cursor has a phone app, a web dashboard and a Slack integration, which it gained since the page was written. You can also reach the comparison pages from the site footer (DOR-1465)
+- The Codex page no longer says its source code is simply open. Only the command-line tool is: the cloud service, the apps and the models are not, and the page says so (DOR-1465)

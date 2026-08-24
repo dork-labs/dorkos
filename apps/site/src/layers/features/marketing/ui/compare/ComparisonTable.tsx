@@ -30,19 +30,33 @@ function BackingFeatureLinks({ slugs }: { slugs: string[] }) {
   );
 }
 
+/** Names the side a cell belongs to, for the stacked layout where no column header is on screen. */
+function CellHeading({ children }: { children: string }) {
+  return (
+    <span className="text-2xs text-charcoal mb-2 block font-mono tracking-[0.12em] uppercase sm:hidden">
+      {children}
+    </span>
+  );
+}
+
 /**
  * The side-by-side dimension table. DorkOS's column is derived from the feature
  * catalog and links to the feature pages behind each answer; the other product's
- * column links to the source backing any yes or partly. Scrolls sideways on a
- * phone instead of squashing the columns.
+ * column links to the source backing any yes or partly.
+ *
+ * Below `sm` the same markup reflows into one stacked block per dimension, each
+ * cell labelled with the side it belongs to. Three columns cannot be read on a
+ * phone at any scroll position — a pinned label wide enough to be useful leaves
+ * less room than a column needs — so on a phone the table stops being a table
+ * rather than becoming an unreadable one.
  *
  * @param competitor - The product this page compares against.
  */
 export function ComparisonTable({ competitor }: { competitor: Competitor }) {
   const copy = COMPARISON_FRAMING_COPY[competitor.framing];
-  const columnHeaders = copy.theirColumnFirst
-    ? [copy.theirColumn(competitor.name), copy.ourColumn]
-    : [copy.ourColumn, copy.theirColumn(competitor.name)];
+  const ourHeader = copy.ourColumn;
+  const theirHeader = copy.theirColumn(competitor.name);
+  const columnHeaders = copy.theirColumnFirst ? [theirHeader, ourHeader] : [ourHeader, theirHeader];
 
   return (
     <section aria-labelledby="side-by-side" className="mt-16">
@@ -51,11 +65,12 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
       </h2>
 
       <HorizontalScrollFrame className="border-warm-gray-light/30 mt-6 overflow-x-auto rounded-lg border">
-        {/* Fixed layout so the pinned label column keeps the width it is given:
-            auto layout hands it a third of the table and leaves a phone almost
-            no room for the column it labels. */}
-        <table className="w-full min-w-[40rem] table-fixed border-collapse text-left sm:min-w-[46rem]">
-          <thead>
+        {/* A block below sm — no min-width, so nothing overflows and every cell
+            is fully readable without scrolling. From sm up it is a real table
+            with fixed layout, so the pinned label column keeps the width it is
+            given instead of being handed a third of the table. */}
+        <table className="block w-full border-collapse text-left sm:table sm:min-w-[46rem] sm:table-fixed">
+          <thead className="hidden sm:table-header-group">
             <tr className="border-warm-gray-light/30 bg-cream-secondary border-b">
               {/* Under fixed layout the first row sets every column width, so
                   the label column's width has to be declared here. Narrower on a
@@ -63,7 +78,7 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                   labels. */}
               <th
                 scope="col"
-                className="text-2xs text-warm-gray bg-cream-secondary sticky left-0 z-20 w-36 p-4 font-mono tracking-[0.12em] uppercase sm:w-56"
+                className="text-2xs text-warm-gray bg-cream-secondary sticky left-0 z-20 w-56 p-4 font-mono tracking-[0.12em] uppercase"
               >
                 What you get
               </th>
@@ -78,13 +93,17 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="block sm:table-row-group">
             {COMPARISON_DIMENSIONS.map((dimension) => {
               const ours = dorkosCellFor(dimension);
               const theirs = competitor.cells[dimension.id];
               const hasDetail = Boolean(ours.detail ?? theirs?.detail);
               const ourCell = (
-                <td key="ours" className="w-1/3 p-4 align-top">
+                <td
+                  key="ours"
+                  className="block w-full px-4 pb-4 align-top sm:table-cell sm:w-auto sm:p-4"
+                >
+                  <CellHeading>{ourHeader}</CellHeading>
                   <VerdictMark verdict={ours.verdict} />
                   <span className="text-warm-gray mt-2 block text-sm leading-relaxed">
                     {ours.note}
@@ -92,19 +111,26 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                   <BackingFeatureLinks slugs={dimension.featureSlugs} />
                   {/* Lives in the cell, not the row header: a row header is the
                       row's accessible name, and a link inside it reads out with
-                      every cell in the row. */}
+                      every cell in the row. The visible text stays short; the
+                      dimension goes in the label so each link is still distinct
+                      to a screen reader. */}
                   {hasDetail && (
                     <Link
                       href={`#criterion-${dimension.id}`}
+                      aria-label={`More on ${dimension.label.toLowerCase()}`}
                       className="text-warm-gray hover:text-brand-orange transition-smooth mt-3 inline-block font-mono text-xs underline underline-offset-2"
                     >
-                      More on {dimension.label.toLowerCase()}
+                      More on this
                     </Link>
                   )}
                 </td>
               );
               const theirCell = (
-                <td key="theirs" className="w-1/3 p-4 align-top">
+                <td
+                  key="theirs"
+                  className="block w-full px-4 pb-4 align-top sm:table-cell sm:w-auto sm:p-4"
+                >
+                  <CellHeading>{theirHeader}</CellHeading>
                   {theirs ? (
                     <>
                       <VerdictMark verdict={theirs.verdict} />
@@ -128,13 +154,15 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                 </td>
               );
               return (
-                <tr key={dimension.id} className="border-warm-gray-light/20 border-b last:border-0">
+                <tr
+                  key={dimension.id}
+                  className="border-warm-gray-light/20 block border-b last:border-0 sm:table-row"
+                >
+                  {/* Pinned only from sm up, where there is room for it beside a
+                      full column. Below that it is the stacked block's heading. */}
                   <th
                     scope="row"
-                    // Narrower where it is pinned over a small screen: a 224px
-                    // label on a 340px scroller leaves almost no room for the
-                    // column it is meant to label.
-                    className="bg-cream-primary border-warm-gray-light/30 sticky left-0 z-10 w-36 border-r p-4 align-top sm:w-56"
+                    className="bg-cream-secondary border-warm-gray-light/30 sm:bg-cream-primary block w-full p-4 text-left align-top sm:sticky sm:left-0 sm:z-10 sm:table-cell sm:w-56 sm:border-r"
                   >
                     {/* The anchor sits inside the row's leftmost cell. Inside,
                         because browsers ignore scroll-margin on a table cell and
