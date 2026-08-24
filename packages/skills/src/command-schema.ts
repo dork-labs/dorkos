@@ -1,42 +1,25 @@
-import { z } from 'zod';
-import { SkillFrontmatterSchema, readYamlBoolean } from './schema.js';
+import { SkillFrontmatterSchema } from './schema.js';
+import type { SkillFrontmatter } from './schema.js';
 
 /**
- * Command frontmatter schema — a superset of the SKILL.md base.
+ * @deprecated Commands merged into skills. Use `SkillFrontmatterSchema` from
+ * `@dorkos/skills/schema` — it is the same object: every field this schema
+ * used to add on its own (`argument-hint`, `context`, `agent`, `model`,
+ * `effort`) now lives on the base, because a command *is* a skill (ADR
+ * `260823-200728`). This alias exists so existing imports keep compiling and
+ * will be removed once they move.
  *
- * Aligns with Claude Code's slash command extensions on top of the
- * agentskills.io base spec.
+ * One behavior went with the merge: this schema used to materialize
+ * `user-invocable: true` when the field was absent. The base leaves it absent
+ * and answers the question through `isUserInvocable()`, which reads absence as
+ * yes. Its one consumer — `CommandRegistryService` — already reads the raw
+ * frontmatter through that predicate (its `.partial()` parse stripped the
+ * default anyway), so nothing a person can see changed.
  */
-export const CommandFrontmatterSchema = SkillFrontmatterSchema.extend({
-  /** Parameter hint shown in autocomplete (e.g., "[issue-number]"). */
-  'argument-hint': z.string().optional(),
+export const CommandFrontmatterSchema = SkillFrontmatterSchema;
 
-  /**
-   * Whether this command appears in the `/` menu. Default: true.
-   *
-   * Narrows the base schema's optional field to a materialized default: a
-   * command palette needs a concrete answer per entry, where a plain skill
-   * read can leave "absent means yes" implicit. It reads the same YAML 1.1
-   * boolean words the base does (`no`, `off`, a quoted `"false"`), so the two
-   * dialects never disagree about the same file, and an unreadable value
-   * falls back to visible rather than failing the parse.
-   */
-  'user-invocable': z
-    .preprocess((v) => readYamlBoolean(v) ?? v, z.boolean())
-    .default(true)
-    .catch(true),
-
-  /** Execution context. "fork" runs in an isolated subagent. */
-  context: z.enum(['fork']).optional(),
-
-  /** Subagent type when context is "fork". */
-  agent: z.string().optional(),
-
-  /** Model override for this command's execution. */
-  model: z.string().optional(),
-
-  /** Effort level override. */
-  effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
-});
-
-export type CommandFrontmatter = z.infer<typeof CommandFrontmatterSchema>;
+/**
+ * @deprecated Use `SkillFrontmatter` from `@dorkos/skills/schema`.
+ * See {@link CommandFrontmatterSchema}.
+ */
+export type CommandFrontmatter = SkillFrontmatter;

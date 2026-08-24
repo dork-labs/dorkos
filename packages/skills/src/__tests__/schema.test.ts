@@ -150,6 +150,116 @@ describe('SkillFrontmatterSchema', () => {
   });
 });
 
+describe('SkillFrontmatterSchema — Claude Code dialect fields', () => {
+  const minimal = { name: 'my-skill', description: 'Does something useful' };
+
+  it('accepts every dialect field at once', () => {
+    const parsed = SkillFrontmatterSchema.parse({
+      ...minimal,
+      'display-name': 'My Skill',
+      'allowed-tools': 'Read Edit',
+      'disallowed-tools': 'Bash WebFetch',
+      paths: 'src/**/*.ts,docs/**/*.mdx',
+      arguments: ['issue', 'branch'],
+      shell: 'powershell',
+      context: 'fork',
+      agent: 'code-reviewer',
+      background: true,
+      model: 'claude-opus-4-20250514',
+      effort: 'high',
+      'argument-hint': '[issue-number]',
+    });
+
+    expect(parsed['display-name']).toBe('My Skill');
+    expect(parsed['disallowed-tools']).toBe('Bash WebFetch');
+    expect(parsed.paths).toBe('src/**/*.ts,docs/**/*.mdx');
+    expect(parsed.arguments).toEqual(['issue', 'branch']);
+    expect(parsed.shell).toBe('powershell');
+    expect(parsed.context).toBe('fork');
+    expect(parsed.agent).toBe('code-reviewer');
+    expect(parsed.background).toBe(true);
+    expect(parsed.model).toBe('claude-opus-4-20250514');
+    expect(parsed.effort).toBe('high');
+    expect(parsed['argument-hint']).toBe('[issue-number]');
+  });
+
+  // Claude Code documents both spellings for these four, so both parse and
+  // neither is normalized — `paths` splits on commas and `arguments` on
+  // spaces, and a schema that picked one separator would get the other wrong.
+  // `allowed-tools` used to take the string only, so a legal Claude Code skill
+  // written with a YAML list failed the whole file and vanished from DorkOS.
+  it.each(['paths', 'arguments', 'allowed-tools', 'disallowed-tools'] as const)(
+    'takes %s as a string or a list, as written',
+    (field) => {
+      expect(SkillFrontmatterSchema.parse({ ...minimal, [field]: 'one two' })[field]).toBe(
+        'one two'
+      );
+      expect(SkillFrontmatterSchema.parse({ ...minimal, [field]: ['one', 'two'] })[field]).toEqual([
+        'one',
+        'two',
+      ]);
+      expect(SkillFrontmatterSchema.safeParse({ ...minimal, [field]: [1, 2] }).success).toBe(false);
+    }
+  );
+
+  it('accepts both shells and rejects a third', () => {
+    expect(SkillFrontmatterSchema.parse({ ...minimal, shell: 'bash' }).shell).toBe('bash');
+    expect(SkillFrontmatterSchema.parse({ ...minimal, shell: 'powershell' }).shell).toBe(
+      'powershell'
+    );
+    expect(SkillFrontmatterSchema.safeParse({ ...minimal, shell: 'zsh' }).success).toBe(false);
+  });
+
+  it('rejects an effort or context value outside the set', () => {
+    expect(SkillFrontmatterSchema.safeParse({ ...minimal, effort: 'extreme' }).success).toBe(false);
+    expect(SkillFrontmatterSchema.safeParse({ ...minimal, context: 'background' }).success).toBe(
+      false
+    );
+  });
+
+  it.each([
+    ['no', false],
+    ['off', false],
+    ['"false"', false],
+    ['yes', true],
+    ['on', true],
+    ['True', true],
+  ])('reads the YAML 1.1 word %s in background as %s', (word, expected) => {
+    const raw = word.replaceAll('"', '');
+    expect(SkillFrontmatterSchema.parse({ ...minimal, background: raw }).background).toBe(expected);
+  });
+
+  it('degrades an unreadable background to absent instead of rejecting the skill', () => {
+    const parsed = SkillFrontmatterSchema.safeParse({ ...minimal, background: 'sometimes' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.background).toBeUndefined();
+  });
+
+  // `background` only means anything with `context: fork`. A stray one is a
+  // no-op, and refusing the file over it would cost the author their whole
+  // skill to fix nothing.
+  it('does not require context: fork alongside background or agent', () => {
+    expect(SkillFrontmatterSchema.safeParse({ ...minimal, background: true }).success).toBe(true);
+    expect(SkillFrontmatterSchema.safeParse({ ...minimal, agent: 'reviewer' }).success).toBe(true);
+  });
+
+  it('leaves every dialect field absent when the author omits them', () => {
+    const parsed = SkillFrontmatterSchema.parse(minimal);
+    expect(parsed['display-name']).toBeUndefined();
+    expect(parsed['disallowed-tools']).toBeUndefined();
+    expect(parsed.paths).toBeUndefined();
+    expect(parsed.arguments).toBeUndefined();
+    expect(parsed.shell).toBeUndefined();
+    expect(parsed.context).toBeUndefined();
+    expect(parsed.agent).toBeUndefined();
+    expect(parsed.background).toBeUndefined();
+    expect(parsed.model).toBeUndefined();
+    expect(parsed.effort).toBeUndefined();
+    expect(parsed['argument-hint']).toBeUndefined();
+    expect(parsed.schedule).toBeUndefined();
+  });
+});
+
 describe('SkillKindSchema', () => {
   it('parses "skill" successfully', () => {
     expect(SkillKindSchema.parse('skill')).toBe('skill');

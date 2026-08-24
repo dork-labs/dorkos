@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { CommandFrontmatterSchema } from '../command-schema.js';
+import { SkillFrontmatterSchema, isUserInvocable } from '../schema.js';
 
 describe('CommandFrontmatterSchema', () => {
   const base = { name: 'deploy', description: 'Deploy to production' };
+
+  it('is the base skill schema — a command IS a skill', () => {
+    expect(CommandFrontmatterSchema).toBe(SkillFrontmatterSchema);
+  });
 
   it('accepts all base fields plus command-specific fields', () => {
     const result = CommandFrontmatterSchema.safeParse({
@@ -18,9 +23,14 @@ describe('CommandFrontmatterSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('applies defaults (user-invocable=true)', () => {
+  // The merge dropped this schema's `user-invocable: true` default. Absence is
+  // now carried through to `isUserInvocable`, which reads it as yes — so the
+  // answer a palette gets is unchanged, and a parse-then-write round trip no
+  // longer stamps a line the author never typed into the file.
+  it('leaves an absent user-invocable absent, and still reads as visible', () => {
     const result = CommandFrontmatterSchema.parse(base);
-    expect(result['user-invocable']).toBe(true);
+    expect(result['user-invocable']).toBeUndefined();
+    expect(isUserInvocable(result)).toBe(true);
   });
 
   it('accepts argument-hint', () => {
@@ -102,7 +112,10 @@ describe('CommandFrontmatterSchema', () => {
   it('falls back to visible when the value is unreadable', () => {
     const parsed = CommandFrontmatterSchema.safeParse({ ...base, 'user-invocable': 'maybe' });
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data['user-invocable']).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data['user-invocable']).toBeUndefined();
+      expect(isUserInvocable(parsed.data)).toBe(true);
+    }
   });
 
   it('requires description', () => {

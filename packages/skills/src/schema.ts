@@ -1,4 +1,18 @@
 import { z } from 'zod';
+import { ScheduleBlockSchema } from './schedule-schema.js';
+import { OptionalYamlBoolean } from './yaml-boolean.js';
+
+export { readYamlBoolean } from './yaml-boolean.js';
+
+/**
+ * A frontmatter field that Claude Code accepts either as one string or as a
+ * YAML list, and that DorkOS stores exactly as written.
+ *
+ * Splitting is the reader's job, not the schema's: `paths` splits on commas
+ * and `arguments` on spaces, so a schema that normalized either one would have
+ * to pick a separator and would get the other wrong.
+ */
+const StringOrStringList = z.union([z.string(), z.array(z.string())]);
 
 /**
  * SKILL.md name field validation.
@@ -42,67 +56,24 @@ export const SkillKindSchema = z.enum(['skill', 'task', 'command']);
 export type SkillKind = z.infer<typeof SkillKindSchema>;
 
 /**
- * Coerce the YAML 1.1 boolean words a person actually types into booleans.
+ * The one SKILL.md frontmatter schema.
  *
- * `gray-matter` parses with js-yaml v4, which is YAML **1.2 core**: only
- * `true`/`false` are booleans there, so `yes`, `no`, `on`, `off`, `y`, `n` and
- * a quoted `"false"` all arrive as plain strings. Authors write those anyway —
- * they were valid YAML 1.1 for a decade and every other tool still takes them.
- * Rejecting one would fail the whole SKILL.md parse and make the entire skill
- * vanish from every surface, which is a far worse answer than reading what the
- * author plainly meant.
+ * Three layers, in this order:
  *
- * Anything else passes through untouched for the schema to judge.
- */
-function coerceYamlBoolean(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'true' || normalized === 'yes' || normalized === 'on' || normalized === 'y') {
-    return true;
-  }
-  if (normalized === 'false' || normalized === 'no' || normalized === 'off' || normalized === 'n') {
-    return false;
-  }
-  return value;
-}
-
-/**
- * A YAML-1.1-tolerant optional boolean (see {@link coerceYamlBoolean}).
+ * 1. the agentskills.io open standard (`name`, `description`, `license`,
+ *    `compatibility`, `metadata`, `allowed-tools`);
+ * 2. Claude Code's extension fields, adopted **verbatim** — same names, same
+ *    semantics, no DorkOS synonyms — so a skill already written for Claude
+ *    Code needs no translation to work here (ADR `260823-200728`);
+ * 3. the DorkOS `schedule:` block, whose presence makes the skill a scheduled
+ *    task (ADR `260823-200724`).
  *
- * A value that is neither a boolean nor a recognized boolean word degrades to
- * absent rather than failing the parse: before these fields existed the schema
- * simply stripped the unknown key, and a typo in one optional field must not
- * delete a person's whole skill from the product.
- */
-const OptionalYamlBoolean = z
-  .preprocess(coerceYamlBoolean, z.boolean())
-  .optional()
-  .catch(undefined);
-
-/**
- * Read a frontmatter value that is meant to be a boolean, the same way the
- * schema does: YAML 1.1 words count, and anything unreadable is `undefined`
- * (absent).
- *
- * Exported for the surfaces that read frontmatter *outside* a full schema
- * parse — `CommandRegistryService` validates with `.partial()` and falls back
- * to a hand-rolled key/value parser for malformed YAML, so it cannot rely on
- * the schema having coerced anything.
- *
- * @param value - Raw frontmatter value, straight from the YAML parser.
- */
-export function readYamlBoolean(value: unknown): boolean | undefined {
-  const coerced = coerceYamlBoolean(value);
-  return typeof coerced === 'boolean' ? coerced : undefined;
-}
-
-/**
- * Base SKILL.md frontmatter schema.
- *
- * Conforms to the agentskills.io open standard. All DorkOS-specific
- * schemas (tasks, commands) extend this base.
+ * Every field past `name` and `description` is optional, and an unknown key is
+ * stripped rather than rejected: one file is read by several tools, and a key
+ * DorkOS does not know must never delete a person's skill from the product.
  *
  * @see https://agentskills.io/specification#skill-md-format
+ * @see https://code.claude.com/docs/en/skills.md
  */
 export const SkillFrontmatterSchema = z.object({
   /** Kebab-case identifier. Must match the parent directory name. */
@@ -120,8 +91,27 @@ export const SkillFrontmatterSchema = z.object({
   /** Arbitrary key-value metadata for client-specific extensions. */
   metadata: z.record(z.string(), z.string()).optional(),
 
-  /** Space-delimited list of pre-approved tools. */
-  'allowed-tools': z.string().optional(),
+  /**
+   * Tools the agent may use without asking, while this skill is active.
+   *
+   * Claude Code dialect: a space- or comma-separated string, or a YAML list,
+   * stored exactly as written (see {@link StringOrStringList}). The list form
+   * was accepted by Claude Code but rejected here until the schemas unified,
+   * and rejecting it failed the whole file — a legal Claude Code skill simply
+   * did not exist in DorkOS. `CommandRegistryService` already read both
+   * shapes at runtime, so widening the schema only lets its validated path do
+   * what its fallback path always did.
+   */
+  'allowed-tools': StringOrStringList.optional(),
+
+  /**
+   * Human-readable display name. Falls back to a humanized `name` if absent.
+   *
+   * A DorkOS extension that predates the unified schema — it lived on task
+   * files first — and now belongs to every skill: a name good enough to show a
+   * person is worth having whether or not the file happens to be scheduled.
+   */
+  'display-name': z.string().optional(),
 
   /**
    * Whether a person may invoke this skill directly (slash menus and other
@@ -145,6 +135,68 @@ export const SkillFrontmatterSchema = z.object({
    * Claude Code dialect, adopted verbatim. Absent means the model may invoke.
    */
   'disable-model-invocation': OptionalYamlBoolean,
+
+  /**
+   * Tools removed from the agent's pool while this skill is active — the deny
+   * half of `allowed-tools`.
+   *
+   * Claude Code dialect: a space- or comma-separated string, or a YAML list,
+   * stored exactly as written (see {@link StringOrStringList}).
+   */
+  'disallowed-tools': StringOrStringList.optional(),
+
+  /**
+   * Glob patterns that limit when the model may load this skill on its own —
+   * a skill about migrations stays out of the way until someone opens a
+   * migration.
+   *
+   * Claude Code dialect: a comma-separated string or a YAML list, stored
+   * exactly as written (see {@link StringOrStringList}).
+   */
+  paths: StringOrStringList.optional(),
+
+  /**
+   * Named positional arguments the skill body substitutes as `$name`.
+   *
+   * Claude Code dialect: a space-separated string or a YAML list, stored
+   * exactly as written (see {@link StringOrStringList}).
+   */
+  arguments: StringOrStringList.optional(),
+
+  /** Shell used for the skill's inline `` !`command` `` blocks. */
+  shell: z.enum(['bash', 'powershell']).optional(),
+
+  /** Execution context. `fork` runs the skill in an isolated subagent. */
+  context: z.enum(['fork']).optional(),
+
+  /** Which subagent type to fork, when `context: fork` is set. */
+  agent: z.string().optional(),
+
+  /**
+   * Whether a forked skill runs in the background instead of being waited on.
+   *
+   * Only meaningful alongside `context: fork`; on its own it does nothing.
+   * That pairing is deliberately not enforced here — a stray `background:` is
+   * a no-op, and refusing the file over one would cost the author their whole
+   * skill to fix nothing.
+   */
+  background: OptionalYamlBoolean,
+
+  /** Model override while this skill is active. */
+  model: z.string().optional(),
+
+  /** Reasoning-effort override while this skill is active. */
+  effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
+
+  /** Parameter hint shown during autocomplete (e.g., "[issue-number]"). */
+  'argument-hint': z.string().optional(),
+
+  /**
+   * Presence makes this skill a **scheduled task**; absence leaves it a plain
+   * skill. See {@link ScheduleBlockSchema} — including why cron *semantics*
+   * are validated at the server seam and not here.
+   */
+  schedule: ScheduleBlockSchema.optional(),
 
   /**
    * Optional discriminator declaring whether this file is a skill, task, or
