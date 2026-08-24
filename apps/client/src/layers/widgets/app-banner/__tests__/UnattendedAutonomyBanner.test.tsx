@@ -20,6 +20,9 @@ import type { UnattendedAutonomyDriver } from '@dorkos/shared/permission-semanti
 
 const navigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
+  // Present, because these cases render inside a routed cockpit. The safe-router
+  // wrappers ask before reading route state (DOR-1444).
+  useRouter: () => ({ stores: {} }),
   useNavigate: () => navigate,
   useSearch: () => ({}),
   useRouterState: () => '/',
