@@ -328,6 +328,60 @@ export const TaskCancelPayloadSchema = z
 
 export type TaskCancelPayload = z.infer<typeof TaskCancelPayloadSchema>;
 
+// === Agent Turn Cancel ===
+
+/**
+ * Subject prefix a stop request for one agent turn is published to (DOR-791).
+ *
+ * The same reasoning as {@link TASK_CANCEL_SUBJECT_PREFIX}, for the other kind
+ * of work a runtime adapter executes on somebody else's behalf. A turn started
+ * by an A2A `message/send` runs inside the adapter, so the gateway holds no
+ * handle on it: dropping its reply subscription abandons the stream and leaves
+ * the model running — and billing — for as long as it wants. The stop travels
+ * the bus the message did.
+ *
+ * `relay.control.` for the same two reasons: a stop must not queue behind the
+ * turn it exists to end (so it arrives by subscription, not delivery), and
+ * nothing may attach a watcher to it, because a watcher counts as a delivery
+ * and would make every unanswered stop report success.
+ *
+ * The concrete subject is this prefix plus the A2A task id, so a trace row
+ * names the task it belongs to; the payload's `replyTo` is what actually
+ * identifies the turn.
+ */
+export const AGENT_CANCEL_SUBJECT_PREFIX = 'relay.control.agent-cancel.';
+
+/**
+ * The only principal allowed to stop an agent turn.
+ *
+ * Server-injected on publish and not reachable from a model, exactly like
+ * {@link TASK_SCHEDULER_PRINCIPAL}: a handler that checks it knows the request
+ * came from the A2A gateway acting on its caller's `tasks/cancel`, and not from
+ * an agent with `relay_send` that guessed a reply subject.
+ */
+export const A2A_GATEWAY_PRINCIPAL = 'relay.system.a2a.gateway';
+
+/** Why a turn is being stopped, in the words its runner writes to the log. */
+export const AgentCancelReasonSchema = z.enum(['caller_canceled', 'caller_timeout']);
+
+export type AgentCancelReason = z.infer<typeof AgentCancelReasonSchema>;
+
+export const AgentCancelPayloadSchema = z
+  .object({
+    type: z.literal('agent_cancel'),
+    /**
+     * The reply subject of the turn to stop — authoritative, and the reason
+     * this is not the agent id: a reply subject is minted per execution, so it
+     * names ONE turn even when two turns of the same task run at once.
+     */
+    replyTo: z.string(),
+    /** Whether the caller cancelled or simply stopped waiting. */
+    reason: AgentCancelReasonSchema,
+  })
+  .openapi('AgentCancelPayload');
+
+export type AgentCancelPayload = z.infer<typeof AgentCancelPayloadSchema>;
+
 // === Console Relay Receipt ===
 
 export const RelayReceiptSchema = z

@@ -22,6 +22,7 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { RelayPublisher, SubscriberVerdict, Unsubscribe } from '../../types.js';
+import type { AbortRegistry } from '../../lib/abort-registry.js';
 
 /** Subject pattern covering a stop request for any run. */
 export const TASK_CANCEL_SUBJECT_PATTERN = `${TASK_CANCEL_SUBJECT_PREFIX}>`;
@@ -34,72 +35,6 @@ export const TASK_CANCEL_SUBJECT_PATTERN = `${TASK_CANCEL_SUBJECT_PREFIX}>`;
  * Stop", and its absence means the run outlived its time limit.
  */
 export const OPERATOR_CANCEL = Symbol('operator-cancel');
-
-/**
- * The task runs this adapter is executing right now.
- *
- * Deliberately narrow: it holds only what is needed to end a run, and only for
- * as long as the run is in flight. A run that has finalized is GONE from here,
- * which is what makes a late stop request answerable with the truth ("no such
- * run is executing") instead of a silent no-op.
- */
-export class RunningTasks {
-  private readonly runs = new Map<string, AbortController>();
-
-  /**
-   * Record a run as in-flight.
-   *
-   * @param runId - The run id, which is also its session key.
-   * @param controller - The controller whose abort ends the run.
-   */
-  register(runId: string, controller: AbortController): void {
-    this.runs.set(runId, controller);
-  }
-
-  /**
-   * Forget a run that has finished.
-   *
-   * Only drops the entry when it is still the one this caller registered, so a
-   * late release can never unregister a newer run that reused the id.
-   *
-   * @param runId - The run id.
-   * @param controller - The controller this caller registered.
-   */
-  release(runId: string, controller: AbortController): void {
-    if (this.runs.get(runId) === controller) this.runs.delete(runId);
-  }
-
-  /**
-   * Ask a run to stop.
-   *
-   * Idempotent: aborting an already-aborted controller keeps the first reason
-   * and does nothing else, so a second Stop is harmless.
-   *
-   * @param runId - The run to stop.
-   * @returns Whether a run with this id was executing here.
-   */
-  stop(runId: string): boolean {
-    const controller = this.runs.get(runId);
-    if (!controller) return false;
-    controller.abort(OPERATOR_CANCEL);
-    return true;
-  }
-
-  /** How many runs this adapter is executing. */
-  get size(): number {
-    return this.runs.size;
-  }
-
-  /**
-   * Drop every entry without aborting anything.
-   *
-   * Called when the adapter stops. The runs themselves are finalized by their
-   * own handlers; this only stops the registry from outliving them.
-   */
-  clear(): void {
-    this.runs.clear();
-  }
-}
 
 /**
  * Handle one stop request.
@@ -116,7 +51,7 @@ export class RunningTasks {
  */
 export function handleTaskCancel(
   envelope: RelayEnvelope,
-  running: RunningTasks,
+  running: AbortRegistry,
   log: Pick<Console, 'warn' | 'debug'>
 ): SubscriberVerdict | void {
   // Stopping somebody's work is the server's business. `from` is stamped by
@@ -143,7 +78,7 @@ export function handleTaskCancel(
   }
 
   const { runId } = parsed.data;
-  if (!running.stop(runId)) {
+  if (!running.stop(runId, OPERATOR_CANCEL)) {
     // The honest answer for a run that already finished, and for an adapter
     // that restarted since the run began. Both are no-ops, neither is an error.
     log.debug?.(`[CCA] task-cancel: run ${runId} is not executing here`);
@@ -163,7 +98,7 @@ export function handleTaskCancel(
  */
 export function subscribeTaskCancelHandler(
   relay: RelayPublisher,
-  running: RunningTasks,
+  running: AbortRegistry,
   log: Pick<Console, 'warn' | 'debug'>
 ): Unsubscribe {
   return relay.subscribe(TASK_CANCEL_SUBJECT_PATTERN, (envelope) =>

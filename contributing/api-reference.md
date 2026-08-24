@@ -1630,7 +1630,7 @@ Fleet-level JSON-RPC 2.0 endpoint for A2A protocol messages. Every message must 
 | `message/send`   | Send a message and receive a complete response |
 | `message/stream` | Send a message and stream the response via SSE |
 | `tasks/get`      | Get the current state of a task                |
-| `tasks/cancel`   | Cancel an in-progress task                     |
+| `tasks/cancel`   | Stop an in-progress task's turn (see below)    |
 
 **Request body:** JSON-RPC 2.0 envelope:
 
@@ -1655,3 +1655,13 @@ Fleet-level JSON-RPC 2.0 endpoint for A2A protocol messages. Every message must 
 - `200` - SSE stream (for `message/stream`, `Content-Type: text/event-stream`)
 - `400` - Invalid JSON-RPC request
 - `404` - Unknown method
+
+**Cancellation (DOR-791).** A turn runs inside a runtime adapter, not inside the gateway, so
+`tasks/cancel` publishes an `agent_cancel` stop request to `relay.control.agent-cancel.{taskId}`
+(payload names the turn by its per-execution reply subject; principal
+`relay.system.a2a.gateway`, which the adapter's subscription enforces). The adapter aborts the
+turn and calls the runtime's `interruptQuery` — abandoning the reply stream stops nothing. The
+task is marked `canceled` only when a runner takes the stop; otherwise the gateway raises
+`TaskNotCancelable` (-32002) and leaves the task in its current state, because it is still
+running. The 2-minute response timeout publishes the same stop request with reason
+`caller_timeout` and logs whether it was taken.
