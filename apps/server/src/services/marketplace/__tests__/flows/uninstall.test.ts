@@ -565,4 +565,136 @@ describe('UninstallFlow', () => {
     ).toBe(true);
     expect(await pathExists(path.join(installRoot, '.dork', 'data', 'state.json'))).toBe(true);
   });
+
+  // === Generated schedule cleanup (DOR-1487) =============================
+
+  /**
+   * Write an install receipt naming skill directories the install generated
+   * outside the package's own install root.
+   */
+  async function writeReceipt(
+    installRoot: string,
+    generatedSchedulePaths: string[]
+  ): Promise<void> {
+    await mkdir(path.join(installRoot, '.dork'), { recursive: true });
+    await writeFile(
+      path.join(installRoot, '.dork', 'install-metadata.json'),
+      JSON.stringify(
+        {
+          name: 'plugin-sched',
+          version: '1.0.0',
+          type: 'plugin',
+          installedAt: new Date().toISOString(),
+          generatedSchedulePaths,
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+  }
+
+  /** Create a skill directory with a SKILL.md at the given path. */
+  async function makeSkillDir(dirPath: string, body = 'Body.'): Promise<void> {
+    await mkdir(dirPath, { recursive: true });
+    await writeFile(
+      path.join(dirPath, 'SKILL.md'),
+      `---\nname: ${path.basename(dirPath)}\ndescription: Generated.\n---\n\n${body}\n`,
+      'utf-8'
+    );
+  }
+
+  it('removes the skill directories the install generated for its schedules', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+    cleanupDirs.push(projectPath);
+
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-sched');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-sched' }),
+    });
+
+    const generated = [
+      path.join(projectPath, '.agents', 'skills', 'nightly'),
+      path.join(projectPath, '.agents', 'skills', 'weekly'),
+    ];
+    for (const dir of generated) await makeSkillDir(dir);
+    await writeReceipt(installRoot, generated);
+
+    const flow = new UninstallFlow(deps);
+    const result = await flow.uninstall({ name: 'plugin-sched' });
+
+    expect(result.ok).toBe(true);
+    // A schedule must not keep firing for a package that is gone.
+    for (const dir of generated) {
+      expect(await pathExists(dir)).toBe(false);
+    }
+  });
+
+  it("removes ONLY what the receipt names, never a neighbour's skill", async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+    cleanupDirs.push(projectPath);
+
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-sched');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-sched' }),
+    });
+
+    const ours = path.join(projectPath, '.agents', 'skills', 'ours');
+    const theirs = path.join(projectPath, '.agents', 'skills', 'theirs');
+    await makeSkillDir(ours);
+    await makeSkillDir(theirs, 'A skill the person wrote.');
+    await writeReceipt(installRoot, [ours]);
+
+    const flow = new UninstallFlow(deps);
+    await flow.uninstall({ name: 'plugin-sched' });
+
+    expect(await pathExists(ours)).toBe(false);
+    // Untouched: uninstall deletes from the receipt, never by scanning.
+    expect(await pathExists(theirs)).toBe(true);
+    expect(await readFile(path.join(theirs, 'SKILL.md'), 'utf-8')).toContain(
+      'A skill the person wrote.'
+    );
+  });
+
+  it('uninstalls cleanly when the receipt predates the field', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-sched');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-sched' }),
+    });
+
+    const flow = new UninstallFlow(deps);
+    const result = await flow.uninstall({ name: 'plugin-sched' });
+
+    expect(result.ok).toBe(true);
+    expect(await pathExists(installRoot)).toBe(false);
+  });
+
+  it('still uninstalls when a generated directory cannot be removed', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-sched');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-sched' }),
+    });
+    // A path that was recorded and has since vanished — the ordinary case of a
+    // cleanup that cannot complete. Failing here would restore a package the
+    // person asked to remove, over a leftover file.
+    await writeReceipt(installRoot, ['/nonexistent/definitely/not/here']);
+
+    const flow = new UninstallFlow(deps);
+    const result = await flow.uninstall({ name: 'plugin-sched' });
+
+    expect(result.ok).toBe(true);
+    expect(await pathExists(installRoot)).toBe(false);
+  });
 });

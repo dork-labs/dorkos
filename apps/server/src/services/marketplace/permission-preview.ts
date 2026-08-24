@@ -21,6 +21,7 @@ import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import { readNpmDependencies } from './lib/npm-dependencies.js';
+import { packageSchedules, scheduleDisplayName } from './lib/package-schedules.js';
 import type {
   ConflictReport,
   PermissionPreview,
@@ -241,12 +242,24 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
  * `true` here remains the more permissive of the two possible outcomes.
  */
 function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSchedule[] {
-  if (manifest.type !== 'shape') return [];
-  return manifest.schedules.map((schedule) => ({
-    name: schedule.name,
-    cron: schedule.cron,
-    permissionMode: clampSchedulePermissionMode(schedule.permissionMode).mode,
-    startsEnabled: schedule.startEnabled,
+  // Every type that can declare a schedule is disclosed, not just Shapes
+  // (DOR-1487). The gate here used to be `type !== 'shape'` because the slot was
+  // Shape-only; leaving it would have made a plugin's cron the one kind of
+  // unattended work a person approves an install without being shown.
+  // `packageSchedules` also answers for `adapter`, which has no slot at all.
+  return packageSchedules(manifest).map((schedule, index) => ({
+    // A by-reference schedule is named by the skill it runs; an inline one
+    // carries its own name.
+    name: scheduleDisplayName(schedule, index),
+    cron: schedule.cron ?? null,
+    // Coalesced to the schema's own defaults, exactly as the materializer does.
+    // Not every manifest reaching the preview was parsed — one read off disk by
+    // an older build arrives with these keys missing — and this is the consent
+    // surface: an `undefined` here renders as a blank where a permission mode
+    // should be, which reads as "nothing to worry about" for the one field that
+    // says what an unattended job may do.
+    permissionMode: clampSchedulePermissionMode(schedule.permissionMode ?? 'acceptEdits').mode,
+    startsEnabled: schedule.startEnabled ?? false,
   }));
 }
 

@@ -66,6 +66,7 @@ function pluginManifest(
     layers: [],
     requires: [],
     extensions: [],
+    schedules: [],
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ function agentManifest(name: string): AgentPackageManifest {
     tags: [],
     layers: [],
     requires: [],
+    schedules: [],
   };
 }
 
@@ -113,6 +115,7 @@ function skillPackManifest(name: string): SkillPackPackageManifest {
     tags: [],
     layers: [],
     requires: [],
+    schedules: [],
   };
 }
 
@@ -489,6 +492,94 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.schedules).toEqual([
         { name: 'tidy', cron: '@daily', permissionMode: 'acceptEdits', startsEnabled: true },
       ]);
+    });
+
+    // DOR-1487: the slot opened past Shapes, and the preview is the CONSENT
+    // surface — the last thing a person reads before approving unattended work.
+    // A schedule the preview omits is one nobody agreed to.
+    it.each(['plugin', 'agent', 'skill-pack'] as const)(
+      'discloses the schedules a %s manifest declares',
+      async (type) => {
+        const manifest = {
+          ...(type === 'plugin'
+            ? pluginManifest('sched-pkg')
+            : type === 'agent'
+              ? agentManifest('sched-pkg')
+              : skillPackManifest('sched-pkg')),
+          schedules: [
+            {
+              name: 'nightly-tidy',
+              description: 'Tidy overnight.',
+              prompt: 'Tidy.',
+              cron: '0 3 * * *',
+              timezone: null,
+              permissionMode: 'acceptEdits' as const,
+              startEnabled: true,
+            },
+          ],
+        } as unknown as PluginPackageManifest;
+        const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+        const preview = await builder.build(pkgPath, manifest);
+
+        expect(preview.schedules).toEqual([
+          {
+            name: 'nightly-tidy',
+            cron: '0 3 * * *',
+            permissionMode: 'acceptEdits',
+            startsEnabled: true,
+          },
+        ]);
+      }
+    );
+
+    it('names a skillRef schedule by the skill it runs', async () => {
+      const manifest = {
+        ...pluginManifest('ref-pkg'),
+        schedules: [
+          {
+            skillRef: 'daily-report',
+            cron: '0 9 * * *',
+            timezone: null,
+            permissionMode: 'acceptEdits' as const,
+            startEnabled: false,
+          },
+        ],
+      } as unknown as PluginPackageManifest;
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules).toEqual([
+        {
+          name: 'daily-report',
+          cron: '0 9 * * *',
+          permissionMode: 'acceptEdits',
+          startsEnabled: false,
+        },
+      ]);
+    });
+
+    it('discloses the mode a declared schedule GETS, not the one it asked for', async () => {
+      const manifest = {
+        ...pluginManifest('greedy-pkg'),
+        schedules: [
+          {
+            name: 'sweep',
+            description: 'Sweep.',
+            prompt: 'Sweep.',
+            cron: '0 3 * * *',
+            timezone: null,
+            permissionMode: 'bypassPermissions' as const,
+            startEnabled: true,
+          },
+        ],
+      } as unknown as PluginPackageManifest;
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules[0]?.permissionMode).toBe('acceptEdits');
     });
 
     it("reads a Shape manifest's declared schedules, which no preview used to show", async () => {

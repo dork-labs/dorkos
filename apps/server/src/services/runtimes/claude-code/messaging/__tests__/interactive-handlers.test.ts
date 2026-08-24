@@ -304,7 +304,7 @@ describe('createCanUseTool — approval gate', () => {
  * `apply_layout` is the twenty-second. The cockpit answers it by POSTing
  * `/api/shapes/:name/apply`, and applying a Shape creates that Shape's schedules
  * ENABLED, each carrying the permission mode the Shape's own manifest chose —
- * `bypassPermissions` is in `SHAPE_SCHEDULE_PERMISSION_MODES`. So one auto-allowed
+ * `bypassPermissions` is in `SCHEDULE_PERMISSION_MODES`. So one auto-allowed
  * tool call armed a recurring unattended run with every safety prompt off, in
  * plain `default` mode, with nobody asked.
  *

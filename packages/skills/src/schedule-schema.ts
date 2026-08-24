@@ -15,7 +15,7 @@ import { coerceYamlBoolean } from './yaml-boolean.js';
  * — a version-safe string-array read, never a cross-version schema composition
  * — and asserts the two sets are equal, so they cannot drift apart.
  *
- * `@dorkos/marketplace` re-exports this as `SHAPE_SCHEDULE_PERMISSION_MODES`
+ * `@dorkos/marketplace` re-exports this as `SCHEDULE_PERMISSION_MODES`
  * rather than keeping a third copy: what a Shape manifest may declare for a
  * schedule is exactly what the schedule's file may then carry, and a manifest
  * allowed to declare a mode the file cannot hold writes an unreadable file.

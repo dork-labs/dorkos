@@ -582,3 +582,125 @@ describe('validatePackage', () => {
     });
   });
 });
+
+describe('declared schedules (DOR-1487)', () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A plugin package on disk with the given schedules and shipped skills. */
+  async function makeScheduledPackage(
+    schedules: Record<string, unknown>[],
+    skills: string[] = []
+  ): Promise<string> {
+    const dir = await makeTempDir();
+    tempDirs.push(dir);
+    const pkgRoot = path.join(dir, 'sched-pkg');
+    await writeJson(path.join(pkgRoot, PACKAGE_MANIFEST_PATH), {
+      schemaVersion: 1,
+      name: 'sched-pkg',
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'Ships schedules.',
+      category: 'productivity',
+      schedules,
+    });
+    await writeJson(path.join(pkgRoot, CLAUDE_PLUGIN_MANIFEST_PATH), {
+      name: 'sched-pkg',
+      version: '1.0.0',
+    });
+    for (const skill of skills) {
+      await writeText(
+        path.join(pkgRoot, skill, 'SKILL.md'),
+        `---\nname: ${path.basename(skill)}\ndescription: A shipped skill.\n---\n\nBody.\n`
+      );
+    }
+    return pkgRoot;
+  }
+
+  it('rejects a skillRef naming a skill the package does not ship', async () => {
+    const pkgRoot = await makeScheduledPackage([{ skillRef: 'never-shipped' }]);
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.ok).toBe(false);
+    const issue = result.issues.find((i) => i.code === 'SCHEDULE_SKILL_MISSING');
+    expect(issue?.level).toBe('error');
+    expect(issue?.message).toContain('never-shipped');
+  });
+
+  it('accepts a skillRef the package ships', async () => {
+    const pkgRoot = await makeScheduledPackage(
+      [{ skillRef: 'daily-report' }],
+      ['skills/daily-report']
+    );
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(false);
+  });
+
+  it('accepts a skillRef nested below the skills root, as the installer does', async () => {
+    // A publish-time check stricter than the install-time one would reject a
+    // package that installs perfectly well.
+    const pkgRoot = await makeScheduledPackage([{ skillRef: 'nested' }], ['skills/group/nested']);
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(false);
+  });
+
+  it('rejects a directory of the right name with no SKILL.md', async () => {
+    const dir = await makeTempDir();
+    tempDirs.push(dir);
+    const pkgRoot = path.join(dir, 'sched-pkg');
+    await writeJson(path.join(pkgRoot, PACKAGE_MANIFEST_PATH), {
+      schemaVersion: 1,
+      name: 'sched-pkg',
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'Ships schedules.',
+      category: 'productivity',
+      schedules: [{ skillRef: 'hollow' }],
+    });
+    await writeJson(path.join(pkgRoot, CLAUDE_PLUGIN_MANIFEST_PATH), {
+      name: 'sched-pkg',
+      version: '1.0.0',
+    });
+    await fs.mkdir(path.join(pkgRoot, 'skills', 'hollow'), { recursive: true });
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(true);
+  });
+
+  it('does not accept a skill that only exists in a task directory', async () => {
+    // The installer's resolver does not look in task directories, so accepting
+    // one here would pass a package whose schedule then fails to materialize
+    // after install — a report the author never gets. Publish-time and
+    // install-time must accept the same set.
+    const pkgRoot = await makeScheduledPackage(
+      [{ skillRef: 'legacy-task' }],
+      ['tasks/legacy-task']
+    );
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(true);
+  });
+
+  it('says nothing about an inline schedule, which references no skill', async () => {
+    const pkgRoot = await makeScheduledPackage([
+      { name: 'nightly', description: 'Runs nightly.', prompt: 'Go.', cron: '0 3 * * *' },
+    ]);
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(false);
+  });
+});

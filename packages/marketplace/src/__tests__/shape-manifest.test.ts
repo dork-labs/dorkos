@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import {
   MarketplacePackageManifestSchema,
-  SHAPE_SCHEDULE_PERMISSION_MODES,
+  SCHEDULE_PERMISSION_MODES,
   type MarketplacePackageManifest,
   type ShapePackageManifest,
 } from '../manifest-schema.js';
@@ -246,9 +246,7 @@ describe('PermissionMode drift — marketplace mirror vs @dorkos/shared source',
   // PermissionModeSchema.options — a plain string array, safe to read across zod
   // majors — and asserts value-set parity so the chain never silently diverges.
   it('the two value sets are equal', () => {
-    expect([...SHAPE_SCHEDULE_PERMISSION_MODES].sort()).toEqual(
-      [...PermissionModeSchema.options].sort()
-    );
+    expect([...SCHEDULE_PERMISSION_MODES].sort()).toEqual([...PermissionModeSchema.options].sort());
   });
 
   // The manifest enum must be built FROM that set, not merely equal to a copy of

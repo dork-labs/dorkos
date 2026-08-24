@@ -80,6 +80,26 @@ export interface InstallMetadata {
    * reinstall rewrites the sidecar, so a repaired package stops reporting.
    */
   dependencyWarnings?: string[];
+  /**
+   * Absolute paths of the skill directories this install GENERATED for the
+   * package's inline `schedules[]` declarations — the uninstall receipt.
+   *
+   * These sit outside the package's own install root (in the project's
+   * `.agents/skills/` or the global `<dorkHome>/skills/`), so removing the
+   * package does not remove them, and without a record of which ones were ours
+   * there would be no safe way to find out later: a generated schedule is
+   * indistinguishable from a person's own skill by location alone. Uninstall
+   * reads this list before the package leaves disk and deletes exactly what is
+   * on it (`flows/uninstall.ts`).
+   *
+   * Only inline declarations appear here. A `skillRef` schedule is written into
+   * a file the package itself ships, which uninstall removes wholesale.
+   *
+   * Absent means the install generated nothing, which is the case for every
+   * package that declares no schedules and for every sidecar written before this
+   * field existed.
+   */
+  generatedSchedulePaths?: string[];
 }
 
 /**
@@ -115,6 +135,15 @@ export async function readInstallMetadata(installRoot: string): Promise<InstallM
         Array.isArray(obj.dependencyWarnings) &&
         obj.dependencyWarnings.every((w) => typeof w === 'string')
           ? (obj.dependencyWarnings as string[])
+          : undefined,
+      // Every element checked, like the warnings above and for a sharper reason:
+      // these strings become paths that uninstall DELETES. A sidecar is a file
+      // anything on the machine can have written, so a non-string element makes
+      // the whole list untrustworthy rather than merely odd.
+      generatedSchedulePaths:
+        Array.isArray(obj.generatedSchedulePaths) &&
+        obj.generatedSchedulePaths.every((p) => typeof p === 'string')
+          ? (obj.generatedSchedulePaths as string[])
           : undefined,
     };
   } catch {
