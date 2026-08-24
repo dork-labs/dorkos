@@ -8,7 +8,7 @@
  * agent templates) are validated in a single pass.
  *
  * This module is browser-safe — it imports only `zod`, `@dorkos/skills/schema`,
- * `@dorkos/skills/task-schema` (itself zod-only), and the local `package-types`
+ * `@dorkos/skills/schedule-schema` (itself zod-only), and the local `package-types`
  * module, with no Node.js dependencies. It can therefore be consumed by
  * `apps/client` and `apps/site`.
  *
@@ -17,7 +17,7 @@
 
 import { z } from 'zod';
 import { SkillNameSchema } from '@dorkos/skills/schema';
-import { TASK_PERMISSION_MODES } from '@dorkos/skills/task-schema';
+import { TASK_PERMISSION_MODES } from '@dorkos/skills/schedule-schema';
 import { PackageTypeSchema } from './package-types.js';
 import { MarketplaceCategorySchema } from './categories.js';
 
@@ -154,7 +154,7 @@ const BasePackageManifestSchema = z.object({
 /**
  * The permission modes a package-declared schedule may run under.
  *
- * This is `TASK_PERMISSION_MODES` from `@dorkos/skills/task-schema`, not a
+ * This is `TASK_PERMISSION_MODES` from `@dorkos/skills/schedule-schema`, not a
  * second copy of it. A schedule declaration becomes a skill file whose
  * `schedule.permissions` frontmatter carries this value, so the two sets have to
  * be the same set: when the manifest allowed a mode the frontmatter did not,

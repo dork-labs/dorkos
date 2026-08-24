@@ -24,8 +24,11 @@
  * - A request that touches nothing in the file does not open the file.
  * - A rewrite is built from the RAW frontmatter (`readRawFrontmatter`), so
  *   nothing the schema invented, dropped, or reshaped is ever persisted.
- * - On a block-backed file, scheduling fields go into the block through
- *   `scheduleToFrontmatter`; on a legacy file they stay at the top level.
+ * - Scheduling fields go into the `schedule:` block through
+ *   `scheduleToFrontmatter`, always. Until DOR-1486 there was a second branch
+ *   here that wrote them at the top level for a legacy file; there are no legacy
+ *   files any more, and a file that arrives without a block gets one rather than
+ *   growing the old shape back.
  * - A file DorkOS cannot fully read is not edited at all, and a file an
  *   installed package owns is never written by us.
  *
@@ -42,7 +45,6 @@ import {
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { mergeTaskFrontmatter, type TaskFrontmatterWrite } from './task-frontmatter-merge.js';
 import { describeScheduleProblem } from './cron-validation.js';
 
@@ -177,8 +179,10 @@ async function resolveOrSelf(target: string): Promise<string> {
  * would be gone from the card. Better to refuse the approval and name the
  * problem, so the answer is "go fix line 4" rather than silence.
  *
- * Both file shapes are asked, because both are still live: the `schedule:` block
- * first, then legacy top-level fields.
+ * One shape is asked, because there is one: the `schedule:` block. A file with
+ * no block is not a schedule and has nothing to block arming — the row it is
+ * attached to is on its way to being retired by discovery, and refusing the
+ * approval of a row nobody can fix is not an improvement.
  *
  * @param filePath - The task's SKILL.md.
  * @param content - Its bytes.
@@ -191,15 +195,9 @@ export function describeArmBlocker(filePath: string, content: string): string | 
   const blockProblem = scheduleProblem(skill.definition.meta);
   if (blockProblem !== null) return blockProblem;
 
-  if (hasSchedule(skill.definition.meta)) {
-    const block = skill.definition.meta.schedule;
-    return describeScheduleProblem(block.cron ?? null, block.timezone);
-  }
-
-  const legacy = parseSkillFile(filePath, content, TaskFrontmatterSchema);
-  return legacy.ok
-    ? describeScheduleProblem(legacy.definition.meta.cron, legacy.definition.meta.timezone)
-    : null;
+  if (!hasSchedule(skill.definition.meta)) return null;
+  const block = skill.definition.meta.schedule;
+  return describeScheduleProblem(block.cron ?? null, block.timezone);
 }
 
 /** What {@link planTaskFileUpdate} decided to do with the file. */
@@ -236,7 +234,11 @@ function planBlockUpdate(
   raw: Record<string, unknown>,
   write: TaskFrontmatterWrite
 ): TaskFileUpdatePlan {
-  const parsed = ScheduleBlockSchema.safeParse(raw.schedule);
+  // An absent block reads as an empty one. That is what makes this the single
+  // write path: a create starts from nothing, and a file that somehow lost its
+  // block gets one back rather than having its scheduling fields written at the
+  // top level, which is the shape DOR-1486 retired.
+  const parsed = ScheduleBlockSchema.safeParse(raw.schedule ?? {});
   if (!parsed.success) {
     // Unreachable through the route, which checks `describeArmBlocker` and the
     // parse gate first. Stated anyway: this function's whole job is to not
@@ -311,11 +313,30 @@ export function planTaskFileUpdate(
     };
   }
 
-  const isBlockBacked = raw.data.schedule !== undefined && raw.data.schedule !== null;
-  const plan = isBlockBacked
-    ? planBlockUpdate(raw.data, write)
-    : ({ kind: 'write', frontmatter: mergeTaskFrontmatter(raw.data, write), body: '' } as const);
-
+  const plan = planBlockUpdate(raw.data, write);
   if (plan.kind === 'refuse') return plan;
   return { kind: 'write', frontmatter: plan.frontmatter, body: prompt ?? raw.body };
+}
+
+/**
+ * Work out the contents of a schedule's SKILL.md as it is first written.
+ *
+ * The create path used to build its frontmatter with a bare
+ * `mergeTaskFrontmatter` over `{name, description}`, which put `cron:` and
+ * friends at the TOP level — the legacy shape, written fresh, by the newest
+ * code in the system, on a file the reconciler then had to keep re-reading in a
+ * format nothing else produced. Converging it here means create and update
+ * cannot disagree about what a schedule file looks like, which is the same
+ * reason `mergeTaskFrontmatter` exists one level down.
+ *
+ * @param base - The identity fields a create knows before anything else.
+ * @param write - The schedule fields the request carries.
+ * @returns The frontmatter to write, or a refusal (unreachable for a create,
+ *   whose starting block is empty by construction).
+ */
+export function planTaskFileCreate(
+  base: { name: string; description: string },
+  write: TaskFrontmatterWrite
+): TaskFileUpdatePlan {
+  return planBlockUpdate({ ...base, schedule: {} }, write);
 }

@@ -2,15 +2,19 @@
  * Where DorkOS looks for scheduled work.
  *
  * Being scheduled is a property of a file, not a place on disk (ADR
- * `260823-200724`), so the scheduler no longer owns any directory — it reads
- * the SKILLS roots and picks out the files carrying a `schedule:` block. One
- * global root plus one per registered agent, the same cardinality as before;
- * only the paths changed.
+ * `260823-200724`), so the scheduler owns no directory — it reads the SKILLS
+ * roots and picks out the files carrying a `schedule:` block. One global root
+ * plus one per registered agent.
  *
- * The legacy task directories are still listed here and still watched. They are
- * removed by the migration wave (DOR-1486), which rewrites the files under them
- * into the new format and moves them; until then a person's existing schedules
- * have to keep working, so both sets of roots are scanned side by side.
+ * The legacy task directories (`<dorkHome>/tasks/`, `<project>/.dork/tasks/`)
+ * were listed here and watched alongside these until DOR-1486. They are not any
+ * more: `legacy-migration.ts` rewrites and moves what is in them on the boot it
+ * finds them, and nothing scans them afterwards. `<dorkHome>/tasks/` still
+ * exists, holding the two SYSTEM files that were always there and were never
+ * schedules — `scheduler.lock` and `presets.json`. A SKILL.md that appears in
+ * either directory after the migration has run is ignored for good; the
+ * migration is a one-shot over state that predates the upgrade, not a standing
+ * import path.
  *
  * @module services/tasks/skills-roots
  */
@@ -20,20 +24,10 @@ import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
 
 /**
- * What kind of root a directory is, which decides how its SKILL.md files are
- * read: a skills root parses with the unified schema and ignores anything
- * without a `schedule:` block, while a legacy tasks root parses every file with
- * the old top-level-fields schema.
- */
-export type TaskRootKind = 'skills' | 'legacy-tasks';
-
-/**
  * The global skills root: `~/.dork/skills/`.
  *
  * Created on boot so a person (or DorkBot) has somewhere obvious to put a
- * schedule that belongs to no project. `~/.dork/tasks/` survives alongside it
- * as a system directory — `scheduler.lock` and `presets.json` live there — and
- * keeps being scanned only until the migration wave empties it.
+ * schedule that belongs to no project.
  *
  * @param dorkHome - The resolved data directory.
  */
@@ -54,48 +48,10 @@ export function agentSkillsRoot(projectPath: string): string {
   return path.join(projectPath, '.agents', 'skills');
 }
 
-/**
- * The legacy global tasks root: `~/.dork/tasks/`. Removed by DOR-1486.
- *
- * @param dorkHome - The resolved data directory.
- */
-export function legacyGlobalTasksRoot(dorkHome: string): string {
-  return path.join(dorkHome, 'tasks');
-}
-
-/**
- * An agent's legacy tasks root: `<projectPath>/.dork/tasks/`. Removed by
- * DOR-1486.
- *
- * @param projectPath - The agent's project root.
- */
-export function legacyAgentTasksRoot(projectPath: string): string {
-  return path.join(projectPath, '.dork', 'tasks');
-}
-
-/**
- * The directory names a root treats as containers rather than schedules.
- *
- * Only the LEGACY task roots have one: `templates/` is the task gallery, and it
- * lives at `<dorkHome>/tasks/templates` (`task-templates.ts`). A skills root has
- * no such container, so nothing is reserved there — reserving `templates`
- * everywhere would make a skill legitimately named `templates` invisible to the
- * tasks subsystem, hiding a real schedule to protect a directory that is not in
- * that tree (DOR-1485 review, minor).
- *
- * @param kind - The root's kind.
- * @returns Names to skip, empty for a skills root.
- */
-export function reservedDirsFor(kind: TaskRootKind): readonly string[] {
-  return kind === 'legacy-tasks' ? RESERVED_TASK_DIRNAMES : [];
-}
-
 /** One root to watch and reconcile, with everything a sync needs to know about it. */
 export interface TaskRoot {
   /** Absolute path to the directory. */
   dir: string;
-  /** How its files are parsed. */
-  kind: TaskRootKind;
   /** Whether tasks found here belong to a project or to the install. */
   scope: 'project' | 'global';
   /** The project root, for project-scoped roots. */
@@ -105,40 +61,72 @@ export interface TaskRoot {
 }
 
 /**
- * Every root that belongs to one registered agent — its skills root and, until
- * DOR-1486, its legacy tasks root.
+ * The directory names a root treats as containers rather than schedules.
  *
- * Order matters: the skills root comes first so that when the same real
- * SKILL.md is reachable through both, the new location is the one that claims
- * it (see `schedule-identity.ts`).
+ * Only the GLOBAL root has one: `templates/` is the schedule gallery, and since
+ * DOR-1486 it lives at `<dorkHome>/skills/templates` (`task-templates.ts`). A
+ * project's skills root has no such container, so nothing is reserved there —
+ * reserving `templates` everywhere would make a project skill legitimately named
+ * `templates` invisible to the tasks subsystem, hiding a real schedule to
+ * protect a directory that is not in that tree (DOR-1485 review, minor).
+ *
+ * @param root - The root being scanned.
+ * @returns Names to skip, empty for a project root.
+ */
+export function reservedDirsFor(root: Pick<TaskRoot, 'scope'>): readonly string[] {
+  return root.scope === 'global' ? RESERVED_TASK_DIRNAMES : [];
+}
+
+/**
+ * Every root that belongs to one registered agent.
+ *
+ * A list of one since DOR-1486 retired the legacy `.dork/tasks/` root beside it.
+ * It stays a list because both callers iterate it, and because the shape is what
+ * makes adding a second project root later a one-line change rather than a
+ * signature change at four call sites.
  *
  * @param projectPath - The agent's project root.
  * @param agentId - The agent's id.
  */
 export function agentTaskRoots(projectPath: string, agentId: string): TaskRoot[] {
-  return [
-    { dir: agentSkillsRoot(projectPath), kind: 'skills', scope: 'project', projectPath, agentId },
-    {
-      dir: legacyAgentTasksRoot(projectPath),
-      kind: 'legacy-tasks',
-      scope: 'project',
-      projectPath,
-      agentId,
-    },
-  ];
+  return [{ dir: agentSkillsRoot(projectPath), scope: 'project', projectPath, agentId }];
 }
 
 /**
- * The install-wide roots — the global skills root and, until DOR-1486, the
- * legacy global tasks root.
+ * The install-wide roots.
  *
  * @param dorkHome - The resolved data directory.
  */
 export function globalTaskRoots(dorkHome: string): TaskRoot[] {
-  return [
-    { dir: globalSkillsRoot(dorkHome), kind: 'skills', scope: 'global' },
-    { dir: legacyGlobalTasksRoot(dorkHome), kind: 'legacy-tasks', scope: 'global' },
-  ];
+  return [{ dir: globalSkillsRoot(dorkHome), scope: 'global' }];
+}
+
+/**
+ * Resolve a skills root's own path, symlinks and all, falling back to the path
+ * itself when it cannot be resolved.
+ *
+ * Every writer that creates a schedule file has to key its row on the path
+ * DISCOVERY will key it on, which is the file's REAL path — a data directory or
+ * a checkout under a symlinked parent is ordinary rather than exotic (every
+ * macOS temp directory is one), and a row keyed on the unresolved path is a
+ * second row for one file the moment the watcher reads it.
+ *
+ * The ROOT is resolved rather than the file, on purpose. The root is stable and
+ * has to exist for any of this to mean anything; the file was written a
+ * microsecond ago and may be being replaced right now. And the fallback matters
+ * more than it looks: resolving is a nicety, while failing a create that has
+ * already written its file to disk is a real failure, so an unresolvable root
+ * degrades to the literal path instead of throwing.
+ *
+ * @param dir - The root to resolve.
+ * @returns The resolved path, or `dir` unchanged.
+ */
+export async function resolveRootPath(dir: string): Promise<string> {
+  try {
+    return await fs.realpath(dir);
+  } catch {
+    return dir;
+  }
 }
 
 /**

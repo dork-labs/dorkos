@@ -97,6 +97,7 @@ import {
 import { attachAgentRoots, attachTaskRoot } from './services/tasks/attach-task-roots.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
+import { migrateLegacySchedules } from './services/tasks/legacy-migration.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
 import {
@@ -372,6 +373,27 @@ let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
+/**
+ * Every registered agent that has a project on disk, as the legacy migration
+ * wants them.
+ *
+ * Lives here rather than inline because the filter is the interesting part: an
+ * agent with no resolvable project path has no `.dork/tasks/` to migrate and no
+ * `.agents/skills/` to migrate into, and asking about it would only produce a
+ * pair of ENOENTs.
+ *
+ * @param meshCore - The registry, absent when Mesh is switched off.
+ */
+function registeredAgentRoots(
+  meshCore: MeshCore | undefined
+): { agentId: string; projectPath: string }[] {
+  if (!meshCore) return [];
+  return meshCore.list().flatMap((agent) => {
+    const projectPath = meshCore.getProjectPath(agent.id);
+    return projectPath ? [{ agentId: agent.id, projectPath }] : [];
+  });
+}
+
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
@@ -2192,8 +2214,7 @@ async function start() {
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
-        // Stop watching and reconciling every root that belonged to the agent —
-        // its skills root and, until DOR-1486, its legacy tasks root.
+        // Stop watching and reconciling every root that belonged to the agent.
         for (const root of agentTaskRoots(projectPath, agentId)) {
           taskFileWatcher?.stopWatching(root.dir).catch(() => {});
           taskReconciler?.removeDirectory(root.dir);
@@ -2210,6 +2231,21 @@ async function start() {
     taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
     taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
     const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
+
+    // Schedules written in the old shape move to the new one, once, on the boot
+    // that finds them — files rewritten, directories moved, rows re-keyed with
+    // their approvals intact (`legacy-migration.ts`, ADR `260823-200729`).
+    //
+    // FIRST, and the order is load-bearing twice over: before any watcher, so
+    // discovery never races a file being rewritten under it, and before the
+    // grant backfill below, which reads each row's own content and so has to see
+    // the finished migration rather than the middle of it. A no-op in
+    // microseconds once there is nothing left to migrate.
+    await migrateLegacySchedules({
+      dorkHome,
+      store: taskStore,
+      agents: registeredAgentRoots(meshCore),
+    });
 
     // Every schedule that was already live keeps its approval across this
     // upgrade. The arm grant is a stored key now, and rows written before that

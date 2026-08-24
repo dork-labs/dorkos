@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseSkillFile } from '../parser.js';
+import { hasSchedule } from '../schedule-schema.js';
 import { SkillFrontmatterSchema } from '../schema.js';
-import { TaskFrontmatterSchema } from '../task-schema.js';
 
 describe('parseSkillFile', () => {
   it('parses valid SKILL.md with base schema', () => {
@@ -27,26 +27,32 @@ describe('parseSkillFile', () => {
     }
   });
 
-  it('parses valid SKILL.md with task schema', () => {
+  it('parses a scheduled skill through its schedule block', () => {
     const content = [
       '---',
       'name: daily-check',
       'description: Runs daily health check',
-      'cron: "0 9 * * *"',
-      'max-runtime: 30m',
+      'schedule:',
+      '  cron: "0 9 * * *"',
+      '  max-runtime: 30m',
       '---',
       '',
       'Check all services.',
     ].join('\n');
 
-    const result = parseSkillFile('/tasks/daily-check/SKILL.md', content, TaskFrontmatterSchema);
+    const result = parseSkillFile('/skills/daily-check/SKILL.md', content, SkillFrontmatterSchema);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.definition.meta.cron).toBe('0 9 * * *');
-      expect(result.definition.meta['max-runtime']).toBe('30m');
-      expect(result.definition.meta.timezone).toBe('UTC'); // default
-      expect(result.definition.meta.enabled).toBe(true); // default
+      const { schedule } = result.definition.meta;
+      expect(hasSchedule(result.definition.meta)).toBe(true);
+      if (!hasSchedule(result.definition.meta)) return;
+      expect(schedule).toMatchObject({
+        cron: '0 9 * * *',
+        'max-runtime': '30m',
+        timezone: 'UTC', // default
+        enabled: true, // default
+      });
     }
   });
 

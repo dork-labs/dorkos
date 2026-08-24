@@ -212,7 +212,6 @@ export class TaskReconciler {
     seenIn: readonly string[]
   ): Promise<void> {
     scannedDirs.add(root.dir);
-    if (root.kind !== 'skills') return;
     try {
       scannedDirs.add(await fs.realpath(root.dir));
     } catch {
@@ -334,9 +333,7 @@ export class TaskReconciler {
       // in the directory it names. `dirname` because a link points at the SKILL
       // directory, and what the retirement gate compares is the directory that
       // CONTAINS it — the same level as a root.
-      if (root.kind === 'skills') {
-        seenIn.push(...(await linkedSkillDirs(root.dir)).map((d) => path.dirname(d)));
-      }
+      seenIn.push(...(await linkedSkillDirs(root)).map((d) => path.dirname(d)));
       await this.recordScanned(root, scannedDirs, seenIn);
 
       for (const result of results) {

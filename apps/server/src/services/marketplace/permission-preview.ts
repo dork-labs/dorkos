@@ -16,7 +16,7 @@ import { join, relative } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills';
+import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
@@ -157,12 +157,14 @@ async function readExtensionManifests(
 
 /**
  * Read every `SKILL.md` under `<packagePath>/.dork/tasks/<name>/` via the
- * shared `@dorkos/skills` parser. Invalid SKILL files are skipped.
+ * shared `@dorkos/skills` parser. Files without a readable `schedule:` block are
+ * skipped, as are invalid ones.
  *
- * A task SKILL.md declares its own permission mode (`permissions`, default
- * `acceptEdits`) and whether it is active on arrival (`enabled`, default
- * `true`), so a scheduled job from this source is disclosed with exactly the
- * same detail as a Shape's `schedules[]` entry — including the clamp. A file on
+ * A skill declares its schedule's permission mode (`schedule.permissions`,
+ * default `acceptEdits`) and whether it is active on arrival
+ * (`schedule.enabled`, default `true`), so a scheduled job from this source is
+ * disclosed with exactly the same detail as a Shape's `schedules[]` entry —
+ * including the clamp. A file on
  * disk cannot arm an unattended bypass any more than a manifest can
  * (`services/tasks/schedule-permission-clamp.ts`), so reporting the raw
  * declaration would warn a person about a job the install would never create.
@@ -199,13 +201,18 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
     if (!(await pathExists(skillPath))) continue;
     try {
       const content = await readFile(skillPath, 'utf-8');
-      const parsed = parseSkillFile(skillPath, content, TaskFrontmatterSchema);
-      if (parsed.ok) {
+      // Read with the UNIFIED schema since DOR-1486: scheduling lives in the
+      // `schedule:` block, and a package still shipping the retired top-level
+      // fields declares no schedule at all — nothing materializes it, nothing
+      // discovers it, so there is nothing to disclose.
+      const parsed = parseSkillFile(skillPath, content, SkillFrontmatterSchema);
+      if (parsed.ok && hasSchedule(parsed.definition.meta)) {
+        const { schedule } = parsed.definition.meta;
         results.push({
           name: parsed.definition.meta.name,
-          cron: parsed.definition.meta.cron ?? null,
-          permissionMode: clampSchedulePermissionMode(parsed.definition.meta.permissions).mode,
-          startsEnabled: parsed.definition.meta.enabled,
+          cron: schedule.cron ?? null,
+          permissionMode: clampSchedulePermissionMode(schedule.permissions).mode,
+          startsEnabled: schedule.enabled,
         });
       }
     } catch {

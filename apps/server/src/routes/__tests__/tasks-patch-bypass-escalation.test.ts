@@ -31,7 +31,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { hasSchedule } from '@dorkos/skills';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
@@ -70,7 +71,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
   let db: Db;
   let scheduler: TaskSchedulerService;
   let dorkHome: string;
-  let tasksDir: string;
+  let skillsDir: string;
 
   /**
    * Re-read a task file and sync it exactly as the file watcher and the
@@ -80,17 +81,24 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
    */
   async function resync(filePath: string) {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema);
+    const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
     if (!parsed.ok) throw new Error(`fixture parse failed: ${parsed.error}`);
-    return store.upsertFromFile({ ...parsed.definition, scope: 'global', projectPath: undefined });
+    if (!hasSchedule(parsed.definition.meta)) throw new Error('fixture carries no schedule block');
+    return store.upsertFromFile({
+      ...parsed.definition,
+      meta: parsed.definition.meta,
+      scope: 'global',
+      projectPath: undefined,
+    });
   }
 
   /** The declared `permissions:` on the file at `filePath`, as it sits on disk. */
   async function filePermission(filePath: string): Promise<string> {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema);
+    const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
     if (!parsed.ok) throw new Error(`fixture parse failed: ${parsed.error}`);
-    return parsed.definition.meta.permissions;
+    if (!hasSchedule(parsed.definition.meta)) throw new Error('fixture carries no schedule block');
+    return parsed.definition.meta.schedule.permissions;
   }
 
   /**
@@ -101,14 +109,12 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
    */
   async function seedApprovedBypassTask(): Promise<{ id: string; filePath: string }> {
     const filePath = await writeSkillFile(
-      tasksDir,
+      skillsDir,
       SLUG,
       {
         name: SLUG,
         description: 'overnight digest',
-        cron: '0 2 * * *',
-        timezone: 'UTC',
-        permissions: 'bypassPermissions',
+        schedule: { cron: '0 2 * * *', timezone: 'UTC', permissions: 'bypassPermissions' },
       },
       APPROVED_PROMPT
     );
@@ -135,8 +141,10 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     db = createTestDb();
     store = new TaskStore(db);
 
-    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-patch-bypass-'));
-    tasksDir = path.join(dorkHome, 'tasks');
+    // Resolved, because a row synced from a skills root is keyed on the file's
+    // REAL path and every macOS temp directory sits under a symlinked `/var`.
+    dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dork-patch-bypass-')));
+    skillsDir = path.join(dorkHome, 'skills');
 
     app = express();
     app.use(express.json());

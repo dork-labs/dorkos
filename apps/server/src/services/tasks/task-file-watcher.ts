@@ -16,17 +16,12 @@ import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 import { logger } from '../../lib/logger.js';
 
 /**
- * Watches task roots for file changes and syncs them to the DB cache and the
+ * Watches skills roots for file changes and syncs them to the DB cache and the
  * scheduler.
  *
- * Two kinds of root, both live until DOR-1486 retires the second
- * (`skills-roots.ts`):
- *
- * - **Skills roots** — `{dorkHome}/skills/` and every registered agent's
- *   `{projectPath}/.agents/skills/`. Files are read with the unified skill
- *   schema, and only those carrying a `schedule:` block become schedules.
- * - **Legacy task roots** — `{dorkHome}/tasks/` and `{projectPath}/.dork/tasks/`.
- *   Every file is a schedule, read with the old top-level-fields schema.
+ * One kind of root since DOR-1486: `{dorkHome}/skills/` and every registered
+ * agent's `{projectPath}/.agents/skills/`. Files are read with the unified skill
+ * schema, and only those carrying a `schedule:` block become schedules.
  *
  * The scheduler half runs through {@link TaskRegistrar}, which is what makes an
  * edit on disk take effect now rather than at the next restart. This class used
@@ -86,7 +81,7 @@ export class TaskFileWatcher {
     const isSkillFile = (filePath: string): boolean =>
       path.basename(filePath) === SKILL_FILENAME &&
       path.dirname(path.dirname(filePath)) === root.dir &&
-      !reservedDirsFor(root.kind).includes(path.basename(path.dirname(filePath)));
+      !reservedDirsFor(root).includes(path.basename(path.dirname(filePath)));
     watcher.on('add', (filePath) => {
       if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);
     });
@@ -122,7 +117,6 @@ export class TaskFileWatcher {
         {
           tasksDir: root.dir,
           scope: root.scope,
-          kind: root.kind,
           code,
           message: err instanceof Error ? err.message : String(err),
           stack: err instanceof Error ? err.stack : undefined,
@@ -132,7 +126,7 @@ export class TaskFileWatcher {
     });
 
     this.watchers.set(root.dir, watcher);
-    logger.info(`[TaskFileWatcher] Watching ${root.dir} (${root.scope}, ${root.kind})`);
+    logger.info(`[TaskFileWatcher] Watching ${root.dir} (${root.scope})`);
   }
 
   /**
@@ -220,8 +214,8 @@ export class TaskFileWatcher {
       // firing from a row whose file no longer existed (DOR-1485 review, I3).
       //
       // A deleted file cannot be `realpath`-ed, so the mapping recorded when the
-      // file was last seen is what answers here; the raw path is the fallback for
-      // a legacy row, which was never resolved in the first place.
+      // file was last seen is what answers here; the raw path is the fallback
+      // for a file this process never saw arrive.
       const identity = this.identities.resolvedFor(filePath) ?? filePath;
       this.identities.releasePath(filePath);
       this.store.markRemovedByFilePath(identity);

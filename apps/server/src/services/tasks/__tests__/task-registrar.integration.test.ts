@@ -11,13 +11,13 @@
  * the assertions read the job's next run rather than its output.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
 import { TaskFileWatcher } from '../task-file-watcher.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
-import { legacyRoot } from './task-root-fixtures.js';
+import { skillsRoot } from './task-root-fixtures.js';
 import { TaskReconciler } from '../task-reconciler.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
@@ -27,7 +27,7 @@ import type { Db } from '@dorkos/db';
 
 /** A task SKILL.md with the given cron, in UTC so next-run times are stable. */
 function skillFile(name: string, cron: string, timezone = 'UTC'): string {
-  return `---\nname: ${name}\ndescription: A task named ${name}\ncron: '${cron}'\ntimezone: ${timezone}\n---\nDo the thing.`;
+  return `---\nname: ${name}\ndescription: A task named ${name}\nschedule:\n  cron: '${cron}'\n  timezone: ${timezone}\n---\nDo the thing.`;
 }
 
 /** An agent manager that would run a turn, if anything here ever fired one. */
@@ -52,7 +52,7 @@ async function waitFor<T>(check: () => T | null | undefined, label: string, time
 
 describe('a task file on disk drives the running scheduler', () => {
   let dorkHome: string;
-  let tasksDir: string;
+  let skillsDir: string;
   let db: Db;
   let store: TaskStore;
   let scheduler: TaskSchedulerService;
@@ -61,8 +61,8 @@ describe('a task file on disk drives the running scheduler', () => {
 
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'task-registrar-'));
-    tasksDir = path.join(dorkHome, 'tasks');
-    await mkdir(tasksDir, { recursive: true });
+    skillsDir = path.join(dorkHome, 'skills');
+    await mkdir(skillsDir, { recursive: true });
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = new TaskSchedulerService(store, silentAgentManager(), {
@@ -84,13 +84,20 @@ describe('a task file on disk drives the running scheduler', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** Write `<tasksDir>/<slug>/SKILL.md`, creating the directory if needed. */
+  /**
+   * Write `<skillsDir>/<slug>/SKILL.md`, creating the directory if needed.
+   *
+   * Returns the file's REAL path, because that is the identity a row in a skills
+   * root is keyed on — and on macOS every temp directory sits under a symlinked
+   * `/var`, so a test that looked its own file up by the path it wrote would
+   * find nothing.
+   */
   async function writeTask(slug: string, cron: string, timezone = 'UTC'): Promise<string> {
-    const dir = path.join(tasksDir, slug);
+    const dir = path.join(skillsDir, slug);
     await mkdir(dir, { recursive: true });
     const filePath = path.join(dir, 'SKILL.md');
     await writeFile(filePath, skillFile(slug, cron, timezone), 'utf-8');
-    return filePath;
+    return realpath(filePath);
   }
 
   /**
@@ -111,7 +118,7 @@ describe('a task file on disk drives the running scheduler', () => {
   // until the next server restart.
   it('re-registers the job when a cron is edited on disk', async () => {
     const filePath = await writeTask('nightly', '0 9 * * *');
-    watcher.watch(legacyRoot(tasksDir, 'global'));
+    watcher.watch(skillsRoot(skillsDir, 'global'));
 
     const task = await waitFor(() => store.getByFilePath(filePath), 'the task to sync');
     approve(task.id);
@@ -136,7 +143,7 @@ describe('a task file on disk drives the running scheduler', () => {
   });
 
   it('parks a task whose SKILL.md is dropped in after the server started, then schedules it', async () => {
-    watcher.watch(legacyRoot(tasksDir, 'global'));
+    watcher.watch(skillsRoot(skillsDir, 'global'));
 
     const filePath = await writeTask('brand-new', '0 4 * * *');
 
@@ -154,7 +161,7 @@ describe('a task file on disk drives the running scheduler', () => {
 
   it('drops the job when a good cron is edited into a bad one', async () => {
     const filePath = await writeTask('drifts', '0 8 * * *');
-    watcher.watch(legacyRoot(tasksDir, 'global'));
+    watcher.watch(skillsRoot(skillsDir, 'global'));
     const task = await waitFor(() => store.getByFilePath(filePath), 'the task to sync');
     approve(task.id);
     await waitFor(() => scheduler.isRegistered(task.id) || null, 'the task to be scheduled');
@@ -180,7 +187,7 @@ describe('a task file on disk drives the running scheduler', () => {
     // No watcher at all — this is the missed-event case, reproduced by never
     // delivering the event in the first place.
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
+    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
@@ -203,7 +210,7 @@ describe('a task file on disk drives the running scheduler', () => {
   it('the reconciler stops the job for a file that is gone', async () => {
     const filePath = await writeTask('retired', '0 7 * * *');
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
+    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
@@ -229,7 +236,7 @@ describe('a task file on disk drives the running scheduler', () => {
   it('the reconciler re-arms a returning file whose content never changed', async () => {
     const filePath = await writeTask('comes-and-goes', '0 6 * * *');
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
+    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
@@ -254,7 +261,7 @@ describe('a task file on disk drives the running scheduler', () => {
   it('the reconciler re-parks a returning file whose content changed', async () => {
     const filePath = await writeTask('swapped', '0 6 * * *');
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
+    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
@@ -281,7 +288,7 @@ describe('a task file on disk drives the running scheduler', () => {
     const goodPath = await writeTask('good', '0 8 * * *');
     const badPath = await writeTask('bad', 'banana');
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
+    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await expect(reconciler.reconcile()).resolves.toMatchObject({ upserted: 2 });
 
