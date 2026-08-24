@@ -103,7 +103,7 @@ export function checkClaudeCli(): CheckResult {
   return {
     label: 'Claude Code CLI not found',
     status: 'warn',
-    detail: 'Agent sessions need the Claude Code CLI. The cockpit still opens without it.',
+    detail: 'Agent sessions need the Claude Code CLI. DorkOS still opens without it.',
     fix: `Install it, then sign in:\n  ${installCmd}`,
   };
 }

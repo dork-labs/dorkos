@@ -22,7 +22,7 @@ _openapi:
           evidence, since both are written by whoever is uploading. That single
           field decides whether `GET` will ever serve the file inline, which is
           what keeps an uploaded `.html` or SVG from rendering as a document on
-          the cockpit's own origin. The response carries one `RoomAttachment`
+          the DorkOS app's own origin. The response carries one `RoomAttachment`
           per file, in request order; a following `POST /api/rooms/{id}/entries`
           names them by id in `attachmentIds`, and the server binds them to the
           entry inside the entry's own transaction, so the message and its files

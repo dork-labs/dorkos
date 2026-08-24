@@ -8,7 +8,7 @@ Nir Eyal's loop is Trigger → Action → Variable Reward → Investment. Most d
 
 - **External trigger:** the product literally sends them. A Telegram ping ("Atlas finished. PR #47 ready.") is the canonical external trigger, and unlike growth-hacked notifications it carries real news the user asked for. The morning review is the ritualized version.
 - **Internal trigger:** two, both strong. _Anticipatory curiosity_ ("I wonder what the fleet did") and _idea capture_ ("I just thought of something; hand it to an agent before I lose it"). Marketing should name these feelings; the product should shorten the distance from feeling to action (quick-capture from phone/Obsidian).
-- **Action:** open the cockpit; reply to the agent; hand off one task.
+- **Action:** open the app; reply to the agent; hand off one task.
 - **Variable reward:** built-in and honest. Agent runs genuinely vary (did it fix the bug? what did it find at 2am? what did it cost?). This is the rewards-of-the-hunt slot machine, except the payout is finished work. Rewards of self: fleet mastery, a green run history. Rewards of tribe: named agents with personalities; sharing fleet screenshots.
 - **Investment:** every named agent, installed skill, configured schedule, bound channel, and accumulated memory is stored value that makes the next trigger richer and the product stickier. The marketplace and personality system are investment mechanics wearing feature clothes.
 
@@ -25,7 +25,7 @@ In loop order, these are the FTUE investments with the highest return; they over
 
 ## 3. The daily ritual (startup delight)
 
-- **The morning briefing** as a first-class surface (cockpit home on first open of the day): what happened, what needs you, what it cost. Calm, newspaper-like, three lines. This is the retention feature; everything else in this doc is seasoning.
+- **The morning briefing** as a first-class surface (the home screen on first open of the day): what happened, what needs you, what it cost. Calm, newspaper-like, three lines. This is the retention feature; everything else in this doc is seasoning.
 - **Status-strip presence:** small time-aware touches ("Fleet quiet. 3 schedules armed for tonight."), never blocking, never cute more than once a day.
 - **Fleet uptime line** ("Your fleet has been on duty 34 days"): pride without streak-guilt; it never resets punitively, it just counts.
 
@@ -35,13 +35,13 @@ Filter for everything below: _a tool, not a toy_. Delight must cost the operator
 
 ### Tier 1: hours each (do during launch polish)
 
-1. **Personalized boot line:** first open of the day, the cockpit's brief boot flicker reads "DorkOS. Good morning, Dorian." (name from git config). Once per day, 800ms, gone.
+1. **Personalized boot line:** first open of the day, the app's brief boot flicker reads "DorkOS. Good morning, Dorian." (name from git config). Once per day, 800ms, gone.
 2. **Spinner verbs, DorkOS edition:** loading states rotate dry lines: "waking the fleet", "consulting the org chart", "negotiating with cron", "herding dorks".
-3. **The 2:47am moment:** if the cockpit is open at exactly 2:47am, a one-time-ever toast: "This is the hour we were built for." (2:47 is the brand's origin-story timestamp.)
+3. **The 2:47am moment:** if the app is open at exactly 2:47am, a one-time-ever toast: "This is the hour we were built for." (2:47 is the brand's origin-story timestamp.)
 4. **`dorkos why`:** CLI prints the thesis, ten lines, beautifully: "Intelligence doesn't scale. Coordination does. ..." `dorkos who` lists your fleet like a crew manifest.
 5. **Thank-you handling:** DorkBot has three dry responses to "thank you" ("It's what we're here for." / "The fleet noticed." / "Logged, with appreciation.").
 6. **Release-notes last line:** every release blog post ends with a one-line message from the fleet ("11 agents contributed to this release. None of them slept.").
-7. **Konami code** in the cockpit: the topology graph does one synchronized pulse and every agent avatar blinks. Nothing else. The restraint IS the joke.
+7. **Konami code** in the app: the topology graph does one synchronized pulse and every agent avatar blinks. Nothing else. The restraint IS the joke.
 
 ### Tier 2: a day or two each (post-launch, weeks 4-8)
 
@@ -61,7 +61,7 @@ Filter for everything below: _a tool, not a toy_. Delight must cost the operator
 
 ### Anti-list (never)
 
-Streaks with loss, confetti storms, badges for logging in, notification re-engagement ("we miss you!"), leaderboards, any delight that fires during an incident, anything the user must dismiss more than once. When in doubt: would it feel right in a cockpit at 2am? Then no.
+Streaks with loss, confetti storms, badges for logging in, notification re-engagement ("we miss you!"), leaderboards, any delight that fires during an incident, anything the user must dismiss more than once. When in doubt: would it feel right on a control panel at 2am? Then no.
 
 ## 5. Incorporation map (what goes where)
 

@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
   "version": "0.64.0",
-  "description": "You, multiplied. Mission control for Claude Code, Codex, and OpenCode: see every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
+  "description": "You, multiplied. All your agents in one place: Claude Code, Codex, and OpenCode. See every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {

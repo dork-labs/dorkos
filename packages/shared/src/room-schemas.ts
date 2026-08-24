@@ -621,7 +621,7 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .boolean()
     .optional()
     .describe(
-      "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the cockpit's bridge controls read their state from it."
+      "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the DorkOS app's bridge controls read their state from it."
     ),
 }).openapi('RoomWithRoster');
 
@@ -1102,7 +1102,7 @@ export const CreateRoomRequestSchema = z
       .array(z.string().min(1))
       .default([])
       .describe(
-        'Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group.'
+        'Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The DorkOS app knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group.'
       ),
   })
   .refine((v) => v.title !== undefined || v.slug !== undefined, {

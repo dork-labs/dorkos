@@ -4,7 +4,7 @@ description: The right panel now opens to Pulse, a quick read on what needs you,
 date: 2026-07-20
 author: DorkOS Team
 category: release
-tags: [release, pulse, cockpit]
+tags: [release, pulse, app]
 ---
 
 The right panel used to sit empty whenever you stepped away from a chat. Now it opens to Pulse: a quick read on what needs you. This release also refocuses the sidebar on your agents and hardens a handful of rough edges in the inspector panel, Docker, and server startup.
@@ -17,11 +17,11 @@ On the dashboard, the agents list, tasks, and every page away from a chat, the r
 
 **The sidebar stays steady**
 
-The sidebar in the web cockpit is now just your list of agents. The old per-chat session view and its row of tabs are gone. Open a chat and your agent list stays put; everything about that chat now lives in the inspector panel on the right, so the sidebar never swaps out from under you.
+The sidebar in the web app is now just your list of agents. The old per-chat session view and its row of tabs are gone. Open a chat and your agent list stays put; everything about that chat now lives in the inspector panel on the right, so the sidebar never swaps out from under you.
 
 **Steadier under the hood**
 
-The inspector panel no longer disappears on pages like the Marketplace, and it won't show an agent you never picked. A blank cockpit behind a remapped port (Docker, an SSH tunnel, a reverse proxy) now renders correctly, and a confusing sign-in warning no longer prints on every server start.
+The inspector panel no longer disappears on pages like the Marketplace, and it won't show an agent you never picked. A blank screen behind a remapped port (Docker, an SSH tunnel, a reverse proxy) now renders correctly, and a confusing sign-in warning no longer prints on every server start.
 
 ## All Changes
 
@@ -31,7 +31,7 @@ The inspector panel no longer disappears on pages like the Marketplace, and it w
 
 ### Changed
 
-- **The sidebar in the web cockpit is now just your list of agents — the old per-chat "session" view and its row of sidebar tabs have been retired.** Opening a chat keeps your agent list in place; everything about that chat lives in the inspector panel on the right, so the sidebar never swaps out from under you. Agents that drive the interface get an honest answer now, too: the web cockpit has no sidebar tabs, so asking to switch one does nothing there — and the agent is told that, instead of it quietly pretending to work. (The tab strip still lives in the Obsidian plugin, where those requests keep working.)
+- **The sidebar in the web app is now just your list of agents — the old per-chat "session" view and its row of sidebar tabs have been retired.** Opening a chat keeps your agent list in place; everything about that chat lives in the inspector panel on the right, so the sidebar never swaps out from under you. Agents that drive the interface get an honest answer now, too: the web app has no sidebar tabs, so asking to switch one does nothing there — and the agent is told that, instead of it quietly pretending to work. (The tab strip still lives in the Obsidian plugin, where those requests keep working.)
 
 ### Fixed
 
@@ -39,7 +39,7 @@ The inspector panel no longer disappears on pages like the Marketplace, and it w
 - Stopped a confusing sign-in advisory from printing on every server start.
 - Directory-boundary messages now tell the truth about folders outside your home directory, instead of mislabeling them.
 - Docker packaging is more reliable: the release tarball is guarded against missing files, `docker:run` works out of the box, and `smoke:npm` can be pinned to a specific version.
-- Fixed a blank cockpit when the host port is remapped (Docker `-p`, an SSH tunnel, or a reverse proxy).
+- Fixed a blank screen when the host port is remapped (Docker `-p`, an SSH tunnel, or a reverse proxy).
 
 ## Install / Update
 

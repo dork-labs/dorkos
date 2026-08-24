@@ -21,7 +21,7 @@ Open DorkOS and you land in #team, a channel every agent you run is already in, 
 **The sidebar knows what needs you**
 
 ![Four DorkOS sessions running side by side in dark mode, each showing whether it is working or done](/product/archive/v0.59.0/multi-session-dark.png)
-_Every session in one place. [See it move.](https://dorkos.ai/features/multi-runtime-cockpit)_
+_Every session in one place. [See it move.](https://dorkos.ai/features/every-agent-one-place)_
 
 The sidebar has three parts now: Heads up is what is waiting on you or working, Today is what you were just in, and Library is everything you keep. One New button starts anything, and ⌘K finds a conversation by its title, whichever agent it belongs to.
 
@@ -354,7 +354,7 @@ Claude Code chats can now stay warm between messages: switch it on for a chat an
   Disabled), not a color dot with no label. Testing a server that needs a sign-in now says so
   and points you to the Sign in button, instead of showing a raw error (DOR-943).
 - Sending messages between agents stays fast as message history grows — the rate limiter now looks up a sender's recent messages through an index instead of scanning the whole list every time.
-- Agents now look like agents everywhere in the cockpit. Tell an avatar what an identity is — an agent, a person, the room's own voice — and it draws the right shape, fill and corner mark on its own, instead of each screen deciding for itself. Agents are filled squares with a small bot mark; people stay round, with a platform mark when they are writing in from somewhere like Telegram. (DOR-967)
+- Agents now look like agents everywhere in DorkOS. Tell an avatar what an identity is — an agent, a person, the room's own voice — and it draws the right shape, fill and corner mark on its own, instead of each screen deciding for itself. Agents are filled squares with a small bot mark; people stay round, with a platform mark when they are writing in from somewhere like Telegram. (DOR-967)
 - An agent that is busy now pulses the same green dot everywhere, in your theme's own colour, and the dot stays put (without the pulse) if you have asked your system to reduce motion. (DOR-967)
 - The chat message list and the hover card that opens over a name now share one rule for drawing agents and people, so an agent always looks like an agent everywhere you see it. (DOR-969)
 - The agent picker in a room's add-agent dialog now draws every row as a filled square, the same shape agents get everywhere else, instead of a round dot. (DOR-969)
@@ -601,7 +601,7 @@ Claude Code chats can now stay warm between messages: switch it on for a chat an
   the top of the sidebar. Press ⌘N in the desktop app and it starts a session straight away,
   with the agent you were last talking to. The `+` on a section still works: it opens the same
   New menu with the matching item already picked out.
-- **The top of the sidebar says whose cockpit this is** — "Dorian's team", from the name in
+- **The top of the sidebar says whose DorkOS this is** — "Dorian's team", from the name in
   your profile. Press it for workspace settings, your account, and which version you are
   running, with a "Check for updates" beside it that asks the server and tells you what it
   found. It is one menu, and it is the menu that will hold your other teams when shared
@@ -660,7 +660,7 @@ Claude Code chats can now stay warm between messages: switch it on for a chat an
 - The tab you are on is easier to see: it was marked with a shade of grey almost
   identical to the others.
 - **The DorkOS panel in Obsidian now looks like the app.** Its list of conversations is drawn
-  with the same rows the cockpit sidebar uses: sentence-case group names instead of shouty
+  with the same rows the web app's sidebar uses: sentence-case group names instead of shouty
   capitals, a coloured dot when a chat is working, waiting on you or has gone wrong, and one "⋮"
   menu per row holding Rename, Fork and Details, so everything you could reach by hovering is now
   also reachable from the keyboard. Arrow keys walk the list; Tab steps past it in one press
@@ -746,7 +746,7 @@ Claude Code chats can now stay warm between messages: switch it on for a chat an
   free of them.
 - **A green dot now means one thing: an agent is working right this second.** It
   used to light up whenever DorkOS had heard from an agent in the last hour, so
-  faces all over the cockpit pulsed as if mid-turn when nothing was running.
+  faces all over the app pulsed as if mid-turn when nothing was running.
   Agents that are simply alive show nothing at all, which is what makes the ones
   that do light up worth looking at.
 - The amber "needs you" dot got darker in the light theme, so it stands out
@@ -904,7 +904,7 @@ Claude Code chats can now stay warm between messages: switch it on for a chat an
 
 - Live-update connections now require the same scheme (`http` or `https`) as the page that
   opened them when no reverse proxy declares one. This closes a gap where an unusual proxy
-  setup could let a plain `http` page open a secure cockpit's stream. If you run a custom
+  setup could let a plain `http` page open a secure instance's stream. If you run a custom
   TLS-terminating proxy, set the `X-Forwarded-Proto` header on it — a proxy that omits it
   will now have its upgrade requests rejected instead of silently accepted (DOR-932)
 

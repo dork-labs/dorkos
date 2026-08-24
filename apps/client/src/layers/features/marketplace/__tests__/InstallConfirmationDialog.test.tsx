@@ -455,9 +455,7 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.queryByLabelText('All agents (global)')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Specific agent')).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Shapes set up your whole cockpit, so they install once for you — not per agent.'
-      )
+      screen.getByText('Shapes set up your whole app, so they install once for you, not per agent.')
     ).toBeInTheDocument();
   });
 

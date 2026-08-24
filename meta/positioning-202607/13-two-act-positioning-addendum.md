@@ -20,7 +20,7 @@ users, unevaled). The two-act structure below is how the instinct gets honored w
 ## The two acts
 
 **Act 1 (now).** Launch and market DorkOS on the existing operator/developer positioning exactly as planned:
-"mission control for every coding agent you run," the Kai/Priya beachhead, the 14-week ladder in
+"one place for every AI agent you run," the Kai/Priya beachhead, the 14-week ladder in
 `09-gtm-plan.md` Part 4. No Act-1 launch copy changes as a result of this addendum. Shapes exist in Act 1 as
 the dev-facing Script-2 / second-visit story (`08-demo-video-scripts.md`) — introduced after launch, not as
 the headline.

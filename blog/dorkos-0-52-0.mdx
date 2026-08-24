@@ -36,7 +36,7 @@ Ask any docs page for markdown: add `.md` to the URL, or send an `Accept: text/m
   - Apply an installed Shape through the API (`POST /api/shapes/:name/apply`). Applying is idempotent, and anything missing (an extension, an agent, an API key) never blocks the rest — it shows up as an honest warning instead. (DOR-355)
   - Fork a Shape to make your own version, with a "forked from" lineage trail, using the new `dorkos shape fork` command. (DOR-355)
   - Shape-aware conflict detection, validator coverage for Shape manifests, and a scaffold command that generates a valid starter skeleton to build your own Shape from. (DOR-355)
-- **Switch Shapes from inside the cockpit.** Open the command palette and pick "Switch Shape" to see every Shape you've installed and apply one in a click (DOR-355). Applying a Shape rearranges your workspace, turns on its extensions live with no reload, and offers its suggested agent for you to bring in or skip. If a piece is missing, you get an honest note about it instead of a silent gap.
+- **Switch Shapes from inside DorkOS.** Open the command palette and pick "Switch Shape" to see every Shape you've installed and apply one in a click (DOR-355). Applying a Shape rearranges your workspace, turns on its extensions live with no reload, and offers its suggested agent for you to bring in or skip. If a piece is missing, you get an honest note about it instead of a silent gap.
 - **A brand-new agent says hello first.** The moment you bring an agent to life, its first session opens with a quiet birth line — its name, the day it was born, where it lives, and the runtime it runs on — and then the agent speaks, without you typing a thing. A ready-made agent introduces itself in its own voice and offers a first action (it waits for your go-ahead). A blank "Design your own" agent says a warm hello and asks what you'd like it to take care of. The greeting is genuinely the agent's — the prompt that sparks it never shows up as if you had typed it. (DOR-355)
 - **Browse the marketplace by category.** The Marketplace page now shows a row of category chips — click one (like Security or Code Review) to narrow the grid, and share the filtered view as a link. New category pages on dorkos.ai, one per category, list the packages in each and link back to the full marketplace. (DOR-356)
 - **See what a package does before you install it** — the marketplace detail panel now shows each package's README right below its permissions.
@@ -71,12 +71,12 @@ Ask any docs page for markdown: add `.md` to the URL, or send an `Accept: text/m
 ### Fixed
 
 - Shapes you install now show up in the marketplace's Installed view, where you can uninstall or update them just like plugins and agents.
-- Updating the Shape you're currently in keeps you in it: the new version is re-applied automatically, instead of the update silently dropping your cockpit back to no Shape.
-- Uninstalling the Shape you're currently in now clears it cleanly, instead of leaving your cockpit pointed at a Shape that's no longer there.
+- Updating the Shape you're currently in keeps you in it: the new version is re-applied automatically, instead of the update silently dropping you back to no Shape.
+- Uninstalling the Shape you're currently in now clears it cleanly, instead of leaving DorkOS pointed at a Shape that's no longer there.
 - The install preview for a Shape now shows the real folder its files will land in (`shapes/`), not a `plugins/` path.
-- Installing a Shape no longer offers the agent scope choice that was silently ignored — Shapes set up your whole cockpit, so they install once for you.
+- Installing a Shape no longer offers the agent scope choice that was silently ignored — Shapes set up your whole DorkOS, so they install once for you.
 - A schedule that comes with a Shape — like a tick that checks your Linear inbox every 15 minutes — now switches on by itself the moment its agent exists. Before, a schedule set up ahead of its agent was left switched off for good. Schedules you made yourself are never touched, and one you turned off yourself stays off.
-- Agents can now switch which agent you're viewing: when an agent runs the "switch agent" command, the cockpit jumps to that agent's folder and chat, instead of quietly doing nothing. (DOR-354)
+- Agents can now switch which agent you're viewing: when an agent runs the "switch agent" command, DorkOS jumps to that agent's folder and chat, instead of quietly doing nothing. (DOR-354)
 - A Marketplace package whose README has a fenced code-block no longer risks crashing the whole page. If the code-block viewer fails to load, the README is replaced by a short note and the package stays open — and a chat message with code survives a broken chunk instead of taking down the transcript.
 - The README preview reads package files safely — a symlinked or oversized README can't leak your local files or eat memory (the read is capped at 200 KB and symlinks are rejected).
 - The dorkos.ai marketplace page adds back its missing "Shape" filter tab, so you can browse Shapes the way you can Agents, Plugins, Skill Packs, and Adapters.

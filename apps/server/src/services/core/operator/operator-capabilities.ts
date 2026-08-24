@@ -158,7 +158,7 @@ export const operatorDomain: CapabilityDomain = {
       title: 'Recent agent activity',
       description:
         'Show which agents were active recently. Returns each agent joined with the timestamp of ' +
-        'its most-recent session, newest first — the same per-agent latest-activity map the cockpit uses.',
+        'its most-recent session, newest first — the same per-agent latest-activity map the app uses.',
       tier: 'observe',
       input: z.object(RecentSessionsQuerySchema.shape),
       output: z.unknown(),

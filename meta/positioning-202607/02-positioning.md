@@ -16,11 +16,17 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 
 ### Category
 
-**The self-hosted control plane for your AI agent fleet.** (Internal shorthand; in public copy, stay human: "mission control for your agents.") We enter the conversation through the meta-harness category because that is where buyers are looking, then win it on depth: a meta-harness is a dashboard; DorkOS is the coordination layer under one.
+**The self-hosted control plane for your AI agent fleet.** (Internal shorthand; in public copy, stay human: "one place for every AI agent you run.") We enter the conversation through the meta-harness category because that is where buyers are looking, then win it on depth: a meta-harness is a dashboard; DorkOS is the coordination layer under one.
 
 ### Positioning statement
 
-> DorkOS is mission control for every coding agent you run. Claude Code, Codex, OpenCode: one cockpit, any device. Schedule them, let them message you and each other, and keep everything on your machine. Open source, MIT.
+> DorkOS is one place for every AI agent you run. Claude Code, Codex, OpenCode: one window, any device. Schedule them, let them message you and each other, and keep everything on your machine. Open source, MIT.
+
+### Language ruling (2026-08-24, DOR-1517)
+
+The category phrase is **"one place"**, and it is settled. "All your agents. One place." on hero surfaces; "DorkOS is one place for every AI agent you run." as the long form. Supporting variants: "one window", "one home", "your team".
+
+Two earlier candidates are retired permanently. Through August 2026 this file recommended "mission control for every coding agent you run" as the category and "One cockpit, any agent" as Pillar 1; the founder ruled both out on 2026-08-24. "Mission control" is borrowed NASA swagger that oversells a laptop tool, and "cockpit" reads as strange to anyone not already picturing a control panel — it names a thing most readers have never sat in. Neither word appears in any prose we still write: site, README, docs, UI copy, release notes, decks, video scripts. The published changelog (`/docs/changelog`, compiled from the frozen `CHANGELOG.md`) is the deliberate carve-out — it records what was said at the time. The deliberation above is kept so the reasoning survives, not so the words can be re-proposed. (One exception, and it is not ours: GitHub ships a product literally named "Mission Control", so competitive analysis may name it.)
 
 ### The three claims, in order
 
@@ -30,7 +36,7 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 
 ### The one-sentence word-of-mouth test (Godin format)
 
-"You know how you've got Claude Code in one terminal, Codex in another, and no idea what any of them did overnight? Someone built mission control for that."
+"You know how you've got Claude Code in one terminal, Codex in another, and no idea what any of them did overnight? Someone built one place that holds all of them."
 
 ### What stays
 
@@ -42,13 +48,13 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 ### What moves
 
 - **Autonomy demotes from hero to proof.** "You slept. They shipped." becomes evidence inside the story, not the door. The door is now _control of a fleet you already have_. (Most target users in mid-2026 already run 2+ agents; their felt pain is chaos and vendor sprawl more than idle nights, and first parties are actively solving idle nights.)
-- **"OS for agents" becomes the vision line, not the category entry.** It is the right ambition and the right architecture story for Priya, but as a category label it invites "isn't that OpenClaw/Omnigent?" Enter as mission control, expand to OS.
+- **"OS for agents" becomes the vision line, not the category entry.** It is the right ambition and the right architecture story for Priya, but as a category label it invites "isn't that OpenClaw/Omnigent?" Enter as the one place your agents live, expand to OS.
 - **Single-runtime language dies everywhere.** The GitHub description ("...for Claude Code"), the FAQ, the OG image. Every surface says the three runtimes or says nothing about vendors.
 
 ## 3. Who, exactly (niches ranked)
 
 1. **The multi-agent Claude Code power user** (Kai, unchanged but sharpened): already runs several sessions daily across projects, feels the 15-tab chaos _today_. Found in r/ClaudeAI, HN Show threads, X build-in-public circles. Beachhead: highest pain, fastest word-of-mouth.
-2. **The vendor hedger** (new, growing fast): runs Claude for quality and Codex for cheap bulk work, hates having two workflows. Multi-runtime cockpit is a purchase trigger by itself. Found in the same places plus Codex-adjacent communities.
+2. **The vendor hedger** (new, growing fast): runs Claude for quality and Codex for cheap bulk work, hates having two workflows. Running both in one place is a purchase trigger by itself. Found in the same places plus Codex-adjacent communities.
 3. **The Obsidian knowledge-worker dev** (Priya): completely unserved (no peer product has an Obsidian surface), reachable through one concentrated channel (Obsidian plugin directory + community), and the plugin already exists. Small niche, outsized loyalty and content energy.
 4. **The AI-native dev shop (1-10 people)**: the existing ICP; adopts after individuals bring it in. Do not sell to them directly yet; make individual adoption excellent.
 
@@ -58,7 +64,7 @@ _(2026-07-09: two grounded personas joined the set — Ikechi, the non-developer
 
 Ordered by leverage per unit of work:
 
-1. **The 5-minute magic path, engineered as one flow** (highest leverage, mostly polish not features): install → cockpit shows every existing Claude Code session already there (instant "it knows me" moment, already true) → schedule one task → connect Telegram → get pinged. Every element ships today; the work is making the sequence frictionless and the default onboarding. This is the demo, the launch video, and the retention hook in one.
+1. **The 5-minute magic path, engineered as one flow** (highest leverage, mostly polish not features): install → the app shows every existing Claude Code session already there (instant "it knows me" moment, already true) → schedule one task → connect Telegram → get pinged. Every element ships today; the work is making the sequence frictionless and the default onboarding. This is the demo, the launch video, and the retention hook in one.
 2. **Cost/model-aware task routing** (the "kernel scheduler" move): let a Task or agent declare what it needs ("cheap+fast" vs "best reasoning") and have DorkOS pick the runtime. Uniquely enabled by the runtime abstraction; instantly legible ("it sends bulk work to Codex and hard problems to Claude"); makes vendor-neutrality _do_ something instead of just _being_ something. Even a v1 (per-task runtime + model presets, a cost line in run history) is a category-first.
 3. **A fleet home screen** (the "org chart" view): one screen that answers "what are all my agents doing right now, what do they need from me, what did they finish?" across runtimes and projects. The Mesh topology graph is adjacent but network-shaped; this is status-shaped. It is the screenshot that sells the product and the tab people keep open all day. (The peer group's entire existence, Conductor/Vibe Kanban, is a weaker version of this one screen.)
 4. **Security posture as a feature** (cheap, urgent): secure-by-default bindings, passcode/tunnel review, a published threat model page, a `dorkos doctor --security` check. Turns the category's open wound into a differentiator. Must precede any traction push, because traction is exactly what makes you a target.
@@ -69,7 +75,7 @@ Explicitly _not_ now: hosted SaaS, team/multi-user features, Wing as a product, 
 
 **Roof** _(amended 2026-07-09)_: **You, multiplied.** — one person, shipping like a team. The customer is the subject of the roof (StoryBrand discipline, §8.1, applied to the tagline itself). The coordination thesis demotes to manifesto line: it names the mechanism, so it leads the anti-positioning/comparison register and the essays, never the hero. Supporting argument when defending the reframe: model intelligence is abundant and vendor-sold; the customer's judgment is the scarce input; DorkOS scales _them_.
 
-**Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode. Per-session choice, one interface, every device (browser, desktop, Obsidian, phone). _Proof:_ live runtime switcher; sessions from the CLI appearing instantly; conformance suite in CI.
+**Pillar 1: All your agents, one place.** Claude Code, Codex, OpenCode. Per-session choice, one interface, every device (browser, desktop, Obsidian, phone). _Proof:_ live runtime switcher; sessions from the CLI appearing instantly; conformance suite in CI.
 
 **Pillar 2: A team, not tabs.** Schedules, messages, discovery. Agents that ping your phone when they finish and find each other when they need help. _Proof:_ the 5-minute path; a night-run receipt (real PR, real Telegram screenshot); Relay/Mesh docs.
 

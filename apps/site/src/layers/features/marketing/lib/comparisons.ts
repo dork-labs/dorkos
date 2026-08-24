@@ -267,7 +267,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
   {
     id: 'multi-runtime',
     label: 'Many agent tools, one place',
-    featureSlugs: ['multi-runtime-cockpit', 'session-durability'],
+    featureSlugs: ['every-agent-one-place', 'session-durability'],
     question: 'Can you run more than one company’s coding agent from the same screen?',
     wantPhrase: 'every coding agent you run on one screen, not one company’s',
     dorkosDetail:
@@ -276,7 +276,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
   {
     id: 'your-own-subscriptions',
     label: 'Runs on the plans you already pay for',
-    featureSlugs: ['multi-runtime-cockpit', 'runtime-accounts'],
+    featureSlugs: ['every-agent-one-place', 'runtime-accounts'],
     question:
       'Does it work through the plans you already pay for, or sell you the model use again?',
     wantPhrase: 'to keep paying your own Claude or ChatGPT plan, with nothing added on top',
@@ -581,7 +581,7 @@ export const comparisons: Competitor[] = [
       'https://cursor.com/docs/configuration/extensions',
       'https://cursor.com/docs/context/mcp',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'rooms'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'rooms'],
   },
   {
     slug: 'github-copilot-agent-hq',
@@ -709,7 +709,7 @@ export const comparisons: Competitor[] = [
       'https://github.com/features/copilot/plans',
       'https://github.blog/changelog/2026-01-26-introducing-the-agents-tab-in-your-repository/',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'workspaces', 'cli', 'task-scheduler'],
+    relatedFeatures: ['every-agent-one-place', 'workspaces', 'cli', 'task-scheduler'],
   },
   {
     slug: 'devin',
@@ -834,7 +834,7 @@ export const comparisons: Competitor[] = [
       'https://docs.devin.ai/admin/billing/usage',
       'https://docs.devin.ai/integrations/slack',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'cli', 'workspaces', 'task-scheduler'],
+    relatedFeatures: ['every-agent-one-place', 'cli', 'workspaces', 'task-scheduler'],
   },
   {
     slug: 'conductor',
@@ -951,7 +951,7 @@ export const comparisons: Competitor[] = [
       'https://www.conductor.build/pricing',
       'https://www.conductor.build/changelog',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'workspaces'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'workspaces'],
   },
   {
     slug: 'emdash',
@@ -1076,7 +1076,7 @@ export const comparisons: Competitor[] = [
       'https://emdash.com/cloud',
       'https://github.com/generalaction/emdash',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'mobile', 'rooms', 'marketplace'],
+    relatedFeatures: ['every-agent-one-place', 'mobile', 'rooms', 'marketplace'],
   },
   {
     slug: 'claude-squad',
@@ -1190,7 +1190,7 @@ export const comparisons: Competitor[] = [
       'https://github.com/smtg-ai/claude-squad/issues/275',
       'https://smtg-ai.github.io/claude-squad/',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'session-durability'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'session-durability'],
   },
   {
     slug: 'omnara',
@@ -1314,7 +1314,7 @@ export const comparisons: Competitor[] = [
       'https://docs.omnara.com/api-reference/endpoints/configs-and-profiles/create-cron-trigger',
       'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'mobile', 'task-scheduler', 'session-durability'],
+    relatedFeatures: ['every-agent-one-place', 'mobile', 'task-scheduler', 'session-durability'],
   },
   {
     slug: 'amp',
@@ -1431,7 +1431,7 @@ export const comparisons: Competitor[] = [
       'https://ampcode.com/news/amp-frontier-corporation',
       'https://github.com/ampcode',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'cli', 'workspaces'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'cli', 'workspaces'],
   },
   {
     slug: 'cline',
@@ -1554,7 +1554,7 @@ export const comparisons: Competitor[] = [
       'https://cline.bot/cline-pass',
       'https://github.com/cline/cline',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'mobile', 'rooms', 'task-scheduler'],
+    relatedFeatures: ['every-agent-one-place', 'mobile', 'rooms', 'task-scheduler'],
   },
   {
     slug: 'factory-droid',
@@ -1673,7 +1673,7 @@ export const comparisons: Competitor[] = [
       'https://docs.factory.ai/integrations/ide-integrations',
       'https://docs.factory.ai/docs/harness/hooks',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'workspaces', 'cli'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'workspaces', 'cli'],
   },
   {
     slug: 'deepseek-harness',
@@ -1800,7 +1800,7 @@ export const comparisons: Competitor[] = [
       'https://github.com/deepseek-ai/deepseek-harness/releases',
       'https://github.com/deepseek-ai/deepseek-harness/blob/master/LICENSE',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'rooms'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'rooms'],
   },
   {
     slug: 'claude-code',
@@ -1921,7 +1921,7 @@ export const comparisons: Competitor[] = [
       'https://code.claude.com/docs/en/mobile',
       'https://code.claude.com/docs/en/features-overview',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'session-durability'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'session-durability'],
   },
   {
     slug: 'codex',
@@ -2042,7 +2042,7 @@ export const comparisons: Competitor[] = [
       'https://learn.chatgpt.com/docs/changelog',
       'https://github.com/openai/codex',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'session-durability', 'workspaces', 'notifications'],
+    relatedFeatures: ['every-agent-one-place', 'session-durability', 'workspaces', 'notifications'],
   },
   {
     slug: 'opencode',
@@ -2160,7 +2160,7 @@ export const comparisons: Competitor[] = [
       'https://opencode.ai/docs/server/',
       'https://github.com/anomalyco/opencode',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'cli'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'cli'],
   },
   {
     slug: 'buzz',
@@ -2397,7 +2397,7 @@ export const comparisons: Competitor[] = [
       'https://openclaw.ai/blog/introducing-openclaw-foundation',
       'https://en.wikipedia.org/wiki/OpenClaw',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'chat-interface', 'marketplace'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'chat-interface', 'marketplace'],
   },
   {
     slug: 'hermes',
@@ -2636,7 +2636,7 @@ export const comparisons: Competitor[] = [
       'https://cursor.com/docs/account/pricing',
       'https://apps.apple.com/us/app/grok/id6670324846',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'cli', 'task-scheduler', 'rooms'],
+    relatedFeatures: ['every-agent-one-place', 'cli', 'task-scheduler', 'rooms'],
   },
   {
     slug: 'terragon',
@@ -2744,7 +2744,7 @@ export const comparisons: Competitor[] = [
       'https://github.com/terragon-labs/terragon-oss',
       'https://web.archive.org/web/20260119142256/https://docs.terragonlabs.com/docs/resources/shutdown',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'workspaces', 'cli'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'workspaces', 'cli'],
   },
   {
     slug: 'roo-code',
@@ -2850,6 +2850,6 @@ export const comparisons: Competitor[] = [
       'https://cline.bot',
       'https://roomote.dev',
     ],
-    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'tool-approval'],
+    relatedFeatures: ['every-agent-one-place', 'task-scheduler', 'mobile', 'tool-approval'],
   },
 ];

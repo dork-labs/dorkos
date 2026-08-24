@@ -134,6 +134,23 @@ jobs:
       - name: Formatting gate — prettier --check (DOR-485)
         run: pnpm format:check
 
+      # Retired vocabulary in user-facing prose (DOR-1517). It rides THIS job
+      # for the same reason the formatting gate does: `typecheck` is already a
+      # required status check and already reports on `merge_group`, so a new
+      # workflow would go red without blocking a merge until someone amended
+      # branch protection — and a gate on a non-required check is not a gate.
+      # Needs no node_modules; it is bash and grep over prose files.
+      #
+      # This is the second half of a deliberate split. Render-path strings in
+      # app source are judged by scripts/check-vocab-gate.ts, which parses
+      # TypeScript so it can tell copy from an identifier; it runs in
+      # scripts-test.yml via its own pin suite. This step covers the prose and
+      # data files that gate cannot read: READMEs, docs MDX, blog posts,
+      # context7.json, the PWA manifest, and the generated openapi.json.
+      - name: Retired-vocabulary gate — prose surfaces (DOR-1517)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-banned-words.sh
+
       # `!cancelled()` so a formatting failure still reports every type error in
       # the same run, for the same reason the step below passes `--continue`.
       - name: Typecheck every package that declares a typecheck script

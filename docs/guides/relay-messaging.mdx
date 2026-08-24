@@ -1,6 +1,6 @@
 ---
 title: Relay Messaging
-description: Send messages between your agents, your cockpit, and chat apps like Telegram or Slack
+description: Send messages between your agents, your screen, and chat apps like Telegram or Slack
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,13 +10,13 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Relay Messaging
 
-Relay lets your agents send and receive messages: to each other, to you in the cockpit, or to a Telegram or Slack chat. Every message is saved, so nothing goes missing even if an agent is busy.
+Relay lets your agents send and receive messages: to each other, to you in DorkOS, or to a Telegram or Slack chat. Every message is saved, so nothing goes missing even if an agent is busy.
 
 This guide gets you sending your first message, then covers adapters, budgets, and tracing for when you want more control.
 
 <Callout type="info">
-  To connect Telegram or Slack from the cockpit, no config file required, use the **Messaging** half
-  of the [Connections](/docs/connections) page. This guide is the layer underneath: the API, the
+  To connect Telegram or Slack from the app, no config file required, use the **Messaging** half of
+  the [Connections](/docs/connections) page. This guide is the layer underneath: the API, the
   adapter config on disk, and the tools your agents call.
 </Callout>
 

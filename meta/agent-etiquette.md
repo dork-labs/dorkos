@@ -152,7 +152,8 @@ it claims a turn and cleared when it releases one is exempt from every speaking
 rule above: it is not a turn, not an acknowledgment, and never model-chosen. The
 exemption is exactly as wide as the mechanism and no wider: it covers an
 indicator that exists only while the dispatcher holds a real claim for a real
-trigger, on whichever surface ships one that way — the cockpit does today, and
+trigger, on whichever surface ships one that way — the DorkOS app does today,
+and
 so does Telegram, whose typing indicator now runs only while a turn is actually
 producing, rather than from the moment a message arrived. Each remaining adapter
 (Slack, communities) joins as its own indicator becomes claim-driven rather

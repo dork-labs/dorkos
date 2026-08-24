@@ -226,8 +226,8 @@ export const MCP_TOOL_TIERS = {
   // server, which does NOT go through the gate. That is a runtime no-op for an
   // `act` tool, and it is stated rather than glossed: if this tool were ever
   // promoted, that server would need the gated registrar first.
-  control_ui: { tier: 'act', title: 'Drive the DorkOS cockpit' },
-  get_ui_state: { tier: 'observe', title: "Read the cockpit's state" },
+  control_ui: { tier: 'act', title: 'Drive the DorkOS app' },
+  get_ui_state: { tier: 'observe', title: "Read the app's state" },
   browser_read_console: { tier: 'observe', title: "Read the preview's console log" },
   browser_read_network: { tier: 'observe', title: "Read the preview's network log" },
   // Not `observe`, even though the output is only a picture: taking it injects a

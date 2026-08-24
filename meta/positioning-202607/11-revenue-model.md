@@ -10,13 +10,13 @@ The MIT core stays whole and free forever; that is the trust anchor, the acquisi
 
 The research question was never "what features can we gate" but "why does the money move." Five validated reasons, mapped to DorkOS:
 
-| #   | Why they pay                                                          | Evidence anchor                                                                                                                         | DorkOS translation                                                                                                                 |
-| --- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Someone else is on call** (hosted convenience)                      | Supabase $25/mo, Plausible $9, Ghost $15; self-host "free" hides 5-10 hrs/mo of ops                                                     | Managed remote access (no ngrok, no config), push notifications, brokered relay bridges                                            |
-| 2   | **Cross-device / remote reach** (the individual's one true pay-point) | Obsidian Sync $5-10/mo, Raycast Pro ~$8, Omnara Pro $9                                                                                  | Control your fleet from your phone from anywhere; laptop + desktop + VPS as one fleet under one account                            |
-| 3   | **Coordinating humans** (the team boundary)                           | Tailscale $8-18/seat (the closest structural analog), Linear $10-16, Cal.com $12-16                                                     | Shared fleet view, shared agents with ACLs, org accounts, private team marketplace                                                 |
-| 4   | **Seeing and controlling spend** (the strongest net-new hook)         | FinOps 2026: AI cost management prioritized by 98% of orgs; LangSmith $39/seat; a whole vendor category (Vantage, Finout, CloudZero...) | Per-agent / per-project / per-person token-spend dashboards, budgets, anomaly alerts, from the cockpit that already sees every run |
-| 5   | **Risk reduction / compliance** (the CISO's budget)                   | The SSO tax: SAML/SCIM/audit gated at 2-4x base price across the entire industry, and accepted                                          | Enterprise tier: SAML/SCIM via WorkOS, audit export, advanced RBAC, policy                                                         |
+| #   | Why they pay                                                          | Evidence anchor                                                                                                                         | DorkOS translation                                                                                                                   |
+| --- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Someone else is on call** (hosted convenience)                      | Supabase $25/mo, Plausible $9, Ghost $15; self-host "free" hides 5-10 hrs/mo of ops                                                     | Managed remote access (no ngrok, no config), push notifications, brokered relay bridges                                              |
+| 2   | **Cross-device / remote reach** (the individual's one true pay-point) | Obsidian Sync $5-10/mo, Raycast Pro ~$8, Omnara Pro $9                                                                                  | Control your fleet from your phone from anywhere; laptop + desktop + VPS as one fleet under one account                              |
+| 3   | **Coordinating humans** (the team boundary)                           | Tailscale $8-18/seat (the closest structural analog), Linear $10-16, Cal.com $12-16                                                     | Shared fleet view, shared agents with ACLs, org accounts, private team marketplace                                                   |
+| 4   | **Seeing and controlling spend** (the strongest net-new hook)         | FinOps 2026: AI cost management prioritized by 98% of orgs; LangSmith $39/seat; a whole vendor category (Vantage, Finout, CloudZero...) | Per-agent / per-project / per-person token-spend dashboards, budgets, anomaly alerts, from the one place that already sees every run |
+| 5   | **Risk reduction / compliance** (the CISO's budget)                   | The SSO tax: SAML/SCIM/audit gated at 2-4x base price across the entire industry, and accepted                                          | Enterprise tier: SAML/SCIM via WorkOS, audit export, advanced RBAC, policy                                                           |
 
 Plus a sixth that gates nothing: **patronage** (Obsidian Catalyst, $25 one-time, "a tip jar" with a badge). It converts devoted individuals at zero trust cost and fits the crew-number identity mechanics we already planned.
 
@@ -34,7 +34,7 @@ What individuals will NOT pay for (research-confirmed, and the ICP doc predicted
 
 ### DorkOS OSS: free forever
 
-Everything that exists today and everything in the Tier-A hardening plan: the cockpit, all three runtimes, Tasks, Relay with self-configured adapters, Mesh, marketplace, self-managed tunnel, MCP, all surfaces. Single operator, full power, offline-capable. _Job: be the best free thing in the category; win the comparison table; feed everything below._
+Everything that exists today and everything in the Tier-A hardening plan: the app, all three runtimes, Tasks, Relay with self-configured adapters, Mesh, marketplace, self-managed tunnel, MCP, all surfaces. Single operator, full power, offline-capable. _Job: be the best free thing in the category; win the comparison table; feed everything below._
 
 ### Founding Crew (patronage, one-time ~$29, at launch)
 
@@ -44,7 +44,7 @@ Gates nothing. Buys: permanent founding-crew badge + low crew number flair, name
 
 The individual's tier, priced in the validated $8-10 band (Omnara $9, Obsidian Sync, Raycast, Tailscale personal→paid), deliberately below the $20+ model subscription it augments.
 
-- **Reach:** managed remote access: your cockpit from any device, no ngrok account, no port math, brokered through DorkOS Cloud with the device-link flow already built (DOR-181/182).
+- **Reach:** managed remote access: your fleet from any device, no ngrok account, no port math, brokered through DorkOS Cloud with the device-link flow already built (DOR-181/182).
 - **Push:** real mobile notifications (beyond Telegram) routed through the cloud.
 - **One fleet:** every machine you run DorkOS on (laptop, desktop, VPS), linked to one account, one aggregate fleet view, per-instance revocation (the Tailscale dashboard pattern; the instance registry is the shipped foundation).
 - **Continuity:** off-site encrypted backup of config/skills/agent manifests (not code, not transcripts by default: privacy posture preserved).
@@ -59,7 +59,7 @@ The team tier, priced in the Tailscale-Standard-to-Linear band, for the 1-10 per
 - **Shared fleet:** the whole team's agents, across everyone's machines, one view: who's running what, what needs a human, what shipped overnight.
 - **Shared agents:** task a teammate's agent (or a team VPS agent) with access control. The primitives already exist and were built for exactly this: Mesh access rules authored per agent, enforced by Relay, budget envelopes preventing runaway loops. The paid feature is the cloud-brokered, org-scoped composition of them.
 - **Private registries:** the team's own marketplace (skills, agents, rules) with scoped installs; the superset format means these registries also serve the team's plain Claude Code users, which makes DorkOS the team's capability-distribution layer even before full adoption.
-- **Team spend:** the FinOps surface: per-agent/per-project/per-person cost dashboards, budgets, anomaly alerts ("Scout burned 4x its normal spend last night"). Reason 4 is the strongest net-new hook in the research and no model vendor offers it cross-vendor. The cockpit already sees every run; this is aggregation plus opinionated presentation.
+- **Team spend:** the FinOps surface: per-agent/per-project/per-person cost dashboards, budgets, anomaly alerts ("Scout burned 4x its normal spend last night"). Reason 4 is the strongest net-new hook in the research and no model vendor offers it cross-vendor. DorkOS already sees every run; this is aggregation plus opinionated presentation.
 - **Team SSO:** Google Workspace / OIDC login included (rule 4).
 
 _Why they pay: reasons 3+4. The seat anchor works: a team already paying $25/seat for Claude pays $15 to coordinate, see, and govern all of it._

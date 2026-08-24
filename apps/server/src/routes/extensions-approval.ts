@@ -99,7 +99,7 @@ function refuseIfNotAPerson(req: Request, res: Response): boolean {
       message:
         `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
         `Allowing an extension to run code inside DorkOS is something a person does in ` +
-        `their own cockpit, not something another site can ask for on their behalf.`,
+        `their own copy of the app, not something another site can ask for on their behalf.`,
     });
     return true;
   }

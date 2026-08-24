@@ -12,6 +12,6 @@ export function setupAboutPanel(): void {
     applicationName: 'DorkOS',
     applicationVersion: app.getVersion(),
     copyright: '© 2026 DorkOS',
-    credits: 'Mission control for your coding agents.',
+    credits: 'All your coding agents. One place.',
   });
 }

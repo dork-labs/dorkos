@@ -3207,7 +3207,7 @@
         "minLength": 1,
         "maxLength": 200,
         "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
-        "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; on the web cockpit there is no strip, so switching a sidebar tab is a no-op there."
+        "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; in the web app there is no strip, so switching a sidebar tab is a no-op there."
       },
       "UiCanvasContent": {
         "oneOf": [
@@ -5795,7 +5795,7 @@
                     "minLength": 1,
                     "maxLength": 200,
                     "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
-                    "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; on the web cockpit switching a sidebar tab is a no-op."
+                    "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; in the web app switching a sidebar tab is a no-op."
                   },
                   "openPanels": {
                     "type": "array",
@@ -6867,7 +6867,7 @@
               },
               "deliverNotices": {
                 "type": "boolean",
-                "description": "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the cockpit's bridge controls read their state from it."
+                "description": "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the DorkOS app's bridge controls read their state from it."
               }
             },
             "required": [
@@ -7014,7 +7014,7 @@
               "minLength": 1
             },
             "default": [],
-            "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group."
+            "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The DorkOS app knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group."
           }
         },
         "required": [
@@ -9473,7 +9473,7 @@
           "Sessions"
         ],
         "summary": "Durable session stream (SSE, or WebSocket at the same path)",
-        "description": "Always-on Server-Sent Events stream — the single delivery path for session state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or `enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event (a SessionSnapshot: completed messages, in-progress turn, status, non-expired pending interactions, and the resume `cursor`) then goes live, emitting one SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` line; the client echoes it back as `Last-Event-ID` on reconnect. On a RESUME connect it SKIPS the snapshot and replays only events with `seq` greater than the cursor, then goes live. A cursor the server cannot serve gap-free falls back to the cold snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: no` defeats proxy buffering. **The same path also answers a WebSocket upgrade** (ADR 260805-041016), which is what the DorkOS cockpit uses — a browser allows only ~6 connections per origin and an SSE stream holds one open, so a few windows exhaust them. Identical contract; each message is one JSON text frame `{ event, data, id? }`, the resume cursor rides `?resume=` (a browser `WebSocket` cannot set headers), liveness is a `__heartbeat` frame rather than an SSE comment, and a refusal arrives as WebSocket close code `4000 + status` because a browser cannot read the status of a failed handshake. SSE remains the documented integration contract — see `docs/integrations/sse-protocol.mdx`.",
+        "description": "Always-on Server-Sent Events stream — the single delivery path for session state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or `enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event (a SessionSnapshot: completed messages, in-progress turn, status, non-expired pending interactions, and the resume `cursor`) then goes live, emitting one SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` line; the client echoes it back as `Last-Event-ID` on reconnect. On a RESUME connect it SKIPS the snapshot and replays only events with `seq` greater than the cursor, then goes live. A cursor the server cannot serve gap-free falls back to the cold snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: no` defeats proxy buffering. **The same path also answers a WebSocket upgrade** (ADR 260805-041016), which is what the DorkOS app uses — a browser allows only ~6 connections per origin and an SSE stream holds one open, so a few windows exhaust them. Identical contract; each message is one JSON text frame `{ event, data, id? }`, the resume cursor rides `?resume=` (a browser `WebSocket` cannot set headers), liveness is a `__heartbeat` frame rather than an SSE comment, and a refusal arrives as WebSocket close code `4000 + status` because a browser cannot read the status of a failed handshake. SSE remains the documented integration contract — see `docs/integrations/sse-protocol.mdx`.",
         "parameters": [
           {
             "schema": {
@@ -10731,7 +10731,7 @@
           "Sessions"
         ],
         "summary": "List the messages waiting on a session",
-        "description": "The messages accepted for this session that have not run yet, head first. The same list rides the session snapshot on `GET /api/sessions/{id}/events`, so a cockpit never needs this route; it is here for integrations and debugging.",
+        "description": "The messages accepted for this session that have not run yet, head first. The same list rides the session snapshot on `GET /api/sessions/{id}/events`, so a DorkOS client never needs this route; it is here for integrations and debugging.",
         "parameters": [
           {
             "schema": {
@@ -17010,7 +17010,7 @@
           "Approvals"
         ],
         "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\nThe body accepts a `standing` flag, which also stops DorkOS asking about this agent doing this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person signed in to the cockpit, so it needs Require login to be on: with login off there is no session cookie and DorkOS cannot tell the operator from an agent running as the same user. It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes before anything is granted, so a caller that asked for two things and can only have one gets neither and is told which part failed. On success the response carries the permission that was opened. Re-answering the same question replaces the live permission and starts a fresh window; using a permission never extends it.",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\nThe body accepts a `standing` flag, which also stops DorkOS asking about this agent doing this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person signed in to the DorkOS app, so it needs Require login to be on: with login off there is no session cookie and DorkOS cannot tell the operator from an agent running as the same user. It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes before anything is granted, so a caller that asked for two things and can only have one gets neither and is told which part failed. On success the response carries the permission that was opened. Re-answering the same question replaces the live permission and starts a fresh window; using a permission never extends it.",
         "parameters": [
           {
             "schema": {
@@ -17210,7 +17210,7 @@
           "Approvals"
         ],
         "summary": "List live standing permissions",
-        "description": "The standing permissions that are live right now: which agent, which action, and when each one runs out. A permission nobody can find is a dark pattern, so this is the list the cockpit shows in both places it offers to end one. Expiry is applied here rather than left to a sweep, so a permission whose window has closed is already gone from this list.\n\nAuthorized like deciding an approval, NOT like reading the pending list, and the difference is deliberate. A pending card is meant to be agent-readable. This list is prospective: it says which irreversible action will go through silently right now and the minute the window shuts, and it names other agents' pairings. So a caller presenting an agent identity or an approval token is refused.\n\nIt carries what the cockpit renders and nothing more. Who opened each permission, when, under which posture, and which card it came from are recorded in the `approval.grant_created` Activity event instead, which is where an audit question belongs.",
+        "description": "The standing permissions that are live right now: which agent, which action, and when each one runs out. A permission nobody can find is a dark pattern, so this is the list the DorkOS app shows in both places it offers to end one. Expiry is applied here rather than left to a sweep, so a permission whose window has closed is already gone from this list.\n\nAuthorized like deciding an approval, NOT like reading the pending list, and the difference is deliberate. A pending card is meant to be agent-readable. This list is prospective: it says which irreversible action will go through silently right now and the minute the window shuts, and it names other agents' pairings. So a caller presenting an agent identity or an approval token is refused.\n\nIt carries what the DorkOS app renders and nothing more. Who opened each permission, when, under which posture, and which card it came from are recorded in the `approval.grant_created` Activity event instead, which is where an audit question belongs.",
         "responses": {
           "200": {
             "description": "Live standing permissions, soonest to expire first",
@@ -17596,7 +17596,7 @@
           "Rooms"
         ],
         "summary": "Where each of a room's agents does its work",
-        "description": "One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a cockpit can turn \"Meeting Notes is working on it\" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.",
+        "description": "One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a DorkOS client can turn \"Meeting Notes is working on it\" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.",
         "parameters": [
           {
             "schema": {
@@ -17871,7 +17871,7 @@
           "Rooms"
         ],
         "summary": "Upload files into a room, before the message that carries them",
-        "description": "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read — 403 when its token resolves to a live agent, 401 when it does not — because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the cockpit's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
+        "description": "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read — 403 when its token resolves to a live agent, 401 when it does not — because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the DorkOS app's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
         "parameters": [
           {
             "schema": {
@@ -18728,7 +18728,7 @@
           "Rooms"
         ],
         "summary": "Durable room event stream (SSE, or WebSocket at the same path)",
-        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the cockpit uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
         "parameters": [
           {
             "schema": {

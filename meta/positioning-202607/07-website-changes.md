@@ -78,7 +78,7 @@ The `curl` one-liner renders as scrambled glyphs (`cu#* **&?& _-<_%!@++...`) tha
 
 The homepage, features page, and feature cards contain no screenshot, video, or live demo of Console. The activity feed is simulated text. For a product whose stated quality bar is "world-class UI/UX", the site shows no UI.
 
-**Why it matters:** Kai's listed buying trigger is "sees a demo showing agents running overnight and producing real output." Every successful peer product leads with the cockpit visual. A control panel product that never shows the control panel forfeits its strongest proof.
+**Why it matters:** Kai's listed buying trigger is "sees a demo showing agents running overnight and producing real output." Every successful peer product leads with a visual of the product itself. A control panel product that never shows the control panel forfeits its strongest proof.
 
 **Change (biggest single win on this list):** add a real Console visual to the hero or immediately after it. Best form: a 30-60s silent screen capture (session streaming + tool approval + a Task firing + a Telegram notification arriving), plus per-feature screenshots on `/features/[slug]` pages. Static hero screenshot is an acceptable v1.
 
@@ -96,7 +96,7 @@ Header nav is logo + "DOCS". GitHub appears only as a small footer icon. No star
 
 Months of engineering went into the `AgentRuntime` abstraction: Claude Code, Codex, and OpenCode all work today, with per-session binding and a conformance suite. The site mentions this only in docs prose. Meanwhile "works with Claude Code AND Codex AND OpenCode, switch per session" is:
 
-- a claim none of the single-vendor cockpits can make,
+- a claim none of the single-vendor tools can make,
 - the concrete answer to "what if Anthropic ships this themselves?" (the #1 strategic risk),
 - and the honest version of "bring your agent, we make it autonomous" from the litepaper.
 

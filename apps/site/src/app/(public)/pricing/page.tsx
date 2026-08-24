@@ -58,12 +58,12 @@ export default function PricingPage() {
             The free core, in writing
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is open source under the MIT license, and that does not change. The cockpit, all
-            three agent runtimes, Tasks, Relay, Mesh, the Marketplace, your own tunnel for remote
-            access, and every client surface (browser, desktop, and the Obsidian plugin) is yours to
-            fork and keep (desktop and the Obsidian plugin are still in beta). One operator, full
-            power, works offline, no account required unless you choose to open it up to another
-            device.
+            DorkOS is open source under the MIT license, and that does not change. The app itself,
+            support for Claude Code, Codex, and OpenCode, Tasks, agents messaging each other, the
+            Marketplace, your own tunnel for remote access, and every way you open it (browser,
+            desktop, and the Obsidian plugin) are yours to fork and keep (desktop and the Obsidian
+            plugin are still in beta). One operator, full power, works offline, no account required
+            unless you choose to open it up to another device.
           </p>
           <p className="text-warm-gray leading-relaxed">
             That is not a starter tier. It is the whole product. Its job is to be the best free
@@ -83,7 +83,7 @@ export default function PricingPage() {
           </p>
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
             <li>
-              Reaching your fleet from your phone or another device without setting up your own
+              Reaching your agents from your phone or another device without setting up your own
               tunnel.
             </li>
             <li>Push notifications that do not require you to wire up your own bot.</li>
@@ -92,7 +92,7 @@ export default function PricingPage() {
               separately.
             </li>
             <li>
-              Later, tools for a small team to share a fleet, hand agents to each other, and see
+              Later, tools for a small team to share one setup, hand agents to each other, and see
               what everyone is spending on models, together.
             </li>
           </ul>
