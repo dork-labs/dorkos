@@ -42,7 +42,12 @@ function setEligibleConfig() {
       telemetry: { userHasDecided: true },
       auth: { enabled: false },
     },
-    isFetchedAfterMount: true,
+    // MomentHost only trusts an answer the server confirmed THIS launch:
+    // `dataUpdatedAt` must beat its module-eval LAUNCH_STARTED_AT (see the
+    // fetch-gate docblock on MomentHost). Tests run after module eval, so
+    // `Date.now()` already clears it; the +1s keeps a same-millisecond tie
+    // from flaking the strict `>`.
+    dataUpdatedAt: Date.now() + 1_000,
   } as unknown as ReturnType<typeof useConfig>);
   vi.mocked(useUpdateConfig).mockReturnValue({
     mutate: vi.fn(),
