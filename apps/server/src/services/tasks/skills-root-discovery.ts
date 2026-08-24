@@ -49,7 +49,7 @@ import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import type { TaskFrontmatter } from '@dorkos/skills/task-schema';
 import { describeScheduleProblem } from './cron-validation.js';
 import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
-import type { TaskRoot } from './skills-roots.js';
+import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 
 /** A SKILL.md that carries a `schedule:` block, ready for the store. */
 export interface DiscoveredSchedule {
@@ -212,9 +212,25 @@ function readLegacySchedule(
 export type ReadOutcome =
   /** On disk but unusable — unreadable, or frontmatter that does not parse. */
   | { kind: 'invalid'; filePath: string; error: string; fileMissing: boolean }
-  /** A plain skill. The ordinary case in a skills root, and a silent one. */
-  | { kind: 'ignored'; filePath: string }
-  /** A schedule, whether or not there is something wrong with it. */
+  /**
+   * A plain skill. The ordinary case in a skills root, and a silent one.
+   *
+   * `resolvedPath` is the identity a row for this file would be keyed on, when
+   * it is known. It matters for the one case where an ignored file is not
+   * silent: a skill that USED to carry a `schedule:` block still has a row, and
+   * retiring it means naming the path that row holds, not the path we walked in
+   * on.
+   */
+  | { kind: 'ignored'; filePath: string; resolvedPath?: string }
+  /**
+   * A schedule, whether or not there is something wrong with it.
+   *
+   * `filePath` is where the file was SEEN — the symlink, for an installed
+   * plugin skill. The schedule's IDENTITY is `discovered.def.filePath`, which is
+   * that path resolved. Both are reported because the two are used for different
+   * things: the row is keyed on the identity, while the sighting is what a
+   * watcher will name when the file is later deleted.
+   */
   | { kind: 'schedule'; filePath: string; discovered: DiscoveredSchedule };
 
 /**
@@ -262,8 +278,8 @@ export async function readTaskRootFile(
     resolvedPath,
   });
   return discovered === null
-    ? { kind: 'ignored', filePath }
-    : { kind: 'schedule', filePath: resolvedPath, discovered };
+    ? { kind: 'ignored', filePath, resolvedPath }
+    : { kind: 'schedule', filePath, discovered };
 }
 
 /**
@@ -336,13 +352,13 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
     root.kind === 'skills'
       ? [
           ...(await scanSkillDirectory(root.dir, SkillFrontmatterSchema, {
-            ignoreDirs: RESERVED_TASK_DIRNAMES,
+            ignoreDirs: reservedDirsFor(root.kind),
           })),
           // Installed plugin skills are symlinks, which the shared scan skips.
           ...(await scanSymlinkedSkills(root.dir, SkillFrontmatterSchema)).map((f) => f.result),
         ]
       : await scanSkillDirectory(root.dir, TaskFrontmatterSchema, {
-          ignoreDirs: RESERVED_TASK_DIRNAMES,
+          ignoreDirs: reservedDirsFor(root.kind),
         });
 
   const outcomes: ReadOutcome[] = [];
@@ -383,9 +399,80 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
     });
     outcomes.push(
       discovered === null
-        ? { kind: 'ignored', filePath: skill.filePath }
-        : { kind: 'schedule', filePath: resolvedPath, discovered }
+        ? { kind: 'ignored', filePath: skill.filePath, resolvedPath }
+        : { kind: 'schedule', filePath: skill.filePath, discovered }
     );
   }
   return outcomes;
+}
+
+/**
+ * The real directories that this root's symlinked entries point at, dangling
+ * links included.
+ *
+ * The reconciler needs these to be allowed to retire a plugin's schedule. Its
+ * retirement gate only acts on a directory the pass actually looked in, and a
+ * row discovered through a `pkg__name` symlink is keyed on a path inside
+ * `.dork/plugins/` — a directory that is not a root and never appears in the
+ * scan. Uninstalling the package therefore left the schedule as a row nothing
+ * could speak about, still on the clock (DOR-1485 review, I3).
+ *
+ * `readlink` rather than `realpath` is what makes this work: a link whose target
+ * has just been deleted still tells you where it pointed, which is exactly the
+ * situation an uninstall creates. Looking through the link IS looking in that
+ * directory, so reporting it is honest testimony and not a widening of the gate.
+ *
+ * @param dir - The skills root to inspect.
+ * @returns Absolute directories, possibly no longer present.
+ */
+export async function linkedSkillDirs(dir: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const dirs: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isSymbolicLink()) continue;
+    if (entry.name.startsWith('.') || RESERVED_TASK_DIRNAMES.includes(entry.name)) continue;
+    try {
+      const target = path.resolve(dir, await fs.readlink(path.join(dir, entry.name)));
+      dirs.push(await resolveThroughAncestors(target));
+    } catch {
+      // Not readable as a link any more; nothing to testify about.
+    }
+  }
+  return dirs;
+}
+
+/**
+ * Resolve a path that may not exist, by resolving as much of it as does.
+ *
+ * `fs.realpath` is all-or-nothing: it throws on a path whose leaf has been
+ * deleted, which is exactly the path an uninstall leaves behind. But the row we
+ * need to name was keyed on the FULLY resolved path, so comparing against the
+ * raw one silently matches nothing — and on macOS that is the ordinary case, not
+ * an edge one, because every temp directory sits under a symlinked `/var`.
+ *
+ * So this resolves the deepest ancestor that still exists and re-attaches the
+ * rest. The parts that no longer exist cannot themselves be symlinks any more,
+ * so nothing is lost by carrying them through literally.
+ *
+ * @param target - An absolute path, possibly gone.
+ * @returns The same path with every resolvable ancestor resolved.
+ */
+async function resolveThroughAncestors(target: string): Promise<string> {
+  const tail: string[] = [];
+  let current = target;
+  for (;;) {
+    try {
+      return path.join(await fs.realpath(current), ...tail);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return target;
+      tail.unshift(path.basename(current));
+      current = parent;
+    }
+  }
 }

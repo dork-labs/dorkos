@@ -40,6 +40,17 @@
 export class ScheduleIdentityRegistry {
   /** Resolved real path → the root directory that claimed it. */
   private owners = new Map<string, string>();
+  /**
+   * The path a file was SEEN at → the real path it resolved to.
+   *
+   * Kept because a deleted file cannot be resolved: `fs.realpath` on it throws
+   * ENOENT. When a watcher reports an unlink it hands us the path it was
+   * watching — for an installed plugin skill, the symlink — while the row is
+   * keyed on the target. Without this mapping the pause looked up a path no row
+   * held, and an uninstalled package's schedule went on firing (DOR-1485
+   * review, I3).
+   */
+  private resolvedBySighting = new Map<string, string>();
 
   /**
    * Ask whether this root may sync this file.
@@ -51,9 +62,14 @@ export class ScheduleIdentityRegistry {
    *
    * @param resolvedPath - The file's real path, symlinks resolved.
    * @param rootDir - The watched root this sighting came through.
+   * @param sightedPath - The path it was seen at, when that differs. Remembered
+   *   so a later deletion of that path can still name the row it belongs to.
    * @returns Whether this root owns the file and should sync it.
    */
-  claim(resolvedPath: string, rootDir: string): boolean {
+  claim(resolvedPath: string, rootDir: string, sightedPath?: string): boolean {
+    if (sightedPath !== undefined && sightedPath !== resolvedPath) {
+      this.resolvedBySighting.set(sightedPath, resolvedPath);
+    }
     const owner = this.owners.get(resolvedPath);
     if (owner === undefined) {
       this.owners.set(resolvedPath, rootDir);
@@ -63,16 +79,35 @@ export class ScheduleIdentityRegistry {
   }
 
   /**
+   * The real path a file seen at this path resolved to, if it was ever claimed.
+   *
+   * `undefined` for a path never seen, and for one that resolved to itself —
+   * both of which mean "the path you have is the identity", so a caller reads
+   * this as `resolvedFor(p) ?? p`.
+   *
+   * @param sightedPath - The path a watcher reported.
+   */
+  resolvedFor(sightedPath: string): string | undefined {
+    return this.resolvedBySighting.get(sightedPath);
+  }
+
+  /**
    * Drop the claim on one file, because it is gone.
    *
    * Called on a delete so that a file which comes back — or a second root that
    * can still see it — can claim it fresh rather than being locked out by a
    * claim nobody is using.
    *
-   * @param resolvedPath - The file's real path.
+   * Takes the SIGHTED path, which is what a watcher has in hand, and clears the
+   * claim on whatever it resolved to. Passing an already-resolved path works
+   * too: it maps to itself.
+   *
+   * @param sightedPath - The path the file was seen at.
    */
-  releasePath(resolvedPath: string): void {
-    this.owners.delete(resolvedPath);
+  releasePath(sightedPath: string): void {
+    const resolved = this.resolvedBySighting.get(sightedPath) ?? sightedPath;
+    this.resolvedBySighting.delete(sightedPath);
+    this.owners.delete(resolved);
   }
 
   /**
@@ -86,7 +121,11 @@ export class ScheduleIdentityRegistry {
    */
   releaseRoot(rootDir: string): void {
     for (const [resolvedPath, owner] of this.owners) {
-      if (owner === rootDir) this.owners.delete(resolvedPath);
+      if (owner !== rootDir) continue;
+      this.owners.delete(resolvedPath);
+      for (const [sighted, resolved] of this.resolvedBySighting) {
+        if (resolved === resolvedPath) this.resolvedBySighting.delete(sighted);
+      }
     }
   }
 

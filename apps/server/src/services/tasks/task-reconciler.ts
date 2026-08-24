@@ -16,7 +16,7 @@ import path from 'node:path';
 import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
-import { scanTaskRoot } from './skills-root-discovery.js';
+import { linkedSkillDirs, scanTaskRoot } from './skills-root-discovery.js';
 import type { TaskRoot } from './skills-roots.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import { logger, logError } from '../../lib/logger.js';
@@ -197,14 +197,20 @@ export class TaskReconciler {
    * to testify about its own files, and rows in it could never retire.
    *
    * A symlinked skill ENTRY (an installed plugin's `pkg__name`) resolves out of
-   * the root entirely, into `.dork/plugins/`, which is not a root and never
-   * appears here. Those rows are therefore never retired by this pass. That is
-   * the safe direction to be wrong in — a stale row that stops firing when the
-   * file cannot be read beats deleting a schedule and its history because a
-   * symlink target moved — and it is why this is documented rather than
-   * "fixed" by widening the set.
+   * the root entirely, into `.dork/plugins/`, so the directory a row's path sits
+   * in is not the root that found it. Its real parent is therefore recorded too,
+   * from the sighting itself — otherwise uninstalling a package would leave its
+   * schedule as a row this pass could never speak about, still on the clock
+   * (DOR-1485 review, I3). Being unable to retire is NOT the same as stopping:
+   * an earlier version of this comment claimed such a row "stops firing when the
+   * file cannot be read", and that was simply false — nothing reads a registered
+   * cron job's file between ticks.
    */
-  private async recordScanned(root: TaskRoot, scannedDirs: Set<string>): Promise<void> {
+  private async recordScanned(
+    root: TaskRoot,
+    scannedDirs: Set<string>,
+    seenIn: readonly string[]
+  ): Promise<void> {
     scannedDirs.add(root.dir);
     if (root.kind !== 'skills') return;
     try {
@@ -214,6 +220,28 @@ export class TaskReconciler {
       // not resolvable now, testifying under one name only is the conservative
       // outcome: fewer rows eligible for deletion, never more.
     }
+    // Every directory this pass actually read a file out of, including the ones
+    // a symlink led it to outside the root. This pass looked in them, so it may
+    // speak about what is missing from them.
+    for (const dir of seenIn) scannedDirs.add(dir);
+  }
+
+  /**
+   * Pause the row at this path because its file is no longer a schedule.
+   *
+   * The file is still there — it is a plain skill now — so this is a pause and
+   * never a delete: removing a `schedule:` block turns a scheduled task back
+   * into an ordinary skill, and the run history belongs to the person, not to
+   * the block. The same ending the watcher gives a block removal it saw.
+   *
+   * @param filePath - The file that stopped carrying a schedule.
+   * @returns Whether a row was actually retired.
+   */
+  private retireIfPresent(filePath: string): boolean {
+    if (this.store.markRemovedByFilePath(filePath) === 0) return false;
+    this.registrar.syncTaskByFilePath(filePath);
+    logger.info(`[TaskReconciler] Schedule block removed from ${filePath} — paused`);
+    return true;
   }
 
   /** Stop periodic reconciliation. */
@@ -292,7 +320,20 @@ export class TaskReconciler {
       } catch {
         continue;
       }
-      await this.recordScanned(root, scannedDirs);
+      // The real directory of every file this scan read, which for a symlinked
+      // plugin skill is outside the root entirely.
+      const seenIn = results
+        .filter((r) => r.kind === 'schedule')
+        .map((r) => path.dirname(path.dirname(r.discovered.def.filePath)));
+      // ...plus wherever this root's symlinks point, including links whose
+      // target an uninstall has just removed. Looking through a link is looking
+      // in the directory it names. `dirname` because a link points at the SKILL
+      // directory, and what the retirement gate compares is the directory that
+      // CONTAINS it — the same level as a root.
+      if (root.kind === 'skills') {
+        seenIn.push(...(await linkedSkillDirs(root.dir)).map((d) => path.dirname(d)));
+      }
+      await this.recordScanned(root, scannedDirs, seenIn);
 
       for (const result of results) {
         if (result.kind === 'invalid') {
@@ -307,13 +348,28 @@ export class TaskReconciler {
           continue;
         }
 
-        // A plain skill in a skills root: not a task, and nothing to say about
-        // it. Still counted as seen, so that a row whose file merely lost its
-        // `schedule:` block is not mistaken for a deleted file and destroyed
-        // with its run history. The watcher pauses such a row, which is the
-        // right end for it.
+        // A plain skill in a skills root: not a task. Counted as seen so a row
+        // whose file merely lost its `schedule:` block is never mistaken for a
+        // deleted file and destroyed with its run history.
+        //
+        // And if a row DOES exist for it, the schedule is over and this pass
+        // has to end it. Skipping here was a hole in the safety net rather than
+        // a tidy no-op: the watcher pauses a block removal it sees, and the
+        // reconciler exists precisely for the changes the watcher did not see —
+        // so an approved schedule whose block was deleted while the watcher was
+        // blind would have gone on firing forever (DOR-1485 review, B3).
         if (result.kind === 'ignored') {
           seenFilePaths.add(result.filePath);
+          try {
+            // By the identity a row would hold, which is the resolved path.
+            if (this.retireIfPresent(result.resolvedPath ?? result.filePath)) orphaned++;
+          } catch (err) {
+            this.report(
+              'error',
+              `[TaskReconciler] Failed to retire un-scheduled ${result.filePath}`,
+              err
+            );
+          }
           continue;
         }
 
@@ -322,7 +378,7 @@ export class TaskReconciler {
         // deleted below. A failed write must never look like a deletion.
         const { discovered } = result;
         seenFilePaths.add(discovered.def.filePath);
-        if (!this.identities.claim(discovered.def.filePath, root.dir)) continue;
+        if (!this.identities.claim(discovered.def.filePath, root.dir, result.filePath)) continue;
         try {
           const task = this.store.upsertFromFile(discovered.def, root.agentId, {
             source: 'discovery',

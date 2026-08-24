@@ -221,14 +221,12 @@ describe('a task file on disk drives the running scheduler', () => {
   // row whose file is back, so the cockpit called the task active while nothing
   // was scheduled for it — and nothing ever would be until a restart.
   //
-  // The gate changed the ending. A returning file is no longer silently
-  // re-armed: `markRemovedByFilePath` only PAUSES a row, so the row and its
-  // approval outlive the file, and anything that can later write that path
-  // would inherit the grant. `keepsApprovedBypass` has always refused a
-  // resurrected path its bypass for exactly this reason; arming now refuses it
-  // too. What the registrar seam still guarantees is that the row and the clock
-  // never disagree — which is the whole claim of this file.
-  it('the reconciler re-parks rather than silently re-arming a returning file', async () => {
+  // A file going away and coming back is what an ordinary SAVE looks like:
+  // editors write to a temp file and rename over the target, and the marketplace
+  // install transaction does the same. Re-parking there would un-approve every
+  // schedule a package ships on every package update, so an approval survives a
+  // round trip when the content key is unchanged (DOR-1485 review, I1).
+  it('the reconciler re-arms a returning file whose content never changed', async () => {
     const filePath = await writeTask('comes-and-goes', '0 6 * * *');
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
     reconciler.addRoot(legacyRoot(tasksDir, 'global'));
@@ -244,6 +242,30 @@ describe('a task file on disk drives the running scheduler', () => {
     expect(scheduler.isRegistered(task.id)).toBe(false);
 
     await writeFile(filePath, skillFile('comes-and-goes', '0 6 * * *'), 'utf-8');
+    await reconciler.reconcile();
+
+    expect(store.getTask(task.id)?.status).toBe('active');
+    expect(scheduler.isRegistered(task.id)).toBe(true);
+  });
+
+  // The other half, and the reason the round trip above is safe: the grant is
+  // keyed on WHAT the schedule does, so a path that comes back carrying
+  // different work does not inherit the approval the old work had.
+  it('the reconciler re-parks a returning file whose content changed', async () => {
+    const filePath = await writeTask('swapped', '0 6 * * *');
+    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
+
+    await reconciler.reconcile();
+    const task = store.getByFilePath(filePath)!;
+    approve(task.id);
+    expect(scheduler.isRegistered(task.id)).toBe(true);
+
+    await rm(filePath);
+    await reconciler.reconcile();
+
+    // Same path, same slug, a different hour to fire at.
+    await writeFile(filePath, skillFile('swapped', '0 23 * * *'), 'utf-8');
     await reconciler.reconcile();
 
     expect(store.getTask(task.id)?.status).toBe('pending_approval');

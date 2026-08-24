@@ -254,7 +254,7 @@ export function ScheduleApprovalCard({
             data-slot="schedule-file-origin"
             className="text-muted-foreground min-w-0 text-xs break-all"
           >
-            <FileCode2 className="mr-1 inline size-3.5 shrink-0 align-text-bottom" />
+            <FileCode2 aria-hidden className="mr-1 inline size-3.5 shrink-0 align-text-bottom" />
             {shortenHomePath(task.filePath)}
           </span>
         ) : (

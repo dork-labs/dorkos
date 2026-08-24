@@ -173,10 +173,18 @@ describe('ScheduleRow', () => {
     expect(screen.getByText('Its "cron" setting is not something DorkOS can read.')).toBeTruthy();
   });
 
-  it('says nothing extra about a schedule that is already running', () => {
-    renderScheduleRow({ ...activeSchedule, reason: 'A reason nobody needs to see now.' });
+  // `reason` on an agent's proposal is the AGENT'S case, not DorkOS's. It gets
+  // the approval card, which can say who is making it; a bare line in the row
+  // would be an argument on screen with nobody's name on it.
+  it('does not print an agent’s case as an unattributed line', () => {
+    renderScheduleRow({
+      ...pendingSchedule,
+      origin: null,
+      proposedByAgentPath: '/Users/dev/agents/dorkbot',
+      reason: 'The backlog piles up overnight and nobody sees it.',
+    });
 
-    expect(screen.queryByText('A reason nobody needs to see now.')).toBeNull();
+    expect(screen.queryByText('The backlog piles up overnight and nobody sees it.')).toBeNull();
   });
 
   it('opens dropdown menu with Edit, Run Now, Delete items', async () => {

@@ -346,3 +346,158 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     });
   });
 });
+
+/**
+ * Approving a schedule must not touch its file (DOR-1485 review, B1).
+ *
+ * Since schedulability became a frontmatter property, the route's read-merge-
+ * write cycle could destroy the very thing it was reading: an unreadable
+ * `schedule:` block parses to a complaint object, and merging that back replaced
+ * the author's cron with `{invalid, problem}` — after which the next read saw a
+ * valid EMPTY block, the schedule silently became on-demand, and the complaint
+ * that explained why was gone. Every part of that was reachable by clicking
+ * Approve, which changes nothing in the file at all.
+ */
+describe('PATCH /api/tasks/:id and a schedule-block file', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let dorkHome: string;
+  let scheduler: TaskSchedulerService;
+
+  /** A skill in the global skills root whose frontmatter carries a block. */
+  async function writeBlockSkill(slug: string, block: string): Promise<string> {
+    const dir = path.join(dorkHome, 'skills', slug);
+    await fs.mkdir(dir, { recursive: true });
+    const filePath = path.join(dir, SKILL_FILENAME);
+    await fs.writeFile(
+      filePath,
+      `---\nname: ${slug}\ndescription: A skill named ${slug}\nschedule:\n${block}\n---\nDo the thing.`,
+      'utf-8'
+    );
+    return filePath;
+  }
+
+  /** Seed the row discovery would have made, parked and waiting. */
+  function seedParked(slug: string, filePath: string, cron: string): string {
+    const task = store.createTask({
+      name: slug,
+      description: `A skill named ${slug}`,
+      prompt: 'Do the thing.',
+      cron,
+      timezone: 'UTC',
+      filePath,
+    });
+    store.updateTask(task.id, { status: 'pending_approval' });
+    return task.id;
+  }
+
+  beforeEach(async () => {
+    state.writeFailure = null;
+    scheduler = createMockScheduler();
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-block-'));
+
+    app = express();
+    app.use(express.json());
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    );
+  });
+
+  afterEach(async () => {
+    store.close();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('leaves the file byte-identical when a schedule is approved', async () => {
+    const filePath = await writeBlockSkill('nightly', "  cron: '0 9 * * *'");
+    const before = await fs.readFile(filePath, 'utf-8');
+    const id = seedParked('nightly', filePath, '0 9 * * *');
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ status: 'active', enabled: true });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('refuses to arm a schedule whose block does not read, and says why', async () => {
+    const filePath = await writeBlockSkill('broken', '  permissions: yolo');
+    const before = await fs.readFile(filePath, 'utf-8');
+    const id = seedParked('broken', filePath, '');
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ status: 'active', enabled: true });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('permissions');
+    // Refused whole: the file is untouched and the schedule is still waiting,
+    // where the person can see the complaint.
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
+    expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
+
+  it('writes a cron edit into the block, never at the top level', async () => {
+    const filePath = await writeBlockSkill('nightly', "  cron: '0 9 * * *'");
+    const id = seedParked('nightly', filePath, '0 9 * * *');
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    const raw = await fs.readFile(filePath, 'utf-8');
+    // The cron lives INSIDE the block — indented under `schedule:` — and there
+    // is exactly one of it. A file carrying a second, top-level `cron:` beside
+    // the block disagrees with itself forever: the row follows the block, so
+    // every sync reverts the edit and re-parks the schedule.
+    expect(raw).toMatch(/schedule:\n\s+cron: '?0 21 \* \* \*'?/);
+    expect(raw.match(/cron:/g)).toHaveLength(1);
+    expect(raw).not.toMatch(/^cron:/m);
+  });
+
+  it('never rewrites a skill an installed package owns', async () => {
+    const dir = path.join(dorkHome, '.dork', 'plugins', 'pack', 'skills', 'owned');
+    await fs.mkdir(dir, { recursive: true });
+    const filePath = path.join(dir, SKILL_FILENAME);
+    await fs.writeFile(
+      filePath,
+      "---\nname: owned\ndescription: A packaged skill\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.",
+      'utf-8'
+    );
+    const before = await fs.readFile(filePath, 'utf-8');
+    const id = seedParked('owned', filePath, '0 9 * * *');
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+
+    expect(res.status).toBe(409);
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
+  });
+
+  // The gap between the file write and the row write. A watcher event landing in
+  // it syncs the NEW file against the OLD row, and the arm gate parks the row —
+  // after which the route's own update would have written the caller's other
+  // fields over a schedule that was now silently waiting (DOR-1485 review, I2).
+  it('keeps the status the caller asked for when a sync parks the row mid-write', async () => {
+    const filePath = await writeBlockSkill('racy', "  cron: '0 9 * * *'");
+    const id = seedParked('racy', filePath, '0 9 * * *');
+    store.updateTask(id, { status: 'active' });
+
+    // Stand in for the watcher firing between the two writes.
+    const realUpdate = store.updateTask.bind(store);
+    let raced = false;
+    vi.spyOn(store, 'updateTask').mockImplementation((taskId, data) => {
+      if (!raced) {
+        raced = true;
+        realUpdate(taskId, { status: 'pending_approval' });
+      }
+      return realUpdate(taskId, data);
+    });
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ status: 'active', cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    vi.restoreAllMocks();
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+});

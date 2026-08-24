@@ -84,6 +84,42 @@ export interface ScheduleReliability {
  */
 export type UpsertFromFileOptions = FileSyncSource;
 
+/**
+ * The provenance columns a discovery sync may write to a row that ALREADY
+ * EXISTS — which is usually none of them.
+ *
+ * Discovery re-reads every file every five minutes, and the legacy roots it
+ * reads hold rows that discovery did not create: an agent's proposal, carrying
+ * the case it made for itself and the session it was proposed from, and an
+ * operator's own schedule, carrying nothing. Writing the arm gate's generic
+ * story over either one destroys real provenance — an agent's reason replaced
+ * by "DorkOS found this schedule in a file", an operator's row stamped
+ * `origin: 'file'` in flat contradiction of what that column means (DOR-1485
+ * review, B2).
+ *
+ * So:
+ *
+ * - `origin` is written only when the row was BORN from discovery. A row that
+ *   arrived through a route is never re-labelled by a later sync of its file.
+ * - `reason` is written only when discovery owns the row, or when the row has
+ *   no story of its own to overwrite.
+ *
+ * The arm STATUS is not conditional and is applied by the caller regardless:
+ * that is the security property, and it holds for every row whatever wrote it.
+ *
+ * @param existing - The row being updated.
+ * @param arm - What the arm gate decided.
+ * @returns The provenance columns to include in the update, possibly none.
+ */
+function fileProvenance(
+  existing: { origin: string | null; reason: string | null },
+  arm: { reason: string | null }
+): { reason?: string | null; origin?: 'file' } {
+  if (existing.origin === 'file') return { reason: arm.reason, origin: 'file' };
+  if (existing.reason === null) return { reason: arm.reason };
+  return {};
+}
+
 /** Fields that can be updated on a run. */
 interface RunUpdate {
   status?: TaskRunStatus;
@@ -824,13 +860,12 @@ export class TaskStore {
           // re-read above, so their choice holds.
           // `pending_approval` is untouched: that gate is a person's to clear.
           //
-          // Under the arm gate this un-pausing no longer applies at all: a
-          // returning file is content nobody has approved SINCE it came back,
-          // so `resolveFileArmStatus` sends it to `pending_approval` instead —
-          // the same verdict `keepsApprovedBypass` has always reached about a
-          // resurrected path, now applied to arming as well as to permissions.
+          // Under the arm gate this un-pausing is the gate's call instead: a
+          // returning file keeps its approval when the content key still
+          // matches (a save is an unlink-and-recreate), and re-parks when it
+          // does not.
           ...(arm
-            ? { status: arm.status, reason: arm.reason, origin: 'file' as const }
+            ? { status: arm.status, ...fileProvenance(existing, arm) }
             : existing.status === 'paused'
               ? { status: 'active' as const }
               : {}),
@@ -879,16 +914,33 @@ export class TaskStore {
    * live task in another project that happens to share the name — observed on
    * real data with two `flow-drain` tasks in different checkouts.
    *
+   * **`pending_approval` is never overwritten.** `paused` has to keep meaning
+   * exactly one thing — "this was live, and its file went away" — because the
+   * arm gate reads it as a still-standing approval that survived a save
+   * (`schedule-permission-clamp.ts`). Writing it over a schedule nobody ever
+   * approved would launder the missing approval: delete the file, let it come
+   * back, and a parked schedule would arm itself. Setting `enabled: false` is
+   * the whole of what a vanished file means for a row that was already waiting.
+   *
    * @param filePath - Absolute path to the SKILL.md that is no longer on disk
-   * @returns The number of tasks marked as paused (0 or 1)
+   * @returns The number of tasks marked as removed (0 or 1)
    */
   markRemovedByFilePath(filePath: string): number {
     // A file that came back is a fresh conflict, worth stating again.
     this.fileGates.forget(filePath);
     const now = new Date().toISOString();
+    const existing = this.db
+      .select({ status: pulseSchedules.status })
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.filePath, filePath))
+      .get();
     const result = this.db
       .update(pulseSchedules)
-      .set({ enabled: false, status: 'paused', updatedAt: now })
+      .set({
+        enabled: false,
+        ...(existing?.status === 'pending_approval' ? {} : { status: 'paused' as const }),
+        updatedAt: now,
+      })
       .where(eq(pulseSchedules.filePath, filePath))
       .run();
     return result.changes;

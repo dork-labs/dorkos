@@ -16,6 +16,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -70,6 +71,23 @@ export function legacyGlobalTasksRoot(dorkHome: string): string {
  */
 export function legacyAgentTasksRoot(projectPath: string): string {
   return path.join(projectPath, '.dork', 'tasks');
+}
+
+/**
+ * The directory names a root treats as containers rather than schedules.
+ *
+ * Only the LEGACY task roots have one: `templates/` is the task gallery, and it
+ * lives at `<dorkHome>/tasks/templates` (`task-templates.ts`). A skills root has
+ * no such container, so nothing is reserved there — reserving `templates`
+ * everywhere would make a skill legitimately named `templates` invisible to the
+ * tasks subsystem, hiding a real schedule to protect a directory that is not in
+ * that tree (DOR-1485 review, minor).
+ *
+ * @param kind - The root's kind.
+ * @returns Names to skip, empty for a skills root.
+ */
+export function reservedDirsFor(kind: TaskRootKind): readonly string[] {
+  return kind === 'legacy-tasks' ? RESERVED_TASK_DIRNAMES : [];
 }
 
 /** One root to watch and reconcile, with everything a sync needs to know about it. */

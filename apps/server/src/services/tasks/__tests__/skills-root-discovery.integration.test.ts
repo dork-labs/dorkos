@@ -27,6 +27,12 @@ import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { attachAgentRoots } from '../attach-task-roots.js';
 import { agentSkillsRoot, agentTaskRoots, globalTaskRoots } from '../skills-roots.js';
 import { legacyRoot, skillsRoot } from './task-root-fixtures.js';
+import {
+  describeArmBlocker,
+  isPackageOwned,
+  planTaskFileUpdate,
+  touchesFile,
+} from '../task-file-update.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -205,6 +211,36 @@ describe('schedules discovered in skills roots', () => {
       expect(store.getTasks()).toEqual([]);
     });
 
+    // Removing the block is how a person turns a scheduled task back into an
+    // ordinary skill. The watcher pauses the row when it sees that; the
+    // reconciler exists for the changes the watcher did NOT see, and skipping
+    // them there left an approved schedule firing forever off a file that no
+    // longer claims to be a schedule (DOR-1485 review, B3).
+    it('retires an approved schedule whose block was removed while nobody watched', async () => {
+      const filePath = await writeSkill('was-scheduled', scheduledSkill('was-scheduled', { cron: '0 9 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('was-scheduled');
+      approve(row.id);
+      expect(scheduler.isRegistered(row.id)).toBe(true);
+
+      // The block goes; the skill stays.
+      await writeFile(filePath, plainSkill('was-scheduled'), 'utf-8');
+      await reconciler.reconcile();
+
+      expect(store.getTask(row.id)?.status).toBe('paused');
+      expect(store.getTask(row.id)?.enabled).toBe(false);
+      expect(scheduler.isRegistered(row.id)).toBe(false);
+      // Paused, never deleted: the file is still there and the run history is
+      // the person's, not the block's.
+      expect(store.getTask(row.id)).not.toBeNull();
+    });
+
+    it('says nothing about a plain skill that never had a row', async () => {
+      await writeSkill('never-scheduled', plainSkill('never-scheduled'));
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+    });
+
     it('parks a skill whose schedule block does not parse, naming the problem', async () => {
       await writeSkill('broken-block', scheduledSkill('broken-block', { permissions: 'yolo' }));
 
@@ -275,6 +311,161 @@ describe('schedules discovered in skills roots', () => {
     });
   });
 
+  // The file is the person's, and DorkOS is a guest in it. These are the cases
+  // where the route used to write into it and should not have (DOR-1485 review,
+  // B1) — driven through `planTaskFileUpdate`, which is the decision the route
+  // makes, rather than through HTTP.
+  describe('editing a schedule never damages its file', () => {
+    it('does not consider the file touched by an approval', () => {
+      // `status` lives only in the row, and approving sends it alone.
+      expect(touchesFile({ status: 'active' })).toBe(false);
+      expect(touchesFile({ status: 'active', reason: 'because' })).toBe(false);
+      expect(touchesFile({})).toBe(false);
+      // Everything that IS in the file still counts — `permissionMode` included.
+      // It is operator-only, but it is also `permissions:` in the frontmatter,
+      // and a row holding a mode its own file contradicts is a standing lie in
+      // the source of truth that the next sync would revert.
+      expect(touchesFile({ permissionMode: 'acceptEdits' })).toBe(true);
+      expect(touchesFile({ cron: '0 9 * * *' })).toBe(true);
+      expect(touchesFile({ prompt: 'Do something else' })).toBe(true);
+      expect(touchesFile({ enabled: false })).toBe(true);
+    });
+
+    it('writes a cron edit into the schedule block, not at the top level', () => {
+      const content = scheduledSkill('nightly', { cron: '0 9 * * *' });
+      const plan = planTaskFileUpdate('/skills/nightly/SKILL.md', content, {
+        cron: '0 21 * * *',
+      });
+
+      if (plan.kind !== 'write') throw new Error('expected a write');
+      expect(plan.frontmatter.schedule).toEqual({ cron: '0 21 * * *' });
+      // The top-level key is where the old code put it, and a file carrying both
+      // disagrees with itself forever: the row follows the block, and every sync
+      // reverts the edit and re-parks the schedule.
+      expect(plan.frontmatter.cron).toBeUndefined();
+    });
+
+    it('keeps a hand-written block the size the author wrote it', () => {
+      const content = scheduledSkill('nightly', { cron: '0 9 * * *' });
+      const plan = planTaskFileUpdate('/skills/nightly/SKILL.md', content, {
+        displayName: 'Nightly sweep',
+      });
+
+      if (plan.kind !== 'write') throw new Error('expected a write');
+      // No `timezone`, `enabled` or `permissions` materialized into a file that
+      // never mentioned them.
+      expect(plan.frontmatter.schedule).toEqual({ cron: '0 9 * * *' });
+      expect(plan.frontmatter['display-name']).toBe('Nightly sweep');
+    });
+
+    it('refuses to rewrite a file whose block it cannot read', () => {
+      const content = scheduledSkill('broken', { permissions: 'yolo' });
+      const plan = planTaskFileUpdate('/skills/broken/SKILL.md', content, {
+        displayName: 'Broken',
+      });
+
+      // The old path spread the PARSED meta back, which replaced the author's
+      // settings with the complaint object and lost their schedule for good.
+      expect(plan.kind).toBe('refuse');
+    });
+
+    it('refuses to arm a schedule whose file does not read, naming the problem', () => {
+      expect(
+        describeArmBlocker('/skills/broken/SKILL.md', scheduledSkill('broken', { cron: '' }))
+      ).toMatch(/"cron"/);
+      expect(
+        describeArmBlocker('/skills/bad/SKILL.md', scheduledSkill('bad', { cron: 'banana' }))
+      ).toMatch(/banana/);
+      // A file that reads has nothing to say.
+      expect(
+        describeArmBlocker('/skills/ok/SKILL.md', scheduledSkill('ok', { cron: '0 9 * * *' }))
+      ).toBeNull();
+    });
+
+    it('treats an installed package’s skill as not ours to write', async () => {
+      const pluginSkill = path.join(dorkHome, '.dork', 'plugins', 'pack', 'skills', 'x', 'SKILL.md');
+      await mkdir(path.dirname(pluginSkill), { recursive: true });
+      await writeFile(pluginSkill, scheduledSkill('x', { cron: '0 9 * * *' }), 'utf-8');
+
+      expect(await isPackageOwned(pluginSkill)).toBe(true);
+      // Reached through the symlink an install leaves in `.agents/skills/`, the
+      // answer has to be the same — that is the path the row actually holds.
+      const link = path.join(skillsDir, 'pack__x');
+      await symlink(path.dirname(pluginSkill), link);
+      expect(await isPackageOwned(path.join(link, 'SKILL.md'))).toBe(true);
+
+      expect(await isPackageOwned(path.join(skillsDir, 'mine', 'SKILL.md'))).toBe(false);
+    });
+  });
+
+  // A discovery sync must never overwrite provenance it did not create
+  // (DOR-1485 review, B2). The legacy roots are full of rows discovery did not
+  // create: agent proposals, and the operator's own schedules.
+  describe('provenance discovery did not create', () => {
+    let legacyDir: string;
+
+    beforeEach(async () => {
+      legacyDir = path.join(projectPath, '.dork', 'tasks');
+      await mkdir(path.join(legacyDir, 'proposed'), { recursive: true });
+      await writeFile(
+        path.join(legacyDir, 'proposed', 'SKILL.md'),
+        legacyTaskFile('proposed', '0 4 * * *'),
+        'utf-8'
+      );
+      reconciler.addRoot(legacyRoot(legacyDir, 'project', projectPath, AGENT_ID));
+    });
+
+    it('leaves an agent’s parked proposal exactly as the agent left it', async () => {
+      const filePath = path.join(legacyDir, 'proposed', 'SKILL.md');
+      const seeded = store.createTask({
+        name: 'proposed',
+        description: 'A task named proposed',
+        prompt: 'Do the thing.',
+        cron: '0 4 * * *',
+        timezone: 'UTC',
+        filePath,
+      });
+      store.updateTask(seeded.id, { status: 'pending_approval' });
+      store.recordProposal(seeded.id, {
+        reason: 'The backlog piles up overnight and nobody sees it.',
+        proposedByAgentPath: '/Users/dev/agents/dorkbot',
+      });
+      const before = store.getTask(seeded.id)!;
+
+      await reconciler.reconcile();
+      await reconciler.reconcile();
+
+      const after = store.getTask(seeded.id)!;
+      // The agent's case, and who made it, survive every pass verbatim. The
+      // approval card is built out of these three fields.
+      expect(after.reason).toBe(before.reason);
+      expect(after.proposedByAgentPath).toBe(before.proposedByAgentPath);
+      expect(after.origin).toBeNull();
+      expect(after.status).toBe('pending_approval');
+    });
+
+    it('never stamps origin file on a schedule the operator made', async () => {
+      const filePath = path.join(legacyDir, 'proposed', 'SKILL.md');
+      const seeded = store.createTask({
+        name: 'proposed',
+        description: 'A task named proposed',
+        prompt: 'Do the thing.',
+        cron: '0 4 * * *',
+        timezone: 'UTC',
+        filePath,
+      });
+
+      await reconciler.reconcile();
+
+      const after = store.getTask(seeded.id)!;
+      expect(after.status).toBe('active');
+      // `origin: 'file'` means "nobody asked for this, DorkOS found it". Saying
+      // it about a row a person created through the app is simply false.
+      expect(after.origin).toBeNull();
+      expect(after.reason).toBeNull();
+    });
+  });
+
   describe('one real file is one schedule', () => {
     it('collapses a symlinked skill and its target into a single row', async () => {
       // The shape an installed marketplace plugin takes: `pkg__name` in
@@ -302,6 +493,45 @@ describe('schedules discovered in skills roots', () => {
       expect(row.filePath).toBe(await realPath(realFile));
       // First root wins the attribution, and keeps it across passes.
       expect(row.agentId).toBe(AGENT_ID);
+    });
+
+    // Uninstalling a package deletes the target; the link the watcher was
+    // watching is what it reports. The row is keyed on the target, so a pause
+    // that looked up the link matched nothing and the schedule kept firing for
+    // a package that is no longer installed (DOR-1485 review, I3).
+    it('retires a plugin schedule when its target is uninstalled', async () => {
+      const realDir = path.join(dorkHome, '.dork', 'plugins', 'pack', 'skills', 'sweep');
+      await mkdir(realDir, { recursive: true });
+      await writeFile(
+        path.join(realDir, 'SKILL.md'),
+        scheduledSkill('sweep', { cron: '0 3 * * *' }),
+        'utf-8'
+      );
+      const link = path.join(skillsDir, 'sweep');
+      await symlink(realDir, link);
+
+      await reconciler.reconcile();
+      const row = rowFor('sweep');
+      approve(row.id);
+      expect(scheduler.isRegistered(row.id)).toBe(true);
+
+      // The uninstall: the package's own directory goes, the link dangles.
+      await rm(realDir, { recursive: true, force: true });
+      await reconciler.reconcile();
+
+      expect(store.getTask(row.id)?.status).toBe('paused');
+      expect(scheduler.isRegistered(row.id)).toBe(false);
+    });
+
+    // The templates gallery is a container in the LEGACY task tree only, so a
+    // skills root reserves nothing — a person may name a skill `templates` and
+    // schedule it like any other.
+    it('lets a skill be named templates in a skills root', async () => {
+      await writeSkill('templates', scheduledSkill('templates', { cron: '0 7 * * *' }));
+
+      await reconciler.reconcile();
+
+      expect(rowFor('templates').cron).toBe('0 7 * * *');
     });
 
     it('never watches .claude/skills — the projection mirror', () => {

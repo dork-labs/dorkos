@@ -137,21 +137,42 @@ function keepsApprovedBypass(
 ): boolean {
   if (!existing) return false;
   if (existing.permissionMode !== 'bypassPermissions') return false;
-  return holdsGrantFor(existing, incoming);
+  // `active` only. A bypass is the largest grant DorkOS makes, and losing one to
+  // a transient pause costs nothing — the schedule drops to `acceptEdits`, which
+  // is the safe direction — so this side keeps the stricter reading.
+  return holdsGrantFor(existing, incoming, ['active']);
 }
 
 /**
  * Whether a person's approval of THIS row still covers the content arriving
  * from disk — the one condition both content-keyed gates are built on.
  *
- * Two clauses, each closing a proven exploit (the notes on
- * {@link keepsApprovedBypass} spell both out): the row must still be `active`,
- * so a grant cannot outlive the file it was made for and be inherited by
- * whatever writes that path next; and the content must be unchanged, so a
- * grant belongs to a specific piece of reviewed work rather than to a filename.
+ * Two clauses. The content must be unchanged, so a grant belongs to a specific
+ * piece of reviewed work rather than to a filename — that clause is shared and
+ * absolute. And the row must be in a status that still represents a live
+ * approval, which is the clause the two gates read differently, on purpose:
+ *
+ * - The **bypass** gate accepts `active` alone (see {@link keepsApprovedBypass}).
+ * - The **arm** gate also accepts `paused`, because `paused` is DorkOS's own
+ *   marker for "the file went away" and the commonest way a file goes away is
+ *   that it was saved: an atomic-rename write, and the marketplace install
+ *   transaction's backup-then-rename, both unlink the path before recreating it.
+ *   Re-parking there meant a plugin update silently un-approved every schedule
+ *   the package ships (DOR-1485 review, I1). With the content key unchanged,
+ *   what came back IS the reviewed work.
+ *
+ * `pending_approval` is in neither set: nobody ever approved it.
+ *
+ * @param existing - The row the file is landing on.
+ * @param incoming - The content arriving from disk.
+ * @param statuses - The row statuses this gate accepts as a live approval.
  */
-function holdsGrantFor(existing: ApprovedSchedule, incoming: IncomingTaskContent): boolean {
-  if (existing.status !== 'active') return false;
+function holdsGrantFor(
+  existing: ApprovedSchedule,
+  incoming: IncomingTaskContent,
+  statuses: readonly string[]
+): boolean {
+  if (!statuses.includes(existing.status)) return false;
   return (
     scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) ===
     scheduleContentKey(incoming)
@@ -165,6 +186,17 @@ function holdsGrantFor(existing: ApprovedSchedule, incoming: IncomingTaskContent
 const UNAPPROVED_REASON =
   'DorkOS found this schedule in a file on your computer. Nothing runs on a timer ' +
   'until you say so — read what it does below, then approve it or delete it.';
+
+/**
+ * Why a schedule that WAS approved is waiting again.
+ *
+ * A different sentence from {@link UNAPPROVED_REASON} because it is a different
+ * situation, and the first one would be a lie on a schedule the person made
+ * themselves months ago: nothing was "found", something changed.
+ */
+const CHANGED_REASON =
+  'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
+  'Read what it does now, then approve it or delete it.';
 
 /** What {@link resolveFileArmStatus} decided about a file-discovered schedule. */
 export interface FileArmVerdict {
@@ -218,9 +250,22 @@ export function resolveFileArmStatus(
   problem?: string | null
 ): FileArmVerdict {
   if (problem) return { status: 'pending_approval', reason: problem };
-  if (existing && holdsGrantFor(existing, incoming)) return { status: 'active', reason: null };
-  return { status: 'pending_approval', reason: UNAPPROVED_REASON };
+  if (existing && holdsGrantFor(existing, incoming, ARM_GRANT_STATUSES)) {
+    return { status: 'active', reason: null };
+  }
+  return {
+    status: 'pending_approval',
+    reason: existing ? CHANGED_REASON : UNAPPROVED_REASON,
+  };
 }
+
+/**
+ * The row statuses the arm gate reads as a live approval.
+ *
+ * `paused` is here because it is DorkOS's own "the file went away" marker, and
+ * an atomic-rename save trips it — see {@link holdsGrantFor}.
+ */
+const ARM_GRANT_STATUSES = ['active', 'paused'] as const;
 
 /**
  * Decide the permission mode a task's SKILL.md frontmatter actually gets, given

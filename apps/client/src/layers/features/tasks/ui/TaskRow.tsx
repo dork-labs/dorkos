@@ -189,8 +189,16 @@ export function TaskRow({
                 is — because the row is where a person meets it first and the
                 Approve button is right there. Without this line, a schedule
                 parked over a typo in its cron looks identical to one parked
-                only for a look. */}
-            {task.status === 'pending_approval' && task.reason && (
+                only for a look.
+
+                Gated on ORIGIN, not on status. `reason` means two different
+                things depending on where the row came from: DorkOS's own words
+                on a file-found schedule, and an AGENT'S CASE on one an agent
+                proposed. The second belongs on the approval card, which can say
+                who is making it — printing it here as a bare line would put an
+                agent's argument on screen with nothing attributing it (DOR-1485
+                review, I5). */}
+            {task.origin === 'file' && task.reason && (
               <div
                 data-slot="task-park-reason"
                 className="text-muted-foreground min-w-0 text-xs break-words"

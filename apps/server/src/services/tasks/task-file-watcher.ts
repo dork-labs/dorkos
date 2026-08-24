@@ -11,9 +11,8 @@ import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
-import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { readTaskRootFile } from './skills-root-discovery.js';
-import type { TaskRoot } from './skills-roots.js';
+import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -87,7 +86,7 @@ export class TaskFileWatcher {
     const isSkillFile = (filePath: string): boolean =>
       path.basename(filePath) === SKILL_FILENAME &&
       path.dirname(path.dirname(filePath)) === root.dir &&
-      !RESERVED_TASK_DIRNAMES.includes(path.basename(path.dirname(filePath)));
+      !reservedDirsFor(root.kind).includes(path.basename(path.dirname(filePath)));
     watcher.on('add', (filePath) => {
       if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);
     });
@@ -187,7 +186,7 @@ export class TaskFileWatcher {
       // shows one schedule while a different one fires — which is what a no-op
       // `onTaskChange` left this doing until the next restart.
       const { discovered } = outcome;
-      if (!this.identities.claim(discovered.def.filePath, root.dir)) return;
+      if (!this.identities.claim(discovered.def.filePath, root.dir, outcome.filePath)) return;
       const task = this.store.upsertFromFile(discovered.def, root.agentId, {
         source: 'discovery',
         problem: discovered.problem,
@@ -214,17 +213,23 @@ export class TaskFileWatcher {
       // Pause by exact path, not by slug: the same slug can exist in the global
       // root and in any number of project ones, and only this file was removed.
       //
-      // The path is used as-is rather than resolved, because a deleted file has
-      // no real path to resolve — `fs.realpath` on it throws ENOENT. For a
-      // symlinked entry that means the row keyed on the link TARGET is not
-      // paused here; the reconciler is the backstop for that, and the identity
-      // claim is released either way so another root can pick the file up.
+      // **By the path the ROW is keyed on, which is the resolved one.** A row
+      // discovered through a skills root holds its file's real path, and chokidar
+      // reports the path it was watching — the symlink. Pausing by the link
+      // therefore matched nothing, so uninstalling a package left its schedule
+      // firing from a row whose file no longer existed (DOR-1485 review, I3).
+      //
+      // A deleted file cannot be `realpath`-ed, so the mapping recorded when the
+      // file was last seen is what answers here; the raw path is the fallback for
+      // a legacy row, which was never resolved in the first place.
+      const identity = this.identities.resolvedFor(filePath) ?? filePath;
       this.identities.releasePath(filePath);
-      this.store.markRemovedByFilePath(filePath);
+      this.store.markRemovedByFilePath(identity);
       // Paused in the DB is not paused on the clock. Without this the job keeps
       // firing a task whose file — the source of truth for what it even does —
-      // is gone.
-      this.registrar.syncTaskByFilePath(filePath);
+      // is gone. Keyed on the same identity the pause used, or it looks up a row
+      // that is not the one just paused.
+      this.registrar.syncTaskByFilePath(identity);
       logger.info(`[TaskFileWatcher] Task file removed: ${dirName} (${root.scope})`);
     } catch (err) {
       // Contained for the same reason the change handler is: this runs inside a

@@ -266,8 +266,11 @@ describe('ScheduleApprovalCard — what it says', () => {
       })
     );
 
-    expect(await findSlot('schedule-file-origin')).toHaveTextContent(
-      '.agents/skills/nightly-sweep/SKILL.md'
+    // The WHOLE rendered string, so the home-directory shortening is actually
+    // under test: asserting a substring of the path would pass identically if
+    // `shortenHomePath` were dropped.
+    expect((await findSlot('schedule-file-origin'))?.textContent).toBe(
+      '~/project/.agents/skills/nightly-sweep/SKILL.md'
     );
     expect(slot('ask-detail')).toHaveTextContent('Found in a file on this computer');
     expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
@@ -283,7 +286,11 @@ describe('ScheduleApprovalCard — what it says', () => {
     );
 
     const reason = await findSlot('schedule-reason');
-    expect(reason).toHaveTextContent('"cron" is not a schedule DorkOS can read.');
+    // `textContent`, not `toHaveTextContent`: the matcher normalizes whitespace
+    // and happily matches a substring, so it passes with the curly quotes still
+    // wrapped around our sentence — which is the exact thing this case forbids.
+    expect(reason?.textContent).toBe('"cron" is not a schedule DorkOS can read.');
+    expect(reason?.textContent?.startsWith('“')).toBe(false);
     expect(reason).not.toHaveClass('italic');
   });
 });
