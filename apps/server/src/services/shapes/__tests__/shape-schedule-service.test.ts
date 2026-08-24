@@ -15,7 +15,7 @@ import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
-import { SHAPE_SCHEDULE_PERMISSION_MODES } from '@dorkos/marketplace/manifest-schema';
+import { SCHEDULE_PERMISSION_MODES } from '@dorkos/marketplace/manifest-schema';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -253,7 +253,7 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
   // and disk and DB disagree forever while the watcher re-rejects the file on
   // every touch. Driving the whole declarable set through the real writer +
   // real parser is what catches that; a hardcoded list of modes would not.
-  it.each(SHAPE_SCHEDULE_PERMISSION_MODES)(
+  it.each(SCHEDULE_PERMISSION_MODES)(
     'writes a file that parses back, and a matching DB row, for %s',
     async (mode) => {
       const request: CreateTaskRequest = {

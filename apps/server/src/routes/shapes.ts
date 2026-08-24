@@ -92,7 +92,7 @@ function requireShapeSlug(name: string, res: Response): string | null {
  *
  * **The argument is CREATION, not deletion.** `applyShape` creates every schedule
  * the Shape's manifest declares, ENABLED, each carrying the `permissionMode` that
- * manifest chose — and `SHAPE_SCHEDULE_PERMISSION_MODES` includes
+ * manifest chose — and `SCHEDULE_PERMISSION_MODES` includes
  * `bypassPermissions`. One call therefore arms recurring, unattended execution on
  * the operator's machine with every safety prompt off, at a time nobody is
  * watching. That is the same thing `gate-bypass-scan.test.ts` already protects
