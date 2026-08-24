@@ -226,6 +226,7 @@ export const CONFIG_DISCLOSURE = {
   'rooms.engagedWindowPosts': 'expose',
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
+  'rooms.responseGate': 'expose',
 
   // A room's own files: whether they are available at all, and the bounds a
   // merge is measured against. Plain numbers and a boolean about the person's

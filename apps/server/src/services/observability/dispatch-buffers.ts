@@ -67,6 +67,18 @@ export interface RecentRefusal {
   roomId?: string;
   authorId?: string;
   sessionId?: string;
+  /**
+   * The room entry it happened over, when there is one.
+   *
+   * An id, like every other field here, and that is the whole test for what may
+   * live on this interface: `GET /api/debug/refusals` answers without a
+   * credential while login is off, so the ring carries identifiers a reader
+   * correlates with and nothing a call site composed. `Refusal.detail` — which
+   * holds error strings and file paths on other paths — deliberately stays on
+   * the log line only, and `dispatch-buffers.test.ts` fails if it ever arrives
+   * here.
+   */
+  entryId?: string;
 }
 
 /**
@@ -206,6 +218,7 @@ export function recordRefusal(
     ...(refusal.roomId !== undefined ? { roomId: refusal.roomId } : {}),
     ...(refusal.authorId !== undefined ? { authorId: refusal.authorId } : {}),
     ...(refusal.sessionId !== undefined ? { sessionId: refusal.sessionId } : {}),
+    ...(refusal.entryId !== undefined ? { entryId: refusal.entryId } : {}),
   });
 }
 

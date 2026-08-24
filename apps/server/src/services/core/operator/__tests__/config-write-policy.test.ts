@@ -116,6 +116,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.repo.maxRepoBytes',
       'rooms.repo.maxRoomMdBytes',
       'rooms.repo.worktreeReapDays',
+      'rooms.responseGate',
       'rooms.turnLimitsEnabled',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',

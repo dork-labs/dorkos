@@ -123,6 +123,7 @@ import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './aut
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
+import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
 import { resolveAddressing } from './mentions.js';
 import type { ReactionBudget } from './reactions/reaction-budget.js';
@@ -264,6 +265,8 @@ export interface RoomServiceDeps {
   engagedWindow(): EngagedWindow;
   /** The live `rooms.collect*` ceilings, injected for the same reason. */
   collect(): CollectWindow;
+  /** The live `rooms.responseGate` setting, injected for the same reason. */
+  responseGate(): ResponseGateMode;
   /**
    * The live `rooms.lateReplyCeilingMinutes` in milliseconds — how long a room
    * waits on an agent busy elsewhere before it gives up. Injected for the same
@@ -685,6 +688,7 @@ export class RoomService {
       limitsFor: deps.limitsFor,
       engagedWindow: deps.engagedWindow,
       collect: deps.collect,
+      responseGate: deps.responseGate,
       holdCeilingMs: deps.holdCeilingMs,
       writer: {
         post: (roomId, input) => this.post(roomId, input),

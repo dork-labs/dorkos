@@ -430,6 +430,7 @@ export const CONFIG_WRITE_POLICY = {
   // the spend the collect mechanism exists to fold together.
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
+  'rooms.responseGate': 'operator-only',
 
   // Whether a room may have files at all. Operator-only in the plainest sense of
   // this list: an agent that turned it back on would be re-opening a surface the
@@ -940,6 +941,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.engagedWindowPosts',
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
+      'rooms.responseGate',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.maxPosts',
