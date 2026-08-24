@@ -11,6 +11,7 @@ import type {
   Session,
   SessionListResponse,
   UpdateSessionRequest,
+  SessionUpdateResponse,
   PermissionMode,
   HistoryMessage,
   TaskItem,
@@ -113,7 +114,11 @@ export function createDirectSessionMethods(
       return services.runtime.getCapabilities().type;
     },
 
-    async updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
+    async updateSession(
+      id: string,
+      opts: UpdateSessionRequest,
+      cwd?: string
+    ): Promise<SessionUpdateResponse> {
       const updated = await services.runtime.updateSession(id, {
         ...opts,
         // The request type carries any id the owning runtime declares (DOR-811);
@@ -123,8 +128,16 @@ export function createDirectSessionMethods(
         // that runtime's own mode descriptors, read from `getCapabilities()`.
         permissionMode: opts.permissionMode as PermissionMode | undefined,
       });
-      if (!updated) throw new Error(`Session not found: ${id}`);
-      return getSession(id, cwd);
+      if (!updated.updated) throw new Error(`Session not found: ${id}`);
+      // The embedded cockpit is answered as honestly as the HTTP one: a
+      // stricter mode the running reply never confirmed rides back on the
+      // session it was written to, so the surface can say when it starts
+      // (DOR-1435). There is no status code on this seam — the field is the
+      // whole signal.
+      const session = await getSession(id, cwd);
+      return updated.permissionModePendingUntilNextTurn
+        ? { ...session, permissionModePendingUntilNextTurn: true }
+        : session;
     },
 
     async forkSession(

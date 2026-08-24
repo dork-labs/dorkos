@@ -44,6 +44,10 @@ export { sessionKeys } from './api/query-keys';
 // `isBypassPermissionMode` is in `shared/lib`, not here: an integration binding is
 // an entity and cannot import a sibling entity, and it is one of the three surfaces
 // that must agree about what a bypass mode covers.
+//
+// `FULL_POWER_MARK_LABEL` is published so the row tests assert the exact shipped
+// string instead of re-hardcoding it — one source of truth for the mark's copy.
+export { FULL_POWER_MARK_LABEL } from './lib/permission-mode';
 export { useSessionDetail } from './model/use-session-detail';
 // The store itself is published (tests reset it between cases); the per-session
 // selector and its types stay slice-private — `useSessionStatus` is the only

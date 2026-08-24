@@ -20,7 +20,7 @@ describe('SessionStore.updateSession', () => {
   it('updates permissionMode when no activeQuery exists', async () => {
     store.ensureSession('s1', { permissionMode: 'default' });
     const result = await store.updateSession('s1', { permissionMode: 'plan' });
-    expect(result).toBe(true);
+    expect(result.updated).toBe(true);
     expect(store.findSession('s1')!.permissionMode).toBe('plan');
   });
 
@@ -44,7 +44,7 @@ describe('SessionStore.updateSession', () => {
 
     // Live failure is swallowed — no throw, no revert.
     const result = await store.updateSession('s1', { permissionMode: 'bypassPermissions' });
-    expect(result).toBe(true);
+    expect(result.updated).toBe(true);
     // New mode is kept (already persisted via write-through; applies next turn).
     expect(store.findSession('s1')!.permissionMode).toBe('bypassPermissions');
   });
@@ -56,7 +56,12 @@ describe('SessionStore.updateSession', () => {
     });
     store.findSession('s1')!.activeQuery = query;
 
-    await expect(store.updateSession('s1', { permissionMode: 'auto' })).resolves.toBe(true);
+    // `plan` → `auto` LOOSENS (it asks less and reaches further), so the
+    // refusal is left unreported: it costs extra prompts for one turn, nothing
+    // more (DOR-1435).
+    await expect(store.updateSession('s1', { permissionMode: 'auto' })).resolves.toEqual({
+      updated: true,
+    });
     expect(store.findSession('s1')!.permissionMode).toBe('auto');
   });
 
@@ -88,7 +93,7 @@ describe('SessionStore.updateSession', () => {
       permissionMode: 'bypassPermissions',
       model: 'claude-sonnet-4',
     });
-    expect(result).toBe(true);
+    expect(result.updated).toBe(true);
 
     const session = store.findSession('s1')!;
     // New mode kept and non-permission fields still applied — no early throw.
@@ -98,7 +103,7 @@ describe('SessionStore.updateSession', () => {
 
   it('auto-creates session for unknown sessionId', async () => {
     const result = await store.updateSession('new-s', { permissionMode: 'plan' });
-    expect(result).toBe(true);
+    expect(result.updated).toBe(true);
     expect(store.hasSession('new-s')).toBe(true);
     expect(store.findSession('new-s')!.permissionMode).toBe('plan');
   });

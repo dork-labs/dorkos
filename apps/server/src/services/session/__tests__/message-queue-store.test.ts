@@ -320,6 +320,20 @@ describe('MessageQueueStore', () => {
     });
   });
 
+  describe('listSessionIds', () => {
+    it('names each session once, however many messages it is holding', () => {
+      enqueue(store, 's1', 'one');
+      enqueue(store, 's1', 'two');
+      enqueue(store, 's2', 'three');
+
+      expect(store.listSessionIds().sort()).toEqual(['s1', 's2']);
+    });
+
+    it('is empty when nothing is queued', () => {
+      expect(store.listSessionIds()).toEqual([]);
+    });
+  });
+
   describe('deleteForSessions', () => {
     it('deletes every row of the named sessions and reports the count', () => {
       enqueue(store, 's1', 'one');

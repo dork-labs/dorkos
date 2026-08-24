@@ -169,11 +169,13 @@ export async function writeOrExplain(
  * with no server cannot read — a stand-in would be wrong for somebody's agent.
  */
 const AUTONOMY_CONSENT_TEXT = [
-  'Starting every new session in Full autonomy means your agents stop asking first.',
+  'Starting every new session in Full autonomy turns off the approval prompts.',
   '',
-  'A session that starts this way runs its tools without showing you an approval',
-  'card — no pause, no chance to say no, for every new session from now on until',
-  'you change it back.',
+  'A session that starts this way runs its tools without stopping for your OK on',
+  'each action — no pause, no chance to say no per action — for every new session',
+  'from now on until you change it back. Your agents still ask when something',
+  'genuinely needs your call, and they still follow anything you tell them to',
+  'check with you about.',
   '',
   'This covers tools inside the session. Actions on DorkOS itself, like removing',
   'packages, still ask.',

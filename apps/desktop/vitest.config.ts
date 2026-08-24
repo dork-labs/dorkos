@@ -3,7 +3,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/__tests__/**/*.test.ts'],
+    // `scripts/` is included alongside `src/` for the same reason
+    // tsconfig.scripts.json exists: the build/QA scripts are the enforcement
+    // machinery for everything else in this package, so leaving them untestable
+    // would leave the gates themselves ungated.
+    include: ['src/**/__tests__/**/*.test.ts', 'scripts/**/__tests__/**/*.test.ts'],
     globals: false,
     passWithNoTests: true,
     // The main-process tests wait on mock children behind real socket I/O (the

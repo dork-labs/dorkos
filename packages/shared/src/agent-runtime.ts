@@ -83,7 +83,7 @@ export type PermissionReach = 'read' | 'edit' | 'workspace' | 'everything';
 /**
  * Which question a mode answers.
  *
- * - `'trust'` — how much the agent may do without asking. These are the modes
+ * - `'trust'` — how much the agent may do before it checks with you. These are the modes
  *   the Trust Dial's three stops select between.
  * - `'working'` — how the agent goes about the work, whatever the trust level.
  *   Claude's `plan` is the only one today: it reads and proposes, and nothing
@@ -842,6 +842,34 @@ export interface ToolDecisionOptions extends InteractionAnswerOptions {
 }
 
 /**
+ * What a session update settled as — and, for the one field where the
+ * difference is a safety matter, whether it reached the turn already running.
+ *
+ * A settings write is persisted before the running turn is told about it
+ * (write-through, ADR-0260), so "saved" and "in force right now" are two
+ * different facts. They only ever diverge for a moment, and only when a turn is
+ * in flight — but for a permission mode the person just TIGHTENED, that moment
+ * is the one they were trying to prevent. A runtime that cannot confirm the
+ * change reached the running turn says so here rather than letting the caller
+ * report a change that has not taken.
+ */
+export interface SessionUpdateResult {
+  /** False when the session does not exist. */
+  updated: boolean;
+  /**
+   * The new permission mode is saved, but the turn already running keeps the
+   * looser one it started under — it applies from the next reply.
+   *
+   * Set ONLY when the change was a tightening (the agent must now ask more, or
+   * may reach less far) that the running turn did not confirm. A loosening in
+   * the same position is left unreported on purpose: it costs a few extra
+   * approval prompts for the rest of one turn and corrects itself, while a
+   * tightening leaves the agent holding permissions the person just withdrew.
+   */
+  permissionModePendingUntilNextTurn?: boolean;
+}
+
+/**
  * Universal contract for agent backends.
  *
  * All session lifecycle, messaging, storage queries, and synchronization operations
@@ -874,7 +902,14 @@ export interface AgentRuntime {
     opts?: { upToMessageId?: string; title?: string }
   ): Promise<Session | null>;
 
-  /** Update mutable session fields. Returns false if the session does not exist. */
+  /**
+   * Update mutable session fields.
+   *
+   * Never throws on a live-delivery failure: the choice is persisted first and
+   * applies on the next turn either way (ADR-0261). What the result carries is
+   * whether it also reached the turn already running — see
+   * {@link SessionUpdateResult}.
+   */
   updateSession(
     sessionId: string,
     opts: {
@@ -883,7 +918,7 @@ export interface AgentRuntime {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): boolean | Promise<boolean>;
+  ): SessionUpdateResult | Promise<SessionUpdateResult>;
 
   /**
    * Rename a session by setting a custom title.

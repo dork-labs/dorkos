@@ -343,9 +343,13 @@ export class SessionPump {
    * Unlike {@link dispatch}, this does not touch the state machine: a steer
    * joins the running turn rather than starting a new one, so the pump stays
    * `RUNNING` and the message rides the same held stream the opening message
-   * did, delivered by the CLI within the live turn. The windower correlates the
-   * turn's single `result` back by adding this message's id to the open window,
-   * which is the caller's job — this method only reaches the input stream.
+   * did, delivered by the CLI within the live turn IF that turn reaches a tool
+   * boundary to fold it in at — a turn that only writes prose does not, and
+   * answers the message afterwards as its own turn ({@link HeldUserPrompt.push}
+   * has the evidence and the two rejected alternatives). The windower correlates
+   * the turn's single `result` back by adding this message's id to the open
+   * window, which is the caller's job — this method only reaches the input
+   * stream.
    *
    * Amnesiac exactly as {@link dispatch} is: a `'delivered'` means the stream
    * accepted the message, never that the agent received it (see the module

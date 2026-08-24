@@ -348,25 +348,37 @@ async function deliverByDisposition(
       });
       return { degrade: 'unsupported' };
     }
-    // The runtime found nothing to join. TWO very different situations answer
-    // that way, and reporting both as `session-idle` is what let a steer become
-    // a silent follow-up turn (DOR-1268). So ask the session itself whether a
-    // turn was actually running:
+    // Whatever the refusal was, the server does not get to GUESS what the session
+    // is doing — that is the whole of DOR-1315, and the probe below is the only
+    // authority on it. `hasOpenTurn` reads the session's own projection: a turn
+    // opens at `turn_start` and closes at `turn_end`, which is exactly "something
+    // is producing right now".
+    const sessionKey = primaryOf(canonicalId);
+    const turnIsOpen = hasOpenTurn(sessionKey, projector);
+    // SOMEBODY ELSE holds the live write-lock, so this sender may not write into
+    // the turn. Ownership is a real, separate fact and gets its own word — but it
+    // is NOT on its own evidence that a turn is running: a lock outlives its turn
+    // until the release, the SSE close, or `SESSIONS.LOCK_TTL_MS` (five minutes).
+    // Asserting a running turn off the lock alone would be the same unchecked
+    // claim the ticket exists to remove, one refusal to the left, so the probe
+    // gates it — exactly as `refusesOpenTurn` pairs ownership with a producing
+    // check rather than trusting the lock by itself.
+    if (!result.authorized) {
+      return { degrade: turnIsOpen ? 'turn-owned-elsewhere' : 'session-idle' };
+    }
+    // The caller WAS allowed to steer and the runtime still did not deliver:
+    // either it found no turn to join, or the process's input stream had closed
+    // under one. Neither answer is evidence about the session either, so the same
+    // probe decides:
     //
     // - No turn open — the session was idle, or its turn ended between the click
-    //   and the POST. The message just runs now, which lost nothing, and this is
-    //   the one downgrade the UI stays quiet about (AC3).
-    // - A turn IS open and the runtime still could not join it — the mechanism
-    //   that cuts in is not under this session (claude-code on the resume path).
-    //   Nothing ran early; the words went to the back of the line, and the
-    //   sender is told so.
-    if (result.authorized && result.reason === 'no-open-turn') {
-      const sessionKey = primaryOf(canonicalId);
-      return { degrade: hasOpenTurn(sessionKey, projector) ? 'not-steerable' : 'session-idle' };
-    }
-    // A DIFFERENT client owns the live turn (unauthorized), or its input stream
-    // had already closed: there is no turn THIS caller may join, so it waits.
-    return { degrade: 'no-open-turn' };
+    //   and the POST. Nothing was there to cut into, so nothing was lost by not
+    //   cutting in, and this is the one downgrade the UI stays quiet about (AC3).
+    // - A turn IS open and the steer still could not join it — the mechanism that
+    //   cuts in is not under this session (claude-code on the resume path), or it
+    //   went away mid-turn. Nothing ran early; the words went to the back of the
+    //   line, and the sender is told so.
+    return { degrade: turnIsOpen ? 'not-steerable' : 'session-idle' };
   }
 
   // stage. The flag routes: a runtime that declares staging is asked to append to
@@ -417,9 +429,10 @@ async function deliverByDisposition(
     }
     return landed({ messageId, requested, applied: 'stage' });
   }
-  // A DIFFERENT client owns the live turn, so the runtime refused the write. The
-  // message waits in line rather than being lost — a rare cross-client race.
-  return { degrade: 'no-open-turn' };
+  // A DIFFERENT window owns the live turn, so the runtime refused the write. The
+  // message waits in line rather than being lost — a rare cross-client race, and
+  // named for what it is rather than as a turn that is not there (DOR-1315).
+  return { degrade: 'turn-owned-elsewhere' };
 }
 
 /**
@@ -1834,9 +1847,12 @@ export interface StageDeliveryResult extends RuntimeDeliveryResult {
  * deliverSteer}'s: the runtime's real write-lock via {@link
  * AgentRuntime.isLocked}, refusing only when a DIFFERENT client owns the live
  * turn. The one difference from a steer is what a FREE lock means. A steer with
- * no open turn is `no-open-turn` — there is nothing to join. A stage needs no
- * open turn at all: a free lock is the ordinary case, and a cold session is warmed
- * so the message can reach a transcript. So this never reports `no-open-turn`.
+ * no open turn has nothing to join, and the runtime answers `no-open-turn` (its
+ * own vocabulary, not the downgrade reason a person reads). A stage needs no open
+ * turn at all: a free lock is the ordinary case, and a cold session is warmed so
+ * the message can reach a transcript. So this never reports `no-open-turn`, and
+ * its ONE undelivered path is the lock refusal above — which the ladder reports
+ * as `turn-owned-elsewhere` when a turn is really open under it (DOR-1315).
  *
  * **Native, then fallback.** The runtime is asked to stage natively
  * ({@link AgentRuntime.deliverIntoTurn} with `mode: 'stage'`). A runtime that

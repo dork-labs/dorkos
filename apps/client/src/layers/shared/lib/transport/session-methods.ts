@@ -7,6 +7,7 @@ import type {
   Session,
   SessionListResponse,
   UpdateSessionRequest,
+  SessionUpdateResponse,
   HistoryMessage,
   TaskItem,
   SessionLockedError,
@@ -107,9 +108,16 @@ export function createSessionMethods(
       return res.runtime;
     },
 
-    updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
+    updateSession(
+      id: string,
+      opts: UpdateSessionRequest,
+      cwd?: string
+    ): Promise<SessionUpdateResponse> {
       const qs = buildQueryString({ cwd });
-      return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`, {
+      // A `202` is a success here, not a failure: the setting is saved and the
+      // body says which reply it starts on (DOR-1435). `fetchJSON` throws on
+      // `!res.ok`, so both 200 and 202 land in the same place.
+      return fetchJSON<SessionUpdateResponse>(baseUrl, `/sessions/${id}${qs}`, {
         method: 'PATCH',
         body: JSON.stringify(opts),
       });

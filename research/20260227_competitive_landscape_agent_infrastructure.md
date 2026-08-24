@@ -19,6 +19,8 @@ tags: [competitive-analysis, agent-infrastructure, market, positioning, agent-os
 
 The AI coding agent market is experiencing rapid fragmentation: every major player has shipped an "agentic" IDE or coding tool, but none has solved the infrastructure layer — scheduling, inter-agent messaging, discovery, remote access, and persistent cross-session state. Developer sentiment in 2025-2026 shows strong demand for background/scheduled execution and better multi-agent coordination, but the tools that address these needs are either enterprise-only (Devin), research-grade (SWE-Agent), or require leaving a laptop running (Cowork, Claude Code Remote). DorkOS occupies a defensible gap: a local-first, open-source, cross-platform agent OS layer that wraps existing agents (especially Claude Code) with the infrastructure primitives they lack.
 
+> **Correction (2026-08-23):** "require leaving a laptop running (Cowork, Claude Code Remote)" is out of date for Cowork. Anthropic now runs Cowork scheduled tasks, and Claude Code Routines, on its own cloud with the user's device off. See the dated correction under **Gap 1: Agent Scheduling** for sources and for what still separates DorkOS Pulse.
+
 ---
 
 ## Topic 1: Direct Competitors and Adjacent Products
@@ -281,6 +283,20 @@ The AI coding agent market is experiencing rapid fragmentation: every major play
 
 ### Gap 1: Agent Scheduling (Cron-Like Execution)
 
+> **Correction (2026-08-23) — this gap has closed for Anthropic; do not cite the "machine must stay awake" claim.**
+> The February 2026 finding below was accurate when written and is now out of date on both Anthropic products:
+>
+> - **Cowork.** Scheduled tasks run in Anthropic's cloud. Anthropic's own docs now say "Scheduled tasks run remotely, so they run on their cadence even when your computer is asleep or the Claude Desktop app is closed" and "Work continues in the background. Close your laptop and Claude keeps going." Cowork on web and mobile was announced 2026-07-07 and is **in beta** (Pro, Max, Team; Enterprise where an admin enables it), with access "rolling out over the next several weeks starting with Max users." Scheduled tasks themselves are available on the paid plans. Sources: [blog: Cowork on web and mobile](https://www.claude.com/blog/cowork-web-mobile) (2026-07-07 date + "Scheduled tasks now run with no device online"), [support.claude.com/13854387](https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork), [support.claude.com/15520349](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile) (beta status).
+> - **Claude Code.** The open question of whether device-off scheduling reached the coding product is now answered: **yes.** Claude Code **Routines** (research preview) "execute on Anthropic-managed cloud infrastructure ... so they keep working when your laptop is closed," on a schedule, an API call, or a GitHub event. Source: [code.claude.com/docs/en/routines](https://code.claude.com/docs/en/routines).
+>
+> **What is still true, and is the honest basis for positioning Pulse:** Anthropic makes you pick between reaching your disk and running with the device off — you don't get both.
+>
+> - **Every Anthropic path that reaches files on your machine still requires the desktop app open and the machine awake.** There is more than one such path, so don't call any single one "the only option": a Cowork scheduled task that "requires local files or apps ... will only run locally"; a Cowork cloud session, which "can read and write files in folders you've connected on your computer only while the desktop app is open on that computer"; and a Claude Code Desktop **local** scheduled task, which "only fires while the app is open and your computer is awake."
+> - **What genuinely runs with the device off is the cloud path, and it works from files in your Claude account or a fresh GitHub clone, not your working copy.** A Routine clones a GitHub repo fresh each run with no local file access; a Cowork cloud scheduled task "can't be tied to a folder on your computer."
+> - Cloud Routines are also one-vendor, GitHub-bound, capped at a one-hour minimum interval, and subject to a daily run cap.
+>
+> Sources: [desktop-scheduled-tasks](https://code.claude.com/docs/en/desktop-scheduled-tasks), [support 13854387](https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork), [support 15520349](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile).
+
 **Who has it:**
 
 - Devin: Yes — "Schedules" page with recurring sessions and email notifications. Most complete implementation.
@@ -296,6 +312,8 @@ The AI coding agent market is experiencing rapid fragmentation: every major play
 **Developer sentiment:** The #1 developer wish identified by RedMonk (December 2025): "Background Agents — queue tasks and let agents work autonomously, even overnight, with completed pull requests ready for review upon return." This is unmet for local/self-hosted agents.
 
 **DorkOS positioning:** Pulse (cron-like scheduler integrated into the server) is a direct, defensible answer to this gap. The key differentiator: Pulse runs server-side, not requiring the user's machine to be active. This is the critical limitation of Cowork's scheduling.
+
+> **Correction (2026-08-23):** the differentiator stated above no longer holds — see the correction at the top of this section. Anthropic now runs both Cowork tasks and Claude Code Routines in its own cloud. Pulse's real, still-true differences are that it schedules **every** runtime (Claude Code, Codex, OpenCode) rather than one vendor's, that it runs against your working directory on your own machine instead of a fresh cloud clone, and that its runs land in the same cockpit and rooms as the rest of your work.
 
 ---
 
@@ -451,6 +469,8 @@ Direct evidence from developer communities:
 
 **Implication for DorkOS:** A server-side scheduler (Pulse) that runs independently of the user's machine state is a concrete, tangible improvement over Cowork's implementation. This is a real pain point with documented community workarounds.
 
+> **Correction (2026-08-23):** the Willison constraint quoted above was fixed. Anthropic's docs now say Cowork scheduled tasks "run remotely ... even when your computer is asleep or the Claude Desktop app is closed," and Claude Code Routines run in Anthropic's cloud "when your laptop is closed." The sleep pain is still real for every Anthropic path that reaches files on your machine — a Cowork task needing local files, a cloud session on a connected folder, or a Claude Code Desktop local scheduled task all require the app open and the computer awake — but "Cowork can't run while you sleep" is no longer a true statement and must not be used in copy. See the correction under Gap 1 for sources and for the differentiators that do survive.
+
 ### Finding 5: Autonomous Agent Execution Sentiment Is Mixed But Growing
 
 From Anthropic's 2026 Agentic Coding Trends Report:
@@ -493,7 +513,7 @@ The current spectrum: fully cloud (Devin, $20-$500+/month) vs. fully manual DIY 
 
 Every Claude Code power user hits the same walls:
 
-- Want to schedule work → write a cron job manually or leave Mac on for Cowork
+- Want to schedule work → write a cron job manually or leave Mac on for Cowork _(**correction 2026-08-23:** Cowork and Claude Code Routines now schedule in Anthropic's cloud with your machine off — but a run that goes to the cloud works from files in your Claude account or a fresh GitHub clone, not your local working copy; the paths that do reach your disk still need the app open and the machine awake. See the correction under Gap 1.)_
 - Want multi-agent → spin up multiple terminals manually
 - Want notifications → wire up a separate webhook service
 - Want Obsidian integration → no official solution
@@ -563,6 +583,8 @@ Based on all research, ranked by evidence weight:
 
 1. **Server-side scheduling** — Only Devin (cloud, expensive) has reliable scheduling. Cowork's limitation is machine-dependent. Pulse is a concrete, unique capability.
 
+   > **Correction (2026-08-23):** no longer a unique capability on the "runs without your machine" axis — Anthropic ships cloud scheduling for both Cowork and Claude Code (Routines). Pulse is still the only one that schedules **all three** runtimes from one place. Scheduling against code on your own disk is not unique on its own — a Claude Code Desktop local task does that too, for Claude only, while its app is open — so the honest pairing is "every runtime, on your own machine, in the same cockpit," not "the only local scheduler." See the correction under Gap 1.
+
 2. **Cross-platform: browser + Obsidian + CLI** — No competitor has designed for this combination. Obsidian integration targets a specific, passionate, and growing note-taking-as-second-brain developer segment.
 
 3. **Local-first with optional remote access** — Claude Code Remote Control is rough and new. DorkOS has had ngrok tunnel integration for longer. The "your code stays on your machine" message resonates strongly with developers burned by cloud lock-in.
@@ -597,7 +619,7 @@ Based on all research, ranked by evidence weight:
 - **Pricing data is evolving:** Cursor, Cline, and Windsurf pricing changes frequently. Enterprise pricing for Devin is not publicly documented beyond the $20/month starting tier.
 - **Windsurf post-OpenAI acquisition:** The acquisition by OpenAI may change Windsurf's roadmap and positioning significantly. Some features may be deprecated or merged into OpenAI products.
 - **Claude Code Swarms:** Anthropic built a hidden multi-agent orchestration feature called "Swarms" discovered on January 24, 2026 via feature flag unlocking. The official roadmap for this feature is unknown and could change the Claude Code multi-agent competitive picture.
-- **Claude Cowork:** First impressions from Simon Willison (January 2026) indicate Cowork is a new product with rough edges. Its scheduling limitation (machine must be awake) may be addressed in a "Cowork Cloud" product that Willison hoped Anthropic was building.
+- **Claude Cowork:** First impressions from Simon Willison (January 2026) indicate Cowork is a new product with rough edges. Its scheduling limitation (machine must be awake) may be addressed in a "Cowork Cloud" product that Willison hoped Anthropic was building. **Correction (2026-08-23): Anthropic shipped it.** Cowork runs in the cloud, on web and mobile **in beta** as announced 2026-07-07, and its scheduled tasks no longer need the machine awake; Claude Code got the same capability as cloud Routines (research preview). See the correction under Gap 1.
 - **Market velocity:** The agentic AI market is moving extremely fast (A2A protocol launched April 2025, Claude Code Remote Control launched February 2026, Cursor 2.0 October 2025). Competitive positions shift on 3-month cycles.
 
 ---

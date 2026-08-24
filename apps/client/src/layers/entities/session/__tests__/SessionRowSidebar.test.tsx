@@ -281,7 +281,7 @@ describe('SessionRowSidebar', () => {
     );
 
     expect(
-      screen.getByRole('img', { name: 'Full power — runs without asking' })
+      screen.getByRole('img', { name: 'Full power — acts without approval prompts' })
     ).toBeInTheDocument();
   });
 
@@ -297,7 +297,7 @@ describe('SessionRowSidebar', () => {
       />
     );
 
-    const mark = screen.getByRole('img', { name: 'Full power — runs without asking' });
+    const mark = screen.getByRole('img', { name: 'Full power — acts without approval prompts' });
     expect(mark.getAttribute('class')).toContain('text-status-success');
     expect(mark.getAttribute('class')).not.toMatch(/red/);
   });
@@ -305,7 +305,7 @@ describe('SessionRowSidebar', () => {
   it('leaves the mark off a session that asks first', () => {
     renderRow(<SessionRowSidebar session={makeSession()} isActive={false} onSelect={() => {}} />);
     expect(
-      screen.queryByRole('img', { name: 'Full power — runs without asking' })
+      screen.queryByRole('img', { name: 'Full power — acts without approval prompts' })
     ).not.toBeInTheDocument();
   });
 

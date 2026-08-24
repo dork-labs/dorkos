@@ -159,6 +159,21 @@ describe('StagedContextStore.rekeySession — a hold follows the session that wa
   });
 });
 
+describe('StagedContextStore.listSessionIds — the boot reconcile finds a hold nobody announced', () => {
+  it('names each holding session once, however many notes it holds', () => {
+    const store = new StagedContextStore(db);
+    store.hold(SESSION, 'first', 'msg-1');
+    store.hold(SESSION, 'second', 'msg-2');
+    store.hold(OTHER, 'elsewhere', 'msg-3');
+
+    expect(store.listSessionIds().sort()).toEqual([SESSION, OTHER].sort());
+  });
+
+  it('is empty when nothing is held', () => {
+    expect(new StagedContextStore(db).listSessionIds()).toEqual([]);
+  });
+});
+
 describe('StagedContextStore.deleteForSessions — a session that is gone keeps nothing', () => {
   it('drops the named sessions and leaves the rest alone', () => {
     const store = new StagedContextStore(db);

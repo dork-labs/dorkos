@@ -472,3 +472,10 @@ ReactDOM.createRoot(document.getElementById('root')!, {
     </ErrorBoundary>
   </React.StrictMode>
 );
+
+// Disarm the boot sentinel in `index.html` (DOR-1451). Reaching this line means
+// the bundle evaluated and React has been handed the tree, which is the whole
+// question the sentinel exists to answer — everything after this (data, streams)
+// has its own error surfaces. Optional because embeds that do not use
+// `index.html` as their host document (Obsidian) never run the sentinel.
+window.__dorkosBoot?.done();

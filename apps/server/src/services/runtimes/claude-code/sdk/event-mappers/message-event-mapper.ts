@@ -3,6 +3,12 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../../agent-types.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
+import {
+  parseCreatedTaskId,
+  buildTaskIdAssignedEvent,
+  buildTaskRemovedEvent,
+} from '../build-task-event.js';
+import { logger } from '../../../../../lib/logger.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
 function extractToolResultText(content: unknown): string {
@@ -198,6 +204,40 @@ export async function* mapMessageEvent(
           if (toolState.resolvedResultIds.has(block.tool_use_id)) continue;
 
           const resultText = extractToolResultText(block.content);
+
+          // TaskCreate carries no id in its input — the tool_result is the
+          // only place the SDK's real id ever appears. Resolve the pending
+          // task (created under a provisional key, see `build-task-event.ts`)
+          // to that real id here, or drop it if the call failed (DOR-1441).
+          //
+          // `is_error` — not "did the text parse" — is what decides removal.
+          // A successful call whose confirmation text doesn't match the
+          // expected shape (a future SDK wording change, a leading blank
+          // block) must never look identical to a genuine failure: that
+          // would silently delete a task the SDK actually created. Keep the
+          // pending row and warn instead, so the drift is visible rather
+          // than a task quietly vanishing from the list.
+          if (toolState.toolNameById.get(block.tool_use_id) === 'TaskCreate') {
+            if (block.is_error) {
+              yield { type: 'task_update', data: buildTaskRemovedEvent(block.tool_use_id) };
+            } else {
+              const realId = parseCreatedTaskId(resultText);
+              if (realId) {
+                yield {
+                  type: 'task_update',
+                  data: buildTaskIdAssignedEvent(block.tool_use_id, realId),
+                };
+              } else {
+                logger.warn(
+                  'TaskCreate succeeded but its confirmation text did not match the expected ' +
+                    'format — keeping the task pending under %s: %s',
+                  block.tool_use_id,
+                  resultText
+                );
+              }
+            }
+          }
+
           if (resultText) {
             const uiResourceUri = extractUiResourceUri(resultText);
             yield {

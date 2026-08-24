@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { useModels } from './use-models';
 import { useSessionDetail } from './use-session-detail';
@@ -156,7 +157,24 @@ export function useSessionStatus(
       applyOverrides(sessionId, applied);
 
       try {
-        const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
+        // The pending flag is a fact about THIS write, not about the session, so
+        // it is split off before anything is cached: leaving it on the session
+        // would keep saying "starts on your next reply" long after that reply
+        // happened (DOR-1435).
+        const { permissionModePendingUntilNextTurn, ...updated } = await transport.updateSession(
+          sessionId,
+          opts,
+          selectedCwd ?? undefined
+        );
+        if (permissionModePendingUntilNextTurn) {
+          // The dial moves either way — the choice IS saved, and reverting it
+          // would be the bigger lie. What the person is owed is the one thing
+          // the dial cannot show: the reply already running did not get the
+          // message, so it is still working under the looser setting.
+          toast.warning('Saved — starts on your next message', {
+            description: 'The reply already running keeps the permission setting it started with.',
+          });
+        }
         queryClient.setQueryData(
           sessionKeys.detail(sessionId, selectedCwd),
           (old: Session | undefined) => ({

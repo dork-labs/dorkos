@@ -419,13 +419,16 @@ export function handleAskUserQuestion(
       toolCallId: toolUseId,
       questions,
       // `startedAt` and `timeoutMs` were missing here while `handleToolApproval`
-      // carries both, and `handleElicitation` carries `timeoutMs` (its own
-      // `startedAt` local is used only for the pending-interaction record, never
-      // pushed onto the event) — the normalizer's `remainingMs: data.remainingMs
-      // ?? data.timeoutMs ?? 0` had nothing to fall back to but `0`, so a LIVE
+      // carried both — the normalizer's `remainingMs: data.remainingMs ??
+      // data.timeoutMs ?? 0` had nothing to fall back to but `0`, so a LIVE
       // question landed with a dead countdown while the recovery snapshot (which
       // recomputes `remainingMs` from `startedAt` + this same budget) showed the
       // real deadline. Matching `handleToolApproval` is the fix (DOR-1323).
+      //
+      // All three handlers now stamp the same two facts (DOR-1442), which is
+      // what lets the anchor be the HANDLER's clock everywhere. Left to the
+      // normalizer's `?? Date.now()`, one prompt would be anchored where it was
+      // raised and another where it happened to be normalized.
       startedAt,
       timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
     },
@@ -510,6 +513,13 @@ export function handleElicitation(
       url: request.url,
       elicitationId: request.elicitationId,
       requestedSchema: request.requestedSchema,
+      // The same anchor + budget pair the other two handlers push. `startedAt`
+      // used to reach the pending-interaction record below and nothing else, so
+      // the durable member fell back to the normalizer's `Date.now()` — the
+      // event was anchored where it was NORMALIZED while its own recovery DTO
+      // was anchored where it was RAISED, and the two disagreed about when the
+      // clock started (DOR-1442).
+      startedAt,
       timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
     },
   });

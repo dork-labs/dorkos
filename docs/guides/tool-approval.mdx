@@ -148,12 +148,13 @@ Each session has a trust setting — one dial with three stops — that decides 
 
 - **Ask first**: Claude prompts before it edits a file or runs a command. Read-only and agent tools are still auto-approved. This is where every session starts.
 - **Act**: Claude edits files and runs routine commands on its own, and only stops to ask about the risky ones.
-- **Full autonomy**: every tool prompt inside the session is skipped. The first time you turn this on, DorkOS asks you to confirm what it means and writes down that you did; after that, the session runs without asking again.
+- **Full autonomy**: every tool approval prompt inside the session is skipped. The first time you turn this on, DorkOS asks you to confirm what it means and writes down that you did; after that, the session stops pausing for your approval on each tool call — though the agent still asks when something genuinely needs your call, and still follows anything you have told it to check with you about.
 
 <Callout type="warn">
-  Full autonomy turns off every prompt inside the session, so the agent edits files and runs
-  commands without stopping. Only use it in isolated environments where you trust the agent
-  completely.
+  Full autonomy turns off the approval prompts inside the session, so the agent edits files and runs
+  commands without stopping for your OK each time. Nothing waits on an approval tap — the agent
+  still asks when something genuinely needs your call, but it will not halt each action for you to
+  confirm. Only use it in isolated environments where you trust the agent completely.
 </Callout>
 
 Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
@@ -190,7 +191,7 @@ Auto mode trades constant approvals for autonomy on long-running work. Instead o
 
 > The agent runs on its own and only checks with you before risky actions, like deleting files or running unfamiliar commands. You can switch back anytime.
 
-After you confirm, the rest of that session switches to auto mode without asking again. You can leave auto mode whenever you want.
+After you confirm, the rest of that session runs in auto mode: no approval prompt for the routine steps, but it still checks with you before risky actions like deleting files or running unfamiliar commands. You can leave auto mode whenever you want.
 
 **Denials are visible.** When the classifier blocks a tool call, a read-only "blocked" chip appears in the chat showing what was denied and why. It's a record, not a prompt: there's no action to take and no re-approval path. This keeps auto mode honest: Claude never silently swallows a denied action.
 

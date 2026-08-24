@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { useTaskRuns, useCancelTaskRun } from '@/layers/entities/tasks';
+import { useInfiniteTaskRuns, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
@@ -262,36 +262,30 @@ const LIMIT = 20;
 /** Run history list for a Tasks schedule with status filtering and pagination. */
 export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
   const [statusFilter, setStatusFilter] = useState<TaskRunStatus | 'all'>('all');
-  const [offset, setOffset] = useState(0);
-  const [previousRuns, setPreviousRuns] = useState<TaskRun[]>([]);
 
   const status = statusFilter === 'all' ? undefined : statusFilter;
-  const { data: currentPage = [], isLoading } = useTaskRuns({
-    scheduleId,
-    status,
-    limit: LIMIT,
-    offset,
-  });
+  // Every loaded page stays live (see `useInfiniteTaskRuns`): a run that finishes
+  // while you are three pages down updates in place rather than spinning forever.
+  // The filter is part of the query key, so changing it starts a fresh list at
+  // page one without this component tracking an offset at all.
+  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteTaskRuns({
+      scheduleId,
+      status,
+      limit: LIMIT,
+    });
   const cancelTaskRun = useCancelTaskRun();
   const [, setActiveSession] = useSessionId();
   const [selectedCwd, setSelectedCwd] = useDirectoryState();
 
-  // Combine previously loaded runs with current page
-  const allRuns = useMemo(
-    () => (offset === 0 ? currentPage : [...previousRuns, ...currentPage]),
-    [offset, currentPage, previousRuns]
-  );
+  const allRuns = useMemo<TaskRun[]>(() => data?.pages.flat() ?? [], [data]);
 
   const handleLoadMore = useCallback(() => {
-    setPreviousRuns(allRuns);
-    setOffset((prev) => prev + LIMIT);
-  }, [allRuns]);
+    void fetchNextPage();
+  }, [fetchNextPage]);
 
-  // Reset pagination when filter changes
   const handleFilterChange = useCallback((value: string) => {
     setStatusFilter(value as TaskRunStatus | 'all');
-    setOffset(0);
-    setPreviousRuns([]);
   }, []);
 
   const handleNavigateToRun = useCallback(
@@ -310,6 +304,27 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
         <RunRowSkeleton />
         <RunRowSkeleton />
         <RunRowSkeleton />
+      </div>
+    );
+  }
+
+  // Before the empty state, never after it: a history we could not read is not
+  // a history with nothing in it, and "No runs yet" for a failed fetch is the
+  // panel inventing an answer it does not have.
+  if (isError && allRuns.length === 0) {
+    return (
+      <div className="space-y-2">
+        <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
+        <div className="py-4 text-center">
+          <p className="text-muted-foreground text-xs">Couldn&rsquo;t load this run history.</p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="text-muted-foreground hover:text-foreground mt-1 text-xs underline-offset-4 hover:underline"
+          >
+            Try again
+          </button>
+        </div>
       </div>
     );
   }
@@ -361,14 +376,14 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
           isCancelling={cancelTaskRun.isPending}
         />
       ))}
-      {currentPage.length === LIMIT && (
+      {hasNextPage && (
         <button
           type="button"
           onClick={handleLoadMore}
-          disabled={isLoading}
+          disabled={isFetchingNextPage}
           className="text-muted-foreground hover:bg-muted/50 hover:text-foreground mt-1 w-full rounded-md py-1.5 text-xs transition-colors disabled:opacity-50"
         >
-          {isLoading ? 'Loading...' : 'Load more'}
+          {isFetchingNextPage ? 'Loading...' : 'Load more'}
         </button>
       )}
     </div>

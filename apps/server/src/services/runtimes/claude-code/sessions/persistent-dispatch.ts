@@ -328,6 +328,17 @@ export class PersistentDispatch {
     // phantom detector (DOR-1087).
     session.contextBreakdown = undefined;
     session.interruptRequestedAt = undefined;
+    // And a Stop belongs to the turn it was pressed during, which the stop
+    // RECORD only gets right if this path says so (DOR-1320). On the resume
+    // path one query is one turn, so `stoppedQueries` is per-turn by
+    // construction; a pump runs many turns on ONE query object, so a single
+    // Stop would otherwise mark every later turn on that warm process as
+    // stopped — and the error-frame suppression it gates would swallow a
+    // genuine failure three turns later. Both slots, because the pump's
+    // `running` edge moves the live query between them (see below).
+    for (const spent of [session.activeQuery, session.lastQuery]) {
+      if (spent !== undefined) session.stoppedQueries?.delete(spent);
+    }
 
     // The ONE cwd resolution, handed to the gate below AND to the launcher
     // through the plan — the identity `dispatch-boundary.ts` requires, and the
@@ -474,7 +485,12 @@ export class PersistentDispatch {
    *
    * A steer does not open a turn: it pushes into the held input stream of the
    * one already running, reaching the CLI's own queue so the message is
-   * delivered within the live turn. So this returns a RECEIPT — the resulting
+   * delivered within the live turn — provided that turn reaches a tool boundary
+   * to fold it in at. A turn that only writes prose reaches none and answers the
+   * message afterwards as its own turn; `sdk/sdk-utils.ts` (`HeldUserPrompt.push`)
+   * carries the evidence and the two rejected alternatives. A `delivered` receipt
+   * here means the words reached the process, never that they cut in.
+   * So this returns a RECEIPT — the resulting
    * events surface on that turn's already-running stream (`streamTurnWindow`),
    * which another consumer is already draining, and a second generator here
    * would be two feeds fighting over one turn.

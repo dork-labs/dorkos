@@ -222,6 +222,52 @@ export function createApp() {
 }
 
 /**
+ * Cache-Control for the SPA shell, on both the static hit and the fallback.
+ *
+ * `no-store` rather than the `max-age=0` + ETag default: the shell names the
+ * exact content-hashed bundles of the build that produced it, so a shell held
+ * over from a previous version points at files that no longer exist on disk —
+ * a blank window with 404s in the console. A revalidating cache usually gets
+ * this right; a cache that cannot revalidate (offline, an intercepting proxy,
+ * a poisoned entry) does not. The shell is a few KB, so never storing it costs
+ * nothing and removes the failure mode outright.
+ */
+const SHELL_HEADERS = { 'Cache-Control': 'no-store' } as const;
+
+/**
+ * Cache-Control for content-hashed bundles under `/assets/`.
+ *
+ * The filename changes whenever the bytes do, so a cached copy can never be
+ * wrong — cache it for a year and let the shell (never stored, above) decide
+ * which filenames are current. A year is the conventional "effectively
+ * forever" max-age rather than any specified ceiling; `immutable` additionally
+ * suppresses the revalidation request a reload would otherwise send.
+ */
+const IMMUTABLE_ASSET_HEADER = 'public, max-age=31536000, immutable';
+
+/** Directory, relative to the client dist root, holding Vite's content-hashed output. */
+const HASHED_ASSET_DIR = 'assets';
+
+/**
+ * Pick the Cache-Control for one file served out of the client dist, or
+ * `null` to leave `express.static`'s defaults alone.
+ *
+ * Only the two paths whose caching can actually break the app are named: the
+ * shell file, and the directory of hashed bundles. Everything else at the dist
+ * root (favicon, manifest, icons) keeps `max-age=0` + ETag — cheap to
+ * revalidate, and harmless when stale.
+ *
+ * @param distPath - Absolute path of the client dist root.
+ * @param filePath - Absolute path of the file `express.static` resolved.
+ */
+function cacheControlForDistFile(distPath: string, filePath: string): string | null {
+  if (path.basename(filePath) === 'index.html') return SHELL_HEADERS['Cache-Control'];
+  const relative = path.relative(distPath, filePath);
+  if (relative.split(path.sep)[0] === HASHED_ASSET_DIR) return IMMUTABLE_ASSET_HEADER;
+  return null;
+}
+
+/**
  * Finalize the Express app by adding the API 404 catch-all, error handler,
  * and production SPA serving. Must be called after all API routes are mounted.
  */
@@ -237,7 +283,14 @@ export function finalizeApp(app: express.Express): void {
   // In production, serve the built React app
   if (env.NODE_ENV === 'production') {
     const distPath = env.CLIENT_DIST_PATH ?? path.join(__dirname, '../../client/dist');
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          const cacheControl = cacheControlForDistFile(distPath, filePath);
+          if (cacheControl) res.setHeader('Cache-Control', cacheControl);
+        },
+      })
+    );
     // SPA fallback: serve index.html for any GET/HEAD not handled by static
     // assets or the API routes above, so client-side deep links resolve. Two
     // Express 5 details: (1) a bare app.get('*') throws under path-to-regexp v8,
@@ -247,7 +300,7 @@ export function finalizeApp(app: express.Express): void {
     // the { root } form serves index.html reliably regardless of req.url.
     app.use((req, res, next) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-      res.sendFile('index.html', { root: distPath });
+      res.sendFile('index.html', { root: distPath, headers: SHELL_HEADERS });
     });
   }
 }

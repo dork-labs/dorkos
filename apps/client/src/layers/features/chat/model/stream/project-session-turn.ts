@@ -285,6 +285,10 @@ function foldQuestion(
 ) {
   const existing = findToolCallPart(parts, event.id);
   const countdownFields = {
+    // The budget rides the question member exactly as it rides the approval's
+    // (DOR-1442): without it a card can only count from the remainder it was
+    // handed, which restarts every time the card is rebuilt.
+    timeoutMs: event.timeoutMs,
     approvalStartedAt: event.startedAt,
     approvalRemainingMs: event.remainingMs,
   };
@@ -322,6 +326,10 @@ function foldElicitation(
     status: 'pending' as const,
     startedAt: event.startedAt,
     remainingMs: event.remainingMs,
+    // The budget, exactly as `foldApproval` and `foldQuestion` carry it — the
+    // wire member carries it for all three kinds, and this was the one fold that
+    // stopped it at the client (DOR-1442).
+    timeoutMs: event.timeoutMs,
   };
   const existing = findElicitationPart(parts, event.id);
   if (existing) {
@@ -720,7 +728,11 @@ function applyRecoveredHold(
     // Only when the DTO actually declares a budget: absent means "this runtime
     // did not say", not "no deadline", so clearing one the turn supplied would
     // take the countdown away rather than correct it.
-    if (dto.type === 'approval' && dto.timeoutMs !== undefined) toolCall.timeoutMs = dto.timeoutMs;
+    //
+    // Not restricted to approvals: a question is answered on the same card and
+    // its DTO carries the same budget, so reading only the approval's left a
+    // recovered question anchored to nothing (DOR-1442).
+    if (dto.timeoutMs !== undefined) toolCall.timeoutMs = dto.timeoutMs;
     // A PARKED prompt is the one case where the remainder is not a countdown:
     // it runs to the four-hour ceiling, while the budget the turn supplied is
     // ten minutes. Carried as its own fact, because inferring it from the two
@@ -732,6 +744,9 @@ function applyRecoveredHold(
   if (elicitation) {
     elicitation.startedAt = dto.startedAt;
     elicitation.remainingMs = dto.remainingMs;
+    // Same rule as the tool-call branch: take a budget the DTO declares, never
+    // clear one it merely omits.
+    if (dto.timeoutMs !== undefined) elicitation.timeoutMs = dto.timeoutMs;
   }
 }
 

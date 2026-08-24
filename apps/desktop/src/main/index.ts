@@ -18,6 +18,7 @@ import { watchNotifications } from './notifications';
 import { announceBackgroundRunning } from './background-notice';
 import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
+import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import {
   ACTIVITY_ROUTE,
   findDeepLinkArg,
@@ -287,6 +288,10 @@ if (!gotTheLock) {
       app.quit();
       return;
     }
+
+    // Must land before any window loads: a cache carried over from the previous
+    // version can serve a shell naming bundles this build does not ship.
+    await clearHttpCacheOnVersionChange();
 
     // 2. Create the main window (the renderer fetches the server port via IPC)
     createTrackedWindow();

@@ -44,13 +44,15 @@ function fakeMoment(id: string, priority: number): MomentDescriptor {
  * Drive the config half of the gate.
  *
  * @param onboarding - The onboarding timestamps, or `null` for "config has not loaded".
- * @param fetchedAfterMount - Whether this config came from the server on THIS page
- *   load. `false` models a warm boot serving the persisted cache, which is the
- *   default the tests below opt out of deliberately.
+ * @param confirmedThisLaunch - Whether the server confirmed this config during THIS
+ *   launch. Modelled through `dataUpdatedAt`, the field the gate actually reads: a
+ *   stamp after the launch began (`true`) is a fetch this session, one before it
+ *   (`false`) is a copy restored from a previous session's persisted cache — the
+ *   warm boot the tests below opt into deliberately.
  */
 function setOnboarding(
   onboarding: { completedAt?: string | null; dismissedAt?: string | null } | null,
-  fetchedAfterMount = true
+  confirmedThisLaunch = true
 ) {
   vi.mocked(useConfig).mockReturnValue({
     data:
@@ -63,7 +65,9 @@ function setOnboarding(
             },
           },
     isLoading: false,
-    isFetchedAfterMount: fetchedAfterMount,
+    // `LAUNCH_STARTED_AT` is sampled at module load, so a stamp a million ms on
+    // either side of "now" is unambiguously after or before this launch began.
+    dataUpdatedAt: confirmedThisLaunch ? Date.now() + 1_000_000 : Date.now() - 1_000_000,
     error: null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useConfig>);

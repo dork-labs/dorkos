@@ -22,7 +22,7 @@ const mockRuntime = {
   type: 'claude-code',
   ensureSession: vi.fn(),
   hasSession: vi.fn(() => false),
-  updateSession: vi.fn(() => true),
+  updateSession: vi.fn(() => ({ updated: true })),
   sendMessage: vi.fn(),
   approveTool: vi.fn(),
   submitAnswers: vi.fn(() => true),

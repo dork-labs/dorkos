@@ -167,7 +167,30 @@ export function CreateTaskDialog({
   function handleToggleEnabled(checked: boolean) {
     if (!editTask) return;
     setLocalEnabled(checked);
-    updateTask.mutate({ id: editTask.id, enabled: checked });
+    updateTask.mutate(
+      { id: editTask.id, enabled: checked },
+      // The switch moves before the server has agreed. When the PATCH fails, the
+      // shared mutation toast (`useUpdateTask`'s `meta.errorLabel`) says so — but
+      // the switch stayed where the click put it, so the dialog went on claiming
+      // a schedule was off when it was still running on its cron. Put it back.
+      //
+      // Back to the last value the server confirmed, not to what the switch read
+      // just before the click. Those differ the moment two toggles overlap, and a
+      // rollback to a stale local value is how you end up asserting a state
+      // nobody holds. The switch is disabled while a change is in flight (below),
+      // so overlapping toggles should not be reachable from the UI at all — this
+      // is the second lock on the same door, because `mutate` is callable from
+      // anywhere and a detached observer's `onError` never runs.
+      //
+      // The residual, stated honestly: `editTask` is a prop, so for one round
+      // trip after a SUCCESSFUL toggle it is stale by one write, and a failure
+      // landing inside that window rolls back one value behind. It self-heals
+      // rather than sticking — the success invalidated the list, and the refetch
+      // hands down a new `editTask` identity (structural sharing only preserves
+      // identity when the data is unchanged), which re-runs the sync effect above
+      // and sets `localEnabled` from it.
+      { onError: () => setLocalEnabled(editTask.enabled) }
+    );
   }
 
   const isPending = createTask.isPending || updateTask.isPending;
@@ -196,6 +219,11 @@ export function CreateTaskDialog({
                 className="ml-auto"
                 checked={localEnabled}
                 onCheckedChange={handleToggleEnabled}
+                // One change at a time. A second toggle issued while the first
+                // is still in flight detaches the first mutation's observer, so
+                // its `onError` never runs and a failed pair leaves the switch
+                // asserting the opposite of what the server holds.
+                disabled={updateTask.isPending}
                 aria-label={localEnabled ? 'Disable schedule' : 'Enable schedule'}
               />
             )}

@@ -103,6 +103,19 @@ declare global {
 
   interface Window {
     electronAPI?: ElectronAPI;
+    /**
+     * The boot sentinel installed by the inline script in `index.html`
+     * (DOR-1451). Absent wherever that document is not the host page — the
+     * Obsidian embed, and any test that mounts the app directly — so every
+     * caller must guard on it.
+     */
+    __dorkosBoot?: {
+      /**
+       * Boot succeeded: cancel the watchdog and stop buffering early errors.
+       * Called once, at `main.tsx`'s render call.
+       */
+      done(): void;
+    };
   }
 }
 

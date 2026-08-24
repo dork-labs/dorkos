@@ -1294,7 +1294,7 @@ describe('OpenCodeRuntime', () => {
 
       await expect(
         runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' })
-      ).resolves.toBe(true);
+      ).resolves.toEqual({ updated: true });
       expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
         permissionMode: 'bypassPermissions',
       });

@@ -140,6 +140,18 @@ vi.mock('../ui/WelcomeStep', () => ({
   ),
 }));
 
+// The power stage sits between requirements and the conversation, so stepping
+// Back out of the conversation lands here. Stubbed (its own writes are pinned in
+// OnboardingPowerStep.test) so this suite stays about the conversation's skip
+// semantics; "Answer power" advances back into the conversation.
+vi.mock('../ui/OnboardingPowerStep', () => ({
+  OnboardingPowerStep: ({ onAdvance }: { onAdvance: () => void }) => (
+    <div data-testid="power-step">
+      <button onClick={onAdvance}>Answer power</button>
+    </div>
+  ),
+}));
+
 import { OnboardingFlow } from '../ui/OnboardingFlow';
 
 /**
@@ -237,15 +249,17 @@ describe('onboarding skip semantics (DOR-472)', () => {
     expect(mockSaveRoles).not.toHaveBeenCalled();
   });
 
-  it('a skipped beat can be taken again: Back then Continue restarts the conversation', async () => {
+  it('a skipped beat can be taken again: Back then re-enter restarts the conversation', async () => {
     await renderFlow('/?onboarding=conversation');
     await screen.findByTestId('skip-personality');
     fireEvent.click(screen.getByTestId('skip-personality'));
     fireEvent.click(await screen.findByTestId('skip-profile'));
     await screen.findByText('Sure, look around');
 
+    // Back out of the conversation lands on the power stage (its predecessor);
+    // answering it re-enters the conversation from the top.
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    fireEvent.click(await screen.findByText('Continue'));
+    fireEvent.click(await screen.findByText('Answer power'));
 
     // The conversation replays from the top, so the personality beat is offered
     // again — the flow never traps a person behind a step they skipped.

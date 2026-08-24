@@ -302,7 +302,8 @@ export const DEGRADED: StatusScenario = {
       stop: 'autonomy',
       asks: 'never',
       reach: 'everything',
-      promise: 'Runs everything without asking, including outside this project.',
+      promise:
+        'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
     },
     plan: null,
     runtime: { isDefault: false, canSelect: false },

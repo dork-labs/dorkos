@@ -526,7 +526,7 @@ function declaredMode(
 function consentRequiredMessage(descriptor: PermissionModeDescriptor): string {
   return isAutonomyStop(descriptor)
     ? 'Turning on Full autonomy needs you to confirm what it means first.'
-    : 'This mode never stops to ask, so you need to confirm what it means first.';
+    : "This mode won't stop for approval on each action, so you need to confirm what it means first.";
 }
 
 // PATCH /api/sessions/:id - Update session settings
@@ -656,7 +656,7 @@ router.patch('/:id', async (req, res) => {
     effort,
     fastMode,
   });
-  if (!updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  if (!updated.updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
 
   const cwd = (req.query.cwd as string) || vaultRoot;
   if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
@@ -677,7 +677,28 @@ router.patch('/:id', async (req, res) => {
   }
   // The loose fallback is still Session-shaped on the wire, so it must carry
   // the required `runtime` field (task 1.1) — resolved from the owning runtime.
-  res.json(session ?? { id: sessionId, permissionMode, model, effort, runtime: runtime.type });
+  const body = session ?? { id: sessionId, permissionMode, model, effort, runtime: runtime.type };
+  // ## A tightening the running turn never confirmed is not a 200 (DOR-1435)
+  //
+  // Everything above is true of what DorkOS has STORED. When the runtime could
+  // not tell the turn already running about a mode the person just tightened,
+  // it is not true of what that turn will do — under a mode that never asks the
+  // CLI skips its approval callback entirely, so nothing on this side can put
+  // the prompts back for the reply already in flight. Answering `200
+  // {permissionMode:'default'}` there states a safety posture the agent has not
+  // adopted, which is the one direction this product must never be confidently
+  // wrong in.
+  //
+  // `202`, because the request was accepted and the change IS saved — it simply
+  // has not taken yet, which is exactly what 202 says and what a 4xx would deny.
+  // The field is what a client acts on; the status is what makes a client that
+  // reads neither at least not report certainty. LOOSENING stays a plain 200:
+  // an unconfirmed one costs a few extra approval prompts for the rest of one
+  // turn and corrects itself on the next.
+  if (updated.permissionModePendingUntilNextTurn) {
+    return res.status(202).json({ ...body, permissionModePendingUntilNextTurn: true });
+  }
+  res.json(body);
 });
 
 // POST /api/sessions/:id/fork - Fork a session

@@ -1,7 +1,7 @@
 ---
 id: 260822-235759
 title: Full power by default is consent-led — the door's accept writes the flips, never a migration
-status: proposed
+status: accepted
 created: 2026-08-22
 spec: full-power-defaults
 superseded-by: null

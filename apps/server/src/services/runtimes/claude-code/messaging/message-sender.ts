@@ -19,7 +19,7 @@ import {
 } from './empty-stream-guard.js';
 import { fireLaunchProbes } from './launch-probes.js';
 import type { AgentSession } from '../agent-types.js';
-import { createToolState } from '../agent-types.js';
+import { createToolState, stopWasAimedAt } from '../agent-types.js';
 import {
   detectPhantomCancellations,
   buildPhantomCorrectionNote,
@@ -208,7 +208,7 @@ export async function* executeSdkQuery(
    * ask: the empty-stream guards ask as a turn closes, the terminal synthesis
    * asks once the stream is over.
    */
-  const wasStopped = (): boolean => session.stoppedQueries?.has(agentQuery) === true;
+  const wasStopped = (): boolean => stopWasAimedAt(session, agentQuery);
   let eventCount = 0;
   let contentEventCount = 0;
   let wasInteractive = false;
@@ -438,7 +438,13 @@ export async function* executeSdkQuery(
       }
 
       let prevSdkId = session.sdkSessionId;
-      for await (const event of mapSdkMessage(result.value, session, sessionId, toolState)) {
+      for await (const event of mapSdkMessage(
+        result.value,
+        session,
+        sessionId,
+        toolState,
+        wasStopped
+      )) {
         // BEFORE this event leaves the server. The mapper may have just adopted
         // a new canonical id, and yielding first is what opened the window this
         // closes: `trigger-turn` re-keys the projector on every event it sees,

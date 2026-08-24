@@ -109,7 +109,7 @@ describe('renderPreview', () => {
     );
 
     expect(out).toContain('nightly-sweep: runs on 0 3 * * *, starts on');
-    expect(out).toContain('This job can run any command without asking you.');
+    expect(out).toContain('This job can run any command without a permission prompt.');
     expect(out).not.toContain('bypassPermissions');
   });
 

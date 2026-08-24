@@ -141,6 +141,7 @@
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage, UsageStatus } from '@dorkos/shared/types';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import { logger } from '../../../../lib/logger.js';
 import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
 import { validateDispatchBoundary } from '../dispatch-boundary.js';
@@ -223,6 +224,18 @@ const CONTINUATION_GRACE_MS = 500;
  * Measured from the first arming, and reset only by a discrete new reason to
  * expect a continuation — another `result` deferred, or another steer — never
  * by the process's own chatter, which is the whole point of having a cap.
+ *
+ * **What reaching the cap costs the person, stated plainly.** The window closes
+ * on the `result` it is holding, so the TURN is settled honestly. But a
+ * continuation that starts after this point starts with no window open, so
+ * `PersistentDispatch` drains it into nothing and logs
+ * `dropped model output nobody could project` at ERROR with a per-type census
+ * (`persistent-dispatch.ts`). Those words never reach the live stream — the
+ * person watching sees a finished turn and nothing more. They are not lost from
+ * the session: the CLI wrote them to its own transcript, so they reappear the
+ * next time the session is hydrated from disk. A healthy run must therefore
+ * never produce that error line, and it is the signal to raise this number
+ * (DOR-1438).
  */
 const CONTINUATION_CAP_MS = 5_000;
 
@@ -402,6 +415,30 @@ function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
 function readAnsweredId(message: SDKMessage): string | undefined {
   const named = (message as { user_message_uuid?: unknown }).user_message_uuid;
   return typeof named === 'string' && named.length > 0 ? named : undefined;
+}
+
+/**
+ * Whether this `result` closes a turn that was CUT SHORT — by a person, or by
+ * anything else that aborted it (DOR-1319).
+ *
+ * **Shape only, deliberately, and this is the one place that is enough.** The
+ * terminal reason says a turn was aborted and never by whom (see
+ * `sdk/sdk-error-mapping.ts`, which ANDs the same shape with DorkOS's own stop
+ * record before it will drop an error frame). This layer cannot ask the same
+ * question — it never sees the stop request and holds no session — but it does
+ * not need to, because of what it does with the answer: it skips an accounting
+ * fetch. A false positive costs one turn's context breakdown, which the next
+ * window's close refetches. Nothing about the turn's honesty rides on it, so
+ * the cheaper question is the right one HERE and would be the wrong one there.
+ *
+ * Read defensively, exactly as {@link readAnsweredId} is, and for the same
+ * reason: the field is not declared on every `result` member.
+ *
+ * @param message - The `result` closing a window
+ */
+function closesAnAbortedTurn(message: SDKMessage): boolean {
+  const reason = (message as { terminal_reason?: unknown }).terminal_reason;
+  return typeof reason === 'string' && isInterruptedTerminalReason(reason);
 }
 
 /**
@@ -995,8 +1032,19 @@ export class SessionTurnWindows {
     // and a close re-entering it there would attribute the next message to a
     // window that no longer exists.
     const remaining = Math.max(0, record.graceDeadline - Date.now());
-    const capped = remaining === 0;
     const delay = wait === 'until-cap' ? remaining : Math.min(grace, remaining);
+    // Whether this timer is armed to end AT the cap rather than at a full
+    // grace — which is the honest meaning of `capped`, and is decidable right
+    // here (DOR-1438). It is exactly `delay === remaining`, spelled out because
+    // the two ways to reach it are worth naming: an `until-cap` arm by
+    // definition, and a `grace` arm with less than one grace of cap left.
+    //
+    // The predicate this replaced was `remaining === 0`, which answers a
+    // different question — "was the cap ALREADY spent when we armed" — and so
+    // reported `false` for the ordinary way a window reaches its cap. Asking at
+    // EXPIRY instead is no better: timers fire late far more often than early,
+    // and a late fire would relabel a plain grace expiry as capped.
+    const capped = delay === remaining;
     record.grace = setTimeout(() => {
       record.grace = undefined;
       // Another path may have settled this window while the timer ran — a
@@ -1116,9 +1164,28 @@ export class SessionTurnWindows {
     this.closingWindows.add(closing);
   }
 
-  /** The body of {@link finish}, kept awaitable. */
+  /**
+   * The body of {@link finish}, kept awaitable.
+   *
+   * **A window closing on a STOP does not spend the accounting budget**
+   * (DOR-1319). `STOP_ACK_TIMEOUT_MS` bounds the ack and nothing else, so what
+   * a person actually waits through after pressing Stop is the ack, then the
+   * CLI's own unwind, then — on this path only — two more control round-trips
+   * against the very channel that just took the interrupt, on their own 8 s
+   * budget. That is 2.7× the Stop bound spent after the turn is already over,
+   * and it is the one segment DorkOS owns: a Stop measured at 7.6 s settled
+   * with its streaming already stopped 7.5 s earlier, so the operator watched a
+   * live-looking turn with a Stop button on it and nothing moving.
+   *
+   * What skipping costs is one turn's context breakdown and one utilization
+   * reading. Neither is lost for long — the next window's close fetches both,
+   * and the strip simply holds its previous values until then — and the money
+   * figure is not involved at all, because `total_cost_usd` rides on the
+   * `result` itself. Weighed against a person waiting on their composer, that
+   * is not a close call.
+   */
   private async settle(record: WindowRecord, result: SDKMessage): Promise<void> {
-    await this.fetchUsage();
+    if (!closesAnAbortedTurn(result)) await this.fetchUsage();
     record.channel.push(result);
     record.channel.end();
     // Only a window a dispatch opened has a pump turn behind it. A runtime

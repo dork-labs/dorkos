@@ -72,7 +72,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
       releaseLock: vi.fn(),
       isLocked: vi.fn(() => false),
       getLockInfo: vi.fn(() => null),
-      updateSession: vi.fn(() => true),
+      updateSession: vi.fn(() => ({ updated: true })),
       submitAnswers: vi.fn(() => true),
       getCommands: vi.fn(async () => ({ commands: [], lastScanned: '' })),
     })),

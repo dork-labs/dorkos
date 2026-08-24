@@ -95,7 +95,8 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
-        promise: 'Runs everything without asking, including outside this project.',
+        promise:
+          'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
       },
     ],
   },

@@ -2,11 +2,41 @@
   "version": 1,
   "specs": [
     {
+      "id": "260823-194809",
+      "slug": "universal-scheduled-tasks",
+      "title": "Universal scheduled tasks — any skill can be scheduled",
+      "created": "2026-08-23",
+      "status": "specified"
+    },
+    {
+      "id": "260823-174248",
+      "slug": "comparison-pages",
+      "title": "/compare — SEO comparison pages driven by the feature catalog",
+      "created": "2026-08-23",
+      "status": "specified"
+    },
+    {
+      "id": "260823-163823",
+      "slug": "desktop-updater-overhaul",
+      "title": "Desktop updater overhaul: self-verifying installs, honest failure surfaces",
+      "created": "2026-08-23",
+      "status": "specified",
+      "project": "Desktop Resilience"
+    },
+    {
+      "id": "260823-163822",
+      "slug": "desktop-renderer-supervision",
+      "title": "Desktop renderer supervision: heartbeat, recovery ladder, fallback page",
+      "created": "2026-08-23",
+      "status": "specified",
+      "project": "Desktop Resilience"
+    },
+    {
       "id": "260822-235213",
       "slug": "full-power-defaults",
       "title": "Full power by default: one-door consent, open mesh, Control Center, green-unlocked UI",
       "created": "2026-08-22",
-      "status": "specified",
+      "status": "implemented",
       "project": "Full Power by Default"
     },
     {

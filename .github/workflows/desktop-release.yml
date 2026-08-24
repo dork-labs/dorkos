@@ -7,8 +7,9 @@ name: Desktop Release
 # its own release or rewrites the human-written notes:
 #
 #   - macOS (build-macos): signs + notarizes the arm64 app, attaches
-#     .dmg + .zip + latest-mac.yml. electron-updater (Squirrel.Mac) reads the
-#     .zip as the update payload; the .dmg is the human-facing installer.
+#     .dmg + .zip + .blockmap + latest-mac.yml. electron-updater (Squirrel.Mac)
+#     reads the .zip as the update payload and the .blockmap for differential
+#     (delta) downloads; the .dmg is the human-facing installer.
 #   - Windows (build-windows): packages an UNSIGNED x64 NSIS installer
 #     (signing is a business-gated follow-up — see
 #     specs/desktop-windows-support/02-specification.md "Decision: signing"),
@@ -124,6 +125,7 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
 
       # Attaches the macOS artifacts to the vX.Y.Z release that /system:release
       # created (Phase 6.11). This step is ATTACH-ONLY on purpose: `gh release
@@ -146,7 +148,11 @@ jobs:
       # The .zip must ship alongside the .dmg: latest-mac.yml points
       # electron-updater (Squirrel.Mac) at the zip as the update payload, so
       # a release without it 404s every auto-update check. The dmg is only
-      # the human-facing installer.
+      # the human-facing installer. The .blockmap files (one per target) enable
+      # differential (delta) downloads for Squirrel.Mac auto-updates — without
+      # them electron-updater logs "Cannot download differentially… status 404"
+      # and falls back to a full download every time (confirmed in a real
+      # user's log).
       - name: Attach macOS artifacts to the release
         if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
         env:
@@ -172,6 +178,7 @@ jobs:
           gh release upload "$tag" \
             apps/desktop/release/*.dmg \
             apps/desktop/release/*.zip \
+            apps/desktop/release/*.blockmap \
             apps/desktop/release/latest-mac.yml \
             --clobber
 

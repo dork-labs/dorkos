@@ -230,14 +230,36 @@ export function getSimplePreview(config: SimpleConfig): string {
   }
 }
 
+const INVALID_CRON_MESSAGE = 'Invalid cron expression';
+
+/**
+ * Whether a cron expression is one this builder can read back to the person.
+ *
+ * An empty expression is valid: a schedule's cron is optional, and a task with
+ * none simply never runs on a timer.
+ *
+ * The submit button reads this too, so the form can never accept the expression
+ * it is showing in red — the same predicate answers both questions and they
+ * cannot drift apart.
+ *
+ * @param cron - The raw cron expression from the escape-hatch input.
+ */
+export function isCronValid(cron: string): boolean {
+  const trimmed = cron.trim();
+  if (!trimmed) return true;
+  try {
+    cronstrue.toString(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Get a human-readable preview of a raw cron expression using cronstrue. */
 function getCronPreview(cron: string): string {
-  if (!cron.trim()) return '';
-  try {
-    return cronstrue.toString(cron);
-  } catch {
-    return 'Invalid cron expression';
-  }
+  const trimmed = cron.trim();
+  if (!trimmed) return '';
+  return isCronValid(trimmed) ? cronstrue.toString(trimmed) : INVALID_CRON_MESSAGE;
 }
 
 // ─── Component ───────────────────────────────────────────────────────
@@ -328,9 +350,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
           <p
             className={cn(
               'text-xs',
-              getCronPreview(value) === 'Invalid cron expression'
-                ? 'text-destructive'
-                : 'text-muted-foreground'
+              isCronValid(value) ? 'text-muted-foreground' : 'text-destructive'
             )}
           >
             {getCronPreview(value)}
