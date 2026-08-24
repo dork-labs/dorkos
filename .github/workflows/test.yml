@@ -39,31 +39,36 @@ name: test
 # failure into a green check. Flake that shows up here should be fixed, not
 # retried. (This does mean the same commit can pass one gate and fail the other
 # — the retry setting is the reason, and it is intentional.)
-# MERGE-GROUP ONLY, and REQUIRED there, as of 2026-08-23. The `merge_group`
-# trigger was added first precisely so this could one day become a required
-# check (a required check must report on merge groups or the queue blocks
-# forever); the ruleset toggle is now flipped, which un-inverts the old shape
-# where the cheapest policy checks gated `main` while the most expensive and
-# most valuable signal was advisory — on 2026-08-23 this suite failed twice in
-# a merge group and the entries merged anyway.
+# TWO EVENTS, TWO DEPTHS, ONE REQUIRED CONTEXT (2026-08-23/24). The full suite
+# runs on `merge_group`, where it is a REQUIRED check of the merge queue — the
+# ruleset toggle this file's `merge_group` trigger always anticipated. That
+# un-inverts the old shape where the cheapest policy checks gated `main` while
+# the most expensive signal was advisory: on 2026-08-23 this suite failed twice
+# in a merge group and the entries merged anyway (one of those reds WAS a real
+# two-PR clash, and it landed).
 #
-# The pull_request and push-to-main triggers were dropped the same day, for
-# capacity: three full-suite runs per merged PR on a Free-plan org capped at 20
-# concurrent hosted jobs had CI 88-runs-deep in queue and the merge queue two
-# hours long (browser-test.yml's header carries the full measurements). What
-# each dropped trigger was for, and where that need went:
+# On `pull_request` the same job runs `--affected` only. This is NOT for
+# thoroughness — the queue owns thoroughness — it exists because a required
+# check must SUCCEED ON THE PULL REQUEST before GitHub lets the PR into the
+# queue at all. That is measured, not assumed: PR #1246 removed the
+# pull_request trigger entirely, sat armed and green for 15 hours, and
+# `enqueuePullRequest` refused it with "required status checks have not
+# succeeded: expected" — a merge_group-only required check deadlocks every PR
+# out of the queue. So the PR leg is the cheapest run that is still an honest
+# signal: the same `turbo test --affected` the lefthook pre-push gate runs,
+# minutes not half-hours, and it reports the `test` context the ruleset
+# requires. The full-monorepo sweep, the `--concurrency=1` discipline and the
+# cache-replay assertion below stay with the queue run, which tests `main`
+# plus everything ahead in the queue plus this PR — the #488/#489 class two
+# branches cannot see alone.
 #
-#   * pull_request: fast feedback during review. That now comes from the
-#     lefthook pre-push `--affected` gate (the survivable local half of
-#     DOR-544's fix) plus typecheck and the policy checks on the PR. The full
-#     sweep still stands between every PR and main — it runs in the queue,
-#     where a red kicks the entry out and the PR cannot land.
-#   * push to main: proving main is green. The queue already proved it — the
-#     merge-group run tests `main` plus everything ahead in the queue plus this
-#     PR (the #488/#489 class: two changes green apart, red together), and the
-#     squash that lands rewrites the SHA, not the content. A direct push to
-#     main bypasses this, but it bypasses the queue and every other gate too.
+# The old push-to-main trigger stays dropped: the queue already tested the
+# byte-identical tree (squash rewrites the SHA, not the content), and the
+# post-merge re-run was a third full-price copy per merged PR on a runner pool
+# that was 88 runs deep on 2026-08-23. A direct push to main bypasses this,
+# but it bypasses the queue and every other gate too.
 on:
+  pull_request:
   merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -71,17 +76,15 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Every merge-group build gets its own unique ref
-# (gh-readonly-queue/main/pr-<n>-<sha>), so grouping by ref means no two runs
-# ever share a group and nothing is ever cancelled by this block — the queue
-# itself supersedes builds, by dequeuing them, and a dequeued entry's run is
-# cancelled by GitHub. The block stays (deliberately IDENTICAL in form to
-# browser-test.yml — keep them in step) so that a future re-added trigger
-# inherits sane grouping instead of none; the history of why grouping semantics
-# matter here is #543 (DOR-517), where real merges' runs were cancelled before
-# they ever started.
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a
+# group and are never cancelled by this block — the queue supersedes builds by
+# dequeuing them. Deliberately IDENTICAL in form to browser-test.yml (keep
+# them in step); the history of why grouping semantics matter is #543
+# (DOR-517), where real merges' runs were cancelled before they ever started.
 concurrency:
   group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -142,7 +145,24 @@ jobs:
       # gate people cannot trust is a gate people route around. Retries would
       # have hidden this; running the work properly fixes it.
       - name: Run every package's test suite
+        if: ${{ github.event_name == 'merge_group' }}
         run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run
+
+      # The PR leg: affected packages only — the same scope the lefthook
+      # pre-push gate runs, for the same reason (fast, survivable), except on a
+      # clean runner instead of a loaded dev machine. Its job is to catch a red
+      # the author's own diff causes and to report the required `test` context
+      # so the PR can enter the merge queue (see the header); the full sweep is
+      # the queue run above. `--concurrency=1` for the DOR-121 reason on that
+      # run: ubuntu-latest has 4 cores and a fanned-out vitest starves itself
+      # into timeout flakes. TURBO_SCM_BASE names the comparison base
+      # explicitly — the checkout is a detached merge ref with no local `main`,
+      # so turbo's default base does not resolve here.
+      - name: Run the affected packages' test suites
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 29 successful, 29 total" (18 test tasks plus the 11 builds they
@@ -154,9 +174,12 @@ jobs:
       # script. See scripts/assert-tests-executed.sh for why this rather than
       # --force, and scripts/test-assert-tests-executed.sh for its fixtures.
       #
-      # It runs only when the previous step succeeded (default `if: success()`),
-      # which is exactly right — a red suite is already a red job, and the
-      # question "did anything actually run" only matters when the answer looks
+      # Merge-group only, twice over: the run it audits is the merge-group one
+      # (the PR leg deliberately runs a SUBSET, which this script would rightly
+      # refuse as "fewer packages ran than declare a test script"), and it
+      # runs only when that step succeeded — a red suite is already a red job,
+      # and "did anything actually run" only matters when the answer looks
       # like yes.
       - name: Prove the suite actually executed
+        if: ${{ github.event_name == 'merge_group' && success() }}
         run: bash scripts/assert-tests-executed.sh

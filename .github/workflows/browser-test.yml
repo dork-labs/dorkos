@@ -16,28 +16,32 @@ name: browser-test
 # fan-in gate that needs all three and fails if any of them did not pass. The
 # reasoning for both the split and the shape is on those jobs.
 #
-# MERGE-GROUP ONLY, deliberately (2026-08-23). This workflow used to fire on
-# every PR push, every merge group AND every push to main — three full
-# ~60-runner-minute suite runs per merged PR, on a Free-plan org capped at 20
-# concurrent hosted jobs. On 2026-08-23 that saturation had 88 workflow runs
-# queued against 14 running and a two-hour merge queue: shards waited 15-40
-# minutes for a runner before executing a single test (run 32663568051 has the
-# receipts). The merge-group run is the only one that sees the combined tree —
-# the two-PR interaction class (each green alone against its own base, red
-# together) that reached main as DOR-656 — so it is the one that stays, and the
-# other two triggers are gone:
+# THE SUITE RUNS IN THE MERGE QUEUE ONLY; THE PR GETS A PASS-THROUGH CONTEXT
+# (2026-08-23/24). This workflow used to fire the full suite on every PR push,
+# every merge group AND every push to main — three full ~60-runner-minute runs
+# per merged PR, on a Free-plan org capped at 20 concurrent hosted jobs. On
+# 2026-08-23 that saturation had 88 workflow runs queued against 14 running
+# and a two-hour merge queue: shards waited 15-40 minutes for a runner before
+# executing a single test (run 32663568051 has the receipts). The merge-group
+# run is the only one that sees the combined tree — the two-PR interaction
+# class (each green alone against its own base, red together) that reached
+# main as DOR-656 — so it is the only place the shards run now:
 #
-#   * `pull_request`: dropped. Every PR still cannot land without passing this
-#     suite — it passes it in the queue, once, instead of on every push. PR-time
-#     feedback is typecheck, the policy checks and the lefthook pre-push
-#     affected tests; a browser regression surfaces when the PR queues, which
-#     under a healthy queue is minutes after it would have surfaced before.
+#   * `pull_request`: the shard matrix is SKIPPED and the `browser-test`
+#     fan-in reports success immediately, stating it deferred to the queue.
+#     This is not decoration — a required check must SUCCEED ON THE PULL
+#     REQUEST before GitHub admits the PR to the merge queue at all (measured
+#     on PR #1246, which dropped the trigger entirely and sat armed, green and
+#     unqueueable for 15 hours; `enqueuePullRequest` refused it with "required
+#     status checks have not succeeded: expected"). The pass-through satisfies
+#     queue ENTRY; the queue run is still the gate that decides the MERGE, so
+#     no browser regression can land — it is caught at the queue, minutes
+#     later, instead of on every PR push, at full price.
 #   * `push` to main: dropped. The tree the queue merges is byte-identical to
-#     the tree it just tested (squash rewrites the SHA, not the content), so the
-#     post-merge run re-proved what was already proven, at full price, per
-#     merge. A direct push to main bypasses this — but it bypasses the queue
-#     and every other gate too, which is already what an emergency bypass
-#     means here.
+#     the tree it just tested (squash rewrites the SHA, not the content), so
+#     the post-merge run re-proved what was already proven. A direct push to
+#     main bypasses this — but it bypasses the queue and every other gate too,
+#     which is already what an emergency bypass means here.
 #
 # FULL MONOREPO TRIGGER, NO `paths:` FILTER. Two independent reasons, and either
 # alone would be enough.
@@ -89,6 +93,7 @@ name: browser-test
 # and where to go). If it ever fires in anger, the decision to revisit is
 # "pin a fixture registry for CI", not "delete the specs".
 on:
+  pull_request:
   merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -96,15 +101,14 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Every merge-group build gets its own unique ref
-# (gh-readonly-queue/main/pr-<n>-<sha>), so grouping by ref means no two runs
-# ever share a group and nothing is ever cancelled by this block — the queue
-# itself supersedes builds, by dequeuing them, and a dequeued entry's run is
-# cancelled by GitHub. The block stays (deliberately IDENTICAL in form to
-# test.yml — keep them in step) so that a future re-added trigger inherits
-# sane grouping instead of none.
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a
+# group and are never cancelled by this block — the queue supersedes builds by
+# dequeuing them. Deliberately IDENTICAL in form to test.yml (keep them in
+# step).
 concurrency:
   group: browser-test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -112,6 +116,10 @@ permissions:
 jobs:
   browser-shard:
     name: browser-shard (${{ matrix.shard }}/${{ strategy.job-total }})
+    # Queue builds only — on pull_request the whole matrix is skipped and the
+    # fan-in below answers instantly. See the header for why the PR still gets
+    # a `browser-test` context at all.
+    if: ${{ github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
     # THREE SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED THREE (DOR-1363).
     #
@@ -441,15 +449,28 @@ jobs:
     # hung artifact download, not a budget anything is expected to approach.
     timeout-minutes: 10
     steps:
+      # The pull_request pass-through. On a PR event the shard matrix was
+      # skipped by design, so this succeeds loudly and every later step (all
+      # gated on merge_group) is skipped. The real verdict on this code is
+      # rendered by the merge-group run before anything merges.
+      - name: Defer to the merge queue on pull_request events
+        if: ${{ github.event_name == 'pull_request' }}
+        run: echo "browser suite deferred — it runs (and gates) in the merge queue's combined-tree build."
+
+      # `merge_group &&` on this and everything below, because on pull_request
+      # the shard matrix is skipped and `skipped != success` would otherwise
+      # turn every PR red here.
       - name: Refuse a run whose shards did not all pass
-        if: ${{ needs.browser-shard.result != 'success' }}
+        if: ${{ github.event_name == 'merge_group' && needs.browser-shard.result != 'success' }}
         run: |
           echo "::error::the browser suite did not pass — the browser-shard matrix reported '${{ needs.browser-shard.result }}'. Open the shard jobs above for the failing specs, and the playwright-report-shard-* artifacts for their traces, screenshots and videos."
           exit 1
 
       - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'merge_group' }}
 
       - name: Collect every shard's JSON report
+        if: ${{ github.event_name == 'merge_group' }}
         uses: actions/download-artifact@v4
         with:
           pattern: browser-results-shard-*
@@ -479,6 +500,7 @@ jobs:
       # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
       # that into a message naming the cause.
       - name: Prove the browser suite actually executed
+        if: ${{ github.event_name == 'merge_group' }}
         run: |
           if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
             echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
