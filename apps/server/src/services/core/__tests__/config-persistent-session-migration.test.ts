@@ -19,17 +19,26 @@
  * Ajv rejects them. Only a real file, read by a real `ConfigManager`, answers
  * whether an upgraded config still validates once the leaf lands in it.
  *
- * ## What these assert, and what they deliberately do not
+ * ## Why the outcome is read off `config.json`
  *
- * They assert the OUTCOME of an upgrade boot: the setting is there, it is off,
- * an existing `true` survives, and the file is not condemned. They are not a
- * test of the migration body — conf builds Ajv with `useDefaults`, so the
- * declared default is written into a stored `runtimes.claudeCode` block during
- * validation whether or not the migration runs, which is what makes
- * `backfillClaudeCodePersistentSession` an anchor rather than the mechanism. The
- * body itself is pinned by `config-manager.test.ts`'s mock-store suite, where
- * breaking it does go red. Both bars are needed: one says the intent is written
- * down, the other says the person's upgrade actually works.
+ * This docblock used to say the opposite of what is true: that these tests were
+ * not a test of the migration body, because Ajv's `useDefaults` writes the
+ * declared default into a stored `runtimes.claudeCode` block whether or not the
+ * migration runs. It does not (DOR-1496). conf's `store` GETTER re-reads and
+ * re-parses the file on every access and validates the copy it is about to
+ * return, so `useDefaults` decorates that copy and the copy is discarded; and
+ * the shallow `defaults` merge conf really does write, before the first
+ * migration key, is beaten wholesale by a `runtimes` object the file already
+ * has. `persistentSession` therefore lands on disk only because this body puts
+ * it there.
+ *
+ * So the claims about what the upgrade LEFT BEHIND are made against the file.
+ * The old `getDot` form does still go red when the body is suppressed, but only
+ * by accident: the schema default is `true` today and this key seeds `false`, so
+ * Ajv's fill happens to disagree with the expected value. Set the default back
+ * to `false` and that form passes with the body gone while the file assertion
+ * below still fails — measured both ways in DOR-1496. An assertion that survives
+ * only because two unrelated numbers currently differ is not one to keep.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
@@ -105,23 +114,41 @@ function priorClaudeCodeBlock(): Record<string, unknown> {
   };
 }
 
+/**
+ * The `runtimes.claudeCode` block the boot actually left in `config.json`.
+ *
+ * Read straight off the file rather than through the manager, which cannot tell
+ * a value a migration wrote from one Ajv invented on the way out. See the note
+ * at the top of this file.
+ *
+ * @param dir - The data directory holding `config.json`.
+ */
+function storedClaudeCode(dir: string): Record<string, unknown> {
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')) as {
+    runtimes: { claudeCode: Record<string, unknown> };
+  };
+  return raw.runtimes.claudeCode;
+}
+
 describe('runtimes.claudeCode.persistentSession on an upgrade boot (real conf + Ajv)', () => {
   it('really is running the 0.59.0 migration, or none of the rest of this file means anything', () => {
     expect(SERVER_VERSION).toBe('0.59.0');
   });
 
-  it('adds the opt-in, off, to a config that predates it', () => {
+  it('writes the opt-in, off, INTO THE FILE of a config that predates it', () => {
     const dir = seedUpgradeBoot(priorClaudeCodeBlock());
 
     const manager = new ConfigManager(dir);
 
-    expect(manager.getDot('runtimes.claudeCode.persistentSession')).toBe(false);
+    expect(storedClaudeCode(dir).persistentSession).toBe(false);
     // The rest of the section is untouched — the backfill spreads the stored block.
-    expect(manager.get('runtimes').claudeCode.defaultAccount).toBe('/Users/me/.claude2');
-    expect(manager.get('runtimes').claudeCode.defaultModel).toBe('opus');
-    expect(manager.get('runtimes').claudeCode.accounts).toEqual([
+    expect(storedClaudeCode(dir).defaultAccount).toBe('/Users/me/.claude2');
+    expect(storedClaudeCode(dir).defaultModel).toBe('opus');
+    expect(storedClaudeCode(dir).accounts).toEqual([
       { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
     ]);
+    // …and that is what a running DorkOS reads back.
+    expect(manager.getDot('runtimes.claudeCode.persistentSession')).toBe(false);
   });
 
   it('leaves the file valid, so the upgrade boot is not condemned', () => {
@@ -131,14 +158,18 @@ describe('runtimes.claudeCode.persistentSession on an upgrade boot (real conf + 
 
     expect(manager.validate()).toEqual({ valid: true });
     expect(fs.existsSync(path.join(dir, 'config.json.bak'))).toBe(false);
-    // A second boot reads the migrated file cleanly rather than looping.
-    expect(new ConfigManager(dir).getDot('runtimes.claudeCode.persistentSession')).toBe(false);
+    // A second boot reads the migrated file cleanly rather than looping, and
+    // leaves the leaf where the first one put it.
+    new ConfigManager(dir);
+    expect(storedClaudeCode(dir).persistentSession).toBe(false);
   });
 
   it('never turns off an opt-in somebody already turned on', () => {
     const dir = seedUpgradeBoot({ ...priorClaudeCodeBlock(), persistentSession: true });
 
-    expect(new ConfigManager(dir).getDot('runtimes.claudeCode.persistentSession')).toBe(true);
+    new ConfigManager(dir);
+
+    expect(storedClaudeCode(dir).persistentSession).toBe(true);
   });
 
   it('a fresh install gets the leaf from the schema, on', () => {

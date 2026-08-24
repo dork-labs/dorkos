@@ -114,12 +114,12 @@ const CONFIG_MIGRATIONS = {
     }
   },
   '0.35.0': (store) => {
-    // Added server.timeout in v0.35.0. conf's defaults-merge will populate
-    // the key on first instantiation, so this migration is a no-op for
-    // added-with-default cases. Kept here to anchor the version boundary
-    // and provide a place to extend if we later need cleanup.
-    if (!store.has('server.timeout')) {
-      store.set('server.timeout', 30000);
+    // Added server.timeout in v0.35.0. `server` is a section every stored
+    // config already has, so NOTHING else writes this leaf to the file — see
+    // the note below. This body is the mechanism, not an anchor.
+    const server = store.get('server');
+    if (server && typeof server === 'object' && !('timeout' in server)) {
+      store.set('server', { ...server, timeout: 30000 });
     }
   },
 } as const;
@@ -127,7 +127,28 @@ const CONFIG_MIGRATIONS = {
 
 The target release version is the version of DorkOS that will first ship this change — ask the user, read `VERSION`, or let `/system:release`'s Phase 2 Check 6 detect and scaffold it for you.
 
-For **added fields with defaults**: the migration body is often empty (or a guard as above) — `conf`'s defaults-merge handles the new-key case automatically.
+#### Does `conf` cover your new field on its own? Only if it is a whole top-level section
+
+This decides whether your migration body is load-bearing or dead code, and getting it backwards is
+what produced a suite of vacuous migration tests (DOR-1496). Measured, not inferred from conf's
+documentation:
+
+- **A whole TOP-LEVEL section** (`a2a`, `notifications`, `approvals`) is covered. Before conf runs
+  its first migration key it merges `Object.assign({}, defaults, fileStore)` and WRITES the result
+  when it differs, so a section the file never carried lands on disk either way. Worse than
+  redundant: an absence-guarded body (`if (store.get('x') == null)`) reads the file conf has
+  _already_ rewritten, sees the section, and returns without ever reaching its `set`. The body is
+  **unreachable**, so if its seeded value ever differed from the object literal in
+  `USER_CONFIG_DEFAULTS` the file would silently take the object literal and your table would
+  document an intent that never runs.
+- **A nested leaf inside a section the file already has** (`ui.composer`, `server.timeout`,
+  `extensions.disabled`) is NOT covered, and your body is the only thing that writes it. That merge
+  is shallow, so a stored `server` object wins wholesale and never gains a member. Ajv's
+  `useDefaults` does fill the leaf — but only into the object conf's `store` GETTER just built from
+  a fresh read and is about to hand back, and that copy is discarded.
+
+Full account: the "Which of these bodies is a real no-op, and which only looks like one" section
+above `CONFIG_MIGRATIONS` in `config-manager.ts`.
 
 For **removed fields**:
 
@@ -243,14 +264,30 @@ it('migrates pre-0.35.0 configs to include server.timeout', async () => {
   );
 
   initConfigManager(dorkHome);
+
+  // READ THE FILE, not `getDot`. conf's `store` getter re-reads and re-parses
+  // config.json on every access and validates the copy it is about to hand
+  // back, so Ajv's `useDefaults` fills the leaf into that copy and the copy is
+  // discarded. `expect(configManager.getDot('server.timeout')).toBe(30000)`
+  // passes with the migration body DELETED — measured, DOR-1496.
+  const onDisk = JSON.parse(await readFile(configPath, 'utf-8'));
+  expect(onDisk.server.timeout).toBe(30000);
+  // …and optionally that a running DorkOS reads it back, which is a
+  // different claim and not a substitute for the one above.
   expect(configManager.getDot('server.timeout')).toBe(30000);
 });
 ```
 
 Test both cases:
 
-- Stale config missing the field → migration runs, field is populated.
+- Stale config missing the field → migration runs, field is **on disk**.
 - Fresh config → defaults handle it, no migration needed.
+
+**Then prove the assertion discriminates.** Comment out the migration body and watch the on-disk
+assertion go red. If it stays green, either you are seeding a whole top-level section (in which case
+conf's pre-write is the author, your body is unreachable, and the test should say so rather than
+imply otherwise) or the assertion is not reading what you think. Do not skip this: every vacuous
+migration test DOR-1496 found was written by someone who believed the same thing you do right now.
 
 ### 9. If it ships OFF, register it as an experiment
 

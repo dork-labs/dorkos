@@ -50,6 +50,15 @@ Mock stores never cross the `conf`/Ajv seam, and `UserConfigSchema.parse` cannot
 strips unknown keys where Ajv rejects them. See `safe-defaults/__tests__/protected-state.test.ts`
 for the pattern (write an Ajv-invalid file, boot a real manager, assert what survived).
 
+**A migration's outcome is read off `config.json`, never off `get`/`getDot`.** conf's `store` getter
+re-reads and re-parses the file on every access and validates the copy it is about to hand back, so
+Ajv's `useDefaults` fills any missing key into that copy and the copy is then discarded. A `getDot`
+assertion therefore passes with the migration body deleted — which is how a whole upgrade-boot suite
+and two further cases certified migrations they never exercised (DOR-1496). The one exception is a
+whole TOP-LEVEL section: conf merges `defaults` under the file and WRITES the result before its
+first migration key, so that section lands on disk either way and no test at this seam can attribute
+it to the body — write that down rather than implying otherwise.
+
 ## Anti-patterns
 
 ```typescript

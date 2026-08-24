@@ -19,6 +19,23 @@
  * written before it existed has no such key, so the only question worth asking is
  * whether a real `ConfigManager` reading a real file still validates once the
  * section lands. Nothing short of that answers it.
+ *
+ * ## What writes the section, and what this file therefore does not claim
+ *
+ * Not `seedA2aDisabled`. Suppress that body entirely and every case here still
+ * passes, including the on-disk one — measured, in DOR-1496. `a2a` is a whole
+ * TOP-LEVEL section, and before conf runs its first migration key it merges
+ * `defaults` under the parsed file and WRITES the result whenever the two
+ * differ, so a section the file has never carried arrives on disk either way.
+ * That is a real file write, not the read-time Ajv fill that makes nested seeds
+ * (`ui.composer`, `ui.promos`) depend on their migration bodies.
+ *
+ * So this file is an UPGRADE-BOOT test, not a test of the migration body: it
+ * asks whether a person on 0.61.0 comes out of the launch with the gate closed
+ * on their file and their config intact, and it would be worth keeping even if
+ * the table were empty. The body is pinned separately, by the mock-store suite
+ * in `config-manager.test.ts`. Do not "strengthen" any case here into a claim
+ * about the migration; nothing readable from this seam can distinguish the two.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
@@ -68,11 +85,18 @@ describe('a2a.enabled on an upgrade boot (real conf + Ajv)', () => {
     expect(SERVER_VERSION).toBe('0.62.0');
   });
 
-  it('seeds the gate CLOSED on a config that predates the section', () => {
+  it('leaves the gate CLOSED, on the file, for a config that predates the section', () => {
     const dir = seedUpgradeBoot();
 
     const manager = new ConfigManager(dir);
 
+    // On the file as well as in memory: a value only conf's read-time fill knows
+    // about is one the person does not really have, and the two are worth
+    // telling apart even where — as here — the same launch supplies both.
+    const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')) as {
+      a2a: unknown;
+    };
+    expect(onDisk.a2a).toEqual({ enabled: false });
     expect(manager.getDot('a2a.enabled')).toBe(false);
     // The section beside it is untouched.
     expect(manager.get('relay').enabled).toBe(true);

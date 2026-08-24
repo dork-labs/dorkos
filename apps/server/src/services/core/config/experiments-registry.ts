@@ -85,11 +85,11 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
   // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
   // `full-power-defaults`): warm agents ship on by default, so the entry went
   // out in the same change that flipped the default, exactly as the contract
-  // above requires. The setting itself did not go away — its switch lives in the
-  // Control Center (task 2.2), which has NOT landed yet — so between that PR
-  // and this one the setting is reachable only through `PATCH /api/config` or
-  // the config file. That gap is deliberate and short, and the changelog says so
-  // rather than implying a switch that is not there.
+  // above requires. The setting itself did not go away — its switch moved to the
+  // Control Center, which landed in #1209 ('Warm agents' in
+  // `ControlCenterSwitches.tsx'), so graduation cost it no control in the end.
+  // The gap between the two PRs, when the setting was reachable only through
+  // `PATCH /api/config` or the file, is closed.
   {
     path: 'a2a.enabled',
     title: 'Let outside agents reach yours',
