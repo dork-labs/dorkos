@@ -35,6 +35,7 @@
  * @module server/services/rooms/room-turn-runner
  */
 import { randomUUID } from 'node:crypto';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
   isBlockingInteractionEvent,
@@ -129,9 +130,58 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
   const readWaitMs = options.waitMs ?? (() => DEFAULT_REPLY_WAIT_MS);
   const readCeilingMs = options.ceilingMs ?? (() => DEFAULT_LATE_REPLY_CEILING_MS);
   const readGraceMs = options.waitingGraceMs ?? (() => WAITING_NOTICE_GRACE_MS);
+  /**
+   * Sessions a Stop reached before their turn could be stopped — the boot
+   * window (DOR-1424) — and the runtime to aim the stop at when it can be.
+   *
+   * **A stop pressed during boot has nothing to land on.** The runtime binds a
+   * turn only once its process is up, so `interruptQuery` a moment earlier
+   * answers `false` and stops nothing at all; the process then finishes booting
+   * and runs the prompt to completion. Measured on 2026-08-17 (rooms run F2):
+   * the interrupt reached a `bin/claude` that was still spawning and a whole
+   * seven-thousand-character answer was produced afterwards. The room already
+   * refuses to POST that answer (DOR-1313) — this is about not paying for it.
+   *
+   * So the stop is remembered rather than dropped, and re-aimed once, at the
+   * first thing the turn's runtime actually produces: by then the turn exists
+   * and can be stopped, so it is stopped instead of run.
+   *
+   * **Keyed by session, and cleared by the next turn on it**, which is the same
+   * lifetime `RoomTriggerDispatcher.stoppedHere` keeps: a new turn is the room
+   * asking again, and a stop left standing across it would kill a turn nobody
+   * stopped. Re-aimed ONCE, never on a timer — a retry loop with no turn to
+   * bound it is how a stop meant for one turn reaches the next one.
+   *
+   * **The third lifetime is that there isn't one**, and it is admitted here
+   * rather than implied away: a stop recorded for a turn that then dies without
+   * producing anything leaves its entry until the next `run` on that session id
+   * — which for a pair whose room is archived, or whose agent leaves the roster,
+   * never comes. What is retained is a string key and the runtime SINGLETON, so
+   * this is a bounded-by-sessions-ever-stopped map and not a retention of
+   * anything a session owns. Sweeping it would need a second lifetime to get
+   * wrong; being one entry per abandoned session is the cheaper mistake.
+   *
+   * **It rests on one cross-module ordering invariant**, which is worth checking
+   * if this ever stops working: the first event a turn puts on the projector
+   * after its synthesized `turn_start` must mean the runtime has a turn that can
+   * be interrupted. For claude-code that boundary is `bundle.booting = true` in
+   * `sessions/persistent-dispatch.ts`, immediately before `recovery.dispatch` —
+   * everything the pump yields BEFORE it (`plan.statusEvents`) is on the wrong
+   * side of it. That is inert today because the only producer of a status event
+   * there is the auto-permission-mode downgrade, and a room turn cannot be
+   * `permissionMode: 'auto'` (it passes no `interactive` flag, so it takes the
+   * runtime's `'default'`). A future status event yielded before the boot would
+   * spend this one shot on nothing, with every test still green.
+   */
+  const stopsWaitingForATurn = new Map<string, AgentRuntime>();
   return {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? randomUUID();
+      // **This turn is the room asking again, so no older Stop is aimed at it**
+      // (DOR-1424). A stop that never found a turn is remembered until one shows
+      // up; the one it was meant for is the turn that was already running when
+      // it was pressed, never this one.
+      stopsWaitingForATurn.delete(sessionId);
       const runtimeType = await resolveRoomRuntimeType(request.agentPath);
       // Resolve the runtime WITHOUT writing anything. `persistSessionRuntime`
       // used to run here, before the turn was known to have started, so a
@@ -259,6 +309,37 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         onWaiting: request.onWaiting,
         onActivity: request.onActivity,
         graceMs: readGraceMs(),
+        // **Where a Stop pressed during boot finally lands** (DOR-1424). The
+        // first thing this turn's runtime produces is the proof that the turn
+        // exists, which is exactly what the earlier interrupt was missing.
+        onProducing: () => {
+          const runtimeToStop = stopsWaitingForATurn.get(sessionId);
+          if (runtimeToStop === undefined) return;
+          stopsWaitingForATurn.delete(sessionId);
+          logger.info('[rooms] a turn stopped while it was starting can be stopped now', {
+            sessionId,
+            roomId: request.room.id,
+          });
+          // Not awaited: this runs inside the collector's read of the stream the
+          // interrupt is about to close, and a read that waits on its own
+          // interrupt is a read that never resumes.
+          void runtimeToStop
+            .interruptQuery(sessionId)
+            .then((stopped) => {
+              if (stopped) return;
+              logger.warn('[rooms] a turn stopped during its boot could not be stopped', {
+                sessionId,
+                roomId: request.room.id,
+              });
+            })
+            .catch((err: unknown) => {
+              logger.warn('[rooms] could not stop a turn that was stopped during its boot', {
+                sessionId,
+                roomId: request.room.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+        },
       });
 
       const result = await dispatchMessage({
@@ -398,15 +479,28 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       };
     },
 
-    async interrupt({ sessionId, agentPath }): Promise<void> {
+    async interrupt({ sessionId, agentPath }): Promise<boolean> {
       // The runtime is resolved from the AGENT, exactly as `run` resolves it,
       // rather than from the session's registry row: a first turn's row is
       // written after the turn starts, so a halt arriving early would otherwise
       // find nothing to stop.
       const runtime = runtimeRegistry.get(await resolveRoomRuntimeType(agentPath));
-      if (!runtime) return;
+      // No runtime is no stop: nothing was reached, and saying so is the whole
+      // point of answering at all (DOR-1425).
+      if (!runtime) return false;
       const stopped = await runtime.interruptQuery(sessionId);
       logger.info('[rooms] interrupted a turn', { sessionId, stopped });
+      if (!stopped) {
+        // **The stop landed on nothing, and the turn may still be COMING UP.**
+        // A halt pressed while the agent's process is still starting reaches a
+        // runtime that has not bound the turn yet, so there is nothing to
+        // interrupt — and the turn then runs the prompt to completion, burning a
+        // whole model turn nobody wanted (DOR-1424, rooms run F2 2026-08-17).
+        // Remembering it here is what lets the turn's own first output re-aim it;
+        // see {@link stopsWaitingForATurn}.
+        stopsWaitingForATurn.set(sessionId, runtime);
+      }
+      return stopped;
     },
   };
 }
@@ -558,6 +652,11 @@ const WAITING_KINDS: Record<BlockingInteractionEventType, RoomTurnWaiting['kind'
  * @param bounds.onActivity - Called with the tool this turn just started, and
  *   once with `null` when it can no longer be doing anything.
  * @param bounds.graceMs - How long a prompt may stand before it is mentioned.
+ * @param bounds.onProducing - Called once, with the first event this turn's
+ *   RUNTIME produced. Everything before it is DorkOS's own bookkeeping — the
+ *   `turn_start` is synthesized here, before the runtime is even asked — so this
+ *   is the earliest moment the turn is known to exist somewhere that can stop
+ *   it (DOR-1424).
  */
 function collectReply(
   projector: SessionStateProjector,
@@ -569,6 +668,7 @@ function collectReply(
     onWaiting: (waiting: RoomTurnWaiting) => void;
     onActivity: (activity: SessionActivity | null) => void;
     graceMs: number;
+    onProducing: () => void;
   }
 ): ReplyCollector {
   const abort = new AbortController();
@@ -626,6 +726,8 @@ function collectReply(
       collecting = '';
     };
     let started = false;
+    /** Whether the runtime behind this turn has produced anything yet. */
+    let producing = false;
     let ended = false;
     let failed = false;
     try {
@@ -636,6 +738,17 @@ function collectReply(
           if (event.type !== 'turn_start' || event.seq !== bounds.ownTurn.startSeq) continue;
           started = true;
           continue;
+        }
+        // Past the synthesized `turn_start`, so this event came off the runtime:
+        // the turn is really running, and a Stop that arrived while it was still
+        // booting has something to aim at at last (DOR-1424).
+        //
+        // A `turn_end` is deliberately not "running": it is the turn being over,
+        // and re-aiming a stop at a session whose turn has just closed is how a
+        // stop meant for one turn lands on the one after it.
+        if (!producing && event.type !== 'turn_end') {
+          producing = true;
+          bounds.onProducing();
         }
         // A prompt the turn has stopped on. It is reported after
         // {@link WAITING_NOTICE_GRACE_MS} and only if it is STILL unanswered

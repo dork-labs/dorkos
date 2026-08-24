@@ -150,7 +150,7 @@ function drivenRunner(opts: {
   return {
     turns,
     interrupted: [],
-    interrupt: () => Promise.resolve(),
+    interrupt: () => Promise.resolve(false),
     land(authorId, reply) {
       takeHeld(authorId, 'land').land(reply);
     },
