@@ -131,6 +131,7 @@ export type ProductSurface =
   | 'canvas-editing'
   | 'chat-streaming'
   | 'cockpit'
+  | 'control-center'
   | 'gen-ui-tictactoe'
   | 'gen-ui-widgets'
   | 'marketplace'
@@ -628,6 +629,11 @@ export const features: Feature[] = [
     ],
     moment:
       "You open Control Center to check who's running at full power. Two sessions show up in Exceptions, each one a click from the setting that put them there.",
+    media: {
+      surface: 'control-center',
+      alt: 'The DorkOS Control Center panel open over the cockpit, showing where new sessions stop for approval and the switches under it',
+      crop: 'top',
+    },
     relatedFeatures: [
       'tool-approval',
       'action-approvals',
