@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react';
-import type { Competitor } from '../../lib/comparisons';
+import { COMPARISON_FRAMING_COPY, type Competitor } from '../../lib/comparisons';
 
 /** One labelled fact in the summary row under the verdict. */
 function Fact({ label, value }: { label: string; value: string }) {
@@ -19,6 +19,7 @@ function Fact({ label, value }: { label: string; value: string }) {
  * @param competitor - The product this page compares against.
  */
 export function ComparisonVerdict({ competitor }: { competitor: Competitor }) {
+  const copy = COMPARISON_FRAMING_COPY[competitor.framing];
   return (
     <section
       aria-labelledby="short-answer"
@@ -53,7 +54,7 @@ export function ComparisonVerdict({ competitor }: { competitor: Competitor }) {
         rel="noopener noreferrer"
         className="text-warm-gray hover:text-brand-orange transition-smooth mt-6 inline-flex items-center gap-1 font-mono text-xs"
       >
-        See {competitor.name} for yourself <ExternalLink size={10} />
+        {copy.outboundLabel(competitor.name)} <ExternalLink size={10} />
       </a>
     </section>
   );

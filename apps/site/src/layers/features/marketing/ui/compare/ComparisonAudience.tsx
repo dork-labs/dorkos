@@ -55,7 +55,11 @@ export function ComparisonAudience({ competitor }: { competitor: Competitor }) {
       {/* Their column reads first everywhere here: the concession before the
           pitch on a head-to-head page, the engine before what wraps it on a
           runtime page. */}
-      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+      {/* Each column ends where its own list ends. DorkOS's side is derived, so
+          it is honestly shorter on most pages, and stretching it to match theirs
+          left a panel of dead space that read as a weak answer rather than a
+          short one. */}
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-2">
         <Column title={copy.theirReasonHeading(competitor.name)} reasons={theirStrengths} />
         <Column title={copy.ourReasonHeading} reasons={ourReasons} />
       </div>

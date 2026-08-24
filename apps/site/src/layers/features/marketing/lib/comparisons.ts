@@ -145,6 +145,14 @@ export interface ComparisonFramingCopy {
   intro: (name: string) => string;
   /** Scope banner above the verdict, where the page needs one to be honest. */
   scopeNote?: (name: string) => string;
+  /**
+   * Wording for the link out to the other product, under the verdict. It is a
+   * framing decision rather than one sentence for every page: "see it for
+   * yourself" invites the reader to go and look, which only works while there is
+   * something there to look at. A shut-down product's address leads to whatever
+   * the closure left behind, so its pages say that instead.
+   */
+  outboundLabel: (name: string) => string;
   /** Heading over the dimension table. */
   tableHeading: string;
   /** Column header for the other product's side of the table. */
@@ -179,6 +187,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     metaTitle: (name) => `DorkOS vs ${name} — an honest comparison`,
     intro: (name) =>
       `Searching for ${name} vs DorkOS gets you this same page. Here is what each one does well, where they overlap, and how to choose.`,
+    outboundLabel: (name) => `See ${name} for yourself`,
     tableHeading: 'Side by side',
     theirColumn: (name) => name,
     ourColumn: 'DorkOS',
@@ -194,6 +203,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     metaTitle: (name) => `DorkOS + ${name} — mission control for ${name}`,
     intro: (name) =>
       `DorkOS runs ${name} for you. Keep the tool you already use, and gain one screen to start, watch and schedule it from.`,
+    outboundLabel: (name) => `See ${name} for yourself`,
     tableHeading: 'What DorkOS adds on top',
     theirColumn: (name) => `${name} on its own`,
     ourColumn: 'With DorkOS',
@@ -215,6 +225,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
       `Searching for ${name} vs DorkOS gets you this same page. These are different kinds of tool, so this page sticks to the part they both cover.`,
     scopeNote: (name) =>
       `${name} and DorkOS are not the same kind of product. Below is only the ground they share, not a score of everything either one does.`,
+    outboundLabel: (name) => `See ${name} for yourself`,
     tableHeading: 'Where the two overlap',
     theirColumn: (name) => name,
     ourColumn: 'DorkOS',
@@ -231,7 +242,10 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     intro: (name) =>
       `${name} is gone. Here is what happened, what your options are, and what moving to DorkOS would give you.`,
     scopeNote: (name) =>
-      `${name} has shut down. The dates and details below come from its own announcement, linked at the bottom of this page.`,
+      `${name} has shut down. This page covers what it did, where its users went next, and where DorkOS fits. Everything we checked is listed at the bottom.`,
+    // Its own address now leads to whatever the closure left behind: a stub page,
+    // or a repository marked read-only. Worth a look, but not a look at the product.
+    outboundLabel: (name) => `See what is left of ${name}`,
     tableHeading: 'What you get if you move to DorkOS',
     theirColumn: (name) => `${name} (shut down)`,
     ourColumn: 'DorkOS',
@@ -1768,5 +1782,447 @@ export const comparisons: Competitor[] = [
       'https://github.com/anomalyco/opencode',
     ],
     relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'cli'],
+  },
+  {
+    slug: 'buzz',
+    name: 'Buzz',
+    maker: 'Block',
+    homepage: 'https://buzz.xyz',
+    framing: 'adjacent',
+    category: 'Team chat where agents are members',
+    oneLiner:
+      'Buzz is Block’s team chat where agents join as members with their own identity. DorkOS is a cockpit for coding agents. This page compares the rooms.',
+    pricing:
+      'Free and open source under the Apache licence, and you can run the whole thing yourself. Block also runs an early-access server of its own, with no price published.',
+    openSource: true,
+    verdict:
+      'Buzz is not trying to be what DorkOS is, so this page covers only the ground they share: rooms where people and agents talk to each other. On that ground Buzz is strong, and in one place ahead of us. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it rather than to an account on someone else’s platform, and the messages travel over a server you run. It also does something our rooms cannot do yet: hand an agent a new instruction while it is still working, instead of making you wait for it to finish. What Buzz is not is a place to run and watch coding agents. It can host them, and it has no screen for driving them.',
+    theirStrengths: [
+      'you want every person and every agent to hold their own identity, instead of an account on someone else’s platform',
+      'you want to redirect an agent while it is still working, rather than waiting for the turn to end',
+      'you want the chat itself to be something you run and own',
+      'you want a desktop app on Mac, Windows and Linux',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'partial',
+        note: 'Its agent bridge will drive Goose, Codex or Claude Code. It runs them out of sight, though: there is no screen for picking one or watching them side by side.',
+        detail:
+          'The pluggable part is real, and it is the reason this row is not a plain no: Buzz talks to coding agents through a shared protocol, so the agent in a channel can be Claude Code today and Codex tomorrow. The difference is what you get to see. In Buzz the agent is a member that posts when it has something to say, and the work happens somewhere you do not watch. In DorkOS the run itself is the thing on screen, with the sessions from all three tools in one list.',
+        source: 'https://github.com/block/buzz/blob/main/docs/remote-agents.md',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. A workflow can start on a schedule, on a message, on a reaction or on a webhook, and a timer checks every minute for anything due.',
+        source: 'https://github.com/block/buzz/blob/main/ARCHITECTURE.md',
+      },
+      coordination: {
+        verdict: 'yes',
+        note: 'This is the whole point of Buzz. Agents are ordinary members of a channel, and you set one working by mentioning it.',
+        detail:
+          'Agents are members of a channel rather than guests in it: you address one by name, and Buzz lines those mentions up per channel so an agent works through what it was asked in turn. Being straight about the scoreboard, this row is where Buzz is furthest ahead of us. Our rooms work, but they are the newest thing we ship and are still marked early, and Buzz can already redirect an agent mid-job where we would make you wait for it to finish.',
+        source: 'https://github.com/block/buzz/blob/main/ARCHITECTURE.md',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes. You run the server and the database yourself, and every message is signed by the key of whoever sent it.',
+        source: 'https://github.com/block/buzz',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'Desk only, for now. There is a desktop app for Mac, Windows and Linux, and the phone apps are listed as still being wired up.',
+        detail:
+          'Two halves of this question, and Buzz answers no to both today. There is no phone app yet: its own status table puts the iPhone and Android clients under the things still being wired up, and lists the desktop app as the one that works. Nor is there a place to approve an agent’s action before it happens, the way you might tap yes on your phone while queuing for coffee. Buzz has approval gates for its scheduled workflows, and its architecture notes, linked below, say that wiring is not finished, so a run reaching one is marked failed.',
+        source: 'https://github.com/block/buzz/blob/main/README.md',
+      },
+      extensibility: {
+        verdict: 'no',
+        note: 'There is no add-on system. What a workflow is allowed to do is a fixed list built into Buzz, and there is no marketplace for adding more.',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'Free, and open under the Apache licence. Nothing is held back for a paid tier, because there is no paid tier.',
+        source: 'https://github.com/block/buzz/blob/main/LICENSE',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Buzz the same thing as Goose?',
+        a: 'No, and they are not even from the same place any more. Goose was Block’s coding agent, but Block handed it to the Linux Foundation’s Agentic AI Foundation at the end of 2025, and it is now run there rather than by Block. Buzz is a separate and newer Block project, and it is a chat workspace, not a coding agent. Buzz can run Goose as one of its agents, which is probably where the mix-up starts.',
+      },
+      {
+        q: 'Does Buzz replace Claude Code?',
+        a: 'No. It runs Claude Code, or Codex, or Goose, as a member of a channel. The agent doing the work is still the one you already installed.',
+      },
+      {
+        q: 'Can I use Buzz and DorkOS at the same time?',
+        a: 'Yes, and they are not fighting over the same job. Buzz is where a team talks. DorkOS is where you start a coding job, watch it run, and pick it up again from your phone.',
+      },
+      {
+        q: 'Whose rooms are further along, honestly?',
+        a: 'Buzz’s are, in one way that matters: you can send an agent a new instruction while it is still working. Ours make you wait for the turn to finish. Our rooms are the newest part of DorkOS and we mark them as early on purpose.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://buzz.xyz',
+      'https://github.com/block/buzz',
+      'https://github.com/block/buzz/blob/main/README.md',
+      'https://github.com/block/buzz/blob/main/ARCHITECTURE.md',
+      'https://github.com/block/buzz/blob/main/docs/remote-agents.md',
+      'https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together',
+      'https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
+    ],
+    relatedFeatures: ['rooms', 'relay-message-bus', 'agent-identity', 'mesh-agent-discovery'],
+  },
+  {
+    slug: 'openclaw',
+    name: 'OpenClaw',
+    maker: 'OpenClaw Foundation',
+    homepage: 'https://openclaw.ai',
+    framing: 'adjacent',
+    category: 'Personal assistant that lives in your chat apps',
+    oneLiner:
+      'OpenClaw runs your whole digital life from the chat apps you already use. DorkOS is a control room for coding agents. Here is where the two overlap.',
+    pricing:
+      'Free, and open source under the MIT licence. You run it on your own machine and pay only for the model behind it, on a plan or a key you already have.',
+    openSource: true,
+    verdict:
+      'These are different products with one honest overlap, and everything below is scoped to that overlap rather than to everything either one does. OpenClaw is a personal assistant that lives in your chat apps and runs your whole digital life: your messages, your files, your calendar, the machine itself. DorkOS is a control room for coding agents. Where they meet is that both are yours, both run on your own computer, and both will get on with work while you are not watching. If you want one assistant you can reach from WhatsApp that does a bit of everything, that is OpenClaw, and DorkOS is not competing for the job. If what you want is Claude Code, Codex and OpenCode running on real projects with somewhere to watch them, that is the part OpenClaw was never built for.',
+    theirStrengths: [
+      'you want one assistant for your whole digital life, not only the code part of it',
+      'you would rather talk to it in WhatsApp or Telegram than open one more app',
+      'you want it to run the machine itself, not just a project folder',
+      'you want something you can reach from your phone today, through an app you already have',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'It chooses which model answers you, not which coding agent runs. Claude Code, Codex and OpenCode are not engines it swaps between.',
+        detail:
+          'This is the clearest line between the two, and it is a difference of purpose rather than a gap someone forgot to fill. OpenClaw is model-agnostic, so you can point it at Anthropic, at OpenAI, or at something running on your own machine, and that choice is about which brain answers the assistant. DorkOS swaps the whole agent underneath a job: the same chat can run on Claude Code today and Codex tomorrow, using the tools already signed in on your computer.',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. It keeps a list of jobs, wakes the agent when one is due, and can send the result to a chat channel or a webhook.',
+        source: 'https://docs.openclaw.ai/automation',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'You can run several separate assistants side by side, and each joins a group chat only when it is named. What its documentation does not describe is two of them holding a conversation with each other.',
+        source: 'https://docs.openclaw.ai/concepts/multi-agent',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes, and it is a point they make loudly. You host it yourself, and your data and your models stay on your own machine.',
+        source: 'https://github.com/openclaw/openclaw',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes, and it is the strongest thing about it: 29 chat apps have their own setup page in its documentation, so it reaches you wherever you already type. There is a dashboard in the browser as well.',
+        detail:
+          'Nothing on this site reaches more places than OpenClaw does. Because it arrives as a message in an app you already have, there is nothing new to install on your phone and nothing new to learn, which is a genuinely better answer than ours for an assistant you want with you all day. DorkOS goes the other way: one screen built for watching agents work, which happens to fit a phone. Different shapes, and each is right for its own job.',
+        source: 'https://github.com/openclaw/openclaw/tree/main/docs/channels',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. Skills written as plain files, a kit for building new channels, and a hub for sharing both.',
+        source: 'https://docs.openclaw.ai/tools/skills',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'Free, and open under the MIT licence. You pay for the model behind it, nothing for the assistant.',
+        source: 'https://github.com/openclaw/openclaw/blob/main/LICENSE',
+      },
+    },
+    faq: [
+      {
+        q: 'Is OpenClaw a coding agent?',
+        a: 'Not really. It can edit files and run commands on your machine, so it will certainly touch code, but it is built to be an assistant for everything rather than a tool for working on projects. If the job is a long piece of software work, a coding agent is still the right thing, and OpenClaw is not one.',
+      },
+      {
+        q: 'Can I use OpenClaw and DorkOS at the same time?',
+        a: 'Yes, and they barely overlap in practice. OpenClaw handles your messages and your day. DorkOS runs the coding agents and shows you what they did. Both sit on your own machine.',
+      },
+      {
+        q: 'Who looks after OpenClaw now?',
+        a: 'A non-profit. The OpenClaw Foundation was announced in July 2026 to hold the project and keep it independent. Its creator, who joined OpenAI earlier in 2026, still leads the technical side.',
+      },
+      {
+        q: 'Which one should I pick?',
+        a: 'They answer different questions, so the honest answer is usually neither-instead-of-the-other. Want an assistant in your pocket for your whole life? OpenClaw. Want to run several coding agents on real projects and see what happened? DorkOS.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://openclaw.ai',
+      'https://github.com/openclaw/openclaw',
+      'https://github.com/openclaw/openclaw/tree/main/docs/channels',
+      'https://docs.openclaw.ai/automation',
+      'https://docs.openclaw.ai/concepts/multi-agent',
+      'https://docs.openclaw.ai/web/control-ui',
+      'https://docs.openclaw.ai/tools/skills',
+      'https://openclaw.ai/blog/introducing-openclaw-foundation',
+      'https://en.wikipedia.org/wiki/OpenClaw',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'chat-interface', 'marketplace'],
+  },
+  {
+    slug: 'hermes',
+    name: 'Hermes Agent',
+    maker: 'Nous Research',
+    homepage: 'https://hermes-agent.nousresearch.com',
+    framing: 'adjacent',
+    category: 'Assistant that lives in your chat apps',
+    oneLiner:
+      'Hermes Agent puts an assistant in Telegram, Discord, Slack and more. DorkOS is a cockpit for coding agents. This page sticks to the shared ground.',
+    pricing:
+      'The agent itself is free and open source, whatever else you buy. Nous sells credits for models and tools on top: a free tier, then $20 a month for Plus, $100 for Super and $200 for Ultra.',
+    openSource: true,
+    verdict:
+      'Hermes Agent and DorkOS both put an agent somewhere you can actually reach it, and that is where the resemblance stops. Hermes lives in your chat apps: you talk to it in Telegram or Slack, it remembers what you told it, it runs jobs on a schedule, and it is free and open under the MIT licence. It is not built around coding agents and it has no cockpit: no list of sessions, no place to watch a long job, no swapping between Claude Code, Codex and OpenCode. One thing deserves correcting, because older write-ups still state it flatly. Hermes used to be the standing example of an agent that would not talk to another agent. Across its chat platforms that is still deliberately true. Inside its desktop app it now has a Bot Mode where a few bots can pass work to each other, with firm limits on how far that goes.',
+    theirStrengths: [
+      'you want an assistant inside the chat app you already use, with nothing new to install on your phone',
+      'you want to point it at any model you like, including one running on your own hardware',
+      'you want scheduled jobs that report back into a chat where other people can see them',
+      'you want something that will run happily on a very small server',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'It swaps models, not coding agents. Nothing in it puts Claude Code on one job and Codex on the next.',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. A built-in scheduler runs jobs unattended and delivers what they produced into whichever chat platform you picked.',
+        source: 'https://hermes-agent.nousresearch.com/docs/user-guide/features/cron',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'Two answers, depending where you look. In the chat apps, no: its own documentation calls wiring two Hermes bots to answer each other an unsupported setup. In its desktop app, a Bot Mode lets a small group of bots hand tasks to each other by name.',
+        detail:
+          'Worth getting right, because the internet is still repeating the old version. The refusal is real and deliberate, and it is about the chat platforms: their documentation says plainly that setting several Hermes profiles to reply to one another in a shared channel is not a supported arrangement, and the safe default ignores other bots entirely. Then, separately, Bot Mode arrived as a plugin for its desktop app, where a group of two to six bots can pull each other in by name, under hard caps of ten messages a turn and three rounds so a room cannot spin. So the honest summary is not "it cannot" but "not in the places you would first try, and with a ceiling where it can". DorkOS puts agents in shared rooms instead, and we mark that part early on purpose.',
+        source: 'https://github.com/NousResearch/Hermes-Bot-Mode',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes. You run it yourself, from a cheap server up to your own machine, and it is yours from there.',
+        source: 'https://github.com/NousResearch/hermes-agent',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes. Seven ways in, counting the terminal: Telegram, Discord, Slack, WhatsApp, Signal and email, so your phone is covered by whatever is already on it.',
+        source: 'https://github.com/NousResearch/hermes-agent',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. It reaches outside tools through MCP, the common standard for that, and skills are shared files you can add to.',
+        source: 'https://github.com/NousResearch/hermes-agent',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'The agent is free and open under the MIT licence. The paid tiers buy credits for models and tools, not features of the agent itself.',
+        source: 'https://github.com/NousResearch/hermes-agent/blob/main/LICENSE',
+      },
+    },
+    faq: [
+      {
+        q: 'Can two Hermes agents talk to each other?',
+        a: 'In the chat apps, no, and that is on purpose: its documentation calls setting two Hermes bots to answer each other an unsupported arrangement, and by default a bot ignores other bots. Inside its desktop app there is a Bot Mode where a small group of bots can pass tasks to each other for a limited number of rounds. So the old line that Hermes flatly cannot do it is out of date, but the caution behind it is still real.',
+      },
+      {
+        q: 'Is Hermes Agent a coding agent?',
+        a: 'No. It is a general assistant that happens to be very good at living in chat. For work on a codebase you would still reach for Claude Code, Codex or OpenCode, which is what DorkOS runs.',
+      },
+      {
+        q: 'Can I use Hermes and DorkOS together?',
+        a: 'Yes. They want different jobs and neither gets in the other one’s way. Hermes is your assistant in chat, DorkOS is where coding work runs and gets watched.',
+      },
+      {
+        q: 'Does DorkOS work in Telegram and Slack too?',
+        a: 'Yes, for a narrower job: you can talk to your agents and get told when something needs you. Telegram has been in use the longest; Slack is newer. Hermes reaches more chat apps than we do, and we would rather say so.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://hermes-agent.nousresearch.com',
+      'https://github.com/NousResearch/hermes-agent',
+      'https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/messaging/discord.md',
+      'https://github.com/NousResearch/hermes-agent/releases/tag/v2026.8.16.2',
+      'https://github.com/NousResearch/Hermes-Bot-Mode',
+      'https://hermes-agent.nousresearch.com/docs/user-guide/features/cron',
+      'https://portal.nousresearch.com',
+    ],
+    relatedFeatures: ['telegram-adapter', 'slack-adapter', 'task-scheduler', 'rooms'],
+  },
+  {
+    slug: 'terragon',
+    name: 'Terragon',
+    maker: 'Terragon Labs',
+    homepage: 'https://www.terragonlabs.com',
+    framing: 'discontinued',
+    category: 'Cloud service that ran coding agents for you',
+    oneLiner:
+      'Terragon ran coding agents in the cloud until it closed in February 2026. What it did, what it left behind, and where DorkOS does and does not fit.',
+    pricing:
+      'It was a paid subscription while it ran. We could find no surviving pricing page, so we are not going to repeat a figure we cannot check.',
+    openSource: true,
+    openSourceNote:
+      'Open under the Apache licence. The team published a snapshot of the whole thing on the way out, so the code is still there to read, and to run yourself if you want to.',
+    verdict:
+      'Terragon closed in February 2026, and if you liked it, that was a real loss: you handed it a task, it worked in its own cloud machine against your repository, and you reviewed a pull request at the end. Two things are worth knowing before you pick a replacement. The first is that Terragon did not tell anyone where to go next. Its own parting words recommend nothing, and the pairing you may have seen suggested online came from a commenter, not from Terragon, so treat it as someone’s opinion rather than the company’s advice. The second is that the code did not vanish. Terragon published an open snapshot under the Apache licence, so self-hosting it is genuinely possible, with nobody maintaining it. As for DorkOS: it fits if what you want back is the part where agents get on with work and you review the result, and it does not fit if what you liked was that none of it ran on your own computer. That was Terragon’s whole shape, and it is the opposite of ours.',
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'It did, and this is the part DorkOS carries on. You could point it at Claude Code, OpenAI Codex, Amp or Gemini, bringing your own subscription or your own keys.',
+        detail:
+          'Terragon got this right early, and it is why its users are worth talking to: it never asked you to give up the agent you already liked. That is the same bet DorkOS makes. The difference is only where the agent runs. Terragon started a fresh cloud machine and worked against your repository there; DorkOS starts the Claude Code or Codex already signed in on your own computer, on any folder, whether or not it has been pushed anywhere.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'It did. Its automations ran on a repeat, or started when something happened in your project, like a new issue.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'Its own feature list named multi-agent support, though it never said much about what those agents did together.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      'local-first': {
+        verdict: 'no',
+        note: 'No, and this is the part that mattered most in the end. The work happened on Terragon’s computers, so when the company stopped, the product stopped with it.',
+        detail:
+          'We are not going to pretend this is a clever argument we made in advance. It is just what happened. A cloud service is someone else’s machine, and when the business behind it winds down, the thing you built your week around goes with it. The agents DorkOS drives are installed on your own computer under your own accounts, so the worst we can do to you is stop writing the cockpit. Your code and your history stay where they already are.',
+      },
+      surfaces: {
+        verdict: 'partial',
+        note: 'There was no phone app, but it hooked into Slack and GitHub, so work could be started from a message or from an issue.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      extensibility: {
+        verdict: 'partial',
+        note: 'It spoke MCP, the common way of plugging outside tools into an agent, so other tools could hand it work. There was no marketplace beyond that.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+      pricing: {
+        verdict: 'partial',
+        note: 'It was a paid subscription while it ran, and the code is open now under the Apache licence, which is more than most closed services leave behind.',
+        source: 'https://github.com/terragon-labs/terragon-oss',
+      },
+    },
+    faq: [
+      {
+        q: 'What happened to Terragon?',
+        a: 'Terragon Labs wound the product down in February 2026. The website is now a single line saying it has shut down, and the team published the code as an open snapshot before they went.',
+      },
+      {
+        q: 'Did Terragon say what to use instead?',
+        a: 'No. We looked, because it is the first thing anyone wants to know, and there is no recommendation in what Terragon left behind. If you have seen Claude Code on the web or Codex named as the official next step, that came from a commenter on a forum rather than from Terragon. Both are real products and either may suit you: just do not take it as advice Terragon gave.',
+      },
+      {
+        q: 'Can I still run Terragon myself?',
+        a: 'Yes, in the sense that the code is public under the Apache licence and nothing stops you. Nobody is maintaining it, and the snapshot is offered with no promise that it is complete, so treat it as a starting point rather than a product.',
+      },
+      {
+        q: 'Is DorkOS just Terragon again?',
+        a: 'No, and it would be dishonest to sell it that way. Terragon put the work on its own machines so you never had to think about yours. DorkOS runs the agents on your computer, using the plans you already pay for. If having nothing on your own machine was what you liked, DorkOS is the wrong shape for you.',
+      },
+      {
+        q: 'Where can I read the shutdown notice?',
+        a: 'Not at the original address any more: that documentation site is offline, and its security certificate expired with it. An archived copy is listed with our sources below, and the code snapshot Terragon published is still up on GitHub.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://www.terragonlabs.com',
+      'https://github.com/terragon-labs/terragon-oss',
+      'https://web.archive.org/web/20260119142256/https://docs.terragonlabs.com/docs/resources/shutdown',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'workspaces', 'cli'],
+  },
+  {
+    slug: 'roo-code',
+    name: 'Roo Code',
+    maker: 'Roo Code, Inc.',
+    homepage: 'https://github.com/RooCodeInc/Roo-Code',
+    framing: 'discontinued',
+    category: 'Coding agent that lived in VS Code',
+    oneLiner:
+      'Roo Code shut down in May 2026, and its own notice names Cline and ZooCode. Here is what happened, and where DorkOS honestly does not replace it.',
+    pricing:
+      'The extension was free, and you paid only the model provider with your own key. There was a paid cloud add-on as well, whose prices we could not confirm from anything Roo Code still controls.',
+    openSource: true,
+    openSourceNote:
+      'Open under the Apache licence. The repository is archived and read-only now, but every line of it is still there to read or fork.',
+    verdict:
+      'Roo Code was a good agent in the editor with a following to match, and losing it stung, because a lot of people had it set up exactly how they liked. It shut down on 15 May 2026, and its old address now forwards to a different product called Roomote. Start with what Roo Code itself said, because the internet has muddled this badly. Its own notice, still readable today on GitHub and on the Marketplace listing, names exactly two alternatives: Cline, which Roo Code was originally forked from, and ZooCode, a fork the community started. Kilo Code is the name you will see most often in write-ups, and it published its own guide for moving across, but Roo Code never named it. Now the honest part about us: DorkOS is not a VS Code extension and will not put an agent back in your editor. It is the room around agents like that one. If what you miss is the agent inside VS Code, take the notice’s advice first, and come back for the part it never did.',
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'No. It was one agent living in your editor. It could talk to plenty of model providers, but it did not run other companies’ coding agents for you.',
+      },
+      scheduling: {
+        verdict: 'no',
+        note: 'No. Nothing in it started a job at a set time: you were in the editor, watching, for every run.',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'Its Orchestrator mode split a big job into smaller ones, ran each in its own mode with its own context, and reported back. That is one agent handing work to itself rather than separate agents talking.',
+        source: 'https://docs.roocode.com/features/boomerang-tasks',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes, and this is what people liked. It ran inside VS Code on your own machine, with your own key, asking before it changed anything.',
+        source: 'https://github.com/RooCodeInc/Roo-Code',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'No. Roo Code lived in the editor window on your desk, and there was no phone app to check in from.',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. It had a marketplace built into the extension for adding outside tools through MCP, and for custom modes.',
+        source: 'https://docs.roocode.com/features/marketplace',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'The extension itself was free and open under the Apache licence. You paid for the model, with your own key.',
+        source: 'https://github.com/RooCodeInc/Roo-Code',
+      },
+    },
+    faq: [
+      {
+        q: 'What happened to Roo Code?',
+        a: 'It shut down on 15 May 2026. The repository was archived and made read-only the same day, and the listing in the VS Code Marketplace still carries the shutdown notice. If you type the old web address you will land on a different product called Roomote, which is where roocode.com now forwards.',
+      },
+      {
+        q: 'What did Roo Code tell people to use instead?',
+        a: 'Two things, by name: Cline, the project Roo Code was originally forked from, and ZooCode, a fork started by its own community. Both are alive today. That wording is still on the archived repository and on the Marketplace listing, so you can check it rather than take our word for it.',
+      },
+      {
+        q: 'Is Kilo Code the official replacement for Roo Code?',
+        a: 'Not officially, no, however often you see it described that way. Kilo Code published a guide for moving over from Roo Code and plenty of people took it, which is fine and it is a real project. It simply is not one of the two Roo Code named. Worth knowing if you are choosing based on what the team endorsed.',
+      },
+      {
+        q: 'Does DorkOS replace Roo Code?',
+        a: 'No, and we would rather say that plainly than win a click. Roo Code was an agent inside your editor. DorkOS has no editor and no extension: it runs coding agents like Claude Code and Codex on your machine and gives you one place to watch and schedule them. Most people replacing Roo Code want the editor part back first, and that is Cline, ZooCode or Kilo Code, not us.',
+      },
+      {
+        q: 'Can I still install or read the code?',
+        a: 'The code yes, the extension no. The repository is archived but public under the Apache licence, so you can read or fork all of it. The Marketplace listing survives as a notice rather than a working download.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://github.com/RooCodeInc/Roo-Code',
+      'https://marketplace.visualstudio.com/items?itemName=RooVeterinaryInc.roo-cline',
+      'https://docs.roocode.com/features/boomerang-tasks',
+      'https://docs.roocode.com/features/marketplace',
+      'https://github.com/Zoo-Code-Org/Zoo-Code',
+      'https://cline.bot',
+      'https://roomote.dev',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'tool-approval'],
   },
 ];
