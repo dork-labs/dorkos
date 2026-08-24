@@ -205,7 +205,6 @@ export const CONFIG_DISCLOSURE = {
 
   'scheduler.enabled': 'expose',
   'scheduler.maxConcurrentRuns': 'expose',
-  'scheduler.timezone': 'expose',
   'scheduler.retentionCount': 'expose',
 
   'mesh.scanRoots': 'expose',

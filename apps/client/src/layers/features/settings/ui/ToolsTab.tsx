@@ -108,7 +108,7 @@ export function ToolsTab() {
 
   const updateScheduler = useCallback(
     async (patch: Record<string, unknown>) => {
-      const current = scheduler ?? { maxConcurrentRuns: 1, timezone: null, retentionCount: 100 };
+      const current = scheduler ?? { maxConcurrentRuns: 1, retentionCount: 100 };
       await transport.updateConfig({ scheduler: { ...current, ...patch } });
       await queryClient.invalidateQueries({ queryKey: configKeys.all });
     },

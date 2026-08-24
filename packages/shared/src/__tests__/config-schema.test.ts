@@ -69,7 +69,7 @@ describe('UserConfigSchema', () => {
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
-      scheduler: { enabled: true, maxConcurrentRuns: 4, timezone: null, retentionCount: 100 },
+      scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -426,7 +426,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
-      scheduler: { enabled: true, maxConcurrentRuns: 4, timezone: null, retentionCount: 100 },
+      scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,

@@ -69,7 +69,6 @@ describe('GET /api/config falls back to the schema, not to a retyped literal', (
 
     expect(res.body.scheduler).toMatchObject({
       maxConcurrentRuns: USER_CONFIG_DEFAULTS.scheduler.maxConcurrentRuns,
-      timezone: USER_CONFIG_DEFAULTS.scheduler.timezone,
       retentionCount: USER_CONFIG_DEFAULTS.scheduler.retentionCount,
     });
   });

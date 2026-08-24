@@ -3438,9 +3438,6 @@ export const ServerConfigSchema = z
           .number()
           .int()
           .openapi({ description: 'Maximum concurrent task runs (1-10)' }),
-        timezone: z.string().nullable().openapi({
-          description: 'IANA timezone for cron expressions, or null for system default',
-        }),
         retentionCount: z
           .number()
           .int()
@@ -3986,8 +3983,17 @@ export const TaskNameSchema = z
   )
   .refine((s) => !s.includes('--'), 'Must not contain consecutive hyphens');
 
+/**
+ * How a task run ended.
+ *
+ * `skipped` is the one that is not about the agent at all: the schedule came
+ * round while this server was already running as many tasks at once as it is
+ * allowed to, so the occurrence was recorded and deliberately not run
+ * (DOR-1482). It is terminal, and it is not a failure — nothing went wrong, the
+ * server was simply busy.
+ */
 export const TaskRunStatusSchema = z
-  .enum(['running', 'completed', 'failed', 'cancelled'])
+  .enum(['running', 'completed', 'failed', 'cancelled', 'skipped'])
   .openapi('TaskRunStatus');
 
 export type TaskRunStatus = z.infer<typeof TaskRunStatusSchema>;

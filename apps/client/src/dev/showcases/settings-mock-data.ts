@@ -111,7 +111,6 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   ],
   scheduler: {
     maxConcurrentRuns: 3,
-    timezone: null,
     retentionCount: 100,
   },
   logging: {

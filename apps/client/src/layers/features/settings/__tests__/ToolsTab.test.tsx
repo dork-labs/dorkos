@@ -116,7 +116,7 @@ function buildConfig(o: ConfigOverrides = {}) {
       lockedByEnv: o.relayLockedByEnv ?? false,
       ...(o.relayInitError && { initError: o.relayInitError }),
     },
-    scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
+    scheduler: { enabled: true, maxConcurrentRuns: 1, retentionCount: 100 },
     agentContext: {
       tasksTools: true,
       relayTools: true,

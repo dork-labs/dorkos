@@ -2026,6 +2026,12 @@ async function start() {
       // allowance is one ceiling across both ways it can reach a person.
       notifyBudget,
       ...(taskStore && { taskStore }),
+      // A getter, not the registrar: these deps are assembled ~120 lines before
+      // `TaskRegistrar` is constructed, so the value read here would be
+      // `undefined` for the life of the process — which is exactly why the task
+      // MCP tools used to write rows the scheduler never heard about
+      // (DOR-1493). Read at call time, by which point it exists.
+      resolveTaskRegistrar: () => taskRegistrar ?? null,
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),
       ...(adapterManager && { bindingStore: adapterManager.getBindingStore() }),
@@ -2134,7 +2140,6 @@ async function start() {
       config: {
         maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
         retentionCount: schedulerConfig.retentionCount,
-        timezone: schedulerConfig.timezone,
         mayFire: firing.mayFire,
         firingReason: firing.reason,
       },

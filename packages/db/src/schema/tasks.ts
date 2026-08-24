@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { desc } from 'drizzle-orm';
 
 /** Task definitions cached from .md files. Internal table name retained for migration simplicity. */
 export const pulseSchedules = sqliteTable('pulse_schedules', {
@@ -60,7 +61,10 @@ export const pulseRuns = sqliteTable(
       // of a schedule that ever ran into a FOREIGN KEY violation.
       .references(() => pulseSchedules.id, { onDelete: 'cascade' }),
     status: text('status', {
-      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout'],
+      // `skipped` is a tick the scheduler deliberately did not run — the cap was
+      // full when it came round (DOR-1482). `timeout` predates it and no writer
+      // produces it; both are terminal, neither is a failure.
+      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout', 'skipped'],
     }).notNull(),
     startedAt: text('started_at').notNull(), // ISO 8601 TEXT
     finishedAt: text('finished_at'),
@@ -75,7 +79,20 @@ export const pulseRuns = sqliteTable(
       .default('scheduled'),
     createdAt: text('created_at').notNull(),
   },
-  (table) => [index('idx_pulse_runs_session').on(table.sessionId)]
+  (table) => [
+    index('idx_pulse_runs_session').on(table.sessionId),
+    // Every read of run history is newest-first, and this table is the one that
+    // GROWS: a task on a per-minute schedule writes 43,200 rows a month, and
+    // until DOR-1482 nothing pruned it between restarts. Without these two, both
+    // shapes of that read are a full scan plus a sort of everything.
+    //
+    // `created_at` alone answers the unfiltered "show me recent runs"
+    // (`GET /api/tasks/runs`); the composite answers the per-task reads —
+    // `listRuns({ taskId })` and, on the hourly retention sweep, `pruneRuns`,
+    // which asks for one task's newest N by exactly this ordering.
+    index('idx_pulse_runs_created_at').on(desc(table.createdAt)),
+    index('idx_pulse_runs_schedule_created_at').on(table.scheduleId, desc(table.createdAt)),
+  ]
 );
 
 /**

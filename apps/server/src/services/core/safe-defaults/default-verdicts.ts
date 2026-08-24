@@ -145,7 +145,6 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'relay.enabled',
   'relay.dataDir',
   'scheduler.enabled',
-  'scheduler.timezone',
   'scheduler.retentionCount',
   'onboarding.completedSteps',
   'onboarding.skippedSteps',

@@ -976,6 +976,31 @@ export function backfillApprovalsDefaults(store: {
 }
 
 /**
+ * Migration body: remove `scheduler.timezone` (DOR-1482).
+ *
+ * The setting never did anything. Every schedule carries its own timezone —
+ * `pulse_schedules.timezone` is NOT NULL DEFAULT 'UTC', and every write path
+ * fills it — so the scheduler's `task.timezone ?? config.timezone` fallback
+ * could not be reached, and a person who set a "default timezone for cron
+ * expressions" in Settings changed nothing at all. Being honest by design means
+ * a control that does nothing is removed, not left there looking functional.
+ *
+ * Idempotent: only deletes the key when it is present. Nothing is migrated onto
+ * the schedules themselves — they already have the value they run on.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `has`/`delete`).
+ */
+export function dropSchedulerTimezone(store: {
+  has: (key: string) => boolean;
+  delete: (key: string) => void;
+}): void {
+  if (store.has('scheduler.timezone')) {
+    store.delete('scheduler.timezone');
+  }
+}
+
+/**
  * Migration body: remove the tunnel passcode fields (`tunnel.passcodeEnabled`,
  * `tunnel.passcodeHash`, `tunnel.passcodeSalt`) and the root `sessionSecret`
  * from stored configs. The tunnel passcode auth path and the cookie-session
@@ -3398,6 +3423,17 @@ export const CONFIG_MIGRATIONS = {
     // backfill wrote `false` into every upgraded config, so Ajv's `useDefaults`
     // will never revisit the key.
     warmClaudeCodeSessionsByDefault(store);
+  },
+  // 0.67.0 has merged (the full-power door), so 0.68.0 is the next key. Frozen
+  // from merge, not from the release bump, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.69.0'`.
+  //
+  // Purely subtractive, and safety-neutral: it removes a key that never had any
+  // effect (DOR-1482). Disjoint from every other key here.
+  '0.68.0': (store: { has: (key: string) => boolean; delete: (key: string) => void }) => {
+    // `scheduler.timezone` — a documented setting that did nothing, because
+    // every schedule already carries its own timezone.
+    dropSchedulerTimezone(store);
   },
 } as const;
 

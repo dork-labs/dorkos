@@ -66,7 +66,6 @@ describe('a task file on disk drives the running scheduler', () => {
     scheduler = new TaskSchedulerService(store, silentAgentManager(), {
       maxConcurrentRuns: 1,
       retentionCount: 100,
-      timezone: null,
       // Nothing in this file waits long enough to fire, and the schedules are
       // hours out; firing stays on so the jobs are the real thing.
       mayFire: true,

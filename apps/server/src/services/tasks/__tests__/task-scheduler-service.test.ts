@@ -110,7 +110,6 @@ function taskInput(
 const DEFAULT_CONFIG = {
   maxConcurrentRuns: 1,
   retentionCount: 100,
-  timezone: null,
   mayFire: true,
   firingReason: 'test',
 };
@@ -675,6 +674,234 @@ describe('TaskSchedulerService', () => {
     it('returns 0 when no runs are active', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       expect(service.getActiveRunCount()).toBe(0);
+    });
+  });
+
+  describe('the concurrency cap counts BOTH dispatch paths (DOR-1482)', () => {
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+    /** A relay that takes the dispatch and never reports an ending. */
+    let mockRelay: { publish: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(true);
+      mockRelay = {
+        publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+      };
+    });
+
+    afterEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(false);
+    });
+
+    function relayScheduler(maxConcurrentRuns = 1): TaskSchedulerService {
+      return new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG, maxConcurrentRuns },
+        relay: mockRelay as unknown as RelayCore,
+      });
+    }
+
+    it('a relay-dispatched run is counted as active', async () => {
+      // It used to be invisible: only `executeRunDirect` recorded anything, so
+      // with the relay enabled this number was a flat zero however many runs
+      // were in flight.
+      const task = store.createTask(taskInput({ name: 'Busy relay', cron: '0 * * * *' }));
+      const service = relayScheduler();
+
+      await service.triggerManualRun(task.id);
+
+      expect(service.getActiveRunCount()).toBe(1);
+      await service.stop();
+    });
+
+    it('a second tick at the cap is refused while a relay run is in flight', async () => {
+      // The defect: with the relay enabled, `maxConcurrentRuns` never tripped,
+      // so a slow hourly task could pile up unbounded concurrent agent turns.
+      const first = store.createTask(taskInput({ name: 'First', cron: '0 * * * *' }));
+      const second = store.createTask(taskInput({ name: 'Second', cron: '0 * * * *' }));
+      const service = relayScheduler(1);
+
+      await service.triggerManualRun(first.id); // takes the only slot
+      await (service as unknown as Dispatchable).dispatch(second, new Date(1_700_000_040_000));
+
+      // The second task was NOT published — it never ran.
+      expect(mockRelay.publish).toHaveBeenCalledOnce();
+      const [secondRun] = store.listRuns({ taskId: second.id });
+      expect(secondRun.status).toBe('skipped');
+      await service.stop();
+    });
+
+    it('a relay run that reaches a terminal status frees its slot', async () => {
+      const first = store.createTask(taskInput({ name: 'Frees', cron: '0 * * * *' }));
+      const second = store.createTask(taskInput({ name: 'Then runs', cron: '0 * * * *' }));
+      const service = relayScheduler(1);
+
+      const held = await service.triggerManualRun(first.id);
+      expect(service.getActiveRunCount()).toBe(1);
+
+      // The receiver finishes it — the row is the only thing that says so.
+      store.updateRun(held!.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      expect(service.getActiveRunCount()).toBe(0);
+
+      await (service as unknown as Dispatchable).dispatch(second, new Date(1_700_000_040_000));
+      expect(mockRelay.publish).toHaveBeenCalledTimes(2);
+      expect(store.listRuns({ taskId: second.id })[0].status).toBe('running');
+      await service.stop();
+    });
+
+    it('shutdown asks the bus to stop the relay runs it cannot abort itself', async () => {
+      const task = store.createTask(taskInput({ name: 'Left running', cron: '0 * * * *' }));
+      const service = relayScheduler();
+      const run = await service.triggerManualRun(task.id);
+
+      await service.stop();
+
+      const stop = mockRelay.publish.mock.calls.find(([subject]) =>
+        String(subject).includes('cancel')
+      );
+      expect(stop, 'a stop request went out for the in-flight relay run').toBeDefined();
+      expect(JSON.stringify(stop![1])).toContain(run!.id);
+    });
+  });
+
+  describe('a tick dropped at the cap is recorded, not silently lost (DOR-1482)', () => {
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+
+    it('writes a skipped run saying why, at the time the schedule came round', async () => {
+      const busy = store.createTask(taskInput({ name: 'Slow one', cron: '* * * * *' }));
+      const waiting = store.createTask(taskInput({ name: 'Waiting', cron: '* * * * *' }));
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 1,
+      });
+      void service.triggerManualRun(busy.id);
+      await parked;
+
+      await (service as unknown as Dispatchable).dispatch(waiting, new Date(1_700_000_040_000));
+
+      const [skipped] = store.listRuns({ taskId: waiting.id });
+      expect(skipped.status).toBe('skipped');
+      expect(skipped.error).toContain('limit');
+      expect(skipped.finishedAt).not.toBeNull();
+      // Nothing was started: the agent was never asked to run this one.
+      expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
+
+      await service.stop();
+    });
+
+    it('claims the tick, so two processes at the cap record ONE skip', async () => {
+      // Without the claim, every process that fired this occurrence wrote its
+      // own skip — and, worse, an unclaimed tick could still be run by another
+      // process after this one had decided not to.
+      const busy = store.createTask(taskInput({ name: 'Occupier', cron: '* * * * *' }));
+      const waiting = store.createTask(taskInput({ name: 'Contended', cron: '* * * * *' }));
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      const capped = { ...DEFAULT_CONFIG, maxConcurrentRuns: 1 };
+      const bothLeader = {
+        tryAcquire: () => true,
+        heartbeat: () => {},
+        release: () => {},
+        isLeaderNow: true,
+      };
+      const s1 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: capped,
+        leaderLock: bothLeader,
+      });
+      const s2 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: capped,
+        leaderLock: bothLeader,
+      });
+      void s1.triggerManualRun(busy.id);
+      await parked;
+
+      const tick = new Date(1_700_000_040_000);
+      await (s1 as unknown as Dispatchable).dispatch(waiting, tick);
+      await (s2 as unknown as Dispatchable).dispatch(waiting, tick);
+
+      expect(store.listRuns({ taskId: waiting.id })).toHaveLength(1);
+
+      await s1.stop();
+      await s2.stop();
+    });
+  });
+
+  describe('retention runs on a timer, not only at startup (DOR-1482)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('prunes run history and the dispatch log every hour', async () => {
+      vi.useFakeTimers();
+      const task = store.createTask(taskInput({ name: 'Chatty', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        retentionCount: 2,
+      });
+      await service.start();
+
+      // Four runs land AFTER boot — exactly what a per-minute task does to a
+      // server that is never restarted.
+      for (let i = 0; i < 4; i++) store.createRun(task.id, 'scheduled');
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(4);
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
+      await service.stop();
+    });
+
+    it('stops pruning once the scheduler has stopped', async () => {
+      vi.useFakeTimers();
+      const task = store.createTask(taskInput({ name: 'Stopped', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        retentionCount: 1,
+      });
+      await service.start();
+      await service.stop();
+
+      store.createRun(task.id, 'scheduled');
+      store.createRun(task.id, 'scheduled');
+      await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
+    });
+  });
+
+  describe('crash recovery is the leader job alone (DOR-1482)', () => {
+    it('a follower boot leaves another process runs running', async () => {
+      const task = store.createTask(taskInput({ name: 'Someone elses', cron: '0 * * * *' }));
+      const live = store.createRun(task.id, 'scheduled');
+
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: {
+          tryAcquire: () => false,
+          heartbeat: () => {},
+          release: () => {},
+          isLeaderNow: false,
+        },
+      });
+      await service.start();
+
+      expect(store.getRun(live.id)!.status).toBe('running');
+      await service.stop();
     });
   });
 
@@ -1312,7 +1539,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1346,7 +1572,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1392,7 +1617,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1427,7 +1651,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },

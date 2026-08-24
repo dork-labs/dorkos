@@ -439,6 +439,44 @@ describe('Database Migrations', () => {
     expect(index?.sql).toContain('WHERE "entry_id" IS NULL');
   });
 
+  it('gives pulse_runs the newest-first indexes its two read shapes need (DOR-1482)', () => {
+    // Run history is the table that grows without bound — a per-minute task
+    // writes ~43k rows a month — and every read of it is newest-first. Both
+    // shapes are asserted off the MIGRATED database rather than the schema
+    // file, same rationale as the indexes above: the two can disagree.
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    const byCreated = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_pulse_runs_created_at') as { sql: string } | undefined;
+    expect(byCreated?.sql).toMatch(/created_at.*desc/i);
+
+    const byScheduleCreated = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_pulse_runs_schedule_created_at') as { sql: string } | undefined;
+    expect(byScheduleCreated?.sql).toContain('schedule_id');
+    expect(byScheduleCreated?.sql).toMatch(/created_at.*desc/i);
+
+    // The planner actually picks them for the two queries that matter:
+    // the unfiltered run list (`GET /api/tasks/runs`)…
+    const listPlan = db.$client
+      .prepare('EXPLAIN QUERY PLAN SELECT * FROM pulse_runs ORDER BY created_at DESC LIMIT 50')
+      .all() as { detail: string }[];
+    expect(listPlan.some((row) => row.detail.includes('idx_pulse_runs_created_at'))).toBe(true);
+
+    // …and the retention sweep's "newest N for one schedule" (`pruneRuns`),
+    // which now runs on an hourly timer rather than once at startup.
+    const prunePlan = db.$client
+      .prepare(
+        'EXPLAIN QUERY PLAN SELECT id FROM pulse_runs WHERE schedule_id = ? ORDER BY created_at DESC LIMIT 100'
+      )
+      .all('01SCHEDULE') as { detail: string }[];
+    expect(prunePlan.some((row) => row.detail.includes('idx_pulse_runs_schedule_created_at'))).toBe(
+      true
+    );
+  });
+
   it('gives relay_index the sender/created_at index ADR-0014 committed to', () => {
     // The rate limiter's sliding-window log runs `SELECT COUNT(*) FROM
     // relay_index WHERE sender = ? AND created_at > ?` on every publish

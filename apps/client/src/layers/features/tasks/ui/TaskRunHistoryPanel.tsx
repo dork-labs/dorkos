@@ -5,6 +5,7 @@ import {
   Loader2,
   MinusCircle,
   Play,
+  SkipForward,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -82,6 +83,15 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
       return (
         <span title="Cancelled" aria-label="Cancelled">
           <MinusCircle className="text-muted-foreground size-3.5" />
+        </span>
+      );
+    case 'skipped':
+      // Not a failure and not a cancellation: the schedule came round while
+      // DorkOS was already running as many tasks as it is allowed to, so this
+      // occurrence was recorded and not run. The row's error text says so.
+      return (
+        <span title="Skipped — DorkOS was busy" aria-label="Skipped">
+          <SkipForward className="text-muted-foreground size-3.5" />
         </span>
       );
     default:
@@ -410,6 +420,7 @@ function StatusFilterSelect({
           <SelectItem value="completed">Completed</SelectItem>
           <SelectItem value="failed">Failed</SelectItem>
           <SelectItem value="cancelled">Cancelled</SelectItem>
+          <SelectItem value="skipped">Skipped</SelectItem>
         </SelectContent>
       </Select>
     </div>

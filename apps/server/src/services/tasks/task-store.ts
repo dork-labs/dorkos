@@ -19,6 +19,7 @@ import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { resolveFilePermissionMode } from './schedule-permission-clamp.js';
+import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -96,6 +97,10 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
   'completed',
   'failed',
   'cancelled',
+  // A skipped tick never started, so it is over the instant it is written
+  // (DOR-1482) — and being terminal is what stops anything from later
+  // "finishing" a run that was never run.
+  'skipped',
 ]);
 
 /**
@@ -479,23 +484,59 @@ export class TaskStore {
   }
 
   /**
-   * Atomically claim a scheduled dispatch for `(taskId, scheduledFireTime)`
-   * (ADR-285). Backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
-   * succeeds for exactly one caller per tick across all processes sharing this
-   * DB. Returns `true` if THIS caller won the claim (should fire), `false` if the
-   * tick was already dispatched (skip).
+   * Atomically claim a scheduled tick AND open its run row, in one transaction
+   * (ADR-285; made atomic by DOR-1482).
+   *
+   * The claim is backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
+   * succeeds for exactly one caller per tick across every process sharing this
+   * database. The run row rides in the SAME transaction because the two used to
+   * be consecutive statements, and a process that died between them consumed
+   * the occurrence for the whole seven-day dedup window while leaving no
+   * evidence it had ever happened: no run row, nothing in the history, and a
+   * `nextRun` that had already moved on. Either both rows exist or neither
+   * does, so a crashed dispatch is simply a tick that was never claimed and the
+   * next process to see it may take it.
    *
    * @param taskId - The task being dispatched.
    * @param scheduledFireTime - The cron's intended tick (epoch ms), not wall-clock.
-   * @returns Whether this caller may proceed to fire.
+   * @param outcome - `running` opens a live run; `skipped` records a tick this
+   *   scheduler deliberately did not run, with the reason a person will read.
+   * @returns The new run, or null when another caller already claimed this tick.
    */
-  tryClaimDispatch(taskId: string, scheduledFireTime: number): boolean {
-    const result = this.db
-      .insert(pulseDispatchLog)
-      .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
-      .onConflictDoNothing()
-      .run();
-    return result.changes === 1;
+  claimScheduledRun(
+    taskId: string,
+    scheduledFireTime: number,
+    outcome: { status: 'running' } | { status: 'skipped'; reason: string }
+  ): TaskRun | null {
+    const now = new Date().toISOString();
+    const runId = this.db.transaction((tx) => {
+      const claim = tx
+        .insert(pulseDispatchLog)
+        .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
+        .onConflictDoNothing()
+        .run();
+      if (claim.changes !== 1) return null;
+
+      const id = ulid();
+      tx.insert(pulseRuns)
+        .values({
+          id,
+          scheduleId: taskId,
+          status: outcome.status,
+          startedAt: now,
+          trigger: 'scheduled',
+          createdAt: now,
+          // A skipped tick is over the moment it is recorded: it has an ending,
+          // it took no time, and the reason is the whole point of writing it.
+          ...(outcome.status === 'skipped'
+            ? { finishedAt: now, durationMs: 0, error: outcome.reason }
+            : {}),
+        })
+        .run();
+      return id;
+    });
+
+    return runId ? this.getRun(runId) : null;
   }
 
   /**
@@ -516,8 +557,14 @@ export class TaskStore {
   }
 
   /**
-   * Mark all currently running runs as failed (used on startup for crash
-   * recovery, DOR-249).
+   * Mark NAMED runs as failed because a restart interrupted them (DOR-249).
+   *
+   * Takes explicit ids rather than sweeping every `running` row, which is what
+   * this used to do: the database is shared by every process using one
+   * `dorkHome` (ADR-285), so an unscoped sweep let one process's boot end
+   * another process's live runs. Deciding WHICH runs a crash left behind is a
+   * judgement about leadership and ownership, so it lives in
+   * `crash-recovery.ts`; this method only carries out the decision.
    *
    * Scoped to rows that are genuinely unfinished (`finishedAt IS NULL`) —
    * a `running` row that already carries a real `finishedAt` was completed
@@ -526,8 +573,12 @@ export class TaskStore {
    * this sweep must not assume every writer is patched). Never overwrite an
    * existing `finishedAt`: that timestamp is the only record of when the run
    * actually finished.
+   *
+   * @param runIds - The runs to end. An empty list writes nothing.
+   * @returns How many rows were changed.
    */
-  markRunningAsFailed(): number {
+  markRunsInterrupted(runIds: string[]): number {
+    if (runIds.length === 0) return 0;
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseRuns)
@@ -536,7 +587,13 @@ export class TaskStore {
         finishedAt: now,
         error: 'Interrupted by server restart',
       })
-      .where(and(eq(pulseRuns.status, 'running'), isNull(pulseRuns.finishedAt)))
+      .where(
+        and(
+          inArray(pulseRuns.id, runIds),
+          eq(pulseRuns.status, 'running'),
+          isNull(pulseRuns.finishedAt)
+        )
+      )
       .run();
     return result.changes;
   }
@@ -611,7 +668,14 @@ export class TaskStore {
     // it): if such a row ever appears, it's a run that ended without
     // success, so it must count against the success rate rather than be
     // silently ignored.
-    const reliabilityTerminalStatuses = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
+    //
+    // 'skipped' is excluded for the mirror-image reason: the agent never ran,
+    // so the schedule neither succeeded nor failed. Counting a busy server
+    // against the task's reliability would blame the task for the queue.
+    const reliabilityTerminalStatuses = [
+      ...[...TERMINAL_RUN_STATUSES].filter((status) => status !== 'skipped'),
+      'timeout' as const,
+    ];
     const conditions = [inArray(pulseRuns.status, reliabilityTerminalStatuses)];
     if (scheduleId) {
       conditions.push(eq(pulseRuns.scheduleId, scheduleId));
@@ -800,56 +864,4 @@ export class TaskStore {
   close(): void {
     logger.debug('[Tasks] TaskStore close() is a no-op — the db lifecycle is managed externally');
   }
-}
-
-/**
- * Convert a Drizzle schedule row to a Task object.
- *
- * `proposedByName` and `nextRuns` are left at their empty values here on
- * purpose. Both are resolved when a task is READ by something that can answer
- * them — the name from the agent-identity service (async, and the store is a
- * synchronous data layer), the run times from the scheduler — so the store
- * never caches an answer that can go stale between a write and a read.
- */
-function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
-  return {
-    id: row.id,
-    name: row.name,
-    displayName: row.displayName ?? null,
-    description: row.description ?? null,
-    prompt: row.prompt,
-    cron: row.cron,
-    timezone: row.timezone,
-    agentId: row.agentId ?? null,
-    enabled: row.enabled,
-    maxRuntime: row.maxRuntime,
-    permissionMode: row.permissionMode,
-    status: row.status as Task['status'],
-    filePath: row.filePath,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    reason: row.reason ?? null,
-    proposedBySessionId: row.proposedBySessionId ?? null,
-    proposedByAgentPath: row.proposedByAgentPath ?? null,
-    proposedByName: null,
-    nextRun: null,
-    nextRuns: [],
-  } as Task;
-}
-
-/** Convert a Drizzle run row to a TaskRun object. */
-function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
-  return {
-    id: row.id,
-    scheduleId: row.scheduleId,
-    status: row.status as TaskRunStatus,
-    startedAt: row.startedAt,
-    finishedAt: row.finishedAt,
-    durationMs: row.durationMs,
-    outputSummary: row.output,
-    error: row.error,
-    sessionId: row.sessionId,
-    trigger: row.trigger as TaskRunTrigger,
-    createdAt: row.createdAt,
-  };
 }

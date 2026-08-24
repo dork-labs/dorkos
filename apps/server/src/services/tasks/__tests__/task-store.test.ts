@@ -199,8 +199,8 @@ describe('TaskStore', () => {
     it('deletes the task dispatch-dedup rows too, so they cannot outlive the task', () => {
       const created = store.createTask(taskInput({ name: 'Has dispatches' }));
       const other = store.createTask(taskInput({ name: 'Untouched' }));
-      store.tryClaimDispatch(created.id, 1_700_000_000_000);
-      store.tryClaimDispatch(other.id, 1_700_000_000_000);
+      store.claimScheduledRun(created.id, 1_700_000_000_000, { status: 'running' });
+      store.claimScheduledRun(other.id, 1_700_000_000_000, { status: 'running' });
 
       store.deleteTask(created.id);
 
@@ -479,7 +479,17 @@ describe('TaskStore', () => {
 
   // === Crash recovery ===
 
-  describe('markRunningAsFailed', () => {
+  describe('markRunsInterrupted', () => {
+    /**
+     * What the crash sweep passes: every run the store currently believes is
+     * running. Which of those a given process is ENTITLED to end is decided in
+     * `crash-recovery.ts` and tested there (DOR-1482); these cases are about
+     * what the write itself does once that decision is made.
+     */
+    function everyRunningRun() {
+      return store.getRunningRuns().map((run) => run.id);
+    }
+
     function createTestTask() {
       return store.createTask(
         taskInput({ name: 'Recovery Test', prompt: 'test', cron: '* * * * *' })
@@ -491,7 +501,7 @@ describe('TaskStore', () => {
       store.createRun(taskId, 'scheduled');
       store.createRun(taskId, 'scheduled');
 
-      const changed = store.markRunningAsFailed();
+      const changed = store.markRunsInterrupted(everyRunningRun());
       expect(changed).toBe(2);
 
       const running = store.getRunningRuns();
@@ -507,7 +517,7 @@ describe('TaskStore', () => {
       const run = store.createRun(taskId, 'scheduled');
       store.updateRun(run.id, { status: 'completed' });
 
-      const changed = store.markRunningAsFailed();
+      const changed = store.markRunsInterrupted(everyRunningRun());
       expect(changed).toBe(0);
 
       const found = store.getRun(run.id);
@@ -533,7 +543,7 @@ describe('TaskStore', () => {
         .where(eq(pulseRuns.id, run.id))
         .run();
 
-      const changed = store.markRunningAsFailed();
+      const changed = store.markRunsInterrupted(everyRunningRun());
       expect(changed).toBe(0);
 
       const found = store.getRun(run.id);
@@ -552,7 +562,7 @@ describe('TaskStore', () => {
         .where(eq(pulseRuns.id, stuckButFinished.id))
         .run();
 
-      const changed = store.markRunningAsFailed();
+      const changed = store.markRunsInterrupted(everyRunningRun());
       expect(changed).toBe(1);
 
       expect(store.getRun(crashed.id)!.status).toBe('failed');
@@ -848,31 +858,79 @@ describe('TaskStore', () => {
   });
 
   describe('dispatch idempotency (ADR-285)', () => {
+    const running = { status: 'running' } as const;
+
     it('claims a tick once — a duplicate (taskId, tick) does not claim again', () => {
       const task = store.createTask(taskInput({ name: 'Dedup', prompt: 'x', cron: '0 * * * *' }));
       const tick = 1_700_000_000_000;
-      expect(store.tryClaimDispatch(task.id, tick)).toBe(true);
-      expect(store.tryClaimDispatch(task.id, tick)).toBe(false);
+      expect(store.claimScheduledRun(task.id, tick, running)).not.toBeNull();
+      expect(store.claimScheduledRun(task.id, tick, running)).toBeNull();
     });
 
     it('distinct ticks for the same task both claim', () => {
       const task = store.createTask(taskInput({ name: 'Dedup2', prompt: 'x', cron: '0 * * * *' }));
-      expect(store.tryClaimDispatch(task.id, 1_700_000_000_000)).toBe(true);
-      expect(store.tryClaimDispatch(task.id, 1_700_000_060_000)).toBe(true);
+      expect(store.claimScheduledRun(task.id, 1_700_000_000_000, running)).not.toBeNull();
+      expect(store.claimScheduledRun(task.id, 1_700_000_060_000, running)).not.toBeNull();
+    });
+
+    it('opens the run row in the same transaction as the claim (DOR-1482)', () => {
+      // The crash window this closes: a claim written, then a process death
+      // before the run row existed, left the occurrence consumed for seven days
+      // with nothing anywhere to show it had ever been dispatched.
+      const task = store.createTask(taskInput({ name: 'Atomic', prompt: 'x', cron: '0 * * * *' }));
+      const run = store.claimScheduledRun(task.id, 1_700_000_000_000, running);
+
+      expect(run).not.toBeNull();
+      expect(run!.status).toBe('running');
+      expect(run!.trigger).toBe('scheduled');
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(1);
+      expect(db.select().from(pulseDispatchLog).all()).toHaveLength(1);
+    });
+
+    it('a claim whose run row cannot be written claims nothing at all (DOR-1482)', () => {
+      // Proves the atomicity rather than asserting it: the run insert is forced
+      // to fail, and the dispatch-log row must roll back with it — otherwise the
+      // tick would be permanently consumed by a dispatch that never happened.
+      const task = store.createTask(
+        taskInput({ name: 'Rollback', prompt: 'x', cron: '0 * * * *' })
+      );
+      const tick = 1_700_000_120_000;
+      // A run row's schedule_id is a foreign key; deleting the task under it
+      // makes the insert fail exactly where a crash would have.
+      const doomedTaskId = task.id;
+      store.deleteTask(doomedTaskId);
+
+      expect(() => store.claimScheduledRun(doomedTaskId, tick, running)).toThrow();
+      expect(db.select().from(pulseDispatchLog).all()).toHaveLength(0);
+    });
+
+    it('records a tick the scheduler deliberately did not run (DOR-1482)', () => {
+      const task = store.createTask(taskInput({ name: 'Busy', prompt: 'x', cron: '0 * * * *' }));
+      const run = store.claimScheduledRun(task.id, 1_700_000_000_000, {
+        status: 'skipped',
+        reason: 'DorkOS was already running 4 tasks at once, which is its limit',
+      });
+
+      expect(run!.status).toBe('skipped');
+      expect(run!.finishedAt).not.toBeNull();
+      expect(run!.durationMs).toBe(0);
+      expect(run!.error).toContain('already running 4 tasks');
+      // Terminal on arrival: nothing may later "finish" a run that never ran.
+      expect(store.updateRun(run!.id, { status: 'completed' })!.status).toBe('skipped');
     });
 
     it('pruneDispatchLog removes ticks older than the TTL and keeps fresh ones', () => {
       const task = store.createTask(taskInput({ name: 'Prune', prompt: 'x', cron: '0 * * * *' }));
       const oldTick = Date.now() - 10 * 24 * 60 * 60 * 1000; // 10 days ago
       const freshTick = Date.now();
-      store.tryClaimDispatch(task.id, oldTick);
-      store.tryClaimDispatch(task.id, freshTick);
+      store.claimScheduledRun(task.id, oldTick, running);
+      store.claimScheduledRun(task.id, freshTick, running);
 
       expect(store.pruneDispatchLog(7 * 24 * 60 * 60 * 1000)).toBe(1); // only the 10-day-old row
 
       // The pruned tick is reclaimable; the fresh one is still blocked.
-      expect(store.tryClaimDispatch(task.id, oldTick)).toBe(true);
-      expect(store.tryClaimDispatch(task.id, freshTick)).toBe(false);
+      expect(store.claimScheduledRun(task.id, oldTick, running)).not.toBeNull();
+      expect(store.claimScheduledRun(task.id, freshTick, running)).toBeNull();
     });
   });
 
