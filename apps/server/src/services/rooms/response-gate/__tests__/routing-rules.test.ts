@@ -24,6 +24,7 @@ function post(overrides: Partial<RoutedEntry> = {}): RoutedEntry {
     mentions: [],
     answersEntryId: null,
     answersThisAgent: false,
+    answeredEntryMentionsThisAgent: false,
     ...overrides,
   };
 }
@@ -126,6 +127,37 @@ describe('R2 — colleagues_answer', () => {
     ).toBeNull();
   });
 
+  it('does NOT excuse a reply to a question that NAMED this agent', () => {
+    // `@ana @nova what do you think?` asked both. Ana answering first does not
+    // discharge Nova's half of it, so Nova still runs — one extra turn against
+    // silently dropping a direct ask.
+    expect(
+      route([
+        post({
+          authorId: 'nova',
+          authorKind: 'agent',
+          answersEntryId: 'q1',
+          answeredEntryMentionsThisAgent: true,
+        }),
+      ])
+    ).toBeNull();
+  });
+
+  it('DOES excuse a reply to a question that named only somebody else', () => {
+    // The other half of the same pair, so the carve-out above cannot quietly
+    // widen into "never excuse a reply".
+    expect(
+      route([
+        post({
+          authorId: 'nova',
+          authorKind: 'agent',
+          answersEntryId: 'q1',
+          answeredEntryMentionsThisAgent: false,
+        }),
+      ])
+    ).toEqual({ verdict: 'no', rule: 'colleagues_answer' });
+  });
+
   it('reads an author whose row has vanished as `system`, and excuses nothing', () => {
     expect(route([post({ authorKind: 'system', answersEntryId: 'q1' })])).toBeNull();
   });
@@ -203,6 +235,7 @@ describe('what tier 1 never reads', () => {
     // real assertion; this pins that the shape has not grown one.
     const entry = post({ mentions: ['nova'] });
     expect(Object.keys(entry).sort()).toEqual([
+      'answeredEntryMentionsThisAgent',
       'answersEntryId',
       'answersThisAgent',
       'authorId',

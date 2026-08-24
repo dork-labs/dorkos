@@ -17,7 +17,12 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { roomTurnSpend, type Db } from '@dorkos/db';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type {
+  RoomEntry,
+  RoomEvent,
+  RoomSignalEvent,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import type { ResponseGateMode } from '../response-gate/routing-rules.js';
@@ -26,9 +31,23 @@ import { logger } from '../../../lib/logger.js';
 import {
   agentLookupFor,
   createRoomHarness,
+  gatedRunner,
   scriptedRunner,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
+import { routeAmbient } from '../response-gate/routing-rules.js';
+
+/**
+ * The rules module, wrapped so one case can make a rule throw.
+ *
+ * Mocked at the MODULE rather than by stubbing a store method, because "the rule
+ * threw" is the failure spec §9's first row is about, and a store stub would
+ * pass just as well against a guard placed one frame too high.
+ */
+vi.mock('../response-gate/routing-rules.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../response-gate/routing-rules.js')>();
+  return { ...actual, routeAmbient: vi.fn(actual.routeAmbient) };
+});
 
 const AGENTS = agentLookupFor({
   '/agents/ana': { name: 'ana' },
@@ -161,8 +180,7 @@ describe('T4 — a skipped message never counts against a turn limit', () => {
     await say(w, '@ana one more thing');
     // The room's headroom as the LAST turn was told it — the number an agent
     // decides how freely to answer against.
-    const before = w.runner.turns.at(-1)!.roomContext.budget
-      .automaticRepliesLeftInThisRoomThisHour;
+    const before = w.runner.turns.at(-1)!.roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
     const spendBefore = w.db.select().from(roomTurnSpend).all().length;
 
     const skipped = await say(w, '@nova can you ship the release?');
@@ -178,8 +196,7 @@ describe('T4 — a skipped message never counts against a turn limit', () => {
     ).toBeUndefined();
 
     await say(w, '@ana and now?');
-    const after = w.runner.turns.at(-1)!.roomContext.budget
-      .automaticRepliesLeftInThisRoomThisHour;
+    const after = w.runner.turns.at(-1)!.roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
     // One spend between the two readings — Ana's own turn here. Without the gate
     // it would be two, and the overheard message would have bought the second.
     expect(before! - after!).toBe(1);
@@ -321,5 +338,177 @@ describe('T12 — the audit trail', () => {
     await engageAna(w);
     await say(w, '@ana one more thing');
     expect(recentRefusals().some((entry) => entry.reason === 'not_addressed_to_me')).toBe(false);
+  });
+});
+
+describe('T5 — a skipped message shows nobody working', () => {
+  it('publishes no presence and no working count for the agent it excused', async () => {
+    const runner = scriptedRunner(() => 'on it');
+    const harness = createRoomHarness({ agents: AGENTS, runner });
+    const published: Array<{ roomId: string; event: RoomEvent }> = [];
+    const broadcaster = harness.service.stream;
+    const deliver = broadcaster.publish.bind(broadcaster);
+    vi.spyOn(broadcaster, 'publish').mockImplementation((roomId, event) => {
+      published.push({ roomId, event });
+      deliver(roomId, event);
+    });
+    const room = harness.service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Backend',
+        members: [],
+        agentPaths: ['/agents/ana', '/agents/nova'],
+      },
+      harness.human
+    );
+    const ana = harness.authors.resolveAgent('/agents/ana', 'ana').id;
+    harness.service.post(room.id, { authorId: harness.human, text: '@ana is the build green?' });
+    await harness.service.triggersIdle();
+    published.length = 0;
+
+    harness.service.post(room.id, { authorId: harness.human, text: '@nova ship the release' });
+    await harness.service.triggersIdle();
+
+    const aboutAna = published
+      .filter((sent) => sent.roomId === room.id)
+      .map((sent) => sent.event)
+      .filter((event): event is RoomSignalEvent => event.type === 'signal')
+      .filter((event) => event.authorId === ana);
+    // The wart this removes: a claim is what publishes an indicator, so before
+    // the gate the room flashed "Ana is working" and resolved it into nothing at
+    // all — the one documented exception to "an indicator releases into
+    // something durable" (`.claude/rules/room-conduct.md`), on its commonest
+    // path. No claim, no flash.
+    expect(aboutAna).toEqual([]);
+  });
+});
+
+describe('T8 — a gate that throws runs the turn (fail open)', () => {
+  it('keeps the collection, warns, and lets the room settle', async () => {
+    const w = open();
+    await engageAna(w);
+    const warn = vi.spyOn(logger, 'warn');
+    vi.mocked(routeAmbient).mockImplementationOnce(() => {
+      throw new Error('the rules are broken');
+    });
+
+    // `triggersIdle` resolving at all is half the assertion. An unguarded throw
+    // escapes through `RoomCollector.sweep`'s `setTimeout` with nothing awaiting
+    // it, stranding the hold between the sweep's map removal and
+    // `settleCollection` — the room wedges and this never resolves.
+    const thrown = await say(w, '@nova ship the release');
+
+    // Asserted on the runner double rather than on a log line: a log assertion
+    // would not catch a turn that failed to run.
+    expect(turnsFor(w, w.ana)).toBe(1);
+    expect(
+      warn.mock.calls.some(([message]) =>
+        String(message).includes('the response gate could not judge a message')
+      )
+    ).toBe(true);
+    // Nothing about THAT message was refused, so a broken gate is never counted
+    // as a mute and the signal §14 tunes against stays honest. Scoped to the
+    // message that threw rather than to the whole ring, because Ana's turn runs
+    // and her own reply legitimately produces skips further down the cascade.
+    expect(
+      recentRefusals().some(
+        (entry) => entry.reason === 'not_addressed_to_me' && entry.entryId === thrown.id
+      )
+    ).toBe(false);
+  });
+
+  it('does not drop the OTHER collections in the same sweep', async () => {
+    const w = open();
+    await engageAna(w);
+    vi.mocked(routeAmbient).mockImplementationOnce(() => {
+      throw new Error('the rules are broken');
+    });
+    // One message, two agents, two collections closing in one sweep. Nova's is
+    // addressed. A guard around the whole loop instead of around each collection
+    // would take her turn down with Ana's throw.
+    await say(w, '@nova ship the release');
+    expect(turnsFor(w, w.nova)).toBe(1);
+    expect(turnsFor(w, w.ana)).toBe(1);
+  });
+});
+
+describe('T9 — busy is a park, never a skip', () => {
+  it('answers an overheard message once the running turn releases', async () => {
+    const runner = gatedRunner();
+    const harness = createRoomHarness({ agents: AGENTS, runner });
+    const room = harness.service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Backend',
+        members: [],
+        agentPaths: ['/agents/ana', '/agents/nova'],
+      },
+      harness.human
+    );
+    const ana = harness.authors.resolveAgent('/agents/ana', 'ana').id;
+    const nova = harness.authors.resolveAgent('/agents/nova', 'nova').id;
+    harness.service.updateMembership(room.id, harness.human, nova, 'silent');
+
+    // Ana is mid-turn and holding.
+    harness.service.post(room.id, { authorId: harness.human, text: '@ana is the build green?' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runner.holdsFor(ana)).toBe(1);
+
+    // A message Ana only overhears, arriving while she works. S3 must NOT gate
+    // it: `claimCollected` parks it, and RP8 re-judges it when the claim
+    // releases — against the room as it is THEN. Skipping it here would settle
+    // the collection `refused` and the message would never be re-weighed.
+    harness.service.post(room.id, { authorId: harness.human, text: '@nova ship the release' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(recentRefusals().some((entry) => entry.reason === 'not_addressed_to_me')).toBe(false);
+
+    runner.releaseAll();
+    await harness.service.triggersIdle();
+    // Re-judged on release, and NOW excused — the verdict happens once, at the
+    // moment the agent could actually have answered.
+    expect(recentRefusals().filter((entry) => entry.reason === 'not_addressed_to_me')).toHaveLength(
+      1
+    );
+    expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+  });
+});
+
+describe('S4 — a room or roster that moved on writes no refusal', () => {
+  it('says nothing about an agent that has left the room', async () => {
+    const w = open();
+    await engageAna(w);
+    w.service.removeMember(w.room.id, w.human, w.ana);
+    await say(w, '@nova ship the release');
+    // Ana is gone. The claim tail settles a departed member as `left`, in its own
+    // words; a `not_addressed_to_me` line here would report a conduct decision
+    // that nobody made and would pollute the one signal §14 tunes against.
+    expect(recentRefusals().some((entry) => entry.reason === 'not_addressed_to_me')).toBe(false);
+    expect(turnsFor(w, w.ana)).toBe(0);
+  });
+
+  // **The archived half of S4 has no test, and deliberately.** Archiving through
+  // `RoomService.updateRoom` calls `abandonHolds`, which drops every pending
+  // collection before a sweep can reach one — so the gate never sees an archived
+  // room by that route, and a test that "proved" it would be measuring
+  // `abandonHolds`. The guard mirrors the identical second gate in
+  // `claimCollected`, which exists for the same narrow case its comment names:
+  // something that changes the room without going through the service. Reaching
+  // it from a test would mean writing the row behind the service's back, which
+  // pins a scenario nothing in the product produces.
+});
+
+describe('R2 — being named in a question survives one hop', () => {
+  it('answers a follow-up to a question that named it, even though a colleague replied first', async () => {
+    const w = open();
+    // Names BOTH. Nova answers; Ana answers. Ana's reply then reaches Nova as an
+    // agent-authored answer to a question Nova did not write — which is R2's
+    // shape exactly, and would have excused Nova from a question that named her.
+    await say(w, '@ana @nova what do you think?');
+    expect(turnsFor(w, w.nova)).toBeGreaterThanOrEqual(1);
+    expect(turnsFor(w, w.ana)).toBeGreaterThanOrEqual(1);
+    const skips = recentRefusals().filter(
+      (entry) => entry.reason === 'not_addressed_to_me' && entry.authorId === w.nova
+    );
+    expect(skips).toEqual([]);
   });
 });

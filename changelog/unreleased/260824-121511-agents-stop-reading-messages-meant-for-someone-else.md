@@ -1,6 +1,8 @@
 ---
 covers:
-  - 'feat(server,shared): free routing rules gate engaged-window turns (DOR-1203)'
+  - 'feat(shared,server): a response-gate setting, and a refusal visibility for a choice (DOR-1203)'
+  - 'feat(server): free routing rules gate engaged-window turns (DOR-1203)'
+  - 'fix(server): the response gate fails open, and being named survives one hop (DOR-1203)'
 ---
 
 ### Changed

@@ -21,11 +21,11 @@ import { eq, rooms, type Db } from '@dorkos/db';
 import { CreateRoomRequestSchema } from '@dorkos/shared/room-schemas';
 import type { AuthorKind, RoomKind } from '@dorkos/shared/room-schemas';
 import { selectTriggerTargets, type TriggerSelection } from '../addressing.js';
+import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';
 
 /** The author ids out of a selection — these cases are about WHO, not why. */
 const ids = (selections: readonly TriggerSelection[]): string[] =>
   selections.map((selection) => selection.authorId);
-import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';
 
 const AGENTS = agentLookupFor({
   '/agents/ana': { name: 'ana' },

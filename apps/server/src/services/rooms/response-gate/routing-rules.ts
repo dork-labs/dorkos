@@ -114,6 +114,24 @@ export interface RoutedEntry {
    * it can only stop {@link RoutingRule.own_cascade_echo} firing.
    */
   answersThisAgent: boolean;
+  /**
+   * Whether the entry this post answers NAMED the agent being judged.
+   *
+   * **An obligation survives one hop, and this is the field that carries it.**
+   * `@ana @nova what do you think?` names both; Ana answers first; and without
+   * this, Nova — who was asked, by name, in the message being answered — is
+   * excused by {@link RoutingRule.colleagues_answer} on the grounds that the
+   * reply was Ana's. The question was Nova's too. Weighed against silently
+   * dropping a direct ask, one extra turn is the cheap mistake.
+   *
+   * One hop, not transitively: only the immediately-answered entry is read. A
+   * mention three replies back has been superseded by the conversation, and
+   * chasing the chain would be a store walk on the ambient path.
+   *
+   * `false` when nothing is answered, and `false` when the answered entry cannot
+   * be found — which is the side that can only stop a rule firing.
+   */
+  answeredEntryMentionsThisAgent: boolean;
 }
 
 /** What {@link routeAmbient} is asked. */
@@ -204,7 +222,17 @@ function excuse(input: RoutingInput, entry: RoutedEntry): RoutingRule | null {
   // shape that produces the deepest cascades: under DOR-1434's raised ceiling
   // one question can bounce between two agents for ten hops, and today a third
   // engaged agent buys ten turns to say nothing about it.
-  if (entry.answersEntryId !== null && !entry.answersThisAgent) return 'colleagues_answer';
+  //
+  // **Unless the question named US.** `@ana @nova what do you think?` asked both,
+  // and Ana replying first does not discharge Nova's half of it — see
+  // {@link RoutedEntry.answeredEntryMentionsThisAgent}.
+  if (
+    entry.answersEntryId !== null &&
+    !entry.answersThisAgent &&
+    !entry.answeredEntryMentionsThisAgent
+  ) {
+    return 'colleagues_answer';
+  }
 
   // R3. A colleague acknowledging something this agent said. An answer is not a
   // question, and nothing in it asked for another one. The cascade guard's

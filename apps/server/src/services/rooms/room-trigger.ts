@@ -1098,6 +1098,15 @@ export class RoomTriggerDispatcher {
    * replacement: `claimCollected` stays correct when called with a batch that
    * was never gated, which is exactly what `responseGate: 'off'` produces.
    *
+   * **Judging is guarded and accounting is not**, deliberately. The `try` below
+   * covers exactly the part that can have a bug in it — the rules, and the two
+   * store reads that feed them — and a throw there falls open to a turn. It does
+   * NOT cover `logRefusal` and `settleCollection`, because those run only after
+   * a verdict is in, and a wrapper around them would have to decide whether a
+   * half-finished accounting had already settled the collection. Every other
+   * refusal site in this file leaves the same pair unguarded, for the same
+   * reason: a logger that throws is a broken process, not a room outcome.
+   *
    * @param batch - Everything the collector just closed.
    * @returns The collections that still deserve a turn, in the order given.
    */
@@ -1108,7 +1117,41 @@ export class RoomTriggerDispatcher {
     // reaches three agents in one channel asks the same question three times.
     const agentsIn = new Map<string, ReadonlySet<string>>();
     for (const collection of batch) {
-      const verdict = this.routeCollection(collection, agentsIn);
+      let verdict: NonNullable<RoutingVerdict> | null = null;
+      try {
+        verdict = this.routeCollection(collection, agentsIn);
+      } catch (err) {
+        // **Fail OPEN, per collection** (spec `engaged-response-gate` §9, and the
+        // whole of invariant I-G6). Three things are true here and each one on
+        // its own would decide it:
+        //
+        // 1. The fallback of a cost optimisation is the status quo it optimises.
+        //    Running the turn is what shipped before this gate existed.
+        // 2. **A gate outage must never be indistinguishable from good
+        //    judgement.** Failing closed would take every agent in every room
+        //    quiet, and the room would look exactly like a room full of tactful
+        //    agents. That is the worst failure this domain can produce.
+        // 3. There is no net under this. `RoomCollector.sweep` calls us from a
+        //    `setTimeout` with nothing awaiting it, so an escaping throw reaches
+        //    `process.on('uncaughtException')` — and on the way out it strands
+        //    the hold this collection is between: `sweep` has already removed it
+        //    from its map and `settleCollection` has not run, so `triggersIdle`
+        //    never settles and the room wedges.
+        //
+        // PER COLLECTION, and that is the half a single wrapper around the loop
+        // would get wrong: one bad burst must not drop the others in the same
+        // sweep, and some of those others are ADDRESSED.
+        //
+        // Deliberately not a `logRefusal`: nothing was refused, the turn ran.
+        // Counting this as a mute would corrupt the one signal §14 says to tune
+        // against.
+        logger.warn('[rooms] the response gate could not judge a message, so the turn ran', {
+          roomId: collection.room.id,
+          authorId: collection.authorId,
+          entryId: collection.entries.at(-1)?.entry.id,
+          ...logError(err),
+        });
+      }
       if (verdict === null) {
         survivors.push(collection);
         continue;
@@ -1209,6 +1252,8 @@ export class RoomTriggerDispatcher {
       mentions: entry.mentions,
       answersEntryId,
       answersThisAgent: answered !== null && answered.authorId === agentAuthorId,
+      answeredEntryMentionsThisAgent:
+        answered !== null && answered.mentions.includes(agentAuthorId),
     };
   }
 
