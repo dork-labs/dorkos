@@ -3,8 +3,15 @@
 declare global {
   /**
    * The release version this bundle was built from, injected by Vite's `define`
-   * (see `vite.config.ts`). Used as the persisted query cache's buster, so a new
+   * (see `vite-define.ts`, which both the web config and the desktop shell's
+   * renderer build with). Used as the persisted query cache's buster, so a new
    * build never paints from a previous build's remembered answers.
+   *
+   * **Declaring a global here is what makes an unsubstituted one compile**, so a
+   * bundler that was never given the `define` emits the bare identifier and
+   * throws at runtime. That is checked in the emitted bundle by
+   * `apps/desktop/scripts/check-renderer-defines.ts`, which reads this file for
+   * the names it looks for.
    */
   const __APP_VERSION__: string;
 
@@ -25,8 +32,14 @@ declare global {
 
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {
-    /** Get the port the Express server is listening on. */
-    getServerPort(): number;
+    /**
+     * Get the port the Express server is listening on, or `null` when it is
+     * not serving — during startup, after a crash, between restarts. Mirrors
+     * the desktop preload's contract; `null` is a normal answer, and
+     * `shared/lib/api-base-url.ts` is where the cockpit decides what to do
+     * with it.
+     */
+    getServerPort(): number | null;
     /** Get the app version string. */
     getAppVersion(): string;
     /** The current platform (darwin, win32, linux). */

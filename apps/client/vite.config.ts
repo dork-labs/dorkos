@@ -1,27 +1,14 @@
-import { readFileSync } from 'fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
-
-// The release version, from the one package.json that carries it — the whole
-// monorepo bumps together at release, and `packages/cli` (what ships) reads the
-// same number. The client's own package.json is the `0.0.0` sentinel, so it
-// cannot be the source.
-const { version: APP_VERSION } = JSON.parse(
-  readFileSync(path.resolve(__dirname, '../../package.json'), 'utf-8')
-) as { version: string };
+import { clientDefines } from './vite-define';
 
 export default defineConfig({
-  // The build's identity, for anything that must start over when the build
-  // changes. Today that is the persisted query cache's `buster`
-  // (`shared/lib/query-persister.ts`): a new build may have changed the shape of
-  // a payload, so it starts from an empty local memory rather than hydrating
-  // yesterday's shape into today's components.
-  define: {
-    __APP_VERSION__: JSON.stringify(APP_VERSION),
-  },
+  // Shared with the desktop shell's renderer build, which bundles this same
+  // source — see `vite-define.ts` for what an unshared `define` costs.
+  define: clientDefines(),
   plugins: [react(), tailwindcss()],
   test: {
     environment: 'jsdom',

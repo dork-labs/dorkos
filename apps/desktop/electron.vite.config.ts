@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { TRAY_IMAGE_FILES } from './src/shared/tray-images';
+import { clientDefines } from '../client/vite-define';
 
 const clientRoot = path.resolve(__dirname, '../client');
 const sharedSrc = path.resolve(__dirname, '../../packages/shared/src');
@@ -74,6 +75,13 @@ export default defineConfig({
   },
   renderer: {
     root: clientRoot,
+    // The renderer is the CLIENT's source, built by a second config — so it
+    // needs the client's `define` map, not just its `root`. Without it the
+    // packaged bundle shipped a bare `__APP_VERSION__`, which threw before
+    // React mounted and left every desktop install on a black window
+    // (v0.63.0, DOR-1448). `scripts/check-renderer-defines.ts` fails the build
+    // if that ever recurs.
+    define: clientDefines(),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

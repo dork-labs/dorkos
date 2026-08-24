@@ -3,10 +3,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    // `scripts/` is included alongside `src/` for the same reason
-    // tsconfig.scripts.json exists: the build/QA scripts are the enforcement
-    // machinery for everything else in this package, so leaving them untestable
-    // would leave the gates themselves ungated.
+    // `scripts/` is in on purpose: the build gates there decide what ships (a
+    // rejected server bundle, a renderer with unsubstituted defines), and they
+    // were the only code in this package nothing executed — the same reason
+    // tsconfig.scripts.json exists.
     include: ['src/**/__tests__/**/*.test.ts', 'scripts/**/__tests__/**/*.test.ts'],
     globals: false,
     passWithNoTests: true,
