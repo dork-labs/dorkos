@@ -4159,7 +4159,13 @@ export const CreateTaskRequestSchema = z
     description: z.string().min(1).max(TASK_DESCRIPTION_MAX),
     prompt: z.string().min(1),
     cron: z.string().min(1).nullable().optional(),
-    timezone: z.string().nullable().optional(),
+    /**
+     * An IANA timezone like `Europe/Berlin`. Non-empty: the frontmatter
+     * defaults this to `UTC` when the key is absent, so an empty string is not
+     * "use the default" — it writes `timezone: ''` into the file and the row,
+     * which is a timezone nothing can read.
+     */
+    timezone: z.string().min(1).nullable().optional(),
     target: z.string().min(1),
     enabled: z.boolean().optional().default(true),
     /**
@@ -4299,9 +4305,26 @@ export const UpdateTaskRequestSchema = z
     description: z.string().min(1).optional(),
     prompt: z.string().min(1).optional(),
     cron: z.string().min(1).nullable().optional(),
-    timezone: z.string().nullable().optional(),
+    /**
+     * An IANA timezone like `Europe/Berlin`. Non-empty: the frontmatter
+     * defaults this to `UTC` when the key is absent, so an empty string is not
+     * "use the default" — it writes `timezone: ''` into the file and the row,
+     * which is a timezone nothing can read.
+     */
+    timezone: z.string().min(1).nullable().optional(),
     enabled: z.boolean().optional(),
-    maxRuntime: z.string().nullable().optional(),
+    /**
+     * A duration like `5m`, `1h`, `30s`, `2h30m`, or `null` to remove the cap.
+     *
+     * Validated exactly as {@link CreateTaskRequestSchema} validates it, which
+     * it was not until DOR-1481 — see {@link TASK_DURATION_PATTERN} for why an
+     * update accepted more loosely than the frontmatter it is written into is a
+     * security bug and not a convenience. Two things went wrong with a value
+     * this used to wave through: `parseDuration('10 minutes')` returns 0, which
+     * takes the run's time limit off altogether, and the same string written to
+     * the SKILL.md makes the file unreadable to every later sync.
+     */
+    maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */

@@ -155,6 +155,21 @@ describe('TaskStore', () => {
       expect(updated!.prompt).toBe('p');
     });
 
+    it('turns a cleared cron into the on-demand empty string, not null', () => {
+      // `pulse_schedules.cron` is NOT NULL and `''` is what "on demand" means in
+      // it — `createTask` and `upsertFromFile` both already write `?? ''`. This
+      // path did not, so `{ cron: null }` threw a NOT NULL constraint error
+      // straight out of the store. The cockpit's edit form sends exactly that
+      // on every save of a task with no cron (`TaskFormInner.tsx`).
+      const created = store.createTask(taskInput({ name: 'OnDemand', prompt: 'p', cron: '' }));
+
+      const updated = store.updateTask(created.id, { cron: null, prompt: 'edited' });
+
+      expect(updated).not.toBeNull();
+      expect(updated!.cron).toBe('');
+      expect(updated!.prompt).toBe('edited');
+    });
+
     it('returns null when updating nonexistent task', () => {
       expect(store.updateTask('nope', { name: 'X' })).toBeNull();
     });

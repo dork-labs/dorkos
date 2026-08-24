@@ -4548,7 +4548,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "minLength": 1
           },
           "target": {
             "type": "string",
@@ -4614,7 +4615,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "minLength": 1
           },
           "enabled": {
             "type": "boolean"
@@ -4623,7 +4625,9 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "minLength": 1,
+            "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"

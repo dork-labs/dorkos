@@ -28,7 +28,7 @@ import { slugify, validateSlug } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { loadTemplates, RESERVED_TASK_DIRNAMES } from '../services/tasks/task-templates.js';
-import { parseBody } from '../lib/route-utils.js';
+import { parseBody, toErrorMessage } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
@@ -45,7 +45,9 @@ import {
   findOperatorOnlyTaskFields,
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
+  OPERATOR_ONLY_TRIGGER_REFUSAL,
 } from '../services/tasks/task-write-policy.js';
+import { mergeTaskFrontmatter } from '../services/tasks/task-frontmatter-merge.js';
 import fs from 'node:fs/promises';
 
 /**
@@ -169,6 +171,45 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
  */
 function parksOnCreate(trusted: boolean): boolean {
   return !trusted;
+}
+
+/**
+ * What a caller is told when a task's SKILL.md could not be read, understood,
+ * or written.
+ *
+ * Written for a person, because these are the failures on this route that a
+ * person has to go and fix outside DorkOS: a read-only disk, a full one, a file
+ * owned by someone else, a settings block someone hand-edited into nonsense. It
+ * names the file, says plainly that nothing changed, and carries the underlying
+ * reason rather than hiding it.
+ *
+ * The `parse` case matters most, and is the one added last (DOR-1481 review).
+ * Any task still carrying the `max-runtime: null` corruption this branch also
+ * fixes has an unreadable file on disk right now, and the route used to fall
+ * straight past it to the row and answer 200 — so the corruption had no symptom
+ * at all. Now it has a legible one that says which file to open.
+ *
+ * @param what - Which step failed: loading the file, understanding it, or writing it.
+ * @param filePath - The SKILL.md the route was working on.
+ * @param reason - The underlying failure, already reduced to a sentence.
+ * @returns One line for the response body's `error`.
+ */
+function describeTaskFileFailure(
+  what: 'read' | 'parse' | 'save',
+  filePath: string,
+  reason: string
+): string {
+  const verb = { read: 'read', parse: 'make sense of', save: 'save' }[what];
+  const advice = {
+    read: 'Check who is allowed to open that file',
+    parse:
+      'Open that file and fix the settings block at the top — a setting written as `null` is the usual cause',
+    save: 'Check who is allowed to write to that file and how much space is left on the disk',
+  }[what];
+  return (
+    `DorkOS could not ${verb} this task's file at ${filePath}, so nothing was changed: ` +
+    `${reason}. ${advice}, then try again.`
+  );
 }
 
 /**
@@ -377,28 +418,38 @@ export function createTasksRouter(
       // File doesn't exist — good
     }
 
-    // Build frontmatter (only file-safe fields)
-    const frontmatter: Record<string, unknown> = {
-      name: slug,
-      description: data.description,
-    };
-    if (data.displayName) frontmatter['display-name'] = data.displayName;
-    if (data.cron) frontmatter.cron = data.cron;
-    if (data.timezone) frontmatter.timezone = data.timezone;
-    if (data.enabled === false) frontmatter.enabled = false;
-    if (data.maxRuntime) frontmatter['max-runtime'] = data.maxRuntime;
-    // The CLAMPED mode, so the file and the row agree. This is a file-first
-    // architecture: the reconciler and the watcher both re-read this file, and a
-    // SKILL.md saying `permissions: bypassPermissions` over a row holding
-    // `acceptEdits` is a standing request from disk that nobody made and no
-    // screen shows. It could not escalate on its own — `resolveFilePermissionMode`
-    // clamps it on every sync, and `keepsApprovedBypass` needs the row to be
-    // bypass AND active already — but a file that disagrees with its own row is
-    // a lie in the source of truth, and the next reader should not have to
-    // rediscover why it is harmless.
-    if (effectivePermissionMode && effectivePermissionMode !== 'acceptEdits') {
-      frontmatter.permissions = effectivePermissionMode;
-    }
+    // Build frontmatter (only file-safe fields), through the same merge the
+    // update path below uses. An omitted field is left out of the file rather
+    // than written as an empty value, which is what the run of `if`s here used
+    // to say one field at a time.
+    const frontmatter = mergeTaskFrontmatter(
+      { name: slug, description: data.description },
+      {
+        displayName: data.displayName || undefined,
+        cron: data.cron || undefined,
+        timezone: data.timezone || undefined,
+        // Only a schedule the caller turned OFF says so in the file — the
+        // frontmatter's own default is `enabled: true`.
+        enabled: data.enabled === false ? false : undefined,
+        maxRuntime: data.maxRuntime || undefined,
+        // The CLAMPED mode, so the file and the row agree. This is a file-first
+        // architecture: the reconciler and the watcher both re-read this file, and a
+        // SKILL.md saying `permissions: bypassPermissions` over a row holding
+        // `acceptEdits` is a standing request from disk that nobody made and no
+        // screen shows. It could not escalate on its own — `resolveFilePermissionMode`
+        // clamps it on every sync, and `keepsApprovedBypass` needs the row to be
+        // bypass AND active already — but a file that disagrees with its own row is
+        // a lie in the source of truth, and the next reader should not have to
+        // rediscover why it is harmless.
+        //
+        // `acceptEdits` is the frontmatter default too, so naming it would add a
+        // line that says nothing.
+        permissionMode:
+          effectivePermissionMode && effectivePermissionMode !== 'acceptEdits'
+            ? effectivePermissionMode
+            : undefined,
+      }
+    );
 
     // Write file first (source of truth)
     const filePath = await writeSkillFile(tasksDir, slug, frontmatter, data.prompt);
@@ -578,37 +629,72 @@ export function createTasksRouter(
       if (clamp.clamped) data.permissionMode = clamp.mode;
     }
 
-    // If there's a file on disk, update it
+    // If there's a file on disk, update it.
+    //
+    // **The file goes first, and a failure here ends the request.** This used
+    // to be one `try {} catch {}` around the read AND the write, with a comment
+    // saying it was there for legacy DB-only tasks. It was — and it also
+    // swallowed `EACCES`, `ENOSPC` and `EROFS` from the write, after which the
+    // row below was updated anyway and the caller got a 200. Five minutes later
+    // the reconciler read the untouched file and put the old values back, so
+    // the edit simply vanished with nothing anywhere saying why. The only error
+    // that means "there is no file, edit the row alone" is `ENOENT` on the
+    // read; every other one is a real failure and is reported as one.
+    //
+    // A file that READS but does not PARSE is the same silent-success defect one
+    // branch over, and it was still here after the first pass (DOR-1481 review):
+    // the route skipped the write, updated the row, and answered 200. That is
+    // the permanent path for every task already carrying the `max-runtime: null`
+    // corruption this branch fixes, so it is exactly the case that most needs a
+    // symptom. It refuses too.
     if (existing.filePath) {
+      let content: string | null = null;
       try {
-        const content = await fs.readFile(existing.filePath, 'utf-8');
+        content = await fs.readFile(existing.filePath, 'utf-8');
+      } catch (err) {
+        // A legacy DB-only task: a row whose file was never written, or was
+        // deleted outside DorkOS. Fall through and update the row alone.
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          return res.status(500).json({
+            error: describeTaskFileFailure(
+              'read',
+              existing.filePath,
+              toErrorMessage(err, 'the disk gave no reason')
+            ),
+          });
+        }
+      }
+
+      if (content !== null) {
         const parsed = parseSkillFile(existing.filePath, content, TaskFrontmatterSchema);
+        if (!parsed.ok) {
+          return res.status(500).json({
+            error: describeTaskFileFailure('parse', existing.filePath, parsed.error),
+          });
+        }
 
-        if (parsed.ok) {
-          const updatedFrontmatter: Record<string, unknown> = {
-            ...(parsed.definition.meta as Record<string, unknown>),
-          };
-          if (data.name !== undefined) updatedFrontmatter.name = data.name;
-          if (data.displayName !== undefined) updatedFrontmatter['display-name'] = data.displayName;
-          if (data.description !== undefined) updatedFrontmatter.description = data.description;
-          if (data.cron !== undefined) updatedFrontmatter.cron = data.cron;
-          if (data.timezone !== undefined) updatedFrontmatter.timezone = data.timezone;
-          if (data.enabled !== undefined) updatedFrontmatter.enabled = data.enabled;
-          if (data.maxRuntime !== undefined) updatedFrontmatter['max-runtime'] = data.maxRuntime;
-          if (data.permissionMode !== undefined)
-            updatedFrontmatter.permissions = data.permissionMode;
-
-          const updatedPrompt = data.prompt ?? parsed.definition.body;
-          const parentDir = path.dirname(parsed.definition.dirPath);
+        const updatedFrontmatter = mergeTaskFrontmatter(
+          parsed.definition.meta as Record<string, unknown>,
+          data
+        );
+        const updatedPrompt = data.prompt ?? parsed.definition.body;
+        const parentDir = path.dirname(parsed.definition.dirPath);
+        try {
           await writeSkillFile(
             parentDir,
             parsed.definition.name,
             updatedFrontmatter,
             updatedPrompt
           );
+        } catch (err) {
+          return res.status(500).json({
+            error: describeTaskFileFailure(
+              'save',
+              existing.filePath,
+              toErrorMessage(err, 'the disk gave no reason')
+            ),
+          });
         }
-      } catch {
-        // File may not exist (legacy DB-only task) — update DB directly
       }
     }
 
@@ -722,8 +808,36 @@ export function createTasksRouter(
     return res.json({ success: true });
   });
 
-  router.post('/:id/trigger', async (_req, res) => {
-    const run = await scheduler.triggerManualRun(_req.params.id);
+  router.post('/:id/trigger', async (req, res) => {
+    // The door that skips every other door (DOR-1481). This was the only write
+    // endpoint on the router that asked nothing at all, and it undid the
+    // approval the other two exist to protect: an agent creates a schedule,
+    // `POST /` correctly parks it at `pending_approval` so a person can read
+    // what it proposes, and then the same agent POSTs here with the same
+    // identity header and the unapproved prompt runs immediately, at whatever
+    // power the schedule carries. Parking is only worth something if it cannot
+    // be walked around.
+    //
+    // So: the same bar, asked the same way. It is about WHO is asking and never
+    // about the schedule's state — a person may still run a `pending_approval`
+    // schedule once before deciding on it, which is the "Run it once" button on
+    // the approval card and the only way to find out what a proposal actually
+    // does short of approving it
+    // (`services/tasks/__tests__/trigger-pending-schedule.test.ts`).
+    if (!clearsTheAgentBar(req, res)) {
+      return res.status(403).json({
+        error: OPERATOR_ONLY_TASK_ERROR,
+        code: OPERATOR_ONLY_TASK_CODE,
+        // Empty on purpose, and present on purpose: the other two refusal sites
+        // on this router always send `fields`, so a caller that reads it should
+        // not have to handle the key being missing here. Nothing was refused
+        // FIELD-by-field — the whole action was — and an empty list says that.
+        fields: [],
+        message: OPERATOR_ONLY_TRIGGER_REFUSAL,
+      });
+    }
+
+    const run = await scheduler.triggerManualRun(req.params.id);
     if (!run) {
       return res.status(404).json({ error: 'Schedule not found' });
     }
