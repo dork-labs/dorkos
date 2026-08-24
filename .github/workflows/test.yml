@@ -102,7 +102,7 @@ jobs:
     # rather than raising this again.
     timeout-minutes: 45
     steps:
-      # fetch-depth: 0 for the tags, not the history. actions/checkout@v4
+      # fetch-depth: 0 for the tags, not the history. actions/checkout@v7
       # defaults to depth 1 and does NOT fetch tags at that depth, so
       # `git tag -l` in config-manager.test.ts's DOR-339 regression guard
       # ("the newest migration key is strictly newer than every released
@@ -113,13 +113,13 @@ jobs:
       # A full clone is the honest fix: it makes CI see the same tags a local
       # checkout already has, rather than teaching the guard to tolerate not
       # knowing.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm

@@ -79,11 +79,11 @@ jobs:
     # The suite itself is seconds; the headroom is for a cold pnpm/turbo cache.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -138,7 +138,7 @@ jobs:
       # changes.
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eval-results-structural-${{ github.run_id }}
           path: |
@@ -187,13 +187,13 @@ jobs:
             echo "::notice title=Credentialed evals skipped::Neither the ANTHROPIC_API_KEY nor the CLAUDE_CODE_OAUTH_TOKEN repository secret has a value. Configure one to run the credentialed suite. Skipping — this is not a failure."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.key.outputs.present == 'true'
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.key.outputs.present == 'true'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.key.outputs.present == 'true'
         with:
           node-version: 24
@@ -249,7 +249,7 @@ jobs:
       # persists on disk until `pnpm evals:sweep`.
       - name: Upload results
         if: always() && steps.key.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eval-results-credentialed-${{ github.run_id }}
           path: |

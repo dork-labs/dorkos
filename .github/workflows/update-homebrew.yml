@@ -89,7 +89,7 @@ jobs:
           echo "SHA256: $SHA256"
 
       - name: Checkout tap repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: dork-labs/homebrew-dorkos
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -33,12 +33,12 @@ jobs:
     # this. Hitting it means CodeQL hung, not that the repo grew.
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           # No compilation needed for JS/TS analysis.
           build-mode: none
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
