@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
 import type {
@@ -32,7 +33,6 @@ import {
   publishDispatchProgress,
   publishResponseWithCorrelation,
 } from './publish.js';
-import type { AbortRegistry } from '../../lib/abort-registry.js';
 import { isCallerCancel } from './agent-cancel-handler.js';
 import { interruptTurn } from './interrupt.js';
 
@@ -44,13 +44,18 @@ export interface AgentHandlerDeps {
   /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
   resolveExecutionSettings?: ExecutionSettingsResolver;
   /**
-   * The adapter's in-flight turn registry — the only handle anything outside
-   * this function has on a running turn (DOR-791). Required, not optional: a
-   * handler that forgot to register its turn is a cancel that answers "nothing
-   * is executing" for a turn that is plainly running, which is the exact bug
-   * this registry exists to close.
+   * This turn's stop handle, owned by the caller (DOR-791).
+   *
+   * Created and registered in `deliver()` BEFORE the concurrency line and the
+   * per-session queue, because a turn is cancelable from the moment its message
+   * arrives — not from the moment it reaches the head of its queue. Already
+   * aborted on entry means the turn was stopped while it waited, and it must
+   * not start: `sendMessage` is what starts, and bills, it.
+   *
+   * Required, not optional: a handler that ran without one would be a turn
+   * nothing can stop, which is the exact bug this exists to close.
    */
-  runningTurns: AbortRegistry;
+  turnController: AbortController;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -102,6 +107,16 @@ const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
 function isNonFatalErrorCode(code: string | undefined): boolean {
   return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
 }
+
+/**
+ * The event source for a turn that never started.
+ *
+ * An empty (synchronous) iterable, which `for await` consumes just as happily
+ * as the runtime's own stream — so a stopped-before-start turn walks the same
+ * path as one stopped mid-stream, and publishes the same terminal error and
+ * done to whoever is reading its replies.
+ */
+const NO_EVENTS: readonly StreamEvent[] = [];
 
 /**
  * How a stopped turn is described to everything downstream of it.
@@ -261,16 +276,25 @@ export async function handleAgentMessage(
       `model=${executionSettings.model ?? '(runtime default)'}`
   );
 
+  // Stopped while it waited — in the concurrency line, or in its session's
+  // queue behind another turn. Nothing about it may start: no session, no
+  // `sendMessage`, no bill. The terminal error and done still go out below, so
+  // whoever is reading the reply stream settles instead of hanging (DOR-791).
+  const controller = deps.turnController;
+  const stoppedBeforeStart = controller.signal.aborted;
+
   // Only mark hasStarted when we have a real SDK session ID from the persistent
   // store.  Without one, the runtime would attempt to resume using the DorkOS-
   // generated UUID (which the SDK never assigned), causing a "No conversation
   // found" error before the self-healing retry creates a fresh session.
-  deps.agentManager.ensureSession(ccaSessionKey, {
-    permissionMode: effectivePermissionMode,
-    hasStarted: !!persistedSdkSessionId,
-    ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-    ...executionSettings,
-  });
+  if (!stoppedBeforeStart) {
+    deps.agentManager.ensureSession(ccaSessionKey, {
+      permissionMode: effectivePermissionMode,
+      hasStarted: !!persistedSdkSessionId,
+      ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+      ...executionSettings,
+    });
+  }
   deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
 
   if (!envelope.replyTo) {
@@ -299,7 +323,6 @@ export async function handleAgentMessage(
 
   // Set up timeout from TTL budget
   const ttlRemaining = envelope.budget.ttl - Date.now();
-  const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
     ttlRemaining > 0 ? ttlRemaining : config.defaultTimeoutMs
@@ -308,6 +331,12 @@ export async function handleAgentMessage(
   // takes no signal, so breaking out of the stream leaves the model running and
   // billing until it finishes on its own. That was true of the TTL deadline too
   // — this listener ends both kinds of stop at the agent (DOR-791).
+  //
+  // Interrupting by SESSION KEY is only safe because the adapter runs one turn
+  // per session at a time (`runtimeAdapter.enqueue`, keyed by the same id): the
+  // in-flight turn on this key is necessarily this one, so a stop can never
+  // reach into a bystander's turn. A future change that lets two turns share a
+  // session key concurrently has to give the runtime a narrower handle first.
   controller.signal.addEventListener(
     'abort',
     () => {
@@ -315,24 +344,19 @@ export async function handleAgentMessage(
     },
     { once: true }
   );
-  // From here until the `finally` below, this turn can be stopped by whoever
-  // started it: the registry is what the stop-request subscription reaches for.
-  // The reply subject names ONE turn (the A2A gateway mints a fresh one per
-  // execution); a turn nobody can reply to is also a turn nobody can name, so
-  // it is simply not registered.
-  const turnKey = envelope.replyTo;
-  if (turnKey) deps.runningTurns.register(turnKey, controller);
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
-  const eventStream = deps.agentManager.sendMessage(ccaSessionKey, prompt, {
-    permissionMode: effectivePermissionMode,
-    ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-    ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
-    // Sent again, for the same reason the permission mode and the cwd are: the
-    // runtime contract resolves a turn as per-send override → persisted → its
-    // own default, and a runtime whose sessions are not held in memory sees
-    // this call and not the one above.
-    ...executionSettings,
-  });
+  const eventStream = stoppedBeforeStart
+    ? NO_EVENTS
+    : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
+        permissionMode: effectivePermissionMode,
+        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+        ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
+        // Sent again, for the same reason the permission mode and the cwd are:
+        // the runtime contract resolves a turn as per-send override → persisted
+        // → its own default, and a runtime whose sessions are not held in
+        // memory sees this call and not the one above.
+        ...executionSettings,
+      });
 
   let eventCount = 0,
     collectedText = '',
@@ -416,10 +440,6 @@ export async function handleAgentMessage(
     });
   } finally {
     clearTimeout(timeout);
-    // Nothing awaits between the loop above and this line, so a stop request
-    // either reaches a turn that is genuinely still going or finds it gone —
-    // never a half-finished turn it could stop twice.
-    if (turnKey) deps.runningTurns.release(turnKey, controller);
     if (!streamedDone && envelope.replyTo && relay) {
       // On a crashed (thrown iterator) or TTL-aborted turn, emit an explicit
       // error signal BEFORE the synthesized done. Reply consumers (the A2A

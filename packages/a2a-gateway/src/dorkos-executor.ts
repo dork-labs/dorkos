@@ -436,8 +436,15 @@ export class DorkOSAgentExecutor implements AgentExecutor {
    * adapter to end it and then reporting what actually happened (DOR-791).
    * Two outcomes, and the difference is the whole point:
    *
-   * - **A runner took the stop.** The turn is ending at the agent, the task is
-   *   marked `canceled`, and the reply subscription is torn down.
+   * - **A runner took the stop.** It accepted the request and is interrupting
+   *   the turn; the task is marked `canceled` and the reply subscription is
+   *   torn down. Note the exact claim: acceptance is what `deliveredTo`
+   *   establishes, and it is one step short of proof that the model stopped —
+   *   the runner's own `interruptQuery` is bounded and swallows its failures,
+   *   so a runtime that ignores or errors on the interrupt is not visible from
+   *   here. That gap is far narrower than the bug it replaced (nothing was
+   *   ever asked), and closing it would need an outcome round-trip the A2A
+   *   `tasks/cancel` call has nowhere to wait for.
    * - **Nothing took it** — no adapter is running it any more, the bus refused
    *   the message, or this process never held the turn (a restart). Then the
    *   task is left exactly as it was and the caller gets an error. It used to
@@ -476,10 +483,19 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     if (stopped === 0) {
       // The turn is still going, so it must still be able to finish the task.
       this.canceledTasks.delete(taskId);
+      // Every turn's reason, not just the first: an N-turn task that failed to
+      // stop for N different reasons must not be described by whichever one
+      // happened to be first in the map.
+      const why = turns
+        .map(
+          (turn, i) =>
+            `${turn.replySubject} on agent '${turn.agentId}': ` +
+            `${outcomes[i]?.reason ?? 'no runner is executing this turn'}`
+        )
+        .join('; ');
       this.logger.warn(
-        `[a2a] task ${taskId}: nothing acknowledged the stop ` +
-          `(${outcomes[0]?.reason ?? 'no runner is executing this turn'}) — ` +
-          `the turn on agent '${turns[0]?.agentId ?? 'unknown'}' may still be running`
+        `[a2a] task ${taskId}: nothing acknowledged the stop for ${turns.length} turn(s) ` +
+          `— they may still be running. ${why}`
       );
       throw A2AError.taskNotCancelable(taskId);
     }
@@ -494,6 +510,12 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       );
     }
 
+    // EVERY turn is settled, including a survivor nothing stopped — deliberately.
+    // The task is terminal from this line on, so the survivor could never move
+    // it anywhere; leaving it subscribed would only hold a reply subscription
+    // and a two-minute timer for events that can no longer change anything.
+    // What settling does NOT do is stop it: that turn runs to its own end, and
+    // the warning above is the only record of it.
     for (const turn of turns) turn.settle();
 
     // Use an empty contextId — the SDK populates the real one from the stored task

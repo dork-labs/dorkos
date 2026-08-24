@@ -19,6 +19,7 @@ import express, { type RequestHandler, type Response } from 'express';
 import { DefaultRequestHandler } from '@a2a-js/sdk/server';
 import { jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 import type { RelayCore } from '@dorkos/relay';
+import type { Logger } from '@dorkos/shared/logger';
 import type { Db } from '@dorkos/db';
 import { generateAgentCard, generateFleetCard } from './agent-card-generator.js';
 import { SqliteTaskStore } from './task-store.js';
@@ -35,6 +36,15 @@ export interface A2aHandlerDeps {
   db: Db;
   /** Card generation configuration (baseUrl, version, authRequired). */
   config: CardGeneratorConfig;
+  /**
+   * Where the executor reports what it could and could not stop.
+   *
+   * Optional, defaulting to `console`. Hosts should pass their own: a turn the
+   * gateway timed out and then failed to stop is invisible on the wire — the
+   * caller has already been told the request timed out — so that warning only
+   * exists in the log the host collects.
+   */
+  logger?: Logger;
 }
 
 /** Express handlers returned by {@link createA2aHandlers}. */
@@ -118,10 +128,14 @@ function sendRpcError(res: Response, status: number, id: JsonRpcId, message: str
  * @returns Object with card and JSON-RPC handlers ({@link A2aHandlers})
  */
 export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
-  const { agentRegistry, relay, db, config } = deps;
+  const { agentRegistry, relay, db, config, logger } = deps;
 
   const taskStore = new SqliteTaskStore(db);
-  const executor = new DorkOSAgentExecutor({ relay, agentRegistry });
+  const executor = new DorkOSAgentExecutor({
+    relay,
+    agentRegistry,
+    ...(logger ? { logger } : {}),
+  });
 
   // Build the fleet card lazily on each request so it reflects current state.
   // The DefaultRequestHandler uses this card for protocol introspection.

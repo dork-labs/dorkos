@@ -789,6 +789,72 @@ describe('DorkOSAgentExecutor', () => {
       expect(statusText(completed[0]!)).toBe('Done anyway.');
     });
 
+    it('stops both turns of a task that has two in flight', async () => {
+      const ctx = makeRequestContext({ taskId: 'task-two' });
+      await executor.execute(ctx, makeEventBus());
+      // A follow-up turn on a non-terminal task runs alongside the first, with
+      // its own reply subject.
+      await executor.execute(
+        makeRequestContext({
+          taskId: 'task-two',
+          task: {
+            kind: 'task',
+            id: 'task-two',
+            contextId: 'ctx-456',
+            status: { state: 'working' },
+            metadata: { agentId: 'agent-01' },
+          },
+        }),
+        makeEventBus()
+      );
+
+      await executor.cancelTask('task-two', eventBus);
+
+      // One stop per turn — a single stop would leave the other one running.
+      expect(stopRequests()).toHaveLength(2);
+      const replySubjects = stopRequests().map(
+        ([, payload]) => (payload as { replyTo: string }).replyTo
+      );
+      expect(new Set(replySubjects).size).toBe(2);
+    });
+
+    it('cancels the task when only one of two turns is stopped, and says which was not', async () => {
+      await executor.execute(makeRequestContext({ taskId: 'task-two' }), makeEventBus());
+      await executor.execute(
+        makeRequestContext({
+          taskId: 'task-two',
+          task: {
+            kind: 'task',
+            id: 'task-two',
+            contextId: 'ctx-456',
+            status: { state: 'working' },
+            metadata: { agentId: 'agent-01' },
+          },
+        }),
+        makeEventBus()
+      );
+      // The first stop is taken, the second reaches nobody.
+      let stops = 0;
+      relay.publish.mockImplementation(async (subject: string) => {
+        if (!subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)) {
+          return { messageId: 'm', deliveredTo: 1 };
+        }
+        stops += 1;
+        return { messageId: 'm', deliveredTo: stops === 1 ? 1 : 0 };
+      });
+
+      await executor.cancelTask('task-two', eventBus);
+
+      // The task IS being cancelled — something took a stop — so `canceled` is
+      // honest. The turn nobody took keeps running, and the log is the only
+      // place that says so.
+      const canceled = statusEvents(eventBus).filter((e) => e.status.state === 'canceled');
+      expect(canceled).toHaveLength(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('1 of 2 turns did not acknowledge')
+      );
+    });
+
     it('refuses a cancel for a task it holds no turn for', async () => {
       await expect(executor.cancelTask('task-999', eventBus)).rejects.toThrow(/not cancelable/i);
 

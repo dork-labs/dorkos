@@ -63,11 +63,6 @@ export class AbortRegistry {
     return true;
   }
 
-  /** How many units of work are registered. */
-  get size(): number {
-    return this.entries.size;
-  }
-
   /**
    * Drop every entry without aborting anything.
    *

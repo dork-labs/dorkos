@@ -177,9 +177,10 @@ function slotRefusal(
  * agent message **waits** on rather than being refused by (`capacity-hold.ts`)
  * — TTL budget timeouts, and records trace spans through the delivery lifecycle.
  *
- * Two control signals arrive by SUBSCRIPTION rather than delivery — tool
- * approvals and run stop requests — because each must reach a turn that is
- * already holding one of those concurrency slots.
+ * Three control signals arrive by SUBSCRIPTION rather than delivery — tool
+ * approvals, run stop requests and turn stop requests — because each must reach
+ * work that is already holding one of those concurrency slots, or waiting for
+ * one.
  */
 export class ClaudeCodeAdapter implements RelayAdapter {
   readonly id: string;
@@ -347,6 +348,51 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       },
     };
 
+    // The handle on this turn, created HERE rather than inside the handler.
+    // Two things stand between a message arriving and its turn starting — the
+    // concurrency line, and the per-session queue — and a turn stopped while it
+    // is in either of them has to be stoppable, and must never start once it
+    // is. Registering at the head of the queue instead meant a cancel for a
+    // queued turn was refused as "not executing here", and the turn then ran
+    // and billed anyway (DOR-791). Tasks dispatch keeps its own registry, keyed
+    // by run id, and ignores this one.
+    const turnController = new AbortController();
+    const turnKey = subject.startsWith(TASKS_SUBJECT_PREFIX) ? undefined : envelope.replyTo;
+    if (turnKey) this.runningTurns.register(turnKey, turnController);
+
+    try {
+      return await this.deliverWithTurnHandle(
+        subject,
+        envelope,
+        context,
+        startTime,
+        turnController
+      );
+    } finally {
+      if (turnKey) this.runningTurns.release(turnKey, turnController);
+    }
+  }
+
+  /**
+   * Take a concurrency slot and run the delivery, with the turn's handle in hand.
+   *
+   * Split out from {@link deliver} only so the registration above brackets
+   * every exit from this method — including the slot refusals, which return
+   * early.
+   *
+   * @param subject - The target subject
+   * @param envelope - The relay envelope to deliver
+   * @param context - Optional adapter context
+   * @param startTime - When delivery began, for `durationMs`
+   * @param turnController - The handle a stop request aborts
+   */
+  private async deliverWithTurnHandle(
+    subject: string,
+    envelope: RelayEnvelope,
+    context: AdapterContext | undefined,
+    startTime: number,
+    turnController: AbortController
+  ): Promise<DeliveryResult> {
     // A hold may not outlive the message it holds. `handleAgentMessage` gives
     // the turn whatever is left of the envelope's TTL, and falls back to
     // `defaultTimeoutMs` when nothing is — so a wait that ate the whole TTL
@@ -412,7 +458,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             traceStore: this.deps.traceStore,
             agentSessionStore: this.deps.agentSessionStore,
             resolveExecutionSettings: this.deps.resolveExecutionSettings,
-            runningTurns: this.runningTurns,
+            turnController,
             logger: this.deps.logger,
           },
           this.relay

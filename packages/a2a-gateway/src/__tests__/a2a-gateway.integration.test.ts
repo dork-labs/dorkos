@@ -9,7 +9,7 @@
  * nothing ever persisted) and F2 (reply payload contract mismatch -> tasks
  * "completed" with undefined text on the first delta).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -23,6 +23,7 @@ import type {
 } from '@dorkos/shared/relay-schemas';
 import { AGENT_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { Logger } from '@dorkos/shared/logger';
 import { createA2aHandlers } from '../express-handlers.js';
 import type { AgentRegistryLike } from '../types.js';
 
@@ -218,15 +219,19 @@ let relay: FakeRelay;
 let server: Server;
 let baseUrl: string;
 let rpcId = 0;
+/** The host-supplied logger, wired the way `routes/a2a.ts` wires the real one. */
+let logger: Logger;
 
 beforeEach(async () => {
   relay = new FakeRelay();
+  logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const db = createTestDb();
   const handlers = createA2aHandlers({
     agentRegistry: makeRegistry([makeManifest()]),
     relay: relay as unknown as RelayCore,
     db,
     config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test', authRequired: false },
+    logger,
   });
 
   const app = express();
@@ -472,6 +477,9 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
       // rather than being handed a comfortable lie it cannot act on.
       expect(cancelResponse.error).toBeDefined();
       expect((cancelResponse.error as { message: string }).message).toContain('not cancelable');
+      // The host's logger is the only place this outcome is legible, so the
+      // wiring from createA2aHandlers down to the executor has to be real.
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('may still be running'));
       const getResponse = await rpc('tasks/get', { id: task.id });
       expect(['submitted', 'working']).toContain((getResponse.result as Task).status.state);
 

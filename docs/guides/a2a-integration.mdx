@@ -78,11 +78,15 @@ Supported methods: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/c
 
 ### Canceling a task
 
-`tasks/cancel` asks the agent that's running the turn to stop, and answers with what really
-happened. You get the task back marked `canceled` only when something confirms the turn is
-ending. If nothing can be stopped — the turn already finished, or DorkOS restarted and lost
-track of it — you get a `TaskNotCancelable` error instead, and the task keeps the state it
-had. A "canceled" answer means the work stopped, not that the request was filed.
+`tasks/cancel` asks whoever is running the turn to stop it, and answers with what really
+happened. You get the task back marked `canceled` only when a runner takes the request and
+starts interrupting the agent. If nothing takes it — the turn already finished, or DorkOS
+restarted and lost track of it — you get a `TaskNotCancelable` error instead, and the task
+keeps the state it had.
+
+So a `canceled` answer means the stop reached the agent that was working, not merely that
+your request was filed. It stops one step short of a receipt from the model itself: in the
+rare case where a runtime ignores its own interrupt, DorkOS has no way to tell you.
 
 If a call to `message/send` waits more than two minutes for an answer, DorkOS gives up and
 asks the agent to stop as well, so a caller walking away doesn't leave a model running.

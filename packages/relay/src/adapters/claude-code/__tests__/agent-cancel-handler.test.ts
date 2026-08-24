@@ -248,6 +248,47 @@ describe('ClaudeCodeAdapter — stopping an agent turn', () => {
     expect(agentManager.interruptQuery).toHaveBeenCalledWith('agent-01');
   });
 
+  it('stops a turn still queued behind another on the same session — and never starts it', async () => {
+    // The adapter runs one turn per session key at a time, so a second turn on
+    // the same agent sits in a queue. Registering it only at the head of that
+    // queue meant a cancel was refused as "not executing here" and the turn
+    // then ran, and billed, after the caller had been told it could not be
+    // canceled (DOR-791).
+    await adapter.start(relay);
+    const second = parkedTurn();
+    vi.mocked(agentManager.sendMessage)
+      .mockReturnValueOnce(turn.stream)
+      .mockReturnValueOnce(second.stream);
+
+    const queuedReplyTo = 'relay.a2a.reply.task-1.c1c1';
+    const first = agentEnvelope();
+    const queued = agentEnvelope({ id: 'msg-agent-2', replyTo: queuedReplyTo });
+    const firstDelivery = adapter.deliver(first.subject, first);
+    const queuedDelivery = adapter.deliver(queued.subject, queued);
+    await turn.parked;
+
+    // The queued turn is cancelable while it waits.
+    const verdict = await cancelHandler()(cancelEnvelope(queuedReplyTo));
+    expect(verdict).toBeUndefined();
+
+    // Let the first turn finish so the queue advances to the canceled one.
+    turn.end();
+    await firstDelivery;
+    const result = await queuedDelivery;
+
+    // It never started: one turn ran, not two. `sendMessage` is what starts —
+    // and bills — a turn.
+    expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    // And its caller's reply stream still settles rather than hanging.
+    const queuedReplies = vi
+      .mocked(relay.publish)
+      .mock.calls.filter(([subject]) => subject === queuedReplyTo)
+      .map(([, payload]) => payload as { type: string; data?: { message?: string } });
+    expect(queuedReplies.some((e) => e.type === 'done')).toBe(true);
+    expect(queuedReplies.find((e) => e.type === 'error')?.data?.message).toContain('cancelled');
+  });
+
   it('refuses a stop for a turn that already finished, and interrupts nothing', async () => {
     await adapter.start(relay);
     vi.mocked(agentManager.sendMessage).mockReturnValue(
