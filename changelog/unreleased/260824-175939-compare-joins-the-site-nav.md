@@ -13,3 +13,4 @@ covers:
 
 - The floating menu no longer sits on top of what you are reading. As you scroll down a long page it steps out of the way, and it comes back the moment you scroll up, reach the top, or arrive at the end. Before this, it could cover a link and swallow the click (DOR-1504)
 - The menu fits on a phone screen again now that it holds six words. On the narrowest screens it drops "home", which the logo at the top already does (DOR-1504)
+- If you are moving through the menu with the keyboard, it now waits for you. It used to slide away mid-tab and drop you back at the start of the page (DOR-1504)

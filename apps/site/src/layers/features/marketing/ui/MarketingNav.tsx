@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { throttle } from 'lodash-es';
 import { motion } from 'motion/react';
@@ -25,6 +25,7 @@ export function MarketingNav({ links }: MarketingNavProps) {
   // unclickable. It steps aside while you read downward and returns the moment
   // you scroll back up, reach the top, or arrive at the end of the page.
   const [visible, setVisible] = useState(true);
+  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     // Scroll direction is the listener's own bookkeeping, so it lives in the
@@ -45,7 +46,13 @@ export function MarketingNav({ links }: MarketingNavProps) {
         y + viewportHeight >= document.documentElement.scrollHeight - BOTTOM_ZONE_PX;
       const scrollingUp = y < lastScrollY;
       lastScrollY = y;
-      setVisible(nearTop || nearBottom || scrollingUp);
+
+      // Never yield out from under a keyboard user: going inert while focus is
+      // inside the pill blurs to <body>, which drops them back at the start of
+      // the tab order. The next scroll after focus leaves settles it.
+      const holdsFocus = navRef.current?.contains(document.activeElement) ?? false;
+
+      setVisible(holdsFocus || nearTop || nearBottom || scrollingUp);
     }, 150);
 
     // Using { passive: true } for better scroll performance
@@ -71,6 +78,7 @@ export function MarketingNav({ links }: MarketingNavProps) {
     // pill sits over, and `inert` keeps it out of the tab order and the
     // accessibility tree.
     <motion.nav
+      ref={navRef}
       aria-label="Site sections"
       inert={!visible}
       initial={false}
@@ -85,13 +93,12 @@ export function MarketingNav({ links }: MarketingNavProps) {
       <ul className="bg-cream-white border-cream-secondary flex items-center rounded-[40px] border px-4 py-2 shadow-lg/5 sm:px-8">
         {links.map((link, index) => {
           const active = isNavLinkActive(pathname, link.href);
-          // Home is duplicated by the always-present header logo, so it yields
-          // on the narrowest screens to keep the pill inside the viewport.
-          const isHome = link.href === '/';
           return (
             <li
               key={link.href}
-              className={`${index > 0 ? 'ml-4 sm:ml-8' : ''} ${isHome ? 'hidden sm:block' : ''}`}
+              className={`${index > 0 ? 'ml-4 sm:ml-8' : ''} ${
+                link.yieldsOnMobile ? 'hidden sm:block' : ''
+              }`}
             >
               <a
                 href={link.href}

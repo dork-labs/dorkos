@@ -13,15 +13,8 @@ import {
   MarketingNav,
   MarketingHeader,
   MarketingFooter,
+  HOME_NAV_LINKS,
 } from '@/layers/features/marketing';
-
-const navLinks = [
-  { label: 'about', href: '#about' },
-  { label: 'features', href: '/features' },
-  { label: 'marketplace', href: '/marketplace' },
-  { label: 'blog', href: '/blog' },
-  { label: 'docs', href: '/docs' },
-];
 
 const socialLinks = [
   {
@@ -72,7 +65,7 @@ export default function HomePage() {
 
       <MarketingFooter email={siteConfig.contactEmail} socialLinks={socialLinks} />
 
-      <MarketingNav links={navLinks} />
+      <MarketingNav links={HOME_NAV_LINKS} />
     </>
   );
 }
