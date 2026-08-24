@@ -23,7 +23,7 @@ const LABEL_COLOR: Record<BootCard['color'], string> = {
   blue: 'text-brand-blue',
   purple: 'text-brand-purple',
   green: 'text-brand-green',
-  gray: 'text-warm-gray-light',
+  gray: 'text-cream-tertiary/60',
 };
 
 /** The "Thursday Morning" boot dashboard — cards appear one by one in presentation mode. */
@@ -88,7 +88,7 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
                   >
                     {card.value}
                   </div>
-                  <div className="text-warm-gray-light font-mono text-[9px]">{card.detail}</div>
+                  <div className="text-cream-tertiary/60 font-mono text-[9px]">{card.detail}</div>
                 </motion.div>
               ))}
             </AnimatePresence>

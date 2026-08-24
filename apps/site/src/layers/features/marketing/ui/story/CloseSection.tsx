@@ -45,7 +45,7 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
 
         <motion.p
           variants={REVEAL}
-          className="text-warm-gray-light font-mono text-[10px] tracking-[0.1em] uppercase"
+          className="text-cream-tertiary/60 font-mono text-[10px] tracking-[0.1em] uppercase"
         >
           No Edges &mdash; Austin TX &mdash; 2026
         </motion.p>

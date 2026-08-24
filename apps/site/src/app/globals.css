@@ -18,7 +18,22 @@
   /* Dorkian Brand - Text Colors */
   --charcoal: #1a1814;
   --warm-gray: #4a4640;
-  --warm-gray-light: #7a756a;
+  /* Muted text on the cream grounds. Derived from the original #7a756a by
+     holding its OKLCH hue (86.5deg) and chroma (0.018) and lowering only
+     lightness until it clears WCAG AA 4.5:1 on the darkest cream it is ever
+     painted on. #7a756a measured 4.04:1 on cream-primary and 3.69:1 on
+     cream-secondary, both under the bar for the 9-14px type that uses it
+     (DOR-1503). This token is for LIGHT grounds only; on charcoal use
+     text-cream-tertiary/NN, which is the site's dark-surface muted idiom.
+
+     Scope, so this reads as narrow as it is. Two things are NOT covered here
+     and are tracked under DOR-1512: the dark-ground body copy on /story, which
+     paints --warm-gray on charcoal at 1.89:1, and the brand accents, which fail
+     AA as text on cream. And cream-tertiary (#e5dcc8) is out of scope: this
+     token measures 4.38:1 there, under the bar, but nothing pairs the two today
+     (cream-tertiary is only ever a foreground on dark, plus one border), so the
+     guard does not assert it. Pairing them would need a darker value. */
+  --warm-gray-light: #686358;
 
   /* Dorkian Brand - Accent Colors */
   --brand-orange: #e85d04;

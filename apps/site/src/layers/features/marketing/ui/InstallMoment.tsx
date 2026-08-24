@@ -307,7 +307,16 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
         ))}
       </div>
 
-      {/* Terminal mockup */}
+      {/*
+        Terminal mockup. The #7A756A literals below are deliberate and do NOT
+        follow `--warm-gray-light`: this mockup's ground is #1A1814, and the
+        muted token was darkened for the cream grounds (DOR-1503), which on a
+        dark ground moves the wrong way. Pointing these at the token would drop
+        them from 3.87:1 to 2.97:1. They are terminal chrome rendered at low
+        contrast on purpose, and they are part of the dark-ground muted-text
+        debt audited under DOR-1512 — if that audit settles on a dark-surface
+        idiom, these move to it rather than to the light-ground token.
+      */}
       <div className="mb-3">
         <div
           className="mx-auto max-w-lg overflow-hidden rounded-lg"
@@ -480,7 +489,7 @@ export function InstallMoment() {
               className="rounded-[3px] px-2 py-0.5 font-mono text-[9px] tracking-[0.08em] uppercase"
               style={{
                 background: 'rgba(232, 93, 4, 0.06)',
-                color: '#7A756A',
+                color: 'var(--warm-gray-light)',
                 border: '1px solid rgba(232, 93, 4, 0.12)',
               }}
             >
