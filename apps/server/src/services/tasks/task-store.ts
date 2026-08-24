@@ -18,7 +18,7 @@ import type {
 import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
-import { resolveFilePermissionMode } from './schedule-permission-clamp.js';
+import { resolveFileArmStatus, resolveFilePermissionMode } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
@@ -72,6 +72,35 @@ export interface ScheduleReliability {
    * predates the percentile extension (DOR-166).
    */
   p95DurationMs: number | null;
+}
+
+/**
+ * What {@link TaskStore.upsertFromFile} needs to know beyond the file itself.
+ *
+ * Both fields exist for one reason: the same method now serves two callers with
+ * opposite trust. A route write is a person deciding; a discovered file is not.
+ */
+export interface UpsertFromFileOptions {
+  /**
+   * Who is writing.
+   *
+   * - `operator` (the default) — a route, an install, or anything else a person
+   *   set in motion through DorkOS. The write IS the approval, so the row's
+   *   status is left alone, exactly as it was before the arm gate existed.
+   * - `discovery` — the file watcher or the reconciler, syncing a file found on
+   *   disk. Subject to the arm gate: it parks unless a person's approval
+   *   already covers this exact content.
+   */
+  source?: 'operator' | 'discovery';
+  /**
+   * What is wrong with the file, when something is — an unreadable `schedule:`
+   * block, or a cron croner refuses.
+   *
+   * A schedule carrying a problem never arms, and the problem becomes the row's
+   * `reason`, which is what the approval card shows a person. Only meaningful
+   * alongside `source: 'discovery'`.
+   */
+  problem?: string | null;
 }
 
 /** Fields that can be updated on a run. */
@@ -748,6 +777,8 @@ export class TaskStore {
   /**
    * Upsert a task from a parsed SKILL.md file definition.
    *
+   * @see {@link UpsertFromFileOptions} for what `options` decides.
+   *
    * Looks up existing tasks by `filePath`. If found, updates in place.
    * If not found, inserts a new row with a fresh ULID.
    *
@@ -756,11 +787,20 @@ export class TaskStore {
    * the primary create path for every task, and a file on disk is nobody's
    * approval. Read that function for what a file may and may not do to the mode.
    *
+   * `options.source` decides whether the SECOND content gate applies. A write
+   * from `discovery` — the watcher or the reconciler finding a file — can never
+   * arm itself and parks at `pending_approval` until a person says otherwise
+   * ({@link resolveFileArmStatus}). A write from `operator` is a person or an
+   * install acting through DorkOS, and the act itself is the approval, so the
+   * status is left exactly as it was. That is the default, because it is what
+   * every caller here did before the gate existed.
+   *
    * @param def - Parsed task definition from a SKILL.md file
    * @param agentId - Agent ID derived from directory location (optional)
+   * @param options - Where the write came from, and what is wrong with the file
    * @returns The upserted Task
    */
-  upsertFromFile(def: TaskDefinition, agentId?: string): Task {
+  upsertFromFile(def: TaskDefinition, agentId?: string, options?: UpsertFromFileOptions): Task {
     const now = new Date().toISOString();
     const maxRuntimeMs = def.meta['max-runtime'] ? parseDuration(def.meta['max-runtime']) : null;
 
@@ -802,6 +842,23 @@ export class TaskStore {
     }
     if (!clamped) this.refusedFileGrants.delete(def.filePath);
 
+    // The arm gate. Only discovery is subject to it: a file DorkOS found is
+    // nobody's decision to run, while a route write is a person's (ADR
+    // `260823-200726`).
+    const arm =
+      options?.source === 'discovery'
+        ? resolveFileArmStatus(
+            existing && {
+              permissionMode: existing.permissionMode as PermissionMode,
+              status: existing.status,
+              prompt: existing.prompt,
+              cron: existing.cron,
+            },
+            { prompt: def.body, cron: incomingCron },
+            options.problem
+          )
+        : null;
+
     if (existing) {
       this.db
         .update(pulseSchedules)
@@ -830,7 +887,17 @@ export class TaskStore {
           // `enabled: false`, which lands in the file's frontmatter and is
           // re-read above, so their choice holds.
           // `pending_approval` is untouched: that gate is a person's to clear.
-          ...(existing.status === 'paused' ? { status: 'active' as const } : {}),
+          //
+          // Under the arm gate this un-pausing no longer applies at all: a
+          // returning file is content nobody has approved SINCE it came back,
+          // so `resolveFileArmStatus` sends it to `pending_approval` instead —
+          // the same verdict `keepsApprovedBypass` has always reached about a
+          // resurrected path, now applied to arming as well as to permissions.
+          ...(arm
+            ? { status: arm.status, reason: arm.reason, origin: 'file' as const }
+            : existing.status === 'paused'
+              ? { status: 'active' as const }
+              : {}),
           tags: '[]',
           updatedAt: now,
         })
@@ -854,7 +921,9 @@ export class TaskStore {
         enabled: def.meta.enabled,
         maxRuntime: maxRuntimeMs,
         permissionMode,
-        status: 'active',
+        status: arm?.status ?? 'active',
+        reason: arm?.reason ?? null,
+        origin: arm ? 'file' : null,
         filePath: def.filePath,
         tags: '[]',
         createdAt: now,

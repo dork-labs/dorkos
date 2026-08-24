@@ -88,6 +88,13 @@ import {
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
+import { ScheduleIdentityRegistry } from './services/tasks/schedule-identity.js';
+import {
+  agentTaskRoots,
+  ensureGlobalSkillsRoot,
+  globalTaskRoots,
+  type TaskRoot,
+} from './services/tasks/skills-roots.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
 import { createTasksRouter } from './routes/tasks.js';
@@ -368,6 +375,15 @@ let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
+/**
+ * Start watching a newly registered agent's schedule roots.
+ *
+ * Set by the tasks bootstrap block and called by the agent-created listener,
+ * which is registered later in this file — so the two cannot simply be one
+ * function. `undefined` when the tasks subsystem is switched off, which is why
+ * the caller uses `?.`.
+ */
+let attachAgentTaskRoots: ((projectPath: string, agentId: string) => void) | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -2176,31 +2192,56 @@ async function start() {
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
-        // Stop watching and reconciling the agent's task directory
-        const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
-        taskFileWatcher?.stopWatching(agentTasksDir).catch(() => {});
-        taskReconciler?.removeDirectory(agentTasksDir);
+        // Stop watching and reconciling every root that belonged to the agent —
+        // its skills root and, until DOR-1486, its legacy tasks root.
+        for (const root of agentTaskRoots(projectPath, agentId)) {
+          taskFileWatcher?.stopWatching(root.dir).catch(() => {});
+          taskReconciler?.removeDirectory(root.dir);
+        }
       });
     }
 
-    // Wire file watcher and reconciler for file-first task sync
-    const globalTasksDir = path.join(dorkHome, 'tasks');
-    taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar);
-    taskFileWatcher.watch(globalTasksDir, 'global');
+    // Wire file watcher and reconciler for file-first schedule sync.
+    //
+    // One identity registry shared by both halves: they are two views of one
+    // discovery pass, and a claim on a real SKILL.md only means anything if
+    // both respect it (`services/tasks/schedule-identity.ts`).
+    const scheduleIdentities = new ScheduleIdentityRegistry();
+    taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
+    taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
 
-    taskReconciler = new TaskReconciler(taskStore, taskRegistrar);
-    taskReconciler.addDirectory(globalTasksDir, 'global');
+    /** Watch and reconcile one root. Idempotent — both halves ignore a repeat. */
+    const attachTaskRoot = (root: TaskRoot): void => {
+      taskFileWatcher?.watch(root);
+      taskReconciler?.addRoot(root);
+    };
 
-    // Watch each registered agent's task directory
+    // `~/.dork/skills/` is created rather than merely watched, so that a person
+    // looking for where to put a global schedule finds it already there.
+    await ensureGlobalSkillsRoot(dorkHome);
+    for (const root of globalTaskRoots(dorkHome)) attachTaskRoot(root);
+
     if (meshCore) {
       for (const agent of meshCore.list()) {
         const projectPath = meshCore.getProjectPath(agent.id);
         if (projectPath) {
-          const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
-          taskFileWatcher.watch(agentTasksDir, 'project', projectPath, agent.id);
-          taskReconciler.addDirectory(agentTasksDir, 'project', projectPath, agent.id);
+          for (const root of agentTaskRoots(projectPath, agent.id)) attachTaskRoot(root);
         }
       }
+
+      // Agents that register AFTER boot get their roots watched immediately.
+      //
+      // Until DOR-1485 the loop above was the only place roots were ever added,
+      // so a newly registered agent's schedules were invisible until the next
+      // restart — the gap `task-reconciler.ts` documents in its retirement
+      // notes. The agent-created listener further down calls this; that hook is
+      // the one seam every arrival funnels through (create, register,
+      // marketplace install, discovery adoption) and it carries the project
+      // path, so nothing has to be looked up.
+      attachAgentTaskRoots = (projectPath: string, agentId: string): void => {
+        for (const root of agentTaskRoots(projectPath, agentId)) attachTaskRoot(root);
+        logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
+      };
     }
 
     taskReconciler.start();
@@ -2465,6 +2506,11 @@ async function start() {
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
+    // Watch this agent's `.agents/skills/` (and, until DOR-1486, its legacy
+    // `.dork/tasks/`) NOW rather than at the next restart. Boot used to be the
+    // only place roots were attached, so a schedule shipped with a
+    // just-installed agent was invisible for the rest of the process's life.
+    attachAgentTaskRoots?.(agent.path, agent.id);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,

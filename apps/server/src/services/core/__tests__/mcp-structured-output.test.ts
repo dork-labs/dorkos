@@ -107,6 +107,7 @@ const TASK: Task = {
   proposedBySessionId: null,
   proposedByAgentPath: null,
   proposedByName: null,
+  origin: null,
   nextRuns: [],
 };
 

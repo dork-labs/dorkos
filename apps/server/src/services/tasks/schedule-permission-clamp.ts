@@ -12,6 +12,16 @@
  * `services/tasks`; parking the rule in shapes and importing it back the other
  * way would close the loop.
  *
+ * ## Two gates, one key
+ *
+ * Since DOR-1485 this module holds a second question of the same shape: not
+ * only "what permission mode does content get?" but "may content arm itself at
+ * all?" ({@link resolveFileArmStatus}). Both are answered from the same
+ * {@link scheduleContentKey}, in one file, on purpose — the ADR that asked for
+ * the arm gate (`260823-200726`) asked for it to live here rather than in a
+ * twin module precisely so the two cannot drift into disagreeing about what
+ * "the same schedule" means.
+ *
  * @module services/tasks/schedule-permission-clamp
  */
 import type { PermissionMode } from '@dorkos/shared/schemas';
@@ -81,6 +91,28 @@ export interface IncomingTaskContent {
 }
 
 /**
+ * The identity of a piece of approved work: what it does, and when.
+ *
+ * **One helper, two gates.** The bypass keep-grant below and the arm gate
+ * further down both answer "is this the same schedule a person already looked
+ * at?", and both must answer it the same way — a schedule whose content changed
+ * enough to drop its bypass but not enough to re-park (or the reverse) is a
+ * gap. Sharing the key is what makes that impossible rather than merely
+ * unlikely (ADR `260823-200726`).
+ *
+ * Serialized rather than concatenated, for the reason `upsertFromFile`'s
+ * refusal key gives: a prompt may contain any text at all, including whatever
+ * separator a joined string would pick, so two different schedules could share
+ * one key.
+ *
+ * @param content - The material content of a schedule.
+ * @returns A string that is equal exactly when the content is.
+ */
+export function scheduleContentKey(content: IncomingTaskContent): string {
+  return JSON.stringify([content.prompt, content.cron]);
+}
+
+/**
  * Whether a file's `bypassPermissions` is the SAME grant a person already made,
  * rather than a new one arriving from disk.
  *
@@ -105,8 +137,89 @@ function keepsApprovedBypass(
 ): boolean {
   if (!existing) return false;
   if (existing.permissionMode !== 'bypassPermissions') return false;
+  return holdsGrantFor(existing, incoming);
+}
+
+/**
+ * Whether a person's approval of THIS row still covers the content arriving
+ * from disk — the one condition both content-keyed gates are built on.
+ *
+ * Two clauses, each closing a proven exploit (the notes on
+ * {@link keepsApprovedBypass} spell both out): the row must still be `active`,
+ * so a grant cannot outlive the file it was made for and be inherited by
+ * whatever writes that path next; and the content must be unchanged, so a
+ * grant belongs to a specific piece of reviewed work rather than to a filename.
+ */
+function holdsGrantFor(existing: ApprovedSchedule, incoming: IncomingTaskContent): boolean {
   if (existing.status !== 'active') return false;
-  return existing.prompt === incoming.prompt && existing.cron === incoming.cron;
+  return (
+    scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) ===
+    scheduleContentKey(incoming)
+  );
+}
+
+/**
+ * Why a file-discovered schedule is waiting rather than running — the sentence
+ * the approval card shows when nothing more specific is wrong with the file.
+ */
+const UNAPPROVED_REASON =
+  'DorkOS found this schedule in a file on your computer. Nothing runs on a timer ' +
+  'until you say so — read what it does below, then approve it or delete it.';
+
+/** What {@link resolveFileArmStatus} decided about a file-discovered schedule. */
+export interface FileArmVerdict {
+  /** The status to write: `active` only when a person's approval still covers this content. */
+  status: 'active' | 'pending_approval';
+  /** Why it is parked, for the row's `reason`. `null` when it is not parked. */
+  reason: string | null;
+}
+
+/**
+ * Whether a schedule DorkOS found on disk may arm itself, or has to wait for a
+ * person (ADR `260823-200726`).
+ *
+ * The answer is almost always "wait". Discovery reads every skills root — a
+ * `git pull`, a plugin install, or an agent writing a file can all put a cron
+ * where DorkOS will see it — so first sighting of new schedule content always
+ * parks, `schedule.enabled: true` or not. `enabled` is the author's intent, and
+ * intent is not permission.
+ *
+ * The grant that lifts it is not stored in a table of its own: it IS the row
+ * being `active` at content that has not changed since, which is exactly what
+ * the bypass keep-grant means by a grant, computed by the same
+ * {@link holdsGrantFor}. Three things fall out of that, all of them wanted:
+ *
+ * - **Approval survives re-syncs.** The operator PATCHes `pending_approval →
+ *   active` (that transition IS the approval, `task-write-policy.ts`), and
+ *   every later sync of identical content finds an active row at a matching key
+ *   and leaves it alone.
+ * - **Editing the file re-parks it.** A changed prompt or cron is a different
+ *   piece of work, and nobody has read this one.
+ * - **Schedules that were already live stay live.** A row an older build wrote
+ *   as `active` holds a grant for its own content the moment this ships, so
+ *   upgrading does not re-park every schedule an alpha user already has. No
+ *   backfill runs, because there is nothing to back-fill — the grant is a
+ *   reading of the row, not a second copy of it.
+ *
+ * A `paused` row does NOT hold a grant, and that is deliberate: `paused` is
+ * what DorkOS writes when the file went away, so a returning file at that path
+ * is content nobody has approved since it came back.
+ *
+ * @param existing - The row this file is landing on, or undefined when new.
+ * @param incoming - The material content of the file being synced.
+ * @param problem - What is wrong with the file, when something is. A schedule
+ *   DorkOS cannot fully read never arms, whatever the row says — the grant
+ *   cannot cover content that does not mean anything yet.
+ * @returns The status to write and, when parked, why.
+ */
+export function resolveFileArmStatus(
+  existing: ApprovedSchedule | undefined,
+  incoming: IncomingTaskContent,
+  problem?: string | null
+): FileArmVerdict {
+  if (problem) return { status: 'pending_approval', reason: problem };
+  if (existing && holdsGrantFor(existing, incoming)) return { status: 'active', reason: null };
+  return { status: 'pending_approval', reason: UNAPPROVED_REASON };
 }
 
 /**

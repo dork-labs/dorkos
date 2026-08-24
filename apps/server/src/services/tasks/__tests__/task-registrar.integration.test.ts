@@ -16,6 +16,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
 import { TaskFileWatcher } from '../task-file-watcher.js';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import { legacyRoot } from './task-root-fixtures.js';
 import { TaskReconciler } from '../task-reconciler.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
@@ -72,7 +74,7 @@ describe('a task file on disk drives the running scheduler', () => {
       firingReason: 'test',
     });
     registrar = new TaskRegistrar({ store, scheduler });
-    watcher = new TaskFileWatcher(store, registrar);
+    watcher = new TaskFileWatcher(store, registrar, new ScheduleIdentityRegistry());
     await scheduler.start();
   });
 
@@ -91,41 +93,70 @@ describe('a task file on disk drives the running scheduler', () => {
     return filePath;
   }
 
+  /**
+   * Stand in for the operator, who is now part of every one of these stories.
+   *
+   * Since DOR-1485 a schedule DorkOS finds on disk parks at `pending_approval`
+   * instead of arming itself (ADR `260823-200726`), so "the file reached the
+   * clock" is a two-step claim: the row syncs, and a person says yes. This is
+   * the second step — the same `status: 'active'` transition `PATCH
+   * /api/tasks/:id` performs, which is what the route treats as the approval.
+   */
+  function approve(taskId: string): void {
+    store.updateTask(taskId, { status: 'active' });
+    registrar.syncTask(taskId);
+  }
+
   // The headline: the cockpit showed the new cron while the old one kept firing,
   // until the next server restart.
   it('re-registers the job when a cron is edited on disk', async () => {
     const filePath = await writeTask('nightly', '0 9 * * *');
-    watcher.watch(tasksDir, 'global');
+    watcher.watch(legacyRoot(tasksDir, 'global'));
 
     const task = await waitFor(() => store.getByFilePath(filePath), 'the task to sync');
+    approve(task.id);
     await waitFor(() => scheduler.isRegistered(task.id) || null, 'the task to be scheduled');
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(9);
 
     await writeFile(filePath, skillFile('nightly', '0 21 * * *'), 'utf-8');
 
-    const rescheduled = await waitFor(
-      () => (scheduler.getNextRun(task.id)?.getUTCHours() === 21 ? true : null),
-      'the live job to move to the new cron'
+    // A changed cron is different work, and nobody has read this one: the grant
+    // the approval made was for the 9am schedule. So the old job stops rather
+    // than silently becoming a schedule the operator never saw.
+    await waitFor(
+      () => (!scheduler.isRegistered(task.id) ? true : null),
+      'the 9am job to stop once its content changed'
     );
-    expect(rescheduled).toBe(true);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
     // …and the row agrees, so the screen and the clock say the same thing.
     expect(store.getTask(task.id)?.cron).toBe('0 21 * * *');
+
+    approve(task.id);
+    expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(21);
   });
 
-  it('schedules a task whose SKILL.md is dropped in after the server started', async () => {
-    watcher.watch(tasksDir, 'global');
+  it('parks a task whose SKILL.md is dropped in after the server started, then schedules it', async () => {
+    watcher.watch(legacyRoot(tasksDir, 'global'));
 
     const filePath = await writeTask('brand-new', '0 4 * * *');
 
     const task = await waitFor(() => store.getByFilePath(filePath), 'the new task to sync');
+    // Dropping a file on disk is not permission to run it unattended.
+    expect(task.status).toBe('pending_approval');
+    expect(task.origin).toBe('file');
+    expect(task.reason).toBeTruthy();
+    expect(scheduler.isRegistered(task.id)).toBe(false);
+
+    approve(task.id);
     await waitFor(() => scheduler.isRegistered(task.id) || null, 'the new task to be scheduled');
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(4);
   });
 
   it('drops the job when a good cron is edited into a bad one', async () => {
     const filePath = await writeTask('drifts', '0 8 * * *');
-    watcher.watch(tasksDir, 'global');
+    watcher.watch(legacyRoot(tasksDir, 'global'));
     const task = await waitFor(() => store.getByFilePath(filePath), 'the task to sync');
+    approve(task.id);
     await waitFor(() => scheduler.isRegistered(task.id) || null, 'the task to be scheduled');
 
     await writeFile(filePath, skillFile('drifts', '99 * * * *'), 'utf-8');
@@ -133,6 +164,12 @@ describe('a task file on disk drives the running scheduler', () => {
     await waitFor(
       () => (!scheduler.isRegistered(task.id) ? true : null),
       'the job to stop rather than keep the schedule nobody asked for'
+    );
+    // And now the operator is told WHICH file to open and what is wrong with
+    // it, rather than the failure living only in a server log line.
+    await waitFor(
+      () => (store.getTask(task.id)?.reason?.includes('99 * * * *') ? true : null),
+      'the row to carry the cron complaint'
     );
   });
 
@@ -142,26 +179,35 @@ describe('a task file on disk drives the running scheduler', () => {
     const filePath = await writeTask('missed', '0 7 * * *');
     // No watcher at all — this is the missed-event case, reproduced by never
     // delivering the event in the first place.
-    const reconciler = new TaskReconciler(store, registrar);
-    reconciler.addDirectory(tasksDir, 'global');
+    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
+    approve(task.id);
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(7);
 
     await writeFile(filePath, skillFile('missed', '0 19 * * *'), 'utf-8');
     await reconciler.reconcile();
 
+    // The backstop carries the change all the way: the row holds the new cron
+    // and the stale 7am job is gone, waiting on the operator rather than firing
+    // a schedule nobody approved.
+    expect(store.getTask(task.id)?.cron).toBe('0 19 * * *');
+    expect(scheduler.isRegistered(task.id)).toBe(false);
+
+    approve(task.id);
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(19);
   });
 
   it('the reconciler stops the job for a file that is gone', async () => {
     const filePath = await writeTask('retired', '0 7 * * *');
-    const reconciler = new TaskReconciler(store, registrar);
-    reconciler.addDirectory(tasksDir, 'global');
+    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
+    approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
 
     await rm(filePath);
@@ -174,13 +220,22 @@ describe('a task file on disk drives the running scheduler', () => {
   // The third shape of the bug, and the quietest: `upsertFromFile` un-pauses a
   // row whose file is back, so the cockpit called the task active while nothing
   // was scheduled for it — and nothing ever would be until a restart.
-  it('the reconciler starts the job again when a paused task’s file returns', async () => {
+  //
+  // The gate changed the ending. A returning file is no longer silently
+  // re-armed: `markRemovedByFilePath` only PAUSES a row, so the row and its
+  // approval outlive the file, and anything that can later write that path
+  // would inherit the grant. `keepsApprovedBypass` has always refused a
+  // resurrected path its bypass for exactly this reason; arming now refuses it
+  // too. What the registrar seam still guarantees is that the row and the clock
+  // never disagree — which is the whole claim of this file.
+  it('the reconciler re-parks rather than silently re-arming a returning file', async () => {
     const filePath = await writeTask('comes-and-goes', '0 6 * * *');
-    const reconciler = new TaskReconciler(store, registrar);
-    reconciler.addDirectory(tasksDir, 'global');
+    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
 
     await reconciler.reconcile();
     const task = store.getByFilePath(filePath)!;
+    approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
 
     await rm(filePath);
@@ -191,7 +246,10 @@ describe('a task file on disk drives the running scheduler', () => {
     await writeFile(filePath, skillFile('comes-and-goes', '0 6 * * *'), 'utf-8');
     await reconciler.reconcile();
 
-    expect(store.getTask(task.id)?.status).toBe('active');
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+    expect(scheduler.isRegistered(task.id)).toBe(false);
+
+    approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
   });
 
@@ -200,15 +258,21 @@ describe('a task file on disk drives the running scheduler', () => {
   it('the reconciler survives a file whose cron croner cannot read', async () => {
     const goodPath = await writeTask('good', '0 8 * * *');
     const badPath = await writeTask('bad', 'banana');
-    const reconciler = new TaskReconciler(store, registrar);
-    reconciler.addDirectory(tasksDir, 'global');
+    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
 
     await expect(reconciler.reconcile()).resolves.toMatchObject({ upserted: 2 });
 
     const good = store.getByFilePath(goodPath)!;
     const bad = store.getByFilePath(badPath)!;
     // The unreadable one keeps its row — its history and id are not the typo's
-    // to take — and simply has no job. The healthy one beside it is untouched.
+    // to take — and says what is wrong with it, which is new: the complaint
+    // used to exist only in the log.
+    expect(bad.reason).toContain('banana');
+    approve(good.id);
+    approve(bad.id);
+    // Even approved, the typo has no job. Containment is the scheduler's, and
+    // it holds whatever a person clicks.
     expect(scheduler.isRegistered(bad.id)).toBe(false);
     expect(scheduler.isRegistered(good.id)).toBe(true);
   });

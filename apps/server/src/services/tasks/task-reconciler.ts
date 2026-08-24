@@ -15,9 +15,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
-import { scanSkillDirectory } from '@dorkos/skills/scanner';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
-import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
+import type { ScheduleIdentityRegistry } from './schedule-identity.js';
+import { scanTaskRoot } from './skills-root-discovery.js';
+import type { TaskRoot } from './skills-roots.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import { logger, logError } from '../../lib/logger.js';
 
@@ -37,13 +37,6 @@ const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
  * One line an hour keeps a standing fault visible at a volume that reads.
  */
 const FAILURE_LOG_WINDOW_MS = 60 * 60 * 1000;
-
-interface TaskDirectory {
-  tasksDir: string;
-  scope: 'project' | 'global';
-  projectPath?: string;
-  agentId?: string;
-}
 
 /** What is remembered about one distinct fault already written to the log. */
 interface ReportedFailure {
@@ -69,28 +62,40 @@ interface ReportedFailure {
  */
 export class TaskReconciler {
   private interval: ReturnType<typeof setInterval> | null = null;
-  private directories: TaskDirectory[] = [];
+  private roots: TaskRoot[] = [];
   /** One entry per distinct fault currently being damped. See {@link report}. */
   private reportedFailures = new Map<string, ReportedFailure>();
 
   constructor(
     private store: TaskStore,
-    private registrar: TaskRegistrar
+    private registrar: TaskRegistrar,
+    private identities: ScheduleIdentityRegistry
   ) {}
 
-  /** Register a directory to reconcile. */
-  addDirectory(
-    tasksDir: string,
-    scope: 'project' | 'global',
-    projectPath?: string,
-    agentId?: string
-  ): void {
-    this.directories.push({ tasksDir, scope, projectPath, agentId });
+  /**
+   * Register a root to reconcile.
+   *
+   * Ignores a root it already holds. That guard is new with DOR-1485 and it is
+   * load-bearing now that roots are added when an agent REGISTERS rather than
+   * only at boot: an agent that registers twice used to double the directory
+   * list, and every pass would then scan and upsert the same files twice.
+   *
+   * @param root - The directory to scan and how to read what is in it.
+   */
+  addRoot(root: TaskRoot): void {
+    if (this.roots.some((r) => r.dir === root.dir)) return;
+    this.roots.push(root);
   }
 
-  /** Remove a directory from reconciliation (e.g., on agent unregister). */
+  /**
+   * Stop reconciling a root (e.g. on agent unregister), and release the
+   * identity claims it was holding.
+   *
+   * @param tasksDir - The root's directory.
+   */
   removeDirectory(tasksDir: string): void {
-    this.directories = this.directories.filter((d) => d.tasksDir !== tasksDir);
+    this.roots = this.roots.filter((r) => r.dir !== tasksDir);
+    this.identities.releaseRoot(tasksDir);
   }
 
   /** Start periodic reconciliation. */
@@ -180,6 +185,37 @@ export class TaskReconciler {
     }
   }
 
+  /**
+   * Note that this root was genuinely enumerated, under every name a row's
+   * `filePath` could be recorded under.
+   *
+   * The retirement pass will only destroy a row whose file's parent directory
+   * is in this set, and rows discovered in a skills root are keyed on the
+   * file's REAL path. So the real path of the root has to be in the set too, or
+   * a root reached through any symlinked ancestor — `/tmp` on macOS, a
+   * symlinked home, a checkout under a symlinked parent — would never be able
+   * to testify about its own files, and rows in it could never retire.
+   *
+   * A symlinked skill ENTRY (an installed plugin's `pkg__name`) resolves out of
+   * the root entirely, into `.dork/plugins/`, which is not a root and never
+   * appears here. Those rows are therefore never retired by this pass. That is
+   * the safe direction to be wrong in — a stale row that stops firing when the
+   * file cannot be read beats deleting a schedule and its history because a
+   * symlink target moved — and it is why this is documented rather than
+   * "fixed" by widening the set.
+   */
+  private async recordScanned(root: TaskRoot, scannedDirs: Set<string>): Promise<void> {
+    scannedDirs.add(root.dir);
+    if (root.kind !== 'skills') return;
+    try {
+      scannedDirs.add(await fs.realpath(root.dir));
+    } catch {
+      // The root was there a moment ago (`fs.access` just said so). If it is
+      // not resolvable now, testifying under one name only is the conservative
+      // outcome: fewer rows eligible for deletion, never more.
+    }
+  }
+
   /** Stop periodic reconciliation. */
   stop(): void {
     if (this.interval) {
@@ -230,21 +266,16 @@ export class TaskReconciler {
     // file is gone — see the retirement loop below.
     const scannedDirs = new Set<string>();
 
-    for (const dir of this.directories) {
+    for (const root of this.roots) {
       let results;
       try {
-        // `templates/` and friends are containers the tasks system owns, not
-        // tasks — scanning them as tasks reports a permanent bogus "invalid
-        // file" every pass.
-        results = await scanSkillDirectory(dir.tasksDir, TaskFrontmatterSchema, {
-          ignoreDirs: RESERVED_TASK_DIRNAMES,
-        });
+        results = await scanTaskRoot(root);
       } catch (err) {
         // A directory that does not exist is already an empty scan, so reaching
         // here means the directory is there and we could not read it — EACCES,
         // or EMFILE under file-descriptor pressure. Treating that as "empty"
         // would pause every task inside it.
-        this.report('error', `[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
+        this.report('error', `[TaskReconciler] Failed to scan ${root.dir}`, err);
         continue;
       }
 
@@ -257,14 +288,14 @@ export class TaskReconciler {
       // the scan was there for it, whereas checking first would leave a window
       // in which it vanishes and the empty result still counts as testimony.
       try {
-        await fs.access(dir.tasksDir);
+        await fs.access(root.dir);
       } catch {
         continue;
       }
-      scannedDirs.add(dir.tasksDir);
+      await this.recordScanned(root, scannedDirs);
 
       for (const result of results) {
-        if (!result.ok) {
+        if (result.kind === 'invalid') {
           this.report('warn', `[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
           // A file that is on disk but unusable — unreadable, or frontmatter
           // that does not parse — is NOT a deleted task. Count it as seen so
@@ -275,28 +306,35 @@ export class TaskReconciler {
           if (!result.fileMissing) seenFilePaths.add(result.filePath);
           continue;
         }
+
+        // A plain skill in a skills root: not a task, and nothing to say about
+        // it. Still counted as seen, so that a row whose file merely lost its
+        // `schedule:` block is not mistaken for a deleted file and destroyed
+        // with its run history. The watcher pauses such a row, which is the
+        // right end for it.
+        if (result.kind === 'ignored') {
+          seenFilePaths.add(result.filePath);
+          continue;
+        }
+
         // Record the file as seen BEFORE attempting the write: the file is on
         // disk either way, and a task missing from this set is treated as
         // deleted below. A failed write must never look like a deletion.
-        seenFilePaths.add(result.definition.filePath);
-        const def = {
-          ...result.definition,
-          scope: dir.scope as 'project' | 'global',
-          projectPath: dir.projectPath,
-        };
+        const { discovered } = result;
+        seenFilePaths.add(discovered.def.filePath);
+        if (!this.identities.claim(discovered.def.filePath, root.dir)) continue;
         try {
-          const task = this.store.upsertFromFile(def, dir.agentId);
+          const task = this.store.upsertFromFile(discovered.def, root.agentId, {
+            source: 'discovery',
+            problem: discovered.problem,
+          });
           // Carry the repair through to the clock. This pass exists to catch
           // what the watcher missed, and what the watcher missed was never only
           // the row.
           this.registrar.syncTask(task.id);
           upserted++;
         } catch (err) {
-          this.report(
-            'error',
-            `[TaskReconciler] Failed to sync ${result.definition.filePath}`,
-            err
-          );
+          this.report('error', `[TaskReconciler] Failed to sync ${discovered.def.filePath}`, err);
         }
       }
     }

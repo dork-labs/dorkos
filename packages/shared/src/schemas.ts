@@ -4040,6 +4040,18 @@ export const TaskSchema = z
      * nothing resolves, which is what the "An agent" fallback is for.
      */
     proposedByName: z.string().nullable().default(null),
+    /**
+     * Where this schedule came from, when that is not a person using DorkOS.
+     *
+     * `file` means DorkOS found a `schedule:` block in a SKILL.md on disk and
+     * made this schedule from it — nobody asked for it through the app. The
+     * approval card reads this to say so honestly: a file-found schedule shows
+     * the file it came from, never "an agent proposed this".
+     *
+     * `null` is every other schedule — one a person made, or one an agent
+     * proposed, which `proposedByAgentPath` tells apart.
+     */
+    origin: z.enum(['file']).nullable().default(null),
     nextRun: z.string().nullable().optional(),
     /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.

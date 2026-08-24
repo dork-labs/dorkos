@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ScheduleBlockSchema } from './schedule-schema.js';
+import { readScheduleField } from './schedule-schema.js';
 import { OptionalYamlBoolean } from './yaml-boolean.js';
 
 export { readYamlBoolean } from './yaml-boolean.js';
@@ -205,19 +205,24 @@ export const SkillFrontmatterSchema = z.object({
 
   /**
    * Presence makes this skill a **scheduled task**; absence leaves it a plain
-   * skill. See {@link ScheduleBlockSchema} — including why cron *semantics*
-   * are validated at the server seam and not here.
+   * skill. See `ScheduleBlockSchema` in `./schedule-schema.ts` — including why
+   * cron *semantics* are validated at the server seam and not here.
    *
-   * TODO(DOR-1485/DOR-1486): a malformed block degrades to absent for now, so
-   * the file survives as a plain skill. That is the right trade only while
-   * nothing reads the block: this wave has no scheduler wired to it, so
-   * degrading costs nothing, while rejecting would delete the whole skill from
-   * three live surfaces over one bad line. Once DOR-1485 lands discovery and a
-   * parked row exists to hold the complaint, this becomes a reject so the file
-   * parks with a validation warning instead of quietly losing its schedule —
-   * the outcome the spec asks for (§User Experience).
+   * **This one field does not degrade to absent, and it is the only one that
+   * does not.** Every other optional field above falls back to `undefined` when
+   * its value is unreadable, because nothing downstream would notice the
+   * difference. A schedule would: silently dropping a broken block turns a file
+   * whose author asked for a nightly run into a plain skill that never runs and
+   * never says why. So the block resolves to a third outcome instead — an
+   * `InvalidSchedule`, a complaint the file carries — and discovery parks a row
+   * holding it (`services/tasks/skills-root-discovery.ts`).
+   *
+   * The file still PARSES either way, which is the part that matters for
+   * everyone else: a skill with a broken schedule block stays in the model's
+   * listing, in the Codex palette, and in its marketplace pack. Only the tasks
+   * subsystem ever sees the complaint.
    */
-  schedule: ScheduleBlockSchema.optional().catch(undefined),
+  schedule: z.unknown().transform(readScheduleField).optional(),
 
   /**
    * Optional discriminator declaring whether this file is a skill, task, or

@@ -7,6 +7,9 @@ import {
   ScheduleBlockSchema,
   TASK_PERMISSION_MODES,
   hasSchedule,
+  isInvalidSchedule,
+  readScheduleField,
+  scheduleProblem,
   scheduleToFrontmatter,
 } from '../schedule-schema.js';
 import { SkillFrontmatterSchema } from '../schema.js';
@@ -45,8 +48,8 @@ describe('ScheduleBlockSchema', () => {
   // The BLOCK rejects an empty cron, so a broken schedule is never silently
   // rewritten into one that simply never fires. What the surrounding FILE does
   // with that rejection is a separate decision, pinned below under "a bad
-  // schedule block never costs the skill": for this wave the block degrades to
-  // absent, because nothing reads it yet and no parked row exists to complain.
+  // schedule block never costs the skill": the file survives as a skill, and
+  // the rejection travels with it as an InvalidSchedule for discovery to park.
   it('rejects an empty cron instead of degrading it to absent', () => {
     expect(ScheduleBlockSchema.safeParse({ cron: '' }).success).toBe(false);
     expect(ScheduleBlockSchema.safeParse({ cron: '   ' }).success).toBe(true);
@@ -143,6 +146,57 @@ describe('hasSchedule', () => {
       expect(meta.schedule.cron).toBe('0 9 * * *');
     } else {
       throw new Error('guard should have narrowed');
+    }
+  });
+
+  // The distinction this pair exists to draw. Both answer `false` to "is this a
+  // scheduled task", and they are not the same thing at all: one file has no
+  // schedule, the other has one nobody can read. Only the second gets a row.
+  it('says no for an unreadable block, but keeps the complaint', () => {
+    const meta = SkillFrontmatterSchema.parse({ ...base, schedule: { cron: '' } });
+    expect(hasSchedule(meta)).toBe(false);
+    expect(scheduleProblem(meta)).toMatch(/"cron"/);
+  });
+
+  it('has nothing to complain about when there is no block at all', () => {
+    expect(scheduleProblem(SkillFrontmatterSchema.parse(base))).toBeNull();
+  });
+
+  it('has nothing to complain about when the block is fine', () => {
+    expect(
+      scheduleProblem(SkillFrontmatterSchema.parse({ ...base, schedule: { cron: '0 9 * * *' } }))
+    ).toBeNull();
+  });
+});
+
+describe('readScheduleField', () => {
+  it('answers absent for a missing key', () => {
+    expect(readScheduleField(undefined)).toBeUndefined();
+    expect(readScheduleField(null)).toBeUndefined();
+  });
+
+  it('answers a block for a readable one', () => {
+    const field = readScheduleField({ cron: '0 9 * * *' });
+    expect(isInvalidSchedule(field)).toBe(false);
+    expect(field).toMatchObject({ cron: '0 9 * * *', timezone: 'UTC', enabled: true });
+  });
+
+  it.each([
+    ['an empty cron', { cron: '' }, /"cron"/],
+    ['a permission mode nobody has', { permissions: 'yolo' }, /"permissions"/],
+    ['a max-runtime in words', { 'max-runtime': '30 minutes' }, /"max-runtime"/],
+    ['a scalar where a mapping belongs', 'daily', /schedule/],
+  ])('answers a complaint naming %s', (_label, raw, expected) => {
+    const field = readScheduleField(raw);
+    if (!isInvalidSchedule(field)) throw new Error('expected a complaint');
+    expect(field.problem).toMatch(expected);
+    // The complaint is a sentence for a person, not a zod dump.
+    expect(field.problem.endsWith('.')).toBe(true);
+  });
+
+  it('never throws, whatever the file put there', () => {
+    for (const raw of [42, [], true, { cron: { nested: 'mapping' } }]) {
+      expect(() => readScheduleField(raw)).not.toThrow();
     }
   });
 });
@@ -353,7 +407,7 @@ describe('schedule block round trip through disk', () => {
     expect(result.definition.meta.name).toBe('survivor');
   });
 
-  it('a bad schedule block never costs the skill — it just is not scheduled', () => {
+  it('a bad schedule block never costs the skill — it parks instead of vanishing', () => {
     const content = [
       '---',
       'name: survivor',
@@ -366,9 +420,28 @@ describe('schedule block round trip through disk', () => {
     ].join('\n');
 
     const result = parseSkillFile('/skills/survivor/SKILL.md', content, SkillFrontmatterSchema);
+    // The whole point: the FILE survives, so the skill keeps its place in the
+    // model's listing, the Codex palette and its marketplace pack.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.definition.meta.description).toBe('Must not vanish over one line');
+    // There is no schedule to run...
+    expect(hasSchedule(result.definition.meta)).toBe(false);
+    // ...and, unlike before DOR-1485, the reason is not thrown away. This is
+    // what discovery parks a row with.
+    expect(scheduleProblem(result.definition.meta)).toMatch(/"cron"/);
+  });
+
+  it('a skill with no schedule block at all stays silent, not parked', () => {
+    const content = ['---', 'name: plain', 'description: Just a skill', '---', '', 'Body.'].join(
+      '\n'
+    );
+
+    const result = parseSkillFile('/skills/plain/SKILL.md', content, SkillFrontmatterSchema);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(hasSchedule(result.definition.meta)).toBe(false);
+    expect(scheduleProblem(result.definition.meta)).toBeNull();
   });
 
   it('reads a hand-written nested block', async () => {

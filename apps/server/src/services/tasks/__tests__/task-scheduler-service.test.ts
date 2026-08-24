@@ -1790,6 +1790,7 @@ describe('buildTaskAppend', () => {
       proposedBySessionId: null,
       proposedByAgentPath: null,
       proposedByName: null,
+      origin: null,
       nextRun: null,
       nextRuns: [],
     };

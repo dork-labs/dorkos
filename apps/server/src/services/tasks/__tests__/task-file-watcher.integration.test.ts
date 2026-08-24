@@ -3,6 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskFileWatcher } from '../task-file-watcher.js';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import { legacyRoot } from './task-root-fixtures.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { FakeScheduler } from './fake-scheduler.js';
 import { TaskStore } from '../task-store.js';
@@ -55,7 +57,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = new FakeScheduler();
-    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler }));
+    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler }), new ScheduleIdentityRegistry());
   });
 
   afterEach(async () => {
@@ -77,7 +79,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     const realTask = path.join(tasksDir, 'real-task', 'SKILL.md');
     await writeFile(realTask, skillFile('real-task'), 'utf-8');
 
-    watcher.watch(tasksDir, 'global');
+    watcher.watch(legacyRoot(tasksDir, 'global'));
 
     await waitUntil(() => store.getByFilePath(realTask) !== null, 'real-task to sync');
     await holdsFor(
@@ -99,7 +101,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     const realTask = path.join(tasksDir, 'real-task', 'SKILL.md');
     await writeFile(realTask, skillFile('real-task'), 'utf-8');
 
-    watcher.watch(tasksDir, 'global');
+    watcher.watch(legacyRoot(tasksDir, 'global'));
 
     await waitUntil(() => store.getByFilePath(realTask) !== null, 'real-task to sync');
     await holdsFor(() => store.getTasks().length === 1, 'only the real task to be synced');

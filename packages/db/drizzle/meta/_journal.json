@@ -540,6 +540,13 @@
       "when": 1787577073802,
       "tag": "0076_first_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1787596377217,
+      "tag": "0077_calm_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

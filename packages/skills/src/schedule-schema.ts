@@ -154,18 +154,112 @@ export const ScheduleBlockSchema = z.object({
 export type ScheduleBlock = z.infer<typeof ScheduleBlockSchema>;
 
 /**
+ * A `schedule:` block that was there and could not be read.
+ *
+ * It exists so that "unreadable" is a THIRD answer, distinct from both a valid
+ * block and no block at all. The distinction is the whole point: a file whose
+ * schedule block is broken must keep working as a skill — it stays in the
+ * model's listing, in the slash palette, and in its marketplace pack — while
+ * the tasks subsystem, and only the tasks subsystem, gets to complain about it
+ * (ADR `260823-200724`; spec `universal-scheduled-tasks` §User Experience).
+ *
+ * Before DOR-1485 a broken block degraded silently to absent, which was the
+ * right trade only while nothing read it: there was no parked row to hold the
+ * complaint, so the alternative was deleting the skill from three live surfaces
+ * over one bad line. Discovery now provides that row.
+ */
+export interface InvalidSchedule {
+  /** Discriminator. Always `true`; {@link isInvalidSchedule} is the test. */
+  readonly invalid: true;
+  /** What is wrong with the block, in a sentence for the person who typed it. */
+  readonly problem: string;
+}
+
+/**
+ * The `schedule:` frontmatter field after parsing: a usable block, a complaint
+ * about an unusable one, or nothing at all.
+ */
+export type ScheduleField = ScheduleBlock | InvalidSchedule | undefined;
+
+/**
+ * Whether a parsed `schedule:` field is the complaint rather than a block.
+ *
+ * @param field - The parsed field.
+ */
+export function isInvalidSchedule(field: ScheduleField): field is InvalidSchedule {
+  return field !== undefined && 'invalid' in field;
+}
+
+/**
+ * Turn zod's account of a rejected block into one sentence a person can act on.
+ *
+ * Only the first issue is reported. A broken block is nearly always one wrong
+ * line, and a reader who fixes it gets the next complaint on the next sync —
+ * whereas a list of five nested zod messages is a wall nobody reads. The field
+ * path is quoted because it is the thing to go and look at.
+ *
+ * @param error - The rejection from {@link ScheduleBlockSchema}.
+ * @returns A sentence naming the field and what zod objected to.
+ */
+export function describeScheduleBlockProblem(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return 'Its schedule settings are not something DorkOS can read.';
+  const field = issue.path.length > 0 ? `"${issue.path.join('.')}"` : 'schedule';
+  return `Its ${field} setting is not something DorkOS can read (${issue.message}).`;
+}
+
+/**
+ * Read the raw `schedule:` value from frontmatter into one of the three
+ * outcomes in {@link ScheduleField}.
+ *
+ * **This never throws and never fails a parse.** That is the contract the
+ * surrounding {@link SkillFrontmatterSchema} depends on: the file has to
+ * survive as a skill whatever the block says.
+ *
+ * @param raw - Whatever sat under the `schedule:` key, if anything.
+ * @returns The parsed block, a complaint, or `undefined` when the key was absent.
+ */
+export function readScheduleField(raw: unknown): ScheduleField {
+  if (raw === undefined || raw === null) return undefined;
+  const result = ScheduleBlockSchema.safeParse(raw);
+  return result.success
+    ? result.data
+    : { invalid: true, problem: describeScheduleBlockProblem(result.error) };
+}
+
+/**
  * Whether this skill is a scheduled task — the one question every scheduler
  * surface asks about a discovered SKILL.md.
  *
- * A `schedule:` block makes the skill a scheduled task; no block makes it a
- * plain skill. Nothing about the file's location is consulted.
+ * A readable `schedule:` block makes the skill a scheduled task; no block makes
+ * it a plain skill. Nothing about the file's location is consulted.
+ *
+ * An UNREADABLE block answers `false` here, because there is no schedule to
+ * run. It is not thereby forgotten: {@link scheduleProblem} is the other half,
+ * and discovery asks both so a broken block parks with its complaint instead of
+ * disappearing.
  *
  * @param meta - Validated SKILL.md frontmatter.
  */
-export function hasSchedule<T extends { schedule?: ScheduleBlock }>(
+export function hasSchedule<T extends { schedule?: ScheduleField }>(
   meta: T
 ): meta is T & { schedule: ScheduleBlock } {
-  return meta.schedule !== undefined;
+  return meta.schedule !== undefined && !isInvalidSchedule(meta.schedule);
+}
+
+/**
+ * What is wrong with this skill's `schedule:` block, if anything is.
+ *
+ * The companion to {@link hasSchedule}: together they separate "no schedule
+ * here" (both answer nothing) from "a schedule that does not read" (this one
+ * answers a sentence), which is the difference between ignoring a file and
+ * parking a row about it.
+ *
+ * @param meta - Validated SKILL.md frontmatter.
+ * @returns The complaint, or `null` when the block is fine or absent.
+ */
+export function scheduleProblem<T extends { schedule?: ScheduleField }>(meta: T): string | null {
+  return isInvalidSchedule(meta.schedule) ? meta.schedule.problem : null;
 }
 
 /**

@@ -26,6 +26,16 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * name would outlive both.
    */
   proposedByAgentPath: text('proposed_by_agent_path'),
+  /**
+   * Where this row came from, when that is not a person using DorkOS.
+   *
+   * `file` means discovery found a `schedule:` block in a SKILL.md and made
+   * this row from it (DOR-1485). Nobody asked for it through a route, so the
+   * approval card must not credit an agent with proposing it — it shows the
+   * file instead. NULL is every other row: a person's own schedule, or an
+   * agent's proposal, which is told apart by `proposed_by_agent_path`.
+   */
+  origin: text('origin', { enum: ['file'] }),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),

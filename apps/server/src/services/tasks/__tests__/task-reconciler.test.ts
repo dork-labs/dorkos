@@ -5,6 +5,8 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, pulseRuns, pulseDispatchLog, type Db } from '@dorkos/db';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import { legacyRoot } from './task-root-fixtures.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -53,8 +55,12 @@ describe('TaskReconciler', () => {
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = new FakeScheduler();
-    reconciler = new TaskReconciler(store, new TaskRegistrar({ store, scheduler }));
-    reconciler.addDirectory(tasksDir, 'global');
+    reconciler = new TaskReconciler(
+      store,
+      new TaskRegistrar({ store, scheduler }),
+      new ScheduleIdentityRegistry()
+    );
+    reconciler.addRoot(legacyRoot(tasksDir, 'global'));
   });
 
   afterEach(async () => {
@@ -195,10 +201,13 @@ describe('TaskReconciler', () => {
 
       await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
 
-      // Same row, same id, history intact — the file is right there.
+      // Same row, same id, same status, history intact — the file is right
+      // there. The status is compared to what it was rather than named
+      // literally, because the claim is that a failed parse changes NOTHING
+      // about the row, whatever state the arm gate left it in.
       const after = store.getTask(created.id);
       expect(after).not.toBeNull();
-      expect(after?.status).toBe('active');
+      expect(after?.status).toBe(created.status);
       expect(store.countRuns(created.id)).toBe(1);
     });
 
@@ -250,7 +259,7 @@ describe('TaskReconciler', () => {
       await expect(fs.access(filePath)).resolves.toBeUndefined();
     });
 
-    it('recovers a task that was paused while its file was missing', async () => {
+    it('lifts the pause when a missing file comes back', async () => {
       const filePath = await writeTask('flaky-file', 'flaky-file');
       await reconciler.reconcile();
       const created = store.getTasks()[0];
@@ -264,9 +273,17 @@ describe('TaskReconciler', () => {
       await writeTask('flaky-file', 'flaky-file');
       await reconciler.reconcile();
 
-      // Both gates the scheduler checks must be restored, or the task looks
-      // live in the UI and silently never fires.
-      expect(store.getTask(created.id)?.status).toBe('active');
+      // `paused` is DorkOS's own "the file went away" marker, and it is gone —
+      // the row is back under the operator's eye rather than stuck in a state
+      // nothing would ever lift.
+      //
+      // It lands at `pending_approval`, not `active`: a row whose file vanished
+      // and returned is content nobody has approved SINCE it came back, and
+      // anything that can write that path could otherwise inherit the approval
+      // (the exploit `keepsApprovedBypass` refuses for permissions, now refused
+      // for arming too). `task-registrar.integration.test.ts` follows the whole
+      // arc through to the clock.
+      expect(store.getTask(created.id)?.status).toBe('pending_approval');
       expect(store.getTask(created.id)?.enabled).toBe(true);
     });
 
@@ -281,6 +298,7 @@ describe('TaskReconciler', () => {
         await writeTask('beta', 'beta');
         await reconciler.reconcile();
         expect(store.getTasks()).toHaveLength(2);
+        const before = store.getTasks().map((t) => [t.id, t.status] as const);
 
         // Simulates EACCES, and equally the EMFILE a file-descriptor squeeze
         // produces — the scan cannot look, which is not evidence of deletion.
@@ -293,7 +311,9 @@ describe('TaskReconciler', () => {
         }
 
         expect(store.getTasks()).toHaveLength(2);
-        expect(store.getTasks().every((t) => t.status === 'active')).toBe(true);
+        // Untouched, not merely present: a pass that could not look must leave
+        // every row exactly as it found it.
+        expect(store.getTasks().map((t) => [t.id, t.status] as const)).toEqual(before);
         expect(logger.error).toHaveBeenCalledWith(
           expect.stringContaining(tasksDir),
           expect.objectContaining({ error: expect.any(String) })
@@ -341,7 +361,7 @@ describe('TaskReconciler', () => {
 
     it('leaves a task behind after its directory is removed on agent unregister', async () => {
       const { dir } = await unregisteredProjectTask();
-      reconciler.addDirectory(dir, 'project', path.join(dorkHome, 'late-project'));
+      reconciler.addRoot(legacyRoot(dir, 'project', path.join(dorkHome, 'late-project')));
       await reconciler.reconcile();
       const task = store.getTasks()[0];
       store.createRun(task.id, 'scheduled');
@@ -394,7 +414,7 @@ describe('TaskReconciler', () => {
         skillFile('nightly'),
         'utf-8'
       );
-      reconciler.addDirectory(projectDir, 'project', path.join(dorkHome, 'doomed-project'));
+      reconciler.addRoot(legacyRoot(projectDir, 'project', path.join(dorkHome, 'doomed-project')));
       await reconciler.reconcile();
       const task = store.getTasks()[0];
       store.createRun(task.id, 'scheduled');
@@ -418,7 +438,7 @@ describe('TaskReconciler', () => {
       await fs.mkdir(path.join(projectDir, 'flow-drain'), { recursive: true });
       const projectFile = path.join(projectDir, 'flow-drain', 'SKILL.md');
       await fs.writeFile(projectFile, skillFile('flow-drain'), 'utf-8');
-      reconciler.addDirectory(projectDir, 'project', path.join(dorkHome, 'project'));
+      reconciler.addRoot(legacyRoot(projectDir, 'project', path.join(dorkHome, 'project')));
 
       const globalFile = path.join(tasksDir, 'flow-drain', 'SKILL.md');
       store.createTask({
@@ -432,7 +452,9 @@ describe('TaskReconciler', () => {
 
       const project = store.getTasks().find((t) => t.filePath === projectFile);
       const global = store.getTasks().find((t) => t.filePath === globalFile);
-      expect(project?.status).toBe('active');
+      // The project one is a live sighting: parked for approval, never paused.
+      // Only the copy whose own file is gone is paused.
+      expect(project?.status).toBe('pending_approval');
       expect(project?.enabled).toBe(true);
       expect(global?.status).toBe('paused');
     });
