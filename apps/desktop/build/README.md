@@ -22,13 +22,21 @@
 - `trayIcon.png` / `trayIcon@2x.png` — the Windows notification-area icon
   (16px + 32px), rendered from `icon.svg` so it keeps its dark chip and stays
   legible on both the light and dark Windows taskbar.
+- `dmg-background.tiff` — the artwork behind the macOS installer window
+  (`dmg.background` in `electron-builder.yml`). One file holding two
+  representations, 540×380 and 1080×760, which is how macOS ships Retina
+  artwork. Generated, never hand-drawn — see "Regenerating the DMG installer
+  background" below, and never edit the `.tiff` by hand.
 - `entitlements.mac.plist` — hardened-runtime entitlements for signing.
 
-`icon.svg` has a consumer outside this directory too: the web cockpit's PWA
+`icon.svg` has consumers outside this directory too. The web cockpit's PWA
 icons (`apps/client/public/icon-192.png`, `icon-512.png`,
 `maskable-icon-512.png`, `apple-touch-icon.png`) are rendered from the same
 glyph, so the "Add to Home Screen" mark on a phone matches the desktop app
-icon. See "Regenerating the cockpit PWA icons" below.
+icon. See "Regenerating the cockpit PWA icons" below. `dmg-background.tiff`
+reads it as well, for the small mark in the installer window's corner. Both
+read the `<path>` out of `icon.svg` at generation time rather than copying it,
+so neither can drift from the app icon by hand.
 
 **The tray PNGs are read at runtime, unlike everything else here.** This
 directory is electron-builder's `buildResources`, which is _not_ packaged into
@@ -114,6 +122,29 @@ rsvg-convert -w 32 -h 32 icon.svg -o trayIcon@2x.png
 Check the 16px renders by eye afterwards: the counter of the "D" has to stay
 open. If the glyph in `icon.svg` changes, update `trayTemplate.svg`'s `<path>`
 to match — it is the same path data with a different fill and viewBox.
+
+## Regenerating the DMG installer background
+
+macOS only — `tiffutil`, the only tool that writes the paired Retina TIFF
+Finder wants, ships with macOS and nothing else. The script says so and stops
+if you run it elsewhere.
+
+```bash
+pnpm --filter @dorkos/desktop exec tsx scripts/generate-dmg-background.ts
+```
+
+The layout lives in `DMG_LAYOUT` in that script, and the icon coordinates in
+`electron-builder.yml`'s `dmg.contents` have to match it — a test fails if they
+drift apart. Two things worth knowing before you change the art:
+
+- The window is 540×380 because the background image is; `dmg.window` is
+  ignored whenever a background is set.
+- Only the top ~298pt are reliably visible. Finder's title bar, and the status
+  and path bars a user may have switched on, cover the rest. Keep anything that
+  carries meaning above that line.
+
+Commit the regenerated `dmg-background.tiff`. A test regenerates it and
+compares byte for byte, so a stale commit fails rather than shipping quietly.
 
 ## Regenerating the cockpit PWA icons
 
