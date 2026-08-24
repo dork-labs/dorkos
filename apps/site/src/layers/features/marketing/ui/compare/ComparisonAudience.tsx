@@ -16,7 +16,7 @@ function Column({ title, reasons }: { title: string; reasons: string[] }) {
           ))}
         </ul>
       ) : (
-        <p className="text-warm-gray-light mt-4 text-sm leading-relaxed">
+        <p className="text-warm-gray mt-4 text-sm leading-relaxed">
           Nothing on this list right now. The table below has the full picture.
         </p>
       )}

@@ -6,6 +6,7 @@ import {
   dorkosCellFor,
   type Competitor,
 } from '../../lib/comparisons';
+import { HorizontalScrollFrame } from './HorizontalScrollFrame';
 import { VerdictMark } from './VerdictMark';
 
 /** Links to the feature pages that back DorkOS's answer on one dimension. */
@@ -20,7 +21,7 @@ function BackingFeatureLinks({ slugs }: { slugs: string[] }) {
         <Link
           key={feature.slug}
           href={`/features/${feature.slug}`}
-          className="text-warm-gray-light hover:text-brand-orange transition-smooth font-mono text-xs underline underline-offset-2"
+          className="text-warm-gray hover:text-brand-orange transition-smooth font-mono text-xs underline underline-offset-2"
         >
           {feature.name}
         </Link>
@@ -49,13 +50,20 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
         {copy.tableHeading}
       </h2>
 
-      <div className="border-warm-gray-light/30 mt-6 overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[46rem] border-collapse text-left">
+      <HorizontalScrollFrame className="border-warm-gray-light/30 mt-6 overflow-x-auto rounded-lg border">
+        {/* Fixed layout so the pinned label column keeps the width it is given:
+            auto layout hands it a third of the table and leaves a phone almost
+            no room for the column it labels. */}
+        <table className="w-full min-w-[40rem] table-fixed border-collapse text-left sm:min-w-[46rem]">
           <thead>
             <tr className="border-warm-gray-light/30 bg-cream-secondary border-b">
+              {/* Under fixed layout the first row sets every column width, so
+                  the label column's width has to be declared here. Narrower on a
+                  phone: a wide pinned label leaves no room for the column it
+                  labels. */}
               <th
                 scope="col"
-                className="text-2xs text-warm-gray-light p-4 font-mono tracking-[0.12em] uppercase"
+                className="text-2xs text-warm-gray bg-cream-secondary sticky left-0 z-20 w-36 p-4 font-mono tracking-[0.12em] uppercase sm:w-56"
               >
                 What you get
               </th>
@@ -88,7 +96,7 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                   {hasDetail && (
                     <Link
                       href={`#criterion-${dimension.id}`}
-                      className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-3 inline-block font-mono text-xs underline underline-offset-2"
+                      className="text-warm-gray hover:text-brand-orange transition-smooth mt-3 inline-block font-mono text-xs underline underline-offset-2"
                     >
                       More on {dimension.label.toLowerCase()}
                     </Link>
@@ -108,28 +116,36 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
                           href={theirs.source}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-2 inline-block font-mono text-xs underline underline-offset-2"
+                          className="text-warm-gray hover:text-brand-orange transition-smooth mt-2 inline-block font-mono text-xs underline underline-offset-2"
                         >
                           Where this comes from
                         </a>
                       )}
                     </>
                   ) : (
-                    <span className="text-warm-gray-light text-sm">Not checked yet.</span>
+                    <span className="text-warm-gray text-sm">Not checked yet.</span>
                   )}
                 </td>
               );
               return (
-                <tr
-                  key={dimension.id}
-                  id={`row-${dimension.id}`}
-                  className="border-warm-gray-light/20 border-b last:border-0"
-                >
-                  <th scope="row" className="w-56 p-4 align-top">
+                <tr key={dimension.id} className="border-warm-gray-light/20 border-b last:border-0">
+                  <th
+                    scope="row"
+                    // Narrower where it is pinned over a small screen: a 224px
+                    // label on a 340px scroller leaves almost no room for the
+                    // column it is meant to label.
+                    className="bg-cream-primary border-warm-gray-light/30 sticky left-0 z-10 w-36 border-r p-4 align-top sm:w-56"
+                  >
+                    {/* The anchor sits inside the row's leftmost cell. Inside,
+                        because browsers ignore scroll-margin on a table cell and
+                        the jump would land under the fixed header; leftmost,
+                        because a target further right drags this frame sideways
+                        and hides the label the reader came back for. */}
+                    <span id={`row-${dimension.id}`} className="block scroll-mt-24" />
                     <span className="text-charcoal block font-mono text-sm font-semibold">
                       {dimension.label}
                     </span>
-                    <span className="text-warm-gray-light mt-1 block text-xs leading-relaxed">
+                    <span className="text-warm-gray mt-1 block text-xs leading-relaxed">
                       {dimension.question}
                     </span>
                   </th>
@@ -139,7 +155,7 @@ export function ComparisonTable({ competitor }: { competitor: Competitor }) {
             })}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollFrame>
     </section>
   );
 }

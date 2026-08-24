@@ -41,7 +41,7 @@ export function ComparisonSources({ competitor }: { competitor: Competitor }) {
     >
       <h2
         id="how-we-checked"
-        className="text-2xs text-warm-gray-light font-mono tracking-[0.12em] uppercase"
+        className="text-2xs text-warm-gray font-mono tracking-[0.12em] uppercase"
       >
         How we checked
       </h2>
@@ -60,7 +60,7 @@ export function ComparisonSources({ competitor }: { competitor: Competitor }) {
               href={source}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1 font-mono text-xs"
+              className="text-warm-gray hover:text-brand-orange transition-smooth inline-flex items-center gap-1 font-mono text-xs"
             >
               {sourceLabel(source)} <ExternalLink size={10} />
             </a>

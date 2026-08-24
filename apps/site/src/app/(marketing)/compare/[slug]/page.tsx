@@ -152,7 +152,7 @@ export default async function ComparisonPage(props: { params: Promise<{ slug: st
 
         <Link
           href="/compare"
-          className="text-2xs text-warm-gray-light hover:text-brand-orange transition-smooth mb-8 inline-flex items-center gap-1 font-mono tracking-[0.04em]"
+          className="text-2xs text-warm-gray hover:text-brand-orange transition-smooth mb-8 inline-flex items-center gap-1 font-mono tracking-[0.04em]"
         >
           <ArrowLeft size={12} /> Compare
         </Link>

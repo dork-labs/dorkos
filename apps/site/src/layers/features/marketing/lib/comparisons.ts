@@ -252,7 +252,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can you run more than one company’s coding agent from the same screen?',
     wantPhrase: 'every coding agent you run on one screen, not one company’s',
     dorkosDetail:
-      'Each chat picks its own agent tool, so you can start a job on Claude Code, run the next on Codex, and keep a third on OpenCode without leaving the tab or changing any setup. Sessions from all three land in one list, and closing your laptop does not end them.',
+      'Each chat picks its own agent tool, so you can start a job on Claude Code, run the next on Codex, and keep a third on OpenCode without leaving the tab or changing any setup. Sessions from all three land in one list, and they keep running for as long as DorkOS does.',
   },
   {
     id: 'scheduling',
@@ -424,27 +424,29 @@ export const comparisons: Competitor[] = [
       },
       coordination: {
         verdict: 'partial',
-        note: 'Several agents can work side by side, each on its own copy of the project, but they work alone: there is no shared room where they pass work to each other.',
+        note: 'Up to eight agents can work side by side, each on its own copy of the project, but each one reports back to you rather than to the others.',
         detail:
-          'Cursor 3 added an Agents Window that runs up to eight agents at once, each in its own copy of your project so they do not tread on each other. That is parallel work, not teamwork: no agent can see what another is doing, ask it a question, or hand it the next step.',
-        source: 'https://www.deployhq.com/guides/cursor',
+          'Cursor runs up to eight agents at once, keeping them apart with separate copies of your project so they do not tread on each other. That is parallel work rather than teamwork: each agent answers in its own context and hands the result back to your conversation, so none of them can ask another a question or pass it the next step.',
+        source: 'https://cursor.com/changelog/2-0',
       },
       'local-first': {
         verdict: 'partial',
-        note: 'The editor runs on your computer, but you sign in to Cursor, and its background agents run on Cursor’s machines rather than yours.',
-        source: 'https://www.deployhq.com/guides/cursor',
+        note: 'The editor runs on your computer, but you sign in to Cursor, and its cloud agents run on Cursor’s own machines rather than yours.',
+        source: 'https://cursor.com/help/ai-features/background-agents',
       },
       surfaces: {
-        verdict: 'partial',
-        note: 'The desktop app is the way in. Background agents keep working in the cloud while you do something else.',
-        source: 'https://www.deployhq.com/guides/cursor',
+        verdict: 'yes',
+        note: 'Yes. Besides the desktop app there is a web dashboard, an iPhone and iPad app, and a Slack integration for starting and checking on its cloud agents.',
+        detail:
+          'You can start an agent from your phone, watch it work, and review and merge its pull request without opening a laptop. The iPhone and iPad app was still a public beta when we checked, with Android named as planned rather than shipped, and it is deliberately not an editor: it is for directing and reviewing agents, not writing code.',
+        source: 'https://cursor.com/docs/cloud-agent/web-and-mobile',
       },
       extensibility: {
         verdict: 'yes',
         note: 'It imports your VS Code setup and installs editor extensions, and its agent can reach your own tools through MCP, the common way to plug outside tools into an agent.',
         detail:
           'Years of editor extensions carry over, with one caveat worth knowing: Cursor installs them from the Open VSX registry rather than the VS Code Marketplace, so a few will be missing. Its agent also connects to outside tools through MCP, so the things your team already runs are reachable from inside the editor.',
-        source: 'https://cursor.com/docs/configuration/extensions',
+        source: 'https://cursor.com/docs/configuration/migrations/vscode',
       },
       pricing: {
         verdict: 'partial',
@@ -470,12 +472,15 @@ export const comparisons: Competitor[] = [
         a: 'Nothing. It is free and open source. You still pay for whatever model plan your agents use, exactly as you do today.',
       },
     ],
-    lastVerified: '2026-08-23',
+    lastVerified: '2026-08-24',
     sources: [
       'https://cursor.com/pricing',
+      'https://cursor.com/changelog/2-0',
+      'https://cursor.com/help/ai-features/background-agents',
+      'https://cursor.com/docs/cloud-agent/web-and-mobile',
+      'https://cursor.com/docs/configuration/migrations/vscode',
       'https://cursor.com/docs/configuration/extensions',
       'https://cursor.com/docs/context/mcp',
-      'https://www.deployhq.com/guides/cursor',
     ],
     relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'rooms'],
   },
