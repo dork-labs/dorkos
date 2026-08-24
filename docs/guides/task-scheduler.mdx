@@ -1,6 +1,6 @@
 ---
-title: Task Scheduler
-description: Schedule agents to run on a timer, without you at the keyboard
+title: Scheduled tasks
+description: Put any skill on a timer and let your agent run it without you
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -8,44 +8,125 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-# Task Scheduler
+# Scheduled tasks
 
 <ProductShot
   id="tasks"
-  alt="The DorkOS Tasks page showing scheduled agent runs with their timers and a run history of green checks"
+  alt="The DorkOS Schedules page showing scheduled tasks with their timers and a run history of green checks"
 />
 
-Tasks lets you schedule an agent to run automatically, on a timer, instead of you kicking it off by hand every time. Set it up once ("check for outdated dependencies every Monday at 10am") and DorkOS handles the rest, without you at the keyboard.
+A scheduled task runs an agent on a timer, instead of you kicking it off by hand every time. Set it up once ("check for outdated dependencies every Monday at 10am") and DorkOS handles the rest, without you at the keyboard.
 
-Schedules fire whenever the DorkOS server is running: on your laptop while it's awake, or around the clock if you run DorkOS on a machine that stays on, like a desktop, a home server, or a cheap cloud box.
+Any skill can become a scheduled task. A skill is a folder with a `SKILL.md` file in it that teaches an agent how to do one job. Add a few lines of timing to the top of that file and the same skill now also runs on its own.
 
-Tasks is on by default. Open the **Scheduled** tab on Home and you're ready to create your first schedule.
+Scheduled tasks fire whenever the DorkOS server is running: on your laptop while it's awake, or around the clock if you run DorkOS on a machine that stays on, like a desktop, a home server, or a cheap cloud box.
+
+Scheduled tasks are on by default. Open the **Schedules** tab on Home and you're ready to create your first one.
 
 <Callout type="info">
-  Don't see a Scheduled tab? Someone turned it off. Run `dorkos --tasks`, or see [Enabling or
-  disabling Tasks](#enabling-or-disabling-tasks) below.
+  Don't see a Schedules tab? Someone turned it off. Run `dorkos --tasks`, or see [Turning scheduled
+  tasks on or off](#turning-scheduled-tasks-on-or-off) below.
 </Callout>
 
-## Create your first schedule
+## Put a skill on a timer
+
+Open the skill's `SKILL.md` and add a `schedule:` block to the block of settings at the top:
+
+```yaml
+---
+name: daily-health-check
+description: Runs lint, tests, and type checks and reports what broke
+schedule:
+  cron: '0 9 * * 1-5'
+  timezone: 'America/New_York'
+---
+Run lint, the test suite, and the type checker. Report anything that failed.
+```
+
+That's the whole switch. The block's presence is what makes the skill a scheduled task, and deleting the block turns it back into a plain skill. Nothing else about the file changes, so the skill still works when you or your agent call it by hand.
+
+The block takes a handful of settings. Only `cron` is worth learning first:
+
+<TypeTable
+  type={{
+    cron: {
+      type: 'string',
+      description:
+        'When it runs, as a cron expression ("0 9 * * 1-5" is weekdays at 9am). Leave it out and the task only runs when someone asks.',
+    },
+    timezone: {
+      type: 'string',
+      description: 'The timezone the times are read in, like "America/New_York".',
+      default: 'UTC',
+    },
+    enabled: {
+      type: 'boolean',
+      description: 'Set false to park the task without deleting it.',
+      default: 'true',
+    },
+    permissions: {
+      type: 'string',
+      description: 'How much the agent may do on its own during the run.',
+      default: 'acceptEdits',
+    },
+    'max-runtime': {
+      type: 'string',
+      description: 'How long the run may take before DorkOS stops it, like "5m" or "1h".',
+    },
+    prompt: {
+      type: 'string',
+      description:
+        'What to send when the timer fires, if that differs from the skill body. Most skills never need this.',
+    },
+  }}
+/>
+
+## Where DorkOS looks
+
+DorkOS reads two places for skills that carry a `schedule:` block:
+
+- `~/.dork/skills/` for tasks that belong to no particular project.
+- `<your project>/.agents/skills/` for tasks that belong to one agent. The run happens in that project's folder.
+
+A skill without a `schedule:` block is simply a skill, and DorkOS leaves it alone. New files are picked up as you save them, so you never restart anything.
+
+<Callout type="info">
+  DorkOS never reads `.claude/skills/` for scheduled tasks. That folder is a copy DorkOS writes for
+  you from `.agents/skills/`, and reading both would find every task twice.
+</Callout>
+
+## Nothing runs until you approve it
+
+A schedule that shows up in a file has to ask before it runs. It lands on the Schedules page marked **Waiting for approval**, and it stays parked until you say yes. That is true even when the file says `enabled: true`. The file states an intention; you grant the permission.
+
+This matters because a `git pull`, a marketplace install, or an agent writing its own skill can all put a new timer on your machine. None of them can start one.
+
+Your approval is tied to what the task actually says. Change its prompt or its timing and it parks again for a fresh look. Approve the same content twice, and it stays approved through every later sync.
+
+Tasks you create yourself in the cockpit start armed. Clicking save **is** the approval.
+
+## Create one from the cockpit
+
+Prefer buttons to files? The Schedules tab builds the same thing for you.
 
 <Steps>
 <Step>
 
-### Open the Scheduled tab
+### Open the Schedules tab
 
-It's in the row of tabs across the top of Home. If you have no schedules yet, you'll see a gallery of ready-made templates, things like "Daily Health Check" (run lint, tests, and type checks every weekday morning) or "Weekly Dependency Audit" (check for outdated packages every Monday).
+It's in the row of tabs across the top of Home. If you have nothing scheduled yet, you'll see a gallery of ready-made templates, things like "Daily Health Check" (run lint, tests, and type checks every weekday morning) or "Weekly Dependency Audit" (check for outdated packages every Monday).
 
 </Step>
 <Step>
 
 ### Pick a template or start from scratch
 
-Click a template card to pre-fill a schedule you can edit, or click "Start from scratch" to build your own. Either way, you land on a form with:
+Click a template card to pre-fill a scheduled task you can edit, or click "Start from scratch" to build your own. Either way, you land on a form with:
 
 - **Agent**: which agent runs the job, and in which project. This also decides the job's working directory.
-- **Name** and **Description**: what to call this schedule.
-- **Prompt**: the instruction the agent gets each time the job runs, e.g. "Check for outdated npm dependencies and summarize what needs updating."
-- **Cron Expression** and **Timezone** (under "Schedule"): when the job runs. A cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
+- **Name** and **Description**: what to call this scheduled task.
+- **Prompt**: the instruction the agent gets each time it runs, e.g. "Check for outdated npm dependencies and summarize what needs updating."
+- **Cron Expression** and **Timezone** (under "Schedule"): when it runs. A cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
 - **Permission Mode** and **Max Runtime** (under "Advanced settings"): how much autonomy the agent gets and how long it's allowed to run before DorkOS stops it.
 
 </Step>
@@ -53,18 +134,18 @@ Click a template card to pre-fill a schedule you can edit, or click "Start from 
 
 ### Save it
 
-Your schedule shows up on the Scheduled tab immediately, along with its next run time. Every run it makes lands in the run history, so you can check what happened without digging through logs.
+It shows up on the Schedules tab right away, along with its next run time. DorkOS writes it out as a real skill file, so your agent can read and use it like any other skill. Every run lands in the run history, so you can check what happened without digging through logs.
 
 </Step>
 </Steps>
 
 ## Will it actually run?
 
-Short answer: yes, once it's live in a real DorkOS install. Schedules always show up and you can always edit them, but a schedule only actually **fires** (starts an agent session) in a real production install of DorkOS, the one you get from the normal install, not a developer preview build. That's a deliberate safety rail: a scheduled job can edit files and run commands on its own, so DorkOS won't let a test or development build fire one by accident.
+Short answer: yes, once it's live in a real DorkOS install. Scheduled tasks always show up and you can always edit them, but one only actually **fires** (starts an agent session) in a real production install of DorkOS, the one you get from the normal install, not a developer preview build. That's a deliberate safety rail: an unattended job can edit files and run commands on its own, so DorkOS won't let a test or development build fire one by accident.
 
-If you're following this guide in a normal DorkOS install, you're already in the environment where schedules fire. Nothing extra to do.
+If you're following this guide in a normal DorkOS install, you're already in the environment where they fire. Nothing extra to do.
 
-## Get a message when a task finishes
+## Get a message when one finishes
 
 DorkOS can message you the moment a scheduled task wraps up, so you do not have to sit and watch it. The message names the task, how long it took, and the first line of what it produced. This works on its own. The agent does not have to do anything.
 
@@ -72,7 +153,7 @@ To turn it on:
 
 1. Open the agent, go to **Connections**, and add a connection like Telegram.
 2. Bind the connection and open its **Advanced** settings.
-3. Turn on **Message me when tasks finish**.
+3. Turn on **Message me when scheduled tasks finish**.
 4. Turn on **Agent can start conversations**. This is the real switch. Nothing gets sent until you allow the agent to reach you.
 
 Failures always reach you. Successful runs reach you only while the switch is on, so you can mute the routine "all good" pings and still hear about breaks.
@@ -83,11 +164,29 @@ Failures always reach you. Successful runs reach you only while the switch is on
   notifications start flowing.
 </Callout>
 
-Cancelled runs never send a message, since you cancelled them yourself. Tasks that are not linked to an agent do not send a message yet.
+Cancelled runs never send a message, since you cancelled them yourself. Scheduled tasks that are not linked to an agent do not send a message yet.
 
-## Enabling or disabling Tasks
+## Coming from an older version
 
-Tasks ships on by default, so most people never need to touch this. If someone turned it off, or you want to force it on or off for a specific run:
+Older versions of DorkOS kept scheduled tasks in their own folders, `~/.dork/tasks/` and `<your project>/.dork/tasks/`. You do not have to move anything. The first time the new version starts, DorkOS rewrites those files into the new format and moves them to the skills folders above.
+
+Anything you had already approved stays approved and keeps its timing. If one file is too damaged to read, DorkOS leaves it where it is and parks it on the Schedules page with a note naming the file, so nothing disappears quietly.
+
+## How this differs from Claude Code's `/loop`
+
+Claude Code's `/loop` repeats a prompt inside the chat you are sitting in. Close that session and the loop is gone with it.
+
+DorkOS Pulse, the scheduler behind this page, is the durable one. Your scheduled tasks live in files, survive restarts, and fire whether or not you have a chat open. Each run starts its own fresh session, and the history of every run is kept.
+
+## When a scheduled task tells the agent to use another skill
+
+One gotcha is worth knowing. A skill can carry `disable-model-invocation: true`, which means "never pick this up on your own; only run it when asked directly."
+
+That flag belongs on the scheduled task itself, not on the skills its prompt tells the agent to use. Scheduled runs are unaffected by the flag, because DorkOS sends the prompt straight to the agent. But if your prompt says "use the changelog skill," and the changelog skill carries the flag, the agent will not reach for it, and the run quietly does less than you asked.
+
+## Turning scheduled tasks on or off
+
+They ship on, so most people never need to touch this. If someone turned them off, or you want to force them on or off for a specific run:
 
 ```bash
 dorkos --tasks
@@ -105,9 +204,11 @@ You can also set `DORKOS_TASKS_ENABLED=true` (or `false`) as an environment vari
 
 The rest of this page is for people who want the API, the exact data model, or the implementation details. If you just wanted to schedule an agent, you're done, go create something.
 
+Names on the wire kept their old spelling on purpose: the REST paths are still `/api/tasks`, and the MCP tools are still `tasks_*`. Only the words people read changed.
+
 ### REST API
 
-Create a schedule:
+Create a scheduled task:
 
 ```bash
 curl -X POST http://localhost:4242/api/tasks \
@@ -122,9 +223,9 @@ curl -X POST http://localhost:4242/api/tasks \
   }'
 ```
 
-`target` is either an agent id (the schedule runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, and `reason` are optional here. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime the scheduler drives — or, if you never chose one, at the level scheduled runs have always started at, able to edit files but stopping for anything riskier. There is one exception to the optional list: a caller creating a schedule it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. That schedule then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
+`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, and `reason` are optional here. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime the scheduler drives. If you never chose one, it starts where scheduled runs have always started: able to edit files, but stopping for anything riskier. There is one exception to the optional list: a caller creating a scheduled task it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. It then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
 
-Pause or resume a schedule:
+Pause or resume:
 
 ```bash
 curl -X PATCH http://localhost:4242/api/tasks/{id} \
@@ -132,13 +233,13 @@ curl -X PATCH http://localhost:4242/api/tasks/{id} \
   -d '{ "enabled": false }'
 ```
 
-Trigger a schedule outside its cron timing:
+Run one outside its cron timing:
 
 ```bash
 curl -X POST http://localhost:4242/api/tasks/{id}/trigger
 ```
 
-Running a schedule on demand is yours to decide, so this call answers 403 for a caller that identifies itself as an agent or presents an approval token — the same bar that decides who may set `permissionMode` or `status`. You can trigger any schedule, including one still parked at `pending_approval`: running a proposal once is how you find out what it does before you approve it.
+Running one on demand is yours to decide, so this call answers 403 for a caller that identifies itself as an agent or presents an approval token. That is the same bar that decides who may set `permissionMode` or `status`. You can trigger any scheduled task, including one still parked at `pending_approval`: running a proposal once is how you find out what it does before you approve it.
 
 Cancel an active run:
 
@@ -154,7 +255,7 @@ curl http://localhost:4242/api/tasks/templates
 
 ### MCP Tools
 
-Agents can create schedules for themselves using the `tasks_create` MCP tool.
+Agents can propose scheduled tasks for themselves using the `tasks_create` MCP tool.
 
 ```
 tasks_create({
@@ -168,16 +269,16 @@ tasks_create({
 ```
 
 <Callout type="warn">
-  Schedules an agent creates for itself enter the `pending_approval` state and won't run until a
-  human approves them. This stops an agent from quietly scheduling recurring work you never asked
-  for. `reason` is required: it's the whole reason to make the schedule up front, in the agent's own
-  words, since it's the only thing the person deciding whether to approve it has to go on. The
+  A scheduled task an agent creates for itself enters the `pending_approval` state and won't run
+  until a human approves it. This stops an agent from quietly scheduling recurring work you never
+  asked for. `reason` is required: it's the whole reason to make the task up front, in the agent's
+  own words, since it's the only thing the person deciding whether to approve it has to go on. The
   approval card also shows who proposed it and the next few times it would actually run.
 </Callout>
 
 ### Cron Syntax
 
-Tasks uses standard five-field cron expressions:
+DorkOS uses standard five-field cron expressions:
 
 ```
 ┌───────────── minute (0-59)
@@ -213,7 +314,7 @@ Tasks uses standard five-field cron expressions:
 <TypeTable
   type={{
     running: { type: 'status', description: 'The agent session is currently executing' },
-    completed: { type: 'status', description: 'The agent completed the task without errors' },
+    completed: { type: 'status', description: 'The agent finished the run without errors' },
     failed: { type: 'status', description: 'The agent encountered an error during execution' },
     cancelled: { type: 'status', description: 'The run was manually cancelled' },
   }}
@@ -221,55 +322,54 @@ Tasks uses standard five-field cron expressions:
 
 Click any run in the history to open the full agent conversation, every tool call, response, and output the agent produced during that run.
 
-Tasks enforces a configurable concurrency cap on simultaneous runs (4 by default, and anything from 1 to 10 in Settings). If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) stops a schedule from starting a new run while its previous run is still active.
+DorkOS enforces a configurable concurrency cap on simultaneous runs (4 by default, and anything from 1 to 10 in Settings). If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) stops a scheduled task from starting a new run while its previous run is still active.
 
 ### Schedule States
 
 <TypeTable
   type={{
-    active: { type: 'state', description: 'The schedule is running on its cron timing' },
+    active: { type: 'state', description: 'It is armed and running on its cron timing' },
     paused: {
       type: 'state',
       description:
-        'Set by DorkOS, not by you: the task file has gone missing, or its agent was disconnected. It clears on its own once the file is back',
+        'Set by DorkOS, not by you: the skill file has gone missing, or its agent was disconnected. It clears on its own once the file is back',
     },
     pending_approval: {
       type: 'state',
-      description: 'The schedule was created by an agent and awaits human approval',
+      description:
+        'Waiting for you. Everything DorkOS finds in a file starts here, as does anything an agent proposes',
     },
   }}
 />
 
-To pause a task yourself, switch it off — that is saved in the task file, so it
-sticks. `paused` is DorkOS telling you something is missing, and it is not
-something you can set.
+To pause a scheduled task yourself, switch it off. That is saved in the skill file, so it sticks. `paused` is DorkOS telling you something is missing, and it is not something you can set.
 
-### Tasks + Relay
+### Scheduled tasks + Relay
 
-When both Tasks and [Relay](/docs/guides/relay-messaging) are enabled, a scheduled run gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. Multi-agent coordination through Relay is shipped but still working toward full end-to-end verification, so treat this integration as functional, not battle-tested. In practice it means:
+When both scheduled tasks and [Relay](/docs/guides/relay-messaging) are enabled, a run gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. Multi-agent coordination through Relay is shipped but still working toward full end-to-end verification, so treat this integration as functional, not battle-tested. In practice it means:
 
-- Each scheduled run gets a Relay trace ID, so you can follow the delivery path from trigger to agent execution.
-- Scheduled runs share Relay's delivery machinery (retries, backpressure handling, a dead-letter queue for messages that can't be delivered) with every other message on the bus.
+- Each run gets a Relay trace ID, so you can follow the delivery path from trigger to agent execution.
+- Runs share Relay's delivery machinery (retries, backpressure handling, a dead-letter queue for messages that can't be delivered) with every other message on the bus.
 
 <Callout type="info">
-  When Relay is disabled, Tasks falls back to calling the agent runtime directly. Schedules still
-  work the same way, you just don't get the trace ID or shared delivery metrics.
+  When Relay is disabled, DorkOS falls back to calling the agent runtime directly. Scheduled tasks
+  still work the same way, you just don't get the trace ID or shared delivery metrics.
 </Callout>
 
 ### Storage
 
-Schedule definitions and run history live in SQLite at `~/.dork/dork.db`, using WAL mode so reads and writes don't block each other.
+The skill files are the source of truth. Their derived rows and the run history live in SQLite at `~/.dork/dork.db`, using WAL mode so reads and writes don't block each other.
 
 Two guarantees hold even if more than one DorkOS server points at the same `~/.dork`:
 
-- **Single firer.** Only one process fires schedules at a time; others display schedules but stay quiet. If the firing process exits, another takes over within seconds.
+- **Single firer.** Only one process fires schedules at a time; others display them but stay quiet. If the firing process exits, another takes over within seconds.
 - **Fire-once.** A given scheduled occurrence dispatches at most once, even across processes, so a shared data directory can never double-run a job. Manual "trigger" calls are exempt and always run.
 
 ## Next Steps
 
 <Cards>
   <Card title="Relay Messaging" href="/docs/guides/relay-messaging">
-    How Tasks integrates with the Relay messaging layer.
+    How scheduled runs ride the Relay messaging layer.
   </Card>
   <Card title="CLI Usage" href="/docs/guides/cli-usage">
     See the --tasks and --no-tasks CLI flags.

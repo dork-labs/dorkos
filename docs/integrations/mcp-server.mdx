@@ -109,12 +109,12 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 55 tools in total, covering sessions, Tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 55 tools in total, covering sessions, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                                           |
 | ------------------- | ----- | -------------------------------------------------------------------------------------------------- |
 | Core                | 4     | `ping`, `get_server_info`, `get_session_count`, `get_agent`                                        |
-| Tasks               | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`              |
+| Scheduled tasks     | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`              |
 | Relay (messaging)   | 13    | `relay_send`, `relay_inbox`, `relay_send_and_wait`, `relay_list_adapters`, `relay_get_metrics`     |
 | Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                                 |
 | Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`                |
