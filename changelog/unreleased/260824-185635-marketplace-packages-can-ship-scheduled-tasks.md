@@ -4,6 +4,7 @@ covers:
   - 'feat(server): declared package schedules become real files at install (DOR-1487)'
   - 'feat(marketplace,server): marketplace packages can ship scheduled tasks (DOR-1487)'
   - 'fix(marketplace,server): a packaged schedule can never reach past its own folder (DOR-1487 review)'
+  - 'fix(marketplace,server): publish-time and install-time resolve a skillRef the same way (DOR-1487 review)'
 ---
 
 ### Added
