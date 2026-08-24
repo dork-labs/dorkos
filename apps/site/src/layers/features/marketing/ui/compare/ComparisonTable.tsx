@@ -47,8 +47,10 @@ function CellHeading({ children }: { children: string }) {
  * Below `sm` the same markup reflows into one stacked block per dimension, each
  * cell labelled with the side it belongs to. Three columns cannot be read on a
  * phone at any scroll position — a pinned label wide enough to be useful leaves
- * less room than a column needs — so on a phone the table stops being a table
- * rather than becoming an unreadable one.
+ * less room than a column needs — so the columns stack rather than truncate.
+ * The reflow costs less than it looks: Chromium still exposes the table, its
+ * rows and its row headers at that width, and only the column-header and
+ * row-group roles drop, which is what the per-cell headings replace.
  *
  * @param competitor - The product this page compares against.
  */
