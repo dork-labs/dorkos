@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): a second window on a chat sees the reply already in progress (DOR-1444)'
   - 'fix(server,client): a chat link without the folder reads the right project (DOR-1444)'
+  - 'fix(client): session hooks survive a tree with no router (DOR-1444)'
 ---
 
 ### Fixed
