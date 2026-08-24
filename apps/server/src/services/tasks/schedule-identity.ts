@@ -91,6 +91,24 @@ export class ScheduleIdentityRegistry {
     return this.resolvedBySighting.get(sightedPath);
   }
 
+  /*
+   * ONE CASE THIS DOES NOT COVER, stated so nobody assumes it does.
+   *
+   * The mapping lives in memory, so it is empty at boot. If a package is
+   * uninstalled while DorkOS is NOT running, the watcher's first sight of that
+   * path is an unlink for a link it never claimed, and it pauses by the raw link
+   * path — which matches no row. The schedule is stranded: a live row whose file
+   * is gone.
+   *
+   * The reconciler is the backstop and does close it, within five minutes:
+   * `linkedSkillDirs` reads the dangling link with `readlink`, which still names
+   * the target an uninstall removed, so the retirement pass may testify about
+   * that directory and retires the row on the evidence of the file itself. A
+   * dangling link that has ALSO been swept away leaves nothing to read, and that
+   * row waits for a person — the safe direction, and the reason this is a note
+   * rather than a guess written into the code.
+   */
+
   /**
    * Drop the claim on one file, because it is gone.
    *

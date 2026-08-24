@@ -1791,6 +1791,7 @@ describe('buildTaskAppend', () => {
       proposedByAgentPath: null,
       proposedByName: null,
       origin: null,
+      reasonSource: null,
       nextRun: null,
       nextRuns: [],
     };

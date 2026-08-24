@@ -217,6 +217,7 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     proposedByAgentPath: null,
     proposedByName: null,
     origin: null,
+    reasonSource: null,
     nextRuns: [],
     ...overrides,
   };

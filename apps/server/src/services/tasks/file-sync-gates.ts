@@ -83,6 +83,7 @@ export class FileSyncGates {
       status: existing.status,
       prompt: existing.prompt,
       cron: existing.cron,
+      approvedContentKey: existing.approvedContentKey,
     };
 
     const { mode: permissionMode, clamped } = resolveFilePermissionMode(

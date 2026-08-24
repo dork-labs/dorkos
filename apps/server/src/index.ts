@@ -2211,6 +2211,16 @@ async function start() {
     taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
     const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
 
+    // Every schedule that was already live keeps its approval across this
+    // upgrade. The arm grant is a stored key now, and rows written before that
+    // column existed have none — so without this pass the first sync would park
+    // every schedule an alpha user already approved. Runs BEFORE any watcher
+    // starts, and matches nothing on the second boot.
+    const backfilled = taskStore.backfillApprovalGrants();
+    if (backfilled > 0) {
+      logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);
+    }
+
     // `~/.dork/skills/` is created rather than merely watched, so that a person
     // looking for where to put a global schedule finds it already there.
     await ensureGlobalSkillsRoot(dorkHome);

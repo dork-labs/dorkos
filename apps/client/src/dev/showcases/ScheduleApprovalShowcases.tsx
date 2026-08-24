@@ -51,6 +51,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedByAgentPath: '/Users/dev/agents/dorkbot',
     proposedByName: 'DorkBot',
     origin: null,
+    reasonSource: null,
     nextRuns: [minutesFromLoad(180), minutesFromLoad(1620), minutesFromLoad(3060)],
     ...overrides,
   };

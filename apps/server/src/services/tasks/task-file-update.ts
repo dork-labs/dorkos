@@ -100,10 +100,7 @@ export interface FileBackedRow {
  * @param existing - The row as it stands, or undefined to skip comparison.
  * @returns True when the file has to be rewritten.
  */
-export function touchesFile(
-  data: Record<string, unknown>,
-  existing?: FileBackedRow
-): boolean {
+export function touchesFile(data: Record<string, unknown>, existing?: FileBackedRow): boolean {
   if (data.maxRuntime !== undefined) return true;
   return Object.entries(FILE_BACKED_COLUMN).some(([field, column]) => {
     const value = data[field];
@@ -117,31 +114,58 @@ export function touchesFile(
 }
 
 /**
+ * The directories installed packages live in, for a given scope.
+ *
+ * Mirrors the marketplace's own layout (`conflict-detector.ts`): the scope root
+ * is `<projectPath>/.dork` for a project install and the data directory for a
+ * global one, and packages sit under `plugins/` inside it.
+ *
+ * @param dorkHome - The resolved data directory.
+ * @param projectPath - The owning agent's project, when it has one.
+ */
+export function pluginRoots(dorkHome: string, projectPath?: string): string[] {
+  const roots = [path.join(dorkHome, 'plugins')];
+  if (projectPath) roots.push(path.join(projectPath, '.dork', 'plugins'));
+  return roots;
+}
+
+/**
  * Whether this file belongs to an installed marketplace package.
  *
- * A skill installed from a package lives under `.dork/plugins/<pkg>/` and is
- * reachable from an agent's `.agents/skills/` as a symlink. Editing it through
- * that link writes into the package's own checkout: the change is invisible in
- * the cockpit's provenance, it is shared by every agent that installed the
- * package, and the next package update overwrites it. So DorkOS does not do it.
- * Approving such a schedule is row state, which the caller reaches without a
- * write at all.
+ * A skill installed from a package lives under a `plugins/` root and is reachable
+ * from an agent's `.agents/skills/` as a symlink. Editing it through that link
+ * writes into the package's own checkout: the change is invisible in the
+ * cockpit's provenance, it is shared by every agent that installed the package,
+ * and the next package update overwrites it. So DorkOS does not do it. Approving
+ * such a schedule is row state, which the caller reaches without a write at all.
  *
- * Resolved before the test, because the link is the whole point — the path the
- * row holds may be either the link or its target.
+ * Both sides are resolved before comparing — the file because the link is the
+ * whole point, and the roots because a data directory or a checkout under a
+ * symlinked parent is ordinary rather than exotic (every macOS temp directory is
+ * one). An earlier version tested for a `plugins` path SEGMENT instead, which
+ * both missed real installs and would have claimed any file under any directory
+ * a person happened to name `plugins` (DOR-1485 review, residual 5).
  *
  * @param filePath - The file the route is about to edit.
+ * @param roots - Candidate plugin roots, from {@link pluginRoots}.
  * @returns True when the file is package-owned and must not be written.
  */
-export async function isPackageOwned(filePath: string): Promise<boolean> {
-  let resolved = filePath;
-  try {
-    resolved = await fs.realpath(filePath);
-  } catch {
-    // Gone or dangling: the caller's own read will report it. Judge the path we
-    // were given rather than claiming ownership we cannot verify.
+export async function isPackageOwned(filePath: string, roots: string[]): Promise<boolean> {
+  const resolvedFile = await resolveOrSelf(filePath);
+  for (const root of roots) {
+    const resolvedRoot = await resolveOrSelf(root);
+    if (resolvedFile.startsWith(resolvedRoot + path.sep)) return true;
   }
-  return resolved.split(path.sep).includes('plugins') && resolved.includes(`.dork${path.sep}`);
+  return false;
+}
+
+/** `fs.realpath`, falling back to the path itself when it cannot be resolved. */
+async function resolveOrSelf(target: string): Promise<string> {
+  try {
+    return await fs.realpath(target);
+  } catch {
+    return target;
+  }
 }
 
 /**

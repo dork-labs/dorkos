@@ -31,6 +31,7 @@ import {
   describeArmBlocker,
   isPackageOwned,
   planTaskFileUpdate,
+  pluginRoots,
   touchesFile,
 } from '../task-file-update.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -383,18 +384,30 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('treats an installed package’s skill as not ours to write', async () => {
-      const pluginSkill = path.join(dorkHome, '.dork', 'plugins', 'pack', 'skills', 'x', 'SKILL.md');
+      const roots = pluginRoots(dorkHome, projectPath);
+      const pluginSkill = path.join(dorkHome, 'plugins', 'pack', 'skills', 'x', 'SKILL.md');
       await mkdir(path.dirname(pluginSkill), { recursive: true });
       await writeFile(pluginSkill, scheduledSkill('x', { cron: '0 9 * * *' }), 'utf-8');
 
-      expect(await isPackageOwned(pluginSkill)).toBe(true);
+      expect(await isPackageOwned(pluginSkill, roots)).toBe(true);
       // Reached through the symlink an install leaves in `.agents/skills/`, the
       // answer has to be the same — that is the path the row actually holds.
       const link = path.join(skillsDir, 'pack__x');
       await symlink(path.dirname(pluginSkill), link);
-      expect(await isPackageOwned(path.join(link, 'SKILL.md'))).toBe(true);
+      expect(await isPackageOwned(path.join(link, 'SKILL.md'), roots)).toBe(true);
 
-      expect(await isPackageOwned(path.join(skillsDir, 'mine', 'SKILL.md'))).toBe(false);
+      // A project-scoped install counts too.
+      const projectSkill = path.join(projectPath, '.dork', 'plugins', 'p', 'skills', 'y', 'SKILL.md');
+      await mkdir(path.dirname(projectSkill), { recursive: true });
+      await writeFile(projectSkill, scheduledSkill('y', { cron: '0 9 * * *' }), 'utf-8');
+      expect(await isPackageOwned(projectSkill, roots)).toBe(true);
+
+      // A person's own skill is theirs, and so is a directory that merely has
+      // the word in its path.
+      expect(await isPackageOwned(path.join(skillsDir, 'mine', 'SKILL.md'), roots)).toBe(false);
+      expect(
+        await isPackageOwned(path.join(projectPath, 'src', 'plugins', 'a', 'SKILL.md'), roots)
+      ).toBe(false);
     });
   });
 
@@ -466,10 +479,124 @@ describe('schedules discovered in skills roots', () => {
     });
   });
 
+  // The arm grant is a STORED key, not something inferred from `status`. Two
+  // separate writers used to mint consent by writing a status for their own
+  // reasons; these are the repros (DOR-1485 review, N1).
+  describe('the arm grant cannot be forged by writing a status', () => {
+    it('does not arm a parked schedule when its agent is unregistered and registered again', async () => {
+      await writeSkill('planted', scheduledSkill('planted', { cron: '0 2 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('planted');
+      expect(row.status).toBe('pending_approval');
+
+      // Unregistering pauses every one of the agent's schedules — including the
+      // ones nobody has approved.
+      store.disableTasksByAgentId(AGENT_ID);
+      expect(store.getTask(row.id)?.status).toBe('paused');
+
+      // ...and registering it again re-syncs the same file.
+      await reconciler.reconcile();
+
+      expect(store.getTask(row.id)?.status).toBe('pending_approval');
+      expect(scheduler.isRegistered(row.id)).toBe(false);
+    });
+
+    it('does not arm a parked schedule that is deleted and restored', async () => {
+      const filePath = await writeSkill('planted', scheduledSkill('planted', { cron: '0 2 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('planted');
+
+      await rm(filePath);
+      await reconciler.reconcile();
+      await writeFile(filePath, scheduledSkill('planted', { cron: '0 2 * * *' }), 'utf-8');
+      await reconciler.reconcile();
+
+      expect(store.getTask(row.id)?.status).toBe('pending_approval');
+    });
+
+    it('re-arms an APPROVED schedule that is deleted and restored unchanged', async () => {
+      const filePath = await writeSkill('saved', scheduledSkill('saved', { cron: '0 2 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('saved');
+      approve(row.id);
+
+      // What an atomic-rename save, and a package update, look like from here.
+      await rm(filePath);
+      await reconciler.reconcile();
+      await writeFile(filePath, scheduledSkill('saved', { cron: '0 2 * * *' }), 'utf-8');
+      await reconciler.reconcile();
+
+      expect(store.getTask(row.id)?.status).toBe('active');
+      expect(scheduler.isRegistered(row.id)).toBe(true);
+    });
+
+    it('withdraws the grant when the content drifts, and says so in our own words', async () => {
+      const filePath = await writeSkill('drifter', scheduledSkill('drifter', { cron: '0 2 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('drifter');
+      approve(row.id);
+
+      await writeFile(filePath, scheduledSkill('drifter', { cron: '0 5 * * *' }), 'utf-8');
+      await reconciler.reconcile();
+
+      const after = store.getTask(row.id)!;
+      expect(after.status).toBe('pending_approval');
+      // The drift sentence, not the found-in-a-file one — this schedule was
+      // approved once and is not news.
+      expect(after.reason).toMatch(/changed since/i);
+      expect(after.reasonSource).toBe('dorkos');
+      // And approving it again re-issues a grant for the NEW content, so the
+      // next sync leaves it alone.
+      approve(after.id);
+      await reconciler.reconcile();
+      expect(store.getTask(row.id)?.status).toBe('active');
+    });
+
+    // The upgrade path: every alpha user has active rows written before the
+    // grant column existed.
+    it('keeps schedules that were already live approved across the upgrade', async () => {
+      const filePath = await writeSkill('legacy-live', scheduledSkill('legacy-live', { cron: '0 8 * * *' }));
+      // A row exactly as an older build left it: active, no grant.
+      const seeded = store.createTask({
+        name: 'legacy-live',
+        description: 'A skill named legacy-live',
+        prompt: 'Do the thing.',
+        cron: '0 8 * * *',
+        timezone: 'UTC',
+        filePath: await realPath(filePath),
+      });
+      store.withdrawApproval(seeded.id);
+
+      expect(store.backfillApprovalGrants()).toBe(1);
+      // Idempotent: a second boot has nothing left to do.
+      expect(store.backfillApprovalGrants()).toBe(0);
+
+      await reconciler.reconcile();
+
+      expect(store.getTask(seeded.id)?.status).toBe('active');
+    });
+
+    it('gives no grant to a row that was merely parked or paused', async () => {
+      await writeSkill('waiting', scheduledSkill('waiting', { cron: '0 8 * * *' }));
+      await reconciler.reconcile();
+      const row = rowFor('waiting');
+
+      // Neither a parked row nor a paused one is evidence of a decision.
+      expect(store.backfillApprovalGrants()).toBe(0);
+      store.disableTasksByAgentId(AGENT_ID);
+      expect(store.backfillApprovalGrants()).toBe(0);
+      expect(store.getTask(row.id)?.status).not.toBe('active');
+    });
+  });
+
   describe('one real file is one schedule', () => {
     it('collapses a symlinked skill and its target into a single row', async () => {
       // The shape an installed marketplace plugin takes: `pkg__name` in
       // `.agents/skills/` is a symlink into `.dork/plugins/`.
+      // The REAL shape Harness Sync projects: the link is NAMESPACED
+      // (`pack__shared-sweep`) while the file it points at says `name:
+      // shared-sweep`. Getting this wrong is what made every plugin skill parse
+      // as invalid (DOR-1485 review, N2).
       const realDir = path.join(dorkHome, 'plugins', 'pack', 'skills', 'shared-sweep');
       await mkdir(realDir, { recursive: true });
       const realFile = path.join(realDir, 'SKILL.md');
@@ -479,8 +606,8 @@ describe('schedules discovered in skills roots', () => {
       const otherProject = path.join(dorkHome, 'other');
       const otherSkills = agentSkillsRoot(otherProject);
       await mkdir(otherSkills, { recursive: true });
-      await symlink(realDir, path.join(otherSkills, 'shared-sweep'));
-      await symlink(realDir, path.join(skillsDir, 'shared-sweep'));
+      await symlink(realDir, path.join(otherSkills, 'pack__shared-sweep'));
+      await symlink(realDir, path.join(skillsDir, 'pack__shared-sweep'));
       reconciler.addRoot(skillsRoot(otherSkills, 'project', otherProject, 'agent-2'));
 
       await reconciler.reconcile();
@@ -493,6 +620,8 @@ describe('schedules discovered in skills roots', () => {
       expect(row.filePath).toBe(await realPath(realFile));
       // First root wins the attribution, and keeps it across passes.
       expect(row.agentId).toBe(AGENT_ID);
+      // The name a person reads is the skill's own, not the namespaced link.
+      expect(row.name).toBe('shared-sweep');
     });
 
     // Uninstalling a package deletes the target; the link the watcher was
@@ -500,14 +629,14 @@ describe('schedules discovered in skills roots', () => {
     // that looked up the link matched nothing and the schedule kept firing for
     // a package that is no longer installed (DOR-1485 review, I3).
     it('retires a plugin schedule when its target is uninstalled', async () => {
-      const realDir = path.join(dorkHome, '.dork', 'plugins', 'pack', 'skills', 'sweep');
+      const realDir = path.join(dorkHome, 'plugins', 'pack', 'skills', 'sweep');
       await mkdir(realDir, { recursive: true });
       await writeFile(
         path.join(realDir, 'SKILL.md'),
         scheduledSkill('sweep', { cron: '0 3 * * *' }),
         'utf-8'
       );
-      const link = path.join(skillsDir, 'sweep');
+      const link = path.join(skillsDir, 'pack__sweep');
       await symlink(realDir, link);
 
       await reconciler.reconcile();

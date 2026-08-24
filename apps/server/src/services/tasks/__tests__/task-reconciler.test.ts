@@ -266,11 +266,10 @@ describe('TaskReconciler', () => {
 
       await fs.rm(filePath);
       await reconciler.reconcile();
-      // Switched off, but still WAITING — not `paused`. `paused` means "this was
-      // live and its file went away", and the arm gate reads it as an approval
-      // that survived a save. Writing it over a schedule nobody approved would
-      // let a delete-and-restore launder the missing approval.
-      expect(store.getTask(created.id)?.status).toBe('pending_approval');
+      // Paused and switched off. This says nothing about approval either way —
+      // the arm grant is a stored key now, so no status write can imply consent,
+      // and this method is free to mean exactly what it says again.
+      expect(store.getTask(created.id)?.status).toBe('paused');
       expect(store.getTask(created.id)?.enabled).toBe(false);
 
       // The file comes back before the grace period expires.
@@ -279,14 +278,11 @@ describe('TaskReconciler', () => {
 
       // `paused` is DorkOS's own "the file went away" marker, and it is gone.
       //
-      // The row keeps whatever standing it had, because the content that came
-      // back is byte-identical to the content that left: an unlink followed by a
-      // recreate is what an ordinary atomic save looks like, and treating it as
-      // a fresh unapproved schedule would re-park every schedule on every save
-      // (DOR-1485 review, I1). This row was never approved in the first place,
-      // so `pending_approval` is where it stays.
-      // `task-registrar.integration.test.ts` follows an APPROVED file through
-      // the same round trip, all the way to the clock.
+      // Back to waiting. The content that came back is byte-identical to the
+      // content that left — an unlink followed by a recreate is what an ordinary
+      // atomic save looks like — but this row was never approved, so there is no
+      // grant to match and it waits. `task-registrar.integration.test.ts`
+      // follows an APPROVED file through the same round trip to the clock.
       expect(store.getTask(created.id)?.status).toBe('pending_approval');
       expect(store.getTask(created.id)?.enabled).toBe(true);
     });

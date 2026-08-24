@@ -4052,6 +4052,15 @@ export const TaskSchema = z
      * proposed, which `proposedByAgentPath` tells apart.
      */
     origin: z.enum(['file']).nullable().default(null),
+    /**
+     * Who wrote `reason`.
+     *
+     * `dorkos` means DorkOS did — "this file changed since you approved it", or
+     * a complaint naming a setting it cannot read. The approval card shows those
+     * words plainly; anything else is the proposer's own case and is quoted as
+     * such. `null` on every schedule a person or an agent explained themselves.
+     */
+    reasonSource: z.enum(['dorkos']).nullable().default(null),
     nextRun: z.string().nullable().optional(),
     /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.

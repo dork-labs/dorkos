@@ -68,6 +68,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedByAgentPath: '/Users/dev/agents/dorkbot',
     proposedByName: 'DorkBot',
     origin: null,
+    reasonSource: null,
     nextRuns: [minutesFromLoad(120), minutesFromLoad(1560), minutesFromLoad(3000)],
     ...overrides,
   };
@@ -273,6 +274,28 @@ describe('ScheduleApprovalCard — what it says', () => {
       '~/project/.agents/skills/nightly-sweep/SKILL.md'
     );
     expect(slot('ask-detail')).toHaveTextContent('Found in a file on this computer');
+    expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
+    expect(screen.queryByText('Requested without an agent identity')).toBeNull();
+  });
+
+  // The drift case on a person's OWN schedule: origin is not `file`, but the
+  // words are still ours. Quoting them under "Proposed by an agent" attributed
+  // our prose to an agent that never said it (DOR-1485 review, residual 2).
+  it('does not dress our drift notice as an agent’s quoted case', async () => {
+    renderCard(
+      proposal({
+        origin: null,
+        reasonSource: 'dorkos',
+        proposedByAgentPath: null,
+        proposedByName: null,
+        proposedBySessionId: null,
+        reason: 'This schedule’s file changed since it was last approved.',
+      })
+    );
+
+    const reason = await findSlot('schedule-reason');
+    expect(reason?.textContent).toBe('This schedule’s file changed since it was last approved.');
+    expect(reason).not.toHaveClass('italic');
     expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
     expect(screen.queryByText('Requested without an agent identity')).toBeNull();
   });

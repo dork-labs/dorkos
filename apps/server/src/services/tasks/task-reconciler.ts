@@ -238,6 +238,10 @@ export class TaskReconciler {
    * @returns Whether a row was actually retired.
    */
   private retireIfPresent(filePath: string): boolean {
+    // Most files in a skills root are plain skills that never had a row, and
+    // this runs for every one of them on every pass. The read is indexed and the
+    // write is not free, so ask before writing.
+    if (this.store.getByFilePath(filePath) === null) return false;
     if (this.store.markRemovedByFilePath(filePath) === 0) return false;
     this.registrar.syncTaskByFilePath(filePath);
     logger.info(`[TaskReconciler] Schedule block removed from ${filePath} — paused`);

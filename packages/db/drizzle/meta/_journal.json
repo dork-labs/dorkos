@@ -547,6 +547,13 @@
       "when": 1787596377217,
       "tag": "0077_calm_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1787603062936,
+      "tag": "0078_natural_vargas",
+      "breakpoints": true
     }
   ]
 }

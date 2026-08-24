@@ -457,7 +457,9 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
   });
 
   it('never rewrites a skill an installed package owns', async () => {
-    const dir = path.join(dorkHome, '.dork', 'plugins', 'pack', 'skills', 'owned');
+    // Global installs live at `<dorkHome>/plugins` — the data directory IS the
+    // scope root, the way `conflict-detector.ts` computes it.
+    const dir = path.join(dorkHome, 'plugins', 'pack', 'skills', 'owned');
     await fs.mkdir(dir, { recursive: true });
     const filePath = path.join(dir, SKILL_FILENAME);
     await fs.writeFile(

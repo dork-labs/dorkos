@@ -26,6 +26,23 @@
  * here. The scheduler still catches croner's throw where it happens; that
  * containment is the backstop, not the message.
  *
+ * ## Why a skills root does not require the name to match its directory
+ *
+ * `parseSkillFile` defaults to refusing a file whose frontmatter `name` differs
+ * from its parent directory, which is right for content DorkOS writes itself.
+ * It is wrong here, and was silently fatal: Harness Sync projects an installed
+ * plugin's skill into `.agents/skills/` under a NAMESPACED link — `flow__drain`
+ * pointing at a directory whose SKILL.md says `name: drain`. Under the default
+ * every projected plugin skill parsed as invalid, which meant no plugin has ever
+ * been discoverable as a schedule and the entire symlink path below was
+ * unreachable in production (DOR-1485 review, N2).
+ *
+ * Relaxing it costs nothing here because a schedule's identity is its RESOLVED
+ * PATH, never its name (`schedule-identity.ts`): two skills may share a name,
+ * and the row that tells them apart was never keyed on it. The name a person
+ * reads comes from the frontmatter, so a projected skill shows as `drain`
+ * rather than `flow__drain`.
+ *
  * ## Why there is no regex fast-reject
  *
  * The spec allows skipping full validation on files with no `schedule:` key.
@@ -109,7 +126,7 @@ function definitionFromBlock(
   location: ScheduleLocation
 ): TaskDefinition {
   return {
-    name: skill.name,
+    name: skill.meta.name,
     body: block.prompt ?? skill.body,
     filePath: location.resolvedPath,
     dirPath: skill.dirPath,
@@ -145,7 +162,7 @@ function definitionFromUnreadableBlock(
   location: ScheduleLocation
 ): TaskDefinition {
   return {
-    name: skill.name,
+    name: skill.meta.name,
     body: skill.body,
     filePath: location.resolvedPath,
     dirPath: skill.dirPath,
@@ -258,7 +275,9 @@ export async function readTaskRootFile(
       : { kind: 'invalid', filePath, error: result.error, fileMissing: false };
   }
 
-  const result = parseSkillFile(filePath, content, SkillFrontmatterSchema);
+  const result = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
+    requireNameMatch: false,
+  });
   if (!result.ok) {
     return { kind: 'invalid', filePath, error: result.error, fileMissing: false };
   }
@@ -321,7 +340,10 @@ async function scanSymlinkedSkills<T>(
     const filePath = path.join(dir, entry.name, SKILL_FILENAME);
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      found.push({ filePath, result: parseSkillFile(filePath, content, schema) });
+      found.push({
+        filePath,
+        result: parseSkillFile(filePath, content, schema, { requireNameMatch: false }),
+      });
     } catch {
       // A link to something that is not a skill directory, or one whose target
       // has gone. Neither is a schedule, and neither is news.
@@ -353,6 +375,7 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
       ? [
           ...(await scanSkillDirectory(root.dir, SkillFrontmatterSchema, {
             ignoreDirs: reservedDirsFor(root.kind),
+            requireNameMatch: false,
           })),
           // Installed plugin skills are symlinks, which the shared scan skips.
           ...(await scanSymlinkedSkills(root.dir, SkillFrontmatterSchema)).map((f) => f.result),

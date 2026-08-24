@@ -129,6 +129,12 @@ export function ScheduleApprovalCard({
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
   const foundInFile = task.origin === 'file';
+  // Whether the words in `reason` are DorkOS's own. True for a discovered
+  // schedule, and ALSO for a schedule a person made themselves whose file has
+  // since drifted — that sentence is ours, and quoting it under "Proposed by an
+  // agent" attributed our prose to an agent that never said it (DOR-1485
+  // review, residual 2).
+  const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const bypasses = isBypassPermissionMode(task.permissionMode);
 
@@ -249,7 +255,7 @@ export function ScheduleApprovalCard({
             draws, so one agent reads as one agent across both cards.
             A schedule DorkOS found in a file had no asker at all, so it names
             the file instead of crediting an agent that does not exist. */}
-        {foundInFile ? (
+        {dorkosWrote && !foundInFile ? null : foundInFile ? (
           <span
             data-slot="schedule-file-origin"
             className="text-muted-foreground min-w-0 text-xs break-all"
@@ -270,8 +276,12 @@ export function ScheduleApprovalCard({
 
       <AskCard.Detail className="text-xs">
         <p className="min-w-0 break-words">
-          {foundInFile ? 'Found in a file on this computer' : `Proposed by ${proposer}`}
-          {!foundInFile && task.proposedBySessionId && sessionTitle && (
+          {foundInFile
+            ? 'Found in a file on this computer'
+            : dorkosWrote
+              ? 'Waiting for you'
+              : `Proposed by ${proposer}`}
+          {!dorkosWrote && task.proposedBySessionId && sessionTitle && (
             <>
               {' · from '}
               <button
@@ -300,10 +310,10 @@ export function ScheduleApprovalCard({
           data-slot="schedule-reason"
           className={cn(
             'text-foreground/90 border-border/60 min-w-0 border-l-2 pl-2.5 text-xs break-words',
-            !foundInFile && 'italic'
+            !dorkosWrote && 'italic'
           )}
         >
-          {foundInFile ? reason : <>&ldquo;{reason}&rdquo;</>}
+          {dorkosWrote ? reason : <>&ldquo;{reason}&rdquo;</>}
         </p>
       )}
 

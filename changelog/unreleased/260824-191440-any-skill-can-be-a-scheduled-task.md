@@ -1,6 +1,9 @@
 ---
 covers:
   - 'feat(skills,server,db): discover schedules in skills roots and never auto-arm them'
+  - 'test(server,client): cover skills-root discovery, the arm gate and file provenance'
+  - 'fix(server,client): approving a schedule no longer rewrites its file'
+  - 'fix(server,db,client): store the schedule arm grant instead of inferring it from status'
 ---
 
 ### Added
@@ -13,3 +16,6 @@ covers:
 - Schedules that come from an installed package are left alone. You can switch one on or off, but DorkOS will not edit the package's own copy — that change would be shared by every agent using the package and would disappear at the next update (DOR-1485)
 - Saving a schedule's file no longer makes you approve it again. Many editors save by replacing the file rather than changing it, and installing a package update does the same; DorkOS now recognises that the schedule came back unchanged. Genuinely changing what a schedule does, or when it runs, still brings it back to you for a look (DOR-1485)
 - Removing the schedule settings from a skill now switches its schedule off, even if DorkOS was not watching at the moment you did it. It stays in your list, switched off, with its history intact (DOR-1485)
+- Schedules that came with an installed package are found. They arrive as a shortcut into the package's own folder, and DorkOS was quietly skipping every one of them, so a package could ship a schedule that never appeared anywhere (DOR-1485)
+- DorkOS now records your approval of a schedule directly, rather than working it out from whether the schedule is switched on. Switching a schedule off, or removing the agent it belongs to, no longer has any bearing on whether it counts as approved — so a schedule you never approved cannot end up running because something else switched it around. Schedules you had already approved stay approved when you upgrade (DOR-1485)
+- When a schedule is waiting because its file changed, DorkOS says so in its own voice instead of appearing to quote an agent that never said it (DOR-1485)

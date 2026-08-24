@@ -52,6 +52,7 @@ const activeSchedule: Task = {
   proposedByAgentPath: null,
   proposedByName: null,
   origin: null,
+  reasonSource: null,
   nextRuns: [],
 };
 
@@ -171,6 +172,29 @@ describe('ScheduleRow', () => {
     });
 
     expect(screen.getByText('Its "cron" setting is not something DorkOS can read.')).toBeTruthy();
+  });
+
+  // A schedule a person made themselves, whose file has since drifted, carries
+  // OUR sentence — so it shows, even though its origin is not `file`.
+  it('says why a drifted schedule of your own is waiting', () => {
+    renderScheduleRow({
+      ...pendingSchedule,
+      origin: null,
+      reasonSource: 'dorkos',
+      reason: 'This schedule’s file changed since it was last approved.',
+    });
+
+    expect(screen.getByText('This schedule’s file changed since it was last approved.')).toBeTruthy();
+  });
+
+  it('says nothing extra about a schedule that is already running', () => {
+    renderScheduleRow({
+      ...activeSchedule,
+      origin: 'file',
+      reason: 'A reason nobody needs to see now.',
+    });
+
+    expect(screen.queryByText('A reason nobody needs to see now.')).toBeNull();
   });
 
   // `reason` on an agent's proposal is the AGENT'S case, not DorkOS's. It gets

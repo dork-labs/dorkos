@@ -41,6 +41,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     proposedByAgentPath: row.proposedByAgentPath ?? null,
     proposedByName: null,
     origin: row.origin ?? null,
+    reasonSource: row.reasonSource ?? null,
     nextRun: null,
     nextRuns: [],
   } as Task;

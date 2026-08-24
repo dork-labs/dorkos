@@ -80,6 +80,11 @@ export interface ApprovedSchedule {
   prompt: string;
   /** The row's cron, `''` for a task with no timer. */
   cron: string;
+  /**
+   * The content key a person approved, or `null` when nobody has. The arm
+   * grant — see {@link holdsGrantFor}.
+   */
+  approvedContentKey: string | null;
 }
 
 /** The material content of the SKILL.md being synced into that row. */
@@ -137,45 +142,42 @@ function keepsApprovedBypass(
 ): boolean {
   if (!existing) return false;
   if (existing.permissionMode !== 'bypassPermissions') return false;
-  // `active` only. A bypass is the largest grant DorkOS makes, and losing one to
-  // a transient pause costs nothing — the schedule drops to `acceptEdits`, which
-  // is the safe direction — so this side keeps the stricter reading.
-  return holdsGrantFor(existing, incoming, ['active']);
-}
-
-/**
- * Whether a person's approval of THIS row still covers the content arriving
- * from disk — the one condition both content-keyed gates are built on.
- *
- * Two clauses. The content must be unchanged, so a grant belongs to a specific
- * piece of reviewed work rather than to a filename — that clause is shared and
- * absolute. And the row must be in a status that still represents a live
- * approval, which is the clause the two gates read differently, on purpose:
- *
- * - The **bypass** gate accepts `active` alone (see {@link keepsApprovedBypass}).
- * - The **arm** gate also accepts `paused`, because `paused` is DorkOS's own
- *   marker for "the file went away" and the commonest way a file goes away is
- *   that it was saved: an atomic-rename write, and the marketplace install
- *   transaction's backup-then-rename, both unlink the path before recreating it.
- *   Re-parking there meant a plugin update silently un-approved every schedule
- *   the package ships (DOR-1485 review, I1). With the content key unchanged,
- *   what came back IS the reviewed work.
- *
- * `pending_approval` is in neither set: nobody ever approved it.
- *
- * @param existing - The row the file is landing on.
- * @param incoming - The content arriving from disk.
- * @param statuses - The row statuses this gate accepts as a live approval.
- */
-function holdsGrantFor(
-  existing: ApprovedSchedule,
-  incoming: IncomingTaskContent,
-  statuses: readonly string[]
-): boolean {
-  if (!statuses.includes(existing.status)) return false;
+  if (existing.status !== 'active') return false;
   return (
     scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) ===
     scheduleContentKey(incoming)
+  );
+}
+
+/**
+ * Whether a person's approval covers the content arriving from disk.
+ *
+ * One comparison, and deliberately not a clever one: the key a person's approval
+ * was recorded under, against the key of what is on disk now. It does not
+ * consult `status`, and that is the entire point of the DOR-1485 review's second
+ * round.
+ *
+ * The gate used to INFER the grant from the row's status — active (and later,
+ * paused) meant approved. Every writer that touched `status` for its own reasons
+ * therefore minted consent as a side effect, and two of them did:
+ * `markRemovedByFilePath` pausing a row whose file vanished, and
+ * `disableTasksByAgentId` pausing every row of an unregistered agent. Both let a
+ * never-approved schedule arm itself — delete the file and put it back, or
+ * unregister the agent and register it again. Guarding each writer as it was
+ * found is a losing game; there was always going to be a third.
+ *
+ * A stored key cannot be produced by writing a status, so the whole class is
+ * closed rather than patched. It also makes the two remaining questions
+ * independent and readable on their own: `status` says what the schedule is
+ * doing, `approvedContentKey` says what a person agreed to.
+ *
+ * @param existing - The row the file is landing on.
+ * @param incoming - The content arriving from disk.
+ */
+function holdsGrantFor(existing: ApprovedSchedule, incoming: IncomingTaskContent): boolean {
+  return (
+    existing.approvedContentKey !== null &&
+    existing.approvedContentKey === scheduleContentKey(incoming)
   );
 }
 
@@ -250,22 +252,15 @@ export function resolveFileArmStatus(
   problem?: string | null
 ): FileArmVerdict {
   if (problem) return { status: 'pending_approval', reason: problem };
-  if (existing && holdsGrantFor(existing, incoming, ARM_GRANT_STATUSES)) {
-    return { status: 'active', reason: null };
-  }
+  if (existing && holdsGrantFor(existing, incoming)) return { status: 'active', reason: null };
   return {
     status: 'pending_approval',
-    reason: existing ? CHANGED_REASON : UNAPPROVED_REASON,
+    // A row that has been approved before and drifted is a different story from
+    // one nobody has ever seen, and telling a person their own schedule was
+    // "found in a file" would be a lie.
+    reason: existing?.approvedContentKey ? CHANGED_REASON : UNAPPROVED_REASON,
   };
 }
-
-/**
- * The row statuses the arm gate reads as a live approval.
- *
- * `paused` is here because it is DorkOS's own "the file went away" marker, and
- * an atomic-rename save trips it — see {@link holdsGrantFor}.
- */
-const ARM_GRANT_STATUSES = ['active', 'paused'] as const;
 
 /**
  * Decide the permission mode a task's SKILL.md frontmatter actually gets, given

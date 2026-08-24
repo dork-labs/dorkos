@@ -108,6 +108,7 @@ const TASK: Task = {
   proposedByAgentPath: null,
   proposedByName: null,
   origin: null,
+  reasonSource: null,
   nextRuns: [],
 };
 

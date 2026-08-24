@@ -36,6 +36,32 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * agent's proposal, which is told apart by `proposed_by_agent_path`.
    */
   origin: text('origin', { enum: ['file'] }),
+  /**
+   * Who wrote `reason`.
+   *
+   * `dorkos` means DorkOS did — "this file changed since you approved it", or a
+   * validation complaint naming a broken setting. NULL means the words belong to
+   * whoever proposed the schedule, and the approval card quotes them as such.
+   * Rendering our own sentence in quotation marks under "Proposed by an agent"
+   * put words in an agent's mouth that it never said.
+   */
+  reasonSource: text('reason_source', { enum: ['dorkos'] }),
+  /**
+   * The schedule content a person has actually approved, as a content key
+   * (prompt + cron; `scheduleContentKey` in `schedule-permission-clamp.ts`).
+   *
+   * This is the arm grant, and it is POSITIVE on purpose. It used to be inferred
+   * from `status`, and that inference sprang a leak every time some other writer
+   * touched the column: pausing a row for a vanished file, and again for an
+   * unregistered agent, each turned "never approved" into "approved" by writing
+   * a status the gate read as consent. A stored key cannot be forged by a status
+   * write, so the gate no longer consults `status` at all.
+   *
+   * NULL means nobody has approved this schedule's current content — the state
+   * every file-discovered row starts in, and the state a row returns to the
+   * moment its content drifts.
+   */
+  approvedContentKey: text('approved_content_key'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),

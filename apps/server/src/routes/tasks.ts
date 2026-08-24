@@ -53,6 +53,7 @@ import {
   describeArmBlocker,
   isPackageOwned,
   planTaskFileUpdate,
+  pluginRoots,
   touchesFile,
 } from '../services/tasks/task-file-update.js';
 import fs from 'node:fs/promises';
@@ -714,7 +715,12 @@ export function createTasksRouter(
         // A skill an installed package owns is never ours to rewrite: the edit
         // would land in `.dork/plugins/`, be shared by every agent that
         // installed the package, and vanish at the next update.
-        if (await isPackageOwned(existing.filePath)) {
+        const owningProject = existing.agentId
+          ? meshCore?.getProjectPath(existing.agentId)
+          : undefined;
+        if (
+          await isPackageOwned(existing.filePath, pluginRoots(dorkHome, owningProject ?? undefined))
+        ) {
           return res.status(409).json({
             error:
               `This schedule belongs to an installed package, so DorkOS did not change its ` +
@@ -765,8 +771,15 @@ export function createTasksRouter(
     // `pending_approval` is deliberately a person's gate to clear. Here we know
     // a person IS the caller and exactly what they asked for, so re-stating it
     // is not overriding the gate — it is finishing the write that opened it.
-    if (data.status !== undefined && updated.status !== data.status) {
-      updated = store.updateTask(req.params.id, { status: data.status }) ?? updated;
+    // The status the caller is entitled to end up at: the one they asked for,
+    // or — when they only edited fields and the schedule was already live — the
+    // one it already had. The second half is the case a first pass missed: the
+    // cockpit's edit form sends a prompt and no `status`, so a lost race
+    // disarmed a running schedule with nothing anywhere saying why.
+    const intendedStatus =
+      data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined);
+    if (intendedStatus !== undefined && updated.status !== intendedStatus) {
+      updated = store.updateTask(req.params.id, { status: intendedStatus }) ?? updated;
     }
 
     // Re-register or unregister the cron job to match the new state, through the

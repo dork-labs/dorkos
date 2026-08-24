@@ -19,6 +19,7 @@ import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
+import { scheduleContentKey } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
@@ -103,6 +104,10 @@ export type UpsertFromFileOptions = FileSyncSource;
  *   arrived through a route is never re-labelled by a later sync of its file.
  * - `reason` is written only when discovery owns the row, or when the row has
  *   no story of its own to overwrite.
+ * - `reasonSource` rides with any reason we DO write, marking it as DorkOS's
+ *   own words. Without it the drift sentence on an operator's own schedule
+ *   rendered on the approval card as an agent's quoted case — our words in
+ *   somebody else's mouth.
  *
  * The arm STATUS is not conditional and is applied by the caller regardless:
  * that is the security property, and it holds for every row whatever wrote it.
@@ -114,9 +119,11 @@ export type UpsertFromFileOptions = FileSyncSource;
 function fileProvenance(
   existing: { origin: string | null; reason: string | null },
   arm: { reason: string | null }
-): { reason?: string | null; origin?: 'file' } {
-  if (existing.origin === 'file') return { reason: arm.reason, origin: 'file' };
-  if (existing.reason === null) return { reason: arm.reason };
+): { reason?: string | null; origin?: 'file'; reasonSource?: 'dorkos' | null } {
+  const source = arm.reason === null ? null : ('dorkos' as const);
+  if (existing.origin === 'file')
+    return { reason: arm.reason, origin: 'file', reasonSource: source };
+  if (existing.reason === null) return { reason: arm.reason, reasonSource: source };
   return {};
 }
 
@@ -249,6 +256,14 @@ export class TaskStore {
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
+        // An operator create is itself the approval, so the row arrives armed.
+        // A caller that must not arm anything — an agent — is parked by the
+        // route straight after, and that park withdraws this through
+        // `updateTask`.
+        approvedContentKey: scheduleContentKey({
+          prompt: input.prompt,
+          cron: input.cron ?? '',
+        }),
         filePath: input.filePath,
         reason: input.reason ?? null,
         proposedBySessionId: input.proposedBySessionId ?? null,
@@ -295,7 +310,101 @@ export class TaskStore {
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
+    // **Status changes through this method ARE the operator's decision.**
+    //
+    // `status` is operator-only (`task-write-policy.ts`), so anything reaching
+    // here with one has already cleared the agent bar — which makes this the one
+    // place a person's approval can be recorded, and the one place it must be
+    // withdrawn. Doing it centrally rather than in the route is what keeps the
+    // MCP tools, the CLI and any future writer honest without each remembering.
+    //
+    // Read AFTER the update, deliberately: a single PATCH may change the cron
+    // and approve it in the same breath, and what was approved is the content
+    // the caller is leaving behind, not the one they found.
+    if (input.status === 'active') this.recordApproval(id);
+    else if (input.status !== undefined) this.withdrawApproval(id);
+
     return this.getTask(id);
+  }
+
+  /**
+   * Record that a person has approved this schedule's CURRENT content.
+   *
+   * The arm grant (`pulse_schedules.approved_content_key`). Stored positively so
+   * that no amount of status-writing elsewhere can fabricate it — see
+   * {@link resolveFileArmStatus} for the two writers that used to.
+   *
+   * @param id - The schedule a person just armed.
+   */
+  recordApproval(id: string): void {
+    const row = this.db
+      .select({ prompt: pulseSchedules.prompt, cron: pulseSchedules.cron })
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.id, id))
+      .get();
+    if (!row) return;
+    this.db
+      .update(pulseSchedules)
+      .set({ approvedContentKey: scheduleContentKey(row) })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+  }
+
+  /**
+   * Drop the arm grant, because this schedule is no longer approved.
+   *
+   * Called whenever a row leaves `active` through the API — parking it, pausing
+   * it — so an approval can never outlive the decision that made it.
+   *
+   * @param id - The schedule to withdraw approval from.
+   */
+  withdrawApproval(id: string): void {
+    this.db
+      .update(pulseSchedules)
+      .set({ approvedContentKey: null })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+  }
+
+  /**
+   * Give every already-live schedule a grant for the content it is already
+   * running (DOR-1485).
+   *
+   * Runs once at boot, before any watcher starts. Every alpha user has `active`
+   * rows that predate the grant column, and without this the first sync of each
+   * would find no key, park it, and confront them with a list of schedules they
+   * approved months ago. The row being `active` before this build existed IS the
+   * historical approval; this writes it down in the form the gate now reads.
+   *
+   * Idempotent and cheap: it only touches rows whose key is NULL, so a second
+   * boot matches nothing. Deliberately narrow, too — a `paused` or
+   * `pending_approval` row is not evidence of anything and gets no key, which is
+   * exactly the laundering the positive grant exists to stop.
+   *
+   * The keys are computed in JS, one row at a time, rather than by a single
+   * `UPDATE ... json_array(prompt, cron)`. SQLite's JSON writer and
+   * `JSON.stringify` agree on ordinary text and are not guaranteed to agree on
+   * escaping — a newline or an emoji in a prompt would be enough — and a key
+   * that differs by one byte from the one the gate computes is a grant that
+   * silently never matches. There are tens of these rows, not thousands.
+   *
+   * @returns How many rows were back-filled.
+   */
+  backfillApprovalGrants(): number {
+    const rows = this.db
+      .select({ id: pulseSchedules.id, prompt: pulseSchedules.prompt, cron: pulseSchedules.cron })
+      .from(pulseSchedules)
+      .where(and(eq(pulseSchedules.status, 'active'), isNull(pulseSchedules.approvedContentKey)))
+      .all();
+
+    for (const row of rows) {
+      this.db
+        .update(pulseSchedules)
+        .set({ approvedContentKey: scheduleContentKey(row) })
+        .where(eq(pulseSchedules.id, row.id))
+        .run();
+    }
+    return rows.length;
   }
 
   /**
@@ -330,7 +439,13 @@ export class TaskStore {
     if (!this.getTask(id)) return null;
 
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    if (proposal.reason !== undefined) updates.reason = proposal.reason;
+    if (proposal.reason !== undefined) {
+      updates.reason = proposal.reason;
+      // A proposer's own words, so the card quotes them and names who said it.
+      // Clearing the marker matters on a row DorkOS had written a reason onto
+      // earlier: without it, a real proposal would keep rendering as our prose.
+      updates.reasonSource = null;
+    }
     if (proposal.proposedBySessionId !== undefined)
       updates.proposedBySessionId = proposal.proposedBySessionId;
     if (proposal.proposedByAgentPath !== undefined)
@@ -865,7 +980,13 @@ export class TaskStore {
           // matches (a save is an unlink-and-recreate), and re-parks when it
           // does not.
           ...(arm
-            ? { status: arm.status, ...fileProvenance(existing, arm) }
+            ? {
+                status: arm.status,
+                ...fileProvenance(existing, arm),
+                // Parking withdraws the grant, so the next sync has to ask again
+                // rather than finding a key it left lying around.
+                ...(arm.status === 'pending_approval' ? { approvedContentKey: null } : {}),
+              }
             : existing.status === 'paused'
               ? { status: 'active' as const }
               : {}),
@@ -895,6 +1016,13 @@ export class TaskStore {
         status: arm?.status ?? 'active',
         reason: arm?.reason ?? null,
         origin: arm ? 'file' : null,
+        reasonSource: arm?.reason ? 'dorkos' : null,
+        // An operator write IS the approval — the install or the route that
+        // reached here is a person acting through DorkOS — so it arrives with a
+        // grant. A discovered file never does; it has to be looked at first.
+        approvedContentKey: arm
+          ? null
+          : scheduleContentKey({ prompt: def.body, cron: incomingCron }),
         filePath: def.filePath,
         tags: '[]',
         createdAt: now,
@@ -914,13 +1042,16 @@ export class TaskStore {
    * live task in another project that happens to share the name — observed on
    * real data with two `flow-drain` tasks in different checkouts.
    *
-   * **`pending_approval` is never overwritten.** `paused` has to keep meaning
-   * exactly one thing — "this was live, and its file went away" — because the
-   * arm gate reads it as a still-standing approval that survived a save
-   * (`schedule-permission-clamp.ts`). Writing it over a schedule nobody ever
-   * approved would launder the missing approval: delete the file, let it come
-   * back, and a parked schedule would arm itself. Setting `enabled: false` is
-   * the whole of what a vanished file means for a row that was already waiting.
+   * The arm grant is deliberately LEFT ALONE here. A schedule whose file went
+   * away has not been un-approved by anybody; if the same content comes back —
+   * which is what an ordinary atomic-rename save looks like from the outside, and
+   * what a package update does — the stored key still matches and the schedule
+   * picks up where it left off. If different content comes back, the key does not
+   * match and it parks. Neither outcome needs this method to have an opinion,
+   * which is the point of storing the grant rather than inferring it from status:
+   * an earlier round of this work had to special-case `pending_approval` here to
+   * stop a pause laundering a missing approval, and that special case is now
+   * unnecessary.
    *
    * @param filePath - Absolute path to the SKILL.md that is no longer on disk
    * @returns The number of tasks marked as removed (0 or 1)
@@ -929,18 +1060,9 @@ export class TaskStore {
     // A file that came back is a fresh conflict, worth stating again.
     this.fileGates.forget(filePath);
     const now = new Date().toISOString();
-    const existing = this.db
-      .select({ status: pulseSchedules.status })
-      .from(pulseSchedules)
-      .where(eq(pulseSchedules.filePath, filePath))
-      .get();
     const result = this.db
       .update(pulseSchedules)
-      .set({
-        enabled: false,
-        ...(existing?.status === 'pending_approval' ? {} : { status: 'paused' as const }),
-        updatedAt: now,
-      })
+      .set({ enabled: false, status: 'paused', updatedAt: now })
       .where(eq(pulseSchedules.filePath, filePath))
       .run();
     return result.changes;

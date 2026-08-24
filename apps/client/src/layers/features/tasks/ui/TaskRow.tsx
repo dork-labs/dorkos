@@ -197,15 +197,21 @@ export function TaskRow({
                 proposed. The second belongs on the approval card, which can say
                 who is making it — printing it here as a bare line would put an
                 agent's argument on screen with nothing attributing it (DOR-1485
-                review, I5). */}
-            {task.origin === 'file' && task.reason && (
-              <div
-                data-slot="task-park-reason"
-                className="text-muted-foreground min-w-0 text-xs break-words"
-              >
-                {task.reason}
-              </div>
-            )}
+                review, I5). `reasonSource` catches the other half: a schedule a
+                person made themselves whose file has drifted also carries our
+                words, not theirs. Both conditions are needed: a schedule that
+                is already running is not waiting for anything, so whatever
+                `reason` it still carries is history. */}
+            {task.status === 'pending_approval' &&
+              (task.origin === 'file' || task.reasonSource === 'dorkos') &&
+              task.reason && (
+                <div
+                  data-slot="task-park-reason"
+                  className="text-muted-foreground min-w-0 text-xs break-words"
+                >
+                  {task.reason}
+                </div>
+              )}
           </div>
 
           {/* Actions — vary by size */}

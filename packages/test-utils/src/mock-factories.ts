@@ -96,6 +96,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     proposedByAgentPath: null,
     proposedByName: null,
     origin: null,
+    reasonSource: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
