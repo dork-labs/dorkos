@@ -33,7 +33,7 @@ export const systemModules: SystemModule[] = [
     name: 'Tasks',
     label: 'Scheduler',
     description:
-      'Autonomous execution loop that works while you sleep. Executes roadmaps, solicits feedback, self-improves.',
+      'Autonomous execution loop that runs without you at the keyboard. Executes roadmaps, solicits feedback, self-improves.',
     status: 'available',
     group: 'engine-capability',
   },
@@ -69,7 +69,7 @@ export const systemModules: SystemModule[] = [
     name: 'Loop',
     label: 'Improvement Engine',
     description:
-      'Closes the feedback loop. Turns signals into hypotheses, hypotheses into tasks, and outcomes into the next iteration. Your system gets better while you sleep.',
+      'Closes the feedback loop. Turns signals into hypotheses, hypotheses into tasks, and outcomes into the next iteration. Your system gets better while you’re not looking.',
     status: 'available',
     group: 'extension',
     url: 'https://www.looped.me/',

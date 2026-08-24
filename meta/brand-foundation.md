@@ -522,11 +522,13 @@ Open Relay. Add the Telegram adapter. Connect your account.
 
 Now your agents can reach you — on your phone, while you're at lunch, while you're asleep. When your 2am test run finishes, you'll know.
 
-### Minute 5: Close your laptop.
+### Minute 5: Walk away.
 
-This is the moment. The terminal is closed. The browser is closed. Your laptop is sleeping.
+This is the moment. The terminal is closed. The browser is closed. You're done for the night.
 
-Your agent is not.
+DorkOS isn't. It keeps running, and your 2am schedule fires on time.
+
+Want your agents working when your laptop isn't? Put DorkOS on a machine that stays on: a desktop, a home server, a cheap cloud box.
 
 At 2:07am, your phone buzzes. Telegram: "Test suite passed. One flaky test fixed. PR #47 ready for review."
 

@@ -84,11 +84,11 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
     shouldShow: (ctx) => ctx.isTasksEnabled && ctx.sessionCount > 0 && ctx.taskCount === 0,
     content: {
       icon: Moon,
-      title: 'Run agents while you sleep',
-      shortDescription: 'Set schedules and wake up to results',
+      title: 'Run agents on a schedule',
+      shortDescription: 'Set a schedule and come back to finished work',
       ctaLabel: 'Set up',
       suggestion: {
-        question: 'Want your agents working while you sleep?',
+        question: 'Want your agents working without you at the keyboard?',
         action: 'Set up a schedule',
       },
     },

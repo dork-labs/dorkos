@@ -369,7 +369,7 @@ export const features: Feature[] = [
     category: 'infrastructure',
     tagline: 'Refresh, restart, reconnect: your session is right where you left it',
     description:
-      'Close your laptop, reopen on your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives a refresh.',
+      'Refresh the tab, swap to your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives the interruption.',
     status: 'ga',
     featured: true,
     benefits: [
@@ -379,7 +379,7 @@ export const features: Feature[] = [
       'Every open tab stays in sync automatically',
     ],
     moment:
-      'You close the laptop mid-run and finish dinner. Reopen the tab on your phone and the session is exactly where it was, every message still in place.',
+      'You lose Wi-Fi mid-run and the tab goes quiet. A minute later it reconnects, and the session is exactly where it was, every message still in place.',
     media: {
       surface: 'chat-streaming',
       alt: 'A DorkOS session streaming output that survives a refresh or reconnect',

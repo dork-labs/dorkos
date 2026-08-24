@@ -47,17 +47,18 @@ dorkos
 
 ## What DorkOS Does
 
-It's 7am. Your automated tests have been failing since 2:47am, because an overnight dependency update broke three of your projects. Your agent could have caught this, fixed it, and sent you a message. Instead, the terminal was closed. The agent wasn't running.
+It's 7am. Your automated tests have been failing since 2:47am, because an overnight dependency update broke three of your projects. Your agent could have caught this, fixed it, and sent you a message. Instead, nothing was watching.
 
 DorkOS gives your agents what they're missing: a schedule, a way to reach you, and a way to find each other. The intelligence comes from the agents. Everything else comes from DorkOS.
 
 ### Tasks: run agents on a schedule
 
-Set an agent to run at a time you pick (like every morning at 9am) or on demand, without keeping a terminal open. Your agents ship code, triage issues, and run audits while you sleep. You wake up to finished work.
+Set an agent to run at a time you pick (like every morning at 9am) or on demand, without keeping a terminal open. Your agents ship code, triage issues, and run audits while you're off doing something else. You come back to finished work.
 
 - Define tasks in files that live next to your code
 - Skip a run if the last one is still going, so you never get duplicates
 - Every run gets its own session with full history
+- Schedules run for as long as DorkOS does: put it on a machine that stays on and they fire around the clock
 
 ### Relay: let agents reach you
 
@@ -111,7 +112,7 @@ docker run --rm -p 4242:4242 \
 
 MIT-licensed and open source. It runs on your machine: your agents, your data, your rules.
 
-Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did in the morning.
+Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did.
 
 - [Documentation](https://dorkos.ai/docs)
 - [Changelog](https://dorkos.ai/docs/changelog)

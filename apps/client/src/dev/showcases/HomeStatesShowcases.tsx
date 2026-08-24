@@ -107,10 +107,10 @@ function QuietSuggestionDemo({ forwardLook }: { forwardLook: string | null }) {
           dismissed ? null : (
             <QuietSuggestionView
               suggestion={{
-                question: 'Want your agents working while you sleep?',
+                question: 'Want your agents working without you at the keyboard?',
                 action: 'Set up a schedule',
               }}
-              promoTitle="Run agents while you sleep"
+              promoTitle="Run agents on a schedule"
               onAccept={() => setTaken(true)}
               onDismiss={() => setDismissed(true)}
             />
