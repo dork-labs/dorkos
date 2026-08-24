@@ -32,6 +32,9 @@ import {
   publishDispatchProgress,
   publishResponseWithCorrelation,
 } from './publish.js';
+import type { AbortRegistry } from '../../lib/abort-registry.js';
+import { isCallerCancel } from './agent-cancel-handler.js';
+import { interruptTurn } from './interrupt.js';
 
 /** Dependencies required by the agent handler. */
 export interface AgentHandlerDeps {
@@ -40,6 +43,14 @@ export interface AgentHandlerDeps {
   agentSessionStore?: AgentSessionStoreLike;
   /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /**
+   * The adapter's in-flight turn registry — the only handle anything outside
+   * this function has on a running turn (DOR-791). Required, not optional: a
+   * handler that forgot to register its turn is a cancel that answers "nothing
+   * is executing" for a turn that is plainly running, which is the exact bug
+   * this registry exists to close.
+   */
+  runningTurns: AbortRegistry;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -90,6 +101,27 @@ const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
  */
 function isNonFatalErrorCode(code: string | undefined): boolean {
   return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
+}
+
+/**
+ * How a stopped turn is described to everything downstream of it.
+ *
+ * A turn ends early for two different reasons and they are not interchangeable:
+ * the message ran out of TTL, or whoever started it stopped waiting. Both used
+ * to read as "TTL budget expired", which sent anyone reading a trace row or a
+ * chat error looking for a budget problem that never happened.
+ *
+ * @param signal - The turn's abort signal.
+ * @returns The reason, or `undefined` for a turn that was not stopped at all.
+ */
+function abortText(signal: AbortSignal): string | undefined {
+  if (!signal.aborted) return undefined;
+  if (isCallerCancel(signal.reason)) {
+    return signal.reason.reason === 'caller_timeout'
+      ? 'Stopped: the caller stopped waiting for this turn'
+      : 'Stopped: the caller cancelled this turn';
+  }
+  return 'TTL budget expired';
 }
 
 /** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
@@ -272,6 +304,24 @@ export async function handleAgentMessage(
     () => controller.abort(),
     ttlRemaining > 0 ? ttlRemaining : config.defaultTimeoutMs
   );
+  // Stopping has to reach the RUNTIME, not just the loop below: `sendMessage`
+  // takes no signal, so breaking out of the stream leaves the model running and
+  // billing until it finishes on its own. That was true of the TTL deadline too
+  // — this listener ends both kinds of stop at the agent (DOR-791).
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      void interruptTurn(deps.agentManager, ccaSessionKey, `turn ${ccaSessionKey}`, deps.logger);
+    },
+    { once: true }
+  );
+  // From here until the `finally` below, this turn can be stopped by whoever
+  // started it: the registry is what the stop-request subscription reaches for.
+  // The reply subject names ONE turn (the A2A gateway mints a fresh one per
+  // execution); a turn nobody can reply to is also a turn nobody can name, so
+  // it is simply not registered.
+  const turnKey = envelope.replyTo;
+  if (turnKey) deps.runningTurns.register(turnKey, controller);
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
   const eventStream = deps.agentManager.sendMessage(ccaSessionKey, prompt, {
     permissionMode: effectivePermissionMode,
@@ -366,6 +416,10 @@ export async function handleAgentMessage(
     });
   } finally {
     clearTimeout(timeout);
+    // Nothing awaits between the loop above and this line, so a stop request
+    // either reaches a turn that is genuinely still going or finds it gone —
+    // never a half-finished turn it could stop twice.
+    if (turnKey) deps.runningTurns.release(turnKey, controller);
     if (!streamedDone && envelope.replyTo && relay) {
       // On a crashed (thrown iterator) or TTL-aborted turn, emit an explicit
       // error signal BEFORE the synthesized done. Reply consumers (the A2A
@@ -373,8 +427,7 @@ export async function handleAgentMessage(
       // bare done as a successful completion and surface the partial streamed
       // text as a finished answer. The `{ type: 'error', data: { message } }`
       // event matches ErrorEventSchema, so those consumers fail the turn.
-      const failureMessage =
-        streamError ?? (controller.signal.aborted ? 'TTL budget expired' : undefined);
+      const failureMessage = streamError ?? abortText(controller.signal);
       if (failureMessage) {
         try {
           await publishResponseWithCorrelation(
@@ -423,10 +476,7 @@ export async function handleAgentMessage(
     // waiter (it settles on the first non-progress payload) but not for a poller:
     // that one reads a list, is told `done:true` ends it, and would otherwise see
     // an error event next to a clean-looking result and have to guess which won.
-    const failure =
-      inStreamError ??
-      streamError ??
-      (controller.signal.aborted ? 'TTL budget expired' : undefined);
+    const failure = inStreamError ?? streamError ?? abortText(controller.signal);
     await publishAgentResult(envelope, collectedText, ccaSessionKey, relay, failure);
   }
 
@@ -454,13 +504,13 @@ export async function handleAgentMessage(
     deps.traceStore.updateSpan(envelope.id, {
       status: aborted ? 'failed' : 'processed',
       processedAt: Date.now(),
-      ...(aborted && { error: 'TTL budget expired' }),
+      ...(aborted && { error: abortText(controller.signal) }),
     });
   }
 
   return {
     success: !failed,
-    error: streamError ?? (aborted ? 'TTL budget expired' : undefined),
+    error: streamError ?? abortText(controller.signal),
     deadLettered: aborted,
     durationMs: Date.now() - startTime,
   };

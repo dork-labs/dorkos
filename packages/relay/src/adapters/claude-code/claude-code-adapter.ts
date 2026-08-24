@@ -38,7 +38,9 @@ import { handleAgentMessage } from './agent-handler.js';
 import { handleTasksMessage } from './task-handler.js';
 import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
-import { RunningTasks, subscribeTaskCancelHandler } from './task-cancel-handler.js';
+import { subscribeTaskCancelHandler } from './task-cancel-handler.js';
+import { subscribeAgentCancelHandler } from './agent-cancel-handler.js';
+import { AbortRegistry } from '../../lib/abort-registry.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { CapacityHold, type SlotOutcome } from './capacity-hold.js';
 import type { ClaudeCodeAdapterConfig, ClaudeCodeAdapterDeps, ResolvedConfig } from './types.js';
@@ -211,8 +213,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   private approvalUnsub: (() => void) | null = null;
   /** Unsubscribe function for the run stop-request subscription (DOR-808). */
   private taskCancelUnsub: (() => void) | null = null;
+  /** Unsubscribe function for the turn stop-request subscription (DOR-791). */
+  private agentCancelUnsub: (() => void) | null = null;
   /** The task runs this adapter is executing, so a stop can reach them. */
-  private readonly runningTasks = new RunningTasks();
+  private readonly runningTasks = new AbortRegistry();
+  /** The agent turns this adapter is executing, so a cancel can reach them. */
+  private readonly runningTurns = new AbortRegistry();
   private status: AdapterStatus = {
     state: 'disconnected',
     messageCount: { inbound: 0, outbound: 0 },
@@ -267,6 +273,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       this.runningTasks,
       this.deps.logger ?? console
     );
+    this.agentCancelUnsub = subscribeAgentCancelHandler(
+      relay,
+      this.runningTurns,
+      this.deps.logger ?? console
+    );
     this.status = {
       state: 'connected',
       messageCount: { inbound: 0, outbound: 0 },
@@ -284,10 +295,13 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.approvalUnsub = null;
     this.taskCancelUnsub?.();
     this.taskCancelUnsub = null;
+    this.agentCancelUnsub?.();
+    this.agentCancelUnsub = null;
     // The runs themselves are finalized by their own handlers; only the
     // registry is torn down here, so a stop request arriving after a restart
     // is answered with the truth instead of aborting a stranger's run.
     this.runningTasks.clear();
+    this.runningTurns.clear();
     // A hold is a promise that a turn will run, and this adapter is about to
     // stop being able to keep it. Every waiter settles now, as a failed
     // delivery, so an ADAPTER restart tells the chats that were waiting. On a
@@ -398,6 +412,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             traceStore: this.deps.traceStore,
             agentSessionStore: this.deps.agentSessionStore,
             resolveExecutionSettings: this.deps.resolveExecutionSettings,
+            runningTurns: this.runningTurns,
             logger: this.deps.logger,
           },
           this.relay
