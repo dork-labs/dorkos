@@ -403,22 +403,30 @@ the merge queue gates on. Chasing it burns the attention the actually-blocking c
 needs. Confirm the required set (`…/branches/main/protection`, above), then act only
 on a **required** check that went red on **this** PR.
 
-Watch with a loop that ends on every terminal outcome — a non-`Vercel` check
-failing, or the PR merging — not one that only knows how to notice success (the
-`Monitor` tool is the ergonomic form of this; the shape is what matters):
+**Do not write the watch loop from memory — run the tested one:**
 
 ```bash
-# emits on the first real failure, the merge, or its own expiry; silent while healthy
-for i in $(seq 1 55); do
-  state=$(gh pr view <number> --json state --jq .state)
-  [ "$state" = MERGED ] && { echo MERGED; exit 0; }
-  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; exit 0; }
-  fails=$(gh pr checks <number> | awk -F'\t' '$2=="fail"{print $1}' | grep -vi '^Vercel')
-  [ -n "$fails" ] && { echo "FAILED: $fails"; exit 0; }
-  sleep 45
-done
-echo "watcher expired; PR <number> still unmerged — check it directly"
+.agents/skills/creating-pull-requests/scripts/watch-prs.sh --interval 60 <number> [<number>...]
+# pipe it into the Monitor tool for hands-free notification; --once for a single probe
 ```
+
+It reports state **transitions** (never a once-per-PR "seen" flag that goes
+blind after the first event — a watcher written that way missed a check failure
+on 2026-08-24), and its event vocabulary is pinned by
+`scripts/test-watch-prs.sh`: `MERGED`, `CLOSED`, `CONFLICTING`,
+`FAILING(names)` (standing `Vercel` reds excluded), `EJECTED(reason)` (the
+merge queue silently dropped the PR — detected via the
+`REMOVED_FROM_MERGE_QUEUE_EVENT` timeline item, the only place that fact
+exists), `STALLED_IN_QUEUE` (queued with zero checks reporting — the classic
+missing `on: merge_group` trigger), `UNRESOLVED_THREADS(n)` (these block
+merge-tail from arming while everything else is green),
+`UNARMED_CLEAN` (arming auto-merge 422s on an already-clean PR — merge it
+directly), `QUEUED(pos)`, `RECOVERED`, and its own expiry. Three semantics it
+gets right that ad-hoc loops get wrong: `mergeStateStatus: UNKNOWN` is
+retry-not-terminal (mergeability is computed async); a rerun of a failed
+`pull_request` job reuses the **original** merge snapshot, so when `main` has
+moved the fix is an empty commit, not another rerun; and checks attach to the
+head SHA, so the rollup stays correct across reruns.
 
 On 2026-08-06 the v0.58.0 release PR sat `OPEN` with a red **required** `typecheck`
 (its prettier `--check` step — see the worktree gotcha below), while a
@@ -437,9 +445,10 @@ Three rules for any PR watcher, Monitor or bash:
   signals it carries.
 - **"Auto-merge armed and zero unresolved threads" proves nothing about checks.**
   It is exactly the state every stuck PR was in when it got stuck.
-- **A watcher that dies must say so.** The loop above echoes its own expiry
-  (~41 minutes); keep that shape, and answer it — an armed PR that outlives its
-  watcher deserves a direct `gh pr checks` look, whatever the watcher reported.
+- **A watcher that dies must say so.** `watch-prs.sh --max-cycles N` announces
+  its own expiry (exit 3); keep that shape, and answer it — an armed PR that
+  outlives its watcher deserves a direct `gh pr checks` look, whatever the
+  watcher reported.
 
 Note the shape of the four traps together: a **conflicting** PR runs nothing, a PR
 missing a **path-filtered** required check hangs pending, a **BEHIND** PR is green
