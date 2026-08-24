@@ -46,9 +46,17 @@ name: scripts-test
 # them keeps the fast signal fast instead of putting a minute of install in front
 # of it.
 #
-# Neither job calls `pnpm test:scripts` even though that script runs all four
-# suites: locally it is one command (and `pnpm verify` calls it), but in CI
-# running it from either job would re-run the other job's suite for nothing.
+# Neither job calls `pnpm test:scripts` even though that script runs every
+# suite: locally it is one command (and `pnpm verify` calls it), but in CI
+# running it from either job would re-run the other job's suites for nothing.
+#
+# THAT is why the same suite list is written out twice, here and in
+# `test:scripts`, and why the two drifted: this workflow ran eleven suites while
+# `test:scripts` ran ten, so `pnpm verify` came back green having never executed
+# `test-process-guard.sh` at all (DOR-1515). If you add a step below, add it to
+# `test:scripts` too — `scripts/__tests__/shell-suite-parity.test.ts` reads both
+# lists and fails naming whichever suite is missing from whichever side, so you
+# will hear about it either way. It rides the `harness` job's `Unit tests` step.
 
 ### The `harness` job depends on files OUTSIDE scripts/: the root package.json
 ### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts,
