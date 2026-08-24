@@ -21,6 +21,7 @@ import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import { readNpmDependencies } from './lib/npm-dependencies.js';
+import { packageSchedules, scheduleDisplayName } from './lib/package-schedules.js';
 import type {
   ConflictReport,
   PermissionPreview,
@@ -241,9 +242,15 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
  * `true` here remains the more permissive of the two possible outcomes.
  */
 function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSchedule[] {
-  if (manifest.type !== 'shape') return [];
-  return manifest.schedules.map((schedule) => ({
-    name: schedule.name,
+  // Every type that can declare a schedule is disclosed, not just Shapes
+  // (DOR-1487). The gate here used to be `type !== 'shape'` because the slot was
+  // Shape-only; leaving it would have made a plugin's cron the one kind of
+  // unattended work a person approves an install without being shown.
+  // `packageSchedules` also answers for `adapter`, which has no slot at all.
+  return packageSchedules(manifest).map((schedule, index) => ({
+    // A by-reference schedule is named by the skill it runs; an inline one
+    // carries its own name.
+    name: scheduleDisplayName(schedule, index),
     cron: schedule.cron,
     permissionMode: clampSchedulePermissionMode(schedule.permissionMode).mode,
     startsEnabled: schedule.startEnabled,

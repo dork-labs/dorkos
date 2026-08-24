@@ -66,6 +66,7 @@ function pluginManifest(
     layers: [],
     requires: [],
     extensions: [],
+    schedules: [],
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ function agentManifest(name: string): AgentPackageManifest {
     tags: [],
     layers: [],
     requires: [],
+    schedules: [],
   };
 }
 
@@ -113,6 +115,7 @@ function skillPackManifest(name: string): SkillPackPackageManifest {
     tags: [],
     layers: [],
     requires: [],
+    schedules: [],
   };
 }
 

@@ -39,6 +39,8 @@ import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
+import { materializePackageSchedules } from './lib/materialize-schedules.js';
+import { validatePackageSchedules } from './lib/validate-package-schedules.js';
 import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -223,6 +225,26 @@ export class MarketplaceInstaller implements InstallerLike {
 
       const result = await this.dispatchFlow(staged.packagePath, staged.manifest, req);
 
+      // Turn the package's declared schedules into files. Type-agnostic and
+      // therefore here rather than in each flow: a schedule means the same thing
+      // whichever of the four types shipped it, and three copies of this call
+      // would be three chances to drift. It runs AFTER the flow because it
+      // writes into the activated install root (for `skillRef` entries) and into
+      // the skills root the install is scoped to (for inline ones).
+      //
+      // Failures warn rather than fail: the package is already installed and
+      // working, and the schedule problems that genuinely justify refusing an
+      // install were caught in `resolveAndValidate`, before anything touched
+      // disk. See `lib/materialize-schedules.ts`.
+      const materialized = await materializePackageSchedules({
+        manifest: staged.manifest,
+        installPath: result.installPath,
+        dorkHome: this.deps.dorkHome,
+        projectPath: req.projectPath,
+        logger: this.deps.logger,
+      });
+      result.warnings.push(...materialized.warnings);
+
       // Persist install provenance to `.dork/install-metadata.json` so the
       // update flow can scope its marketplace lookups, the routes layer can
       // surface "installed from" / "installed at" to API clients, and (DOR-147)
@@ -245,6 +267,12 @@ export class MarketplaceInstaller implements InstallerLike {
             result.dependencyWarnings.length > 0 && {
               dependencyWarnings: result.dependencyWarnings,
             }),
+          // The uninstall receipt: skill directories this install generated
+          // OUTSIDE the package's own install root, which removing the package
+          // would otherwise leave behind firing forever.
+          ...(materialized.generatedPaths.length > 0 && {
+            generatedSchedulePaths: materialized.generatedPaths,
+          }),
         });
       } catch (metaErr) {
         this.deps.logger.warn('[marketplace-installer] failed to write install-metadata.json', {
@@ -447,6 +475,18 @@ export class MarketplaceInstaller implements InstallerLike {
         .filter((i) => i.level === 'error')
         .map((i) => i.message);
       throw new InvalidPackageError(errorMessages);
+    }
+
+    // The half of schedule validation the manifest schema cannot do: whether a
+    // cron MEANS anything (croner's question, and croner is a server dependency)
+    // and whether a `skillRef` names a skill the package actually ships. Both
+    // describe a schedule that could never run, and both are checked here —
+    // before any flow touches disk — so the answer is a refused install with one
+    // clear sentence rather than a parked row discovered at boot weeks later.
+    // See `lib/validate-package-schedules.ts`.
+    const scheduleProblems = await validatePackageSchedules(staged.path, validation.manifest);
+    if (scheduleProblems.length > 0) {
+      throw new InvalidPackageError(scheduleProblems);
     }
 
     return {
