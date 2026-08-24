@@ -38,8 +38,10 @@ name: scripts-test
 # TWO JOBS, on purpose. `fixtures` needs only bash, jq, iconv and Node, so
 # skipping the pnpm toolchain keeps it a few seconds, which is worth preserving
 # for the reviewer scripts it guards. `harness` covers the TypeScript under
-# scripts/ (the Q3 contention harness, DOR-500) plus the one bash suite that
-# needs a node_modules (the os.homedir() ban fixtures), both of which want pnpm.
+# scripts/ (the Q3 contention harness, DOR-500) plus the two bash suites that
+# need a node_modules — the os.homedir() ban fixtures, which lint through the
+# real server ESLint config, and the format-changed hook fixtures, which run the
+# real prettier — all of which want pnpm.
 # Splitting
 # them keeps the fast signal fast instead of putting a minute of install in front
 # of it.
@@ -68,8 +70,9 @@ name: scripts-test
 ### of bash plus a one-minute harness job is the honest price of a guard that
 ### fires when it matters.
 ###
-### `.claude/hooks/**` is in the filter for the `fixtures` job, which tests the
-### git-guard and process-guard hooks that live there rather than under scripts/.
+### `.claude/hooks/**` is in the filter for the hook suites, which test scripts
+### living there rather than under scripts/: git-guard and process-guard in
+### `fixtures`, and format-changed in `harness` (it needs the real prettier).
 ### The ESLint configs are in the filter for the same reason as
 ### claude-code-review.yml: test-homedir-guard.sh asserts against them. The
 ### os.homedir() ban lives in apps/server/eslint.config.js and its severity
@@ -260,6 +263,23 @@ jobs:
       # stops matching exits 0 rather than crashing (DOR-668).
       - name: os.homedir() ban fixtures
         run: bash scripts/test-homedir-guard.sh
+
+      # In `harness` for the same reason as the suite above it: it is the only
+      # job with a node_modules, and this suite needs the REAL prettier. A stub
+      # could prove the hook called something, but not that eligible files come
+      # out formatted and ignored ones do not, which is half of what it pins.
+      #
+      # .claude/hooks/format-changed.sh went from a 13-line PostToolUse
+      # one-liner to a ~126-line Stop hook with real file-collection logic, and
+      # the automated reviewer flagged that it had arrived untested. Its failure
+      # modes are all quiet: it is silent by design, so "formatted nothing this
+      # turn" and "formatted everything" look identical from the outside, and
+      # the two gates behind it (lefthook pre-commit, CI prettier --check) would
+      # absorb the drift without ever naming the hook. The one loud failure is
+      # the one that matters most — a Stop hook exiting 2 blocks the turn from
+      # ending — so every case asserts exit 0.
+      - name: Format-changed hook fixtures
+        run: bash scripts/test-format-changed.sh
 
       # check-vocab-gate.ts (DOR-855) rides this step rather than getting a
       # dedicated one: its own pin suite (__tests__/check-vocab-gate.test.ts)
