@@ -22,7 +22,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
-import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills';
+import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';

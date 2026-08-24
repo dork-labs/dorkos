@@ -516,6 +516,13 @@ export function planInstalledSkills(
  * scheduled skill is still undiscoverable, because no projection stage targets
  * `<dorkHome>/skills` at all (see `sources/installed.ts`).
  *
+ * One interaction worth knowing: `dorkos harness sync --harness <id> --fix`
+ * narrows the plan by action `harness`, so a run narrowed to anything but
+ * {@link SCHEDULE_LINK_ATTRIBUTION} filters these links out and does not write
+ * them. That is the flag behaving as asked — it projects one harness's files —
+ * and every default path (a bare sync, `--fix`, DorkOS's own install-triggered
+ * projection) passes an unfiltered plan and is unaffected.
+ *
  * @param input - the projectable project-scoped plugins and the enabled harnesses.
  * @returns the scheduler-driven symlink actions and any plugin-root warnings for
  *   them (both empty when an enabled harness already covers the directory).

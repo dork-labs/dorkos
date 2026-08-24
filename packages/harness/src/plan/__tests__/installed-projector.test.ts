@@ -561,7 +561,9 @@ describe('schedule-bearing plugin skills reach the watched skills root', () => {
       expect(link?.kind).toBe('symlink');
       expect(link?.source).toBe('.dork/plugins/acme/skills/drain');
       expect(link?.provenance).toBe('installed');
-      // The report says why a link exists in a directory no enabled harness reads.
+      // The note that explains why a link exists in a directory no enabled
+      // harness reads. That it REACHES the operator is pinned separately, on the
+      // CLI report itself (`packages/cli/src/__tests__/harness-sync.test.ts`).
       expect(link?.reason).toContain('scheduler');
     } finally {
       rmSync(repo, { recursive: true, force: true });
