@@ -210,7 +210,7 @@ export function TimelineSection() {
                 <div className="shrink-0 md:w-[72px] md:text-right">
                   <span
                     className="font-mono text-xs tracking-[0.04em]"
-                    style={{ color: '#7A756A' }}
+                    style={{ color: 'var(--warm-gray-light)' }}
                   >
                     {entry.time}
                   </span>

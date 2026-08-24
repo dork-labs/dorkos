@@ -42,7 +42,12 @@ const MODULE_COLORS: Record<ModuleId, string> = {
   tasks: '#CF722B',
   mesh: '#4A90A4',
   relay: '#8B7BA4',
-  agent: '#7A756A',
+  // The gray module rides the shared muted token so it tracks the light-ground
+  // value instead of drifting from it. As a hardcoded #7A756A its badge label
+  // measured 4.06:1 on the hero and sat visibly lighter than the migrated grays
+  // beside it (DOR-1503). The other four are brand hues and stay literal; their
+  // badge labels fail AA on the tinted chip and are tracked under DOR-1512.
+  agent: 'var(--warm-gray-light)',
 };
 
 /** Module label for the badge. */
@@ -170,9 +175,15 @@ function FeedBadge({ module }: { module: ModuleId }) {
     <span
       className="shrink-0 rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] leading-none tracking-[0.1em] uppercase"
       style={{
-        background: `${color}18`,
+        // `color-mix`, not a `${color}18` hex-alpha suffix: the suffix only works
+        // when `color` is a literal hex. Concatenating onto a `var()` yields
+        // `var(--x) 18`, two tokens, which is invalid at computed-value time — the
+        // fill silently drops to transparent and the border to 0px. These
+        // percentages are the exact alphas the old `18`/`30` suffixes meant
+        // (24/255 and 48/255), so every badge renders as it did before.
+        background: `color-mix(in srgb, ${color} 9.4%, transparent)`,
         color,
-        border: `1px solid ${color}30`,
+        border: `1px solid color-mix(in srgb, ${color} 18.8%, transparent)`,
       }}
     >
       {MODULE_LABELS[module]}
@@ -216,7 +227,10 @@ function FeedItem({ entry, index }: { entry: FeedEntry; index: number }) {
         </p>
         <div className="mt-1 flex items-center gap-2">
           <FeedBadge module={entry.module} />
-          <span className="font-mono text-[9px] tracking-[0.06em]" style={{ color: '#7A756A' }}>
+          <span
+            className="font-mono text-[9px] tracking-[0.06em]"
+            style={{ color: 'var(--warm-gray-light)' }}
+          >
             {timestamp}
           </span>
         </div>
@@ -311,7 +325,7 @@ function ActivityFeedPanel() {
       >
         <p
           className="text-center font-mono text-[9px] tracking-[0.06em]"
-          style={{ color: '#7A756A' }}
+          style={{ color: 'var(--warm-gray-light)' }}
         >
           This is your fleet, reporting back.
         </p>
@@ -385,7 +399,7 @@ export function ActivityFeedHero({ ctaText, ctaHref, showGithubLink }: ActivityF
           <div className="mb-3 flex items-center gap-2">
             <span
               className="text-2xs font-mono tracking-[0.12em] uppercase"
-              style={{ color: '#7A756A' }}
+              style={{ color: 'var(--warm-gray-light)' }}
             >
               Right now, somewhere
             </span>
@@ -396,7 +410,7 @@ export function ActivityFeedHero({ ctaText, ctaHref, showGithubLink }: ActivityF
 
           <p
             className="mt-3 text-center font-mono text-[10px] leading-[1.6] tracking-[0.04em]"
-            style={{ color: '#7A756A' }}
+            style={{ color: 'var(--warm-gray-light)' }}
           >
             Simulated. Your own feed fills in as your agents work.
           </p>

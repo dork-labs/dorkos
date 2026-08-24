@@ -44,7 +44,7 @@ export function StoryHero({ slideId = 'hero' }: StoryHeroProps) {
 
         <motion.p
           variants={REVEAL}
-          className="text-warm-gray-light font-mono text-[10px] tracking-[0.1em] uppercase"
+          className="text-cream-tertiary/60 font-mono text-[10px] tracking-[0.1em] uppercase"
         >
           Dorian Collier &mdash; No Edges &mdash; Austin TX
         </motion.p>
