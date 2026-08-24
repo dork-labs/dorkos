@@ -1,7 +1,7 @@
 ---
 id: 260822-235801
 title: The color economy — green means full power, red is reserved for alarms
-status: proposed
+status: accepted
 created: 2026-08-22
 spec: full-power-defaults
 superseded-by: null

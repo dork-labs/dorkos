@@ -1,7 +1,7 @@
 ---
 id: 260822-235800
 title: One-time modals ride a moments rail, mirroring the banner slot's arbitration
-status: proposed
+status: accepted
 created: 2026-08-22
 spec: full-power-defaults
 superseded-by: null
