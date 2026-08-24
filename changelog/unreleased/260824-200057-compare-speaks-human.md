@@ -3,6 +3,7 @@ covers:
   - 'feat(site): feature catalog catches up with the shipped product (DOR-1516)'
   - 'feat(site): six new comparison dimensions (DOR-1516)'
   - 'feat(site): /compare speaks human (DOR-1516)'
+  - 'fix(site): three review notes on the comparison copy (DOR-1516)'
 ---
 
 ### Added

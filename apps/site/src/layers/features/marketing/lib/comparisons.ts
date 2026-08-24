@@ -341,8 +341,8 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     id: 'surfaces',
     label: 'Where you can use it',
     featureSlugs: ['mobile', 'chat-interface', 'notifications'],
-    question: 'Can you check in and approve work away from your desk?',
-    wantPhrase: 'to check in and approve work from your phone',
+    question: 'Can you open your agents and watch them work from any screen you are near?',
+    wantPhrase: 'to open your agents from any screen you are near, not just the one they run on',
   },
   {
     id: 'approvals-anywhere',
@@ -1000,7 +1000,7 @@ export const comparisons: Competitor[] = [
       },
       'attention-management': {
         verdict: 'no',
-        note: 'Its task list shows what ran. Nothing gathers the things that need you into one place.',
+        note: 'Its task list shows what ran. We found no inbox or notification list gathering the things that need you.',
       },
       'multi-runtime': {
         verdict: 'yes',
@@ -1480,7 +1480,7 @@ export const comparisons: Competitor[] = [
       },
       'attention-management': {
         verdict: 'no',
-        note: 'Its task board runs on your own machine and shows the work. It is not a list of what needs you.',
+        note: 'Its task board runs on your own machine and shows the work. We found no inbox or notification list gathering what is waiting on your answer.',
       },
       'multi-runtime': {
         verdict: 'no',
@@ -2569,7 +2569,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. You teach a bot a job once and it keeps that as a skill, and a routine then runs that skill on a schedule, on their computer rather than yours.',
         detail:
-          'Worth knowing before you switch one on: their own advice is to test a routine first, and its warning is that a test run performs real work. In its words, it can navigate websites, change files, and call connected tools, so a test is a real send rather than a rehearsal. The difference from ours is where the job runs. Theirs runs in xAI’s cloud whether or not your laptop is open; ours needs your own machine to be awake.',
+          'Worth knowing before you switch one on: their own advice is to test a routine first, and its warning is that a test run performs real work. In its words, it can navigate websites, change files, and call connected tools, so a test is a real send rather than a rehearsal. The difference from ours is where the job runs. Theirs runs in SpaceXAI’s cloud whether or not your laptop is open; ours needs your own machine to be awake.',
         source: 'https://docs.x.ai/grok-bot/skills-routines-and-automations',
       },
       coordination: {
