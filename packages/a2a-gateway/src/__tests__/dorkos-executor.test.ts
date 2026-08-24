@@ -3,6 +3,8 @@ import type { Message, Task, TaskStatusUpdateEvent } from '@a2a-js/sdk';
 import type { ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AgentRegistryEntry } from '@dorkos/mesh';
+import type { Logger } from '@dorkos/shared/logger';
+import { AGENT_CANCEL_SUBJECT_PREFIX, A2A_GATEWAY_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import { DorkOSAgentExecutor } from '../dorkos-executor.js';
 
 // ---------------------------------------------------------------------------
@@ -188,12 +190,14 @@ describe('DorkOSAgentExecutor', () => {
   let registry: ReturnType<typeof makeRegistry>;
   let executor: DorkOSAgentExecutor;
   let eventBus: ExecutionEventBus;
+  let logger: Logger;
   let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
 
   function buildExecutor() {
     executor = new DorkOSAgentExecutor({
       relay: relay as never,
       agentRegistry: registry as never,
+      logger,
     });
   }
 
@@ -201,6 +205,7 @@ describe('DorkOSAgentExecutor', () => {
     vi.useFakeTimers();
     relay = makeRelay();
     registry = makeRegistry();
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     subscribeHandler = undefined;
     relay.subscribe.mockImplementation(
       (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
@@ -663,6 +668,36 @@ describe('DorkOSAgentExecutor', () => {
       expect(vi.mocked(eventBus.finished).mock.calls.length).toBe(finishedCountBefore);
     });
 
+    it('asks the runner to end the turn when the caller stops waiting', async () => {
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+
+      await vi.advanceTimersByTimeAsync(120_001);
+
+      const stop = relay.publish.mock.calls.find(([subject]) =>
+        subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)
+      );
+      // Walking away from the reply stream stops nothing: without this the
+      // model keeps running, and billing, after the caller gave up (DOR-791).
+      expect(stop).toBeDefined();
+      expect(stop![1]).toEqual(
+        expect.objectContaining({ type: 'agent_cancel', reason: 'caller_timeout' })
+      );
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('asked to stop'));
+    });
+
+    it('says so in the log when a timed-out turn could not be stopped', async () => {
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+      relay.publish.mockResolvedValue({ messageId: 'msg-stop', deliveredTo: 0 });
+
+      await vi.advanceTimersByTimeAsync(120_001);
+
+      // Nothing on the wire can report this — the task is already failed — so
+      // the log is the only place the leak is visible.
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('may still be running'));
+    });
+
     it('unsubscribes from reply subject on timeout', async () => {
       const unsubFn = vi.fn();
       relay.subscribe.mockImplementation(
@@ -686,18 +721,102 @@ describe('DorkOSAgentExecutor', () => {
   // -------------------------------------------------------------------------
 
   describe('cancelTask', () => {
-    it('emits canceled status event', async () => {
-      await executor.cancelTask('task-999', eventBus);
+    /** The stop requests the executor published, in order. */
+    function stopRequests() {
+      return relay.publish.mock.calls.filter(([subject]) =>
+        subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)
+      );
+    }
 
+    it('asks the runner to end the turn and only then reports canceled', async () => {
+      const execBus = makeEventBus();
+      const ctx = makeRequestContext({ taskId: 'task-abort' });
+      await executor.execute(ctx, execBus);
+      const replySubject = relay.publish.mock.calls[0]![2].replyTo;
+
+      await executor.cancelTask('task-abort', eventBus);
+
+      const [subject, payload, options] = stopRequests()[0]!;
+      expect(subject).toBe(`${AGENT_CANCEL_SUBJECT_PREFIX}task-abort`);
+      // The reply subject is what names ONE turn on the bus.
+      expect(payload).toEqual({
+        type: 'agent_cancel',
+        replyTo: replySubject,
+        reason: 'caller_canceled',
+      });
+      // The runner refuses a stop from anyone else.
+      expect(options.from).toBe(A2A_GATEWAY_PRINCIPAL);
       expect(eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: 'status-update',
-          taskId: 'task-999',
+          taskId: 'task-abort',
           status: expect.objectContaining({ state: 'canceled' }),
           final: true,
         })
       );
       expect(eventBus.finished).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to claim canceled when nothing acknowledges the stop', async () => {
+      const execBus = makeEventBus();
+      const ctx = makeRequestContext({ taskId: 'task-unstoppable' });
+      await executor.execute(ctx, execBus);
+      // Nobody is executing this turn any more (an adapter restart, say).
+      relay.publish.mockResolvedValue({ messageId: 'msg-stop', deliveredTo: 0 });
+
+      await expect(executor.cancelTask('task-unstoppable', eventBus)).rejects.toThrow(
+        /not cancelable/i
+      );
+
+      expect(stopRequests()).toHaveLength(1);
+      expect(statusEvents(eventBus)).toHaveLength(0);
+      expect(eventBus.finished).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('may still be running'));
+    });
+
+    it('leaves a turn it could not stop able to finish the task', async () => {
+      const execBus = makeEventBus();
+      const ctx = makeRequestContext({ taskId: 'task-unstoppable' });
+      await executor.execute(ctx, execBus);
+      relay.publish.mockResolvedValue({ messageId: 'msg-stop', deliveredTo: 0 });
+
+      await expect(executor.cancelTask('task-unstoppable', eventBus)).rejects.toThrow();
+      subscribeHandler!(makeReplyEnvelope(textDelta('Done anyway.'), 'task-unstoppable'));
+      subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-unstoppable'));
+
+      const completed = statusEvents(execBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(1);
+      expect(statusText(completed[0]!)).toBe('Done anyway.');
+    });
+
+    it('refuses a cancel for a task it holds no turn for', async () => {
+      await expect(executor.cancelTask('task-999', eventBus)).rejects.toThrow(/not cancelable/i);
+
+      // Nothing was published and nothing was claimed: this gateway has no
+      // handle on that task, and saying otherwise would be the original bug.
+      expect(stopRequests()).toHaveLength(0);
+      expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(eventBus.finished).not.toHaveBeenCalled();
+    });
+
+    it('stops listening for the reply once the cancel is taken', async () => {
+      const unsubFn = vi.fn();
+      relay.subscribe.mockImplementation(
+        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
+          subscribeHandler = handler;
+          return unsubFn;
+        }
+      );
+      const execBus = makeEventBus();
+      await executor.execute(makeRequestContext({ taskId: 'task-abort' }), execBus);
+
+      await executor.cancelTask('task-abort', eventBus);
+
+      expect(unsubFn).toHaveBeenCalled();
+      // The response deadline is gone with it — a canceled task must not be
+      // failed for timing out two minutes later.
+      vi.advanceTimersByTime(120_001);
+      expect(statusEvents(execBus).filter((e) => e.status.state === 'failed')).toHaveLength(0);
     });
 
     it('suppresses response processing for canceled tasks', async () => {

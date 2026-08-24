@@ -16,7 +16,12 @@ import type { AddressInfo } from 'node:net';
 import type { Task } from '@a2a-js/sdk';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RelayCore } from '@dorkos/relay';
-import type { RelayEnvelope, StandardPayload } from '@dorkos/shared/relay-schemas';
+import type {
+  AgentCancelPayload,
+  RelayEnvelope,
+  StandardPayload,
+} from '@dorkos/shared/relay-schemas';
+import { AGENT_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createA2aHandlers } from '../express-handlers.js';
 import type { AgentRegistryLike } from '../types.js';
@@ -37,6 +42,14 @@ class FakeRelay {
   responder: Responder | undefined;
   /** Every relay.agent.* subject published to, in order — for routing asserts. */
   readonly agentSubjects: string[] = [];
+  /**
+   * Reply subjects of the turns this fake adapter is executing, standing in for
+   * the CCA adapter's own in-flight turn registry — which is what makes a stop
+   * request answerable with the truth.
+   */
+  readonly runningTurns = new Set<string>();
+  /** Reply subjects of turns a stop request actually reached. */
+  readonly stoppedTurns: string[] = [];
   private idCounter = 0;
 
   subscribe(pattern: string, handler: (envelope: RelayEnvelope) => void): () => void {
@@ -75,9 +88,27 @@ class FakeRelay {
         return { messageId: envelope.id, deliveredTo: 0 };
       }
       const responder = this.responder;
+      if (envelope.replyTo) this.runningTurns.add(envelope.replyTo);
       // Deliver on a macrotask, like a real agent turn — the gateway's
       // post-publish continuation (the `working` status) must run first
-      setTimeout(() => void responder(envelope), 0);
+      setTimeout(() => {
+        void responder(envelope).finally(() => {
+          if (envelope.replyTo) this.runningTurns.delete(envelope.replyTo);
+        });
+      }, 0);
+      return { messageId: envelope.id, deliveredTo: 1 };
+    }
+
+    // The adapter's stop subscription: it takes the request only for a turn it
+    // is actually executing, and refuses otherwise (deliveredTo 0), exactly as
+    // `handleAgentCancel` does.
+    if (subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)) {
+      const { replyTo } = payload as AgentCancelPayload;
+      if (!this.runningTurns.has(replyTo)) {
+        return { messageId: envelope.id, deliveredTo: 0 };
+      }
+      this.runningTurns.delete(replyTo);
+      this.stoppedTurns.push(replyTo);
       return { messageId: envelope.id, deliveredTo: 1 };
     }
 
@@ -407,6 +438,10 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
       expect(canceled.id).toBe(task.id);
       expect(canceled.status.state).toBe('canceled');
 
+      // The turn was actually asked to stop — the whole point. A canceled task
+      // whose agent keeps working is the bug this asserts against (DOR-791).
+      expect(relay.stoppedTurns).toHaveLength(1);
+
       const getResponse = await rpc('tasks/get', { id: task.id });
       expect((getResponse.result as Task).status.state).toBe('canceled');
 
@@ -415,6 +450,37 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
       await gate.finished;
       const afterRelease = await rpc('tasks/get', { id: task.id });
       expect((afterRelease.result as Task).status.state).toBe('canceled');
+    });
+
+    it('refuses tasks/cancel — and leaves the task running — when no runner takes the stop', async () => {
+      const gate = gatedResponder(streamingResponder(relay, ['Still working.']));
+      relay.responder = gate.responder;
+
+      const sendResponse = await rpc('message/send', {
+        ...sendParams('Long-running job.', 'agent-backend'),
+        configuration: { blocking: false },
+      });
+      const task = sendResponse.result as Task;
+
+      // Whoever was executing this turn is gone — an adapter restart, say. The
+      // stop reaches nobody.
+      relay.runningTurns.clear();
+
+      const cancelResponse = await rpc('tasks/cancel', { id: task.id });
+
+      // Not "canceled". The model is still running and the caller is told so,
+      // rather than being handed a comfortable lie it cannot act on.
+      expect(cancelResponse.error).toBeDefined();
+      expect((cancelResponse.error as { message: string }).message).toContain('not cancelable');
+      const getResponse = await rpc('tasks/get', { id: task.id });
+      expect(['submitted', 'working']).toContain((getResponse.result as Task).status.state);
+
+      // And the turn it could not stop still finishes normally.
+      gate.release();
+      await gate.finished;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const afterRelease = await rpc('tasks/get', { id: task.id });
+      expect((afterRelease.result as Task).status.state).toBe('completed');
     });
 
     it('accepts a follow-up turn on a non-terminal task, accumulating history with sticky routing', async () => {

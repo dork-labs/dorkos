@@ -76,6 +76,17 @@ The fleet endpoint never routes an untargeted message to an arbitrary agent. A m
 
 Supported methods: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`.
 
+### Canceling a task
+
+`tasks/cancel` asks the agent that's running the turn to stop, and answers with what really
+happened. You get the task back marked `canceled` only when something confirms the turn is
+ending. If nothing can be stopped — the turn already finished, or DorkOS restarted and lost
+track of it — you get a `TaskNotCancelable` error instead, and the task keeps the state it
+had. A "canceled" answer means the work stopped, not that the request was filed.
+
+If a call to `message/send` waits more than two minutes for an answer, DorkOS gives up and
+asks the agent to stop as well, so a caller walking away doesn't leave a model running.
+
 ### Authentication
 
 Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. Fetching an Agent Card (the `GET` discovery paths) stays open — that's public metadata, the A2A analogue of listing tools.
