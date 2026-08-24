@@ -933,10 +933,16 @@ export function backfillAuthDefaults(store: {
 /**
  * Migration body: backfill the `approvals` section (standing permissions,
  * DOR-501) for configs persisted before it existed. Additive + idempotent: only
- * writes when the key is absent. A whole TOP-LEVEL section, so it is a genuine
- * anchor for the reason {@link backfillProfileDefaults} spells out: conf writes
- * its merged `defaults` to the file before the first migration key runs, and
- * `approvals` lands there whether or not this body exists.
+ * writes when the key is absent.
+ *
+ * **The two branches have different standing, so do not read one verdict over
+ * both.** The whole-section branch is a genuine anchor for the reason
+ * {@link backfillProfileDefaults} spells out — `approvals` is TOP-LEVEL, conf
+ * writes its merged `defaults` to the file before the first migration key runs,
+ * and the section lands there whether or not this body exists. The second
+ * branch is not: it adds a nested LEAF to an `approvals` object that is already
+ * on the file, which that merge never reaches, so it is the only thing that
+ * writes `standingGrantsVoidBefore` down (measured, DOR-1496).
  *
  * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
  * by an upgrade — nothing changes for an existing user until they ask for it.
@@ -2874,6 +2880,19 @@ export function warmClaudeCodeSessionsByDefault(store: {
  *   it when it differs from the file, so a section the file has never heard of
  *   arrives on disk whatever the table says. Delete such a body and nothing
  *   about the resulting file changes.
+ *
+ *   Sharper than "redundant", and worth stating because it has a consequence:
+ *   such a body is **unreachable**. It guards on absence (`if (store.get('x') ==
+ *   null)`), and by the time it runs, the pre-write has already put the section
+ *   on the file it is about to read — on the upgrade path and the fresh-install
+ *   path alike. The `set` never executes; measured by handing the body a probe
+ *   store after a real boot and watching `set` go uncalled. So the value written
+ *   in the table is not the value that reaches anybody: if it ever diverged from
+ *   the object literal in `USER_CONFIG_DEFAULTS`, the file would silently take
+ *   the literal and this table would document an intent that never ran. That is
+ *   the defaults-declared-twice trap wearing a migration for a disguise — the
+ *   per-field Zod default and the object literal are already two declarations,
+ *   and an anchor body is a third that cannot win.
  * - **A nested leaf inside a section the file already has** (`ui.composer`,
  *   `ui.promos`, `runtimes.claudeCode.persistentSession`) is NOT covered, and a
  *   body that seeds one is the only thing that writes it. The merge above is
@@ -2907,9 +2926,20 @@ export const CONFIG_MIGRATIONS = {
   },
   // Backfill `extensions.disabled: []` for configs persisted before the two-list
   // deviation model (Core Extensions). Resolved from a `<next-release>` placeholder
-  // to v0.44.0 at release time (/system:release). Additive + idempotent; the schema
-  // default also yields `disabled: []` on read, so this just writes the key through
-  // on the upgrade where it lands.
+  // to v0.44.0 at release time (/system:release). Additive + idempotent.
+  //
+  // This comment used to add "the schema default also yields `disabled: []` on
+  // read, so this just writes the key through" — the no-op-anchor claim. It is
+  // wrong here, and measured wrong (DOR-1496): the body writes a nested LEAF
+  // into an `extensions` object the file already has, which conf's shallow
+  // pre-migration defaults merge never reaches, and Ajv's read-time fill lands
+  // in the throwaway copy the `store` getter is about to return. Boot a config
+  // carrying `extensions: { enabled: [...] }` with no key running and the file
+  // still has no `disabled`. This body is the only thing that writes it. (The
+  // whole-`extensions`-absent case IS covered by the merge, and the function's
+  // own docblock says so correctly — that is the case this comment confused
+  // with the one the key actually serves.) See "Which of these bodies is a real
+  // no-op, and which only looks like one" in the docblock above the table.
   '0.44.0': backfillExtensionsDisabled,
   // Everything below shipped together in v0.45.0. Each body was authored on a
   // placeholder "next ascending release" key (0.45.0-0.53.0) while on main, and

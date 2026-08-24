@@ -159,6 +159,20 @@ the tree and recorded in the relevant commit body.
     default is written into a stored `ui` block during validation whether or not a migration runs.
     This matches `backfillProfileDefaults`, which already documents itself the same way. It is kept
     because it puts the intent — seeded OFF — in the migration table where it is reviewable.
+
+    > **[Correction, 2026-08-24 — DOR-1496.]** The observation above was real; the conclusion drawn
+    > from it was wrong, and this record is left as written because it is what was believed at the
+    > time. The suite stayed green because it asserted through `configManager.getDot`, and conf's
+    > `store` getter re-reads and re-parses `config.json` on every access and validates the copy it
+    > is about to hand back — so Ajv's `useDefaults` filled the copy and the copy was discarded.
+    > `ui.composer` never reached the file. `backfillComposerPrefs` is the mechanism, not an anchor,
+    > and it is not comparable to `backfillProfileDefaults`: `profile` is a whole TOP-LEVEL section,
+    > which conf's pre-migration defaults merge really does write to the file, whereas `ui.composer`
+    > is a leaf inside a `ui` object the file already has. The suite now reads the file and goes red
+    > when the body is suppressed. Corrected mechanism: the "Which of these bodies is a real no-op,
+    > and which only looks like one" section above `CONFIG_MIGRATIONS` in `config-manager.ts`.
+    > `specs/full-power-defaults/04-implementation.md` reached the correct reading independently.
+
 11. **The 4.4 surface bar is a source test, not a render test.** The task asks for "a test per
     other surface" asserting the prop is absent, but its own acceptance criterion requires the word
     `richText` to appear nowhere under `widgets`/`onboarding` — which such a test would violate —
