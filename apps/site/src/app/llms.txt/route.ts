@@ -5,7 +5,12 @@ import {
   CATEGORY_LABELS,
   type FeatureCategory,
 } from '@/layers/features/marketing/lib/features';
-import { buildDocsSections, buildBlogSection, buildMarketplaceSection } from '@/lib/ai/site-index';
+import {
+  buildDocsSections,
+  buildBlogSection,
+  buildComparisonLinks,
+  buildMarketplaceSection,
+} from '@/lib/ai/site-index';
 
 export const dynamic = 'force-static';
 
@@ -56,6 +61,12 @@ ${buildFeaturesSection()}
 ## Feature Categories
 
 ${buildFeatureCategoriesSection()}
+
+## Comparisons
+
+How DorkOS compares to other ways of running coding agents. Each page carries the date its facts were last checked.
+
+${buildComparisonLinks()}
 
 ## Marketplace
 

@@ -2,13 +2,14 @@ import { source, blog } from '@/lib/source';
 import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { siteConfig } from '@/config/site';
 import { features } from '@/layers/features/marketing/lib/features';
+import { comparisons, COMPARISON_FRAMING_COPY } from '@/layers/features/marketing/lib/comparisons';
 import { fetchMarketplaceJson } from '@/layers/features/marketplace';
 
 /**
  * Shared markdown link-list builders for the site's agent-facing indexes.
  *
  * Both `llms.txt` (the AI index file) and `sitemap.md` (the agent-crawl link
- * list) group the same docs, blog, features, and marketplace links. These
+ * list) group the same docs, blog, features, comparison, and marketplace links. These
  * builders are the single source of that grouping so the two surfaces cannot
  * drift.
  *
@@ -126,6 +127,25 @@ export function buildFeatureLinks(): string {
       return `- [${feature.name}](${url}): ${feature.tagline}`;
     })
     .join('\n');
+}
+
+/**
+ * Comparison pages as a markdown bullet list of `[headline](url): one-liner
+ * (last checked <date>)` links, led by the `/compare` hub so the list matches
+ * what `sitemap.ts` publishes. The check date rides along because these facts
+ * age fast, and an agent reading the index should be able to tell how fresh
+ * they are.
+ */
+export function buildComparisonLinks(): string {
+  const hub = `- [Compare DorkOS](${siteConfig.url}/compare): every comparison, grouped by how DorkOS relates to the other tool`;
+  const entries = comparisons
+    .map((competitor) => {
+      const url = `${siteConfig.url}/compare/${competitor.slug}`;
+      const headline = COMPARISON_FRAMING_COPY[competitor.framing].headline(competitor.name);
+      return `- [${headline}](${url}): ${competitor.oneLiner} (last checked ${competitor.lastVerified})`;
+    })
+    .join('\n');
+  return `${hub}\n${entries}`;
 }
 
 /**

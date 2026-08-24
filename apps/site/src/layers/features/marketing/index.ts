@@ -58,6 +58,21 @@ export type {
   ProductFrameVariant,
 } from './lib/features';
 
+// Comparison components
+export { ComparisonVerdict } from './ui/compare/ComparisonVerdict';
+export { ComparisonAudience } from './ui/compare/ComparisonAudience';
+export { ComparisonTable } from './ui/compare/ComparisonTable';
+export { ComparisonCriteria } from './ui/compare/ComparisonCriteria';
+export { ComparisonFaq } from './ui/compare/ComparisonFaq';
+export { ComparisonSources } from './ui/compare/ComparisonSources';
+export { CompetitorCard } from './ui/compare/CompetitorCard';
+
+// Data — comparison catalog. Only what the routes outside this slice consume:
+// the dimension list, the scoring helpers and the cell types stay internal,
+// where the comparison components import them by relative path.
+export { comparisons, COMPARISON_FRAMING_COPY } from './lib/comparisons';
+export type { Competitor, ComparisonFraming } from './lib/comparisons';
+
 // Data — product-media shot registry (published in manifest.json)
 export { PRODUCT_SHOTS, PRODUCT_SHOT_IDS, getProductShot, shotHasLoop } from './lib/shots';
 export type { ProductShotMeta, ShotConsumer, ShotKind, ShotFrame } from './lib/shots';

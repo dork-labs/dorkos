@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { features, PRODUCT_LABELS, type FeatureProduct } from '@/layers/features/marketing';
@@ -50,6 +51,14 @@ export default async function FeaturesPage(props: {
         </header>
 
         <FeatureCatalog features={features} initialProduct={initialProduct} />
+
+        <p className="text-warm-gray-light mt-12 text-sm">
+          Weighing DorkOS against something else?{' '}
+          <Link href="/compare" className="text-brand-orange hover:text-charcoal transition-smooth">
+            See the comparisons
+          </Link>
+          .
+        </p>
       </div>
 
       {/* Closing exit ramp — the established install pattern */}

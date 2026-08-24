@@ -3,7 +3,12 @@ import { MARKETPLACE_CATEGORIES } from '@dorkos/marketplace';
 import { siteConfig } from '@/config/site';
 import { source, blog } from '@/lib/source';
 import { gitLastModified } from '@/lib/metadata';
-import { features, CATEGORY_LABELS, type FeatureCategory } from '@/layers/features/marketing';
+import {
+  features,
+  comparisons,
+  CATEGORY_LABELS,
+  type FeatureCategory,
+} from '@/layers/features/marketing';
 import { fetchMarketplaceJson } from '@/layers/features/marketplace';
 
 const BASE_URL = siteConfig.url;
@@ -47,7 +52,8 @@ async function buildMarketplaceEntries(): Promise<MetadataRoute.Sitemap> {
  * Generate the sitemap for the DorkOS marketing site.
  *
  * `lastModified` carries a real signal or nothing at all: blog posts use their
- * frontmatter date, docs pages use the source file's git commit date, and static
+ * frontmatter date, docs pages use the source file's git commit date, comparison
+ * pages use the date their facts were last checked, and static
  * marketing/feature/marketplace pages omit it (no honest signal exists). Google
  * ignores `priority`/`changeFrequency`, so those are left as loose documentation.
  */
@@ -81,6 +87,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
+  // The hub has no honest modification signal, so it carries no `lastModified`.
+  // Each comparison page does: the date someone last checked its facts.
+  const comparePages: MetadataRoute.Sitemap = [
+    { url: `${BASE_URL}/compare`, changeFrequency: 'monthly', priority: 0.7 },
+    ...comparisons.map((competitor) => ({
+      url: `${BASE_URL}/compare/${competitor.slug}`,
+      lastModified: new Date(competitor.lastVerified),
+      changeFrequency: 'monthly' as const,
+      priority: 0.8,
+    })),
+  ];
+
   const docPages: MetadataRoute.Sitemap = source.getPages().map((page) => {
     const lastModified = gitLastModified(`docs/${page.path}`);
     return {
@@ -105,6 +123,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...featureCatalogPage,
     ...featurePages,
     ...featureCategoryPages,
+    ...comparePages,
     ...docPages,
     ...blogPages,
     ...marketplacePages,
