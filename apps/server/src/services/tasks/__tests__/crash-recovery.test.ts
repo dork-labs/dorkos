@@ -121,6 +121,35 @@ describe('sweepInterruptedRuns (DOR-1482)', () => {
     expect(store.getRun(withinLimit.id)!.status).toBe('running');
   });
 
+  it('never ends a run THIS process is executing, whatever the rules say', () => {
+    // The promotion case (DOR-1482 review). A process that stalls past the
+    // lock's stale TTL — a closed laptop is enough — has its lock stolen, and
+    // is promoted again on the next heartbeat. Rule 2 would then fail its OWN
+    // live scheduled run: written failed while its AbortController is still
+    // held, its real completion refused by the terminal guard, and a phone
+    // buzzing about work that is still going.
+    const task = store.createTask(taskInput({ name: 'Mine', cron: '0 * * * *' }));
+    const mine = store.createRun(task.id, 'scheduled');
+    const orphan = store.createRun(task.id, 'scheduled');
+
+    const result = sweepInterruptedRuns(store, leader, new Set([mine.id]));
+
+    expect(store.getRun(mine.id)!.status).toBe('running');
+    // A genuinely orphaned run beside it is still swept.
+    expect(store.getRun(orphan.id)!.status).toBe('failed');
+    expect(result.swept).toBe(1);
+    // And the run this process is driving can still finish for real.
+    expect(store.updateRun(mine.id, { status: 'completed' })!.status).toBe('completed');
+  });
+
+  it('excludes this process own runs even with no lock at all', () => {
+    const task = store.createTask(taskInput({ name: 'Solo mine', cron: '0 * * * *' }));
+    const mine = store.createRun(task.id, 'manual');
+
+    expect(sweepInterruptedRuns(store, null, new Set([mine.id])).swept).toBe(0);
+    expect(store.getRun(mine.id)!.status).toBe('running');
+  });
+
   it('never overwrites the finishedAt of a run that had already ended', () => {
     const task = store.createTask(taskInput({ name: 'Stuck', cron: '0 * * * *' }));
     const finished = store.createRun(task.id, 'scheduled');

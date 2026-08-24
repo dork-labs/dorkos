@@ -2,6 +2,7 @@
 covers:
   - 'fix(server,db,client): scheduled runs are owned, counted, pruned, and never silently dropped (DOR-1482)'
   - 'fix(server): the task MCP tools keep the running cron jobs in step (DOR-1493)'
+  - 'fix(server,client): retention never deletes a live run, and a skipped one says why (DOR-1482)'
 ---
 
 ### Fixed

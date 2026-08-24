@@ -45,6 +45,19 @@
  * A follower sweeps nothing at all. It is not entitled to fire, and it is not
  * entitled to end other processes' work either.
  *
+ * ## Runs this process is executing are never swept, by any rule
+ *
+ * The rules above reason about a run's PROBABLE owner. For one set of runs
+ * there is no need to reason: the ones this process is running itself, which it
+ * holds in {@link RunAccounting}. That matters because the sweep is not only a
+ * boot-time thing — a follower promoted when the leader dies sweeps at the
+ * moment of promotion, and by then it may well be executing runs of its own.
+ * A process that stalls past the lock's stale TTL (a closed laptop is enough)
+ * has its lock stolen and can be promoted again minutes later, and rule 2 would
+ * then fail its OWN live scheduled run: written failed while its
+ * `AbortController` is still held, its real completion refused by the terminal
+ * guard, and a `task_run_failed` raised about work that is still going.
+ *
  * @module services/tasks/crash-recovery
  */
 import type { TaskStore } from './task-store.js';
@@ -68,18 +81,24 @@ export interface InterruptedRunSweep {
  * @param store - The task store to read candidates from and write outcomes to.
  * @param leaderLock - This process's leader lock, or null when it has none
  *   (single-process and test setups, where this process is always the leader).
+ * @param liveHere - Runs this process is executing right now; never swept,
+ *   whatever the rules below would otherwise say about them.
  * @returns How many runs were ended and how many were left alone.
  */
 export function sweepInterruptedRuns(
   store: TaskStore,
-  leaderLock: LeaderLock | null
+  leaderLock: LeaderLock | null,
+  liveHere: ReadonlySet<string> = new Set()
 ): InterruptedRunSweep {
   // A follower ends nothing. Its own runs, if any, are covered by rule 3 on the
   // leader's next boot or by its own boot once it is promoted.
-  if (leaderLock && !leaderLock.isLeaderNow)
+  if (leaderLock && !leaderLock.isLeaderNow) {
     return { swept: 0, left: store.getRunningRuns().length };
+  }
 
-  const running = store.getRunningRuns();
+  // Whatever else is true below, a run THIS process is executing is not an
+  // orphan — see the note above about promotion.
+  const running = store.getRunningRuns().filter((run) => !liveHere.has(run.id));
   if (running.length === 0) return { swept: 0, left: 0 };
 
   // Rule 1: nobody else can own these rows.

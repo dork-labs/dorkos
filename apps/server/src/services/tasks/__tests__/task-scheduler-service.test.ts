@@ -844,7 +844,14 @@ describe('TaskSchedulerService', () => {
       vi.useRealTimers();
     });
 
-    it('prunes run history and the dispatch log every hour', async () => {
+    /** A run that is over — the only kind retention may ever delete. */
+    function finishedRun(taskId: string): string {
+      const run = store.createRun(taskId, 'scheduled');
+      store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      return run.id;
+    }
+
+    it('prunes finished run history and the dispatch log every hour', async () => {
       vi.useFakeTimers();
       const task = store.createTask(taskInput({ name: 'Chatty', cron: '* * * * *' }));
       const service = new TaskSchedulerService(store, mockAgent, {
@@ -855,12 +862,38 @@ describe('TaskSchedulerService', () => {
 
       // Four runs land AFTER boot — exactly what a per-minute task does to a
       // server that is never restarted.
-      for (let i = 0; i < 4; i++) store.createRun(task.id, 'scheduled');
+      for (let i = 0; i < 4; i++) finishedRun(task.id);
       expect(store.listRuns({ taskId: task.id })).toHaveLength(4);
 
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
 
       expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
+      await service.stop();
+    });
+
+    it('leaves a run that is still going, however far behind the window it is', async () => {
+      // Retention on a timer meets a long run: a relay-dispatched hourly task
+      // that takes 40 minutes is still `running` when the sweep comes round,
+      // and a per-minute task can bury it under a hundred newer rows. Deleting
+      // it would discard the outcome, silence the terminal hook, and hand back
+      // the concurrency slot it is holding (DOR-1482 review).
+      vi.useFakeTimers();
+      const task = store.createTask(taskInput({ name: 'Slow', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        retentionCount: 2,
+      });
+      await service.start();
+
+      const live = store.createRun(task.id, 'scheduled');
+      for (let i = 0; i < 6; i++) finishedRun(task.id);
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(store.getRun(live.id)).not.toBeNull();
+      expect(store.getRun(live.id)!.status).toBe('running');
+      // Its real ending still lands, and still counts.
+      expect(store.updateRun(live.id, { status: 'completed' })!.status).toBe('completed');
       await service.stop();
     });
 
@@ -874,8 +907,8 @@ describe('TaskSchedulerService', () => {
       await service.start();
       await service.stop();
 
-      store.createRun(task.id, 'scheduled');
-      store.createRun(task.id, 'scheduled');
+      finishedRun(task.id);
+      finishedRun(task.id);
       await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
 
       expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
@@ -883,6 +916,72 @@ describe('TaskSchedulerService', () => {
   });
 
   describe('crash recovery is the leader job alone (DOR-1482)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a promotion never ends the scheduled run this process is executing', async () => {
+      // The scenario (DOR-1482 review): this process WAS the leader and is
+      // running a scheduled task. It stalls past the lock's stale TTL — a closed
+      // laptop is enough — so another process steals the lock; then it comes
+      // back and is promoted again. The sweep that promotion triggers must not
+      // fail the run this process still has an AbortController for.
+      const task = store.createTask(taskInput({ name: 'Ours', cron: '0 * * * *' }));
+      const orphan = store.createRun(task.id, 'scheduled');
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      // Leadership is scripted by the test: `heartbeat()` is where a real lock
+      // re-reads the file and steps up or down, and these flips are what it
+      // would have found.
+      let leaderNow = true;
+      const flakyLock = {
+        tryAcquire: () => leaderNow,
+        heartbeat: () => {},
+        release: () => {},
+        get isLeaderNow() {
+          return leaderNow;
+        },
+      };
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: flakyLock,
+      });
+      await service.start();
+      // The boot sweep ended the orphan already; a fresh one stands in for what
+      // the process that held the lock in between leaves behind.
+      expect(store.getRun(orphan.id)!.status).toBe('failed');
+      const strandedByTheOtherProcess = store.createRun(task.id, 'scheduled');
+
+      // Our own scheduled run, in flight.
+      void (
+        service as unknown as {
+          dispatch(t: typeof task, when?: Date | null): Promise<void>;
+        }
+      ).dispatch(task, new Date(1_700_000_040_000));
+      await parked;
+      expect(service.getActiveRunCount()).toBe(1);
+      const mine = store
+        .listRuns({ taskId: task.id })
+        .find((run) => run.status === 'running' && run.id !== strandedByTheOtherProcess.id)!;
+
+      // Lock stolen while we were stalled, then handed back.
+      leaderNow = false;
+      const beat = (service as unknown as { onHeartbeat(): void }).onHeartbeat.bind(service);
+      beat();
+      leaderNow = true;
+      beat();
+
+      // Ours survives — and the other process's stranded run is swept, so this
+      // is not passing because the sweep did nothing.
+      expect(store.getRun(mine.id)!.status).toBe('running');
+      expect(store.getRun(strandedByTheOtherProcess.id)!.status).toBe('failed');
+
+      await service.stop();
+    });
+
     it('a follower boot leaves another process runs running', async () => {
       const task = store.createTask(taskInput({ name: 'Someone elses', cron: '0 * * * *' }));
       const live = store.createRun(task.id, 'scheduled');

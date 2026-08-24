@@ -443,15 +443,72 @@ describe('TaskStore', () => {
         .id;
     }
 
+    /**
+     * A run that is OVER — which is the only kind retention may delete.
+     *
+     * These cases used to build their history out of bare `createRun` calls,
+     * which leaves every row `running`. That made them assert the exact defect
+     * DOR-1482 found: retention deleting live work. Pruning ran once at boot
+     * back then, immediately after a sweep that had ended every running row, so
+     * nothing could observe it — but the assertion was wrong even then.
+     */
+    function finishedRun(taskId: string): string {
+      const run = store.createRun(taskId, 'scheduled');
+      store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      return run.id;
+    }
+
     it('prunes old runs keeping only retentionCount', () => {
       const taskId = createTestTask();
-      for (let i = 0; i < 5; i++) {
-        store.createRun(taskId, 'scheduled');
-      }
+      for (let i = 0; i < 5; i++) finishedRun(taskId);
 
       const pruned = store.pruneRuns(taskId, 2);
       expect(pruned).toBe(3);
       expect(store.countRuns(taskId)).toBe(2);
+    });
+
+    it('never deletes a run that has not finished, however old it is', () => {
+      // THE bug (DOR-1482 review): with retention on an hourly timer, a live run
+      // that has fallen behind the retention window was deleted mid-flight. The
+      // scheduler's terminal write then found no row, so the outcome was lost,
+      // the run-terminal hook never fired, and the concurrency slot the run was
+      // holding was handed back — the cap growing on its own.
+      const taskId = createTestTask();
+      const live = store.createRun(taskId, 'scheduled');
+      // Plenty of newer, finished history: the live run is nowhere near the
+      // newest `retentionCount` rows.
+      for (let i = 0; i < 5; i++) finishedRun(taskId);
+
+      const pruned = store.pruneRuns(taskId, 2);
+
+      expect(store.getRun(live.id)).not.toBeNull();
+      expect(store.getRun(live.id)!.status).toBe('running');
+      // Only finished rows outside the newest two were deleted — five finished
+      // rows, two kept — and the live one was never a candidate.
+      expect(pruned).toBe(3);
+      // And the run can still be completed for real afterwards.
+      expect(store.updateRun(live.id, { status: 'completed' })!.status).toBe('completed');
+    });
+
+    it('prunes a skipped run like any other finished one', () => {
+      const taskId = createTestTask();
+      store.claimScheduledRun(taskId, 1_700_000_000_000, {
+        status: 'skipped',
+        reason: 'DorkOS was busy',
+      });
+      for (let i = 0; i < 3; i++) finishedRun(taskId);
+
+      expect(store.pruneRuns(taskId, 1)).toBe(3);
+    });
+
+    it('keeps a live run even when retentionCount is 0', () => {
+      // The branch that used to delete the task's whole history unconditionally.
+      const taskId = createTestTask();
+      const live = store.createRun(taskId, 'scheduled');
+      finishedRun(taskId);
+
+      expect(store.pruneRuns(taskId, 0)).toBe(1);
+      expect(store.getRun(live.id)!.status).toBe('running');
     });
 
     it('does not prune other tasks', () => {
@@ -460,10 +517,8 @@ describe('TaskStore', () => {
         taskInput({ name: 'Other', prompt: 'test', cron: '* * * * *' })
       ).id;
 
-      for (let i = 0; i < 3; i++) {
-        store.createRun(taskId1, 'scheduled');
-      }
-      store.createRun(taskId2, 'scheduled');
+      for (let i = 0; i < 3; i++) finishedRun(taskId1);
+      finishedRun(taskId2);
 
       store.pruneRuns(taskId1, 1);
       expect(store.countRuns(taskId1)).toBe(1);
@@ -472,7 +527,7 @@ describe('TaskStore', () => {
 
     it('returns 0 when nothing to prune', () => {
       const taskId = createTestTask();
-      store.createRun(taskId, 'scheduled');
+      finishedRun(taskId);
       expect(store.pruneRuns(taskId, 10)).toBe(0);
     });
   });

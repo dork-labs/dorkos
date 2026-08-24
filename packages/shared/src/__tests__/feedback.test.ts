@@ -28,7 +28,7 @@ describe('sanitizeFlags', () => {
       'tunnel.authtoken': 'ngrok-secret-token',
       'mcp.apiKey': 'sk-live-1234567890',
       'server.cwd': '/Users/dorian/code/secret-project',
-      'scheduler.timezone': 'America/New_York',
+      'scheduler.maxConcurrentRuns': 4,
     });
     expect(result).toEqual({});
   });

@@ -113,6 +113,17 @@ export function isTerminalRunStatus(status: TaskRunStatus): boolean {
 }
 
 /**
+ * Every status that means a run is OVER, for queries that must not act on a run
+ * that is still going.
+ *
+ * The terminal set plus `timeout`, which exists only in the DB column's enum:
+ * no writer produces it today and the shared `TaskRunStatus` omits it, but a row
+ * carrying it is plainly finished, and both readers below would otherwise treat
+ * it as live for ever.
+ */
+const FINISHED_RUN_STATUSES = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
+
+/**
  * Callback fired exactly once when a run transitions to a terminal status
  * (DOR-240). The store stays a pure data layer: it holds this reference and
  * calls it fire-and-forget after the DB write — it contains no
@@ -349,7 +360,7 @@ export class TaskStore {
    * Update fields on an existing run. Returns the updated run or null.
    *
    * A run's outcome is immutable once terminal (`completed`/`failed`/
-   * `cancelled`, see {@link isTerminalRunStatus}): this is a no-op that
+   * `cancelled`/`skipped`, see {@link isTerminalRunStatus}): this is a no-op that
    * returns the run unchanged. This is the durable fix for DOR-248 — the
    * scheduler's post-publish `status: 'running'` write can lose a race with
    * the handler's own terminal write on synchronous (in-process) relay
@@ -459,7 +470,32 @@ export class TaskStore {
     return result?.count ?? 0;
   }
 
-  /** Prune old runs, keeping only the most recent `retentionCount` per task. */
+  /**
+   * Prune old runs, keeping the most recent `retentionCount` per task.
+   *
+   * **A run that has not finished is never deleted, however old it is.**
+   * Retention is about HISTORY, and a live run is not history — deleting its
+   * row mid-flight destroys the only record of work that is still happening:
+   * the scheduler's terminal write then finds nothing to update and the outcome
+   * is discarded, the run-terminal hook never fires (no notification, no
+   * attention badge), and the concurrency slot it was holding is silently
+   * handed back, so the cap quietly grows.
+   *
+   * This guard was not needed while pruning happened once, at startup, directly
+   * after a sweep that had just ended every running row — there was no live run
+   * left for it to hit. Both halves of that changed in DOR-1482: pruning now
+   * runs hourly, and the sweep deliberately leaves other processes' runs alone.
+   * So the protection has to be stated here rather than inherited from when it
+   * is called.
+   *
+   * Written as "delete only what is finished" rather than "skip `running`", so
+   * a status added later is protected by default and has to be opted IN to
+   * deletion.
+   *
+   * @param taskId - The task whose history is being trimmed.
+   * @param retentionCount - How many of the newest runs to keep.
+   * @returns How many rows were deleted.
+   */
   pruneRuns(taskId: string, retentionCount: number): number {
     const keepers = this.db
       .select({ id: pulseRuns.id })
@@ -471,14 +507,15 @@ export class TaskStore {
 
     const keeperIds = keepers.map((r) => r.id);
 
-    if (keeperIds.length === 0) {
-      const result = this.db.delete(pulseRuns).where(eq(pulseRuns.scheduleId, taskId)).run();
-      return result.changes;
-    }
+    const conditions = [
+      eq(pulseRuns.scheduleId, taskId),
+      inArray(pulseRuns.status, FINISHED_RUN_STATUSES),
+    ];
+    if (keeperIds.length > 0) conditions.push(notInArray(pulseRuns.id, keeperIds));
 
     const result = this.db
       .delete(pulseRuns)
-      .where(and(eq(pulseRuns.scheduleId, taskId), notInArray(pulseRuns.id, keeperIds)))
+      .where(and(...conditions))
       .run();
     return result.changes;
   }
@@ -672,10 +709,9 @@ export class TaskStore {
     // 'skipped' is excluded for the mirror-image reason: the agent never ran,
     // so the schedule neither succeeded nor failed. Counting a busy server
     // against the task's reliability would blame the task for the queue.
-    const reliabilityTerminalStatuses = [
-      ...[...TERMINAL_RUN_STATUSES].filter((status) => status !== 'skipped'),
-      'timeout' as const,
-    ];
+    const reliabilityTerminalStatuses = FINISHED_RUN_STATUSES.filter(
+      (status) => status !== 'skipped'
+    );
     const conditions = [inArray(pulseRuns.status, reliabilityTerminalStatuses)];
     if (scheduleId) {
       conditions.push(eq(pulseRuns.scheduleId, scheduleId));

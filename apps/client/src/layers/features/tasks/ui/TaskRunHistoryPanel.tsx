@@ -226,9 +226,22 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
             {firstLine(run.error)}
           </span>
         )}
+        {/* A skipped run carries its reason in the same column, in muted text
+            rather than the failure red: DorkOS being busy is not a fault of the
+            task, and the row is the only place a person ever learns the
+            occurrence was passed over (DOR-1482). */}
+        {run.status === 'skipped' && run.error && (
+          <span className="text-muted-foreground truncate" title={run.error}>
+            {firstLine(run.error)}
+          </span>
+        )}
       </span>
 
-      <span className="text-muted-foreground">{formatDuration(run.durationMs)}</span>
+      {/* No duration for a run that never started — a "< 1s" against a skipped
+          row reads as if it ran and finished instantly. */}
+      <span className="text-muted-foreground">
+        {run.status === 'skipped' ? '' : formatDuration(run.durationMs)}
+      </span>
 
       <span>
         {run.status === 'running' && (

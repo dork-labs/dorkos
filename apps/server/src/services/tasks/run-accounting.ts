@@ -80,6 +80,8 @@ export class RunAccounting {
   private runs = new Map<string, ActiveRun>();
 
   /**
+   * Build an empty registry.
+   *
    * @param store - Read-only here; used to ask whether a relay run has ended.
    */
   constructor(private readonly store: Pick<TaskStore, 'getRun'>) {}
@@ -148,6 +150,18 @@ export class RunAccounting {
   relayRunIds(): string[] {
     this.reapRelayRuns();
     return [...this.runs.entries()].filter(([, run]) => run.kind === 'relay').map(([id]) => id);
+  }
+
+  /**
+   * Every run this process is accountable for right now, on either path.
+   *
+   * Read by crash recovery, which must never end a run THIS process is still
+   * working on — the one case where "is anybody still running this?" has a
+   * definite local answer instead of a judgement about ownership.
+   */
+  heldRunIds(): ReadonlySet<string> {
+    this.reapRelayRuns();
+    return new Set(this.runs.keys());
   }
 
   /**

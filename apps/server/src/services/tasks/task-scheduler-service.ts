@@ -2,8 +2,6 @@ import { Cron } from 'croner';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
-import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
-import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
@@ -21,6 +19,7 @@ import { emitRunActivity } from './run-activity.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
 import { sweepInterruptedRuns } from './crash-recovery.js';
+import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
@@ -28,17 +27,6 @@ import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 export type { CancelRunOutcome } from './run-cancel.js';
 
 const logger = createTaggedLogger('Tasks');
-
-
-/**
- * How long one unschedulable task stays quiet after it has been reported.
- *
- * Matches `FAILURE_LOG_WINDOW_MS` in `task-reconciler.ts`, and for the same
- * reason: the reconciler's 5-minute pass re-syncs every task file forever, so
- * an undamped refusal is 288 identical lines a day. One line an hour keeps a
- * standing fault visible at a volume that reads.
- */
-const REFUSED_SCHEDULE_LOG_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * Derive a stable idempotency key for a scheduled occurrence (ADR-285).
@@ -177,14 +165,8 @@ export class TaskSchedulerService {
   private wasLeader = false;
   /** Backing field for {@link isStarted}. */
   private started = false;
-  /**
-   * One entry per task whose schedule croner refused, damping the log.
-   * See {@link reportRefusedSchedule}.
-   */
-  private refusedSchedules = new Map<
-    string,
-    { signature: string; lastLoggedAt: number; suppressed: number }
-  >();
+  /** Damps the log when a task's schedule cannot be run. See {@link RefusedScheduleLog}. */
+  private readonly refusedSchedules = new RefusedScheduleLog();
 
   constructor(
     store: TaskStore,
@@ -336,7 +318,14 @@ export class TaskSchedulerService {
    * `crash-recovery.ts` — never the unscoped sweep this used to be.
    */
   private recoverInterruptedRuns(): void {
-    const { swept, left } = sweepInterruptedRuns(this.store, this.leaderLock);
+    // The runs this process is executing go in as an exclusion set. At boot
+    // there are none; on a PROMOTION there may well be, and ending one of those
+    // would be this bug's own mistake made against ourselves.
+    const { swept, left } = sweepInterruptedRuns(
+      this.store,
+      this.leaderLock,
+      this.runs.heldRunIds()
+    );
     if (swept > 0) logger.info(`marked ${swept} interrupted run(s) as failed`);
     if (left > 0) {
       logger.debug(
@@ -464,67 +453,15 @@ export class TaskSchedulerService {
         });
       });
     } catch (err) {
-      this.reportRefusedSchedule(task, tz, err);
+      this.refusedSchedules.report(task, tz, err);
       return false;
     }
 
     // The schedule reads again, so the next refusal of this task is news.
-    this.refusedSchedules.delete(task.id);
+    this.refusedSchedules.clear(task.id);
     this.cronJobs.set(task.id, job);
     logger.debug(`registered task "${task.name}" (${task.cron})`);
     return true;
-  }
-
-  /**
-   * Say that a task's schedule cannot be run — at most once an hour per task.
-   *
-   * The log is the ONLY place this surfaces: the row keeps the schedule it was
-   * given and the cockpit keeps showing it, so an operator looking at a task
-   * that never fires needs this line to explain why. Giving the row a visible
-   * "broken" state needs a column and a screen that do not exist yet.
-   *
-   * Which is exactly why it has to be damped. The reconciler re-upserts every
-   * task file every five minutes and syncs each one through the registrar, so
-   * an undamped line here writes 288 identical stack traces a day for one typo
-   * — burying the failures an operator actually needs to see. This is the same
-   * hazard `TaskReconciler.report` damps on its own timer, and the same one
-   * `TaskStore.upsertFromFile` damps for a refused permission grant.
-   *
-   * The first occurrence of any distinct refusal always logs, in full and at
-   * `error`. Keyed on the SCHEDULE, not just the task, for the reason
-   * `upsertFromFile` gives: a task re-edited into a *different* bad schedule is
-   * a new fault, and must not be silenced by the one before it. When the window
-   * closes, a standing fault logs again carrying what it swallowed, so it reads
-   * as standing rather than as a fresh one-off.
-   *
-   * @param task - The task whose schedule croner refused.
-   * @param timezone - The timezone actually passed to croner, if any.
-   * @param err - What croner threw.
-   */
-  private reportRefusedSchedule(task: Task, timezone: string | undefined, err: unknown): void {
-    // JSON rather than a joined string, for the reason `TaskReconciler.report`
-    // gives: a delimiter is only unambiguous if it cannot appear in the parts.
-    const signature = JSON.stringify([task.cron, timezone ?? null]);
-    const now = Date.now();
-    const seen = this.refusedSchedules.get(task.id);
-
-    if (seen?.signature === signature && now - seen.lastLoggedAt < REFUSED_SCHEDULE_LOG_WINDOW_MS) {
-      seen.suppressed++;
-      return;
-    }
-
-    const repeats = seen?.signature === signature ? seen.suppressed : 0;
-    const stillFailing =
-      repeats > 0
-        ? ` (still failing; ${repeats} identical ${repeats === 1 ? 'report' : 'reports'} suppressed in the last hour)`
-        : '';
-    logger.error(
-      `task "${task.name}" has a schedule DorkOS cannot run (cron "${task.cron}"` +
-        `${timezone ? `, timezone "${timezone}"` : ''}) — it will not fire until the schedule is fixed` +
-        stillFailing,
-      logError(err)
-    );
-    this.refusedSchedules.set(task.id, { signature, lastLoggedAt: now, suppressed: 0 });
   }
 
   /** Unregister and stop a cron job. */
@@ -949,7 +886,8 @@ export class TaskSchedulerService {
         // same cancel in the activity feed twice, the second time attributed to
         // Tasks. A deadline or a shutdown abort has no such route emit, so it
         // still needs this one.
-        if (!operatorCancelled) emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
+        if (!operatorCancelled)
+          emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
       } else {
         this.store.updateRun(run.id, {
           status: 'completed',
@@ -976,5 +914,4 @@ export class TaskSchedulerService {
       this.runs.release(run.id);
     }
   }
-
 }
