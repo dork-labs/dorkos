@@ -4,11 +4,11 @@
 
 ## Tier 1: The story (lead with these everywhere)
 
-**1. Multi-runtime cockpit** (Claude Code, Codex, OpenCode; per-session choice)
+**1. Every agent in one place** (Claude Code, Codex, OpenCode; per-session choice)
 _Benefit:_ run any agent from one place; pick the right brain per task; never bet your workflow on one vendor.
 _Why #1:_ the claim no first party can make and no peer product has. It converts vendor competition into a DorkOS feature. Currently invisible on every marketing surface; fixing that is the single cheapest positioning win available.
 
-**2. The live fleet cockpit** (durable sessions, cross-client sync, multi-device)
+**2. The live fleet screen** (durable sessions, cross-client sync, multi-device)
 _Benefit:_ every session, every project, every device. Start in the terminal, review on your phone, approve from Obsidian; nothing is lost on refresh, restart, or reconnect.
 _Why:_ this is the daily-driver value that makes DorkOS the tab that stays open. The durable-stream engineering (snapshot/replay/live) is genuinely hard and genuinely done; peers show stale session lists.
 
@@ -59,7 +59,7 @@ _Why:_ differentiated UX craft; a strong demo beat rather than a reason to adopt
 
 **13. Workspaces** (directory-scoped sessions and bindings)
 _Benefit:_ the right agent in the right project, always.
-_Why:_ quietly load-bearing; markets as part of the cockpit story, not alone.
+_Why:_ quietly load-bearing; markets as part of the one-place story, not alone.
 
 **14. Extensions + extension API** (agent-built extensions, settings UI generation)
 _Benefit:_ your agents can extend their own control panel.
@@ -82,11 +82,11 @@ _Why:_ not a differentiator, but the absence would be one. Evaluation-stage proo
 Individual rankings undersell three compositions (founder insight, 2026-07-06):
 
 1. **The capability pipeline** = Marketplace superset (#5) x Harness sync (#15) x Tasks-are-skills (#3). Install any Claude Code plugin → it works in every harness you use → any of its skills can be scheduled as an autonomous job. Three clicks from "saw a plugin" to "it runs itself nightly, everywhere." No peer or first party composes these. Present as a 20-second demo, never as an explanation. (Full treatment: `02-positioning.md` §6.)
-2. **The privacy stack** = OpenCode local models x self-hosted x Trust controls (#6). A session that provably never leaves the machine, inside the same cockpit as the cloud runtimes. Converts "private by design" from a policy claim into a demo, and gives the r/LocalLLaMA audience a real reason to care.
+2. **The privacy stack** = OpenCode local models x self-hosted x Trust controls (#6). A session that provably never leaves the machine, inside the same window as the cloud runtimes. Converts "private by design" from a policy claim into a demo, and gives the r/LocalLLaMA audience a real reason to care.
 3. **Tasks-are-skills** on its own is also a quiet architectural flex: scheduling is not a separate subsystem to learn; a task is a skill with a clock. Worth one architecture essay; users feel it as "anything my agent can do, it can do on a schedule."
 
 ## What this ranking implies
 
-- **Site featured-6 should be:** Multi-runtime, Fleet cockpit, Tasks, Relay, Marketplace, Trust controls. (Today's featured set is Chat, Tasks, Relay, Agent Discovery, Topology Graph, MCP Server: it leads with #2/#3 material and two Tier-2/3 vision features while omitting #1 and #5 entirely.)
-- **The launch demo runs the tiers in order:** one cockpit with three runtimes (10s) → the fleet screen (10s) → schedule a task (15s) → the Telegram ping arrives (15s) → "and it's all on your machine, MIT" (5s).
+- **Site featured-6 should be:** Multi-runtime, Fleet screen, Tasks, Relay, Marketplace, Trust controls. (Today's featured set is Chat, Tasks, Relay, Agent Discovery, Topology Graph, MCP Server: it leads with #2/#3 material and two Tier-2/3 vision features while omitting #1 and #5 entirely.)
+- **The launch demo runs the tiers in order:** three runtimes in one window (10s) → the fleet screen (10s) → schedule a task (15s) → the Telegram ping arrives (15s) → "and it's all on your machine, MIT" (5s).
 - **Docs/blog depth goes to Tier 3:** that is where the architecture-reader persona converts.

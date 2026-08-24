@@ -1,13 +1,13 @@
 ---
 title: DorkOS 0.63.0
-description: When an agent needs you, DorkOS now makes sure you hear about it — a soft knock, one Inbox, your desktop, even your phone — and the whole cockpit got simpler and faster.
+description: When an agent needs you, DorkOS now makes sure you hear about it — a soft knock, one Inbox, your desktop, even your phone — and the whole app got simpler and faster.
 date: 2026-08-22
 author: DorkOS Team
 category: release
 tags: [release, notifications, scheduling, sidebar]
 ---
 
-When an agent needs you, DorkOS now makes sure you hear about it — a soft knock, one Inbox, your desktop, even your phone. And the whole cockpit got simpler and faster while it was at it.
+When an agent needs you, DorkOS now makes sure you hear about it — a soft knock, one Inbox, your desktop, even your phone. And the whole app got simpler and faster while it was at it.
 
 ## Highlights
 
@@ -17,9 +17,9 @@ When an agent needs you, DorkOS now makes sure you hear about it — a soft knoc
 
 **A scheduled job now makes its case before it runs.** When an agent proposes a schedule, you get a real card: who asked, why, and the exact times it would run — with a one-time test run so you can see what it does before you commit. Turning one down gives you a moment to change your mind.
 
-**The cockpit got simpler and faster.** The sidebar reads as two clean levels and every heading folds; every page shares one header style instead of naming itself twice; and reloading the app paints instantly from local memory instead of rebuilding in front of you. A busy agent even holds the message you send it and runs it when it's free, instead of asking you to resend.
+**The app got simpler and faster.** The sidebar reads as two clean levels and every heading folds; every page shares one header style instead of naming itself twice; and reloading the app paints instantly from local memory instead of rebuilding in front of you. A busy agent even holds the message you send it and runs it when it's free, instead of asking you to resend.
 
-[![The DorkOS cockpit with the simplified sidebar and one header bar](/product/archive/v0.63.0/cockpit-light.png)](/docs/concepts/sidebar)
+[![The DorkOS app with the simplified sidebar and one header bar](/product/archive/v0.63.0/cockpit-light.png)](/docs/concepts/sidebar)
 
 [![The Team page with its new tab-style view switcher](/product/archive/v0.63.0/agents-light.png)](/docs/guides/team)
 
@@ -132,7 +132,7 @@ When an agent needs you, DorkOS now makes sure you hear about it — a soft knoc
 - The three ways in still go where they always did. The head count in the header opens the list of members, an empty room's "Add agents" opens the picker ready to type, and the sidebar menu's Members, Add agents and Edit topic each open the part they name (DOR-1403)
 - Picking one of those from the sidebar now opens that room as well, so the panel is always about the room you are looking at (DOR-1403)
 - On a phone the panel slides over the room, the way the pop-up used to (DOR-1403)
-- Reloading the cockpit no longer opens with a second of empty panel. DorkOS remembers what your sidebar looked like last time — your channels, your agents, today's conversations, your pins — and paints the finished panel in the first frame, then quietly checks with the server behind it and updates anything that moved (DOR-1373)
+- Reloading the app no longer opens with a second of empty panel. DorkOS remembers what your sidebar looked like last time — your channels, your agents, today's conversations, your pins — and paints the finished panel in the first frame, then quietly checks with the server behind it and updates anything that moved (DOR-1373)
 - The sidebar redraws less. Muting a channel, filing one into a section, or the panel's own once-a-minute tick used to make every conversation row in the list redraw itself; now only the rows that actually changed do. Each row also waits until you reach for its menu before setting up what that menu can do, so a long list costs less just by being on screen (DOR-1375)
 - Pages stop saying their own name twice. The bar along the top already tells you where you are, so Marketplace, Marketplace Sources, Connections and Product feedback no longer repeat it as a big title underneath — each one opens with the line that actually explains it. Screen readers still announce the page name, so nothing is lost if you navigate by heading
 - The sidebar now moves when something changes that you did not change. Folding a section springs it shut and leaves a quiet count on the header ("12 · 3 unread"); a conversation that turns up in Heads up or Today slides in and flashes once instead of appearing out of nowhere; a list that reorders slides so your eye can follow the row you were reading; and dragging a row lifts it slightly, marks where it would land with a thin ring, and lets it settle into place. Nothing loops, nothing lasts longer than a blink, and if you have asked your computer for less motion, all of it is simply off.
@@ -181,7 +181,7 @@ When an agent needs you, DorkOS now makes sure you hear about it — a soft knoc
 - When any of this happens to a command you ran, the `dorkos` command line now shows you what the server actually said. It used to tell you your API key was the problem, which sent you to fix the wrong thing (DOR-1361)
 - What an agent is waiting for now reaches only the people who could answer it. In a group chat nobody sees it, because DorkOS cannot know who else is reading. And another agent on your machine no longer sees any of it: not in the fleet-wide list, not on the live feed, and not on a session's own stream. It could never answer one of these, and now it cannot read one either. Your own scripts, holding your API key, can still see them and still cannot answer them (DOR-1356)
 - Requests for permission to run something are no longer broadcast to every connection. An agent connecting to DorkOS with its own token no longer sees what other agents are asking you for permission to do, which brings these in line with the questions agents ask you (DOR-1383)
-- What the cockpit remembers is tied to the address it was talking to, so two DorkOS installs open in one browser never show each other's channels. It is forgotten when you sign out, when you update DorkOS, and after a day. Your conversations are never kept in the browser — and neither is anything waiting on your answer, so you are never shown a stale "three things need you" (DOR-1373)
+- What the app remembers is tied to the address it was talking to, so two DorkOS installs open in one browser never show each other's channels. It is forgotten when you sign out, when you update DorkOS, and after a day. Your conversations are never kept in the browser — and neither is anything waiting on your answer, so you are never shown a stale "three things need you" (DOR-1373)
 
 ## Install / Update
 

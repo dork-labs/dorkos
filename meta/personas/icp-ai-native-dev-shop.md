@@ -22,7 +22,7 @@
 - Uses GitHub, has CI/CD, ships weekly or faster
 - Comfortable with self-hosted open source tooling
 - Values control over convenience — would rather run their own infra than use a managed service
-- Uses two or more agent vendors (e.g., Claude Code + Codex) or wants local-model coverage for private repos — the strongest single adoption signal for the multi-runtime cockpit _(added 2026-07-06)_
+- Uses two or more agent vendors (e.g., Claude Code + Codex) or wants local-model coverage for private repos — the strongest single adoption signal for running every agent in one place _(added 2026-07-06)_
 
 ## Why They Adopt DorkOS
 

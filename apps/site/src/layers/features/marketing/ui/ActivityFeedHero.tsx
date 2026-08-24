@@ -381,8 +381,8 @@ export function ActivityFeedHero({ ctaText, ctaHref, showGithubLink }: ActivityF
         {/* Tagline */}
         <motion.div variants={REVEAL} className="mb-12">
           <p className="text-charcoal mx-auto max-w-2xl text-lg font-medium tracking-[-0.01em] text-balance md:text-xl">
-            Every coding agent you run: Claude Code, Codex, OpenCode. One cockpit. Your fleet,
-            scheduled, connected, and reporting back to you.
+            Every coding agent you run: Claude Code, Codex, OpenCode. One place. Scheduled,
+            connected, and reporting back to you.
           </p>
           <p className="text-warm-gray mx-auto mt-4 max-w-2xl text-base text-balance md:text-lg">
             You&apos;ve always had more ideas than hours. That ratio just changed.

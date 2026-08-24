@@ -12,14 +12,14 @@ _openapi:
     contents:
       - content: 'One `authorId → sessionId` pair per agent that has answered in this
           room, and nothing else — no session content, no working directory, no
-          status. The narrowness is the point: this exists so a cockpit can turn
-          "Meeting Notes is working on it" into a link you can follow, and a
-          route that answered more would be a second way to read a session,
-          reached through a room. A room the caller cannot see answers 404,
-          exactly as reading the room does. **Only a person may ask** — an agent
-          enumerating its room-mates'' sessions is arbitration this domain has
-          declined, so a caller whose `X-DorkOS-Agent` token resolves to a live
-          agent is refused 403 `PEOPLE_ONLY`, and one whose token does not
+          status. The narrowness is the point: this exists so a DorkOS client
+          can turn "Meeting Notes is working on it" into a link you can follow,
+          and a route that answered more would be a second way to read a
+          session, reached through a room. A room the caller cannot see answers
+          404, exactly as reading the room does. **Only a person may ask** — an
+          agent enumerating its room-mates'' sessions is arbitration this domain
+          has declined, so a caller whose `X-DorkOS-Agent` token resolves to a
+          live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not
           resolve is refused 401 before the room is looked up at all. A revoked
           agent is still an agent.'
 ---

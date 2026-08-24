@@ -49,7 +49,7 @@ The intelligence comes from the agents. Everything else comes from DorkOS.
 
 DorkOS doesn't depend on any single AI agent. It's built on the `AgentRuntime` interface — a defined contract for session management, message streaming, tool approvals, and command discovery. This isn't just positioning: DorkOS routes, the shared schema layer, and the React client have zero direct SDK dependencies. The agent-agnostic claim is structurally enforced, not aspirational.
 
-Three runtimes are shipped today _(updated 2026-07-06)_: **Claude Code** (via Anthropic's Agent SDK), **Codex** (via the OpenAI SDK, thread-based), and **OpenCode** (managed sidecar, bringing 75+ providers including local models). Runtime choice is per-session; every runtime passes the same conformance suite; and OpenCode's local-model support means a session can run entirely offline, on your machine, in the same cockpit as the cloud runtimes.
+Three runtimes are shipped today _(updated 2026-07-06)_: **Claude Code** (via Anthropic's Agent SDK), **Codex** (via the OpenAI SDK, thread-based), and **OpenCode** (managed sidecar, bringing 75+ providers including local models). Runtime choice is per-session; every runtime passes the same conformance suite; and OpenCode's local-model support means a session can run entirely offline, on your machine, in the same window as the cloud runtimes.
 
 Adding another backend means implementing the same defined interface: start a session, send messages, stream responses, handle tool approvals. The core DorkOS coordination layer — scheduling, messaging, the mesh, the console — works with any runtime that conforms to this contract.
 

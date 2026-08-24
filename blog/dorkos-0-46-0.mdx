@@ -119,7 +119,7 @@ After your agent opens a page in the workbench browser, it can read the console 
 - Codex and OpenCode conversations now keep their history when the DorkOS server restarts. Every completed reply is saved to disk the moment its turn finishes, so the full conversation is right where you left it.
 - OpenCode sessions keep the same id after you restart the DorkOS server. Before, a restart quietly re-keyed every OpenCode conversation under a new id, so bookmarks and open tabs hit a dead "session not found" page while the same conversation reappeared in the list as a stranger (DOR-251)
 - Codex sessions no longer slowly fill your disk with logs; the Codex engine no longer writes endless debug records to its log database (DOR-188)
-- Sessions that don't belong to any project no longer get announced to every open cockpit. Before, a Codex or OpenCode session with no working directory could show up as a nameless ghost row under agents it had nothing to do with (DOR-202)
+- Sessions that don't belong to any project no longer get announced to every open DorkOS window. Before, a Codex or OpenCode session with no working directory could show up as a nameless ghost row under agents it had nothing to do with (DOR-202)
 - Enabling a coding agent whose command-line tool isn't installed no longer stops DorkOS from starting; that agent is skipped with a warning and everything else works.
 
 **Scheduled tasks and usage**

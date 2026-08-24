@@ -4,8 +4,8 @@
 
 ## Block A: Free wins lying on the ground (this week, mostly hours each)
 
-1. **Fix the GitHub repo description** [human, 2 min]: "Intelligence doesn't scale. Coordination does. Mission control for Claude Code, Codex, and OpenCode: scheduling, messaging, agent discovery. Self-hosted, MIT." Add topics/tags (ai-agents, claude-code, codex, self-hosted, mcp, orchestration, meta-harness).
-2. **README overhaul** [semi]: hero GIF of the cockpit, the positioning line, the 5-minute path, badges (npm version, MIT, CI), honest status section, link ladder (site/docs/discord). The README is the real landing page for launch traffic.
+1. **Fix the GitHub repo description** [human, 2 min]: "Intelligence doesn't scale. Coordination does. One place for Claude Code, Codex, and OpenCode: scheduling, messaging, agent discovery. Self-hosted, MIT." Add topics/tags (ai-agents, claude-code, codex, self-hosted, mcp, orchestration, meta-harness).
+2. **README overhaul** [semi]: hero GIF of the app, the positioning line, the 5-minute path, badges (npm version, MIT, CI), honest status section, link ladder (site/docs/discord). The README is the real landing page for launch traffic.
 3. **Site quick fixes** from `07-website-changes.md` §1 [semi]: the 404 docs links above all.
 4. **Submit to every relevant list** [semi, one-time each]: awesome-agent-orchestrators, awesome-harness-engineering, awesome-cli-coding-agents, awesome-selfhosted, awesome-mcp lists, alternativeto.net, selfh.st, Obsidian plugin directory (the big one), openalternative.co. Agent drafts the PRs; human submits.
 5. **Social profiles coherence** [human, 1 hr]: X bio, GitHub org page, dorkos.ai footer all carry the same one-liner and link. dork-labs org README with the logo and thesis.
@@ -14,7 +14,7 @@
 
 ## Block B: The launch assets (weeks 1-3, the real work)
 
-8. **The 60-second cockpit video** [human directs, agent-assisted]: screen capture of the 5-minute path compressed to 60s, silent-with-captions version for embeds/X, voiceover version for YouTube. This single asset feeds the hero, README, HN, PH, and every social post. Playwright infra (`apps/e2e`) can drive the app for perfectly reproducible captures [auto for re-takes on each release].
+8. **The 60-second product video** [human directs, agent-assisted]: screen capture of the 5-minute path compressed to 60s, silent-with-captions version for embeds/X, voiceover version for YouTube. This single asset feeds the hero, README, HN, PH, and every social post. Playwright infra (`apps/e2e`) can drive the app for perfectly reproducible captures [auto for re-takes on each release].
 9. **Screenshot pipeline** [auto]: a Task that boots dev, seeds demo data, drives Playwright through the money screens (fleet view, session, approval, task run, topology, marketplace), and exports themed PNGs. Run on every release: screenshots never go stale, and each release tweet gets fresh visuals for free.
 10. **Show HN post + first comment** [human]: drafted, reviewed cold a week later, tested on one friendly reader. The founder story belongs in the first comment, not the post.
 11. **Product Hunt kit** [semi]: gallery from the screenshot pipeline, maker story from /story assets.

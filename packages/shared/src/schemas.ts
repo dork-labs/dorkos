@@ -4647,7 +4647,7 @@ export const UiSidebarTabSchema = z
   .describe(
     "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
       "'connections'). The sidebar tab strip exists only in the embedded " +
-      '(Obsidian) app; on the web cockpit there is no strip, so switching a ' +
+      '(Obsidian) app; in the web app there is no strip, so switching a ' +
       'sidebar tab is a no-op there.'
   )
   .openapi('UiSidebarTab');

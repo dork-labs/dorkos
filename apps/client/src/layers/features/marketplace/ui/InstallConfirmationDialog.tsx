@@ -216,7 +216,7 @@ export function InstallConfirmationDialog() {
             <div className="shrink-0 space-y-2 px-4 sm:px-6">
               {isShape ? (
                 <p className="text-muted-foreground text-sm">
-                  Shapes set up your whole cockpit, so they install once for you — not per agent.
+                  Shapes set up your whole app, so they install once for you, not per agent.
                 </p>
               ) : (
                 <>

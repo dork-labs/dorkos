@@ -12,7 +12,7 @@ DorkOS delivers all real-time state over two durable streams: a per-session even
 <Callout type="info">
   **Both streams are also WebSocket endpoints, at the same URLs.** Server-Sent Events is the
   documented contract for integrations and is not going anywhere — everything on this page keeps
-  working. The DorkOS cockpit itself connects over WebSocket, for a browser-specific reason that
+  working. The DorkOS app itself connects over WebSocket, for a browser-specific reason that
   probably does not apply to you: a browser allows only about six connections per origin, and an SSE
   stream holds one open for as long as it lasts, so a few browser windows would use them all up. A
   script, a server, or a CLI has no such limit. Use SSE unless you are writing something that runs
@@ -294,7 +294,7 @@ Content-Type: application/json
 
 ## The Message Queue
 
-Every session has one queue, and the server holds it. A message sent while a turn is running lands there and runs when that turn ends; a message sent to an idle session runs immediately and never appears. The queue belongs to the session rather than to whoever filled it, so a message queued by the cockpit is visible to your integration, and one queued by your integration is visible in every open browser window. It survives a dropped connection, a reconnect, and a server restart.
+Every session has one queue, and the server holds it. A message sent while a turn is running lands there and runs when that turn ends; a message sent to an idle session runs immediately and never appears. The queue belongs to the session rather than to whoever filled it, so a message queued in the app is visible to your integration, and one queued by your integration is visible in every open browser window. It survives a dropped connection, a reconnect, and a server restart.
 
 You learn the queue two ways, and they carry the same list:
 

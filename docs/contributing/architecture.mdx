@@ -467,7 +467,7 @@ Runtimes yield internal `StreamEvent` objects; the per-session projector normali
 
 ## Session Event Stream
 
-All session state is delivered on a durable per-session stream: `GET /api/sessions/:id/events`. The cockpit opens it as a WebSocket and integrations may open the same path as SSE (ADR 260805-041016). A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect the resume cursor (`Last-Event-ID` over SSE, `?resume=` over a socket) resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: CLI writes and turns triggered by other clients appear in the DorkOS UI automatically.
+All session state is delivered on a durable per-session stream: `GET /api/sessions/:id/events`. The DorkOS client opens it as a WebSocket and integrations may open the same path as SSE (ADR 260805-041016). A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect the resume cursor (`Last-Event-ID` over SSE, `?resume=` over a socket) resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: CLI writes and turns triggered by other clients appear in the DorkOS UI automatically.
 
 The session list stays live via the global `GET /api/events` stream (`session_upserted` / `session_removed` / `session_status`), with no polling.
 

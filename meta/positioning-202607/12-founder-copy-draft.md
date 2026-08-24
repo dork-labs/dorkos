@@ -13,7 +13,7 @@ X profile bios cap at 160 characters. All four options below fit with room to sp
 **Option A — product-forward (128 chars), tagline last**
 
 ```
-Building DorkOS: mission control for every coding agent you run. Claude Code, Codex, and OpenCode, one cockpit. You, multiplied.
+Building DorkOS: one place for every AI agent you run. Claude Code, Codex, and OpenCode, one window. You, multiplied.
 ```
 
 **Option B — founder-forward (137 chars), leans on the origin story**
@@ -25,13 +25,13 @@ Self-taught in Section 8 housing. Shipped to 30M users. Now building DorkOS, so 
 **Option C — shortest, tagline-first (118 chars), includes the repo link**
 
 ```
-DorkOS: You, multiplied. Open source mission control for Claude Code, Codex, and OpenCode. github.com/dork-labs/dorkos
+DorkOS: You, multiplied. Open source, and one place for Claude Code, Codex, and OpenCode. github.com/dork-labs/dorkos
 ```
 
 **Option D — plain founder line (116 chars)**
 
 ```
-Founder, DorkOS. Open source mission control for every coding agent you run. One person, one fleet. You, multiplied.
+Founder, DorkOS. Open source, and one place for every AI agent you run. One person, one fleet. You, multiplied.
 ```
 
 **Recommendation:** Option A for launch week (it leads with what DorkOS does, not who built it — X bios get maybe two seconds of attention from a stranger). Switch to Option B once the "about/why" page (`07-website-changes.md` §4.3) ships and the origin story has somewhere to send people who click through.
@@ -45,7 +45,7 @@ rendered on the org homepage.
 ### Short description field
 
 ```
-Open source mission control for every coding agent you run. Building DorkOS.
+Open source, and one place for every AI agent you run. Building DorkOS.
 ```
 
 (78 characters — well inside GitHub's field.)
@@ -57,7 +57,7 @@ If Dorian wants the fuller org homepage treatment, a draft README body:
 ```markdown
 # DorkOS
 
-Mission control for every coding agent you run. One cockpit for Claude Code, Codex, and
+One place for every AI agent you run. One window for Claude Code, Codex, and
 OpenCode, so you can see what your agents are doing, hand them work on a schedule, and
 step in only when they need you.
 

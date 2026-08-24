@@ -21,7 +21,7 @@ Ikechi doesn't write code — he ships products anyway. He builds websites and a
 
 He is a **power user without being a programmer** — the combination the industry keeps insisting doesn't exist. The dabbler anti-persona wants a hosted chat app; Ikechi self-hosts a coordination layer. What separates him from Jordan Wells is not skill, it's **operator mentality**: he wants to own and run his system, and he'll climb whatever learning curve that requires.
 
-DorkOS is load-bearing for Ikechi in a way it isn't for Kai. Kai could approximate the cockpit with tmux and shell scripts; Ikechi cannot. Without the coordination layer, he has no access to this way of working at all.
+DorkOS is load-bearing for Ikechi in a way it isn't for Kai. Kai could approximate DorkOS with tmux and shell scripts; Ikechi cannot. Without the coordination layer, he has no access to this way of working at all.
 
 ## Trigger
 

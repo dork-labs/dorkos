@@ -11,7 +11,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 The **A2A gateway** exposes your registered DorkOS agents to any external client that speaks Google's [Agent-to-Agent (A2A) protocol](https://github.com/google-a2a/A2A). A2A is a JSON-RPC surface. An external orchestrator discovers your agents through an **Agent Card**, then sends messages to them over a standard method set.
 
-This is developer reference: it assumes you're wiring up an external A2A client against a running DorkOS instance, not just using the cockpit day to day.
+This is developer reference: it assumes you're wiring up an external A2A client against a running DorkOS instance, not just using DorkOS day to day.
 
 <Callout type="warn">
   A2A is an **external, network-facing** surface. It is off by default and, when enabled, is guarded
@@ -23,7 +23,7 @@ This is developer reference: it assumes you're wiring up an external A2A client 
 
 The gateway is off until you turn it on, and it needs Relay running. There are two ways to turn it on.
 
-**In the cockpit.** Open **Settings → Experiments** and flip "Let outside agents reach yours". DorkOS reads it once when it starts, so restart to pick up the change.
+**In the app.** Open **Settings → Experiments** and flip "Let outside agents reach yours". DorkOS reads it once when it starts, so restart to pick up the change.
 
 **By environment variable**, for a headless deployment:
 
@@ -200,7 +200,7 @@ To use the **fleet** endpoint instead, drop the per-agent card and set `metadata
 
 The gateway is engineered to fail closed. Understand these before exposing it:
 
-- **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server **refuses to mount** the A2A gateway and its well-known card routes, and logs the fix: set `MCP_API_KEY` or enable login. The loopback cockpit stays usable. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
+- **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server **refuses to mount** the A2A gateway and its well-known card routes, and logs the fix: set `MCP_API_KEY` or enable login. DorkOS itself stays usable on your own machine. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
 - **Advertised URL.** Behind a proxy or tunnel, set `DORKOS_PUBLIC_URL` so cards advertise a routable URL instead of the non-routable `http://0.0.0.0:PORT` bind.
 - **Rate limiting assumes one trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app trusts a single proxy hop (`X-Forwarded-For`), correct behind one reverse proxy or tunnel (e.g. ngrok). On a **direct** public bind a client can spoof `X-Forwarded-For` to spread requests across buckets, so the limiter is not a security boundary there. Put a trusted proxy in front, or rely on auth.
 - **`contextId` is not a per-principal boundary**: see the caveat above.

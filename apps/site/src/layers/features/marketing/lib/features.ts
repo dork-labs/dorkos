@@ -130,6 +130,10 @@ export type ProductSurface =
   | 'canvas'
   | 'canvas-editing'
   | 'chat-streaming'
+  // Internal media key only, never rendered as words. DOR-1517 retired
+  // "cockpit" from everything a visitor reads, but this name keys
+  // `cockpit-light.png` in `public/product/manifest.json` and in every
+  // archived per-version manifest, so renaming it would orphan that media.
   | 'cockpit'
   | 'control-center'
   | 'gen-ui-tictactoe'
@@ -254,7 +258,7 @@ export interface Feature {
 export const features: Feature[] = [
   // === RUNTIMES ===
   {
-    slug: 'multi-runtime-cockpit',
+    slug: 'every-agent-one-place',
     name: 'Every Agent, One Place',
     product: 'runtimes',
     category: 'agent-control',
@@ -299,7 +303,7 @@ export const features: Feature[] = [
     ],
     moment:
       'Your work agent bills the work account, and your side project bills your own. You choose once per agent, and every session it starts follows that choice.',
-    relatedFeatures: ['multi-runtime-cockpit', 'control-center', 'workspaces'],
+    relatedFeatures: ['every-agent-one-place', 'control-center', 'workspaces'],
     sortOrder: 2,
   },
 
@@ -410,7 +414,7 @@ export const features: Feature[] = [
       crop: 'top',
     },
     docsUrl: '/docs/concepts/sessions',
-    relatedFeatures: ['chat-interface', 'multi-runtime-cockpit', 'canvas'],
+    relatedFeatures: ['chat-interface', 'every-agent-one-place', 'canvas'],
     sortOrder: 3,
   },
   {
@@ -585,7 +589,7 @@ export const features: Feature[] = [
     moment:
       'You open a session for the API project and the right agent is already loaded. You never had to point it at the folder again; the workspace remembered for you.',
     docsUrl: '/docs/guides/workspaces',
-    relatedFeatures: ['chat-interface', 'multi-runtime-cockpit'],
+    relatedFeatures: ['chat-interface', 'every-agent-one-place'],
     sortOrder: 8,
   },
   {
@@ -661,7 +665,7 @@ export const features: Feature[] = [
     relatedFeatures: [
       'tool-approval',
       'action-approvals',
-      'multi-runtime-cockpit',
+      'every-agent-one-place',
       'task-scheduler',
     ],
     sortOrder: 11,
@@ -1161,7 +1165,7 @@ export const features: Feature[] = [
  * The slug is deliberately older than the name it renders: renaming it means
  * redirecting a published URL, which is scoped to DOR-1517.
  */
-export const FLAGSHIP_SLUG = 'multi-runtime-cockpit';
+export const FLAGSHIP_SLUG = 'every-agent-one-place';
 
 /**
  * Bento tile footprint for a feature card. A *presentation hint derived from

@@ -80,6 +80,12 @@ export interface Shot {
  */
 export const SHOTS: readonly Shot[] = [
   // --- Desktop stills (marketing; several also embed in the docs) ---
+  // `cockpit` keeps a word the product no longer says (DOR-1517 retired
+  // "cockpit" and "mission control" from all user-facing prose). The id is a
+  // purely internal key, and it names `cockpit-light.png` in the live
+  // `public/product/manifest.json` plus every archived per-version manifest
+  // back to v0.46.0. Renaming it would orphan that generated media, which no
+  // visitor ever sees a word of, so the key stays and the copy moved on.
   { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'agents', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'tasks', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },

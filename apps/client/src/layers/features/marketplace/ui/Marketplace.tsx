@@ -39,7 +39,7 @@ export function Marketplace() {
           <p className="text-muted-foreground text-sm">
             {view === 'installed'
               ? 'Manage every package installed across your global and per-agent scopes.'
-              : 'Browse and install packages for your agents and cockpit from the DorkOS marketplace.'}
+              : 'Browse and install packages for your agents and for DorkOS itself.'}
           </p>
         </div>
         <Tabs value={view} onValueChange={(next) => setView(next as MarketplaceView)}>

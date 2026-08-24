@@ -12,7 +12,7 @@
 
 **You, multiplied.**
 
-DorkOS is mission control for every coding agent you run: Claude Code, Codex, and OpenCode, in one cockpit. See every session, approve what your agents do, and put them on a schedule, all on your own machine.
+DorkOS is one place for every AI agent you run: Claude Code, Codex, and OpenCode, in one window. See every session, approve what your agents do, and put them on a schedule, all on your own machine.
 
 **Alpha, and moving fast.** DorkOS is built in the open by one person and a fleet of agents. Expect rough edges. [File an issue](https://github.com/dork-labs/dorkos/issues) and we'll get to it.
 

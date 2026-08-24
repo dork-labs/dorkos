@@ -289,6 +289,14 @@ jobs:
       - name: Format-changed hook fixtures
         run: bash scripts/test-format-changed.sh
 
+      # Pins scripts/check-banned-words.sh, the DOR-1517 prose guard. The guard
+      # itself runs in the `typecheck` workflow (already a required check, and
+      # it reports on merge_group); this step proves the guard still goes red on
+      # a seeded violation and still stays green on all four things that sweep
+      # deliberately kept. A guard nobody has watched fail is not a gate.
+      - name: Banned-words prose guard fixtures
+        run: bash scripts/test-check-banned-words.sh
+
       # check-vocab-gate.ts (DOR-855) rides this step rather than getting a
       # dedicated one: its own pin suite (__tests__/check-vocab-gate.test.ts)
       # includes a "regression canary" test that runs the real gate against

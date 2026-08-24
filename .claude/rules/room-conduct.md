@@ -382,7 +382,7 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   through `runOne` anyway and would let a bypass pass unnoticed. The indicator
   may also carry WHAT the turn is doing — the tool and its one argument, as
   `SessionActivity` (DOR-1351) — and that argument never leaves this operator's
-  own cockpit: it is stripped at the chat-bridge forwarder and at the
+  own screen: it is stripped at the chat-bridge forwarder and at the
   `CommunityAdapter` port (`withoutActivityTarget`, ADR `260819-022127`), for the
   same reason the waiting notice above refuses to name a file or a command in
   front of everybody else.
@@ -532,7 +532,7 @@ Current as of 2026-07-31; fix them rather than working around them.
   the whole reason nothing durable is written when a hold opens. What the person
   is left with is an unread message and a room that no longer owes it a turn,
   and nothing on the log claiming otherwise.
-- No room is bridged to a chat platform. Room presence reaches the cockpit
+- No room is bridged to a chat platform. Room presence reaches the app
   (`RoomService.publishSignal` → the room's event stream) and stops there. The
   Telegram adapter keeps a signal seam for it (`handleTypingSignal`), but
   nothing publishes into it yet, so a Telegram chat cannot show a room's

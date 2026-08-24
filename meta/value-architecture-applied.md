@@ -15,13 +15,13 @@ The July 2026 positioning review updates this document's outputs without rerunni
 **Message House v2** (supersedes Phase 3A's pillars; roof updated 2026-07-09):
 
 - **Roof:** **You, multiplied.** — one person, shipping like a team. _(Changed 2026-07-09: the old roof, "Intelligence doesn't scale. Coordination does.", was a Layer 2 mechanism claim sitting where a Layer 5 identity claim belongs — a defect by this framework's own construction rules. It demotes to the manifesto line and anchors the 4C anti-positioning template, where naming the paradigm is the job. The customer is the subject of the roof.)_
-- **Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
+- **Pillar 1: All your agents, one place.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
 - **Pillar 2: A team, not tabs.** Schedules, messages, discovery; agents that ping your phone and find each other. _Proof:_ the 5-minute path, a real night-run receipt.
 - **Pillar 3: Yours, and safe to run.** Self-hosted, MIT, listens only on your own machine by default, honest data-flow; fully-local sessions via OpenCode local models. _Proof:_ threat model page, localhost defaults, an offline-session demo, readable source. (Not "secure by default", and not "sign-in required the moment you expose it": both are false for the Docker image, which opts out of the bind guard. See the downstream copy rule in `positioning-202607/02-positioning.md` §Pillar 3.)
 
 **Two new value ladders** (full five-layer treatment to be authored in the 1.0 format):
 
-- **VL-11 Multi-Runtime Cockpit.** Feature: three runtimes behind one conformance-tested interface, per-session choice. Mechanism: routes/clients/schemas have zero SDK dependence, so no vendor can be load-bearing. Functional: run every agent from one place; pick the right brain per task. Emotional: never bet your workflow on one vendor again. Identity: "I don't get locked in; my system outlasts their roadmaps." Proof anchor: switch runtimes live in one session list; survive a (simulated) vendor outage.
+- **VL-11 Every Agent In One Place.** Feature: three runtimes behind one conformance-tested interface, per-session choice. Mechanism: routes/clients/schemas have zero SDK dependence, so no vendor can be load-bearing. Functional: run every agent from one place; pick the right brain per task. Emotional: never bet your workflow on one vendor again. Identity: "I don't get locked in; my system outlasts their roadmaps." Proof anchor: switch runtimes live in one session list; survive a (simulated) vendor outage.
 - **VL-12 Marketplace + Ecosystem Judo.** Feature: marketplace is a strict superset of the Claude Code plugin format; harness sync projects installs to every harness; tasks are skills with metadata. Mechanism: one package format, three force multipliers. Functional: install any Claude Code plugin, it works in every tool you use, and any of its skills can run on a schedule. Emotional: your tools compound instead of fragmenting. Identity: "my capability library works everywhere and runs itself." Proof anchor: the 20-second install → sync → schedule demo. _(Verify the superset claim on real plugins before public use.)_
 
 **Status changes:** VL-08 (Wing/persistent memory) is **vision-stage**: activation templates must not draw on it. Autonomy ladders (VL-01) demote from hero to proof in discovery-stage messaging; VL-11 leads. Functional proof placeholders can now use: 3 runtimes / 1 interface, 44 public releases in 5 months, 4 client surfaces, marketplace live. Social-proof fields remain placeholders until launch.
@@ -191,7 +191,7 @@ feature: 'Cron-based agent scheduling with overrun protection, isolated sessions
 # Layer 2: Mechanism
 mechanism:
   alternative: 'Manually invoke your agent from the terminal every time you want work done. Or: cobble together shell scripts and cron. Anthropic will schedule Claude for you, but you have to pick a half — a cloud run (Cowork task or Claude Code Routine) that works from files in your Claude account or a fresh GitHub clone and never sees your working copy, or one of the paths that does reach your disk (a Cowork task needing local files, a cloud session on a connected folder, a Claude Code Desktop local task), each of which only runs while the app is open and your computer is awake. Either way it schedules Claude, and only Claude.'
-  differentiator: 'Pulse schedules every runtime you use — Claude Code, Codex, and OpenCode — from one place, and it runs where your code already is, so a scheduled run sees your actual working directory, uncommitted changes included, and your repos never leave your machine. Run it on your laptop, a home server, or a $5 VPS. Every run shows up as a session in the cockpit you can read and steer. Overrun protection prevents duplicate runs. Approval gates prevent runaway autonomous execution.'
+  differentiator: 'Pulse schedules every runtime you use — Claude Code, Codex, and OpenCode — from one place, and it runs where your code already is, so a scheduled run sees your actual working directory, uncommitted changes included, and your repos never leave your machine. Run it on your laptop, a home server, or a $5 VPS. Every run shows up as a session you can read and steer. Overrun protection prevents duplicate runs. Approval gates prevent runaway autonomous execution.'
 
 # Layer 3: Functional Benefit
 functional: 'Your agents ship code, triage issues, and run audits overnight. You wake up to completed pull requests, not a stale terminal waiting for your next prompt.'
@@ -763,7 +763,7 @@ messages:
 ```
 YOU, MULTIPLIED.
 
-Every coding agent you run — Claude Code, Codex, OpenCode — in one cockpit.
+Every coding agent you run — Claude Code, Codex, OpenCode — in one place.
 Your fleet, scheduled, connected, and reporting back to you.
 You've always had more ideas than hours. That ratio just changed.
 

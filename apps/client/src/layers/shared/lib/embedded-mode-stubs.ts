@@ -1062,11 +1062,11 @@ export const connectorStubs = {
 
 /** The one honest notice every refused connector write carries (spec OQ4). */
 const EMBEDDED_CONNECTORS_NOTICE =
-  'Connections can only be managed from the web cockpit — open DorkOS in your browser to connect services.';
+  'Connections can only be managed in DorkOS itself. Open DorkOS in your browser to connect services.';
 
 /** The one honest notice every refused managed-MCP write carries. */
 const EMBEDDED_MCP_NOTICE =
-  'MCP servers can only be managed from the web cockpit — open DorkOS in your browser to add or change them.';
+  'MCP servers can only be managed in DorkOS itself. Open DorkOS in your browser to add or change them.';
 
 /**
  * Managed per-agent MCP servers (spec `mcp-server-management`). Server-only: the

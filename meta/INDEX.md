@@ -14,8 +14,9 @@ status banner at the top.
 ## Positioning review (`positioning-202607/`)
 
 The July 2026 repositioning study: market landscape (meta-harnesses, OpenClaw,
-first-party absorption), from-scratch positioning around the multi-runtime
-cockpit, feature ranking, brand-doc change list, launch-first marketing strategy
+first-party absorption), from-scratch positioning around one place for every
+agent you run, feature ranking, brand-doc change list, launch-first marketing
+strategy
 and tactics, and the prioritized website-changes list. Entry point:
 [`positioning-202607/00-overview.md`](positioning-202607/00-overview.md). Where
 this review and the Q1 docs disagree, this review is the newer statement of

@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install DorkOS and open the cockpit where you run, schedule, and check on your coding agents
+description: Install DorkOS and open the one place where you run, schedule, and check on your coding agents
 ---
 
 # Installation
@@ -25,7 +25,7 @@ Curious before you commit to anything? If you have Node.js 22 or newer, you can 
 npx dorkos@latest
 ```
 
-The first run takes a minute or two: npx downloads DorkOS and compiles a couple of native pieces it depends on. After that, your browser opens to the same cockpit a permanent install gives you.
+The first run takes a minute or two: npx downloads DorkOS and compiles a couple of native pieces it depends on. After that, your browser opens to the same app a permanent install gives you.
 
 Already signed in to Claude Code? You're set. Otherwise, set your API key first:
 
@@ -77,7 +77,7 @@ An environment variable is a value your shell hands to programs when they start,
 dorkos
 ```
 
-DorkOS starts on port 4242 (the address your browser uses to reach it) and opens your browser automatically to the DorkOS cockpit.
+DorkOS starts on port 4242 (the address your browser uses to reach it) and opens automatically in your browser.
 
 </Step>
 </Steps>
@@ -144,7 +144,7 @@ dorkos --version
 dorkos
 ```
 
-DorkOS starts on port 4242 and opens your browser to the cockpit.
+DorkOS starts on port 4242 and opens your browser to the app.
 
 </Step>
 </Steps>
@@ -160,11 +160,11 @@ DorkOS starts on port 4242 and opens your browser to the cockpit.
 
 <Callout type="warn">
   The desktop app is new. It runs on Macs with Apple Silicon (the M1 chip or later) and is under
-  active development, so expect a rough edge here and there. If you hit trouble, the web cockpit
-  from the tabs above is the most battle-tested way to run DorkOS today.
+  active development, so expect a rough edge here and there. If you hit trouble, the web app from
+  the tabs above is the most battle-tested way to run DorkOS today.
 </Callout>
 
-A real Mac app: it's the same DorkOS cockpit, in its own window and dock icon, with nothing to install in a terminal. It bundles everything it needs, including Claude Code, so you don't need Node.js.
+A real Mac app: it's the same DorkOS, in its own window and dock icon, with nothing to install in a terminal. It bundles everything it needs, including Claude Code, so you don't need Node.js.
 
 <Steps>
 <Step>
@@ -190,8 +190,8 @@ There is now a Windows version too, and it is brand new. Download it from [dorko
 <Callout type="warn">
   Windows may show a blue "Windows protected your PC" message, because the app is not signed yet.
   Click **More info**, then **Run anyway** to continue. We have not finished testing the Windows app
-  on a real machine, so treat it as an early preview. If something does not work, the web cockpit
-  from the tabs above is the most reliable way to run DorkOS today.
+  on a real machine, so treat it as an early preview. If something does not work, the web app from
+  the tabs above is the most reliable way to run DorkOS today.
 </Callout>
 
 <Callout type="info">
@@ -203,10 +203,10 @@ There is now a Windows version too, and it is brand new. Download it from [dorko
 
 The app runs its own DorkOS server, normally at `http://localhost:4242` just like the CLI. **Settings
 → Server** shows the exact address, copies it, and opens it in your browser, which is what you need
-to bookmark the cockpit or point another tool at it.
+to bookmark DorkOS or point another tool at it.
 
 See the [Desktop App guide](/docs/getting-started/desktop-app) for the full menu, deep link, and
-auto-update details, plus what it doesn't do that the web cockpit does.
+auto-update details, plus what it doesn't do that the web app does.
 
 </Tab>
 
@@ -234,7 +234,7 @@ The `-v dorkos-data:/home/node/.dork` part creates a Docker volume, a small chun
 
 ### Open the interface
 
-Navigate to [http://localhost:4242](http://localhost:4242) in your browser. You'll land on the DorkOS cockpit.
+Navigate to [http://localhost:4242](http://localhost:4242) in your browser. You'll land on DorkOS.
 
 </Step>
 </Steps>
@@ -252,8 +252,7 @@ Navigate to [http://localhost:4242](http://localhost:4242) in your browser. You'
 <Callout type="warn">
   The Obsidian plugin (built as **DorkOS Copilot**) is early. It's not yet listed in Obsidian's
   community plugin directory, and it's under active development, so expect rough edges. If you want
-  a dependable daily driver today, use the web cockpit above; come back here once it's further
-  along.
+  a dependable daily driver today, use the web app above; come back here once it's further along.
 </Callout>
 
 DorkOS Copilot embeds a chat sidebar for your agents directly inside [Obsidian](https://obsidian.md/), so you can talk to them without leaving your notes. Because it isn't published yet, the only way to try it is to build it from source, alongside the DorkOS repo:
@@ -344,7 +343,7 @@ ANTHROPIC_API_KEY=your-key-here
 pnpm dev
 ```
 
-This starts the Express API server and Vite dev server together, with hot reload as you edit. The cockpit is available at [http://localhost:6241](http://localhost:6241).
+This starts the Express API server and Vite dev server together, with hot reload as you edit. DorkOS is available at [http://localhost:6241](http://localhost:6241).
 
 </Step>
 </Steps>

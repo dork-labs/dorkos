@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/desktop",
   "version": "0.64.0",
-  "description": "DorkOS desktop app — mission control for your coding agents",
+  "description": "DorkOS desktop app - all your coding agents in one place",
   "author": "Dorian Collier",
   "private": true,
   "main": "dist/main/index.js",

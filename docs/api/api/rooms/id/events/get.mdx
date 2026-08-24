@@ -12,7 +12,7 @@ _openapi:
     contents:
       - content: "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then
           live. The same path also answers a WebSocket upgrade, which is what
-          the cockpit uses (ADR 260805-041016) — identical contract, each
+          the DorkOS app uses (ADR 260805-041016) — identical contract, each
           message a JSON text frame, resuming from `?resume=`, with refusals as
           close code `4000 + status`. Event ids are `<roomId>-<epoch>-<seq>`; a
           cursor from another room or another server process falls back to a
