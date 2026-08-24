@@ -19,6 +19,10 @@
       "types": "./src/schema.ts",
       "default": "./dist/schema.js"
     },
+    "./schedule-schema": {
+      "types": "./src/schedule-schema.ts",
+      "default": "./dist/schedule-schema.js"
+    },
     "./task-schema": {
       "types": "./src/task-schema.ts",
       "default": "./dist/task-schema.js"

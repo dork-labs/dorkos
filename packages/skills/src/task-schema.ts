@@ -1,46 +1,26 @@
 import { z } from 'zod';
 import { SkillFrontmatterSchema } from './schema.js';
 import { DurationSchema } from './duration.js';
+import { TASK_PERMISSION_MODES } from './schedule-schema.js';
+import type { ScheduleBlock } from './schedule-schema.js';
+
+export { TASK_PERMISSION_MODES } from './schedule-schema.js';
 
 /**
- * The permission modes a task file may declare in its `permissions:`
- * frontmatter — the same set a chat session may run under.
+ * Legacy task frontmatter schema — scheduling fields at the TOP level.
  *
- * DRIFT NOTE: an inlined mirror of `PermissionModeSchema`
- * (`packages/shared/src/schemas.ts`) by value. `@dorkos/shared` is on zod v4
- * and this package is still on v3, and nesting a v4 `ZodType` inside a v3
- * `z.object()` silently misbehaves rather than erroring (the same boundary
- * `ui-template.ts` documents), so the six values are inlined here instead of
- * composed. `__tests__/task-schema.test.ts` reads `PermissionModeSchema.options`
- * — a version-safe string-array read, never a cross-version schema composition
- * — and asserts the two sets are equal, so they cannot drift apart.
+ * @deprecated Legacy top-level task fields; superseded by the `schedule:`
+ * block on `SkillFrontmatterSchema`. This schema still describes every task
+ * file on disk today and the live tasks pipeline still reads through it, so it
+ * stays until the files themselves are rewritten. It is removed with the
+ * migration wave (DOR-1486); use {@link legacyTaskToSchedule} to map a file
+ * this schema parsed onto the block that replaces it.
  *
- * `@dorkos/marketplace` re-exports this as `SHAPE_SCHEDULE_PERMISSION_MODES`
- * rather than keeping a third copy: what a Shape manifest may declare for a
- * schedule is exactly what the schedule's file may then carry, and a manifest
- * allowed to declare a mode the file cannot hold writes an unreadable file.
- */
-export const TASK_PERMISSION_MODES = [
-  'default',
-  'plan',
-  'acceptEdits',
-  'dontAsk',
-  'bypassPermissions',
-  'auto',
-] as const;
-
-/**
- * Task frontmatter schema — a superset of the SKILL.md base.
- *
- * Adds scheduling, execution constraints, and display customization.
- * Fields that depend on installation context (agentId, cwd) are
- * intentionally excluded — they are derived from the file's location
- * on disk and stored in the DB only.
+ * Fields that depend on installation context (agentId, cwd) are intentionally
+ * excluded — they are derived from the file's location on disk and stored in
+ * the DB only.
  */
 export const TaskFrontmatterSchema = SkillFrontmatterSchema.extend({
-  /** Human-readable display name. Falls back to humanized `name` if absent. */
-  'display-name': z.string().optional(),
-
   /** Cron expression for scheduling. Absent means on-demand only. */
   cron: z.string().optional(),
 
@@ -55,36 +35,8 @@ export const TaskFrontmatterSchema = SkillFrontmatterSchema.extend({
 
   /**
    * Agent permission mode during task execution. One of
-   * {@link TASK_PERMISSION_MODES}.
-   *
-   * **A mode id is a request, not a description.** What each one actually does
-   * is declared by the runtime the task runs on
-   * (`PermissionModeDescriptor.promise` in its capability profile), and the same
-   * id can mean materially different things: `acceptEdits` on Claude Code edits
-   * files and stops before a command, while on Codex it runs commands inside the
-   * workspace too and cannot pause to ask at all. Read the runtime's profile —
-   * or the Trust Dial, which renders it — for the sentence that is true for a
-   * given task.
-   *
-   * What holds across runtimes:
-   *
-   * - `default`: the most careful setting the runtime offers.
-   * - `acceptEdits` (the schema default): the agent changes files on its own.
-   * - `plan`: read-only planning; nothing is written.
-   * - `bypassPermissions`: nothing asks. The run does whatever it decides to.
-   * - `auto`, `dontAsk`: the remaining runtime modes, carried through as-is.
-   *
-   * A task run is unattended, so nobody answers an approval it raises. It is
-   * **refused** after `SESSIONS.INTERACTION_TIMEOUT_MS` (10 minutes) and the
-   * turn carries on without it — it does not stall until `max-runtime`. A long
-   * task under a strict mode therefore finishes, having quietly spent ten
-   * minutes per ask and skipped the work behind each one. The stricter modes
-   * trade throughput for safety, deliberately; budget `max-runtime` for the
-   * asks you expect.
-   *
-   * A scheduled run is the ONE exception to parking: an interactive session
-   * holds an unanswered prompt for four hours so a person can come back to it,
-   * and a run nobody is watching has nobody to come back.
+   * {@link TASK_PERMISSION_MODES}; see `ScheduleBlockSchema.permissions` for
+   * what each mode actually promises.
    */
   permissions: z.enum(TASK_PERMISSION_MODES).default('acceptEdits'),
 
@@ -100,4 +52,43 @@ export const TaskFrontmatterSchema = SkillFrontmatterSchema.extend({
   shape: z.string().optional(),
 });
 
+/**
+ * @deprecated See {@link TaskFrontmatterSchema}.
+ */
 export type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
+
+/**
+ * Map a legacy task file's top-level scheduling fields onto the `schedule:`
+ * block that replaces them.
+ *
+ * Total and side-effect free — it never throws and never reads disk, so the
+ * migration can call it on every candidate file before deciding what to write.
+ * Three mappings are worth knowing:
+ *
+ * - **An empty `cron` becomes absent.** The legacy schema accepted `cron: ''`;
+ *   the block does not, and both spellings mean the same thing — on-demand,
+ *   nothing on a clock.
+ * - **`display-name` does not move.** It lives on the base schema now and
+ *   belongs to the skill, not to its schedule.
+ * - **No `prompt` is produced.** Legacy tasks had no prompt override; the
+ *   file's body was always what fired, and it still is.
+ *
+ * `origin`/`shape` carry over as the schedule's own provenance, including the
+ * lopsided cases a hand-edited file can contain (a `shape:` with no `origin:`,
+ * or the reverse) — the migration rewrites what it found rather than guessing
+ * at what was meant.
+ *
+ * @param meta - Frontmatter validated by {@link TaskFrontmatterSchema}.
+ * @returns The equivalent schedule block.
+ */
+export function legacyTaskToSchedule(meta: TaskFrontmatter): ScheduleBlock {
+  return {
+    ...(meta.cron ? { cron: meta.cron } : {}),
+    timezone: meta.timezone,
+    enabled: meta.enabled,
+    ...(meta['max-runtime'] !== undefined ? { 'max-runtime': meta['max-runtime'] } : {}),
+    permissions: meta.permissions,
+    ...(meta.origin !== undefined ? { origin: meta.origin } : {}),
+    ...(meta.shape !== undefined ? { shape: meta.shape } : {}),
+  };
+}
