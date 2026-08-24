@@ -988,6 +988,510 @@ export const comparisons: Competitor[] = [
     relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'session-durability'],
   },
   {
+    slug: 'omnara',
+    name: 'Omnara',
+    maker: 'Omnara',
+    homepage: 'https://omnara.com',
+    framing: 'competitor',
+    category: 'Platform for running agents, with a phone app',
+    oneLiner:
+      'Omnara keeps agents running as a service you reach by API or from your phone. DorkOS runs the agents already installed on your own machine.',
+    pricing:
+      'Free and open source under the Apache licence if you run it yourself. They also sell a hosted version. Its price is not something we can quote: their pricing page came up blank for us, so ask them rather than trusting a number found elsewhere.',
+    openSource: true,
+    openSourceNote:
+      'The platform is open under the Apache licence and you can run the whole thing yourself. The phone apps and the hosted service are not published.',
+    verdict:
+      'Omnara has changed shape, and that matters more than any row in the table below. It began as a phone command centre for Claude Code and Codex, and those apps still ship: an iPhone app with an Apple Watch app beside it, which is more than DorkOS has. What Omnara leads with now is something else, a platform for running agents as a lasting service, with an API, organisations, roles, and machines it can borrow or rent. The real difference is where an agent lives. In Omnara it lives in a control plane and picks up a machine when it needs one, which is exactly why a closed laptop cannot hurt it. In DorkOS the agent is the Claude Code already signed in on your own computer, and it is the screen that travels instead.',
+    theirStrengths: [
+      'you want an agent that survives a closed laptop, a dropped connection or a restart, because its whole history lives in a database rather than in a running program',
+      'you are putting agents inside your own product, and want an API and a code library rather than a screen',
+      'you need teams: organisations, projects, roles, and access to secrets and machines handed out one grant at a time',
+      'you want a real phone app, with an Apple Watch app beside it',
+      'you want the work to run wherever suits: your own laptop, a server of yours, or a sandbox made on demand',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'partial',
+        note: 'Its phone app watches and steers Claude Code and Codex running on your own laptop. The platform they now lead with is about swapping models rather than agents, and its documentation mentions neither one.',
+        detail:
+          'This is where Omnara overlaps DorkOS most, and it is also the part that has gone quiet. The app in the store is still called Claude & Codex Mobile and still does what the name says, but it was last updated in April, and the platform Omnara writes about today does not mention either agent. Read plainly: Omnara now runs agents you build, and DorkOS runs the agents you already installed.',
+        source: 'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. A trigger fires on an ordinary five-field cron line, in a time zone you name, and can either start a fresh agent or nudge a running one each time it goes off.',
+        source:
+          'https://docs.omnara.com/api-reference/endpoints/configs-and-profiles/create-cron-trigger',
+      },
+      coordination: {
+        verdict: 'no',
+        note: 'Agents run as separate conversations. Their built-in tools can message a person in Slack, but nothing lets one agent message another or hand work along.',
+      },
+      'local-first': {
+        verdict: 'partial',
+        note: 'The work can run on your own laptop, through a small program that dials out so nothing has to be opened up to the internet. The agent itself lives in a control plane: theirs, or one you run.',
+        detail:
+          'This is a genuinely good arrangement, and worth understanding before choosing between them. Your machine keeps no open door: the small program calls out, and an agent attaches to the machine and lets go of it again afterwards. The price is that the thinking and the history are not on your machine. Their own documentation puts it well, saying the machine does not own the agent, which is what makes a closed laptop harmless and also why DorkOS made the opposite choice.',
+        source: 'https://docs.omnara.com/machines/overview',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes, and it is their strongest side: an iPhone app with an Apple Watch app, an Android app, a web console, and Slack.',
+        detail:
+          'DorkOS has no app in either store. What it has is a screen built to work properly on a phone. Omnara ships real apps, and a watch app on top of them, which is more. The caveat is age: the iPhone app was last updated in April, and mobile has dropped out of the writing about the platform, so the best thing about Omnara may be the part it is no longer building on.',
+        source: 'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. Outside tools connect with the sign-in handled for you, skills are shared out one grant at a time, and there is a large API with a code library beside it.',
+        source: 'https://docs.omnara.com/tools/mcp',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'The platform is free and open source under the Apache licence, and you can run all of it yourself. The hosted version has a price we could not read.',
+        source: 'https://github.com/omnara-ai/omnara',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Omnara free?',
+        a: 'The platform is, under the Apache licence, and you can run the whole thing on your own machines. They also sell a hosted version. We cannot tell you what that costs: their pricing page came up blank when we checked, so ask them rather than trusting a number you read somewhere else.',
+      },
+      {
+        q: 'Does Omnara work with Claude Code?',
+        a: 'Through its phone app, yes: it watches and steers Claude Code and Codex running on your own laptop. That app was last updated in April. The platform Omnara writes about today is about models rather than other companies’ agents, and mentions neither.',
+      },
+      {
+        q: 'Does Omnara have an iPhone app?',
+        a: 'Yes, with an Apple Watch app beside it, and an Android app as well. That is more than DorkOS ships: we have no app in either store, only a screen built to work properly on a phone.',
+      },
+      {
+        q: 'Can Omnara run agents on a schedule?',
+        a: 'Yes. A trigger takes an ordinary cron line and a time zone, and starts a fresh agent every time it goes off.',
+      },
+      {
+        q: 'What does DorkOS do differently?',
+        a: 'It runs the agents already on your computer, signed in to the plans you already pay for, and keeps the work there. Omnara runs agents you build, in a control plane, on machines it borrows or rents. Which is better depends on whether you are operating agents or shipping them.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://github.com/omnara-ai/omnara',
+      'https://docs.omnara.com/introduction',
+      'https://docs.omnara.com/machines/overview',
+      'https://docs.omnara.com/agents/overview',
+      'https://docs.omnara.com/tools/built-in',
+      'https://docs.omnara.com/tools/mcp',
+      'https://docs.omnara.com/api-reference/endpoints/configs-and-profiles/create-cron-trigger',
+      'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'mobile', 'task-scheduler', 'session-durability'],
+  },
+  {
+    slug: 'amp',
+    name: 'Amp',
+    maker: 'Amp Frontier',
+    homepage: 'https://ampcode.com',
+    framing: 'competitor',
+    category: 'Coding agent that picks the model for you',
+    oneLiner:
+      'Amp chooses the model for you and runs the work on its own machines. DorkOS drives the agents already signed in on yours, for nothing.',
+    pricing:
+      'No free plan. Megawatt is $20 a month and Gigawatt $200, and each includes that much agent use before you pay what the model makers charge. Students and teachers pay $10.',
+    openSource: false,
+    openSourceNote:
+      'Amp itself is closed. The pieces around it are open: its Neovim plugin, its Homebrew tap, and the shared collections of skills and tools published beside it.',
+    verdict:
+      'One thing first, because older write-ups get it wrong: Amp spun out of Sourcegraph into its own company at the end of 2025, so it is no longer Sourcegraph’s agent. What it sells is an unusual bargain, which is that you stop choosing. Amp picks between the frontier models for you, decides how hard to think about a problem, and charges no mark-up on what those models cost. On privacy it is more careful than most, saying plainly that it does not train on your data unless you switch that on, and that on its company plan it can never be switched on at all. Two things separate it from DorkOS. It runs its own agent only, so Claude Code and Codex stay outside it. And it is built around its own servers: you sign in, your history lives there, and its remote machines do the heavy work. If you want the model chosen for you and the work off your laptop, that is a fair offer at a fair price.',
+    theirStrengths: [
+      'you would rather not choose a model: Amp picks between the frontier ones for you, and adds no mark-up to what they cost',
+      'you care where your code goes: Amp says it does not train on your data unless you turn that on, and on its company plan it can never be turned on',
+      'you want long jobs off your own laptop, on machines they run, with hours included in the price',
+      'you want to reach an agent from Slack, or by talking to it out loud',
+      'you want to hand a colleague the whole transcript of a piece of work as a link',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'Amp runs its own agent and picks between several companies’ models for you. It does not start Claude Code, Codex or OpenCode.',
+        detail:
+          'The choice on offer is which model thinks, not whose agent works, and Amp would rather make that choice than hand it to you. You can point your own ChatGPT subscription at it for extra allowance, which is an arrangement about billing rather than one agent running another. If your week already mixes Claude Code and Codex, those stay separate programs with separate histories.',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes, in an unusual shape: the agent sets its own schedule and wakes itself up later, carrying on with the context it already had.',
+        detail:
+          'Most schedulers start a job from nothing at a set time. Amp’s agent instead arranges to be woken, and comes back knowing what it was in the middle of, which suits keeping an eye on something more than running a nightly chore. Because its remote machines do the work, none of it needs your laptop open. What we did not find is a plain place to write "every night at two" yourself.',
+        source: 'https://ampcode.com/manual',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'It starts its own helper agents inside a piece of work, and can ask a stronger model for a second opinion. Sharing a thread is for people, not agents: nothing hands work from one agent to another.',
+        source: 'https://ampcode.com/manual',
+      },
+      'local-first': {
+        verdict: 'partial',
+        note: 'The command-line tool runs on your machine, but you sign in to Amp, your threads are kept on their servers, and its remote machines run work somewhere else entirely.',
+        source: 'https://ampcode.com/security',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes: the terminal, the web, the web on your phone, Slack, and a voice mode you can hold a conversation with. There is no separate phone app to install.',
+        source: 'https://ampcode.com/news/agents-everywhere',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. Outside tools connect both on your machine and over the web, there is a plugin system for adding tools, commands and skills, and a kit for building Amp into your own programs.',
+        source: 'https://ampcode.com/manual',
+      },
+      pricing: {
+        verdict: 'no',
+        note: 'There is no free plan on their pricing page: the cheapest is $20 a month, students and teachers pay $10, and the code is closed.',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Amp free?',
+        a: 'Not today. Their pricing page has no free plan: Megawatt is $20 a month and Gigawatt is $200, and students and teachers can get it for $10. There was a free allowance in the past, paid for by ads for a while, and it has been cut back since. We would not count on it.',
+      },
+      {
+        q: 'Is Amp still part of Sourcegraph?',
+        a: 'No. Amp spun out of Sourcegraph into its own company at the end of 2025. Write-ups calling it Sourcegraph’s agent are out of date, though the old name still turns up in a few corners.',
+      },
+      {
+        q: 'Does Amp train on my code?',
+        a: 'Their security page says neither Amp nor the companies behind it train on your data unless you explicitly turn that on, and that on the company plan it can never be turned on. That plan also shortens how long the model makers keep anything you send.',
+      },
+      {
+        q: 'How much does Amp cost?',
+        a: 'Megawatt is $20 a month, Gigawatt is $200, and each includes that much agent use. Past it you pay what the model makers charge, with nothing added on top unless you are a company customer. There is also a pay-as-you-go arrangement where you bring your own keys.',
+      },
+      {
+        q: 'Why would I use DorkOS instead?',
+        a: 'Because you want the agents you already have, on the machine in front of you. DorkOS starts the Claude Code, Codex or OpenCode already signed in, keeps the work local, and costs nothing. Amp is the other bargain: one agent, models chosen for you, their servers.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://ampcode.com/manual',
+      'https://ampcode.com/manual/sdk',
+      'https://ampcode.com/pricing',
+      'https://ampcode.com/security',
+      'https://ampcode.com/news/agents-everywhere',
+      'https://ampcode.com/news/amp-frontier-corporation',
+      'https://github.com/ampcode',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'cli', 'workspaces'],
+  },
+  {
+    slug: 'cline',
+    name: 'Cline',
+    maker: 'Cline Bot',
+    homepage: 'https://cline.bot',
+    framing: 'competitor',
+    category: 'Open source coding agent for your editor and terminal',
+    oneLiner:
+      'Cline is a free, open coding agent for your editor and terminal. DorkOS is the room around the agents you already installed, reachable anywhere.',
+    pricing:
+      'The agent is free and open source. You pay only for the models: your own key, credits bought from Cline, or an optional pass at $9.99 a month for a set of open models. Company plans are priced by agreement.',
+    openSource: true,
+    openSourceNote:
+      'The agent, its command-line tool and its developer kit are open under the Apache licence. The account that sells model credits is a paid service, and its code is not published.',
+    verdict:
+      'Cline is the strongest free answer on this page. The agent is open under the Apache licence, works with your own key and no account at all, and reaches more models than anything else here, including ones running offline on your own machine. It also does two things people assume only a cockpit does: jobs that start on a cron line and keep running with no terminal open, and agent teams where a lead hands pieces to specialists who share a task board and a mailbox. That last one is ahead of where DorkOS is, and we would rather say so than hide it. What differs is shape. Cline is one agent living in your editor; DorkOS is the room around the agents you already installed, on a screen you can open from a phone. If you work in one editor and want one very good open agent, Cline is an easy recommendation.',
+    theirStrengths: [
+      'you want a free, open agent that works with your own key and no account at all',
+      'you want the widest choice of models, from the big providers down to one running offline on your own machine',
+      'you want the agent inside the editor you already use, or in Zed, Neovim or Emacs through a shared protocol',
+      'you want agents that already work as a team, with a lead, a shared task board and a mailbox',
+      'you want jobs that start on a cron line without paying anyone for the privilege',
+      'you want to build an agent into your own product, on the same kit they build on',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'Cline is one agent that works with a very long list of models, local ones included. It does not run Claude Code, Codex or OpenCode as agents.',
+        detail:
+          'One thing here looks like an exception and is not. Cline can sign in through the Claude command-line tool you already installed, so your Claude subscription pays for the work instead of an API bill. That is a way of paying, not a way of running Claude Code: Cline is still the agent doing the thinking. DorkOS starts the real thing and shows you everything it did.',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. A saved job takes an ordinary cron line, keeps running across restarts, and needs no terminal open. It works from the command line and the kit, not from the editor add-ons.',
+        source: 'https://docs.cline.bot/cli/scheduling',
+      },
+      coordination: {
+        verdict: 'yes',
+        note: 'Yes, and further than most. One agent leads and hands pieces to specialists, who share a task board and a mailbox they leave messages in, and the team survives being closed and reopened.',
+        detail:
+          'This is a place where Cline is ahead of us on paper, and it would be silly to pretend otherwise. What DorkOS is building is a different arrangement, rooms that hold people and agents together rather than a lead and its workers, and it is the newest thing we ship, marked partly done in every table on this site. Cline’s teams carry the same limit as its scheduler: the command line and the kit have them, the editor add-ons do not.',
+        source: 'https://docs.cline.bot/cli/agent-teams',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes. It runs in the editor or terminal in front of you, and with your own key it needs no Cline account at all. Usage reporting is on until you switch it off.',
+        source: 'https://cline.bot/faq',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'Your editor, your terminal, and a task board that runs on your own machine. There is no phone app, and no screen of theirs to sign in to.',
+        detail:
+          'The board can be reached from a phone if you open it up to your network yourself, and their documentation is careful about what that means: whoever reaches it has your project and your terminal. That is the honest version of working from a phone. Doing that part safely is most of why DorkOS exists.',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes, and it is a strong suit: a catalogue of outside tools you install in one click, project rules read from several files including the shared AGENTS.md, and a kit for building Cline into your own product.',
+        source: 'https://cline.bot/mcp-marketplace',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'Free, and open source under the Apache licence. You pay only for the models: your own key, credits from Cline, or an optional $9.99 a month pass.',
+        source: 'https://cline.bot/pricing',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Cline free?',
+        a: 'The agent is, openly so, under the Apache licence. You pay only for the models you use: your own key, credits bought from Cline, or an optional pass at $9.99 a month for a set of open models. Their pricing page has just two entries, the free open source one and a company plan priced by agreement.',
+      },
+      {
+        q: 'Can Cline run jobs on a schedule?',
+        a: 'Yes. You save a job with an ordinary cron line and it keeps running across restarts with no terminal open. One catch worth knowing: it works from the command line and the developer kit, not from the VS Code or JetBrains add-ons.',
+      },
+      {
+        q: 'Does Cline work with Claude Code?',
+        a: 'Not as an agent. It can sign in through the Claude command-line tool so that your Claude subscription pays for the work, but Cline is still the one doing it. If you want the actual Claude Code session, with everything it did in front of you, that is what DorkOS runs.',
+      },
+      {
+        q: 'Can several Cline agents work together?',
+        a: 'Yes. A lead agent hands pieces to specialists, and they share a task board and a mailbox. It is the strongest teamwork on this page, ours included: DorkOS rooms are newer, and we mark them partly done.',
+      },
+      {
+        q: 'What does DorkOS add over Cline?',
+        a: 'A screen you can open from a phone without exposing anything yourself, and one list holding Claude Code, Codex and OpenCode sessions side by side. Cline is one agent with a great many models; DorkOS is the room around the agents you already installed.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://cline.bot',
+      'https://cline.bot/pricing',
+      'https://cline.bot/faq',
+      'https://cline.bot/mcp-marketplace',
+      'https://docs.cline.bot/usage/cli-overview',
+      'https://docs.cline.bot/cli/scheduling',
+      'https://docs.cline.bot/cli/agent-teams',
+      'https://docs.cline.bot/usage/acp',
+      'https://docs.cline.bot/provider-config/anthropic',
+      'https://cline.bot/cline-pass',
+      'https://github.com/cline/cline',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'mobile', 'rooms', 'task-scheduler'],
+  },
+  {
+    slug: 'factory-droid',
+    name: 'Droid',
+    maker: 'Factory',
+    homepage: 'https://factory.ai',
+    framing: 'competitor',
+    category: 'Coding agent built for company teams',
+    oneLiner:
+      'Droid is Factory’s coding agent for company teams, with missions that plan big work. DorkOS runs the agents you already pay for, on your machine.',
+    pricing:
+      'No free plan. Pro is $20 a month, Plus $100 and Max $200, each allowing more work than the last. Team and company plans are priced by agreement.',
+    openSource: false,
+    verdict:
+      'First the name, because it trips people up: the company is Factory and the agent is Droid, which is also what you type. Droid is aimed squarely at companies, and that shows in the good sense: single sign-on, audit trails, data kept in your part of the world, even an install with no way out to the internet. It reaches models from four companies plus a set of open ones, starts work on a cron line or from a Slack message, and its missions plan a large job into milestones and hand the pieces to worker sessions that check each other as they go. It is also closed, starts at $20 a month with no free plan, and like everything else on this page it runs its own agent rather than yours. DorkOS is the smaller, opposite bet: free, open, on your own machine, driving the agents you already signed in to.',
+    theirStrengths: [
+      'you work somewhere that needs the paperwork: single sign-on, audit trails, data kept in your part of the world, even an install with no way out to the internet',
+      'you want one subscription reaching models from four companies plus a set of open ones, switchable in the middle of a job',
+      'you want work to start on a clock, from a Slack message, or from something happening on GitHub',
+      'you want a large job planned into milestones and carried out by workers whose output gets checked',
+      'you want an agent that reads the CLAUDE.md and the skills you already wrote',
+      'you want machines that keep their state between sessions, so nothing has to be set up twice',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'no',
+        note: 'Droid is one agent you can point at models from Anthropic, OpenAI, Google and xAI, plus a set of open ones. It does not start Claude Code, Codex or OpenCode.',
+        detail:
+          'Swapping the model in the middle of a job is genuinely useful, and their list is one of the longest anywhere. It is still a different thing from swapping the agent, and nothing in their documentation runs another company’s coding agent. Droid is unusually polite about what you already wrote, though: it reads a CLAUDE.md as happily as an AGENTS.md, so bringing your instructions across costs nothing.',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. A saved job runs on a cron line or a cadence written in plain words, and work can also start from a Slack message or from something happening on GitHub.',
+        source: 'https://docs.factory.ai/software-factory/automations',
+      },
+      coordination: {
+        verdict: 'yes',
+        note: 'Yes. A mission plans a large job, starts worker sessions for the parts, passes work between them through git, and checks each step before going on.',
+        detail:
+          'This is real orchestration rather than parallel lanes, and Factory is refreshingly honest about its limits. Their own writing says doing things in order, with parallel work only where coordinating is cheap, has beaten running everything at once, and lists whether parallelism helps at all as a question they are still testing. Worth remembering whenever anyone, ourselves included, sells you a picture of ten agents working at once.',
+        source: 'https://docs.factory.ai/docs/missions/overview',
+      },
+      'local-first': {
+        verdict: 'partial',
+        note: 'The command-line agent runs on your machine, and your own model keys stay there. An account is still required, and its lasting machines and hosted screens are theirs.',
+        detail:
+          'One catch if you bring your own model keys: their documentation says custom models work in the command-line tool and the desktop app, and do not appear on the hosted web and phone surfaces. So the widest reach and the most control are, for now, two different setups.',
+        source: 'https://docs.factory.ai/cli/byok/overview',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes, widely: the terminal, a desktop app, the web, VS Code and JetBrains and Zed, Slack and Teams, Linear and Jira, and a phone screen for reviewing work.',
+        source: 'https://docs.factory.ai/factory-app/overview',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes, and shaped like the tools you already know: outside tools, hooks on the agent’s lifecycle, custom droids written as plain Markdown, and a project file it reads as either AGENTS.md or CLAUDE.md.',
+        source: 'https://docs.factory.ai/docs/harness/hooks',
+      },
+      pricing: {
+        verdict: 'no',
+        note: 'There is no free plan: the cheapest is $20 a month, and the code is closed.',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Droid free?',
+        a: 'No. There is no free plan. Pro is $20 a month, Plus is $100 and Max is $200, and team and company plans are priced by agreement. You can bring your own model keys, and every individual plan allows some of that before it starts counting.',
+      },
+      {
+        q: 'What is a Factory mission?',
+        a: 'A way of handing over a large piece of work. You agree the plan first, broken into features and milestones, and Droid then starts worker sessions for the parts, passes work between them through git, and checks each step before moving on.',
+      },
+      {
+        q: 'Does Droid run Claude Code?',
+        a: 'No. Droid is its own agent, though it will happily read the CLAUDE.md you already wrote. If what you want is the Claude Code on your own machine, signed in to your own plan, that is what DorkOS drives.',
+      },
+      {
+        q: 'Can Droid work on a schedule or in a build pipeline?',
+        a: 'Both. Jobs run on a cron line or a cadence written in plain words, and there is a headless mode made for build pipelines that reports success or failure the way scripts expect.',
+      },
+      {
+        q: 'Why would I use DorkOS instead?',
+        a: 'Price, openness, and whose machine it is. DorkOS is free and open source, runs the agents already signed in on your computer, and adds nothing to your bill. Droid is the better answer if you need company controls and are happy to pay for them.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://factory.ai/pricing',
+      'https://docs.factory.ai/pricing',
+      'https://docs.factory.ai/docs/models',
+      'https://docs.factory.ai/docs/missions/overview',
+      'https://docs.factory.ai/software-factory/automations',
+      'https://docs.factory.ai/cli/byok/overview',
+      'https://docs.factory.ai/factory-app/overview',
+      'https://docs.factory.ai/integrations/ide-integrations',
+      'https://docs.factory.ai/docs/harness/hooks',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'workspaces', 'cli'],
+  },
+  {
+    slug: 'deepseek-harness',
+    name: 'DeepSeek Harness',
+    maker: 'DeepSeek',
+    homepage: 'https://deepseek.com/harness',
+    framing: 'competitor',
+    category: 'Agent harness that can run other agents',
+    oneLiner:
+      'DeepSeek Harness can run Claude Code and Codex inside itself, and calls itself a developer preview. DorkOS does that job with a schedule and a phone.',
+    pricing:
+      'Free, and open source under the MIT licence. You pay only the model provider whose key you bring. It asks for a DeepSeek key first, and takes others instead.',
+    openSource: true,
+    verdict:
+      'This is the closest thing we have found to what DorkOS is trying to be, and pretending otherwise would be silly. DeepSeek Harness sits above other coding agents and runs them: install a plugin and it will start a real Claude Code, through Anthropic’s own kit, or a real Codex, as workers inside its own session. Underneath, almost every part of it is a named piece you can swap out, written down in a way that will delight anyone who reads the source before trusting a tool. Two honest things follow. It is very new and says so in capital letters, its own words being that there will be compatibility-breaking changes, and every version on its releases page so far is a release candidate. And it is a harness rather than a control room, with nothing that runs while the session is closed, nothing for a phone, and a local web page as the way in. DorkOS is pointed at that second half of the problem, and we would rather you knew both existed.',
+    theirStrengths: [
+      'you want to read the design before you trust it: nearly every part is a named, swappable piece, listed in documentation generated from the code itself',
+      'you want to replace those parts yourself, down to the model adapter, the session log and the loop the agent runs in',
+      'you want Claude Code and Codex started through their makers’ own kits, rather than something pretending to type at them',
+      'you are happy on a developer preview, and would rather have the newest ideas than a settled product',
+      'you want one command, a local address, no account, and the MIT licence',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'Yes, and it is the point of the thing: plugins start a real Claude Code, through Anthropic’s own kit, or a real Codex, as workers inside a session. Both are optional, and off until you switch them on.',
+        detail:
+          'The details matter here, because this is the row where someone else matches us. Claude Code and Codex are separate plugins you install and then switch on in a preset, and the list is those two, anything speaking the shared agent protocol, and a second harness of its own run as a child. Each run is one-shot: a fresh process, no carrying a session on, no way for the child to stop and ask you a question, and only its final text comes back, so the reasoning and the tool calls stay inside. DorkOS drives three agents as first-class citizens, with the whole session visible, steerable mid-turn and resumable. Different depth, same good instinct.',
+        source:
+          'https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/subagent/README.md',
+      },
+      scheduling: {
+        verdict: 'partial',
+        note: 'Reminders inside a session that is still open: after so long, at a set time, or every so often with a five-minute floor. There are no cron lines, and nothing fires once the session is closed.',
+        detail:
+          'Their documentation is admirably exact about this, and worth repeating in their own terms: a reminder never leaves the session that owns it, and a closed session does no work at all. Reopening one makes anything overdue arrive late. It is a way for an agent to check back on something it is already watching, not a way to have a job run at three in the morning while you sleep.',
+        source:
+          'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/schedule.md',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'A lead session can start teammates, leave lasting messages in a shared mailbox, and track a shared list of tasks. It is a lead and its children rather than a room, and their own documentation calls it experimental.',
+        source:
+          'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/agent-team.md',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes, thoroughly. One command runs it on your own machine at a local address, its settings and keys are plain files in your home folder, and the history stays there too.',
+        source: 'https://github.com/deepseek-ai/deepseek-harness',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'A web page on your own machine, and a command line. Nothing for a phone, and reaching it from anywhere else means forwarding the port over SSH yourself.',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes, and it is the whole idea: around sixty named parts you can replace, the model adapter and the session log and the agent loop among them, plus outside tools and skills.',
+        detail:
+          'This is the most impressive thing about the project. The list of swappable parts is generated from the code itself, so it cannot quietly drift from what is really there, and each entry says which part owns it and which parts use it. If you are the sort of person who reads the architecture before installing anything, start there. One limit worth knowing: it connects out to other people’s tools, and does not offer itself to other programs as one.',
+        source:
+          'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'Free, and open source under the MIT licence. The only bill is the model provider whose key you bring.',
+        source: 'https://github.com/deepseek-ai/deepseek-harness/blob/master/LICENSE',
+      },
+    },
+    faq: [
+      {
+        q: 'What is DeepSeek Harness?',
+        a: 'An open source agent harness from DeepSeek, started with one command on your own machine. Its idea is that everything is a plugin: the model adapter, the tools, the session log, even the loop the agent runs in. It can also start other companies’ coding agents as workers inside a session.',
+      },
+      {
+        q: 'Does DeepSeek Harness run Claude Code and Codex?',
+        a: 'Yes, and it is the most interesting thing about it. Both are separate plugins you install and switch on. Each run is one-shot, though: the agent cannot stop to ask you a question, and only its final answer comes back, so you do not see what it did along the way.',
+      },
+      {
+        q: 'Is DeepSeek Harness ready to rely on?',
+        a: 'Its own README answers that in capital letters: it is a developer preview, iterating rapidly, and there will be compatibility-breaking changes. On its releases page, every version so far is a release candidate. We say it the way we would want our own early parts described, and DorkOS has some of those too.',
+      },
+      {
+        q: 'Is DeepSeek Harness free?',
+        a: 'Yes, and open source under the MIT licence. You pay only the model provider whose key you give it. It asks for a DeepSeek key first, and will take Anthropic, OpenAI or others instead if you would rather.',
+      },
+      {
+        q: 'How is DorkOS different?',
+        a: 'Mostly in what surrounds the agents. DorkOS runs work while your session is closed, messages you when a job finishes or needs a decision, and puts the whole thing on a screen you can open from a phone. DeepSeek Harness goes deeper underneath, and is honest that it is early.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://deepseek.com/harness',
+      'https://github.com/deepseek-ai/deepseek-harness',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/README.md',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/subagent/README.md',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.md',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/schedule.md',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/agent-team.md',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.md',
+      'https://github.com/deepseek-ai/deepseek-harness/releases',
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/LICENSE',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'rooms'],
+  },
+  {
     slug: 'claude-code',
     name: 'Claude Code',
     maker: 'Anthropic',
