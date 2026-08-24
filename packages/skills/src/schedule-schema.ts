@@ -179,15 +179,25 @@ export function hasSchedule<T extends { schedule?: ScheduleBlock }>(
  * typed. Writing through this helper keeps a hand-written `schedule: {cron}`
  * exactly that size across any number of round trips.
  *
+ * **It always returns a mapping, never `undefined`.** An all-default block
+ * writes as `schedule: {}`, which round-trips exactly — gray-matter emits
+ * `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
+ * key present: presence is what makes the file a scheduled task, so dropping it
+ * would silently un-schedule the skill. Returning `undefined` would be worse
+ * still, because the spread this helper is written for
+ * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand js-yaml an
+ * `undefined` and throw "unacceptable kind of an object".
+ *
+ * One thing it cannot preserve: a `true` the author typed by hand is
+ * indistinguishable after parsing from one the schema supplied, so an explicit
+ * `enabled: true` is dropped on rewrite. The file still means exactly what it
+ * meant; it just gets shorter.
+ *
  * @param schedule - A validated schedule block.
- * @returns A plain mapping for `writeSkillFile`'s frontmatter, or `undefined`
- * when nothing needs writing at all (an on-demand schedule left at every
- * default) — a caller writing `schedule:` with an empty mapping would produce
- * `schedule: null` on the next read.
+ * @returns A plain mapping for `writeSkillFile`'s frontmatter, empty when every
+ * value is already the default.
  */
-export function scheduleToFrontmatter(
-  schedule: ScheduleBlock
-): Record<string, unknown> | undefined {
+export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (schedule.cron !== undefined) out.cron = schedule.cron;
   if (schedule.timezone !== DEFAULT_TIMEZONE) out.timezone = schedule.timezone;
@@ -197,5 +207,5 @@ export function scheduleToFrontmatter(
   if (schedule.prompt !== undefined) out.prompt = schedule.prompt;
   if (schedule.origin !== undefined) out.origin = schedule.origin;
   if (schedule.shape !== undefined) out.shape = schedule.shape;
-  return Object.keys(out).length > 0 ? out : undefined;
+  return out;
 }

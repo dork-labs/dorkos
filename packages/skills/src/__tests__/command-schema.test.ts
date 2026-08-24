@@ -65,12 +65,13 @@ describe('CommandFrontmatterSchema', () => {
     }
   });
 
-  it('rejects invalid effort value', () => {
+  it('degrades an invalid effort value to absent', () => {
     const result = CommandFrontmatterSchema.safeParse({
       ...base,
       effort: 'extreme',
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.effort).toBeUndefined();
   });
 
   it('still validates base schema fields', () => {
@@ -81,12 +82,13 @@ describe('CommandFrontmatterSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects invalid context value', () => {
+  it('degrades an invalid context value to absent', () => {
     const result = CommandFrontmatterSchema.safeParse({
       ...base,
       context: 'background',
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.context).toBeUndefined();
   });
 
   it('accepts user-invocable=false to hide from slash menu', () => {

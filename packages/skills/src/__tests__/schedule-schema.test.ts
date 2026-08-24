@@ -42,9 +42,11 @@ describe('ScheduleBlockSchema', () => {
     expect(block.cron).toBeUndefined();
   });
 
-  // Dropping a broken cron silently would turn a schedule the author meant to
-  // fire into one that never does. Failing here parks the file with a warning
-  // instead, which is the outcome the spec asks for.
+  // The BLOCK rejects an empty cron, so a broken schedule is never silently
+  // rewritten into one that simply never fires. What the surrounding FILE does
+  // with that rejection is a separate decision, pinned below under "a bad
+  // schedule block never costs the skill": for this wave the block degrades to
+  // absent, because nothing reads it yet and no parked row exists to complain.
   it('rejects an empty cron instead of degrading it to absent', () => {
     expect(ScheduleBlockSchema.safeParse({ cron: '' }).success).toBe(false);
     expect(ScheduleBlockSchema.safeParse({ cron: '   ' }).success).toBe(true);
@@ -97,11 +99,24 @@ describe('ScheduleBlockSchema', () => {
   it('falls back to enabled when the value is unreadable', () => {
     expect(ScheduleBlockSchema.parse({ enabled: 'maybe' }).enabled).toBe(true);
   });
+
+  // Because that fallback is ON, a value we misread arms a schedule the author
+  // was trying to switch off. `enabled: 0` is the one an author actually types.
+  it('reads a numeric 0/1 rather than falling back to armed', () => {
+    expect(ScheduleBlockSchema.parse({ enabled: 0 }).enabled).toBe(false);
+    expect(ScheduleBlockSchema.parse({ enabled: 1 }).enabled).toBe(true);
+    expect(ScheduleBlockSchema.parse({ enabled: '0' }).enabled).toBe(false);
+  });
 });
 
 describe('TASK_PERMISSION_MODES', () => {
   // The v3/v4 zod boundary means the two lists are inlined copies, not one
   // composed schema. Read the options as strings so the versions never meet.
+  //
+  // `task-schema.test.ts` asserts the same thing through the re-export. That
+  // duplicate is deliberate and temporary: it guards the legacy import path
+  // that `@dorkos/marketplace` still uses, and dies with `task-schema.ts` in
+  // DOR-1486.
   it('matches the session permission modes in @dorkos/shared', () => {
     expect([...TASK_PERMISSION_MODES].sort()).toEqual([...PermissionModeSchema.options].sort());
   });
@@ -164,11 +179,16 @@ describe('scheduleToFrontmatter', () => {
     });
   });
 
-  // `schedule: {}` reads back as `schedule: null`, which is not a schedule at
-  // all — so an all-default on-demand block reports "nothing to write" and the
-  // caller drops the key.
-  it('returns undefined when nothing but defaults is left', () => {
-    expect(scheduleToFrontmatter(ScheduleBlockSchema.parse({}))).toBeUndefined();
+  // An all-default block still has to WRITE something: presence of the key is
+  // what makes the file a scheduled task, so an empty mapping keeps the skill
+  // scheduled where dropping the key would silently un-schedule it.
+  it('returns an empty mapping when nothing but defaults is left', () => {
+    expect(scheduleToFrontmatter(ScheduleBlockSchema.parse({}))).toEqual({});
+  });
+
+  it('drops a hand-typed enabled: true, which the file cannot tell from a default', () => {
+    const block = ScheduleBlockSchema.parse({ cron: '0 9 * * *', enabled: true });
+    expect(scheduleToFrontmatter(block)).toEqual({ cron: '0 9 * * *' });
   });
 });
 
@@ -305,6 +325,52 @@ describe('schedule block round trip through disk', () => {
     expect(definition.body).toBe('Check every service and report.');
   });
 
+  // Old-vs-new pins. Every value below was simply STRIPPED as an unknown key
+  // before the schemas unified, so the skill parsed. Introducing the fields
+  // must not turn a file that worked into one that fails: a failed parse is
+  // not a stern warning, it is the skill disappearing from the model's
+  // listing, from the Codex slash palette, and taking a marketplace pack
+  // install down with it.
+  it.each([
+    ['a shell DorkOS does not run', 'shell: zsh'],
+    ['a Codex effort this enum omits', 'effort: xhigh'],
+    ['a schedule that is not a mapping', 'schedule: daily'],
+    ['a malformed schedule block', 'schedule:\n  cron: ""'],
+  ])('still parses as a skill with %s', async (_label, frontmatterLine) => {
+    const content = [
+      '---',
+      'name: survivor',
+      'description: Must not vanish over one line',
+      frontmatterLine,
+      '---',
+      '',
+      'Body.',
+    ].join('\n');
+
+    const result = parseSkillFile('/skills/survivor/SKILL.md', content, SkillFrontmatterSchema);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.definition.meta.name).toBe('survivor');
+  });
+
+  it('a bad schedule block never costs the skill — it just is not scheduled', () => {
+    const content = [
+      '---',
+      'name: survivor',
+      'description: Must not vanish over one line',
+      'schedule:',
+      "  cron: ''",
+      '---',
+      '',
+      'Body.',
+    ].join('\n');
+
+    const result = parseSkillFile('/skills/survivor/SKILL.md', content, SkillFrontmatterSchema);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(hasSchedule(result.definition.meta)).toBe(false);
+  });
+
   it('reads a hand-written nested block', async () => {
     const content = [
       '---',
@@ -369,6 +435,55 @@ describe('schedule block round trip through disk', () => {
     expect(content).toContain('timezone: UTC');
     expect(content).toContain('enabled: true');
     expect(content).toContain('permissions: acceptEdits');
+  });
+
+  it('writes an all-default block as an empty mapping that stays a schedule', async () => {
+    const block = ScheduleBlockSchema.parse({});
+    await writeSkillFile(
+      tmpDir,
+      'on-demand',
+      {
+        name: 'on-demand',
+        description: 'Runs only when asked',
+        schedule: scheduleToFrontmatter(block),
+      },
+      'Body.'
+    );
+
+    // The key survives the write, so the file is still a scheduled task.
+    expect(await read('on-demand')).toContain('schedule: {}');
+    const definition = await parse('on-demand');
+    expect(hasSchedule(definition.meta)).toBe(true);
+    expect(definition.meta.schedule).toEqual({
+      timezone: 'UTC',
+      enabled: true,
+      permissions: 'acceptEdits',
+    });
+  });
+
+  // The documented call shape must survive the all-default case. Returning
+  // `undefined` here would hand js-yaml an undefined and throw
+  // "unacceptable kind of an object" at the moment of writing.
+  it('does not throw when the helper result is spread into frontmatter', async () => {
+    await writeSkillFile(
+      tmpDir,
+      'spread-check',
+      { name: 'spread-check', description: 'Runs only when asked', schedule: {} },
+      'Body.'
+    );
+    const first = await parse('spread-check');
+    if (!hasSchedule(first.meta)) throw new Error('expected a schedule');
+
+    await expect(
+      writeSkillFile(
+        tmpDir,
+        'spread-check',
+        { ...first.meta, schedule: scheduleToFrontmatter(first.meta.schedule) },
+        first.body
+      )
+    ).resolves.toBeTruthy();
+
+    expect(hasSchedule((await parse('spread-check')).meta)).toBe(true);
   });
 
   it('stays minimal when the parsed block is written back through scheduleToFrontmatter', async () => {

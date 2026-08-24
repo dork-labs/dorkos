@@ -72,6 +72,18 @@ export type SkillKind = z.infer<typeof SkillKindSchema>;
  * stripped rather than rejected: one file is read by several tools, and a key
  * DorkOS does not know must never delete a person's skill from the product.
  *
+ * **The same mercy applies to a key DorkOS *does* know.** Every optional field
+ * below degrades to absent when its value is unreadable, rather than failing
+ * the parse. This is not fussiness about tidy types — a rejected parse means
+ * `parseSkillFile` returns an error, and the skill then vanishes from the
+ * model's listing (`skill-resources.ts`), from the Codex slash palette
+ * (`scan-skill-commands.ts`), and takes an entire marketplace pack install
+ * down with it (`install-skill-pack.ts` throws). One misspelled enum is not
+ * worth any of that: `shell: zsh` is what a macOS author types, and
+ * `effort: xhigh` is a live Codex value this enum does not list. The narrow
+ * enums are a description of what DorkOS understands, never a gate on what a
+ * person may write.
+ *
  * @see https://agentskills.io/specification#skill-md-format
  * @see https://code.claude.com/docs/en/skills.md
  */
@@ -102,7 +114,7 @@ export const SkillFrontmatterSchema = z.object({
    * shapes at runtime, so widening the schema only lets its validated path do
    * what its fallback path always did.
    */
-  'allowed-tools': StringOrStringList.optional(),
+  'allowed-tools': StringOrStringList.optional().catch(undefined),
 
   /**
    * Human-readable display name. Falls back to a humanized `name` if absent.
@@ -111,7 +123,7 @@ export const SkillFrontmatterSchema = z.object({
    * files first — and now belongs to every skill: a name good enough to show a
    * person is worth having whether or not the file happens to be scheduled.
    */
-  'display-name': z.string().optional(),
+  'display-name': z.string().optional().catch(undefined),
 
   /**
    * Whether a person may invoke this skill directly (slash menus and other
@@ -143,7 +155,7 @@ export const SkillFrontmatterSchema = z.object({
    * Claude Code dialect: a space- or comma-separated string, or a YAML list,
    * stored exactly as written (see {@link StringOrStringList}).
    */
-  'disallowed-tools': StringOrStringList.optional(),
+  'disallowed-tools': StringOrStringList.optional().catch(undefined),
 
   /**
    * Glob patterns that limit when the model may load this skill on its own —
@@ -153,7 +165,7 @@ export const SkillFrontmatterSchema = z.object({
    * Claude Code dialect: a comma-separated string or a YAML list, stored
    * exactly as written (see {@link StringOrStringList}).
    */
-  paths: StringOrStringList.optional(),
+  paths: StringOrStringList.optional().catch(undefined),
 
   /**
    * Named positional arguments the skill body substitutes as `$name`.
@@ -161,16 +173,16 @@ export const SkillFrontmatterSchema = z.object({
    * Claude Code dialect: a space-separated string or a YAML list, stored
    * exactly as written (see {@link StringOrStringList}).
    */
-  arguments: StringOrStringList.optional(),
+  arguments: StringOrStringList.optional().catch(undefined),
 
   /** Shell used for the skill's inline `` !`command` `` blocks. */
-  shell: z.enum(['bash', 'powershell']).optional(),
+  shell: z.enum(['bash', 'powershell']).optional().catch(undefined),
 
   /** Execution context. `fork` runs the skill in an isolated subagent. */
-  context: z.enum(['fork']).optional(),
+  context: z.enum(['fork']).optional().catch(undefined),
 
   /** Which subagent type to fork, when `context: fork` is set. */
-  agent: z.string().optional(),
+  agent: z.string().optional().catch(undefined),
 
   /**
    * Whether a forked skill runs in the background instead of being waited on.
@@ -183,20 +195,29 @@ export const SkillFrontmatterSchema = z.object({
   background: OptionalYamlBoolean,
 
   /** Model override while this skill is active. */
-  model: z.string().optional(),
+  model: z.string().optional().catch(undefined),
 
   /** Reasoning-effort override while this skill is active. */
-  effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
+  effort: z.enum(['low', 'medium', 'high', 'max']).optional().catch(undefined),
 
   /** Parameter hint shown during autocomplete (e.g., "[issue-number]"). */
-  'argument-hint': z.string().optional(),
+  'argument-hint': z.string().optional().catch(undefined),
 
   /**
    * Presence makes this skill a **scheduled task**; absence leaves it a plain
    * skill. See {@link ScheduleBlockSchema} — including why cron *semantics*
    * are validated at the server seam and not here.
+   *
+   * TODO(DOR-1485/DOR-1486): a malformed block degrades to absent for now, so
+   * the file survives as a plain skill. That is the right trade only while
+   * nothing reads the block: this wave has no scheduler wired to it, so
+   * degrading costs nothing, while rejecting would delete the whole skill from
+   * three live surfaces over one bad line. Once DOR-1485 lands discovery and a
+   * parked row exists to hold the complaint, this becomes a reject so the file
+   * parks with a validation warning instead of quietly losing its schedule —
+   * the outcome the spec asks for (§User Experience).
    */
-  schedule: ScheduleBlockSchema.optional(),
+  schedule: ScheduleBlockSchema.optional().catch(undefined),
 
   /**
    * Optional discriminator declaring whether this file is a skill, task, or

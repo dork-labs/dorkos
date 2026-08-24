@@ -198,23 +198,35 @@ describe('SkillFrontmatterSchema — Claude Code dialect fields', () => {
         'one',
         'two',
       ]);
-      expect(SkillFrontmatterSchema.safeParse({ ...minimal, [field]: [1, 2] }).success).toBe(false);
+      // A list of the wrong thing degrades to absent; it never fails the file.
+      const wrong = SkillFrontmatterSchema.safeParse({ ...minimal, [field]: [1, 2] });
+      expect(wrong.success).toBe(true);
+      if (wrong.success) expect(wrong.data[field]).toBeUndefined();
     }
   );
 
-  it('accepts both shells and rejects a third', () => {
+  it('reads both shells', () => {
     expect(SkillFrontmatterSchema.parse({ ...minimal, shell: 'bash' }).shell).toBe('bash');
     expect(SkillFrontmatterSchema.parse({ ...minimal, shell: 'powershell' }).shell).toBe(
       'powershell'
     );
-    expect(SkillFrontmatterSchema.safeParse({ ...minimal, shell: 'zsh' }).success).toBe(false);
   });
 
-  it('rejects an effort or context value outside the set', () => {
-    expect(SkillFrontmatterSchema.safeParse({ ...minimal, effort: 'extreme' }).success).toBe(false);
-    expect(SkillFrontmatterSchema.safeParse({ ...minimal, context: 'background' }).success).toBe(
-      false
-    );
+  // These enums describe what DorkOS understands, and are not a gate on what a
+  // person may write. `zsh` is what a macOS author reaches for, and `xhigh` is
+  // a live Codex effort this enum does not list. Failing the parse would delete
+  // the whole skill from the model's listing, from the Codex palette, and would
+  // throw a marketplace pack install — over one line DorkOS merely does not use.
+  it.each([
+    ['shell', 'zsh'],
+    ['shell', 'fish'],
+    ['effort', 'xhigh'],
+    ['effort', 'minimal'],
+    ['context', 'background'],
+  ] as const)('degrades an unknown %s value (%s) to absent, keeping the skill', (field, value) => {
+    const parsed = SkillFrontmatterSchema.safeParse({ ...minimal, [field]: value });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data[field]).toBeUndefined();
   });
 
   it.each([
@@ -376,10 +388,20 @@ describe('readYamlBoolean', () => {
     expect(readYamlBoolean('YES')).toBe(true);
   });
 
+  // 0 and 1 were YAML 1.1 integers, not booleans, but an author who writes
+  // `enabled: 0` means off — and the field they write it in falls back to ON.
+  it('reads 0 and 1, as numbers or strings', () => {
+    expect(readYamlBoolean(0)).toBe(false);
+    expect(readYamlBoolean(1)).toBe(true);
+    expect(readYamlBoolean('0')).toBe(false);
+    expect(readYamlBoolean('1')).toBe(true);
+  });
+
   it('returns undefined for absent or unreadable values', () => {
     expect(readYamlBoolean(undefined)).toBeUndefined();
     expect(readYamlBoolean('maybe')).toBeUndefined();
-    expect(readYamlBoolean(0)).toBeUndefined();
+    expect(readYamlBoolean(2)).toBeUndefined();
+    expect(readYamlBoolean(-1)).toBeUndefined();
   });
 });
 

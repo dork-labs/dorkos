@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(skills): one skill frontmatter schema, with a schedule block (DOR-1484)'
+  - 'fix(skills): one bad frontmatter line never deletes a skill (DOR-1484)'
 ---
 
 ### Changed
@@ -9,4 +10,9 @@ covers:
 
 ### Added
 
-- A skill file can now carry a `schedule:` block that says when it should run: a time, a timezone, a time limit, how much the run may do on its own, and what to send when it fires. DorkOS reads and checks that block today, and a value it cannot make sense of is reported instead of quietly ignored. Actually running a skill from its own `schedule:` block arrives in a later change (DOR-1484)
+- A skill file can now carry a `schedule:` block that says when it should run: a time, a timezone, a time limit, how much the run may do on its own, and what to send when it fires. DorkOS understands the block today. Actually running a skill from its own `schedule:` block arrives in a later change (DOR-1484)
+
+### Fixed
+
+- A skill that lists its pre-approved tools the way Claude Code allows, as a YAML list instead of one line, no longer goes missing. Before, that one detail stopped the whole skill from loading (DOR-1484)
+- One option DorkOS does not recognize can no longer hide a skill. A line like `shell: zsh` is skipped over now, and the skill keeps working everywhere else (DOR-1484)

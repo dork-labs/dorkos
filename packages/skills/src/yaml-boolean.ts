@@ -11,6 +11,14 @@ import { z } from 'zod';
  * vanish from every surface, which is a far worse answer than reading what the
  * author plainly meant.
  *
+ * `0` and `1` are read as `false` and `true` too, as numbers or as strings.
+ * YAML 1.1 called those integers, not booleans, so this is one step past the
+ * dialect — taken because the alternative is worse in one direction that
+ * matters. A field like `schedule.enabled` falls back to `true` when it cannot
+ * read a value, so `enabled: 0` from an author who meant *off* would otherwise
+ * arm a schedule they had just tried to disable. Guessing is not free, but
+ * arming something against a plainly stated `0` is not a guess, it is a bug.
+ *
  * Anything else passes through untouched for the schema to judge.
  *
  * @param value - Raw frontmatter value, straight from the YAML parser.
@@ -18,8 +26,11 @@ import { z } from 'zod';
  * outside them.
  */
 export function coerceYamlBoolean(value: unknown): unknown {
+  if (value === 0 || value === 1) return value === 1;
   if (typeof value !== 'string') return value;
   const normalized = value.trim().toLowerCase();
+  if (normalized === '0') return false;
+  if (normalized === '1') return true;
   if (normalized === 'true' || normalized === 'yes' || normalized === 'on' || normalized === 'y') {
     return true;
   }
