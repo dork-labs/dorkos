@@ -184,7 +184,9 @@ describe('ScheduleRow', () => {
       reason: 'This schedule’s file changed since it was last approved.',
     });
 
-    expect(screen.getByText('This schedule’s file changed since it was last approved.')).toBeTruthy();
+    expect(
+      screen.getByText('This schedule’s file changed since it was last approved.')
+    ).toBeTruthy();
   });
 
   it('says nothing extra about a schedule that is already running', () => {

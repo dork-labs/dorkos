@@ -145,8 +145,8 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Found in a file, not proposed by anyone — names the file, and DorkOS&rsquo;s own words
-        are not dressed as a quotation
+        Found in a file, not proposed by anyone — names the file, and DorkOS&rsquo;s own words are
+        not dressed as a quotation
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
@@ -180,7 +180,8 @@ export function ScheduleApprovalShowcases() {
               cron: '',
               nextRuns: [],
               filePath: '/Users/dev/project/.agents/skills/broken-sweep/SKILL.md',
-              reason: 'Its "cron" setting is not something DorkOS can read (String must contain at least 1 character(s)).',
+              reason:
+                'Its "cron" setting is not something DorkOS can read (String must contain at least 1 character(s)).',
             })}
           />
         </div>
