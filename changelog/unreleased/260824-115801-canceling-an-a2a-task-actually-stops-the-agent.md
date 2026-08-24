@@ -3,6 +3,7 @@ covers:
   - 'refactor(relay,shared): one abort registry, one bounded interrupt (DOR-791)'
   - 'fix(relay): an agent turn can be stopped, and the stop reaches the model (DOR-791)'
   - 'fix(a2a-gateway): tasks/cancel stops the turn, or says it could not (DOR-791)'
+  - 'fix(relay,a2a-gateway): a queued turn is cancelable, and never starts once stopped (DOR-791)'
 ---
 
 ### Fixed
