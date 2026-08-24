@@ -15,7 +15,7 @@ import { useAppForm } from '@/layers/shared/lib/form';
 import { needsConsentRitual, permissionModeLabel } from '@/layers/shared/lib';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode, Task } from '@dorkos/shared/types';
-import { ScheduleBuilder } from './TaskBuilder';
+import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
 
@@ -316,6 +316,23 @@ export function ScheduleForm({
             </div>
           </details>
 
+          {/* The cron warning lives inside the Schedule section, which collapses
+              — and a collapsed section plus a disabled Create button is a dead
+              end with its reason hidden. This sits OUTSIDE the <details>, so the
+              reason is on screen either way. Deliberately not forcing the
+              section open instead: React only writes `open` when the prop
+              changes, so a person who collapses it again would never see it
+              reopen. */}
+          <form.Subscribe selector={(s) => !isCronValid(s.values.cron)}>
+            {(cronIsBroken) =>
+              cronIsBroken ? (
+                <p role="alert" data-testid="cron-blocks-save" className="text-destructive text-xs">
+                  Fix the cron expression under Schedule before saving.
+                </p>
+              ) : null
+            }
+          </form.Subscribe>
+
           {/* ── Advanced settings (collapsed by default) ── */}
           <details className="group">
             <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-sm">
@@ -461,8 +478,17 @@ export function ScheduleForm({
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
+        {/* A cron the builder is already showing in red cannot also be saveable.
+            It used to be: the escape-hatch input said "Invalid cron expression"
+            and Create stayed live, so the schedule went to the server and came
+            back rejected — or worse, saved and never fired. Same predicate as
+            the warning (`isCronValid`), so the two cannot disagree. */}
         <form.Subscribe
-          selector={(s) => s.values.name.trim() !== '' && s.values.prompt.trim() !== ''}
+          selector={(s) =>
+            s.values.name.trim() !== '' &&
+            s.values.prompt.trim() !== '' &&
+            isCronValid(s.values.cron)
+          }
         >
           {(isFormValid) => (
             <Button

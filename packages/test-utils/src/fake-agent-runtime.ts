@@ -13,6 +13,7 @@ import type {
   ToolDecisionOptions,
   DeliverIntoTurnOpts,
   RuntimeDeliveryResult,
+  SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
@@ -163,8 +164,8 @@ export class FakeAgentRuntime implements AgentRuntime {
         effort?: EffortLevel;
         fastMode?: boolean;
       }
-    ) => boolean
-  >(() => true);
+    ) => SessionUpdateResult
+  >(() => ({ updated: true }));
   forkSession = vi
     .fn<
       (

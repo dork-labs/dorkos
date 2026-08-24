@@ -74,6 +74,45 @@
 export const STOP_ACK_TIMEOUT_MS = 3_000;
 
 /**
+ * **What this bound does NOT bound** (DOR-1319).
+ *
+ * It bounds the ACK, and only the ack. What a person waits through after
+ * pressing Stop is three segments end to end, and DorkOS owns one of them:
+ *
+ * | Segment                      | Bounded by                                     |
+ * | ---------------------------- | ---------------------------------------------- |
+ * | request sent → ack           | {@link STOP_ACK_TIMEOUT_MS}                    |
+ * | ack → the CLI's own `result` | nothing here; it is the CLI winding down       |
+ * | that `result` → `turn_end`   | on the pump, the closing window's accounting   |
+ *
+ * The clock on the first segment starts at the true send:
+ * {@link awaitControlAck} invokes the request itself and arms the timer in the
+ * same synchronous block, so there is no queue-then-measure gap to blame. What
+ * the clock cannot see is a starved event loop — the timer rides the same loop
+ * the ack does, so under real load the bound inflates along with everything
+ * else, and no clock inside this process can subtract that out. The stop path
+ * therefore MEASURES the ack and says so when it ran long
+ * ({@link STOP_ACK_SLOW_MS}), which is what makes a slow Stop attributable
+ * afterwards instead of guessed at.
+ *
+ * The third segment used to be the largest: two control round-trips on their
+ * own 8 s budget, run after the turn was already over. A window closing on a
+ * stopped turn now skips them (`sessions/session-turn-windows.ts`).
+ */
+
+/**
+ * How long a stop's ack may take before it is worth a line in the log.
+ *
+ * A healthy interrupt is answered in milliseconds, so a full second is already
+ * far outside normal and a third of the bound that follows it. Below this the
+ * latency is recorded at debug and nothing more; above it, the log names the
+ * number — so a Stop that took seconds can be split into "the CLI was slow to
+ * hear us" and "the CLI was slow to wind down" from the log alone, which is the
+ * question a 7.6 s Stop left unanswerable (DOR-1319).
+ */
+export const STOP_ACK_SLOW_MS = 1_000;
+
+/**
  * How long a live permission-mode change may go unanswered before `PATCH
  * /api/sessions/:id` stops waiting on it.
  *
@@ -90,13 +129,22 @@ export const STOP_ACK_TIMEOUT_MS = 3_000;
  * `default` — leaves the gate held by the CLI, not by DorkOS: under bypass the
  * CLI never calls `canUseTool` at all (`launch-resolver.ts`,
  * `phantom-cancellation.ts`), so no in-memory mode on this side can put the
- * approval prompts back for the turn already running. The PATCH still answers
- * `200 {permissionMode:'default'}`, which is true of what DorkOS has stored and
- * NOT of what the running turn will do. Two follow-ups are filed against that
- * gap: reporting whether the live change actually applied (an `AgentRuntime`
- * shape change, so not free), and whether a tightening that goes unanswered
- * should escalate — end the turn rather than let it keep bypassing. Neither is
- * decided here; the bound only makes the failure visible instead of a hang.
+ * approval prompts back for the turn already running.
+ *
+ * **What the product does about that, decided in DOR-1435.** The unanswered
+ * TIGHTENING is REPORTED, not escalated:
+ *
+ * - `updateSession` answers `permissionModePendingUntilNextTurn`, and `PATCH
+ *   /api/sessions/:id` turns that into a `202` saying the new mode starts on
+ *   the next reply. The old `200 {permissionMode:'default'}` stated a safety
+ *   posture the agent had not adopted; a person who is told can decide.
+ * - The turn is NOT killed. Ending it is the same trade `STOP_ACK_TIMEOUT_MS`
+ *   weighs above, and here it comes out the other way: an escalation on this
+ *   clock would destroy real work on a channel that was merely slow, while the
+ *   case that actually produces unacks is the wind-down, where the turn is
+ *   ending anyway and killing it buys nothing. The person keeps the Stop button
+ *   — now with an honest answer in front of them — which is the same power
+ *   without the false positives.
  */
 export const PERMISSION_MODE_ACK_TIMEOUT_MS = 3_000;
 

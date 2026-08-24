@@ -7,7 +7,11 @@
  *
  * @module shared/lib/direct/services
  */
-import type { RuntimeCapabilities, SessionOpts } from '@dorkos/shared/agent-runtime';
+import type {
+  RuntimeCapabilities,
+  SessionOpts,
+  SessionUpdateResult,
+} from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type {
@@ -44,7 +48,7 @@ export interface DirectTransportServices {
     updateSession(
       sessionId: string,
       opts: { permissionMode?: PermissionMode; model?: string }
-    ): boolean | Promise<boolean>;
+    ): SessionUpdateResult | Promise<SessionUpdateResult>;
     getCapabilities(): RuntimeCapabilities;
     /**
      * Available models reported by the SDK (AgentRuntime contract). Same source

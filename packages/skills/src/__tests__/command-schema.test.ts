@@ -90,6 +90,21 @@ describe('CommandFrontmatterSchema', () => {
     }
   });
 
+  it('reads YAML 1.1 boolean words the same way the base schema does', () => {
+    expect(
+      CommandFrontmatterSchema.parse({ ...base, 'user-invocable': 'no' })['user-invocable']
+    ).toBe(false);
+    expect(
+      CommandFrontmatterSchema.parse({ ...base, 'user-invocable': 'yes' })['user-invocable']
+    ).toBe(true);
+  });
+
+  it('falls back to visible when the value is unreadable', () => {
+    const parsed = CommandFrontmatterSchema.safeParse({ ...base, 'user-invocable': 'maybe' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data['user-invocable']).toBe(true);
+  });
+
   it('requires description', () => {
     const result = CommandFrontmatterSchema.safeParse({ name: 'valid-name' });
     expect(result.success).toBe(false);

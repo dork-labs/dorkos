@@ -9,8 +9,11 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
+import { toast } from 'sonner';
 import { useSessionStatus } from '../model/use-session-status';
 import { useSessionSettingsOverridesStore } from '../model/session-settings-overrides';
+
+vi.mock('sonner', () => ({ toast: { warning: vi.fn() } }));
 
 // Mock app store (selectedCwd). A resolved directory, because a session query
 // correctly refuses to fire without one (DOR-495) — `null` is the app's
@@ -356,5 +359,101 @@ describe('useSessionStatus', () => {
     });
 
     expect(transport.updateSession).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A stricter setting the running reply never got told about (DOR-1435).
+ *
+ * The dial moves — the choice IS saved — so the only dishonest version of this
+ * screen is the silent one, where the person reads the new mode and believes
+ * the reply in front of them is running under it.
+ */
+describe('useSessionStatus and a permission change that has not taken yet', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSessionSettingsOverridesStore.setState({ bySession: {} });
+  });
+  afterEach(cleanup);
+
+  /** A wrapper whose query client the test can inspect afterwards. */
+  function wrapperWithClient(transport: Transport) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    return { wrapper, queryClient };
+  }
+
+  function transportAnswering(pending: boolean) {
+    return createMockTransport({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ id: 's1', model: 'a', permissionMode: 'bypassPermissions' }),
+      updateSession: vi.fn().mockResolvedValue({
+        id: 's1',
+        model: 'a',
+        permissionMode: 'default',
+        ...(pending ? { permissionModePendingUntilNextTurn: true } : {}),
+      }),
+    });
+  }
+
+  it('tells the person the stricter setting starts on their next message', async () => {
+    const transport = transportAnswering(true);
+    const { wrapper } = wrapperWithClient(transport);
+    const { result } = renderHook(() => useSessionStatus('s1', null, true), { wrapper });
+
+    await act(async () => {
+      await result.current.updateSession({ permissionMode: 'default' });
+    });
+
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    const [title, options] = vi.mocked(toast.warning).mock.calls[0]!;
+    expect(String(title)).toMatch(/next message/i);
+    expect((options as { description?: string })?.description).toMatch(/already running/i);
+  });
+
+  it('says nothing when the change did reach the running reply', async () => {
+    const transport = transportAnswering(false);
+    const { wrapper } = wrapperWithClient(transport);
+    const { result } = renderHook(() => useSessionStatus('s1', null, true), { wrapper });
+
+    await act(async () => {
+      await result.current.updateSession({ permissionMode: 'default' });
+    });
+
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('never writes the pending flag into the session cache', async () => {
+    // It is a fact about one write, not about the session. Cached, it would go
+    // on claiming "starts on your next message" long after that message.
+    //
+    // The WRITE is what is asserted, not the cache a moment later: the session
+    // query refetches on its own and would wash the flag out regardless, so
+    // reading the cache after the fact passes whether or not the write was
+    // clean.
+    const transport = transportAnswering(true);
+    const { wrapper, queryClient } = wrapperWithClient(transport);
+    const written: unknown[] = [];
+    const setQueryData = queryClient.setQueryData.bind(queryClient);
+    vi.spyOn(queryClient, 'setQueryData').mockImplementation(((key: unknown, updater: unknown) => {
+      const result = setQueryData(key as never, updater as never);
+      if (JSON.stringify(key).includes('s1')) written.push(result);
+      return result;
+    }) as typeof queryClient.setQueryData);
+
+    const { result } = renderHook(() => useSessionStatus('s1', null, true), { wrapper });
+    await act(async () => {
+      await result.current.updateSession({ permissionMode: 'default' });
+    });
+
+    expect(written.length).toBeGreaterThan(0);
+    for (const value of written) {
+      expect(value).not.toHaveProperty('permissionModePendingUntilNextTurn');
+    }
   });
 });

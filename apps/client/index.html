@@ -11,6 +11,386 @@
     <title>DorkOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Boot sentinel. A bundle that throws at module scope never mounts React, and
+      `#root` stays empty on a dark page: v0.63.0 shipped exactly that and users
+      saw a black window with nothing to read and nothing to click (DOR-1451).
+      This script runs before the bundle, buffers whatever fails, and paints a
+      readable panel into `#root` if nothing has mounted by the time its watchdog
+      expires. Inline, framework-free, no external assets and no imports on
+      purpose — it has to survive the case where the bundle is what is broken, so
+      it cannot depend on anything the bundle brings. Styles are inline for the
+      same reason: in dev the stylesheet arrives THROUGH the bundle, so a class
+      name would paint nothing.
+
+      `main.tsx` calls `window.__dorkosBoot.done()` at its render call, which
+      disarms all of this. That happens long before any data loads, so a healthy
+      app that is merely slow never reaches the watchdog. It is deliberately
+      first in the head, ahead of the theme script, so a failure there is caught
+      too. Its behaviour is pinned by `src/__tests__/boot-sentinel.test.ts`,
+      which reads this file and evaluates the script below — keep the
+      `data-boot-sentinel` attribute, that test finds it by name.
+
+      A SLOW NETWORK IS NOT A FAILED BOOT, and this is the trap to know about:
+      the critical path is ~1.16MB gzipped, which on a throttled or tunnelled
+      connection is still downloading well past ten seconds. Measured in
+      Chromium at 400 kbit/s, a bare timeout painted over a perfectly healthy
+      boot — and "Try again" then cancelled the in-flight request and restarted
+      the download from zero, so the watchdog made a slow load unloadable. The
+      timeout path therefore requires `document.readyState === 'complete'`
+      before it counts as evidence.
+    -->
+    <script data-boot-sentinel>
+      (function () {
+        // How long a healthy boot may take to reach `main.tsx`'s render call,
+        // counted only against a document that has finished loading (checkBoot).
+        var BOOT_DEADLINE_MS = 10000;
+        // How often to look again while the document is still loading.
+        var LOADING_RECHECK_MS = 1000;
+        // Backstop for a fetch that neither finishes nor fails: a hung
+        // connection leaves readyState at 'interactive' for good, so the
+        // readyState gate on its own would wait forever.
+        var BOOT_CEILING_MS = 60000;
+        // How long after an uncaught error to wait before deciding it was fatal.
+        // React may still be mid-mount when something unrelated throws.
+        var ERROR_GRACE_MS = 3000;
+        var MAX_FAILURES = 5;
+        var MAX_FAILURE_CHARS = 2000;
+        var COPY_FEEDBACK_MS = 2000;
+        var COPY_LABEL = 'Copy details';
+
+        var failures = [];
+        var timers = [];
+        var waitedMs = 0;
+        var copyTimer = null;
+        var graceArmed = false;
+        var painted = false;
+        var disarmed = false;
+
+        function record(text) {
+          if (failures.length >= MAX_FAILURES) return;
+          var line = String(text == null ? 'Unknown error' : text);
+          if (line.length > MAX_FAILURE_CHARS) {
+            line = line.slice(0, MAX_FAILURE_CHARS) + '\n... (truncated)';
+          }
+          failures.push(line);
+        }
+
+        function later(ms, fn) {
+          if (disarmed) return;
+          timers.push(setTimeout(fn, ms));
+        }
+
+        // A mounted app is a working app, whatever the watchdog believes.
+        // Whitespace is not a mounted app: index.html may one day carry a static
+        // skeleton inside #root, and a `firstChild` test would read its
+        // indentation text node as "React is up" and silently switch all of this
+        // off.
+        function mountedAlready() {
+          var root = document.getElementById('root');
+          if (!root) return false;
+          return root.children.length > 0 || root.textContent.trim() !== '';
+        }
+
+        function giveUp() {
+          if (disarmed || painted || mountedAlready()) return;
+          // A missing #root is the one truly unrecoverable state, and the one
+          // most in need of saying so — fall back to the body rather than
+          // staying silent.
+          var target = document.getElementById('root') || document.body;
+          if (!target) return;
+          painted = true;
+          paint(target);
+        }
+
+        function scheduleCheck(ms) {
+          waitedMs += ms;
+          later(ms, checkBoot);
+        }
+
+        // The pure-timeout path, which has no evidence of its own that anything
+        // went wrong. A slow network is not a failed boot: on a throttled
+        // connection the bundle is still arriving at the deadline, so painting
+        // here would replace a perfectly healthy boot mid-download — and "Try
+        // again" would cancel the in-flight request and restart it from zero.
+        // The timeout therefore only counts once the document says loading
+        // STOPPED. readyState still reaches 'complete' when the bundle 404s or
+        // throws at module scope, so every real failure mode survives the gate;
+        // the ceiling covers the fetch that hangs instead of failing.
+        function checkBoot() {
+          if (disarmed || painted || mountedAlready()) return;
+          if (document.readyState !== 'complete' && waitedMs < BOOT_CEILING_MS) {
+            scheduleCheck(LOADING_RECHECK_MS);
+            return;
+          }
+          giveUp();
+        }
+
+        function onError(event) {
+          var target = event.target;
+          if (target && target !== window && target.tagName) {
+            // Resource failure (the bundle 404s, a chunk is missing). These fire
+            // on the element and do not bubble, which is why the listener below
+            // is registered for the capture phase.
+            record('Failed to load ' + (target.src || target.href || target.tagName));
+          } else {
+            var where = (event.filename || '?') + ':' + event.lineno + ':' + event.colno;
+            var stack = event.error && event.error.stack;
+            record(stack ? stack : event.message + ' (' + where + ')');
+          }
+          armGrace();
+        }
+
+        function onRejection(event) {
+          var reason = event.reason;
+          record('Unhandled promise rejection: ' + ((reason && reason.stack) || reason));
+          armGrace();
+        }
+
+        function armGrace() {
+          if (graceArmed) return;
+          graceArmed = true;
+          later(ERROR_GRACE_MS, giveUp);
+        }
+
+        function detailsText() {
+          var lines = [
+            'DorkOS could not finish starting.',
+            'When: ' + new Date().toISOString(),
+            'Page: ' + location.href,
+            'Browser: ' + navigator.userAgent,
+            '',
+          ];
+          if (failures.length === 0) {
+            lines.push('No error was reported before the app gave up.');
+          }
+          return lines.concat(failures).join('\n');
+        }
+
+        function css(node, rules) {
+          for (var key in rules) node.style[key] = rules[key];
+          return node;
+        }
+
+        function el(tag, rules, text) {
+          var node = document.createElement(tag);
+          if (rules) css(node, rules);
+          if (text != null) node.textContent = text;
+          return node;
+        }
+
+        // One timer, cleared on re-entry, restoring a fixed label. Capturing the
+        // CURRENT text as the thing to restore looks equivalent and is not: a
+        // second click while the label is still swapped captures "Copied" as the
+        // original and puts the button in that state permanently.
+        function flash(node, label) {
+          if (copyTimer) clearTimeout(copyTimer);
+          node.textContent = label;
+          copyTimer = setTimeout(function () {
+            node.textContent = COPY_LABEL;
+            copyTimer = null;
+          }, COPY_FEEDBACK_MS);
+        }
+
+        function copyViaTextarea(text, node) {
+          try {
+            var area = el('textarea', { position: 'fixed', top: '0', opacity: '0' });
+            area.value = text;
+            document.body.appendChild(area);
+            area.select();
+            var copied = document.execCommand && document.execCommand('copy');
+            document.body.removeChild(area);
+            flash(node, copied ? 'Copied' : 'Copy failed');
+          } catch (err) {
+            flash(node, 'Copy failed');
+          }
+        }
+
+        function copyDetails(node) {
+          var text = detailsText();
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(
+                function () {
+                  flash(node, 'Copied');
+                },
+                function () {
+                  copyViaTextarea(text, node);
+                }
+              );
+              return;
+            }
+          } catch (err) {
+            // Fall through: a clipboard that throws on access is no clipboard.
+          }
+          copyViaTextarea(text, node);
+        }
+
+        function paint(target) {
+          // The theme script below has already put `dark` on <html>, so the
+          // panel matches whatever the window was going to be.
+          var dark = document.documentElement.classList.contains('dark');
+          var c = dark
+            ? {
+                bg: '#0a0a0a',
+                fg: '#dedede',
+                dim: '#a3a3a3',
+                line: '#404040',
+                code: '#171717',
+                brand: '#f17827',
+                actionBg: '#dedede',
+                actionFg: '#171717',
+              }
+            : {
+                bg: '#fafafa',
+                fg: '#171717',
+                dim: '#525252',
+                line: '#d4d4d4',
+                code: '#f5f5f5',
+                brand: '#d55c0b',
+                actionBg: '#171717',
+                actionFg: '#fafafa',
+              };
+          var stack =
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+          var mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+          var page = el('div', {
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            boxSizing: 'border-box',
+            background: c.bg,
+            color: c.fg,
+            fontFamily: stack,
+          });
+          var panel = el('div', {
+            width: '100%',
+            maxWidth: '460px',
+            boxSizing: 'border-box',
+            padding: '28px',
+            borderRadius: '12px',
+            border: '1px solid ' + c.line,
+            borderTop: '2px solid ' + c.brand,
+            background: dark ? '#0f0f0f' : '#ffffff',
+            // Suppressed because this element is focused programmatically and is
+            // not a tab stop: without it Chrome paints its blue ring around the
+            // whole panel, burying the brand edge under what reads as a browser
+            // artifact. The two buttons are the real tab stops and keep their
+            // native rings.
+            outline: 'none',
+          });
+          // The panel is the only thing left on the page and it demands an
+          // answer, so it is the dialog rather than a passive announcement.
+          panel.setAttribute('role', 'alertdialog');
+          panel.setAttribute('aria-labelledby', 'dorkos-boot-failure-title');
+          panel.setAttribute('tabindex', '-1');
+
+          var heading = el(
+            'h1',
+            { margin: '0 0 8px', fontSize: '18px', fontWeight: '600', letterSpacing: '-0.01em' },
+            "DorkOS couldn't finish starting."
+          );
+          heading.id = 'dorkos-boot-failure-title';
+          panel.appendChild(heading);
+          panel.appendChild(
+            el(
+              'p',
+              { margin: '0 0 20px', fontSize: '14px', lineHeight: '1.55', color: c.dim },
+              "Try again first. If that doesn't help, copy the details below and send them to us."
+            )
+          );
+
+          var actions = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap' });
+          var base = {
+            font: 'inherit',
+            fontSize: '14px',
+            fontWeight: '500',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            cursor: 'pointer',
+          };
+
+          var retry = el('button', base, 'Try again');
+          css(retry, {
+            border: '1px solid transparent',
+            background: c.actionBg,
+            color: c.actionFg,
+          });
+          retry.type = 'button';
+          retry.onclick = function () {
+            location.reload();
+          };
+
+          var copy = el('button', base, COPY_LABEL);
+          css(copy, { border: '1px solid ' + c.line, background: 'transparent', color: c.fg });
+          copy.type = 'button';
+          copy.onclick = function () {
+            copyDetails(copy);
+          };
+
+          actions.appendChild(retry);
+          actions.appendChild(copy);
+          panel.appendChild(actions);
+
+          var details = el('details', { marginTop: '20px' });
+          var summary = el(
+            'summary',
+            { fontSize: '13px', color: c.dim, cursor: 'pointer' },
+            'Technical details'
+          );
+          details.appendChild(summary);
+          details.appendChild(
+            el(
+              'pre',
+              {
+                margin: '10px 0 0',
+                padding: '12px',
+                borderRadius: '8px',
+                background: c.code,
+                color: c.dim,
+                fontFamily: mono,
+                fontSize: '12px',
+                lineHeight: '1.5',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: '220px',
+                overflow: 'auto',
+              },
+              detailsText()
+            )
+          );
+          panel.appendChild(details);
+
+          page.appendChild(panel);
+          target.appendChild(page);
+          // Move the keyboard out of whatever it was on and onto the one thing
+          // now on screen. Wrapped: focus() can throw in exotic embeds, and a
+          // painted panel nobody can tab to still beats no panel.
+          try {
+            panel.focus();
+          } catch (err) {
+            // Focus is a nicety here, not the point.
+          }
+        }
+
+        window.addEventListener('error', onError, true);
+        window.addEventListener('unhandledrejection', onRejection);
+        scheduleCheck(BOOT_DEADLINE_MS);
+
+        window.__dorkosBoot = {
+          done: function () {
+            disarmed = true;
+            for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]);
+            timers.length = 0;
+            window.removeEventListener('error', onError, true);
+            window.removeEventListener('unhandledrejection', onRejection);
+          },
+        };
+      })();
+    </script>
     <script>
       (function () {
         var t = localStorage.getItem('gateway-theme');

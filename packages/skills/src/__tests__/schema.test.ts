@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { SkillFrontmatterSchema, SkillKindSchema, SkillNameSchema } from '../schema.js';
+import {
+  SkillFrontmatterSchema,
+  SkillKindSchema,
+  SkillNameSchema,
+  isUserInvocable,
+  isModelInvocable,
+  readYamlBoolean,
+} from '../schema.js';
 import type { SkillKind } from '../schema.js';
 
 describe('SkillNameSchema', () => {
@@ -169,5 +176,127 @@ describe('SkillKindSchema', () => {
     const taskKind: SkillKind = 'task';
     const commandKind: SkillKind = 'command';
     expect([skillKind, taskKind, commandKind]).toEqual(['skill', 'task', 'command']);
+  });
+});
+
+describe('invocation frontmatter', () => {
+  const base = { name: 'deploy', description: 'Ship the app' };
+
+  it('carries user-invocable and disable-model-invocation through a base parse', () => {
+    const parsed = SkillFrontmatterSchema.parse({
+      ...base,
+      'user-invocable': false,
+      'disable-model-invocation': true,
+    });
+    expect(parsed['user-invocable']).toBe(false);
+    expect(parsed['disable-model-invocation']).toBe(true);
+  });
+
+  it('leaves both fields absent when the author omits them (no materialized default)', () => {
+    const parsed = SkillFrontmatterSchema.parse(base);
+    expect(parsed['user-invocable']).toBeUndefined();
+    expect(parsed['disable-model-invocation']).toBeUndefined();
+  });
+
+  // js-yaml v4 is YAML 1.2 core, so gray-matter hands us these as STRINGS.
+  // A person writing `user-invocable: no` means false and must not have their
+  // whole skill rejected over the dialect.
+  it.each([
+    ['no', false],
+    ['off', false],
+    ['n', false],
+    ['"false"', false],
+    ['False', false],
+    ['yes', true],
+    ['on', true],
+    ['y', true],
+    ['True', true],
+  ])('reads the YAML 1.1 word %s as %s', (word, expected) => {
+    const raw = word.replaceAll('"', '');
+    expect(SkillFrontmatterSchema.parse({ ...base, 'user-invocable': raw })['user-invocable']).toBe(
+      expected
+    );
+    expect(
+      SkillFrontmatterSchema.parse({ ...base, 'disable-model-invocation': raw })[
+        'disable-model-invocation'
+      ]
+    ).toBe(expected);
+  });
+
+  it('ignores surrounding whitespace on a boolean word', () => {
+    expect(
+      SkillFrontmatterSchema.parse({ ...base, 'user-invocable': '  No  ' })['user-invocable']
+    ).toBe(false);
+  });
+
+  it('degrades an unreadable value to absent instead of rejecting the skill', () => {
+    // Pre-change, an unknown key was simply stripped and the skill parsed
+    // fine. A typo here must not delete the whole skill from the product.
+    const parsed = SkillFrontmatterSchema.safeParse({
+      ...base,
+      'user-invocable': 'maybe',
+      'disable-model-invocation': 42,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data['user-invocable']).toBeUndefined();
+      expect(parsed.data['disable-model-invocation']).toBeUndefined();
+    }
+  });
+
+  it('treats a garbage value as permissive on both questions', () => {
+    const meta = SkillFrontmatterSchema.parse({
+      ...base,
+      'user-invocable': 'maybe',
+      'disable-model-invocation': 'sometimes',
+    });
+    expect(isUserInvocable(meta)).toBe(true);
+    expect(isModelInvocable(meta)).toBe(true);
+  });
+});
+
+describe('readYamlBoolean', () => {
+  it('passes real booleans through', () => {
+    expect(readYamlBoolean(true)).toBe(true);
+    expect(readYamlBoolean(false)).toBe(false);
+  });
+
+  it('reads the YAML 1.1 words', () => {
+    expect(readYamlBoolean('no')).toBe(false);
+    expect(readYamlBoolean('YES')).toBe(true);
+  });
+
+  it('returns undefined for absent or unreadable values', () => {
+    expect(readYamlBoolean(undefined)).toBeUndefined();
+    expect(readYamlBoolean('maybe')).toBeUndefined();
+    expect(readYamlBoolean(0)).toBeUndefined();
+  });
+});
+
+describe('isUserInvocable', () => {
+  it('says yes when the field is absent', () => {
+    expect(isUserInvocable({})).toBe(true);
+  });
+
+  it('says yes on an explicit true', () => {
+    expect(isUserInvocable({ 'user-invocable': true })).toBe(true);
+  });
+
+  it('says no only on an explicit false', () => {
+    expect(isUserInvocable({ 'user-invocable': false })).toBe(false);
+  });
+});
+
+describe('isModelInvocable', () => {
+  it('says yes when the field is absent', () => {
+    expect(isModelInvocable({})).toBe(true);
+  });
+
+  it('says yes on an explicit false', () => {
+    expect(isModelInvocable({ 'disable-model-invocation': false })).toBe(true);
+  });
+
+  it('says no only on an explicit true', () => {
+    expect(isModelInvocable({ 'disable-model-invocation': true })).toBe(false);
   });
 });

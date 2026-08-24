@@ -332,7 +332,7 @@ export function ScheduleApprovalCard({
             )}
           >
             Runs as: {permissionModeLabel(task.permissionMode)}
-            {bypasses && ' — acts without asking'}
+            {bypasses && ' — acts without approval prompts'}
           </span>
         </div>
         <CollapsibleContent>

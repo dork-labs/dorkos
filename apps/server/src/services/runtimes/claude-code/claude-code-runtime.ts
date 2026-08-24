@@ -38,6 +38,7 @@ import type {
   SessionWarmth,
   DeliverIntoTurnOpts,
   RuntimeDeliveryResult,
+  SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -355,7 +356,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       effort?: EffortLevel;
       fastMode?: boolean;
     }
-  ): Promise<boolean> {
+  ): Promise<SessionUpdateResult> {
     return this.sessionStore.updateSession(sessionId, opts);
   }
 

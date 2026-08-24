@@ -20,12 +20,17 @@ import { logger } from '../../../../lib/logger.js';
  * @param session - In-memory session state (mutated by system init/memory-recall events).
  * @param sessionId - DorkOS session identifier.
  * @param toolState - Mutable tool tracking state passed by reference.
+ * @param wasStopped - Whether DorkOS aimed a Stop at the query running this
+ *   turn. Forwarded to the result mapper, which needs it to tell a turn a
+ *   person stopped from one that failed (DOR-1320); every other mapper ignores
+ *   it. Omitted means "nobody stopped anything".
  */
 export async function* mapSdkMessage(
   message: SDKMessage,
   session: AgentSession,
   sessionId: string,
-  toolState: ToolState
+  toolState: ToolState,
+  wasStopped?: () => boolean
 ): AsyncGenerator<StreamEvent> {
   switch (message.type) {
     case 'system':
@@ -43,7 +48,7 @@ export async function* mapSdkMessage(
     case 'result':
     case 'rate_limit_event':
     case 'prompt_suggestion':
-      yield* mapResultEvent(message, session, sessionId);
+      yield* mapResultEvent(message, session, sessionId, wasStopped);
       return;
     default:
       // Catch-all: log unhandled message types for debugging.

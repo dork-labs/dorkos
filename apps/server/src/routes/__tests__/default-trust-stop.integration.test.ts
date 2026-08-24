@@ -73,7 +73,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     // reading THIS profile, so a stub profile would test the stub.
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
     fake = new FakeAgentRuntime();
-    fake.updateSession.mockReturnValue(true);
+    fake.updateSession.mockReturnValue({ updated: true });
     fake.getSession.mockResolvedValue(null);
     runtimeRegistry.register(fake);
     runtimeRegistry.setDefault('fake');

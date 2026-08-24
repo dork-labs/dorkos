@@ -66,7 +66,18 @@ const DOWNGRADE_NOTICE: Record<
   // sentence here would be a duplicate at best, and at worst it would imply a
   // failure where the design simply chose the later of two honest routes.
   'not-stageable': null,
-  'no-open-turn': 'Queued. The task had already finished.',
+  // Says the task is still running and where the words went, and claims nothing
+  // about it ending. The sentence this replaced — "Queued. The task had already
+  // finished." — asserted an ending the server had never checked for, and a
+  // person watching the task run was told it was over (DOR-1315).
+  //
+  // "Something else" rather than "another window", deliberately: the holder is a
+  // client id, and plenty of them are not windows. A room runs turns under
+  // `ROOMS.CLIENT_ID`, an MCP sign-in resume under its own flow id, Obsidian
+  // under the embedded transport's. Naming a window would put back exactly the
+  // kind of unchecked claim this line was rewritten to remove.
+  'turn-owned-elsewhere':
+    "Couldn't cut in. Something else is running this task, so it's waiting in line.",
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
 
@@ -76,7 +87,7 @@ const DOWNGRADE_NOTICE: Record<
  *
  * Now that steer and stage have real mechanisms (P4), a downgrade is a live
  * event: a steer the runtime could not honour is queued instead, and the chip
- * owns up to it once — `unsupported`, `not-steerable`, `no-open-turn`, and
+ * owns up to it once — `unsupported`, `not-steerable`, `turn-owned-elsewhere`, and
  * `pending-interaction` each get one plain line. Two are deliberately quiet:
  * `session-idle`, because "it ran immediately" is not a loss anybody needs told,
  * and `not-stageable`, because a folded stage sits on no queue and the transcript

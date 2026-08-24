@@ -389,13 +389,84 @@ describe('CodexRuntime', () => {
 
       const updated = await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
 
-      expect(updated).toBe(true);
+      expect(updated).toEqual({ updated: true });
       expect(runtime.hasSession(sessionId)).toBe(true);
       expect(port.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
         permissionMode: 'acceptEdits',
       });
       const session = await runtime.getSession('/projects/demo', sessionId);
       expect(session?.permissionMode).toBe('acceptEdits');
+    });
+
+    /**
+     * A mode becomes a `sandboxMode` when the turn starts and nothing moves it
+     * afterwards — there is no control channel and no ack to wait for. So a
+     * tightening landed mid-turn is saved and NOT in force, and saying so is the
+     * whole of DOR-1435 on this adapter.
+     */
+    describe('a permission change landed while a turn is streaming', () => {
+      /** Start a turn and park it mid-stream, so `activeTurns` holds an entry. */
+      function startParkedTurn(runtime: CodexRuntime, sessionId: string) {
+        let capturedSignal: AbortSignal | undefined;
+        sdkMocks.startThread.mockReturnValue({
+          id: null,
+          runStreamed: vi.fn((_input: unknown, turnOptions?: { signal?: AbortSignal }) => {
+            capturedSignal = turnOptions?.signal;
+            return Promise.resolve({ events: abortableStream(() => capturedSignal!) });
+          }),
+          run: vi.fn(),
+        });
+        const gen = runtime.sendMessage(sessionId, 'long task');
+        return { gen, drainRest: async () => void (await drain(gen)) };
+      }
+
+      it('says a tightening has not reached the running turn', async () => {
+        const { runtime } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        runtime.ensureSession(sessionId, {
+          permissionMode: 'bypassPermissions',
+          cwd: '/projects/demo',
+        });
+        const { gen, drainRest } = startParkedTurn(runtime, sessionId);
+        await gen.next(); // the turn is now in flight
+
+        // Full access → Read only: the run keeps full file and network access
+        // until it ends, whatever the session now says.
+        await expect(
+          runtime.updateSession(sessionId, { permissionMode: 'default' })
+        ).resolves.toEqual({ updated: true, permissionModePendingUntilNextTurn: true });
+
+        await runtime.interruptQuery(sessionId);
+        await drainRest();
+      });
+
+      it('stays quiet about a loosening, which the next turn simply picks up', async () => {
+        const { runtime } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/demo' });
+        const { gen, drainRest } = startParkedTurn(runtime, sessionId);
+        await gen.next();
+
+        await expect(
+          runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' })
+        ).resolves.toEqual({ updated: true });
+
+        await runtime.interruptQuery(sessionId);
+        await drainRest();
+      });
+
+      it('stays quiet when no turn is running — the next one is projected from the new mode', async () => {
+        const { runtime } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        runtime.ensureSession(sessionId, {
+          permissionMode: 'bypassPermissions',
+          cwd: '/projects/demo',
+        });
+
+        await expect(
+          runtime.updateSession(sessionId, { permissionMode: 'default' })
+        ).resolves.toEqual({ updated: true });
+      });
     });
 
     it('forkSession is unsupported and resolves null', async () => {

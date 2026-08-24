@@ -62,6 +62,31 @@ mac:
 dmg:
   sign: true
   artifactName: DorkOS-${version}-${arch}.dmg
+  # Without a background and an explicit layout, electron-builder falls back to
+  # its own generic gray template art — which is the first thing a Mac user
+  # ever sees of this product. The artwork is generated and committed by
+  # apps/desktop/scripts/generate-dmg-background.ts; edit that, not the TIFF.
+  #
+  # There is deliberately no `window:` key here. dmg-builder ignores it whenever
+  # a background image is set and derives the window size from the image itself
+  # (`sips -g pixelWidth` on the background, in its `customizeDmg`), so the
+  # 540x380 window comes from the TIFF's 1x representation. Declaring a size
+  # here would look authoritative while doing nothing.
+  #
+  # x/y are icon CENTRES in that same 540x380 space. They must stay in step with
+  # DMG_LAYOUT in the generator, or the arrow drawn on the background points at
+  # empty space — scripts/__tests__/generate-dmg-background.test.ts fails if
+  # these numbers and that constant ever disagree.
+  background: build/dmg-background.tiff
+  iconSize: 100
+  contents:
+    - x: 140
+      y: 205
+      type: file
+    - x: 400
+      y: 205
+      type: link
+      path: /Applications
 
 win:
   # x64 only for now (win32-arm64 is a tracked follow-up). Unsigned for the

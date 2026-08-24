@@ -158,7 +158,9 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
     // No configureSettings() call — settingsPort is undefined.
     const session = await store.ensureForMessage('s1', fakeTranscript(false), '/cwd');
     expect(session.permissionMode).toBe('default'); // hardcoded fallback default
-    await expect(store.updateSession('s1', { permissionMode: 'plan' })).resolves.toBe(true);
+    await expect(store.updateSession('s1', { permissionMode: 'plan' })).resolves.toEqual({
+      updated: true,
+    });
   });
 
   it('updateSession hydrates persisted settings on a cold auto-create (regression, DOR-1151)', async () => {
@@ -177,7 +179,7 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
     // this. updateSession must hit its own auto-create branch.
     const result = await store.updateSession('s1', { model: 'claude-sonnet-4' });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ updated: true });
     expect(port.getSessionSettings).toHaveBeenCalledWith('s1');
     expect(store.findSession('s1')!.permissionMode).toBe('bypassPermissions');
     expect(store.findSession('s1')!.model).toBe('claude-sonnet-4');

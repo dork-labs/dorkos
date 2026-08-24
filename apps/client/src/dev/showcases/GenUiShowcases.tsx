@@ -145,8 +145,20 @@ const TIMELINE: WidgetDocument = {
   root: {
     type: 'timeline',
     items: [
-      { time: '08:15', title: 'Depart San Francisco', subtitle: 'SFO → JFK', status: 'done' },
-      { time: '16:40', title: 'Arrive New York', subtitle: 'Check in at hotel', status: 'done' },
+      {
+        time: '08:15',
+        title: 'Depart San Francisco',
+        subtitle: 'SFO → JFK',
+        status: 'done',
+        icon: 'check-circle',
+      },
+      {
+        time: '16:40',
+        title: 'Arrive New York',
+        subtitle: 'Check in at hotel',
+        status: 'done',
+        icon: 'check-circle',
+      },
       { time: 'Now', title: 'Team dinner', subtitle: 'Little Italy', status: 'active' },
       {
         time: 'Tomorrow',

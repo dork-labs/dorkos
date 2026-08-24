@@ -301,7 +301,7 @@ describe('Sessions Routes', () => {
     }
 
     it('returns 200 when permission mode update succeeds', async () => {
-      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue({
         id: S1,
         title: 'Test session',
@@ -319,12 +319,44 @@ describe('Sessions Routes', () => {
         .send({ permissionMode: 'dontAsk', acknowledgedAutonomy: true });
 
       expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('permissionModePendingUntilNextTurn');
       expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
         permissionMode: 'dontAsk',
         model: undefined,
         effort: undefined,
         fastMode: undefined,
       });
+    });
+
+    // ## A tightening the running reply never heard about (DOR-1435)
+    //
+    // The runtime persists the choice and reports that it could not deliver it
+    // to the turn in flight. Answering `200 {permissionMode:'default'}` there
+    // states a safety posture the agent has not adopted — under the mode it is
+    // still running, the CLI never calls back for approval at all, so nothing
+    // on this side can put the prompts back for that reply.
+    it('answers 202 and says so when a stricter mode did not reach the running reply', async () => {
+      fakeRuntime.updateSession.mockReturnValue({
+        updated: true,
+        permissionModePendingUntilNextTurn: true,
+      });
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'Test session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default',
+      });
+
+      const res = await request(server)
+        .patch(`/api/sessions/${S1}`)
+        .send({ permissionMode: 'default' });
+
+      expect(res.status).toBe(202);
+      expect(res.body.permissionModePendingUntilNextTurn).toBe(true);
+      // The saved mode still rides back: the choice IS kept, and the flag is
+      // the only thing that says it starts on the next reply.
+      expect(res.body.permissionMode).toBe('default');
     });
 
     it.each([
@@ -340,7 +372,7 @@ describe('Sessions Routes', () => {
       'returns 400 for a permission mode the runtime does not declare ($asked)',
       async ({ runtimeModes, asked }) => {
         declareModes(runtimeModes);
-        fakeRuntime.updateSession.mockReturnValue(true);
+        fakeRuntime.updateSession.mockReturnValue({ updated: true });
 
         const res = await request(server)
           .patch(`/api/sessions/${S1}`)
@@ -359,7 +391,7 @@ describe('Sessions Routes', () => {
 
     it('returns 200 for every mode the runtime does declare', async () => {
       declareModes(['default', 'acceptEdits', 'bypassPermissions']);
-      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue(null);
 
       for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
@@ -386,7 +418,7 @@ describe('Sessions Routes', () => {
       beforeEach(() => {
         fakeRuntime.getCapabilities.mockReturnValue(TEST_MODE_CAPABILITIES);
         fakeRuntime.getCapabilities.mockClear();
-        fakeRuntime.updateSession.mockReturnValue(true);
+        fakeRuntime.updateSession.mockReturnValue({ updated: true });
         fakeRuntime.getSession.mockResolvedValue(null);
         // No standing autonomy acknowledgement unless a request carries one.
         vi.mocked(configManager.get).mockReturnValue(null);
@@ -475,7 +507,7 @@ describe('Sessions Routes', () => {
       }
 
       beforeEach(() => {
-        fakeRuntime.updateSession.mockReturnValue(true);
+        fakeRuntime.updateSession.mockReturnValue({ updated: true });
         fakeRuntime.getSession.mockResolvedValue(null);
         // No standing acknowledgement on file unless a test puts one there.
         vi.mocked(configManager.get).mockReturnValue(null);
@@ -683,7 +715,7 @@ describe('Sessions Routes', () => {
     it('leaves non-mode settings unaffected by the capability gate', async () => {
       // A PATCH that carries no permissionMode must never consult the gate.
       declareModes(['default']);
-      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue(null);
 
       const res = await request(server).patch(`/api/sessions/${S1}`).send({ model: 'some-model' });
@@ -704,7 +736,7 @@ describe('Sessions Routes', () => {
     it('includes the resolved runtime in the fallback body when getSession returns null', async () => {
       // Session.runtime is required on the wire (task 1.1) — the loose
       // fallback for a just-updated-but-unreadable session must carry it too.
-      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue(null);
 
       const res = await request(server)
@@ -720,7 +752,7 @@ describe('Sessions Routes', () => {
     });
 
     it('returns 404 when session does not exist', async () => {
-      fakeRuntime.updateSession.mockReturnValue(false);
+      fakeRuntime.updateSession.mockReturnValue({ updated: false });
 
       const res = await request(server)
         .patch(`/api/sessions/${S1}`)
@@ -762,7 +794,7 @@ describe('Sessions Routes', () => {
     it('translates session ID via getInternalSessionId', async () => {
       const internalId = '00000000-0000-4000-8000-internal00001';
       fakeRuntime.getInternalSessionId.mockReturnValue(internalId);
-      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue({
         id: internalId,
         title: 'Test session',
@@ -780,7 +812,7 @@ describe('Sessions Routes', () => {
     });
 
     it('updates model without affecting permission mode', async () => {
-      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue({
         id: S1,
         title: 'Test session',

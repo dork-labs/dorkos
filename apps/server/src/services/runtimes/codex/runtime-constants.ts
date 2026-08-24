@@ -102,7 +102,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
-        promise: 'Runs everything without asking, anywhere on your machine, network included.',
+        promise:
+          "Acts without approval prompts, anywhere on your machine, network included — and can't pause to ask.",
         native: 'danger-full-access',
       },
     ],

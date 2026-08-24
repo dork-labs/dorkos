@@ -7,12 +7,16 @@
  * as slash commands — the same skills Claude's SDK exposes from `.claude/skills`
  * — giving Codex sessions a real, project-scoped command palette.
  *
+ * The palette honors the same invocation frontmatter Claude Code enforces
+ * natively, so one SKILL.md means one thing on every runtime: `user-invocable:
+ * false` keeps a skill out of the menu.
+ *
  * @module services/runtimes/codex/scan-skill-commands
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
-import { SkillFrontmatterSchema, SKILL_FILENAME } from '@dorkos/skills';
+import { SkillFrontmatterSchema, SKILL_FILENAME, isUserInvocable } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import type { CommandEntry } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
@@ -49,6 +53,12 @@ export function scanSkillCommands(cwd: string): CommandEntry[] {
         });
         continue;
       }
+      // `user-invocable: false` marks a skill the model may load but a person
+      // should never see in a `/` menu — Claude Code honors it natively, and
+      // this palette is the same promise for Codex. `disable-model-invocation`
+      // is deliberately NOT filtered here: person-only is exactly what a slash
+      // palette is for.
+      if (!isUserInvocable(parsed.definition.meta)) continue;
       commands.push({
         command: skill.name,
         fullCommand: `/${skill.name}`,

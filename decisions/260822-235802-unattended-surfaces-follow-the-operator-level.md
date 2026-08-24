@@ -1,7 +1,7 @@
 ---
 id: 260822-235802
 title: Unattended surfaces follow the operator's power level, resolved at creation, confirm kept
-status: proposed
+status: accepted
 created: 2026-08-22
 spec: full-power-defaults
 superseded-by: null

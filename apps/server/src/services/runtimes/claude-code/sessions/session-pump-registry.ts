@@ -364,9 +364,9 @@ export class SessionPumpRegistry {
     // just elapsed was armed for exactly that long, so there is no separate
     // clock to read. One line at info, greppable by session, is what makes a
     // process going away for lack of use distinguishable in the log from one
-    // that crashed or was evicted — DOR-1323 (flag-on run, L-11): this was
-    // invisible below `debug` (the sibling ceiling-reclaim path a few lines
-    // down already logs; this, the far more common exit, did not).
+    // that crashed or was evicted (DOR-1323, flag-on run L-11 — this exit used
+    // to say nothing at all). A warm process has exactly two ways to go away,
+    // this and the ceiling reclaim below, and both say so once at `info`.
     if (await this.reap(sessionId)) {
       logger.info('[SessionPumpRegistry] retired an idle warm process', {
         session: sessionId,
@@ -432,7 +432,12 @@ export class SessionPumpRegistry {
     }
     for (const sessionId of this.slots.leastRecentFirst(candidates)) {
       if (await this.reap(sessionId)) {
-        logger.debug('[SessionPumpRegistry] reclaimed a warm slot', { reaped: sessionId, asking });
+        // `info`, matching the idle reap above: both are a warm process going
+        // away, and this is the RARER and more surprising of the two — a
+        // session losing its process to make room for another one. Logging the
+        // routine exit louder than the contended one told the story backwards
+        // (DOR-1442).
+        logger.info('[SessionPumpRegistry] reclaimed a warm slot', { reaped: sessionId, asking });
         return true;
       }
     }

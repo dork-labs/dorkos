@@ -317,6 +317,17 @@ export async function* enforceApprovals(
     // answerable on the turn's own session rather than dropping it.
     const askedIn =
       turn.permissions.pendingPermissionSessions.get(approval.toolCallId) ?? turn.ocSessionId;
+    // ## Read LIVE, at approval time — and that is why `updateSession` on this
+    // runtime never reports a change as pending (DOR-1435)
+    //
+    // The registry is consulted per ask, so a permission mode changed while a
+    // turn is streaming governs the very next tool this turn asks about. That
+    // makes `{ updated: true }` in `opencode-runtime.ts` an honest answer, not
+    // an unaudited one: there is no window where the person's stricter choice
+    // is saved but the run is still enjoying the looser one. The other two
+    // adapters cannot say that — Claude's CLI stops calling back at all under a
+    // mode that never asks, and Codex's sandbox is fixed when the turn starts —
+    // which is exactly why they DO report it. Do not "align" this one with them.
     const mode = deps.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
     if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
       try {
