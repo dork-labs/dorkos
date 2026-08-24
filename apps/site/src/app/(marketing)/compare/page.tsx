@@ -5,6 +5,7 @@ import {
   CompetitorCard,
   MarketingChrome,
   InstallMoment,
+  ProductFrame,
   type ComparisonFraming,
 } from '@/layers/features/marketing';
 import { siteConfig } from '@/config/site';
@@ -80,12 +81,23 @@ export default function ComparePage() {
           }}
         />
 
-        <header className="mb-12">
-          <h1 className="text-charcoal font-mono text-4xl font-bold tracking-tight">Compare</h1>
-          <p className="text-warm-gray mt-3 max-w-2xl text-lg">
-            How DorkOS stacks up against the other ways to run coding agents. Every page says where
-            the other tool is better, when we last checked the facts, and where they came from.
-          </p>
+        <header className="mb-12 grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+          <div>
+            <h1 className="text-charcoal font-mono text-4xl font-bold tracking-tight">Compare</h1>
+            <p className="text-warm-gray mt-3 max-w-2xl text-lg">
+              How DorkOS stacks up against the other ways to run coding agents. Every page says
+              where the other tool is better, when we last checked the facts, and where they came
+              from.
+            </p>
+          </div>
+
+          {/* The thing being compared, shown rather than described */}
+          <ProductFrame
+            surface="cockpit"
+            alt="The DorkOS cockpit: every coding agent you run, in one place"
+            size="hero"
+            priority
+          />
         </header>
 
         <div className="space-y-14">

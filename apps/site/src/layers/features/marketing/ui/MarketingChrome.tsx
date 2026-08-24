@@ -2,16 +2,7 @@ import { siteConfig } from '@/config/site';
 import { MarketingHeader } from './MarketingHeader';
 import { MarketingFooter } from './MarketingFooter';
 import { MarketingNav } from './MarketingNav';
-import type { NavLink } from '../lib/types';
-
-/** Bottom pill-nav destinations, shared across marketing pages. */
-const NAV_LINKS: NavLink[] = [
-  { label: 'home', href: '/' },
-  { label: 'features', href: '/features' },
-  { label: 'marketplace', href: '/marketplace' },
-  { label: 'blog', href: '/blog' },
-  { label: 'docs', href: '/docs' },
-];
+import { NAV_LINKS } from '../lib/nav-links';
 
 /** Footer social destinations. Icons inlined; lucide dropped its brand glyphs. */
 const SOCIAL_LINKS = [
