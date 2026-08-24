@@ -112,7 +112,7 @@ jobs:
       # pull_request object at all, and `github.sha` is already the queue branch
       # tip (main + everything ahead in the queue + this PR), which is exactly
       # the tree whose version needs to outrank the base.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0

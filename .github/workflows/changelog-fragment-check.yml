@@ -67,7 +67,7 @@ jobs:
     steps:
       # Check out the PR head (not the default merge ref) with full history so
       # the merge-base against the base branch resolves.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # On merge_group there is no pull_request object; github.sha is already
           # the queue branch tip.
@@ -189,7 +189,7 @@ jobs:
     if: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # On merge_group there is no pull_request object; github.sha is already
           # the queue branch tip.
