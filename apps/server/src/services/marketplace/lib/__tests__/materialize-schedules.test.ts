@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  writeFile,
+  rm,
+  readdir,
+  symlink,
+  lstat,
+  readlink,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -487,6 +497,31 @@ describe('an occupied directory is never replaced', () => {
 
     expect(result.generatedPaths).toEqual([]);
     expect(result.warnings.join(' ')).toMatch(/already there/);
+  });
+
+  it('spares a dangling symlink instead of following it to its absent target', async () => {
+    // `lstat` judges the link as itself. `stat` would follow it, report the
+    // TARGET's absence as the link's, and clear the way to replace a link a
+    // person deliberately put there — after which the transaction's rollback
+    // path has to cope with a delete-then-ENOTDIR it should never have reached.
+    const skillsRoot = path.join(projectPath, '.agents', 'skills');
+    await mkdir(skillsRoot, { recursive: true });
+    const link = path.join(skillsRoot, 'nightly');
+    await symlink(path.join(root, 'no-such-target'), link);
+
+    const result = await materializePackageSchedules({
+      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result.generatedPaths).toEqual([]);
+    expect(result.warnings.join(' ')).toMatch(/already there/);
+    // The link itself is still there, still pointing where it pointed.
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await readlink(link)).toBe(path.join(root, 'no-such-target'));
   });
 
   it('spares a SKILL.md whose frontmatter cannot be parsed', async () => {

@@ -137,6 +137,15 @@ export async function materializePackageSchedules(
 
     try {
       if (schedule.skillRef) {
+        // LOAD-BEARING: the first argument is `opts.installPath` and must stay
+        // that. `injectScheduleIntoShippedSkill` rewrites the file it finds by
+        // parsing and re-emitting it, which preserves the frontmatter's keys and
+        // values but not its exact text — comments go, anchors resolve, scalars
+        // may be re-quoted. That is fine for a file inside the package's own
+        // install root, which is regenerated from the source package on every
+        // reinstall and which nobody hand-edits. Point this at a skills root and
+        // it would quietly reformat a file somebody maintains. Nothing enforces
+        // the invariant; this is the only place it is decided.
         const replaced = await injectScheduleIntoShippedSkill(
           opts.installPath,
           schedule.skillRef,

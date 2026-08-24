@@ -679,6 +679,21 @@ describe('declared schedules (DOR-1487)', () => {
     expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(true);
   });
 
+  it('does not accept a skill that only exists in a task directory', async () => {
+    // The installer's resolver does not look in task directories, so accepting
+    // one here would pass a package whose schedule then fails to materialize
+    // after install — a report the author never gets. Publish-time and
+    // install-time must accept the same set.
+    const pkgRoot = await makeScheduledPackage(
+      [{ skillRef: 'legacy-task' }],
+      ['tasks/legacy-task']
+    );
+
+    const result = await validatePackage(pkgRoot);
+
+    expect(result.issues.some((i) => i.code === 'SCHEDULE_SKILL_MISSING')).toBe(true);
+  });
+
   it('says nothing about an inline schedule, which references no skill', async () => {
     const pkgRoot = await makeScheduledPackage([
       { name: 'nightly', description: 'Runs nightly.', prompt: 'Go.', cron: '0 3 * * *' },

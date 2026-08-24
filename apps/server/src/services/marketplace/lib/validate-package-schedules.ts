@@ -38,8 +38,16 @@ import { packageSchedules, scheduleDisplayName } from './package-schedules.js';
 
 /**
  * Directories inside a package that may hold a schedulable skill, in the order
- * they are searched. Mirrors the skill source directories the package validator
- * already scans, minus the task directories a schedule would never point at.
+ * they are searched. The task directories are excluded on purpose: a task
+ * directory is the legacy home for scheduled tasks, and a schedule pointing into
+ * one is the arrangement this slot replaces.
+ *
+ * Must stay identical to `SCHEDULE_SKILL_SOURCE_DIRS` in
+ * `packages/marketplace/src/package-validator.ts`, which answers the same
+ * question at publish time. Disagreeing in either direction puts the failure in
+ * front of the wrong person — stricter there rejects a package that installs
+ * fine; looser there passes one whose schedule then never materializes, and the
+ * author who could fix it never hears about it.
  */
 const SKILL_SEARCH_DIRS = ['skills', '.claude/skills', 'commands', '.claude/commands'] as const;
 

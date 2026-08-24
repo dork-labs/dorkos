@@ -91,6 +91,29 @@ const SKILL_SOURCE_DIRS = [
 ] as const;
 
 /**
+ * Where a `schedules[].skillRef` may resolve to a shipped skill.
+ *
+ * A deliberate SUBSET of {@link SKILL_SOURCE_DIRS}: the two task directories are
+ * excluded, because a task directory is the legacy home for scheduled tasks and
+ * a schedule pointing INTO one is the arrangement this whole slot replaces.
+ *
+ * The list must stay identical to the installer's resolver
+ * (`SKILL_SEARCH_DIRS` in
+ * `apps/server/src/services/marketplace/lib/validate-package-schedules.ts`),
+ * which is why it is its own constant rather than a reuse of the broader list.
+ * Reusing that one made publish-time accept a `tasks/`-only skill the installer
+ * would then fail to find — a package that validated clean and produced a
+ * schedule that never materialized, with the failure surfacing to the installing
+ * person rather than to the author who could fix it.
+ */
+const SCHEDULE_SKILL_SOURCE_DIRS = [
+  'skills',
+  '.claude/skills',
+  'commands',
+  '.claude/commands',
+] as const;
+
+/**
  * Permissive frontmatter schema used when scanning bundled SKILL.md files.
  *
  * The package validator only cares about structural integrity — it should
@@ -309,16 +332,19 @@ async function checkScheduleSkillRefs(
  * same reason a frontmatter/directory mismatch is only a warning above (DOR-263).
  *
  * The search descends, because skills nest (`skills/group/my-skill/`) and the
- * installer's own resolver descends too. The two have to accept the same set: a
- * publish-time check stricter than the install-time one would reject a package
- * that installs perfectly well, which is the worse direction to be wrong in.
+ * installer's own resolver descends too. The two accept the same set — same
+ * four directories ({@link SCHEDULE_SKILL_SOURCE_DIRS}), same depth, same
+ * `node_modules` exclusion — because disagreeing in either direction is a bug
+ * with a person on the end of it: stricter here rejects a package that would
+ * install perfectly well, and looser here passes a package whose schedule then
+ * fails to materialize after install, which is the report the author never gets.
  *
  * @param packagePath - Absolute path to the package root.
  * @param skillName - The directory name to find.
  * @internal
  */
 async function packageShipsSkill(packagePath: string, skillName: string): Promise<boolean> {
-  for (const dir of SKILL_SOURCE_DIRS) {
+  for (const dir of SCHEDULE_SKILL_SOURCE_DIRS) {
     if (await searchForSkill(path.join(packagePath, dir), skillName, 0)) return true;
   }
   return false;
