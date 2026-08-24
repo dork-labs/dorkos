@@ -1,22 +1,12 @@
-import path from 'path';
-import { randomUUID } from 'crypto';
 import type { Browser, Page } from '@playwright/test';
-import {
-  DESKTOP_VIEWPORT,
-  DEVICE_SCALE_FACTOR,
-  FLEET_ROOT,
-  MULTI_SESSION_PROMPTS,
-  type Theme,
-} from './config.js';
+import { DESKTOP_VIEWPORT, DEVICE_SCALE_FACTOR, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
   attempt,
   attemptShot,
-  ensureDesktopSidebarExpanded,
   isShotSkipped,
   openLiveTurn,
   patch,
-  post,
   recordLoop,
   seedThemeOnContext,
   shoot,
@@ -26,11 +16,18 @@ import {
   type LoopMark,
   type LoopSpec,
 } from './lib.js';
+import { driveMultiSession, shootMultiSession } from './surfaces-desktop-fleet.js';
+import { shootControlCenter, shootSettingsRooms } from './surfaces-desktop-power.js';
 
 /**
  * Desktop surface drives: every 1280×800 still and loop, including the
  * onboarding agent-discovery flow. Each `shootX` waits for its money state
  * before the screenshot; each `driveX` is shared between still and loop.
+ *
+ * Two groups live in sibling modules, both driven from the capture entry points
+ * below: the power surfaces (Control Center, Settings → Rooms, the full-power
+ * door) in `surfaces-desktop-power`, and the four-agent fleet drive behind
+ * `multi-session` in `surfaces-desktop-fleet`.
  *
  * @module capture/surfaces-desktop
  */
@@ -438,128 +435,6 @@ async function shootSubagents(page: Page, theme: Theme, rec: RunRecorder): Promi
   await shoot(page, 'subagents', theme, rec);
 }
 
-/** Settle beat after an agent's conversation opens, before the next one does. */
-const MULTI_SESSION_SETTLE_MS = 600;
-/** Pause after a turn is triggered, so the roster can resolve it as that agent's newest. */
-const MULTI_SESSION_RESOLVE_MS = 1200;
-/**
- * The agents the fleet drive puts to work, in the order it opens them.
- *
- * **Four agents, not four sessions on one agent**, and the last one listed is
- * where the drive lands — so its transcript is what the main pane shows. Three
- * runtimes are on screen at once (`sentinel` runs opencode, `scout` codex,
- * `forge`/`atlas` claude-code), which is exactly what this surface's feature
- * card promises: one cockpit, whatever each agent runs on.
- */
-const MULTI_SESSION_AGENTS: readonly string[] = ['sentinel', 'forge', 'scout', 'atlas'];
-/** The one agent whose turn stops for a permission prompt, so a row reads amber. */
-const MULTI_SESSION_APPROVAL_AGENT = 'sentinel';
-/** Rotates through the prompt pool so repeated drives mint distinct titles. */
-let multiSessionPromptCursor = 0;
-
-/** One agent's live conversation for the fleet drive. */
-interface FleetTurn {
-  readonly id: string;
-  readonly agent: string;
-  readonly cwd: string;
-  readonly prompt: string;
-  readonly scenario: string;
-}
-
-/** The turns this drive will run, one per agent, with fresh session ids. */
-function planFleetTurns(): FleetTurn[] {
-  return MULTI_SESSION_AGENTS.map((agent) => ({
-    id: randomUUID(),
-    agent,
-    cwd: path.join(FLEET_ROOT, agent),
-    prompt: MULTI_SESSION_PROMPTS[multiSessionPromptCursor++ % MULTI_SESSION_PROMPTS.length]!,
-    scenario: agent === MULTI_SESSION_APPROVAL_AGENT ? 'demo-approval' : 'demo-coding',
-  }));
-}
-
-/** Trigger one agent's turn through the test-mode seam. */
-async function startFleetTurn(turn: FleetTurn): Promise<void> {
-  await post('/api/test/scenario', { name: turn.scenario, sessionId: turn.id });
-  await post(`/api/sessions/${turn.id}/messages`, { content: turn.prompt, cwd: turn.cwd });
-}
-
-/**
- * Drive the fleet moment on the redesigned Now/Today/Library sidebar: start one
- * agent's turn, open that agent from the roster, and repeat down the fleet — so
- * the panel ends up holding four concurrent conversations at once, three
- * streaming green and one stopped amber on a permission prompt, with Now
- * summarising them above ("N working", "sentinel › Waiting on you").
- *
- * Two things about this shape are load-bearing, and both come from the
- * Now/Today/Library redesign (DOR-1066/1068/1071):
- *
- * - **The clicks ARE the drive.** Today's membership is "conversations this
- *   person has been in" (`select-today-items`, BC-15), read from the
- *   interaction record `SidebarChrome.openSession` writes — and the server half
- *   of that key (`userLastMessageAt`) has no source yet. A `page.goto` into a
- *   session therefore leaves no trace: only the one session in the URL would
- *   draw a row, as the anchor. Opening each agent from its roster row (BC-34)
- *   is the product's own path to a populated Today, and the only honest one.
- * - **Turns start one at a time, just before their agent is opened.** Every
- *   click costs a second or two, and a `demo-coding` turn only runs for about
- *   fourteen; launching all four up front left the earliest ones finished
- *   before the still, and long finished before the end of the loop's hold.
- *   Staggering the triggers alongside the clicks keeps every row live through
- *   both.
- *
- * The old drive waited on `[data-testid="session-row"]`, which the redesign
- * stopped mounting in the sidebar entirely — the panel builds its rows from
- * `SidebarRowModel` now (`[data-sidebar-row]`), and `SessionRowFull`/`Compact`
- * survive only on the profile's Sessions page.
- */
-async function driveMultiSession(page: Page): Promise<void> {
-  const turns = planFleetTurns();
-  await page.goto(url('/'));
-  await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
-  await ensureDesktopSidebarExpanded(page);
-
-  for (const turn of turns) {
-    await startFleetTurn(turn);
-    await sleep(MULTI_SESSION_RESOLVE_MS);
-    await page
-      .getByRole('button', { name: `Switch to ${turn.agent}` })
-      .first()
-      .click({ timeout: WAIT_MS });
-    // The agent row resumes that agent's newest conversation, which is the turn
-    // just started — waiting on its id proves the click landed there rather
-    // than on one of the seeded, long-finished sessions.
-    await page.waitForURL(new RegExp(`session=${turn.id}`), { timeout: WAIT_MS });
-    await sleep(MULTI_SESSION_SETTLE_MS);
-  }
-
-  const todayRows = page.locator('[data-sidebar-zone="today"] [data-sidebar-row]');
-  await todayRows.nth(turns.length - 1).waitFor({ timeout: WAIT_MS });
-  // A streaming row reserves a verb line and the leaf fills it in ("Editing a
-  // file…") — the proof the rows are live rather than merely present.
-  await page
-    .locator('[data-sidebar-zone="today"] [data-slot="sidebar-row-second-line"]')
-    .first()
-    .waitFor({ timeout: WAIT_MS });
-  // Opening a conversation scrolls its Today row into view, which walks the
-  // panel down past Now. Bring Now back so the frame carries the whole story:
-  // what needs you, how much is running, and the four rows it is running in.
-  // Scrolled by locator rather than by wheel — the panel is not the element
-  // under the cursor after a row click, and a wheel aimed at a guessed point
-  // silently did nothing.
-  await page.locator('[data-sidebar-zone="now"]').first().scrollIntoViewIfNeeded();
-  await sleep(400);
-}
-
-/**
- * Capture the multi-session cockpit: the Now zone counting the running work and
- * naming what is blocked, over four live conversations in Today.
- */
-async function shootMultiSession(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  await driveMultiSession(page);
-  await sleep(1500); // let indicators and the viewed transcript fill in
-  await shoot(page, 'multi-session', theme, rec);
-}
-
 /** Pause between personality preset selections so each radar morph reads fully. */
 const PERSONALITY_MORPH_MS = 1600;
 
@@ -669,9 +544,10 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
 
 /**
  * Capture the onboarding agent-discovery surface: the light still plus the dark
- * loop (whose poster is extracted from the loop's own first frame). Runs last —
- * it flips the global onboarding state, drives the wizard, then restores the
- * dismissed state for reproducibility.
+ * loop (whose poster is extracted from the loop's own first frame). One of the
+ * run's two closing drives (the full-power door is the other) — it flips the
+ * global onboarding state, drives the wizard, then restores the dismissed state
+ * for reproducibility, so it goes after every shot that reads that state.
  */
 export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder): Promise<void> {
   // Skip when this shot is not ours to capture — a human override supplies it,
@@ -742,6 +618,12 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   await seedThemeOnContext(ctx, theme);
   const page = await ctx.newPage();
   await attemptShot('cockpit', 'cockpit-light', () => shootCockpit(page, theme, rec));
+  await attemptShot('control-center', 'control-center-light', () =>
+    shootControlCenter(page, theme, rec)
+  );
+  await attemptShot('settings-rooms', 'settings-rooms-light', () =>
+    shootSettingsRooms(page, theme, rec)
+  );
   await attemptShot('agents', 'agents-light', () => shootAgents(page, theme, rec));
   await attemptShot('tasks', 'tasks-light', () => shootTasks(page, theme, rec));
   await attemptShot('marketplace', 'marketplace-light', () => shootMarketplace(page, theme, rec));

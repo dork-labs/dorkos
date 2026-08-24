@@ -74,7 +74,7 @@ The safe parallel unit is a whole stack, so each shard gets its own:
 How a sharded record runs (`record.ts`):
 
 1. **Build once.** Server workspace deps are built a single time up front (`buildServerDeps`), then every shard boots from that output — no per-shard rebuild.
-2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each mints its own Today rows, but its Now zone counts every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state) and `agent-discovery` (driven **last** in its stack — it flips global onboarding state, which every other shot in the same stack needs left dismissed; each shard's own `DORK_HOME` keeps that flip local).
+2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each mints its own Today rows, but its Now zone counts every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state), the **global-state flips** `agent-discovery` and `full-power-door` (driven **last** in their stack, in that order — one re-opens onboarding and one un-answers the power decision, and every other shot in the same stack needs onboarding dismissed and the power door settled; each shard's own `DORK_HOME` keeps both flips local), and the `accounts-pending`/`accounts-linked` pair (one linear device flow, so a round-robin split would break it).
 3. **Record in parallel.** One `record-shard.ts` worker process per shard prepares its filesystem, boots its stack, seeds it, and captures **only its assigned shots** into the shared run's `raw/` dir (file names never collide — shots are disjoint), writing a partial manifest to `library/<run-id>/shards/`.
 4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would. A failed sharded record removes its partial run dir instead of leaving a `run.json`-less husk in the library.
 
@@ -253,7 +253,7 @@ Nothing rendered depends on `Date.now()`.
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
 - `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
 - `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker, the `attemptShot` skip guard).
-- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives.
+- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus two desktop siblings kept out of line: `surfaces-desktop-power.ts` (Control Center, Settings → Rooms, the full-power door) and `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive).
 - `optimize.ts` — the editing stage: PNG recompression + aspect-validated scaling (sharp), loop editing (ffmpeg-static: head-trim, end-seam crossfade, two-pass VP9, poster extraction), and the v2 manifest writer.
 - `overrides/` — committed human-override sources (see `overrides/README.md`).
 - `__tests__/` — unit tests for the registry, aspect validation, and override discovery (`pnpm --filter @dorkos/e2e test`).
