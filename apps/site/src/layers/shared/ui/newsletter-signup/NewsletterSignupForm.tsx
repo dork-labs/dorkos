@@ -33,7 +33,7 @@ interface NewsletterSignupFormProps {
 }
 
 const CADENCE_COPY =
-  'Release notes and fleet reports, about twice a month. One click to unsubscribe.';
+  'Release notes and agent reports, about twice a month. One click to unsubscribe.';
 
 /**
  * Render the newsletter signup form.

@@ -94,7 +94,7 @@ export default function ComparePage() {
           {/* The thing being compared, shown rather than described */}
           <ProductFrame
             surface="cockpit"
-            alt="The DorkOS cockpit: every coding agent you run, in one place"
+            alt="DorkOS: every coding agent you run, in one place"
             size="hero"
             priority
           />

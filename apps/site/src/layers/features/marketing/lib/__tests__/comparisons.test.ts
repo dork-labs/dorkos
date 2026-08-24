@@ -289,48 +289,71 @@ describe('dorkosCellFor — the demo-claim gate', () => {
     wantPhrase: 'the gate to hold',
   });
 
-  /** A feature the catalog ships as alpha: built, not yet proven by real use. */
-  const alphaFeature = features.find((f) => f.status === 'alpha');
-  /** A feature the catalog ships as generally available. */
-  const gaFeature = features.find((f) => f.status === 'ga');
-
-  it('the catalog still contains the alpha and GA fixtures this suite relies on', () => {
-    expect(alphaFeature, 'no alpha feature in the catalog to test the gate with').toBeDefined();
-    expect(gaFeature, 'no GA feature in the catalog').toBeDefined();
+  /**
+   * One feature per lifecycle stage, so every arm of the gate is exercised
+   * whatever the shipped catalog happens to contain.
+   *
+   * These fixtures used to be looked up out of the real catalog, which quietly
+   * made the suite depend on DorkOS always shipping something unproven: the
+   * moment the last alpha feature was promoted, the lookup returned undefined
+   * and the gate tests fell over. A catalog with nothing early in it is a good
+   * outcome, not a broken test.
+   */
+  const stageFixture = (slug: string, name: string, status: Feature['status']): Feature => ({
+    slug,
+    name,
+    product: 'core',
+    category: 'infrastructure',
+    tagline: `What ${name} gives you`,
+    description:
+      'A stand-in feature used only by this suite, long enough to look like a real catalog entry without pretending to be one.',
+    status,
+    benefits: ['Exists only in this test', 'Never ships a claim', 'Keeps the gate honest'],
   });
 
+  const gaFeature = stageFixture('shipped-thing', 'Shipped Thing', 'ga');
+  const betaFeature = stageFixture('nearly-there', 'Nearly There', 'beta');
+  const alphaFeature = stageFixture('still-early', 'Still Early', 'alpha');
+  const unshippedFeature = stageFixture('not-shipped-yet', 'Not Shipped Yet', 'coming-soon');
+  const catalog: Feature[] = [gaFeature, betaFeature, alphaFeature, unshippedFeature];
+
+  /** Score a dimension over the synthetic catalog above. */
+  const cellFor = (slugs: string[], dorkosNote?: string) =>
+    dorkosCellFor({ ...dimensionWith(slugs), ...(dorkosNote ? { dorkosNote } : {}) }, catalog);
+
   it('says yes only when every backing feature is generally available', () => {
-    const cell = dorkosCellFor(dimensionWith([gaFeature!.slug]));
+    const cell = cellFor([gaFeature.slug]);
     expect(cell.verdict).toBe('yes');
-    expect(cell.note).toBe(gaFeature!.tagline);
+    expect(cell.note).toBe(gaFeature.tagline);
+  });
+
+  it('counts a beta feature as proven, because beta is past the demo-claim gate', () => {
+    expect(cellFor([betaFeature.slug]).verdict).toBe('yes');
   });
 
   it('never says yes when a backing feature is still alpha', () => {
-    const cell = dorkosCellFor(dimensionWith([gaFeature!.slug, alphaFeature!.slug]));
+    const cell = cellFor([gaFeature.slug, alphaFeature.slug]);
     expect(cell.verdict).not.toBe('yes');
     expect(cell.verdict).toBe('partial');
   });
 
   it('names the feature that is still early, in one clean sentence', () => {
-    const cell = dorkosCellFor(dimensionWith([gaFeature!.slug, alphaFeature!.slug]));
+    const cell = cellFor([gaFeature.slug, alphaFeature.slug]);
     expect(cell.note).toBe(
-      `${gaFeature!.tagline}. ${alphaFeature!.name} is still early: built, but not yet proven in everyday use.`
+      `${gaFeature.tagline}. ${alphaFeature.name} is still early: built, but not yet proven in everyday use.`
     );
   });
 
   it('joins an authored note that already ends in a period without doubling it', () => {
-    const cell = dorkosCellFor({
-      ...dimensionWith([alphaFeature!.slug]),
-      dorkosNote: 'Everything you need is here.',
-    });
+    const cell = cellFor([alphaFeature.slug], 'Everything you need is here.');
     expect(cell.note).toBe(
-      `Everything you need is here. ${alphaFeature!.name} is still early: built, but not yet proven in everyday use.`
+      `Everything you need is here. ${alphaFeature.name} is still early: built, but not yet proven in everyday use.`
     );
     expect(cell.note).not.toContain('..');
   });
 
   it('never says yes for an alpha feature standing alone either', () => {
-    expect(dorkosCellFor(dimensionWith([alphaFeature!.slug])).verdict).toBe('partial');
+    expect(cellFor([alphaFeature.slug]).verdict).toBe('partial');
   });
 
   it('holds for every shipped dimension: an unproven backing feature can never score yes', () => {
@@ -348,57 +371,25 @@ describe('dorkosCellFor — the demo-claim gate', () => {
   });
 
   it('an authored note cannot buy a yes past an alpha feature', () => {
-    const cell = dorkosCellFor({
-      ...dimensionWith([alphaFeature!.slug]),
-      dorkosNote: 'Everything here works perfectly.',
-    });
+    const cell = cellFor([alphaFeature.slug], 'Everything here works perfectly.');
     expect(cell.verdict).toBe('partial');
     expect(cell.note).toContain('Everything here works perfectly');
-    expect(cell.note).toContain(alphaFeature!.name);
+    expect(cell.note).toContain(alphaFeature.name);
   });
 
   it('never says yes over a feature that has not shipped yet', () => {
-    // The shipped catalog has no `coming-soon` entry today, so this arm of the
-    // gate is only reachable with a catalog of our own — and it is exactly the
-    // arm that matters when someone lists a feature before it exists.
-    const catalog: Feature[] = [
-      {
-        slug: 'not-shipped-yet',
-        name: 'Not Shipped Yet',
-        product: 'core',
-        category: 'infrastructure',
-        tagline: 'Something we have not finished building',
-        description:
-          'A stand-in for a feature that is announced but not yet available, used to prove the gate refuses to score it as done.',
-        status: 'coming-soon',
-        benefits: ['Exists only in this test', 'Never ships a claim', 'Keeps the gate honest'],
-      },
-    ];
-
-    const cell = dorkosCellFor(dimensionWith(['not-shipped-yet']), catalog);
+    const cell = cellFor([unshippedFeature.slug]);
     expect(cell.verdict, 'a coming-soon feature was scored as delivered').toBe('partial');
-    expect(cell.note).toContain('Not Shipped Yet');
+    expect(cell.note).toContain(unshippedFeature.name);
     expect(cell.note).toContain('still early');
   });
 
-  it('says yes for that same synthetic catalog once the feature ships', () => {
-    // The mirror of the test above: with only the status changed, the gate opens.
-    // Without this pair, a broken gate that always returns partial would pass.
-    const catalog: Feature[] = [
-      {
-        slug: 'not-shipped-yet',
-        name: 'Not Shipped Yet',
-        product: 'core',
-        category: 'infrastructure',
-        tagline: 'Something we have not finished building',
-        description:
-          'A stand-in for a feature that is announced but not yet available, used to prove the gate refuses to score it as done.',
-        status: 'ga',
-        benefits: ['Exists only in this test', 'Never ships a claim', 'Keeps the gate honest'],
-      },
-    ];
-
-    expect(dorkosCellFor(dimensionWith(['not-shipped-yet']), catalog).verdict).toBe('yes');
+  it('says yes for that same feature once it ships', () => {
+    // The mirror of the test above: with only the status changed, the gate
+    // opens. Without this pair, a broken gate that always returned partial
+    // would pass every other test in this block.
+    const shipped: Feature[] = [{ ...unshippedFeature, status: 'ga' }];
+    expect(dorkosCellFor(dimensionWith([unshippedFeature.slug]), shipped).verdict).toBe('yes');
   });
 
   it('refuses a dimension with no backing features rather than claiming yes', () => {

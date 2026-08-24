@@ -33,7 +33,7 @@ export default async function NewsletterConfirmedPage(props: {
             </>
           ) : (
             <>
-              Your email is confirmed. You&apos;ll get release notes and fleet reports about twice a
+              Your email is confirmed. You&apos;ll get release notes and agent reports about twice a
               month, and one click unsubscribes any time.
             </>
           )}

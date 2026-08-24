@@ -5,7 +5,7 @@ import { MarketingShell } from './marketing-shell';
 
 const metaTitle = `${siteConfig.name} - ${siteConfig.description}`;
 const metaDescription =
-  'Mission control for every coding agent you run: Claude Code, Codex, and OpenCode in one cockpit. Schedule your fleet, get pinged when your agents finish, and keep everything on your machine. Open source, MIT.';
+  'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Put them on a schedule, get a message when they finish, and keep everything on your own computer. Open source, MIT.';
 
 export const metadata: Metadata = {
   title: metaTitle,
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'DorkOS: mission control for every coding agent you run',
+        alt: 'DorkOS: one place for every AI agent you run',
       },
     ],
   },

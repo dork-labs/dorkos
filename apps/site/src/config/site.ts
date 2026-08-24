@@ -7,7 +7,7 @@
 export const siteConfig = {
   name: 'DorkOS',
   description:
-    'Mission control for every coding agent you run: Claude Code, Codex, and OpenCode in one cockpit. Open source, self-hosted.',
+    'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Open source, and it runs on your own computer.',
   url: 'https://dorkos.ai',
   contactEmail: 'hey@dorkos.ai',
   github: 'https://github.com/dork-labs/dorkos',

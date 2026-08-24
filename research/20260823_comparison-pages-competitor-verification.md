@@ -37,6 +37,8 @@ topic: Verification and profiles of the 11 user-named comparison candidates for 
 Always-on cloud agent; each task gets a persistent cloud computer (browser, filesystem, terminal). Closed, cloud-only. Bundled with SuperGrok Plus and Cursor Pro+/Teams; full beta needs SuperGrok Heavy ($300/mo) or Cursor Ultra ($200/mo). No local-first option, no plugin/marketplace ecosystem comparable to MCP/skills, no scheduling primitive beyond "keeps working while away". Weeks old.
 Sources: aitoolsreview.co.uk/insights/grok-bot-agent-launch · digitalapplied.com/blog/grok-bot-ai-teammates-launch-cloud-computer-2026 · reworked.co/collaboration-productivity/xai-launches-grok-bot-ai-agents-in-beta/
 
+> **Correction, 2026-08-24.** The maker line above is out of date. xAI stopped existing as a standalone company in February 2026, absorbed by SpaceX in an all-stock merger, and was rebranded **SpaceXAI** around May 2026. The `/compare` entry now reads "SpaceXAI (SpaceX)". Consequence worth carrying: **Grok Bot and Cursor now share an owner**, so Grok Bot being bundled into Cursor tiers is first-party bundling rather than a partnership. Sources: cnbc.com/2026/02/11/ · en.wikipedia.org/wiki/SpaceXAI. Detail: `research/20260824_comparison-maker-corrections.md`.
+
 ### Hermes Agent (Nous Research)
 
 `github.com/NousResearch/hermes-agent`, MIT, Python, launched 2026-02-25. Lives inside chat platforms (Discord, Slack, Telegram, WhatsApp, Signal, Mattermost, Feishu/QQ…). Model-agnostic, self-hostable, free. Explicitly does NOT support bot-to-bot conversation (stated design decision). Scheduling via cron feeding delivery. One OS process per bot profile. Config-heavy (env + YAML, inconsistent precedence per its own docs). Stars: ~188K–220K by Jul/Aug 2026 (sources disagree ±30K; treat as directional). "Fastest-growing open-source agent framework of 2026" per multiple outlets.
@@ -76,6 +78,8 @@ Sources: tech-insider.org/ie/opencode-160k-github-stars-2026/ · aiwiki.ai/wiki/
 
 AI IDE. As of Jul 2026: Hobby free, Pro $20, Pro+ $60, Ultra $200, Teams $40/user; credit-based consumption on top (heavy agent users $60–100+/mo). Cursor 3 (Apr 2026) rebuilt around an "Agents Window" for parallel agents + Design Mode + cloud agents; up to 8 parallel agents via worktrees/remote machines. No native cron/scheduling, no inter-agent bus, no third-party-runtime management, no Obsidian surface. $2B+ ARR, ~$29.3B valuation mid-2026.
 Sources: taskade.com/blog/cursor-review · devtoolpicks.com cursor-3 review · aiproductivity.ai/blog/cursor-pricing/.
+
+> **Correction, 2026-08-24.** The maker line above is out of date. **SpaceX acquired Anysphere, Inc. for $60B in all stock**, closing 2026-08-14 and announced 2026-08-15. Cursor keeps its name, Anysphere survives as the legal entity, and it operates under the SpaceXAI unit. Revenue was roughly $4B annualised at close. The valuation figure above ($29.3B, mid-2026) predates the deal. The `/compare` entry now reads "SpaceX (Anysphere)". Sources: techcrunch.com/2026/08/15/spacex-officially-closes-its-cursor-acquisition/ · Cursor's own blog · SEC 8-K. Detail: `research/20260824_comparison-maker-corrections.md`.
 
 ### Codex (OpenAI)
 
