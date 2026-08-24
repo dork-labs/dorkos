@@ -9,6 +9,9 @@ export { InstallMoment } from './ui/InstallMoment';
 export { IdentityClose } from './ui/IdentityClose';
 export { FAQSection } from './ui/FAQSection';
 
+// Data — the one list of site destinations, shared by every marketing surface
+export { NAV_LINKS, HOME_NAV_LINKS, isNavLinkActive } from './lib/nav-links';
+
 // UI components — chrome
 export { MarketingNav } from './ui/MarketingNav';
 export { MarketingHeader } from './ui/MarketingHeader';
