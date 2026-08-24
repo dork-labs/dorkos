@@ -491,6 +491,503 @@ export const comparisons: Competitor[] = [
     relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'rooms'],
   },
   {
+    slug: 'github-copilot-agent-hq',
+    name: 'GitHub Agent HQ',
+    maker: 'GitHub',
+    homepage: 'https://github.com/features/copilot',
+    framing: 'competitor',
+    category: 'Agent control centre built into GitHub',
+    oneLiner:
+      'Agent HQ runs Copilot, Claude and Codex inside your repositories, on GitHub’s computers. DorkOS runs the agents you already pay for, on yours.',
+    pricing:
+      'A free tier that leaves the outside agents out. Copilot Pro is $10 a month, Pro+ $39 and Max $100; team seats are $19 and enterprise seats $39. Agent work is metered on top.',
+    openSource: false,
+    verdict:
+      'This is the most head-on comparison on the site, and GitHub has built something serious: you can hand one issue to Copilot, to Anthropic’s Claude and to OpenAI’s Codex at once, then compare what three companies’ agents bring back, all inside the repository your team already works in. The catch is where it happens. The work runs on GitHub’s computers, on code that is already on GitHub, and it is billed by the token against your Copilot seat rather than the Claude or ChatGPT plan you already pay for. DorkOS drives the agents already signed in on your own machine, on any folder whether or not GitHub has ever seen it, and adds nothing to your bill. If your work lives in GitHub and your company needs one place to say which agents are allowed, Agent HQ is the better fit.',
+    theirStrengths: [
+      'your work already lives in GitHub, and agent sessions sit right beside the issues and pull requests you use anyway',
+      'you want one issue handed to Copilot, Claude and Codex at the same time so you can compare what each one comes back with',
+      'your company needs central control: rules about which agents are allowed, and a record of what they did',
+      'you would rather have one bill, on the Copilot seat you already buy, with no other accounts to set up',
+      'you want the security checks your repositories already run applied to the agents’ work too',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'Yes. An issue can go to Copilot, to Anthropic’s Claude, to OpenAI’s Codex, or to all three at once. Both outside agents were still marked a preview when we checked.',
+        detail:
+          'This is real, and it is why this page exists: GitHub will run a rival’s agent for you, which almost nobody else does. Two things are worth knowing. The line-up is shorter than the announcement suggested — Google’s and Cognition’s agents were promised for "the coming months" and are still not there — and these are GitHub’s own hosted versions of Claude and Codex, billed through your Copilot seat. They are not the Claude Code or Codex you already have installed and signed in. DorkOS drives that copy instead, which is why the plan you already pay for is the one doing the work.',
+        source:
+          'https://docs.github.com/en/copilot/concepts/agents/about-third-party-coding-agents',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. A saved job can repeat every hour, day or week, or start when an issue or pull request is opened. It will not work in a public repository: yours has to be private or internal.',
+        detail:
+          'There are two versions of this. The easy one is a saved job on an hourly, daily or weekly repeat, which covers most of what people want and is closed to public repositories. For a time of your own choosing you drop into their workflow files, which run as ordinary build jobs and were still a preview when we checked. DorkOS takes the time in plain words and runs the job on your own machine, whoever owns the repository, and whether or not there is one.',
+        source:
+          'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-automations',
+      },
+      coordination: {
+        verdict: 'partial',
+        note: 'Several agents can take on the same issue at once, each opening its own pull request to compare. They do not talk to each other, and nothing passes a job from one to the next.',
+        detail:
+          'Racing three agents at one problem and reading the three answers back is genuinely useful, and a pull request is a sensible place to compare them. It is competition rather than teamwork, though: no agent can ask another a question, or pick up where another one left off.',
+        source:
+          'https://github.blog/changelog/2026-02-26-claude-and-codex-now-available-for-copilot-business-pro-users/',
+      },
+      'local-first': {
+        verdict: 'no',
+        note: 'No. The work runs on GitHub’s computers, on code that is already on GitHub. GitHub does have a separate desktop app that works on local folders, but that is a different program from this one.',
+        detail:
+          'This is the sharpest difference between the two, and it is not an oversight: living inside GitHub is the whole idea, and it is what makes the review, the permissions and the audit trail come free. The price is that the work has to be on GitHub before any of it can happen. DorkOS starts from a folder — any folder, on any host or none — and runs the agent next to it on the machine in front of you.',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes, on more screens than anything else here: the website, a phone app for iPhone and Android, several editors, the command line, and now Slack and Microsoft Teams.',
+        source: 'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes, and deeply. Outside tools set up per repository, custom agents written as files in your project, and a shared add-on standard GitHub publishes with other companies.',
+        source:
+          'https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/create-custom-agents',
+      },
+      pricing: {
+        verdict: 'partial',
+        note: 'There is a free tier, but it leaves the outside agents out. Paid plans start at $10 a month, agent work is metered on top in credits and build minutes, and the code is closed.',
+        source: 'https://github.com/features/copilot/plans',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Agent HQ free?',
+        a: 'Not in any useful sense. The free Copilot tier allows a little agent use and leaves out the outside agents entirely, so handing work to Claude or Codex needs a paid plan. Those start at $10 a month, and the agent’s work is metered on top of that.',
+      },
+      {
+        q: 'What is GitHub Mission Control?',
+        a: 'It is the name GitHub’s blog gave the page where you hand out work and watch the agents doing it. The documentation does not use that name: look for the Agents tab in a repository, or the Agents page. Same thing, two vocabularies.',
+      },
+      {
+        q: 'Which agents can I actually use in Agent HQ today?',
+        a: 'Copilot’s own agent, Anthropic’s Claude and OpenAI’s Codex, with the last two still marked a preview. Google’s and Cognition’s agents were named in the announcement but had not arrived when we checked.',
+      },
+      {
+        q: 'Does Agent HQ work with Claude Code?',
+        a: 'Not the Claude Code on your machine. It runs GitHub’s hosted version of Anthropic’s agent, billed through your Copilot seat. If what you want is the Claude Code you already installed and signed in, running on your own files, that is what DorkOS drives.',
+      },
+      {
+        q: 'Can it work on a folder that is not on GitHub?',
+        a: 'Not this part of it. Agent HQ works on repositories that live on GitHub. GitHub’s separate desktop app can open a local folder, and DorkOS works on any folder on your machine whether or not it has ever been pushed anywhere.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://github.blog/news-insights/company-news/welcome-home-agents/',
+      'https://docs.github.com/en/copilot/concepts/agents/about-third-party-coding-agents',
+      'https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent',
+      'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent',
+      'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-automations',
+      'https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing',
+      'https://github.com/features/copilot/plans',
+      'https://github.blog/changelog/2026-01-26-introducing-the-agents-tab-in-your-repository/',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'workspaces', 'cli', 'task-scheduler'],
+  },
+  {
+    slug: 'devin',
+    name: 'Devin',
+    maker: 'Cognition',
+    homepage: 'https://devin.ai',
+    framing: 'competitor',
+    category: 'AI software engineer you hire by the month',
+    oneLiner:
+      'Devin is Cognition’s AI software engineer, working in its own cloud machines. DorkOS runs the agents you already pay for, on your own computer.',
+    pricing:
+      'A free tier, then $20 a month for Pro and $200 for Max. Teams start at $80 a month with $40 per full seat, and Enterprise is priced by agreement. Heavy use is metered on top.',
+    openSource: false,
+    verdict:
+      'Devin is the most autonomous thing on this list: you hand it a ticket and it works in its own cloud machine, with a terminal, an editor and a browser of its own, checking its work as it goes. That power is rented rather than owned — the work happens on Cognition’s computers, your code goes there to be worked on, and the meter runs on what the agent does. DorkOS makes the opposite trade: the agents run on your machine, under the plans you already pay for, and there is nothing for us to meter. If what you have is a backlog of repetitive tickets and you would rather buy the result than run the machinery, Devin is a serious answer and DorkOS is not trying to be one.',
+    theirStrengths: [
+      'you want a job done rather than a tool to run, and you are happy for that to be someone else’s computer',
+      'you have a backlog of repetitive, similar tickets: migrations, lint sweeps, clean-ups',
+      'you want one agent to break a job up, hand the pieces to copies of itself, and put the results back together',
+      'you need enterprise paperwork: single sign-on, audit logs, access lists and a private deployment',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'Yes, in its desktop editor, which can run Anthropic’s, OpenAI’s, Google’s and JetBrains’ agents alongside its own. Devin’s cloud sessions still only ever run Devin.',
+        detail:
+          'This surprised us, and it is worth being exact about. Devin Desktop, the editor Cognition used to sell as Windsurf, can host five other companies’ coding agents through a shared protocol. You install those agents yourself, and Cognition says plainly that its own privacy terms and billing do not cover them: that part is between you and the other company. The cloud Devin everyone means when they say "Devin" runs Devin.',
+        source: 'https://docs.devin.ai/desktop/acp',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes, and thoroughly. Sessions can run on a repeating schedule, and its automations also start work from a message, a pull request or a webhook, with spending caps attached.',
+        detail:
+          'This is a strong version of the idea: as well as a plain repeating schedule, work can begin because someone wrote in Slack, because a check failed, or because a ticket changed. Caps on how much a run may spend are part of the setup, which matters when the agent bills by what it does. All of it starts Devin, on Cognition’s machines.',
+        source: 'https://docs.devin.ai/product-guides/automations',
+      },
+      coordination: {
+        verdict: 'yes',
+        note: 'Yes. One session can act as a manager: it splits the job up, hands pieces to other Devins, watches them, sorts out clashes and puts the results back together.',
+        detail:
+          'This is genuine coordination rather than parallel lanes, and each worker gets a machine of its own. It is a chain of command rather than a conversation, though: the manager talks to its workers, the workers do not talk to each other, and every one of them is a Devin — one company’s agents, all the way down.',
+        source: 'https://docs.devin.ai/work-with-devin/advanced-capabilities',
+      },
+      'local-first': {
+        verdict: 'partial',
+        note: 'Partly. There is now a command-line version and a desktop editor that work on your own files, but the Devin people mean by Devin runs in Cognition’s cloud, with your code copied there.',
+        detail:
+          'Cognition has moved a good way toward your machine: a command-line agent and a desktop editor both work on the files in front of you, and larger customers can have sessions run on their own servers. Even then the thinking happens in Cognition’s cloud, and the local versions do without some of what the cloud one has. DorkOS starts from the other end: everything runs where you already are, and nothing has to leave for the product to work.',
+        source: 'https://docs.devin.ai/cli',
+      },
+      surfaces: {
+        verdict: 'yes',
+        note: 'Yes. It lives in a browser, in Slack and in Microsoft Teams, so you can hand it work and answer it from a phone. There is no phone app of its own.',
+        source: 'https://docs.devin.ai/integrations/slack',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. It connects to outside tools both ways, keeps reusable instructions and playbooks, reads the same skill files other agents read, and has an API.',
+        source: 'https://docs.devin.ai/work-with-devin/mcp',
+      },
+      pricing: {
+        verdict: 'partial',
+        note: 'There is a free tier and a $20 plan, but real work is metered on top of it, and the code is closed.',
+        source: 'https://docs.devin.ai/admin/billing/self-serve',
+      },
+    },
+    faq: [
+      {
+        q: 'How much does Devin cost?',
+        a: 'There is a free tier, Pro at $20 a month and Max at $200. Teams start at $80 a month with $40 for each full seat, and Enterprise is priced by agreement. Those prices buy an allowance; heavy use is metered on top of it, so the bill follows how much work you ask for.',
+      },
+      {
+        q: 'Can Devin run on my own computer?',
+        a: 'Partly. There is a command-line version and a desktop editor that work on your local files, and big customers can have sessions run on their own servers. The Devin most people mean still runs in Cognition’s cloud, with your code copied there to be worked on.',
+      },
+      {
+        q: 'Can Devin run Claude Code or Codex?',
+        a: 'In its desktop editor, yes: it can host Anthropic’s, OpenAI’s, Google’s and JetBrains’ agents as well as its own. You install those yourself, and Cognition says its own terms and billing do not cover them. Devin’s cloud sessions run Devin only.',
+      },
+      {
+        q: 'Can Devin work on a schedule?',
+        a: 'Yes, and more than that: as well as repeating schedules, work can start from a Slack message, a pull request or a webhook, with a cap on what each run may spend.',
+      },
+      {
+        q: 'Why would I use DorkOS instead?',
+        a: 'Because you would rather run the agents than rent them. DorkOS starts the Claude Code, Codex or OpenCode already signed in on your machine, on your own files, with no second bill and nothing metered by us. It is free and open source, and you can read every line of it.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://docs.devin.ai/get-started/devin-intro',
+      'https://docs.devin.ai/desktop/acp',
+      'https://docs.devin.ai/cli',
+      'https://docs.devin.ai/product-guides/automations',
+      'https://docs.devin.ai/product-guides/scheduled-sessions',
+      'https://docs.devin.ai/work-with-devin/advanced-capabilities',
+      'https://docs.devin.ai/work-with-devin/mcp',
+      'https://docs.devin.ai/admin/billing/self-serve',
+      'https://docs.devin.ai/admin/billing/usage',
+      'https://docs.devin.ai/integrations/slack',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'cli', 'workspaces', 'task-scheduler'],
+  },
+  {
+    slug: 'conductor',
+    name: 'Conductor',
+    maker: 'Melty Labs',
+    homepage: 'https://www.conductor.build',
+    framing: 'competitor',
+    category: 'Mac app for running coding agents in parallel',
+    oneLiner:
+      'Conductor runs parallel coding agents on your Mac, with the best review screen of the bunch. DorkOS runs the same work anywhere, on a schedule.',
+    pricing:
+      'Free for running agents locally on your Mac with your own accounts. Pro is $50 a month and adds their cloud, an API and shared work; Teams are $60 per person.',
+    openSource: false,
+    verdict:
+      'Conductor is a beautifully made Mac app for running Claude Code, Codex, Cursor and OpenCode side by side, each in its own copy of your project, and three of those four come built in with nothing to install. It has the best reviewing screen of anything on this page: a real diff viewer with comments, and a tab that gathers your build, your pull request and its comments in one place. What it will not do is start work without you, or let you look in from anywhere except that Mac. DorkOS does less about reviewing and more about those two things, and it also runs on Windows and Linux.',
+    theirStrengths: [
+      'you work on a Mac and want the most polished app of this kind, made by people who clearly care',
+      'you want reviewing to be first class: a proper diff viewer, comments on the changes, and your build and pull request in one tab',
+      'you want the agents to come with the app: Claude Code, Codex and OpenCode are built in, with nothing extra to install',
+      'you are happy to pay so the work keeps going in their cloud after you close the laptop',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'Yes. Claude Code, Codex, Cursor and OpenCode all run in it, and the first three are built into the app rather than installed separately.',
+        detail:
+          'This used to be a Claude Code app and is not one any more: Codex arrived in late 2025, Cursor and OpenCode in mid 2026. Bundling the agents is a real convenience and a real trade — you get whichever version they ship, rather than the one you have installed and signed in yourself. DorkOS goes the other way and drives the copies already on your machine, so your own accounts and settings are the ones in play.',
+        source: 'https://www.conductor.build/docs/reference/harnesses',
+      },
+      scheduling: {
+        verdict: 'no',
+        note: 'No. Nothing in it runs on a clock: its scripts fire when you make a workspace or press run, and its API has no way to book work for later.',
+        detail:
+          'We looked for this carefully, because it is the kind of thing that hides in a changelog. Conductor has a "background tasks" feature, but that only shows you when an agent is waiting on something; and its dispatcher, despite the name, is a box for starting new work rather than anything that runs by itself. Work in Conductor starts when a person starts it.',
+      },
+      coordination: {
+        verdict: 'no',
+        note: 'No. Workspaces are deliberately independent, and nothing passes a message or a job from one agent to another.',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes, and free that way: workspaces live on your own Mac and use the agent logins already there. Their paid cloud is the opposite arrangement, on their machines.',
+        source: 'https://www.conductor.build/pricing',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'A Mac app, and only that. Their paid cloud keeps agents working after you close the laptop, but the phone app is still listed as coming soon.',
+        detail:
+          'The cloud tier answers half of this: your agents keep going with the laptop shut. What it does not yet answer is where you watch them from, since the way in is still the Mac app on your desk. A phone app is promised on their pricing page, and until it ships that is a plan rather than a feature.',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. Each agent keeps its own outside-tool setup inside Conductor, there are setup and run scripts you can share with your team, and other agents can drive Conductor itself.',
+        source: 'https://www.conductor.build/docs/reference/mcp',
+      },
+      pricing: {
+        verdict: 'partial',
+        note: 'Running agents on your own Mac is free. The cloud, the API and shared work cost $50 a month, and the code is closed.',
+        source: 'https://www.conductor.build/pricing',
+      },
+    },
+    faq: [
+      {
+        q: 'Is this the same Conductor as Microsoft’s?',
+        a: 'No. This page is about Melty Labs’ Mac app at conductor.build. Microsoft has an unrelated tool called Conductor for describing multi-agent workflows in a file, and there is a third, older Conductor that came out of Netflix for running business workflows. Three different products, one name.',
+      },
+      {
+        q: 'Is Conductor free?',
+        a: 'Running agents on your own Mac is free, using the accounts you already have. Pro is $50 a month and adds their cloud, shared work and an API; team seats are $60 per person.',
+      },
+      {
+        q: 'Does Conductor work with Codex?',
+        a: 'Yes, and has since late 2025. It runs Claude Code, Codex, Cursor and OpenCode, and Claude Code, Codex and OpenCode are built into the app so there is nothing to install.',
+      },
+      {
+        q: 'Does Conductor run on Windows?',
+        a: 'No. Its own installation page says it is not available for Windows or Linux yet. DorkOS runs on both, though our Windows build is early and we say so on the page.',
+      },
+      {
+        q: 'Can Conductor run a job on a schedule?',
+        a: 'No. There is no scheduler anywhere in it, so every job starts because you started it. That is the main thing DorkOS adds if you already like Conductor.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://www.conductor.build/docs',
+      'https://www.conductor.build/docs/reference/harnesses',
+      'https://www.conductor.build/docs/installation',
+      'https://www.conductor.build/docs/concepts/git-worktrees',
+      'https://www.conductor.build/docs/reference/scripts',
+      'https://www.conductor.build/docs/reference/mcp',
+      'https://www.conductor.build/docs/cloud',
+      'https://www.conductor.build/pricing',
+      'https://www.conductor.build/changelog',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'workspaces'],
+  },
+  {
+    slug: 'emdash',
+    name: 'Emdash',
+    maker: 'General Action',
+    homepage: 'https://emdash.com',
+    framing: 'competitor',
+    category: 'Open source desktop app for parallel agents',
+    oneLiner:
+      'Emdash is an open source desktop app for running many coding agents at once. DorkOS does the same job on your machine, on a screen you can open anywhere.',
+    pricing:
+      'Free, and open source under the Apache licence. A hosted cloud version and an enterprise version both exist, and neither publishes a price: you ask them.',
+    openSource: true,
+    openSourceNote:
+      'The desktop app is open under the Apache licence. Its cloud and enterprise versions are not published as open source.',
+    verdict:
+      'Emdash is the closest thing to DorkOS that is also open source, and it is genuinely good: local, free, and built on the same belief that you should be able to run any coding agent you like under your own accounts. Its documentation lists 34 of them, which is a wider roster than DorkOS drives. The two part company after the agents start. Emdash gives each one a clean lane and leaves you as the place they meet; DorkOS puts them in shared rooms and on a screen you can open from your phone, and that room part is the newest thing we ship.',
+    theirStrengths: [
+      'you want the widest choice of agents: its documentation lists 34 command-line tools it can drive',
+      'you want to set up an outside tool once and have every agent you have installed pick it up',
+      'you want the same app on Windows or Linux, not only on a Mac',
+      'you want a job to run on another machine over SSH, on your own server or in a container',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'Yes, and more widely than DorkOS: its documentation lists 34 command-line agents it can drive, each signed in on your own machine under your own account.',
+        detail:
+          'Emdash finds the agent tools you already have installed and runs them through their own command-line programs, so the plan you already pay for is the one that does the work. That is the same bet DorkOS makes, made wider. DorkOS drives three agents closely and knows what each session is doing; Emdash drives many and treats them more alike. If the length of the list is what you are choosing on, this is the stronger one.',
+        source: 'https://emdash.com/docs/providers',
+      },
+      scheduling: {
+        verdict: 'yes',
+        note: 'Yes. Automations start a job on a repeating schedule, and each run is kept with its status, timing and any error, so you can see what happened overnight.',
+        detail:
+          'This is a real scheduler, not a checkbox: runs are recorded, can be started by hand, and turn into ordinary tasks you can open and review. What its documentation does not describe is what happens when a scheduled job needs a decision from you halfway through. That is the part DorkOS spends most of its care on, because a job that quietly stops at three in the morning is worse than one that never started.',
+        source: 'https://emdash.com/docs/automations',
+      },
+      coordination: {
+        verdict: 'no',
+        note: 'Each job gets its own branch and workspace and works alone. Nothing in its documentation lets one agent message another or hand work along.',
+        detail:
+          'This is the one real gap between the two products, and it is narrower than it sounds: parallel lanes are what most people want most days, and Emdash keeps clean ones. If your work divides neatly into separate jobs, you are unlikely to miss what is not here.',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes. It runs on your own machine, keeps its records in a file there, needs no Emdash account at all, and its usage reporting switches off with one setting.',
+        source: 'https://emdash.com/docs/installation',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'Desktop only, on macOS, Windows and Linux. It can send the work to another machine over SSH, but there is no phone or browser screen to check in from.',
+        detail:
+          'This is the clearest split between the two. The Emdash remote feature changes where the work runs; it does not change where you have to be to watch it. DorkOS goes the other way round: the work stays on your own machine and the screen travels, so you can read what an agent did and approve the next step from a phone.',
+      },
+      extensibility: {
+        verdict: 'yes',
+        note: 'Yes. One place to set up outside tools for every agent you have installed, with a catalogue of 54 to pick from, plus reusable prompts and skills.',
+        detail:
+          'Setting an outside tool up once and having every installed agent pick it up is genuinely better than doing it agent by agent, and it is the kind of thing only a tool that drives several agents can offer. What it does not have is a way to wrap an agent up with its instructions and its tools and hand the whole thing to someone else, which is what the DorkOS marketplace is for.',
+        source: 'https://emdash.com/docs/library/mcp',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'The app is free and open source under the Apache licence. The cloud and enterprise versions carry no published price and are sold by talking to them.',
+        source: 'https://emdash.com/cloud',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Emdash free?',
+        a: 'The desktop app is free and open source under the Apache licence. There is no pricing page. A hosted cloud version and an enterprise version exist, and both ask you to get in touch rather than showing a price. You still pay for the agent plans you already have.',
+      },
+      {
+        q: 'What agents does Emdash support?',
+        a: 'Its documentation lists 34 command-line agents, including Claude Code, Codex, OpenCode, Cursor, Copilot and Gemini. Its own home page says "25+", so treat the exact number loosely. Each agent has to be installed and signed in on your machine first.',
+      },
+      {
+        q: 'Can Emdash run agents on a schedule?',
+        a: 'Yes. Automations start a job on a repeating schedule and keep a record of every run. If scheduling is the only thing you are shopping for, Emdash covers it.',
+      },
+      {
+        q: 'What does DorkOS do that Emdash does not?',
+        a: 'Two things. You can reach DorkOS from a phone or a browser, so approving a step does not mean going back to your desk. And DorkOS agents share rooms where they can see and answer each other, rather than each working alone. Emdash has the wider agent list of the two.',
+      },
+      {
+        q: 'Does Emdash work on Windows?',
+        a: 'Yes. Every release ships a Windows installer alongside macOS and Linux builds. DorkOS runs on Windows too, though that build is early and we say so.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://emdash.com',
+      'https://emdash.com/docs/providers',
+      'https://emdash.com/docs/automations',
+      'https://emdash.com/docs/tasks',
+      'https://emdash.com/docs/installation',
+      'https://emdash.com/docs/library/mcp',
+      'https://emdash.com/docs/remote-development/remote-tasks',
+      'https://emdash.com/cloud',
+      'https://github.com/generalaction/emdash',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'mobile', 'rooms', 'marketplace'],
+  },
+  {
+    slug: 'claude-squad',
+    name: 'Claude Squad',
+    maker: 'smtg-ai',
+    homepage: 'https://github.com/smtg-ai/claude-squad',
+    framing: 'competitor',
+    category: 'Terminal manager for parallel agents',
+    oneLiner:
+      'Claude Squad runs several coding agents side by side in your terminal, free. DorkOS does that job in a screen you can open from anywhere, on a schedule.',
+    pricing:
+      'Free, with no account and nothing to buy. You still pay for whichever agent you point it at, using the plan or the key you already have.',
+    openSource: true,
+    openSourceNote:
+      'Open under the AGPL. You can read and change it freely, and building a paid service on top of it means publishing your changes too.',
+    verdict:
+      'Claude Squad does one thing and does it very well: every agent gets its own terminal session and its own copy of your project, so several can work at once without treading on each other. It costs nothing, needs no account, and will run whatever terminal agent you name, which makes it the quickest way to try parallel agents at all. What it does not do is anything above that line — no schedule, no way to look in from a phone, no messages between the lanes, and joining the work back up is yours. That upper layer is the whole of what DorkOS is, so if you live in a terminal and only want parallelism, Claude Squad is genuinely enough.',
+    theirStrengths: [
+      'you live in the terminal and want parallel agents without leaving it',
+      'you want no account and no server: one small program and a settings file with five things in it',
+      'you want to run any terminal agent at all, including one released this week, by naming its command',
+      'you want what it makes to outlive it: plain terminal sessions and plain git branches, still there if you stop using it',
+    ],
+    cells: {
+      'multi-runtime': {
+        verdict: 'yes',
+        note: 'Yes. It starts whatever terminal command you name, so Claude Code, Codex, Gemini and Aider all work, and a brand new agent works the day it ships.',
+        detail:
+          'There is no per-agent wiring here, and that is the point: you hand it a command and it runs it. The trade is that Claude Squad cannot know anything about the agent it started, so every lane looks the same to it and the useful details stay inside each session. DorkOS supports fewer agents on purpose and knows what each session is actually doing, which is what lets one list hold them all.',
+        source: 'https://github.com/smtg-ai/claude-squad',
+      },
+      scheduling: {
+        verdict: 'no',
+        note: 'No. Its background mode answers prompts in sessions you started yourself; nothing here ever starts on a clock.',
+        detail:
+          'The background mode is easy to mistake for scheduling. What it does is watch sessions you already opened and answer their questions for you, which the maintainers mark experimental and limit to two of the agents. Starting a job at three in the morning is still something you arrange yourself, with your computer’s own timer.',
+      },
+      coordination: {
+        verdict: 'no',
+        note: 'No. Each session is its own lane on its own branch. Nothing passes a message from one to another, so you are the part that joins the work back up.',
+      },
+      'local-first': {
+        verdict: 'yes',
+        note: 'Yes, completely. One program on your own machine, a small settings file beside it, no account, and no server of its own anywhere.',
+        source: 'https://github.com/smtg-ai/claude-squad',
+      },
+      surfaces: {
+        verdict: 'no',
+        note: 'Terminal only, on macOS and Linux. There is no phone app and no browser screen, and its own issue tracker reports the Windows build failing as soon as you open a session.',
+      },
+      extensibility: {
+        verdict: 'no',
+        note: 'Nothing of its own: no add-ons, no hooks, no outside-tool setup. Whatever your agent already has keeps working, because all it does is start the agent.',
+      },
+      pricing: {
+        verdict: 'yes',
+        note: 'Free, and open source under the AGPL. The only bill is the agent you point it at.',
+        source: 'https://github.com/smtg-ai/claude-squad/blob/main/LICENSE.md',
+      },
+    },
+    faq: [
+      {
+        q: 'Is Claude Squad free?',
+        a: 'Yes. It is open source under the AGPL, with no account and nothing to buy. You still pay for the agent you run through it, with your own plan or your own key.',
+      },
+      {
+        q: 'Does Claude Squad work on Windows?',
+        a: 'Not reliably. A Windows build is published, but the project’s own issue tracker has an open report that it fails as soon as you start a session, and it needs the tmux terminal tool, which is not native to Windows. macOS and Linux are where it works.',
+      },
+      {
+        q: 'Can Claude Squad run agents on a schedule?',
+        a: 'No. It has no scheduler. Its background mode only answers prompts in sessions you opened yourself. If you want a job to start on its own at a set time, that is the gap DorkOS fills.',
+      },
+      {
+        q: 'Is Claude Squad still maintained?',
+        a: 'Yes, at a gentle pace. When we checked, its latest release was four days old and most fixes were coming from people outside the project rather than a full-time team.',
+      },
+      {
+        q: 'What does DorkOS add over Claude Squad?',
+        a: 'A screen you can open from a phone or a browser, jobs that start at a set time and message you when they finish, and one list that knows what each session is doing. Claude Squad is lighter, and if you only want parallel lanes in a terminal it is the smaller, simpler answer.',
+      },
+    ],
+    lastVerified: '2026-08-24',
+    sources: [
+      'https://github.com/smtg-ai/claude-squad',
+      'https://github.com/smtg-ai/claude-squad/blob/main/README.md',
+      'https://github.com/smtg-ai/claude-squad/blob/main/LICENSE.md',
+      'https://github.com/smtg-ai/claude-squad/releases',
+      'https://github.com/smtg-ai/claude-squad/issues/275',
+      'https://smtg-ai.github.io/claude-squad/',
+    ],
+    relatedFeatures: ['multi-runtime-cockpit', 'task-scheduler', 'mobile', 'session-durability'],
+  },
+  {
     slug: 'claude-code',
     name: 'Claude Code',
     maker: 'Anthropic',
