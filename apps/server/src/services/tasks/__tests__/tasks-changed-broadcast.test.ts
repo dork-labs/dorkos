@@ -84,6 +84,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { createTasksRouter } from '../../../routes/tasks.js';
+import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
 import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
@@ -115,6 +116,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -139,11 +141,19 @@ describe('a task write tells the world it happened', () => {
     db = createTestDb();
     store = new TaskStore(db);
     activityService = new ActivityService(db);
+    const scheduler = createMockScheduler();
     app = express();
     app.use(express.json());
     app.use(
       '/api/tasks',
-      createTasksRouter(store, createMockScheduler(), '/tmp/dork-test', undefined, activityService)
+      createTasksRouter(
+        store,
+        scheduler,
+        new TaskRegistrar({ store, scheduler }),
+        '/tmp/dork-test',
+        undefined,
+        activityService
+      )
     );
 
     const deps = {

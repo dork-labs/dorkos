@@ -8,7 +8,7 @@
  * (no orphaned global duplicate). This is what turns a Shape's tick on when its
  * agent is finally created.
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +21,7 @@ import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskStore } from '../../tasks/task-store.js';
-import type { TaskSchedulerService } from '../../tasks/task-scheduler-service.js';
+import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/task-registrar.js';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
 
 /** A global, disabled inbox-tick request (agent missing at apply time). */
@@ -66,9 +66,9 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
   let store: TaskStore;
   let dorkHome: string;
   let agentDir: string;
-  let registerTask: ReturnType<typeof vi.fn>;
-  let unregisterTask: ReturnType<typeof vi.fn>;
-  let scheduler: TaskSchedulerService;
+  let registerTask: Mock<SchedulerRegistrationTarget['registerTask']>;
+  let unregisterTask: Mock<SchedulerRegistrationTarget['unregisterTask']>;
+  let scheduler: SchedulerRegistrationTarget;
   let service: ShapeScheduleService;
 
   beforeEach(async () => {
@@ -78,9 +78,9 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     agentDir = path.join(dorkHome, 'agents', 'linear-tender');
     await fs.mkdir(agentDir, { recursive: true });
 
-    registerTask = vi.fn();
-    unregisterTask = vi.fn();
-    scheduler = { registerTask, unregisterTask } as unknown as TaskSchedulerService;
+    registerTask = vi.fn<SchedulerRegistrationTarget['registerTask']>(() => true);
+    unregisterTask = vi.fn<SchedulerRegistrationTarget['unregisterTask']>();
+    scheduler = { isStarted: true, registerTask, unregisterTask };
 
     const meshCore = {
       getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
@@ -93,7 +93,13 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       error: vi.fn(),
     } as unknown as Logger;
 
-    service = new ShapeScheduleService({ taskStore: store, scheduler, meshCore, dorkHome, logger });
+    service = new ShapeScheduleService({
+      taskStore: store,
+      registrar: new TaskRegistrar({ store, scheduler }),
+      meshCore,
+      dorkHome,
+      logger,
+    });
   });
 
   afterEach(async () => {
@@ -142,7 +148,12 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       agentId: 'agent-tender',
       enabled: true,
     });
-    expect(unregisterTask).toHaveBeenCalledTimes(1);
+    // Twice, and both name the old global row: creating it disabled asks the
+    // registrar to make sure it has no job, and the teardown asks again once the
+    // row is gone. Unregistering a task that has no job is a no-op — the seam
+    // states the intended end state rather than tracking what it did before.
+    expect(unregisterTask).toHaveBeenCalledTimes(2);
+    expect(new Set(unregisterTask.mock.calls.map(([id]) => id)).size).toBe(1);
   });
 
   it('is a no-op on a schedule that is already agent-bound (respects a user disable)', async () => {
@@ -214,10 +225,10 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-mode-'));
     service = new ShapeScheduleService({
       taskStore: store,
-      scheduler: {
-        registerTask: vi.fn(),
-        unregisterTask: vi.fn(),
-      } as unknown as TaskSchedulerService,
+      registrar: new TaskRegistrar({
+        store,
+        scheduler: { isStarted: true, registerTask: vi.fn(() => true), unregisterTask: vi.fn() },
+      }),
       meshCore: undefined,
       dorkHome,
       logger: {
@@ -287,9 +298,9 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
   let store: TaskStore;
   let dorkHome: string;
   let agentDir: string;
-  let registerTask: ReturnType<typeof vi.fn>;
-  let unregisterTask: ReturnType<typeof vi.fn>;
-  let scheduler: TaskSchedulerService;
+  let registerTask: Mock<SchedulerRegistrationTarget['registerTask']>;
+  let unregisterTask: Mock<SchedulerRegistrationTarget['unregisterTask']>;
+  let scheduler: SchedulerRegistrationTarget;
   let service: ShapeScheduleService;
 
   beforeEach(async () => {
@@ -299,9 +310,9 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
     agentDir = path.join(dorkHome, 'agents', 'linear-tender');
     await fs.mkdir(agentDir, { recursive: true });
 
-    registerTask = vi.fn();
-    unregisterTask = vi.fn();
-    scheduler = { registerTask, unregisterTask } as unknown as TaskSchedulerService;
+    registerTask = vi.fn<SchedulerRegistrationTarget['registerTask']>(() => true);
+    unregisterTask = vi.fn<SchedulerRegistrationTarget['unregisterTask']>();
+    scheduler = { isStarted: true, registerTask, unregisterTask };
 
     const meshCore = {
       getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
@@ -314,7 +325,13 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
       error: vi.fn(),
     } as unknown as Logger;
 
-    service = new ShapeScheduleService({ taskStore: store, scheduler, meshCore, dorkHome, logger });
+    service = new ShapeScheduleService({
+      taskStore: store,
+      registrar: new TaskRegistrar({ store, scheduler }),
+      meshCore,
+      dorkHome,
+      logger,
+    });
   });
 
   afterEach(async () => {

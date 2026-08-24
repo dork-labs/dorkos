@@ -1,5 +1,6 @@
 /**
- * Watches task directories for SKILL.md file changes and syncs to the DB cache.
+ * Watches task directories for SKILL.md file changes and syncs them to the DB
+ * cache and the running scheduler.
  *
  * @module services/tasks/task-file-watcher
  */
@@ -7,28 +8,32 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import type { TaskStore } from './task-store.js';
+import type { TaskRegistrar } from './task-registrar.js';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
 
-/** Callback invoked when a task file changes or is removed. */
-type TaskChangeCallback = (taskSlug: string) => void;
-
 /**
- * Watches task directories for file changes and syncs to the DB cache.
+ * Watches task directories for file changes and syncs them to the DB cache and
+ * the scheduler.
  *
  * - Global tasks: `{dorkHome}/tasks/` — started unconditionally on server startup
  * - Project tasks: `{projectPath}/.dork/tasks/` — started per agent registration
+ *
+ * The scheduler half runs through {@link TaskRegistrar}, which is what makes an
+ * edit on disk take effect now rather than at the next restart. This class used
+ * to take a `(taskSlug: string) => void` callback for that, and the one caller
+ * in `index.ts` passed `() => {}` — so every on-disk change updated the row and
+ * nothing else.
  */
 export class TaskFileWatcher {
   private watchers = new Map<string, FSWatcher>();
 
   constructor(
     private store: TaskStore,
-    private onTaskChange: TaskChangeCallback,
-    private dorkHome: string
+    private registrar: TaskRegistrar
   ) {}
 
   /**
@@ -164,20 +169,33 @@ export class TaskFileWatcher {
       }
 
       const def = { ...result.definition, scope, projectPath };
-      this.store.upsertFromFile(def, agentId);
-      this.onTaskChange(def.name);
+      // The row first, then the job that runs from it. Both, or the cockpit
+      // shows one schedule while a different one fires — which is what a
+      // no-op `onTaskChange` left this doing until the next restart.
+      const task = this.store.upsertFromFile(def, agentId);
+      this.registrar.syncTask(task.id);
     } catch (err) {
       logger.error(`[TaskFileWatcher] Failed to process ${filePath}`, err);
     }
   }
 
   private handleFileRemove(filePath: string): void {
-    // Pause by exact path, not by slug: the same slug can exist in the global
-    // tasks directory and in any number of project ones, and only this file
-    // was removed.
-    this.store.markRemovedByFilePath(filePath);
     const dirName = path.basename(path.dirname(filePath));
-    this.onTaskChange(dirName);
-    logger.info(`[TaskFileWatcher] Task file removed: ${dirName}`);
+    try {
+      // Pause by exact path, not by slug: the same slug can exist in the global
+      // tasks directory and in any number of project ones, and only this file
+      // was removed.
+      this.store.markRemovedByFilePath(filePath);
+      // Paused in the DB is not paused on the clock. Without this the job keeps
+      // firing a task whose file — the source of truth for what it even does —
+      // is gone.
+      this.registrar.syncTaskByFilePath(filePath);
+      logger.info(`[TaskFileWatcher] Task file removed: ${dirName}`);
+    } catch (err) {
+      // Contained for the same reason the change handler is: this runs inside a
+      // chokidar event, where a throw has nowhere to go but the process-wide
+      // unhandled-error path.
+      logger.error(`[TaskFileWatcher] Failed to retire ${filePath}`, err);
+    }
   }
 }

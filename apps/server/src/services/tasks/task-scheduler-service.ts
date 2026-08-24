@@ -8,7 +8,7 @@ import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { createTaggedLogger } from '../../lib/logger.js';
+import { createTaggedLogger, logError } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import { formatDuration } from '../../lib/format-duration.js';
@@ -26,6 +26,16 @@ const logger = createTaggedLogger('Tasks');
 
 /** Retention window for the dispatch-dedup log — generous; a tick only needs seconds. */
 const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long one unschedulable task stays quiet after it has been reported.
+ *
+ * Matches `FAILURE_LOG_WINDOW_MS` in `task-reconciler.ts`, and for the same
+ * reason: the reconciler's 5-minute pass re-syncs every task file forever, so
+ * an undamped refusal is 288 identical lines a day. One line an hour keeps a
+ * standing fault visible at a volume that reads.
+ */
+const REFUSED_SCHEDULE_LOG_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * Derive a stable idempotency key for a scheduled occurrence (ADR-285).
@@ -149,6 +159,16 @@ export class TaskSchedulerService {
   private leaderLock: LeaderLock | null;
   /** Heartbeat timer that keeps the leader lock fresh; cleared on `stop()`. */
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** Backing field for {@link isStarted}. */
+  private started = false;
+  /**
+   * One entry per task whose schedule croner refused, damping the log.
+   * See {@link reportRefusedSchedule}.
+   */
+  private refusedSchedules = new Map<
+    string,
+    { signature: string; lastLoggedAt: number; suppressed: number }
+  >();
 
   constructor(
     store: TaskStore,
@@ -196,6 +216,19 @@ export class TaskSchedulerService {
     return this.leaderLock ? this.leaderLock.isLeaderNow : true;
   }
 
+  /**
+   * Whether {@link start} has finished, so registering a job is meaningful.
+   *
+   * Read by {@link TaskRegistrar}, which must not put jobs on the clock during
+   * boot: the server listens and the file watcher delivers its initial `add`
+   * events before `start()` runs, and a job registered then would be firing
+   * ahead of leader election and crash recovery. `start()` registers everything
+   * from the store, so nothing is lost by waiting for it.
+   */
+  get isStarted(): boolean {
+    return this.started;
+  }
+
   /** Start the scheduler: recover from crashes, prune old runs, register enabled tasks. */
   async start(): Promise<void> {
     logger.info(
@@ -223,22 +256,38 @@ export class TaskSchedulerService {
       logger.info(`marked ${failed} interrupted run(s) as failed`);
     }
 
+    // Boot must complete. Every task is registered and pruned inside its own
+    // try/catch, because this loop is the last thing standing between one bad
+    // row and a server that cannot start: `index.ts` awaits this call, and a
+    // throw from here ends in `process.exit(1)`. A single unschedulable task —
+    // a cron somebody typo'd in a SKILL.md, a timezone that no longer exists —
+    // used to take the whole install down with it, and every OTHER task with
+    // it. `registerTask` already contains its own failure; this guard is for
+    // everything else in the body, `pruneRuns` most of all.
     const tasks = this.store.getTasks();
     for (const task of tasks) {
-      if (task.enabled && task.status === 'active') {
-        this.registerTask(task);
+      try {
+        if (task.enabled && task.status === 'active') {
+          this.registerTask(task);
+        }
+        this.store.pruneRuns(task.id, this.config.retentionCount);
+      } catch (err) {
+        logger.error(`could not start task "${task.name}" — skipping it`, logError(err));
       }
-      this.store.pruneRuns(task.id, this.config.retentionCount);
     }
 
     // Bound the dispatch-dedup log (ADR-285) — keys only need to outlive a tick.
     this.store.pruneDispatchLog(DISPATCH_LOG_TTL_MS);
 
+    this.started = true;
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }
 
   /** Stop the scheduler: cancel all jobs and abort active runs. */
   async stop(): Promise<void> {
+    // Said first, so nothing registers a job into a scheduler that is on its way
+    // down — a watcher event can land while this is still awaiting active runs.
+    this.started = false;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -264,11 +313,30 @@ export class TaskSchedulerService {
     logger.info('scheduler stopped');
   }
 
-  /** Register a cron job for a task. Skips registration for on-demand tasks (no cron). */
-  registerTask(task: Task): void {
+  /**
+   * Register a cron job for a task, replacing any job it already has.
+   *
+   * **Total: this never throws.** A task's cron and timezone reach here from
+   * three places — an API request, a SKILL.md somebody hand-edited, a row an
+   * older build wrote — and `croner` throws on an expression or a timezone it
+   * cannot read. Letting that escape made one bad file able to abort server
+   * startup, and able to break whichever writer happened to touch it next. A
+   * task that cannot be scheduled is a task that does not run; it is never
+   * a reason to take the other tasks down.
+   *
+   * The API refuses a bad schedule at the door
+   * (`describeScheduleProblem` in `cron-validation.ts`), so in practice only a
+   * hand-edited file gets this far.
+   *
+   * @param task - The task to schedule.
+   * @returns Whether the task now has a live cron job. `false` covers both an
+   *   on-demand task, which is not meant to have one, and a schedule croner
+   *   refused.
+   */
+  registerTask(task: Task): boolean {
     if (!task.cron) {
       logger.debug(`skipping cron registration for on-demand task "${task.name}"`);
-      return;
+      return false;
     }
 
     if (this.cronJobs.has(task.id)) {
@@ -276,16 +344,77 @@ export class TaskSchedulerService {
     }
 
     const tz = task.timezone ?? this.config.timezone ?? undefined;
-    const job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
-      // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
-      // dedups on a value that's identical across processes (ADR-285).
-      this.dispatch(task, self.currentRun()).catch((err) => {
-        logger.error(`dispatch error for ${task.name}:`, err);
+    let job: Cron;
+    try {
+      job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
+        // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
+        // dedups on a value that's identical across processes (ADR-285).
+        this.dispatch(task, self.currentRun()).catch((err) => {
+          logger.error(`dispatch error for ${task.name}:`, err);
+        });
       });
-    });
+    } catch (err) {
+      this.reportRefusedSchedule(task, tz, err);
+      return false;
+    }
 
+    // The schedule reads again, so the next refusal of this task is news.
+    this.refusedSchedules.delete(task.id);
     this.cronJobs.set(task.id, job);
     logger.debug(`registered task "${task.name}" (${task.cron})`);
+    return true;
+  }
+
+  /**
+   * Say that a task's schedule cannot be run — at most once an hour per task.
+   *
+   * The log is the ONLY place this surfaces: the row keeps the schedule it was
+   * given and the cockpit keeps showing it, so an operator looking at a task
+   * that never fires needs this line to explain why. Giving the row a visible
+   * "broken" state needs a column and a screen that do not exist yet.
+   *
+   * Which is exactly why it has to be damped. The reconciler re-upserts every
+   * task file every five minutes and syncs each one through the registrar, so
+   * an undamped line here writes 288 identical stack traces a day for one typo
+   * — burying the failures an operator actually needs to see. This is the same
+   * hazard `TaskReconciler.report` damps on its own timer, and the same one
+   * `TaskStore.upsertFromFile` damps for a refused permission grant.
+   *
+   * The first occurrence of any distinct refusal always logs, in full and at
+   * `error`. Keyed on the SCHEDULE, not just the task, for the reason
+   * `upsertFromFile` gives: a task re-edited into a *different* bad schedule is
+   * a new fault, and must not be silenced by the one before it. When the window
+   * closes, a standing fault logs again carrying what it swallowed, so it reads
+   * as standing rather than as a fresh one-off.
+   *
+   * @param task - The task whose schedule croner refused.
+   * @param timezone - The timezone actually passed to croner, if any.
+   * @param err - What croner threw.
+   */
+  private reportRefusedSchedule(task: Task, timezone: string | undefined, err: unknown): void {
+    // JSON rather than a joined string, for the reason `TaskReconciler.report`
+    // gives: a delimiter is only unambiguous if it cannot appear in the parts.
+    const signature = JSON.stringify([task.cron, timezone ?? null]);
+    const now = Date.now();
+    const seen = this.refusedSchedules.get(task.id);
+
+    if (seen?.signature === signature && now - seen.lastLoggedAt < REFUSED_SCHEDULE_LOG_WINDOW_MS) {
+      seen.suppressed++;
+      return;
+    }
+
+    const repeats = seen?.signature === signature ? seen.suppressed : 0;
+    const stillFailing =
+      repeats > 0
+        ? ` (still failing; ${repeats} identical ${repeats === 1 ? 'report' : 'reports'} suppressed in the last hour)`
+        : '';
+    logger.error(
+      `task "${task.name}" has a schedule DorkOS cannot run (cron "${task.cron}"` +
+        `${timezone ? `, timezone "${timezone}"` : ''}) — it will not fire until the schedule is fixed` +
+        stillFailing,
+      logError(err)
+    );
+    this.refusedSchedules.set(task.id, { signature, lastLoggedAt: now, suppressed: 0 });
   }
 
   /** Unregister and stop a cron job. */

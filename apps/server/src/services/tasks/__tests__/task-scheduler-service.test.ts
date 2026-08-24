@@ -160,6 +160,53 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    // One unschedulable row used to be able to stop the server booting at all:
+    // `index.ts` awaits start(), croner throws on a pattern it cannot read, and
+    // the rejection ends in process.exit(1). A task file is a plain text file a
+    // person edits, so this is a typo away at any time.
+    it('boots past a task whose cron croner cannot read, and registers the rest', async () => {
+      store.createTask(taskInput({ name: 'Broken', prompt: 'test', cron: 'banana' }));
+      store.createTask(taskInput({ name: 'Fine', prompt: 'test', cron: '0 * * * *' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      await expect(service.start()).resolves.toBeUndefined();
+
+      const [broken, fine] = store.getTasks();
+      expect(service.isRegistered(broken!.id)).toBe(false);
+      expect(service.isRegistered(fine!.id)).toBe(true);
+
+      await service.stop();
+    });
+
+    // Croner reads a timezone lazily, so this one throws from a different place
+    // than a bad pattern does — and the row reaches the scheduler the same way.
+    it('boots past a task whose timezone croner cannot resolve', async () => {
+      store.createTask(
+        taskInput({ name: 'Off world', prompt: 'test', cron: '0 * * * *', timezone: 'Mars/Phobos' })
+      );
+      store.createTask(taskInput({ name: 'Fine', prompt: 'test', cron: '0 * * * *' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      await expect(service.start()).resolves.toBeUndefined();
+
+      const [offWorld, fine] = store.getTasks();
+      expect(service.isRegistered(offWorld!.id)).toBe(false);
+      expect(service.isRegistered(fine!.id)).toBe(true);
+
+      await service.stop();
+    });
+
+    it('is not started before start() runs, and is not started after stop()', async () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.isStarted).toBe(false);
+
+      await service.start();
+      expect(service.isStarted).toBe(true);
+
+      await service.stop();
+      expect(service.isStarted).toBe(false);
+    });
+
     it('skips tasks with pending_approval status', async () => {
       const task = store.createTask(
         taskInput({ name: 'Pending', prompt: 'test', cron: '0 * * * *' })
@@ -740,6 +787,62 @@ describe('TaskSchedulerService', () => {
       service.registerTask(task);
       service.registerTask(task); // Should not throw
       expect(service.isRegistered(task.id)).toBe(true);
+    });
+
+    // `registerTask` is reachable from a file somebody hand-edited, so it has to
+    // answer rather than throw: the caller is a watcher event or a reconciler
+    // pass, and neither has anywhere to put an exception.
+    it('refuses a schedule croner cannot read, and says so instead of throwing', () => {
+      const task = store.createTask(taskInput({ name: 'Broken', prompt: 'test', cron: 'banana' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(false);
+      expect(service.isRegistered(task.id)).toBe(false);
+    });
+
+    it('reports an on-demand task as unregistered rather than scheduled', () => {
+      const task = store.createTask(taskInput({ name: 'On demand', prompt: 'test' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(false);
+      expect(service.isRegistered(task.id)).toBe(false);
+    });
+
+    // A pattern that parses but never matches is a REGISTERED job, not a refused
+    // one. `apps/e2e` calls this expression `NEVER_FIRES_CRON` and seeds its task
+    // fixtures with it precisely because it renders as a live, enabled schedule
+    // while being unable to spawn a (real, billed) agent on that suite's leg.
+    it('registers a schedule that never comes round, and never fires it', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Manual only', prompt: 'test', cron: '0 0 31 2 *', timezone: 'UTC' })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(true);
+      expect(service.isRegistered(task.id)).toBe(true);
+      // Held by croner with no occurrence to wait for — the honest answer to
+      // "when does this run?" is nothing, not an error.
+      expect(service.getNextRun(task.id)).toBeNull();
+
+      // Nothing dispatches: no run row, and the agent was never asked to work.
+      expect(store.listRuns()).toHaveLength(0);
+      expect(mockAgent.ensureSession).not.toHaveBeenCalled();
+      expect(mockAgent.sendMessage).not.toHaveBeenCalled();
+
+      await service.stop();
+    });
+
+    // A task edited from a good cron to a bad one must lose its old job, not
+    // keep firing on the schedule nobody asked for any more.
+    it('drops the old job when a re-register is refused', () => {
+      const task = store.createTask(
+        taskInput({ name: 'Drifts', prompt: 'test', cron: '0 * * * *' })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      service.registerTask(task);
+      expect(service.registerTask({ ...task, cron: 'banana' })).toBe(false);
+      expect(service.isRegistered(task.id)).toBe(false);
     });
   });
 

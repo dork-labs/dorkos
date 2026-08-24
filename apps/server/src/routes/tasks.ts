@@ -18,6 +18,8 @@ import type { Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
+import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
+import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -188,7 +190,9 @@ const MISSING_REASON_MESSAGE =
  * Create the Tasks router with schedule and run management endpoints.
  *
  * @param store - TaskStore for data persistence
- * @param scheduler - TaskSchedulerService for cron management and dispatch
+ * @param scheduler - TaskSchedulerService for dispatch and run-time queries
+ * @param registrar - The one seam that turns a row into a live cron job, shared
+ *   with the file watcher and the reconciler so all four writers agree
  * @param dorkHome - Resolved data directory path
  * @param meshCore - Optional MeshCore for resolving agent project paths
  * @param activityService - Optional ActivityService for emitting activity events
@@ -196,6 +200,7 @@ const MISSING_REASON_MESSAGE =
 export function createTasksRouter(
   store: TaskStore,
   scheduler: TaskSchedulerService,
+  registrar: TaskRegistrar,
   dorkHome: string,
   meshCore?: MeshCore,
   activityService?: ActivityService
@@ -260,6 +265,17 @@ export function createTasksRouter(
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
     const data = parseBody(CreateTaskRequestSchema, req.body, res);
     if (!data) return;
+
+    // Asked before ANY write, because the file is written first and never
+    // withdrawn: a cron or timezone croner cannot read would otherwise leave a
+    // permanent SKILL.md on disk backing a row that can never be scheduled. The
+    // question cannot be asked in `CreateTaskRequestSchema` — only croner knows
+    // the answer and `@dorkos/shared` cannot depend on it; see
+    // `services/tasks/cron-validation.ts`.
+    const scheduleProblem = describeScheduleProblem(data.cron, data.timezone);
+    if (scheduleProblem) {
+      return res.status(400).json({ error: scheduleProblem });
+    }
 
     // How much power this schedule runs with, resolved ONCE (spec
     // `full-power-defaults`, D6). A caller that named a mode keeps it verbatim;
@@ -467,9 +483,10 @@ export function createTasksRouter(
       armEscalation('schedule.parked', await resolveScheduleParkPayload(schedule));
     }
 
-    if (schedule.enabled && schedule.status === 'active') {
-      scheduler.registerTask(schedule);
-    }
+    // Through the registrar, not `scheduler.registerTask` directly: the same
+    // seam the watcher and the reconciler use, so a task created here and a task
+    // created by dropping a SKILL.md on disk end up in exactly the same state.
+    registrar.syncTask(schedule.id);
 
     activityService?.emit({
       actorType: 'user',
@@ -501,6 +518,22 @@ export function createTasksRouter(
     const existing = store.getTask(req.params.id);
     if (!existing) {
       return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // The MERGED schedule is what gets registered, so the merged schedule is
+    // what has to read: a new cron runs in the task's existing timezone unless
+    // this same request changes it, and either half alone can be the one croner
+    // refuses. Asked only when a request touches one of them, so a PATCH of an
+    // unrelated field can never be refused by a schedule it did not write — and
+    // asked before the file rewrite below, for the reason the create path gives.
+    if (data.cron !== undefined || data.timezone !== undefined) {
+      const problem = describeScheduleProblem(
+        data.cron !== undefined ? data.cron : existing.cron,
+        data.timezone !== undefined ? data.timezone : existing.timezone
+      );
+      if (problem) {
+        return res.status(400).json({ error: problem });
+      }
     }
 
     // A caller that cannot NAME `bypassPermissions` must not be able to KEEP one
@@ -584,12 +617,9 @@ export function createTasksRouter(
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    // Re-register or unregister cron job based on new state
-    if (updated.enabled && updated.status === 'active') {
-      scheduler.registerTask(updated);
-    } else {
-      scheduler.unregisterTask(updated.id);
-    }
+    // Re-register or unregister the cron job to match the new state, through the
+    // shared seam — see the note on the create path above.
+    registrar.syncTask(updated.id);
 
     if (data.enabled === false && activityService) {
       activityService.emit({
@@ -661,8 +691,10 @@ export function createTasksRouter(
       }
     }
 
-    scheduler.unregisterTask(id);
+    // Row first, then the seam: with no row to read, `syncTask` unregisters —
+    // the same answer the direct call gave, arrived at the one way.
     store.deleteTask(id);
+    registrar.syncTask(id);
 
     activityService?.emit({
       actorType: 'user',

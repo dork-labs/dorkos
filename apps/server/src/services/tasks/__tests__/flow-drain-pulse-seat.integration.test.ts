@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Cron } from 'croner';
 import { TaskFileWatcher } from '../task-file-watcher.js';
+import { TaskRegistrar } from '../task-registrar.js';
+import { FakeScheduler } from './fake-scheduler.js';
 import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -80,6 +82,9 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
   let store: TaskStore;
   let watcher: TaskFileWatcher;
   let scheduler: TaskSchedulerService | undefined;
+  /** Stands in for the scheduler behind the WATCHER's registrar; the real one
+   * this test drives is built inside each case. */
+  let watcherScheduler: FakeScheduler;
 
   // The agent the project task is linked to, and its provisioned worktree cwd.
   const AGENT_ID = 'agent-flow-project';
@@ -93,7 +98,8 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
 
     db = createTestDb();
     store = new TaskStore(db);
-    watcher = new TaskFileWatcher(store, () => {}, dorkHome);
+    watcherScheduler = new FakeScheduler();
+    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler: watcherScheduler }));
   });
 
   afterEach(async () => {
