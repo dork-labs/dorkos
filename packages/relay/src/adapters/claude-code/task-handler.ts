@@ -21,7 +21,9 @@ import type {
   TraceStoreLike,
 } from '../../types.js';
 import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
-import { OPERATOR_CANCEL, type RunningTasks } from './task-cancel-handler.js';
+import { OPERATOR_CANCEL } from './task-cancel-handler.js';
+import type { AbortRegistry } from '../../lib/abort-registry.js';
+import { interruptTurn } from './interrupt.js';
 
 /** Maximum characters to collect for run output summary. */
 const OUTPUT_SUMMARY_MAX_CHARS = 1000;
@@ -31,17 +33,6 @@ const OUTPUT_SUMMARY_MAX_CHARS = 1000;
  * before the agent produced its next event.
  */
 const RUN_STOPPED = Symbol('run-stopped');
-
-/** Race sentinel: the runtime's interrupt did not settle inside its own bound. */
-const INTERRUPT_TIMEOUT = Symbol('interrupt-timeout');
-
-/**
- * How long to wait for the runtime's interrupt before giving up on learning its
- * outcome. Mirrors `SESSIONS.STALL_INTERRUPT_TIMEOUT_MS` in
- * `apps/server/src/config/constants.ts`, restated here because this package
- * cannot import server config. Keep the two in step.
- */
-const INTERRUPT_TIMEOUT_MS = 30_000;
 
 /**
  * Consume a run's event stream until it ends or the run's budget expires.
@@ -111,48 +102,6 @@ async function consumeRunStream(
   }
 }
 
-/**
- * Ask the runtime to end the turn behind a stopped run.
- *
- * Never rejects: it is called from an abort listener, where a rejection would
- * surface as an unhandled rejection, and a runtime that cannot be interrupted
- * must not stop the run from being finalized.
- *
- * Bounded by {@link INTERRUPT_TIMEOUT_MS}: `interruptQuery` reaches the very
- * subprocess being interrupted, so it can hang, and an unobserved dangling
- * await is a leak nobody ever sees. The run is finalized by the caller either
- * way — this bound only decides how long we wait to learn the outcome. Mirrors
- * `interruptRun` in `apps/server/src/services/tasks/run-stream.ts`.
- *
- * @param deps - Handler dependencies (runtime + optional logger).
- * @param runId - The run id, which is also its session key.
- */
-async function interruptRun(deps: TasksHandlerDeps, runId: string): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const expiry = new Promise<typeof INTERRUPT_TIMEOUT>((resolve) => {
-      timer = setTimeout(() => resolve(INTERRUPT_TIMEOUT), INTERRUPT_TIMEOUT_MS);
-      // Never hold the process open for an interrupt we already gave up on.
-      timer.unref();
-    });
-    const outcome = await Promise.race([deps.agentManager.interruptQuery(runId), expiry]);
-    if (outcome === INTERRUPT_TIMEOUT) {
-      deps.logger?.warn(
-        `[tasks] run ${runId}: interrupt did not settle within ${INTERRUPT_TIMEOUT_MS}ms; ` +
-          'the run is finalized anyway'
-      );
-    } else if (!outcome) {
-      // Also the honest answer for a turn that just finished, so this is not
-      // evidence of a leak.
-      deps.logger?.debug(`[tasks] run ${runId}: runtime reported no in-flight turn to interrupt`);
-    }
-  } catch (err) {
-    deps.logger?.error(`[tasks] run ${runId}: interrupting the turn failed`, err);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
-
 /** Dependencies required by the tasks handler. */
 export interface TasksHandlerDeps {
   agentManager: AgentRuntimeLike;
@@ -165,7 +114,7 @@ export interface TasksHandlerDeps {
    * "not found" for a run that is plainly executing, which is the exact bug
    * this registry exists to close.
    */
-  runningTasks: RunningTasks;
+  runningTasks: AbortRegistry;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -283,7 +232,7 @@ export async function handleTasksMessage(
     const stopped = await consumeRunStream(
       eventStream,
       controller.signal,
-      () => void interruptRun(deps, runId),
+      () => void interruptTurn(deps.agentManager, runId, `run ${runId}`, deps.logger),
       async (event) => {
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };

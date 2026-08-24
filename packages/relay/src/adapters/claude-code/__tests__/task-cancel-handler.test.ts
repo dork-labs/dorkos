@@ -9,11 +9,8 @@ import type {
   TraceStoreLike,
 } from '../index.js';
 import type { MessageHandler, RelayPublisher } from '../../../types.js';
-import {
-  RunningTasks,
-  handleTaskCancel,
-  TASK_CANCEL_SUBJECT_PATTERN,
-} from '../task-cancel-handler.js';
+import { handleTaskCancel, TASK_CANCEL_SUBJECT_PATTERN } from '../task-cancel-handler.js';
+import { AbortRegistry } from '../../../lib/abort-registry.js';
 import { TASK_CANCEL_SUBJECT_PREFIX, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 
 function createMockAgentManager(): AgentRuntimeLike {
@@ -159,7 +156,7 @@ const silentLog = { warn: vi.fn(), debug: vi.fn() };
 
 describe('handleTaskCancel', () => {
   it('stops a run this adapter is executing', () => {
-    const running = new RunningTasks();
+    const running = new AbortRegistry();
     const controller = new AbortController();
     running.register('run-1', controller);
 
@@ -170,7 +167,7 @@ describe('handleTaskCancel', () => {
   });
 
   it('refuses — without throwing — for a run nobody here is executing', () => {
-    const running = new RunningTasks();
+    const running = new AbortRegistry();
 
     const verdict = handleTaskCancel(cancelEnvelope('ghost-run'), running, silentLog);
 
@@ -180,7 +177,7 @@ describe('handleTaskCancel', () => {
   });
 
   it('refuses a stop from anyone but the scheduler, without touching the run', () => {
-    const running = new RunningTasks();
+    const running = new AbortRegistry();
     const controller = new AbortController();
     running.register('run-1', controller);
 
@@ -195,7 +192,7 @@ describe('handleTaskCancel', () => {
   });
 
   it('refuses a payload that is not a stop request', () => {
-    const running = new RunningTasks();
+    const running = new AbortRegistry();
 
     const verdict = handleTaskCancel(
       cancelEnvelope('run-1', { type: 'something_else' }),
@@ -207,7 +204,7 @@ describe('handleTaskCancel', () => {
   });
 
   it('is idempotent — a second stop changes nothing', () => {
-    const running = new RunningTasks();
+    const running = new AbortRegistry();
     const controller = new AbortController();
     running.register('run-1', controller);
 
@@ -220,7 +217,7 @@ describe('handleTaskCancel', () => {
   });
 
   it('does not let a late release unregister a newer run with the same id', () => {
-    const running = new RunningTasks();
+    const running = new AbortRegistry();
     const first = new AbortController();
     const second = new AbortController();
     running.register('run-1', first);
