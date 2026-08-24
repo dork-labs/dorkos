@@ -2,6 +2,7 @@ import { app, Menu, nativeImage, Tray } from 'electron';
 import { join } from 'node:path';
 import log from 'electron-log';
 import { TRAY_IMAGE_BY_PLATFORM } from '../shared/tray-images';
+import { saveDiagnosticReportInteractive } from './diagnostics';
 import type { AgentActivityCounts } from './agent-activity';
 
 /**
@@ -163,6 +164,15 @@ function render(): void {
       { type: 'separator' },
       { label: 'Open DorkOS', click: () => showWindow() },
       { label: 'Activity', click: () => openActivity() },
+      { type: 'separator' },
+      // The one item here that is not about agents, and it earns the space by
+      // the same argument the tray itself does: when the window is blank or
+      // will not open, this menu is the only surface still answering. Asking
+      // for the report from inside a cockpit you cannot see is no help.
+      {
+        label: 'Save Diagnostic Report…',
+        click: () => void saveDiagnosticReportInteractive(),
+      },
       { type: 'separator' },
       // Routed through app.quit() so it meets the same confirmation as every
       // other way out (see quit-guard.ts).
