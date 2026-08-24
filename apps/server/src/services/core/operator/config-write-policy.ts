@@ -99,6 +99,73 @@
  * separate sentence for them, because a refusal that overstates what a setting
  * does is a lie a model then repeats (DOR-1044).
  *
+ * ### The floor under the line: whatever a config WIPE refuses to reverse
+ *
+ * The two paragraphs above describe the line as a judgement, field by field. It
+ * also has a floor that is not a judgement at all, and the floor is checked
+ * rather than argued (DOR-1497).
+ *
+ * `PROTECTIVE_CARRYOVERS` (`safe-defaults/protected-state.ts`) is the list of
+ * leaves a person can move to a value MORE protective than the default. Recovery
+ * from a corrupt config, and a full `reset()`, deliberately carry those values
+ * across instead of landing on the shipped default, because a wipe may lose a
+ * preference and must never lose a protection.
+ *
+ * A leaf on that list and marked `agent-writable` here is a contradiction with a
+ * hole in it. The wipe path is an ACCIDENT and it still refuses to reverse the
+ * person's value; the agent path is a DELIBERATE write by something that is not
+ * the person, and it had no bar at all. Nine leaves sat in exactly that state —
+ * `agentContext.*`, `harness.autoSync`, `uploads.max*`,
+ * `runtimes.claudeCode.persistentSession`, `scheduler.maxConcurrentRuns` — and an
+ * agent-originated `PATCH /api/config` flipped every one of them back to the
+ * permissive default with a 200 and nothing on screen. The `agentContext` four
+ * are the ones that read worst out loud: an agent could undo a narrowing the
+ * person made to its own tool groups. State that carefully, because the obvious
+ * stronger sentence is not true — `resolveToolConfig`
+ * (`claude-code/tooling/tool-filter.ts`) gates the CONTEXT BLOCKS and nothing
+ * else, so the tools stay registered and callable either way (that module's own
+ * TSDoc says so, and leaving them out at MCP registration is still open work).
+ * The refusal copy for them is worded to match what they actually do.
+ *
+ * So the rule, pinned by a drift guard in
+ * `__tests__/config-write-policy.test.ts`: **every `PROTECTIVE_CARRYOVERS` path
+ * is `operator-only` here.** The write policy is at least as protective as the
+ * wipe policy, and a new carryover entry cannot be added without deciding this
+ * side too.
+ *
+ * Two properties of that rule are worth stating so nobody re-derives them later:
+ *
+ * - **It refuses BOTH directions, and that is the existing behavior rather than
+ *   a new cost.** The guard classifies paths, never values — `findOperatorOnlyPaths`
+ *   never reads the stored config — so an agent may no longer TIGHTEN one of these
+ *   either. Seventeen of the twenty-six carryover leaves already behaved exactly
+ *   that way (nobody may have an agent lower `rooms.maxAgentDepth` for them), and
+ *   a value-comparing guard would be a second, differently-shaped mechanism in
+ *   front of a question this one already answers. See "Settings that live inside
+ *   a list" below for why a shape this guard cannot read fails closed instead.
+ * - **It binds agents, not people, and it costs the person nothing.** The
+ *   terminal clears the operator bar outright (`LOCAL_OPERATOR_AUTHORITY`), and
+ *   over HTTP a caller presenting no agent identity is let through by
+ *   `trustedCaller` in `routes/config.ts` — the same escape every other
+ *   operator-only setting rides. Every one of the nine already has a way in:
+ *   `persistentSession` and `scheduler.maxConcurrentRuns` are the Control
+ *   Center's "Warm agents" switch and "Scheduled runs at once" stepper
+ *   (`ControlCenterSwitches.tsx`, #1209 — `maxConcurrentRuns` is also in
+ *   Settings → Tools), the four `agentContext.*` switches are Settings → Tools,
+ *   and `uploads.max*` and `harness.autoSync` have no screen of their own and
+ *   take `dorkos config set`. The person flips it where they already would; the
+ *   agent cannot flip it back.
+ * - **Versioned migrations are the one deliberate exception, and they are not a
+ *   hole.** `0.67.0` moves a stored `scheduler.maxConcurrentRuns` of exactly `1`
+ *   to `4` and a stored `runtimes.claudeCode.persistentSession` of exactly
+ *   `false` to `true` (`raiseSchedulerConcurrencyFloor`,
+ *   `warmClaudeCodeSessionsByDefault`) — two of these nine values, reversed on
+ *   upgrade. That is allowed where an agent write is not, because a migration is
+ *   versioned, reviewed, append-only and named in the changelog, and because
+ *   nothing on disk separates a stored old default from a deliberate choice of
+ *   it. Both bodies carry that caveat at the call site; this rule governs
+ *   REQUESTS to change a setting, not the release that redefines its default.
+ *
  * ### Considered and deliberately left writable
  *
  * Refusing more than the line justifies makes the capability useless and invites
@@ -296,7 +363,13 @@ export const CONFIG_WRITE_POLICY = {
   'a2a.enabled': 'operator-only',
 
   'scheduler.enabled': 'agent-writable',
-  'scheduler.maxConcurrentRuns': 'agent-writable',
+  // How many scheduled runs may be in flight at once. It used to ship at its
+  // schema minimum, so there was nothing to tighten to; it ships at 4 since
+  // `0.67.0`, and somebody who set it back to 1 chose one run at a time on a
+  // machine that presumably needed the room. A `PROTECTIVE_CARRYOVERS` leaf, so
+  // operator-only by the wipe-floor rule in this module's doc: an accident is not
+  // allowed to put three more runs alongside theirs, and an agent certainly is not.
+  'scheduler.maxConcurrentRuns': 'operator-only',
   'scheduler.timezone': 'agent-writable',
   'scheduler.retentionCount': 'agent-writable',
 
@@ -391,13 +464,54 @@ export const CONFIG_WRITE_POLICY = {
   'profile.displayName': 'agent-writable',
   'profile.rolePromptDismissedAt': 'agent-writable',
 
-  'agentContext.relayTools': 'agent-writable',
-  'agentContext.meshTools': 'agent-writable',
-  'agentContext.adapterTools': 'agent-writable',
-  'agentContext.tasksTools': 'agent-writable',
+  // The four tool-group switches, all defaulting ON, all `PROTECTIVE_CARRYOVERS`
+  // leaves — so operator-only by the wipe-floor rule in this module's doc. While
+  // they were agent-writable, an agent could undo a narrowing the person had made
+  // to its own tool groups, on the surface they would least look at.
+  //
+  // What they actually do, stated because the flattering version is wrong and a
+  // refusal built on it would teach a model something false (DOR-1044).
+  // `resolveToolConfig` (`claude-code/tooling/tool-filter.ts`) feeds the CONTEXT
+  // BLOCKS and nothing else: turning `relayTools` off stops the Relay tools being
+  // documented to the agent, it does not unregister them, and access is decided
+  // by the tier gate below every caller. Leaving a disabled group out at MCP
+  // registration is open work in that module (its TSDoc carries the history —
+  // `allowedTools` was tried and ran backwards, ADR-0070). So this is a person's
+  // deliberate narrowing to protect, not a capability gate to defend, and
+  // `OPERATOR_ONLY_STAKES` words the refusal accordingly.
+  //
+  // ## THIS NARROWS THE HOLE AT THE CONFIG SEAM. IT DOES NOT CLOSE IT.
+  //
+  // Say it here rather than let a reader infer a guarantee that is not on offer.
+  // `resolveToolConfig` reads `agent.<group> ?? globalConfig.<group>Tools`, so an
+  // explicit PER-AGENT value BEATS the global switch — and the per-agent seam has
+  // no bar of its own: `PATCH /api/agents/current` validates the boundary and
+  // delegates to `updateAgentManifest`, which refuses `account` and nothing else,
+  // with no caller-identity check at all. An agent can therefore restore its own
+  // context blocks through its manifest after a person turned the global switch
+  // off. Reproduced during review.
+  //
+  // Two things bound it, neither of which makes it a non-issue: the `update_agent`
+  // MCP tool does not expose `enabledToolGroups` (see `UpdateAgentArgs`), so the
+  // capability surface is not a route to it, and the effect is which tools are
+  // DOCUMENTED, never which may run. Tracked as DOR-1506; do not describe the
+  // global switches as agent-proof until that seam is closed too.
+  'agentContext.relayTools': 'operator-only',
+  'agentContext.meshTools': 'operator-only',
+  'agentContext.adapterTools': 'operator-only',
+  'agentContext.tasksTools': 'operator-only',
 
-  'uploads.maxFileSize': 'agent-writable',
-  'uploads.maxFiles': 'agent-writable',
+  // The two upload bounds a person can tighten past the shipped default, and so
+  // two more `PROTECTIVE_CARRYOVERS` leaves: operator-only by the wipe floor. A
+  // `safe` verdict on the default means the shipped value protects, not that it
+  // is the tightest anybody might want. `allowedTypes` is left where it was: it
+  // ships at `*/*` and a person CAN narrow it, but it carries no carryover rule,
+  // so the floor does not reach it and moving it here would be a fresh judgement
+  // rather than this fix. Filed as a question for the carryover list, which is
+  // the side that decides it (DOR-1505); if it gains a rule there, this verdict
+  // follows automatically and the drift guard is what will say so.
+  'uploads.maxFileSize': 'operator-only',
+  'uploads.maxFiles': 'operator-only',
   'uploads.allowedTypes': 'agent-writable',
 
   // Where agent manifests are created. `agent-creator.ts` DOES boundary-check the
@@ -448,7 +562,13 @@ export const CONFIG_WRITE_POLICY = {
   'workspace.defaultProvider': 'agent-writable',
   'workspace.retentionCap': 'agent-writable',
 
-  'harness.autoSync': 'agent-writable',
+  // Whether installing or uninstalling a marketplace plugin re-projects `.agents/`
+  // into every harness directory of every project on disk, on its own. Defaults
+  // ON, and a `PROTECTIVE_CARRYOVERS` leaf: turning it off is somebody stopping
+  // automatic writes into their own repositories, so the wipe floor makes it
+  // operator-only. `dorkos harness sync` is still how a person does it by hand,
+  // and that door is unaffected.
+  'harness.autoSync': 'operator-only',
   // The record of a person allowing an installed package to write shell commands
   // into the files a coding agent runs on their behalf (DOR-522). An agent that
   // could append to this list could approve its own package's hooks.
@@ -506,14 +626,23 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.claudeCode.defaultModel': 'agent-writable',
   'runtimes.claudeCode.defaultEffort': 'agent-writable',
   // Whether a Claude Code chat keeps its agent running between messages
-  // (spec `persistent-session-runtime` §P3). A preference about how work runs,
-  // on the same footing as the model and effort leaves above: it spawns the same
-  // executable with the same permissions and the same trust stop, and only
-  // changes how long that process is held. It removes no gate, widens no
-  // boundary — the boundary check runs per dispatch either way — and reaches no
-  // credential. What it can cost is memory: warm processes are bounded by the
-  // warm-session ceiling in code, not by anything an agent can write here.
-  'runtimes.claudeCode.persistentSession': 'agent-writable',
+  // (spec `persistent-session-runtime` §P3). Nothing about the SECURITY reading
+  // of it has changed and it is still true: the same executable is spawned with
+  // the same permissions under the same trust stop, the boundary check runs per
+  // dispatch either way, and no credential is reachable through it. That reading
+  // is why it was agent-writable, and it is not what decides this leaf.
+  //
+  // What decides it is the wipe floor (DOR-1497). The cost is memory — up to
+  // about a gigabyte per warm agent — so a person who turned it off did so to get
+  // that memory back on a machine that needed it, which is why it is a
+  // `PROTECTIVE_CARRYOVERS` leaf. The Control Center's "Warm agents" switch
+  // (`ControlCenterSwitches.tsx`, #1209) is where a person turns it off — and
+  // nothing tells them when it comes back on, so while this was agent-writable
+  // an agent could hand itself that gigabyte back and the person would find out
+  // from their machine rather than from the app. That the switch exists is also
+  // what makes the verdict cheap: refusing the agent takes nothing away from the
+  // person, who was never going to reach for a config door to begin with.
+  'runtimes.claudeCode.persistentSession': 'operator-only',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
@@ -592,18 +721,30 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
  * - `reach` — who can reach this instance, and how far it reaches on this machine.
  * - `credentials` — which sign-in and which keys the work runs on.
  * - `code` — which code this server runs, and which outside tools it attaches to.
+ * - `tools` — which DorkOS tool groups the agents here are told about.
  * - `disclosure` — what leaves this machine.
  * - `approvals` — whether a person is asked before something happens.
  * - `initiative` — when agents speak on their own, and what that spends.
+ * - `resources` — how much of this machine the work may take up.
  * - `attention` — whether the person finds out that something needs them.
+ *
+ * `tools` and `resources` arrived with the wipe floor (DOR-1497) rather than
+ * being carved out of the others, because neither claim was already on the list:
+ * "your agents are told about fewer tool groups than they want" is not `code`
+ * (nothing new is loaded or attached), and "this bound is about memory and disk"
+ * is not `initiative` (nothing speaks on its own). Filing them under a
+ * near-neighbour would have been the DOR-1044 failure again — a refusal that
+ * overstates what a setting does is a lie the model then carries.
  */
 export type OperatorOnlyStake =
   | 'reach'
   | 'credentials'
   | 'code'
+  | 'tools'
   | 'disclosure'
   | 'approvals'
   | 'initiative'
+  | 'resources'
   | 'attention';
 
 /** One stake, the sentence an agent reads for it, and the paths it covers. */
@@ -648,6 +789,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'relay.dataDir',
       'agents.defaultDirectory',
       'mesh.scanRoots',
+      // Whether DorkOS writes into the harness directories of projects on disk on
+      // its own. The second clause of this stake — how far it reaches on this
+      // machine — read as a write rather than as a scope.
+      'harness.autoSync',
     ],
   },
   {
@@ -685,6 +830,22 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].url',
       'connectors.rawMcpServers[].transport',
+    ],
+  },
+  {
+    stake: 'tools',
+    // "Told about" is the precise verb and the reason this stake exists. These
+    // switches feed the context blocks (`tool-filter.ts`), so a clause promising
+    // they decide what an agent MAY DO would be false — the tools stay registered
+    // and the tier gate decides access. It is still not `code` (nothing is loaded
+    // or attached) and not `reach` (nobody gets in), so a near-neighbour would
+    // have been the DOR-1044 failure by another route.
+    description: 'Which DorkOS tool groups your agents are told about',
+    paths: [
+      'agentContext.relayTools',
+      'agentContext.meshTools',
+      'agentContext.adapterTools',
+      'agentContext.tasksTools',
     ],
   },
   {
@@ -740,6 +901,21 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // The most literal member of this group: it is the one welcome-back
       // setting that decides whether a model turn runs at all (DOR-1046).
       'welcomeBack.offersEnabled',
+    ],
+  },
+  {
+    stake: 'resources',
+    // Memory, disk and how many things run at once. None of these is a security
+    // control and none of them decides whether an agent acts unbidden, so neither
+    // `reach` nor `initiative` would be a true sentence about them. They are here
+    // because a person tightened a bound on their own machine and the wipe floor
+    // says an agent may not slacken it back (DOR-1497).
+    description: 'How much of this machine the work may take up',
+    paths: [
+      'uploads.maxFileSize',
+      'uploads.maxFiles',
+      'runtimes.claudeCode.persistentSession',
+      'scheduler.maxConcurrentRuns',
     ],
   },
   {

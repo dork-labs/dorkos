@@ -185,26 +185,28 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     direction: 'boolean',
     protectiveValue: false,
     reason:
-      'Agent-to-agent messaging tools default ON. Someone who took them away from their agents should not have them handed back by a wipe.',
+      'The agent-to-agent messaging tools are documented to every session by default. Turning that off is a deliberate narrowing of what a person tells their agents they can do, and a wipe must not undo it. Stated as documentation rather than as access on purpose: `resolveToolConfig` feeds the context blocks and nothing else, so these four never unregister a tool (DOR-1497).',
   },
   {
     path: 'agentContext.meshTools',
     direction: 'boolean',
     protectiveValue: false,
-    reason: 'Agent discovery tools default ON; turning them off is a deliberate narrowing.',
+    reason:
+      'The agent discovery tools, documented by default; turning them off is the same deliberate narrowing, and the same documentation-only caveat applies.',
   },
   {
     path: 'agentContext.adapterTools',
     direction: 'boolean',
     protectiveValue: false,
     reason:
-      'Chat-adapter tools default ON and are the surface an agent uses to speak on an outside channel.',
+      'The chat-adapter tools — how an agent speaks on an outside channel — documented by default. Narrowing it is a choice about what agents here are told they may reach for.',
   },
   {
     path: 'agentContext.tasksTools',
     direction: 'boolean',
     protectiveValue: false,
-    reason: 'Scheduled-work tools default ON and are how an agent arranges unattended runs.',
+    reason:
+      'The scheduled-work tools, documented by default; how an agent learns it can arrange an unattended run.',
   },
   {
     path: 'harness.autoSync',

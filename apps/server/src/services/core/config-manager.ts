@@ -2711,6 +2711,13 @@ export function seedFullPowerDecision(store: {
  * nothing and any other number — including one somebody lowered to `1` after
  * this ran — is left alone the second time.
  *
+ * **This is the deliberate exception to the wipe floor** (DOR-1497,
+ * `operator/config-write-policy.ts`), which otherwise says nothing may quietly
+ * reverse a `PROTECTIVE_CARRYOVERS` value — this leaf is on that list. A
+ * versioned, reviewed, append-only migration named in the changelog is allowed
+ * to redefine a DEFAULT; the floor governs requests to change a SETTING, and it
+ * is what stops an agent doing the same thing on any other day.
+ *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
@@ -2746,11 +2753,15 @@ export function raiseSchedulerConcurrencyFloor(store: {
  * here:** a stored `false` is indistinguishable from a person who tried the
  * experiment and turned it off, because `false` is what shipped. This raises
  * both. The changelog says so — and says the other half too, which is that this
- * leaf has no switch in the product between the graduation and the Control
- * Center (task 2.2): the way back is `PATCH /api/config` or the file.
+ * leaf did not lose its switch in the end — it moved to the Control Center
+ * (`Warm agents`, #1209), which is the way back.
  *
  * Additive + idempotent: only the exact value `false` moves, so a re-run does
- * nothing and an off somebody chooses AFTER this key has run is permanent.
+ * nothing and an off somebody chooses AFTER this key has run is permanent —
+ * doubly so since DOR-1497, which made this leaf `operator-only`, so no agent
+ * can undo that off either. Same deliberate exception as the scheduler bump
+ * above: a versioned migration may redefine a default; nothing else may reverse
+ * one of these values.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
