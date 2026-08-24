@@ -41,7 +41,7 @@ export function ComparisonSources({ competitor }: { competitor: Competitor }) {
     >
       <h2
         id="how-we-checked"
-        className="text-2xs text-warm-gray-light font-mono tracking-[0.12em] uppercase"
+        className="text-2xs text-warm-gray font-mono tracking-[0.12em] uppercase"
       >
         How we checked
       </h2>
@@ -55,14 +55,17 @@ export function ComparisonSources({ competitor }: { competitor: Competitor }) {
       </p>
       <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
         {competitor.sources.map((source) => (
-          <li key={source}>
+          <li key={source} className="max-w-full min-w-0">
             <a
               href={source}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1 font-mono text-xs"
+              className="text-warm-gray hover:text-brand-orange transition-smooth inline-flex max-w-full items-center gap-1 font-mono text-xs"
             >
-              {sourceLabel(source)} <ExternalLink size={10} />
+              {/* A URL has no spaces to break at, so a long one would push the
+                  whole page sideways on a narrow screen rather than wrap. */}
+              <span className="break-all">{sourceLabel(source)}</span>
+              <ExternalLink size={10} className="shrink-0" />
             </a>
           </li>
         ))}

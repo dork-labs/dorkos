@@ -154,6 +154,22 @@ describe('comparison catalog data integrity', () => {
     }
   });
 
+  it('spells out openness by hand only where the plain yes/no would overstate it', () => {
+    for (const competitor of comparisons) {
+      if (competitor.openSourceNote === undefined) continue;
+      expect(
+        competitor.openSourceNote.trim().length,
+        `${competitor.slug} has an empty openSourceNote`
+      ).toBeGreaterThan(0);
+      // It replaces the whole answer rather than sitting beside it, so it has to
+      // say what is open and what is not, not just add a caveat.
+      expect(
+        competitor.openSourceNote,
+        `${competitor.slug} openSourceNote repeats the wording it replaces`
+      ).not.toMatch(/^(Open, you can read it|Closed, you cannot read it)$/);
+    }
+  });
+
   it('lastVerified is a real date, not in the future, and fresh enough to trust', () => {
     const now = Date.now();
     for (const competitor of comparisons) {

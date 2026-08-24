@@ -72,7 +72,7 @@ export function ComparisonCriteria({ competitor }: { competitor: Competitor }) {
           <section key={dimension.id} aria-labelledby={`criterion-${dimension.id}`}>
             <h2
               id={`criterion-${dimension.id}`}
-              className="text-charcoal font-mono text-2xl font-bold tracking-tight"
+              className="text-charcoal scroll-mt-24 font-mono text-2xl font-bold tracking-tight"
             >
               {dimension.label}
             </h2>
@@ -83,7 +83,7 @@ export function ComparisonCriteria({ competitor }: { competitor: Competitor }) {
             </div>
             <Link
               href={`#row-${dimension.id}`}
-              className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-4 inline-block font-mono text-xs underline underline-offset-2"
+              className="text-warm-gray hover:text-brand-orange transition-smooth mt-4 inline-block font-mono text-xs underline underline-offset-2"
             >
               Back to the table
             </Link>

@@ -97,7 +97,7 @@ export default function ComparePage() {
               >
                 {group.copy.groupLabel}
               </h2>
-              <p className="text-warm-gray-light mt-2 text-sm">{group.copy.groupBlurb}</p>
+              <p className="text-warm-gray mt-2 text-sm">{group.copy.groupBlurb}</p>
               <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {group.entries.map((competitor) => (
                   <CompetitorCard key={competitor.slug} competitor={competitor} />

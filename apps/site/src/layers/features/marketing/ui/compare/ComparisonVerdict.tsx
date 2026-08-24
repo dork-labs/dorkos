@@ -5,9 +5,7 @@ import type { Competitor } from '../../lib/comparisons';
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-2xs text-warm-gray-light font-mono tracking-[0.12em] uppercase">
-        {label}
-      </dt>
+      <dt className="text-2xs text-warm-gray font-mono tracking-[0.12em] uppercase">{label}</dt>
       <dd className="text-charcoal mt-1 text-sm leading-relaxed">{value}</dd>
     </div>
   );
@@ -40,7 +38,12 @@ export function ComparisonVerdict({ competitor }: { competitor: Competitor }) {
         <Fact label="Price" value={competitor.pricing} />
         <Fact
           label="Source code"
-          value={competitor.openSource ? 'Open, you can read it' : 'Closed, you cannot read it'}
+          value={
+            // A product can be open in one part and closed in another, and the
+            // plain yes/no would overstate it.
+            competitor.openSourceNote ??
+            (competitor.openSource ? 'Open, you can read it' : 'Closed, you cannot read it')
+          }
         />
       </dl>
 
@@ -48,7 +51,7 @@ export function ComparisonVerdict({ competitor }: { competitor: Competitor }) {
         href={competitor.homepage}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-6 inline-flex items-center gap-1 font-mono text-xs"
+        className="text-warm-gray hover:text-brand-orange transition-smooth mt-6 inline-flex items-center gap-1 font-mono text-xs"
       >
         See {competitor.name} for yourself <ExternalLink size={10} />
       </a>
