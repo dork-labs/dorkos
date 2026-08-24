@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(site): Compare joins the site nav — pill overlap fixed, hub gets its money shot (DOR-1504)'
+  - 'fix(site): the homepage shares the one nav list, and the pill waits for keyboard users (DOR-1504)'
 ---
 
 ### Added
