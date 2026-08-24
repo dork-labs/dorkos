@@ -256,6 +256,11 @@ export function createCreateScheduleHandler(
     // where the timer is disarmed, through `resolveStanding`.
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
+    // Through the registrar, exactly as the REST create path does: a task
+    // created here and a task created by dropping a SKILL.md on disk end up in
+    // the same state. A parked schedule has no job to register, and the seam is
+    // what makes sure of it rather than an assumption (DOR-1493).
+    deps.resolveTaskRegistrar?.()?.syncTask(schedule.id);
     const updated = deps.taskStore!.getTask(schedule.id);
 
     // One block, not two, so `parked` is genuinely non-optional inside it: the
@@ -382,6 +387,11 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
 
     const updated = deps.taskStore!.updateTask(args.id, patch);
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // Through the registrar, exactly as `PATCH /api/tasks/:id` does. Without
+    // this the row said one thing and the running cron job went on firing the
+    // old schedule until a restart — an agent could change a task's cron, be
+    // told it worked, and watch it keep running at the old time (DOR-1493).
+    deps.resolveTaskRegistrar?.()?.syncTask(updated.id);
     broadcastTasksChanged();
     return jsonContent({ schedule: updated });
   };
@@ -398,6 +408,11 @@ export function createDeleteScheduleHandler(deps: McpToolDeps) {
     const existing = deps.taskStore!.getTask(args.id);
     const deleted = deps.taskStore!.deleteTask(args.id);
     if (!deleted) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // With no row left to read, `syncTask` unregisters — which is the whole
+    // point here: a deleted schedule whose job kept firing is worse than a
+    // stale one, because the run it tries to record belongs to a schedule that
+    // no longer exists (DOR-1493).
+    deps.resolveTaskRegistrar?.()?.syncTask(args.id);
     resolveParkedScheduleRemoved(existing);
     broadcastTasksChanged();
     return jsonContent({ success: true, id: args.id });
