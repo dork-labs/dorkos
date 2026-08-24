@@ -500,7 +500,7 @@ export const comparisons: Competitor[] = [
     oneLiner:
       'Agent HQ runs Copilot, Claude and Codex inside your repositories, on GitHub’s computers. DorkOS runs the agents you already pay for, on yours.',
     pricing:
-      'A free tier that leaves the outside agents out. Copilot Pro is $10 a month, Pro+ $39 and Max $100; team seats are $19 and enterprise seats $39. Agent work is metered on top.',
+      'A free tier and a $10 Pro plan, neither of which includes the outside agents. Handing work to Claude or Codex starts at $39 a month. Business and enterprise plans are priced separately, and agent work is metered on top.',
     openSource: false,
     verdict:
       'This is the most head-on comparison on the site, and GitHub has built something serious: you can hand one issue to Copilot, to Anthropic’s Claude and to OpenAI’s Codex at once, then compare what three companies’ agents bring back, all inside the repository your team already works in. The catch is where it happens. The work runs on GitHub’s computers, on code that is already on GitHub, and it is billed by the token against your Copilot seat rather than the Claude or ChatGPT plan you already pay for. DorkOS drives the agents already signed in on your own machine, on any folder whether or not GitHub has ever seen it, and adds nothing to your bill. If your work lives in GitHub and your company needs one place to say which agents are allowed, Agent HQ is the better fit.',
@@ -524,7 +524,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. A saved job can repeat every hour, day or week, or start when an issue or pull request is opened. It will not work in a public repository: yours has to be private or internal.',
         detail:
-          'There are two versions of this. The easy one is a saved job on an hourly, daily or weekly repeat, which covers most of what people want and is closed to public repositories. For a time of your own choosing you drop into their workflow files, which run as ordinary build jobs and were still a preview when we checked. DorkOS takes the time in plain words and runs the job on your own machine, whoever owns the repository, and whether or not there is one.',
+          'The shape of it is a saved job on an hourly, daily or weekly repeat, which covers most of what people want it for. The catch is the one in the table: your repository has to be private or internal, so none of this works on open source. DorkOS takes the time in plain words and runs the job on your own machine, whoever owns the repository, and whether or not there is one.',
         source:
           'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-automations',
       },
@@ -555,14 +555,14 @@ export const comparisons: Competitor[] = [
       },
       pricing: {
         verdict: 'partial',
-        note: 'There is a free tier, but it leaves the outside agents out. Paid plans start at $10 a month, agent work is metered on top in credits and build minutes, and the code is closed.',
+        note: 'There is a free tier, but neither it nor the $10 plan includes the outside agents: Claude and Codex need the $39 tier or above. Agent work is metered on top, and the code is closed.',
         source: 'https://github.com/features/copilot/plans',
       },
     },
     faq: [
       {
         q: 'Is Agent HQ free?',
-        a: 'Not in any useful sense. The free Copilot tier allows a little agent use and leaves out the outside agents entirely, so handing work to Claude or Codex needs a paid plan. Those start at $10 a month, and the agent’s work is metered on top of that.',
+        a: 'Not in any useful sense. The free tier allows a little of Copilot’s own agent work, and the $10 plan does not include the outside agents either. Handing a job to Anthropic’s Claude or OpenAI’s Codex needs the $39 plan or the $100 one, and what the agent does is metered on top of that.',
       },
       {
         q: 'What is GitHub Mission Control?',
@@ -617,7 +617,7 @@ export const comparisons: Competitor[] = [
     cells: {
       'multi-runtime': {
         verdict: 'yes',
-        note: 'Yes, in its desktop editor, which can run Anthropic’s, OpenAI’s, Google’s and JetBrains’ agents alongside its own. Devin’s cloud sessions still only ever run Devin.',
+        note: 'Yes, in its desktop editor, which can run five other coding agents alongside its own: Claude, Codex, OpenCode, Gemini and JetBrains’ Junie. Devin’s cloud sessions still only ever run Devin.',
         detail:
           'This surprised us, and it is worth being exact about. Devin Desktop, the editor Cognition used to sell as Windsurf, can host five other companies’ coding agents through a shared protocol. You install those agents yourself, and Cognition says plainly that its own privacy terms and billing do not cover them: that part is between you and the other company. The cloud Devin everyone means when they say "Devin" runs Devin.',
         source: 'https://docs.devin.ai/desktop/acp',
@@ -670,7 +670,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can Devin run Claude Code or Codex?',
-        a: 'In its desktop editor, yes: it can host Anthropic’s, OpenAI’s, Google’s and JetBrains’ agents as well as its own. You install those yourself, and Cognition says its own terms and billing do not cover them. Devin’s cloud sessions run Devin only.',
+        a: 'In its desktop editor, yes: it can host five other agents as well as its own — Claude, Codex, OpenCode, Gemini and JetBrains’ Junie. You install those yourself, and Cognition says its own terms and billing do not cover them. Devin’s cloud sessions run Devin only.',
       },
       {
         q: 'Can Devin work on a schedule?',
@@ -709,7 +709,7 @@ export const comparisons: Competitor[] = [
       'Free for running agents locally on your Mac with your own accounts. Pro is $50 a month and adds their cloud, an API and shared work; Teams are $60 per person.',
     openSource: false,
     verdict:
-      'Conductor is a beautifully made Mac app for running Claude Code, Codex, Cursor and OpenCode side by side, each in its own copy of your project, and three of those four come built in with nothing to install. It has the best reviewing screen of anything on this page: a real diff viewer with comments, and a tab that gathers your build, your pull request and its comments in one place. What it will not do is start work without you, or let you look in from anywhere except that Mac. DorkOS does less about reviewing and more about those two things, and it also runs on Windows and Linux.',
+      'First, the name: this is Melty Labs’ Conductor, the Mac app at conductor.build, and it has nothing to do with Microsoft’s tool of the same name for multi-agent workflows. It is a beautifully made app for running Claude Code, Codex, Cursor and OpenCode side by side, each in its own copy of your project, and three of those four come built in with nothing to install. It has the best reviewing screen of anything on this page: a real diff viewer with comments, and a tab that gathers your build, your pull request and its comments in one place. What it will not do is start work without you, or let you look in from anywhere except that Mac. DorkOS does less about reviewing and more about those two things, and it also runs on Windows and Linux.',
     theirStrengths: [
       'you work on a Mac and want the most polished app of this kind, made by people who clearly care',
       'you want reviewing to be first class: a proper diff viewer, comments on the changes, and your build and pull request in one tab',
@@ -759,7 +759,7 @@ export const comparisons: Competitor[] = [
     faq: [
       {
         q: 'Is this the same Conductor as Microsoft’s?',
-        a: 'No. This page is about Melty Labs’ Mac app at conductor.build. Microsoft has an unrelated tool called Conductor for describing multi-agent workflows in a file, and there is a third, older Conductor that came out of Netflix for running business workflows. Three different products, one name.',
+        a: 'No, and the mix-up is an easy one. Everything on this page is Melty Labs’ Mac app. Microsoft’s Conductor is a way of writing multi-agent workflows down in a file, and a third one, older than both and born at Netflix, runs business processes. Three products, one name, no connection between them.',
       },
       {
         q: 'Is Conductor free?',
@@ -866,7 +866,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'What agents does Emdash support?',
-        a: 'Its documentation lists 34 command-line agents, including Claude Code, Codex, OpenCode, Cursor, Copilot and Gemini. Its own home page says "25+", so treat the exact number loosely. Each agent has to be installed and signed in on your machine first.',
+        a: 'Its documentation lists 34 command-line agents, including Claude Code, Codex, OpenCode, Cursor, Copilot, Cline, Goose and Jules. Its own home page says "25+", so treat the exact number loosely. Each agent has to be installed and signed in on your machine first.',
       },
       {
         q: 'Can Emdash run agents on a schedule?',
