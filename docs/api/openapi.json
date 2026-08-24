@@ -4470,6 +4470,28 @@
             ],
             "default": null
           },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "file",
+              null
+            ],
+            "default": null
+          },
+          "reasonSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "dorkos",
+              null
+            ],
+            "default": null
+          },
           "nextRun": {
             "type": [
               "string",

@@ -5,6 +5,7 @@ covers:
   - 'fix(server,client): approving a schedule no longer rewrites its file'
   - 'fix(server,db,client): store the schedule arm grant instead of inferring it from status'
   - 'fix(server): editing your own live schedule keeps it running'
+  - 'docs(api): regenerate the OpenAPI spec for the schedule provenance fields'
 ---
 
 ### Added
