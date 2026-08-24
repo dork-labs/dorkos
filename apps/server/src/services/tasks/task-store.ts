@@ -19,6 +19,7 @@ import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { resolveFilePermissionMode } from './schedule-permission-clamp.js';
+import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -96,6 +97,10 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
   'completed',
   'failed',
   'cancelled',
+  // A skipped tick never started, so it is over the instant it is written
+  // (DOR-1482) — and being terminal is what stops anything from later
+  // "finishing" a run that was never run.
+  'skipped',
 ]);
 
 /**
@@ -106,6 +111,17 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
 export function isTerminalRunStatus(status: TaskRunStatus): boolean {
   return TERMINAL_RUN_STATUSES.has(status);
 }
+
+/**
+ * Every status that means a run is OVER, for queries that must not act on a run
+ * that is still going.
+ *
+ * The terminal set plus `timeout`, which exists only in the DB column's enum:
+ * no writer produces it today and the shared `TaskRunStatus` omits it, but a row
+ * carrying it is plainly finished, and both readers below would otherwise treat
+ * it as live for ever.
+ */
+const FINISHED_RUN_STATUSES = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
 
 /**
  * Callback fired exactly once when a run transitions to a terminal status
@@ -344,7 +360,7 @@ export class TaskStore {
    * Update fields on an existing run. Returns the updated run or null.
    *
    * A run's outcome is immutable once terminal (`completed`/`failed`/
-   * `cancelled`, see {@link isTerminalRunStatus}): this is a no-op that
+   * `cancelled`/`skipped`, see {@link isTerminalRunStatus}): this is a no-op that
    * returns the run unchanged. This is the durable fix for DOR-248 — the
    * scheduler's post-publish `status: 'running'` write can lose a race with
    * the handler's own terminal write on synchronous (in-process) relay
@@ -454,48 +470,123 @@ export class TaskStore {
     return result?.count ?? 0;
   }
 
-  /** Prune old runs, keeping only the most recent `retentionCount` per task. */
+  /**
+   * Prune old runs, keeping the most recent `retentionCount` per task.
+   *
+   * **A run that has not finished is never deleted, however old it is.**
+   * Retention is about HISTORY, and a live run is not history — deleting its
+   * row mid-flight destroys the only record of work that is still happening:
+   * the scheduler's terminal write then finds nothing to update and the outcome
+   * is discarded, the run-terminal hook never fires (no notification, no
+   * attention badge), and the concurrency slot it was holding is silently
+   * handed back, so the cap quietly grows.
+   *
+   * This guard was not needed while pruning happened once, at startup, directly
+   * after a sweep that had just ended every running row — there was no live run
+   * left for it to hit. Both halves of that changed in DOR-1482: pruning now
+   * runs hourly, and the sweep deliberately leaves other processes' runs alone.
+   * So the protection has to be stated here rather than inherited from when it
+   * is called.
+   *
+   * Written as "delete only what is finished" rather than "skip `running`", so
+   * a status added later is protected by default and has to be opted IN to
+   * deletion.
+   *
+   * ## `retentionCount` counts FINISHED runs
+   *
+   * The keeper query is restricted the same way, so a live run never occupies a
+   * keeper slot. Two things go wrong when it can. `created_at` is an ISO string
+   * at millisecond resolution with no tiebreaker, so runs written in the same
+   * millisecond order arbitrarily — a live run can win a slot on one pass and
+   * lose it on the next, which makes how much history survives depend on a
+   * coin toss. And a slot spent on a run that is protected anyway is a slot not
+   * spent on history, so "keep the last 100" silently kept 99 whenever a run
+   * was in flight.
+   *
+   * @param taskId - The task whose history is being trimmed.
+   * @param retentionCount - How many of the newest FINISHED runs to keep.
+   * @returns How many rows were deleted.
+   */
   pruneRuns(taskId: string, retentionCount: number): number {
     const keepers = this.db
       .select({ id: pulseRuns.id })
       .from(pulseRuns)
-      .where(eq(pulseRuns.scheduleId, taskId))
+      .where(
+        and(eq(pulseRuns.scheduleId, taskId), inArray(pulseRuns.status, FINISHED_RUN_STATUSES))
+      )
       .orderBy(desc(pulseRuns.createdAt))
       .limit(retentionCount)
       .all();
 
     const keeperIds = keepers.map((r) => r.id);
 
-    if (keeperIds.length === 0) {
-      const result = this.db.delete(pulseRuns).where(eq(pulseRuns.scheduleId, taskId)).run();
-      return result.changes;
-    }
+    const conditions = [
+      eq(pulseRuns.scheduleId, taskId),
+      inArray(pulseRuns.status, FINISHED_RUN_STATUSES),
+    ];
+    if (keeperIds.length > 0) conditions.push(notInArray(pulseRuns.id, keeperIds));
 
     const result = this.db
       .delete(pulseRuns)
-      .where(and(eq(pulseRuns.scheduleId, taskId), notInArray(pulseRuns.id, keeperIds)))
+      .where(and(...conditions))
       .run();
     return result.changes;
   }
 
   /**
-   * Atomically claim a scheduled dispatch for `(taskId, scheduledFireTime)`
-   * (ADR-285). Backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
-   * succeeds for exactly one caller per tick across all processes sharing this
-   * DB. Returns `true` if THIS caller won the claim (should fire), `false` if the
-   * tick was already dispatched (skip).
+   * Atomically claim a scheduled tick AND open its run row, in one transaction
+   * (ADR-285; made atomic by DOR-1482).
+   *
+   * The claim is backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
+   * succeeds for exactly one caller per tick across every process sharing this
+   * database. The run row rides in the SAME transaction because the two used to
+   * be consecutive statements, and a process that died between them consumed
+   * the occurrence for the whole seven-day dedup window while leaving no
+   * evidence it had ever happened: no run row, nothing in the history, and a
+   * `nextRun` that had already moved on. Either both rows exist or neither
+   * does, so a crashed dispatch is simply a tick that was never claimed and the
+   * next process to see it may take it.
    *
    * @param taskId - The task being dispatched.
    * @param scheduledFireTime - The cron's intended tick (epoch ms), not wall-clock.
-   * @returns Whether this caller may proceed to fire.
+   * @param outcome - `running` opens a live run; `skipped` records a tick this
+   *   scheduler deliberately did not run, with the reason a person will read.
+   * @returns The new run, or null when another caller already claimed this tick.
    */
-  tryClaimDispatch(taskId: string, scheduledFireTime: number): boolean {
-    const result = this.db
-      .insert(pulseDispatchLog)
-      .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
-      .onConflictDoNothing()
-      .run();
-    return result.changes === 1;
+  claimScheduledRun(
+    taskId: string,
+    scheduledFireTime: number,
+    outcome: { status: 'running' } | { status: 'skipped'; reason: string }
+  ): TaskRun | null {
+    const now = new Date().toISOString();
+    const runId = this.db.transaction((tx) => {
+      const claim = tx
+        .insert(pulseDispatchLog)
+        .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
+        .onConflictDoNothing()
+        .run();
+      if (claim.changes !== 1) return null;
+
+      const id = ulid();
+      tx.insert(pulseRuns)
+        .values({
+          id,
+          scheduleId: taskId,
+          status: outcome.status,
+          startedAt: now,
+          trigger: 'scheduled',
+          createdAt: now,
+          // A skipped tick is over the moment it is recorded: it has an ending,
+          // it took no time, and the reason is the whole point of writing it.
+          ...(outcome.status === 'skipped'
+            ? { finishedAt: now, durationMs: 0, error: outcome.reason }
+            : {}),
+        })
+        .run();
+      return id;
+    });
+
+    return runId ? this.getRun(runId) : null;
   }
 
   /**
@@ -516,8 +607,14 @@ export class TaskStore {
   }
 
   /**
-   * Mark all currently running runs as failed (used on startup for crash
-   * recovery, DOR-249).
+   * Mark NAMED runs as failed because a restart interrupted them (DOR-249).
+   *
+   * Takes explicit ids rather than sweeping every `running` row, which is what
+   * this used to do: the database is shared by every process using one
+   * `dorkHome` (ADR-285), so an unscoped sweep let one process's boot end
+   * another process's live runs. Deciding WHICH runs a crash left behind is a
+   * judgement about leadership and ownership, so it lives in
+   * `crash-recovery.ts`; this method only carries out the decision.
    *
    * Scoped to rows that are genuinely unfinished (`finishedAt IS NULL`) —
    * a `running` row that already carries a real `finishedAt` was completed
@@ -526,8 +623,12 @@ export class TaskStore {
    * this sweep must not assume every writer is patched). Never overwrite an
    * existing `finishedAt`: that timestamp is the only record of when the run
    * actually finished.
+   *
+   * @param runIds - The runs to end. An empty list writes nothing.
+   * @returns How many rows were changed.
    */
-  markRunningAsFailed(): number {
+  markRunsInterrupted(runIds: string[]): number {
+    if (runIds.length === 0) return 0;
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseRuns)
@@ -536,7 +637,13 @@ export class TaskStore {
         finishedAt: now,
         error: 'Interrupted by server restart',
       })
-      .where(and(eq(pulseRuns.status, 'running'), isNull(pulseRuns.finishedAt)))
+      .where(
+        and(
+          inArray(pulseRuns.id, runIds),
+          eq(pulseRuns.status, 'running'),
+          isNull(pulseRuns.finishedAt)
+        )
+      )
       .run();
     return result.changes;
   }
@@ -611,7 +718,13 @@ export class TaskStore {
     // it): if such a row ever appears, it's a run that ended without
     // success, so it must count against the success rate rather than be
     // silently ignored.
-    const reliabilityTerminalStatuses = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
+    //
+    // 'skipped' is excluded for the mirror-image reason: the agent never ran,
+    // so the schedule neither succeeded nor failed. Counting a busy server
+    // against the task's reliability would blame the task for the queue.
+    const reliabilityTerminalStatuses = FINISHED_RUN_STATUSES.filter(
+      (status) => status !== 'skipped'
+    );
     const conditions = [inArray(pulseRuns.status, reliabilityTerminalStatuses)];
     if (scheduleId) {
       conditions.push(eq(pulseRuns.scheduleId, scheduleId));
@@ -800,56 +913,4 @@ export class TaskStore {
   close(): void {
     logger.debug('[Tasks] TaskStore close() is a no-op — the db lifecycle is managed externally');
   }
-}
-
-/**
- * Convert a Drizzle schedule row to a Task object.
- *
- * `proposedByName` and `nextRuns` are left at their empty values here on
- * purpose. Both are resolved when a task is READ by something that can answer
- * them — the name from the agent-identity service (async, and the store is a
- * synchronous data layer), the run times from the scheduler — so the store
- * never caches an answer that can go stale between a write and a read.
- */
-function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
-  return {
-    id: row.id,
-    name: row.name,
-    displayName: row.displayName ?? null,
-    description: row.description ?? null,
-    prompt: row.prompt,
-    cron: row.cron,
-    timezone: row.timezone,
-    agentId: row.agentId ?? null,
-    enabled: row.enabled,
-    maxRuntime: row.maxRuntime,
-    permissionMode: row.permissionMode,
-    status: row.status as Task['status'],
-    filePath: row.filePath,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    reason: row.reason ?? null,
-    proposedBySessionId: row.proposedBySessionId ?? null,
-    proposedByAgentPath: row.proposedByAgentPath ?? null,
-    proposedByName: null,
-    nextRun: null,
-    nextRuns: [],
-  } as Task;
-}
-
-/** Convert a Drizzle run row to a TaskRun object. */
-function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
-  return {
-    id: row.id,
-    scheduleId: row.scheduleId,
-    status: row.status as TaskRunStatus,
-    startedAt: row.startedAt,
-    finishedAt: row.finishedAt,
-    durationMs: row.durationMs,
-    outputSummary: row.output,
-    error: row.error,
-    sessionId: row.sessionId,
-    trigger: row.trigger as TaskRunTrigger,
-    createdAt: row.createdAt,
-  };
 }

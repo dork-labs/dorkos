@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -62,6 +63,15 @@ function createWrapper(transport: Transport) {
     </QueryClientProvider>
   );
 }
+
+// Radix Select needs DOM APIs jsdom lacks to open its listbox under userEvent —
+// the same shim `ClaudeAccountsSection.test.tsx` installs.
+beforeAll(() => {
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (!proto.hasPointerCapture) proto.hasPointerCapture = vi.fn();
+  if (!proto.releasePointerCapture) proto.releasePointerCapture = vi.fn();
+  if (!proto.scrollIntoView) proto.scrollIntoView = vi.fn();
+});
 
 describe('TaskRunHistoryPanel', () => {
   beforeEach(() => {
@@ -375,6 +385,83 @@ describe('TaskRunHistoryPanel', () => {
     fireEvent.click(screen.getByText('Try again'));
 
     await waitFor(() => expect(screen.getByTitle('Completed')).toBeTruthy());
+  });
+
+  describe('a run DorkOS skipped because it was busy (DOR-1482)', () => {
+    const SKIP_REASON = 'DorkOS was already running 4 tasks at once, which is its limit';
+
+    /** Render one skipped run, as the scheduler writes it. */
+    async function renderSkipped() {
+      const transport = createMockTransport({
+        listTaskRuns: vi.fn().mockResolvedValue([
+          createMockRun({
+            id: 'run-skipped',
+            status: 'skipped',
+            trigger: 'scheduled',
+            sessionId: null,
+            durationMs: 0,
+            error: SKIP_REASON,
+            outputSummary: null,
+          }),
+        ]),
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByTitle(/Skipped/)).toBeTruthy());
+      return transport;
+    }
+
+    it('says WHY it was skipped', async () => {
+      // The row is the only place a person ever learns the occurrence was passed
+      // over. Without this the row read "scheduled · Just now · < 1s" — no
+      // reason, and a duration implying it had run.
+      await renderSkipped();
+
+      expect(screen.getByTitle(SKIP_REASON)).toBeTruthy();
+      expect(screen.getByText(SKIP_REASON)).toBeTruthy();
+    });
+
+    it('shows no duration for a run that never started', async () => {
+      await renderSkipped();
+
+      expect(screen.queryByText('< 1s')).toBeNull();
+      expect(screen.queryByText('0s')).toBeNull();
+    });
+
+    it('offers no Stop button — there is nothing to stop', async () => {
+      await renderSkipped();
+
+      expect(screen.queryByText('Stop')).toBeNull();
+    });
+
+    it('can be filtered for on its own', async () => {
+      const user = userEvent.setup();
+      const listTaskRuns = vi.fn().mockResolvedValue([]);
+      const transport = createMockTransport({ listTaskRuns });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+      await screen.findByText('No runs yet');
+      listTaskRuns.mockClear();
+
+      await user.click(screen.getByRole('combobox'));
+      const listbox = await screen.findByRole('listbox');
+      await user.click(within(listbox).getByRole('option', { name: 'Skipped' }));
+
+      await waitFor(() => {
+        expect(listTaskRuns).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 'skipped' } as Partial<ListTaskRunsQuery>)
+        );
+      });
+      expect(screen.getByText('No skipped runs')).toBeTruthy();
+    });
   });
 
   it('shows loading state', () => {

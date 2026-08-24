@@ -673,7 +673,6 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },

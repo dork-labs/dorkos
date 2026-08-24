@@ -1549,13 +1549,11 @@ export const UserConfigSchema = z.object({
        * literal below, because `conf` merges top-level defaults shallowly.
        */
       maxConcurrentRuns: z.number().int().min(1).max(10).default(4),
-      timezone: z.string().nullable().default(null),
       retentionCount: z.number().int().min(1).default(100),
     })
     .default(() => ({
       enabled: true,
       maxConcurrentRuns: 4,
-      timezone: null,
       retentionCount: 100,
     })),
   mesh: z

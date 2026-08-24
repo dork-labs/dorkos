@@ -5,6 +5,7 @@ import {
   Loader2,
   MinusCircle,
   Play,
+  SkipForward,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -82,6 +83,15 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
       return (
         <span title="Cancelled" aria-label="Cancelled">
           <MinusCircle className="text-muted-foreground size-3.5" />
+        </span>
+      );
+    case 'skipped':
+      // Not a failure and not a cancellation: the schedule came round while
+      // DorkOS was already running as many tasks as it is allowed to, so this
+      // occurrence was recorded and not run. The row's error text says so.
+      return (
+        <span title="Skipped — DorkOS was busy" aria-label="Skipped">
+          <SkipForward className="text-muted-foreground size-3.5" />
         </span>
       );
     default:
@@ -211,14 +221,29 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
             {firstLine(run.outputSummary)}
           </span>
         )}
-        {run.status === 'failed' && run.error && (
-          <span className="text-destructive truncate" title={run.error}>
+        {/* Two runs carry a line of explanation, and they read differently. A
+            failure is the task's own, in the failure red. A skipped run is
+            DorkOS saying it was too busy to start this one — not the task's
+            fault, so muted — and this row is the only place a person ever
+            learns the occurrence was passed over (DOR-1482). */}
+        {(run.status === 'failed' || run.status === 'skipped') && run.error && (
+          <span
+            className={cn(
+              'truncate',
+              run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'
+            )}
+            title={run.error}
+          >
             {firstLine(run.error)}
           </span>
         )}
       </span>
 
-      <span className="text-muted-foreground">{formatDuration(run.durationMs)}</span>
+      {/* No duration for a run that never started — a "< 1s" against a skipped
+          row reads as if it ran and finished instantly. */}
+      <span className="text-muted-foreground">
+        {run.status === 'skipped' ? '' : formatDuration(run.durationMs)}
+      </span>
 
       <span>
         {run.status === 'running' && (
@@ -410,6 +435,7 @@ function StatusFilterSelect({
           <SelectItem value="completed">Completed</SelectItem>
           <SelectItem value="failed">Failed</SelectItem>
           <SelectItem value="cancelled">Cancelled</SelectItem>
+          <SelectItem value="skipped">Skipped</SelectItem>
         </SelectContent>
       </Select>
     </div>

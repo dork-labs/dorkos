@@ -1,5 +1,6 @@
 import type { TranscriptReader } from '../sessions/transcript-reader.js';
 import type { TaskStore } from '../../../tasks/task-store.js';
+import type { TaskRegistrar } from '../../../tasks/task-registrar.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -24,6 +25,21 @@ export interface McpToolDeps {
   defaultCwd: string;
   /** Optional Task store — undefined when Tasks is disabled */
   taskStore?: TaskStore;
+  /**
+   * The registration seam that keeps running cron jobs in step with task rows,
+   * resolved LAZILY (DOR-1493).
+   *
+   * A getter rather than the registrar itself, because of boot order: these
+   * deps are assembled in `index.ts` roughly a hundred lines before
+   * `TaskRegistrar` exists, so a plain field would be captured as `undefined`
+   * forever and the tools would go on writing rows that no scheduler ever
+   * hears about — `tasks_update` leaving the old cron firing, `tasks_delete`
+   * leaving a job firing against a row that is gone. Resolved at call time, it
+   * is simply there by the time any tool runs.
+   *
+   * Undefined when Tasks is disabled, and null before the scheduler is built.
+   */
+  resolveTaskRegistrar?: () => TaskRegistrar | null;
   /** Optional RelayCore — undefined when Relay is disabled */
   relayCore?: RelayCore;
   /** Optional AdapterManager — undefined when Relay adapters are not configured */

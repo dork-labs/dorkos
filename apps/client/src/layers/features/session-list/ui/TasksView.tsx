@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CheckCircle2, Loader2, XCircle, MinusCircle, Clock } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle, MinusCircle, SkipForward, Clock } from 'lucide-react';
 import {
   useTasks,
   useActiveTaskRunCount,
@@ -43,6 +43,8 @@ function RunStatusIcon({ status }: { status: TaskRun['status'] }) {
       return <XCircle className="text-destructive size-3 shrink-0" aria-hidden />;
     case 'cancelled':
       return <MinusCircle className="text-muted-foreground size-3 shrink-0" aria-hidden />;
+    case 'skipped':
+      return <SkipForward className="text-muted-foreground size-3 shrink-0" aria-hidden />;
     default:
       return null;
   }

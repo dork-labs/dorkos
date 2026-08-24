@@ -4722,7 +4722,8 @@
           "running",
           "completed",
           "failed",
-          "cancelled"
+          "cancelled",
+          "skipped"
         ]
       },
       "TaskRunTrigger": {

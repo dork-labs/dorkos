@@ -370,7 +370,6 @@ export const CONFIG_WRITE_POLICY = {
   // operator-only by the wipe-floor rule in this module's doc: an accident is not
   // allowed to put three more runs alongside theirs, and an agent certainly is not.
   'scheduler.maxConcurrentRuns': 'operator-only',
-  'scheduler.timezone': 'agent-writable',
   'scheduler.retentionCount': 'agent-writable',
 
   // Directories DorkOS would scan for agents. Nothing resolves this today (the

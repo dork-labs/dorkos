@@ -101,7 +101,6 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `a2a.enabled`                                    | boolean                                                                  | `false`            | Mount the external A2A gateway — an agent card plus a JSON-RPC address outside agents can post work to. **Experimental**, listed in the [Experiments registry](#experimental-fields); needs `relay.enabled`. `DORKOS_A2A_ENABLED` overrules it in both directions when present, and the Settings switch then reports itself locked. `operator-only` to write                                                                  |
 | `scheduler.enabled`                              | boolean                                                                  | `true`             | Enable Tasks scheduler subsystem (config-level toggle)                                                                                                                                                                                                                                                                                                                                                                        |
 | `scheduler.maxConcurrentRuns`                    | integer (1--10)                                                          | `4`                | How many scheduled runs may be in flight at once. Raised from `1` in `0.67.0` (spec `full-power-defaults`, D1): one at a time meant a slow run held up every schedule behind it. A throttle, not a capability — the bounds are unchanged and every run still passes the same gates. `operator-only` to write: it carries a `PROTECTIVE_CARRYOVERS` rule, so the [wipe floor](#step-by-step-adding-a-new-config-field) applies |
-| `scheduler.timezone`                             | string \| null                                                           | `null`             | Default timezone for cron expressions (`null` = system timezone)                                                                                                                                                                                                                                                                                                                                                              |
 | `scheduler.retentionCount`                       | integer                                                                  | `100`              | Number of completed run records to retain in the database                                                                                                                                                                                                                                                                                                                                                                     |
 | `mesh.scanRoots`                                 | string[]                                                                 | `[]`               | Directories to scan for agent discovery                                                                                                                                                                                                                                                                                                                                                                                       |
 | `connectors.rawMcpServers`                       | array of `{ slug, displayName, url, transport }`                         | `[]`               | Remote MCP servers the raw-MCP connector offers as connectable services (`transport`: `http` \| `sse`). Read at boot; edits take effect on the next server start                                                                                                                                                                                                                                                              |
@@ -1181,7 +1180,7 @@ $ dorkos config list
   "ui": { "theme": "system" },
   "logging": { "level": "info", "maxLogSizeKb": 500, "maxLogFiles": 14 },
   "relay": { "enabled": true, "dataDir": null },
-  "scheduler": { "enabled": true, "maxConcurrentRuns": 4, "timezone": null, "retentionCount": 100 },
+  "scheduler": { "enabled": true, "maxConcurrentRuns": 4, "retentionCount": 100 },
   "mesh": { "scanRoots": [] },
   "uploads": { "maxFileSize": 10485760, "maxFiles": 10, "allowedTypes": ["*/*"] },
   "agentContext": { "relayTools": true, "meshTools": true, "adapterTools": true, "tasksTools": true }
@@ -1395,7 +1394,6 @@ Content-Type: application/json
     "scheduler": {
       "enabled": true,
       "maxConcurrentRuns": 4,
-      "timezone": null,
       "retentionCount": 100
     },
     "mesh": { "scanRoots": [] },

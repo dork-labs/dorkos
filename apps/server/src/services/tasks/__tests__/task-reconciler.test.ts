@@ -90,7 +90,7 @@ describe('TaskReconciler', () => {
     it('removes an orphan that has run history instead of aborting the pass', async () => {
       const taskId = createExpiredOrphan('gone-task');
       store.createRun(taskId, 'manual');
-      store.tryClaimDispatch(taskId, 1_700_000_000_000);
+      store.claimScheduledRun(taskId, 1_700_000_000_000, { status: 'running' });
 
       await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 1 });
 
