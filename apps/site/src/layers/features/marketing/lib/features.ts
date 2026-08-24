@@ -610,6 +610,32 @@ export const features: Feature[] = [
     relatedFeatures: ['team-room', 'tool-approval', 'task-scheduler', 'question-prompts'],
     sortOrder: 10,
   },
+  {
+    slug: 'control-center',
+    name: 'Control Center',
+    product: 'console',
+    category: 'agent-control',
+    tagline: "Check and change every agent's power settings, in one panel",
+    description:
+      'Power settings hide across Settings, Runtimes, and Tasks. Control Center puts every dial in one panel, open with ⌘⇧L from anywhere in DorkOS.',
+    status: 'ga',
+    benefits: [
+      'See where new sessions stop for approval, at a glance',
+      'Let agents message across projects with one switch',
+      "Make 'stop asking' stick for one agent, one action",
+      'Keep agents warm between messages, and cap concurrent scheduled runs',
+      'An Exceptions list links straight to what to fix',
+    ],
+    moment:
+      "You open Control Center to check who's running at full power. Two sessions show up in Exceptions, each one a click from the setting that put them there.",
+    relatedFeatures: [
+      'tool-approval',
+      'action-approvals',
+      'multi-runtime-cockpit',
+      'task-scheduler',
+    ],
+    sortOrder: 11,
+  },
 
   // === TASKS ===
   {
@@ -678,7 +704,7 @@ export const features: Feature[] = [
       'Make a channel and invite the agents you want',
       'Ask one agent, or the whole room, in one message',
       'Reply in a thread so a side topic stays put',
-      'See who is working on your message, and for how long',
+      'Set how often agents can reply, per room, or turn it off',
       'Direct-message a single agent when it is just the two of you',
     ],
     moment:

@@ -1,7 +1,7 @@
 ---
 id: 260821-205323
 title: The billing account resolves through a launch-time ladder; disk stays per-session truth
-status: proposed
+status: accepted
 created: 2026-08-21
 spec: billing-account-ladder
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed (implemented by spec billing-account-ladder, shipped 2026-08-22 in PRs #1166/#1183/#1185)
+Accepted — implemented by spec billing-account-ladder, shipped 2026-08-22 in PRs #1166/#1183/#1185. Verified in code: `defaultAccount` (renamed from `activeAccount`) and the launch-account ladder are live in `apps/server/src/services/core/config-manager.ts` and `apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts`.
 
 ## Context
 

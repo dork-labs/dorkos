@@ -1,7 +1,7 @@
 ---
 id: 260823-000217
 title: The cascade guard's ancestry rule becomes a per-agent turn counter
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: null
 superseded-by: null
@@ -12,7 +12,7 @@ amends: 260726-170127
 
 ## Status
 
-Proposed. Amends ADR 260726-170127, which stands in every other respect.
+Accepted. Amends ADR 260726-170127, which stands in every other respect. Verified in code: `apps/server/src/services/rooms/cascade-guard.ts` carries `turnsByAuthor`, the `'repeat'` refusal reason, and `maxTurnsPerAgentPerCascade`; `RoomStore.turnsByAuthorInCascade` implements the `dispatch_id`-based turn count from the DOR-1434 amendment.
 
 ## Context
 

@@ -90,6 +90,24 @@ dorkos config set runtimes.default opencode
 
 See the [Configuration reference](/docs/getting-started/configuration) for the full `runtimes` block.
 
+## Choose an Account
+
+If you've registered more than one Claude account (see [Configuration](/docs/getting-started/configuration#runtimes)), you can send a chat's work, and what it bills, to a specific one. This only shows up once DorkOS knows about more than one account — with just one, there's nothing to choose.
+
+### For One Chat
+
+Before the first message, open the runtime chip in the status bar and pick an account. It applies to that chat only: the menu says so, and the choice locks once the first message sends. The menu also names what "Default" would actually charge, so leaving it alone is still a choice you can see.
+
+### For an Agent
+
+Open the agent's profile and tap **Runs on**, then pick an account the same way you'd pick a model. The row shows where the choice came from: green when the agent just follows your default, amber when you set something else here. One tap on that chip puts it back to following your default.
+
+Settings → Runtimes lists every agent billing somewhere other than your default, next to the ones running on a different runtime or model. An agent pointing at an account this machine doesn't know about shows up in amber, in Settings and in the sidebar's Needs-attention group, and bills to your default until you fix it.
+
+### As the Default
+
+Set which account new chats bill to when neither the chat nor the agent names one, at Settings → Runtimes → Claude Code under **Default account**.
+
 ## See the Runtime
 
 Every session wears its runtime openly:

@@ -1,7 +1,7 @@
 ---
 id: 260821-205324
 title: Billing accounts are referenced by registry id, never by path
-status: proposed
+status: accepted
 created: 2026-08-21
 spec: billing-account-ladder
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed (implemented by spec billing-account-ladder, shipped 2026-08-22 in PRs #1166/#1183/#1185)
+Accepted — implemented by spec billing-account-ladder, shipped 2026-08-22 in PRs #1166/#1183/#1185. Verified in code: registry `id` migration and id-only referencing are live in `apps/server/src/services/core/config-manager.ts` (comments cite this ADR directly at the migration site).
 
 ## Context
 

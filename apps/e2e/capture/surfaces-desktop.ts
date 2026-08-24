@@ -656,6 +656,10 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
   await page.getByText('Get Started', { exact: true }).first().click({ timeout: WAIT_MS });
   // The ready-state CTA reads "Meet DorkBot"; its testid predates that copy.
   await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
+  // The power stage (DOR-1431) sits between the readiness check and the DorkBot
+  // conversation. "Decide later" advances without writing a power choice, the
+  // same no-write routing as the two skips below.
+  await page.getByTestId('onboarding-power-decide-later').click({ timeout: WAIT_MS });
   await page.getByTestId('skip-personality').click({ timeout: WAIT_MS });
   await page.getByTestId('skip-profile').click({ timeout: WAIT_MS });
   await page.getByText('Sure, look around', { exact: true }).click({ timeout: WAIT_MS });

@@ -995,42 +995,6 @@
       "affects": ["apps/client/src/layers/features/canvas/**"]
     },
     {
-      "number": 289,
-      "slug": "flow-identity-aware-poll-based-question-routing",
-      "title": "Identity-Mode-Aware, Poll-Based Question Routing",
-      "status": "proposed",
-      "created": "2026-06-25",
-      "extractedFrom": "flow-triage-feeds-loop",
-      "specSlug": "flow-triage-feeds-loop"
-    },
-    {
-      "number": 288,
-      "slug": "flow-transport-agnostic-inbound-event-seam",
-      "title": "Transport-Agnostic Inbound Event Seam (Poll-First)",
-      "status": "proposed",
-      "created": "2026-06-25",
-      "extractedFrom": "flow-triage-feeds-loop",
-      "specSlug": "flow-triage-feeds-loop"
-    },
-    {
-      "number": 287,
-      "slug": "flow-reconciler-registry-and-scheduler",
-      "title": "Composable Reconciler Registry and Scheduler",
-      "status": "proposed",
-      "created": "2026-06-25",
-      "extractedFrom": "flow-triage-feeds-loop",
-      "specSlug": "flow-triage-feeds-loop"
-    },
-    {
-      "number": 286,
-      "slug": "flow-readiness-at-every-stage-boundary",
-      "title": "Readiness Is Produced at Every Stage Boundary",
-      "status": "proposed",
-      "created": "2026-06-25",
-      "extractedFrom": "flow-triage-feeds-loop",
-      "specSlug": "flow-triage-feeds-loop"
-    },
-    {
       "number": 285,
       "slug": "pulse-scheduling-production-gated-singleton-locked",
       "title": "Pulse scheduling is production-gated, singleton-locked, and idempotent",
@@ -4834,7 +4798,7 @@
       "id": "260821-205323",
       "slug": "the-billing-account-resolves-through-a-launch-time-ladder",
       "title": "The billing account resolves through a launch-time ladder; disk stays per-session truth",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-21",
       "extractedFrom": "billing-account-ladder",
       "specSlug": "billing-account-ladder",
@@ -4845,7 +4809,7 @@
       "id": "260821-205324",
       "slug": "billing-accounts-are-referenced-by-registry-id",
       "title": "Billing accounts are referenced by registry id, never by path",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-21",
       "extractedFrom": "billing-account-ladder",
       "specSlug": "billing-account-ladder",
@@ -4900,7 +4864,7 @@
       "id": "260823-000217",
       "slug": "the-ancestry-rule-becomes-a-per-agent-turn-counter",
       "title": "The cascade guard's ancestry rule becomes a per-agent turn counter",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-23",
       "amends": "260726-170127",
       "supersedes": null,
@@ -4918,7 +4882,7 @@
       "id": "260823-000218",
       "slug": "room-turn-limits-ship-loose-and-can-be-turned-off",
       "title": "Room turn limits ship loose, and a person may turn them off entirely",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-23",
       "amends": null,
       "supersedes": null,
