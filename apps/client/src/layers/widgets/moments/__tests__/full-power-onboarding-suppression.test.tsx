@@ -42,7 +42,13 @@ function setEligibleConfig() {
       telemetry: { userHasDecided: true },
       auth: { enabled: false },
     },
-    isFetchedAfterMount: true,
+    // The host opens a moment only off a config the server confirmed THIS launch,
+    // measured as `dataUpdatedAt` against a `LAUNCH_STARTED_AT` sampled at module
+    // load — so a stamp a million ms ahead of now is unambiguously within it.
+    // Feeding the retired `isFetchedAfterMount` instead leaves `dataUpdatedAt`
+    // undefined, which reads as a stale restored cache and holds every moment
+    // down: the suppression case below then passes for the wrong reason.
+    dataUpdatedAt: Date.now() + 1_000_000,
   } as unknown as ReturnType<typeof useConfig>);
   vi.mocked(useUpdateConfig).mockReturnValue({
     mutate: vi.fn(),
