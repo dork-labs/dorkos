@@ -140,7 +140,7 @@ export const DORKBOT_TOUR_LINES = {
   /** The Tasks occasion tour, fired on the first scheduled task. */
   tasks: {
     tasksList:
-      'Here it is. Every task you schedule lands in this list, with its next run and its history.',
+      'Here it is. Every scheduled task lands in this list, with its next run and its history.',
   },
   /** The Relay occasion tour, fired on the first integration made. */
   relay: {

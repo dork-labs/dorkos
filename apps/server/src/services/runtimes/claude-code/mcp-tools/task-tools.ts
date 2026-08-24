@@ -79,7 +79,7 @@ export const REASON_DESCRIPTION =
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
   if (!deps.taskStore) {
-    return jsonContent({ error: 'Tasks scheduler is not enabled' }, true);
+    return jsonContent({ error: 'Scheduled tasks are turned off on this DorkOS' }, true);
   }
   return null;
 }
@@ -448,19 +448,19 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
   return [
     tool(
       'tasks_list',
-      'List all Tasks scheduled jobs. Returns schedule definitions with status and configuration.',
+      'List every scheduled task on this DorkOS. Returns each one with its status and settings.',
       { enabled_only: z.boolean().optional().describe('Only return enabled schedules') },
       createListSchedulesHandler(deps)
     ),
     tool(
       'tasks_create',
-      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it can run.',
+      'Propose a new scheduled task. It is created with pending_approval status and never runs until the person approves it.',
       {
-        name: z.string().describe('Name for the scheduled job'),
+        name: z.string().describe('Name for the scheduled task'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
         reason: z.string().describe(REASON_DESCRIPTION),
-        description: z.string().optional().describe('Description of what this task does'),
+        description: z.string().optional().describe('Description of what this scheduled task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
@@ -470,7 +470,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     ),
     tool(
       'tasks_update',
-      'Update an existing Tasks schedule. Only provided fields are updated.',
+      'Update an existing scheduled task. Only the fields you send are changed.',
       {
         id: z.string().describe('Schedule ID to update'),
         // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
@@ -494,13 +494,13 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     ),
     tool(
       'tasks_delete',
-      'Delete a Tasks schedule permanently.',
+      'Delete a scheduled task permanently.',
       { id: z.string().describe('Schedule ID to delete') },
       createDeleteScheduleHandler(deps)
     ),
     tool(
       'tasks_get_run_history',
-      'Get recent run history for a Tasks schedule.',
+      'Get the recent run history for a scheduled task.',
       {
         schedule_id: z.string().describe('Schedule ID to get runs for'),
         limit: z.number().optional().describe('Max runs to return (default 20)'),
