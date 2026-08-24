@@ -173,3 +173,70 @@ describe('types with no schedules slot', () => {
     expect(await validatePackageSchedules(packagePath, adapter)).toEqual([]);
   });
 });
+
+describe('names that cannot become a folder', () => {
+  it.each(['!!!', '..', '\u{1F31F}\u{1F31F}', '---', '   '])(
+    'refuses the name %j with the author own spelling in the message',
+    async (name) => {
+      const raw = {
+        schemaVersion: 1,
+        name: 'tools',
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'Test package.',
+        schedules: [{ name, description: 'd', prompt: 'p' }],
+      } as unknown as MarketplacePackageManifest;
+
+      const problems = await validatePackageSchedules(packagePath, raw);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain(name);
+      expect(problems[0]).toMatch(/no letters or numbers/);
+    }
+  );
+
+  it('accepts a name that slugifies to something', async () => {
+    const problems = await validatePackageSchedules(
+      packagePath,
+      manifest([{ name: 'Nightly Tidy!', description: 'd', prompt: 'p' }])
+    );
+    expect(problems).toEqual([]);
+  });
+});
+
+describe('two declarations, one folder', () => {
+  it('refuses names that differ only by punctuation', async () => {
+    const problems = await validatePackageSchedules(
+      packagePath,
+      manifest([
+        { name: 'nightly tidy', description: 'd', prompt: 'p' },
+        { name: 'Nightly-Tidy!', description: 'd', prompt: 'p' },
+      ])
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/both become the folder/);
+    // Both names are named, so the author can find them.
+    expect(problems[0]).toContain('nightly tidy');
+    expect(problems[0]).toContain('Nightly-Tidy!');
+  });
+
+  it('allows two genuinely different names', async () => {
+    const problems = await validatePackageSchedules(
+      packagePath,
+      manifest([
+        { name: 'nightly', description: 'd', prompt: 'p' },
+        { name: 'weekly', description: 'd', prompt: 'p' },
+      ])
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it('does not treat two skillRef entries as a folder collision', async () => {
+    await shipSkill('skills', 'one');
+    await shipSkill('skills', 'two');
+    const problems = await validatePackageSchedules(
+      packagePath,
+      manifest([{ skillRef: 'one' }, { skillRef: 'two' }])
+    );
+    expect(problems).toEqual([]);
+  });
+});

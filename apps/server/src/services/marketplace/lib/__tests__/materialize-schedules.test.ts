@@ -269,12 +269,29 @@ describe('skillRef declarations inject into the shipped skill', () => {
     expect(body).toBe('# Daily report\n\nGather yesterday and summarize it.');
   });
 
-  it('keeps frontmatter keys the skill schema does not know', async () => {
-    // Parsing through SkillFrontmatterSchema would strip these; reading with
-    // gray-matter is what keeps them.
+  it('keeps every frontmatter key and value the skill schema does not know', async () => {
+    // Parsing through SkillFrontmatterSchema would strip all of these; reading
+    // with gray-matter is what keeps them. Each is a distinct shape the schema
+    // has no field for, so a regression that reintroduces schema-parsing reddens
+    // here rather than passing on a single lenient key.
     const filePath = await shipSkill(
       'exotic',
-      ['name: exotic', 'description: Has unusual keys.', 'x-vendor-thing: keep-me'].join('\n'),
+      [
+        'name: exotic',
+        'description: Has unusual keys.',
+        'x-vendor-thing: keep-me',
+        'metadata:',
+        '  team: platform',
+        '  tier: "2"',
+        'allowed-tools: Read, Bash',
+        'disable-model-invocation: true',
+        'arguments:',
+        '  - first',
+        '  - second',
+        'nested:',
+        '  deep:',
+        '    value: 42',
+      ].join('\n'),
       'Body.'
     );
 
@@ -288,7 +305,65 @@ describe('skillRef declarations inject into the shipped skill', () => {
 
     const { data } = await readSkill(filePath);
     expect(data['x-vendor-thing']).toBe('keep-me');
+    expect(data.metadata).toEqual({ team: 'platform', tier: '2' });
+    expect(data['allowed-tools']).toBe('Read, Bash');
+    expect(data['disable-model-invocation']).toBe(true);
+    expect(data.arguments).toEqual(['first', 'second']);
+    expect(data.nested).toEqual({ deep: { value: 42 } });
     expect(data.schedule).toBeDefined();
+  });
+
+  it('says so when it resets a schedule block that had been changed', async () => {
+    // An update reinstalls the package and rewrites this block. If a person had
+    // tuned the schedule in between, that edit disappears — the install still
+    // wins, but silence would leave a deliberate change with nothing to trace it
+    // to.
+    const filePath = await shipSkill(
+      'tuned',
+      [
+        'name: tuned',
+        'description: Someone moved its hour.',
+        'schedule:',
+        '  cron: 0 17 * * *',
+        '  permissions: plan',
+      ].join('\n'),
+      'Body.'
+    );
+
+    const result = await materializePackageSchedules({
+      manifest: manifest([{ skillRef: 'tuned', cron: '0 9 * * *' }]),
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result.warnings.join(' ')).toMatch(/was reset to what the package declares/);
+    const { data } = await readSkill(filePath);
+    expect((data.schedule as Record<string, unknown>).cron).toBe('0 9 * * *');
+  });
+
+  it('stays quiet when the block on disk already matches the declaration', async () => {
+    await shipSkill('steady', ['name: steady', 'description: Unchanged.'].join('\n'), 'Body.');
+    const decl = manifest([{ skillRef: 'steady', cron: '0 9 * * *' }]);
+
+    await materializePackageSchedules({
+      manifest: decl,
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+    // Second pass: a reinstall of the same version must not invent a warning.
+    const again = await materializePackageSchedules({
+      manifest: decl,
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(again.warnings).toEqual([]);
   });
 
   it('finds a skill nested below the skills root', async () => {
@@ -311,6 +386,162 @@ describe('skillRef declarations inject into the shipped skill', () => {
     expect(result.warnings).toEqual([]);
     const { data } = await readSkill(path.join(dir, 'SKILL.md'));
     expect(data.schedule).toBeDefined();
+  });
+});
+
+describe('the skills root is never the target', () => {
+  // A name with nothing slug-able in it slugifies to '', and `path.join(root,
+  // '')` is the ROOT. Everything downstream then treats the person's whole
+  // skills directory as one skill dir: the transaction moves it aside, drops a
+  // single SKILL.md where it stood, and deletes the backup on success — after
+  // which the root is on the uninstall receipt to be deleted later.
+  it.each(['!!!', '..', '🌟🌟🌟', '---', '   '])(
+    'refuses the name %j instead of consuming the skills root',
+    async (name) => {
+      // Pre-existing skills that must survive untouched.
+      const neighbour = path.join(projectPath, '.agents', 'skills', 'neighbour');
+      await mkdir(neighbour, { recursive: true });
+      await writeFile(path.join(neighbour, 'SKILL.md'), 'mine', 'utf-8');
+
+      const raw = {
+        schemaVersion: 1,
+        name: 'nightly-tools',
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'Hostile names.',
+        schedules: [{ name, description: 'd', prompt: 'p' }],
+      } as unknown as MarketplacePackageManifest;
+
+      const result = await materializePackageSchedules({
+        manifest: raw,
+        installPath,
+        dorkHome,
+        projectPath,
+        logger,
+      });
+
+      const skillsRoot = path.join(projectPath, '.agents', 'skills');
+      // Nothing generated, and above all the ROOT is not on the receipt.
+      expect(result.generatedPaths).toEqual([]);
+      expect(result.generatedPaths).not.toContain(skillsRoot);
+      expect(result.warnings.join(' ')).toMatch(/no letters or numbers/);
+      // The neighbour is still there, with its contents.
+      expect(await readFile(path.join(neighbour, 'SKILL.md'), 'utf-8')).toBe('mine');
+      // And no SKILL.md was dropped into the root itself.
+      expect(await readdir(skillsRoot)).toEqual(['neighbour']);
+    }
+  );
+});
+
+describe('an occupied directory is never replaced', () => {
+  /** Everything that can sit at the target path without being a readable skill of ours. */
+  it('spares a directory holding loose files but no SKILL.md', async () => {
+    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'draft.md'), 'my draft', 'utf-8');
+    await writeFile(path.join(target, 'notes.txt'), 'my notes', 'utf-8');
+
+    const result = await materializePackageSchedules({
+      manifest: manifest([{ name: 'nightly', description: 'Package version.', prompt: 'Go.' }]),
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result.generatedPaths).toEqual([]);
+    expect(result.warnings.join(' ')).toMatch(/already there/);
+    // Both files survive — this is the case that read as "absent" before.
+    expect(await readFile(path.join(target, 'draft.md'), 'utf-8')).toBe('my draft');
+    expect(await readFile(path.join(target, 'notes.txt'), 'utf-8')).toBe('my notes');
+  });
+
+  it('spares a directory whose entry file is named something else', async () => {
+    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'readme.md'), 'reference', 'utf-8');
+
+    const result = await materializePackageSchedules({
+      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result.generatedPaths).toEqual([]);
+    expect(await readFile(path.join(target, 'readme.md'), 'utf-8')).toBe('reference');
+  });
+
+  it('spares an empty directory a person made', async () => {
+    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
+    await mkdir(target, { recursive: true });
+
+    const result = await materializePackageSchedules({
+      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result.generatedPaths).toEqual([]);
+    expect(result.warnings.join(' ')).toMatch(/already there/);
+  });
+
+  it('spares a SKILL.md whose frontmatter cannot be parsed', async () => {
+    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
+    await mkdir(target, { recursive: true });
+    const broken = '---\nname: [unclosed\n  bad: : :\n---\nbody\n';
+    await writeFile(path.join(target, 'SKILL.md'), broken, 'utf-8');
+
+    const result = await materializePackageSchedules({
+      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result.generatedPaths).toEqual([]);
+    expect(await readFile(path.join(target, 'SKILL.md'), 'utf-8')).toBe(broken);
+  });
+});
+
+describe('a shape is never materialized here', () => {
+  it('leaves a shape manifest entirely alone', async () => {
+    // `applyShape` stands a Shape's schedules up itself, with the agent binding
+    // resolved and the Shape's own provenance. Doing it here too would make two
+    // files from one declaration, and this one would be invisible to Shape
+    // teardown.
+    const shape = MarketplacePackageManifestSchema.parse({
+      schemaVersion: 1,
+      name: 'linear-ops',
+      version: '1.0.0',
+      type: 'shape',
+      description: 'A place.',
+      agents: [{ ref: 'tender', affinity: 'default', matchName: 'Tender' }],
+      schedules: [
+        {
+          name: 'inbox-tick',
+          description: 'Poll the inbox.',
+          prompt: 'Tick.',
+          cron: '*/15 * * * *',
+          agentRef: 'tender',
+        },
+      ],
+    });
+
+    const result = await materializePackageSchedules({
+      manifest: shape,
+      installPath,
+      dorkHome,
+      projectPath,
+      logger,
+    });
+
+    expect(result).toEqual({ generatedPaths: [], warnings: [] });
+    await expect(readdir(path.join(projectPath, '.agents'))).rejects.toThrow();
   });
 });
 

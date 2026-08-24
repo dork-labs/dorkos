@@ -215,6 +215,24 @@ export class MarketplaceInstaller implements InstallerLike {
       resolved = staged.resolved;
       packageType = staged.manifest.type;
 
+      // The half of schedule validation the manifest schema cannot do: whether a
+      // cron MEANS anything (croner's question, and croner is a server
+      // dependency), whether a `skillRef` names a skill the package actually
+      // ships, and whether two declarations would collide on one directory. All
+      // describe a schedule that could never run, and all are checked here —
+      // before any flow touches disk — so the answer is a refused install with
+      // one clear sentence rather than a parked row found at boot weeks later.
+      //
+      // Deliberately in `install()` and NOT in `resolveAndValidate`, which
+      // `preview()` also calls: the preview backs the marketplace's package
+      // DETAIL page, and refusing there would turn one package's bad cron into a
+      // page a person cannot open to read about it. Browsing a broken package is
+      // fine; installing it is not.
+      const scheduleProblems = await validatePackageSchedules(staged.packagePath, staged.manifest);
+      if (scheduleProblems.length > 0) {
+        throw new InvalidPackageError(scheduleProblems);
+      }
+
       const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
         projectPath: req.projectPath,
       });
@@ -280,6 +298,19 @@ export class MarketplaceInstaller implements InstallerLike {
           installPath: result.installPath,
           error: metaErr instanceof Error ? metaErr.message : String(metaErr),
         });
+        // The receipt is the ONLY record of the directories this install
+        // generated outside the package. Without it, uninstall has no safe way
+        // to find them — it deletes from the receipt and never by scanning — so
+        // they would outlive the package permanently, with the install still
+        // reporting success. Name them, so a person has the list the file was
+        // supposed to keep.
+        if (materialized.generatedPaths.length > 0) {
+          result.warnings.push(
+            `DorkOS could not record what this package installed, so removing it later will ` +
+              `leave its scheduled tasks behind. Delete these folders by hand if you uninstall ` +
+              `it: ${materialized.generatedPaths.join(', ')}`
+          );
+        }
       }
 
       await this.reportTerminalOutcome({
@@ -475,18 +506,6 @@ export class MarketplaceInstaller implements InstallerLike {
         .filter((i) => i.level === 'error')
         .map((i) => i.message);
       throw new InvalidPackageError(errorMessages);
-    }
-
-    // The half of schedule validation the manifest schema cannot do: whether a
-    // cron MEANS anything (croner's question, and croner is a server dependency)
-    // and whether a `skillRef` names a skill the package actually ships. Both
-    // describe a schedule that could never run, and both are checked here —
-    // before any flow touches disk — so the answer is a refused install with one
-    // clear sentence rather than a parked row discovered at boot weeks later.
-    // See `lib/validate-package-schedules.ts`.
-    const scheduleProblems = await validatePackageSchedules(staged.path, validation.manifest);
-    if (scheduleProblems.length > 0) {
-      throw new InvalidPackageError(scheduleProblems);
     }
 
     return {

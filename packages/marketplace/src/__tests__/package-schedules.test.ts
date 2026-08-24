@@ -198,3 +198,40 @@ describe('defaults and safe answers', () => {
     expect(schedules[0]?.startEnabled).toBe(false);
   });
 });
+
+describe('a name must be able to become a folder', () => {
+  // The name is slugified into a DIRECTORY name at materialization. A name that
+  // slugifies to nothing resolves to the skills ROOT, which turned generating
+  // one schedule into replacing the person's whole skills directory.
+  it.each(['!!!', '..', '\u{1F31F}\u{1F31F}\u{1F31F}', '---', '   '])(
+    'rejects the inline name %j',
+    (name) => {
+      expect(issuePaths(manifestOf('plugin', { schedules: [inlineSchedule({ name })] }))).toContain(
+        'schedules.0.name'
+      );
+    }
+  );
+
+  it.each(['nightly-tidy', 'Nightly Tidy!', 'tidy 2', 'a'])(
+    'accepts the inline name %j',
+    (name) => {
+      const schedules = parseSchedules(
+        manifestOf('plugin', { schedules: [inlineSchedule({ name })] })
+      );
+      expect(schedules[0]?.name).toBe(name);
+    }
+  );
+
+  it('applies the same rule to a shape schedule', () => {
+    // `.extend()` REPLACES a field rather than tightening it, so the rule has to
+    // be restated on the Shape variant or Shapes become the one type that can
+    // still declare a name that slugifies to nothing.
+    const paths = issuePaths(
+      manifestOf('shape', {
+        agents: [{ ref: 'tidier', affinity: 'default', matchName: 'Tidier' }],
+        schedules: [inlineSchedule({ name: '!!!', agentRef: 'tidier' })],
+      })
+    );
+    expect(paths).toContain('schedules.0.name');
+  });
+});

@@ -1212,6 +1212,57 @@ describe('MarketplaceInstaller', () => {
       }
     });
 
+    it('names the orphaned folders when the receipt cannot be written', async () => {
+      // The receipt is the ONLY record of what was generated outside the
+      // package. Losing it silently leaves those folders running forever with
+      // the install still reporting success.
+      const built = buildDeps();
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-orphan-'));
+      const projectPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-orphanproj-'));
+      try {
+        wireInstall(
+          built,
+          withSchedules([
+            { name: 'nightly', description: 'Runs at night.', prompt: 'Go.', cron: '0 3 * * *' },
+          ]),
+          localPath
+        );
+        mockedWriteInstallMetadata.mockRejectedValueOnce(new Error('disk full'));
+
+        const installer = new MarketplaceInstaller(built.deps);
+        const result = await installer.install({ name: 'scheduled-plugin', projectPath });
+
+        const generatedDir = nodePath.join(projectPath, '.agents', 'skills', 'nightly');
+        // The install still succeeds — the package is on disk and working.
+        expect(result.ok).toBe(true);
+        // But the person is told what will be left behind, and where.
+        const warning = result.warnings.join(' ');
+        expect(warning).toMatch(/leave its scheduled tasks behind/);
+        expect(warning).toContain(generatedDir);
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+        await rm(projectPath, { recursive: true, force: true });
+      }
+    });
+
+    it('does not validate schedules on the preview path, so a bad cron still browses', async () => {
+      // The preview backs the marketplace package DETAIL page. Refusing there
+      // would turn one package's bad cron into a page nobody can open to read
+      // about it.
+      const built = buildDeps();
+      wireInstall(
+        built,
+        withSchedules([
+          { name: 'tick', description: 'Ticks.', prompt: 'Tick.', cron: 'every second tuesday' },
+        ])
+      );
+
+      const installer = new MarketplaceInstaller(built.deps);
+      const preview = await installer.preview({ name: 'scheduled-plugin' });
+
+      expect(preview.manifest.name).toBe('scheduled-plugin');
+    });
+
     it('leaves the receipt field off entirely when nothing was generated', async () => {
       const built = buildDeps();
       wireInstall(built, buildPluginManifest({ name: 'scheduled-plugin' }));

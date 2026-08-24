@@ -204,8 +204,25 @@ const BaseScheduleDeclSchema = z.object({
    */
   skillRef: SkillNameSchema.optional(),
 
-  /** Schedule name. Required on an inline entry; a `skillRef` entry is named by its skill. */
-  name: z.string().min(1).optional(),
+  /**
+   * Schedule name. Required on an inline entry; a `skillRef` entry is named by
+   * its skill.
+   *
+   * Must contain at least one letter or digit, which is a stronger rule than
+   * "non-empty" for a concrete reason: the name is slugified into a DIRECTORY
+   * name when the schedule is materialized, and a name made only of punctuation
+   * or emoji (`!!!`, `..`, `🌟`) slugifies to the empty string. An empty
+   * directory name resolves to the skills root ITSELF, which turned generating
+   * one schedule into replacing the person's entire skills directory. The
+   * materializer refuses an empty slug too — this is the first of the three
+   * places that rule is enforced, and the only one an author sees before
+   * publishing.
+   */
+  name: z
+    .string()
+    .min(1)
+    .regex(/[a-zA-Z0-9]/, 'Must contain at least one letter or number')
+    .optional(),
 
   /** What this schedule does, in one line. Required on an inline entry. */
   description: z.string().min(1).optional(),
@@ -515,7 +532,14 @@ const ShapeAgentSchema = z.object({
  * `target`, which is resolved from `agentRef` at apply time.
  */
 const ShapeScheduleSchema = BaseScheduleDeclSchema.extend({
-  name: z.string().min(1),
+  // Same slug-able rule as the shared base, re-stated because `.extend()`
+  // REPLACES the field rather than tightening it — dropping the regex here
+  // would leave Shapes as the one type that can still declare a name that
+  // slugifies to nothing.
+  name: z
+    .string()
+    .min(1)
+    .regex(/[a-zA-Z0-9]/, 'Must contain at least one letter or number'),
   description: z.string().min(1),
   prompt: z.string().min(1),
   /**

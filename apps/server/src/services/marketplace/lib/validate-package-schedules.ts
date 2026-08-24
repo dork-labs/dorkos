@@ -33,6 +33,7 @@ import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { describeScheduleProblem } from '../../tasks/cron-validation.js';
+import { slugify } from '@dorkos/skills/slug';
 import { packageSchedules, scheduleDisplayName } from './package-schedules.js';
 
 /**
@@ -131,6 +132,8 @@ export async function validatePackageSchedules(
 ): Promise<string[]> {
   const problems: string[] = [];
   const schedules = packageSchedules(manifest);
+  /** Directory slug → the declared name that produced it, for collision reporting. */
+  const slugOwners = new Map<string, string>();
 
   for (const [index, schedule] of schedules.entries()) {
     const label = scheduleDisplayName(schedule, index);
@@ -149,7 +152,38 @@ export async function validatePackageSchedules(
             `with name, description and prompt.`
         );
       }
+      continue;
     }
+
+    // Inline entries become directories, so their names have to survive
+    // slugification and be distinct from each other once slugified.
+    if (schedule.name === undefined) continue; // already reported by the schema
+    const slug = slugify(schedule.name);
+
+    if (slug === '') {
+      // Reported with the author's OWN spelling, because the slug is empty and
+      // would name nothing they could search their manifest for. The schema
+      // rejects these too; this is the copy an installing person sees.
+      problems.push(
+        `Schedule '${schedule.name}' has no letters or numbers in its name, so DorkOS cannot ` +
+          `make a folder name from it. Rename it to something like 'nightly-tidy'.`
+      );
+      continue;
+    }
+
+    const clashesWith = slugOwners.get(slug);
+    if (clashesWith !== undefined) {
+      // Two declarations, one directory: the second would silently overwrite the
+      // first (same package name, so the ownership gate lets it through) and the
+      // uninstall receipt would carry the path twice. One schedule would simply
+      // never exist, with nothing said.
+      problems.push(
+        `Schedules '${clashesWith}' and '${schedule.name}' both become the folder '${slug}', so ` +
+          `one would replace the other. Give them names that differ by more than punctuation.`
+      );
+      continue;
+    }
+    slugOwners.set(slug, schedule.name);
   }
 
   return problems;

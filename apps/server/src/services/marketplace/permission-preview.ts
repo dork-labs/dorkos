@@ -251,9 +251,15 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
     // A by-reference schedule is named by the skill it runs; an inline one
     // carries its own name.
     name: scheduleDisplayName(schedule, index),
-    cron: schedule.cron,
-    permissionMode: clampSchedulePermissionMode(schedule.permissionMode).mode,
-    startsEnabled: schedule.startEnabled,
+    cron: schedule.cron ?? null,
+    // Coalesced to the schema's own defaults, exactly as the materializer does.
+    // Not every manifest reaching the preview was parsed — one read off disk by
+    // an older build arrives with these keys missing — and this is the consent
+    // surface: an `undefined` here renders as a blank where a permission mode
+    // should be, which reads as "nothing to worry about" for the one field that
+    // says what an unattended job may do.
+    permissionMode: clampSchedulePermissionMode(schedule.permissionMode ?? 'acceptEdits').mode,
+    startsEnabled: schedule.startEnabled ?? false,
   }));
 }
 

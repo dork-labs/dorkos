@@ -3,6 +3,7 @@ covers:
   - 'feat(marketplace): the schedules slot opens to every package type that can run one (DOR-1487)'
   - 'feat(server): declared package schedules become real files at install (DOR-1487)'
   - 'feat(marketplace,server): marketplace packages can ship scheduled tasks (DOR-1487)'
+  - 'fix(marketplace,server): a packaged schedule can never reach past its own folder (DOR-1487 review)'
 ---
 
 ### Added
@@ -15,7 +16,8 @@ covers:
 ### Changed
 
 - A package can never switch its own scheduled task on. Whatever the package asks for, the task waits for you to approve it before it runs for the first time, and a package cannot give itself permission to work unsupervised. (DOR-1487)
-- A package will not overwrite a skill of yours. When one tries to create a scheduled task with the same name as a skill you already have, DorkOS keeps yours and tells you, rather than replacing it. (DOR-1487)
+- A package will not overwrite a skill of yours. When one tries to create a scheduled task where you already keep something — a skill, a draft, notes, anything at all — DorkOS keeps what is yours and tells you, rather than replacing it. (DOR-1487)
+- If you change when a packaged scheduled task runs, or what it is allowed to do, updating that package puts its own settings back — and now says so, naming the task, instead of letting your change disappear quietly. (DOR-1487)
 
 ### Fixed
 

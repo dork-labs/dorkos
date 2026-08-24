@@ -38,7 +38,7 @@
  *
  * @module services/marketplace/lib/materialize-schedules
  */
-import { mkdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
@@ -94,9 +94,21 @@ export interface MaterializeSchedulesResult {
 export async function materializePackageSchedules(
   opts: MaterializeSchedulesOptions
 ): Promise<MaterializeSchedulesResult> {
-  const schedules = packageSchedules(opts.manifest);
   const generatedPaths: string[] = [];
   const warnings: string[] = [];
+
+  // A Shape's schedules are NOT materialized here. `applyShape` already stands
+  // each one up through `ShapeScheduleService`, which writes its own file with
+  // the Shape's provenance and the agent binding resolved from `agentRef` — and
+  // which the Shape teardown and re-bind flows then recognize by that
+  // provenance. Materializing them here as well would produce a SECOND file per
+  // declaration, stamped `origin: plugin` with `agentRef` dropped: invisible to
+  // Shape teardown, unbound from the agent the Shape named, and a duplicate
+  // schedule the moment file discovery lands. A Shape's schedules belong to its
+  // apply, not to its install.
+  if (opts.manifest.type === 'shape') return { generatedPaths, warnings };
+
+  const schedules = packageSchedules(opts.manifest);
   if (schedules.length === 0) return { generatedPaths, warnings };
 
   const skillsRoot = resolveSkillsRoot(opts);
@@ -125,12 +137,20 @@ export async function materializePackageSchedules(
 
     try {
       if (schedule.skillRef) {
-        await injectScheduleIntoShippedSkill(opts.installPath, schedule.skillRef, block);
+        const replaced = await injectScheduleIntoShippedSkill(
+          opts.installPath,
+          schedule.skillRef,
+          block
+        );
+        if (replaced) warnings.push(replaced);
         continue;
       }
       const generated = await generateScheduleSkill(skillsRoot, schedule, block, packageName);
       if (generated.written) {
-        generatedPaths.push(generated.dirPath);
+        // Deduped: two declarations whose names slug to the same directory are
+        // refused at validation, but a receipt is a delete list and must never
+        // carry the same path twice even if one slips through.
+        if (!generatedPaths.includes(generated.dirPath)) generatedPaths.push(generated.dirPath);
       } else {
         warnings.push(generated.reason);
       }
@@ -216,22 +236,32 @@ function buildScheduleBlock(
 /**
  * Write a `schedule:` block into the installed copy of a skill the package ships.
  *
- * The rest of the frontmatter is preserved VERBATIM, which is why this reads
- * with `gray-matter` rather than through `SkillFrontmatterSchema`: the schema
- * strips keys it does not know, so parsing and re-writing through it would
- * quietly delete a Claude-Code-only key, a `metadata:` map, or anything else the
- * author put there. Only the `schedule` key is added or replaced.
+ * Every frontmatter KEY AND VALUE the author wrote is carried across, which is
+ * why this reads with `gray-matter` rather than through `SkillFrontmatterSchema`:
+ * the schema strips keys it does not know, so parsing and re-writing through it
+ * would quietly delete a Claude-Code-only key, a `metadata:` map, or anything
+ * else the author put there. Only the `schedule` key is added or replaced.
+ *
+ * What is NOT preserved is the file's exact TEXT. This is a parse and re-emit,
+ * so the rewritten file loses YAML comments, expands anchors and aliases into
+ * their resolved values, may re-quote or re-escape scalars, and trims trailing
+ * body whitespace. The data survives; the typography does not. That is
+ * acceptable here because the file being rewritten is the package's own
+ * installed copy — regenerated from the source package on every reinstall, and
+ * not a file a person edits — but it would not be acceptable on a file somebody
+ * maintains by hand, and this function must not be pointed at one.
  *
  * @param installPath - The package's install root.
  * @param skillRef - Directory name of the shipped skill.
  * @param block - The schedule block to write.
+ * @returns A warning when an existing block was replaced with a different one.
  * @internal
  */
 async function injectScheduleIntoShippedSkill(
   installPath: string,
   skillRef: string,
   block: ScheduleBlock
-): Promise<void> {
+): Promise<string | null> {
   const skillDir = await findShippedSkillDir(installPath, skillRef);
   if (!skillDir) {
     // Pre-validated at install time, so reaching here means the tree changed
@@ -241,28 +271,54 @@ async function injectScheduleIntoShippedSkill(
 
   const filePath = path.join(skillDir, 'SKILL.md');
   const parsed = matter(await readFile(filePath, 'utf-8'));
+  const incoming = scheduleToFrontmatter(block);
+
+  // An update reinstalls the package, which rewrites this block from the new
+  // manifest. If a person had tuned the schedule in the meantime — moved its
+  // hour, tightened its permissions — that edit is about to be replaced by the
+  // package's declaration, and saying nothing would make a deliberate change
+  // vanish with no event to trace it to. The install still proceeds: the file
+  // belongs to the package, and a reinstall restoring the package's own answer
+  // is the honest outcome. Being told is the part that was missing.
+  const existing = parsed.data.schedule as unknown;
+  const replaced = existing !== undefined && JSON.stringify(existing) !== JSON.stringify(incoming);
+
   await writeSkillFile(
     path.dirname(skillDir),
     path.basename(skillDir),
-    { ...parsed.data, schedule: scheduleToFrontmatter(block) },
+    { ...parsed.data, schedule: incoming },
     parsed.content.trim()
   );
+
+  return replaced
+    ? `The schedule on '${skillRef}' was reset to what the package declares. If you had ` +
+        `changed its timing or permissions, set them again on the schedule.`
+    : null;
 }
 
 /**
  * Generate a new skill directory for an inline declaration.
  *
- * Refuses to overwrite a directory that is already there and is not one of ours.
+ * Refuses to overwrite anything already at the target that is not one of ours.
  * A person's own skill, or another package's, must never be replaced because a
  * manifest picked a colliding name — the same provenance gate the Shape flows
- * apply before they touch anything they did not create. The check reads the
- * existing file's own `schedule.origin`/`schedule.shape` rather than trusting
- * the path, and anything unreadable counts as not-ours (fail closed).
+ * apply before they touch anything they did not create. Presence is decided by
+ * the DIRECTORY existing, and ownership is read from the marker inside it as a
+ * separate question, so a directory holding drafts, notes, or a differently
+ * named entry file is never mistaken for empty ground.
  *
  * The write runs through {@link runTransaction} so a failure mid-write cannot
  * leave a half-built skill directory behind: the file is built in a staging
  * directory and moved into place in one atomic rename, and a failed move
  * restores whatever was there before (ADR-0304).
+ *
+ * NOTE on collisions: the guarantee is exact-path, and paths are compared by the
+ * filesystem, not by this function. On a case-insensitive volume (the macOS
+ * default) a declared `Nightly` and an existing `nightly` are the same
+ * directory and collide; on a case-sensitive one they are two. That is a
+ * property of the machine, and the refusal below is what makes either outcome
+ * safe — the colliding case is caught, and the non-colliding case was never a
+ * collision.
  *
  * @param skillsRoot - The skills root to generate into.
  * @param schedule - The inline declaration.
@@ -281,9 +337,28 @@ async function generateScheduleSkill(
   // is what makes that true, and the install-time validator ran before this.
   const name = schedule.name ?? '';
   const slug = slugify(name);
+
+  // An empty slug would make `path.join(skillsRoot, '')` the skills ROOT itself,
+  // and everything below would then treat that root as the skill directory: the
+  // transaction would move the person's entire `.agents/skills/` aside, drop a
+  // single SKILL.md where it stood, delete the backup on success, and record the
+  // root on the uninstall receipt for later deletion. `slugify` returns '' for
+  // any name with no slug-able characters — `!!!`, `..`, an emoji — and the
+  // manifest schema only asks that a name be non-empty. This is the guard;
+  // `validatePackageSchedules` refuses the same names earlier, with the author's
+  // own spelling in the message.
+  if (slug === '') {
+    return {
+      written: false,
+      reason:
+        `Schedule '${name}' was not created: its name has no letters or numbers to make a ` +
+        `folder name from. Give the schedule a name like 'nightly-tidy'.`,
+    };
+  }
+
   const dirPath = path.join(skillsRoot, slug);
 
-  const existing = await readScheduleOwner(path.join(dirPath, 'SKILL.md'));
+  const existing = await readScheduleOwner(dirPath);
   // Anything already there that this package did not write is left alone. Note
   // "present with no marker" is a REFUSAL, not a permission: an unmarked skill
   // is a person's own, and it is the case that matters most.
@@ -321,31 +396,49 @@ async function generateScheduleSkill(
 }
 
 /**
- * Whether a skill file is already at this path, and which package generated it.
+ * Whether anything is already at this path, and which package generated it.
  *
- * The two facts have to be separate, because collapsing them is a way to delete
- * somebody's work: a file that is present but carries no provenance marker is a
- * person's own skill, and reporting it the same as "nothing here" would let a
- * colliding package name overwrite it. Present-and-unreadable reports the same
- * way, for the same reason — a file DorkOS cannot understand is never a file it
- * may replace.
+ * The two facts have to be separate, and presence has to be a fact about the
+ * DIRECTORY rather than about a `SKILL.md` inside it. Asking only whether the
+ * skill file was readable answers "no" for a directory full of a person's
+ * drafts, notes, or an entry file under another name — and "no" here means
+ * "empty ground", which sends the caller on to move that directory aside and
+ * delete the backup. A directory that exists is occupied, whatever is in it.
  *
- * @param filePath - Absolute path to a candidate `SKILL.md`.
- * @returns Whether a file is there, and the package that generated it (`null`
- *   when there is no marker, including when the file could not be read).
+ * `lstat`, not `stat`, so a symlink is judged as itself: a link pointing
+ * somewhere that no longer exists is still something a person put there, and
+ * following it would report the target's absence as the link's.
+ *
+ * Ownership is then read from the marker, and everything ambiguous fails
+ * closed — no `SKILL.md`, unparseable frontmatter, or no provenance marker all
+ * report `owner: null`, which the caller treats as somebody else's.
+ *
+ * @param dirPath - Absolute path to the candidate skill DIRECTORY.
+ * @returns Whether anything is there, and the package that generated it (`null`
+ *   when there is no readable marker).
  * @internal
  */
 async function readScheduleOwner(
-  filePath: string
+  dirPath: string
 ): Promise<{ present: boolean; owner: string | null }> {
+  try {
+    await lstat(dirPath);
+  } catch (err) {
+    // Genuinely absent is the ONLY case that clears the way. Any other error
+    // (EACCES, ELOOP, …) means something is there we could not inspect.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { present: false, owner: null };
+    }
+    return { present: true, owner: null };
+  }
+
   let content: string;
   try {
-    content = await readFile(filePath, 'utf-8');
-  } catch (err) {
-    // Genuinely absent is the only case that clears the way. Any other read
-    // error means something IS there that we could not read.
-    const absent = (err as NodeJS.ErrnoException).code === 'ENOENT';
-    return { present: !absent, owner: null };
+    content = await readFile(path.join(dirPath, 'SKILL.md'), 'utf-8');
+  } catch {
+    // Occupied by something that is not a readable skill — a draft directory, a
+    // dangling link, a differently named entry file. Present, and not ours.
+    return { present: true, owner: null };
   }
 
   try {
