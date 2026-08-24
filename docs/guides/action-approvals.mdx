@@ -113,7 +113,17 @@ The two below are about something else. They are not protecting anything; they d
 - How far agents may keep replying to each other in a room, how many turns an hour that may take, and how long an agent stays in the conversation after you talk to it
 - Whether agents greet you when you come back, after how long away, and how many may speak
 
-Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself in Settings. Three of these settings can still be reached by another route, which the second note below explains.
+The last group is different again. These are the dials you turn **down** to give yourself room — less memory in use, fewer things running at once, smaller uploads, fewer tool groups in play. When DorkOS has to rebuild your settings file after a problem, it already refuses to undo a choice like that; an agent should not be able to undo it on purpose either. Each one says where you change it yourself:
+
+- Whether your Claude Code chats keep an agent awake between messages, which costs memory — **Control Center**, under _Warm agents_
+- How many scheduled runs may go at once — **Control Center**, or Settings → Tools
+- Which sets of DorkOS tools your agents are told about — **Settings → Tools**
+- How large an upload may be, and how many files it may carry — no screen yet; `dorkos config set uploads.maxFileSize`
+- Whether DorkOS updates the agent files inside your projects on its own — no screen yet; `dorkos config set harness.autoSync`
+
+The Control Center opens with `⌘⇧L` (`Ctrl+Shift+L` on Windows and Linux). The last two have no switch anywhere in the app, so the command line is the way to them — and once you set one there, it stays set.
+
+Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself — in Settings, in the Control Center, or from the command line, as the lists above say. Three of these settings can still be reached by another route, which the second note below explains.
 
 <Callout type="warn">
   **How well this holds depends on Require login, and it is worth knowing which half you have.**

@@ -408,7 +408,7 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
   'runtimes.claudeCode.persistentSession': {
     value: true,
     reason:
-      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one `PATCH /api/config` away — a switch for it lands with the Control Center (task 2.2), which is the one thing this default is currently missing.',
+      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
   },
   'scheduler.maxConcurrentRuns': {
     value: 4,
