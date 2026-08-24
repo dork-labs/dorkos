@@ -5,6 +5,7 @@ import { execFileSync } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import sharp from 'sharp';
 import { OUTPUT_DIR } from './config.js';
+import { writeJsonFile } from './json.js';
 import { shotsManifest, type Dimensions } from './shots.js';
 
 /**
@@ -466,8 +467,19 @@ export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry[]
  * registry snapshot (`shots`) so the marketing site and docs stay consistent
  * with the pipeline, and tags each asset with its `source` (`auto`/`manual`)
  * and provenance. `runId` is the automated source run the auto assets came from.
+ *
+ * The manifest is committed, so it is emitted through {@link writeJsonFile} —
+ * plain `JSON.stringify` expands the short `consumers` arrays that Prettier
+ * collapses, which red-lights the repo-wide format gate (see `capture/json`).
+ *
+ * `outputDir` defaults to the real published dir; tests pass a fixture dir
+ * (mirrors `runArchive`).
  */
-export async function writeManifest(assets: AssetEntry[], runId: string): Promise<void> {
+export async function writeManifest(
+  assets: AssetEntry[],
+  runId: string,
+  outputDir: string = OUTPUT_DIR
+): Promise<void> {
   const sorted = assets
     .map((a) => ({ source: 'auto' as AssetSource, ...a }))
     .sort((a, b) => a.file.localeCompare(b.file));
@@ -484,10 +496,7 @@ export async function writeManifest(assets: AssetEntry[], runId: string): Promis
     shots: shotsManifest(),
     assets: sorted,
   };
-  await fs.writeFile(
-    path.join(OUTPUT_DIR, 'manifest.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`
-  );
+  await writeJsonFile(path.join(outputDir, 'manifest.json'), manifest);
 }
 
 /** Ensure the output dir exists and is empty of previously generated assets. */
