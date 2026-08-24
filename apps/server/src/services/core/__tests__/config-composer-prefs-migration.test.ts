@@ -18,18 +18,27 @@
  * Ajv rejects them. Only a real file, read by a real `ConfigManager`, answers
  * whether an upgraded config still validates once the section lands in it.
  *
- * ## What these assert, and what they deliberately do not
+ * ## Why these read `config.json` instead of calling `getDot`
  *
- * They assert the OUTCOME of an upgrade boot: the section is there, it is on
- * (the owner's 2026-08-12 call), and the file is not condemned. They are not a
- * test of the migration body, and
- * emptying `CONFIG_MIGRATIONS['0.59.0']` leaves them green — measured, not
- * assumed. conf builds Ajv with `useDefaults`, so a declared default is written
- * into a stored `ui` block during validation whether or not a migration runs,
- * which is what makes `backfillComposerPrefs` a no-op anchor rather than the
- * mechanism. The body itself is pinned by `config-manager.test.ts`'s mock-store
- * suite, where breaking it does go red. Both bars are needed: one says the
- * intent is written down, the other says the person's upgrade actually works.
+ * They used to call `getDot`, on a docblock that said so proudly: emptying
+ * `CONFIG_MIGRATIONS['0.59.0']` left them green, and that was written up as
+ * proof that `backfillComposerPrefs` is a no-op anchor Ajv's `useDefaults` makes
+ * redundant. The measurement was real; the conclusion was backwards (DOR-1496).
+ *
+ * conf's `store` GETTER re-reads and re-parses `config.json` on every access and
+ * validates the copy it is about to hand back, so `useDefaults` decorates that
+ * copy and the copy is then discarded. Nothing it filled is written down. And
+ * the one merge conf DOES write — the shallow `Object.assign` of `defaults`
+ * under the file, which runs before the first migration key — cannot help here,
+ * because an upgrading config already has a `ui` object and a stored object wins
+ * that merge whole. So `ui.composer` reaches the file if and only if this body
+ * runs, and a `getDot` assertion was reading conf's fill rather than the
+ * migration's work.
+ *
+ * Hence: every claim about what the upgrade LEFT BEHIND is made against the
+ * file. Suppressing the body now turns this file red, which is the property the
+ * old version lacked. `getDot` still appears where the claim really is about
+ * what a running DorkOS sees.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
@@ -73,20 +82,38 @@ function seedUpgradeBoot(ui: Record<string, unknown>): string {
   return dir;
 }
 
+/**
+ * The `ui` block the boot actually left in `config.json`.
+ *
+ * Read straight off the file rather than through the manager, because the
+ * manager cannot tell the difference between a value a migration wrote and one
+ * Ajv invented on the way out. See the note at the top of this file.
+ *
+ * @param dir - The data directory holding `config.json`.
+ */
+function storedUi(dir: string): Record<string, unknown> {
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')) as {
+    ui: Record<string, unknown>;
+  };
+  return raw.ui;
+}
+
 describe('ui.composer on an upgrade boot (real conf + Ajv)', () => {
   it('really is running the 0.59.0 migration, or none of the rest of this file means anything', () => {
     expect(SERVER_VERSION).toBe('0.59.0');
   });
 
-  it('adds ui.composer with rich text on to a config that predates it', () => {
+  it('writes ui.composer, rich text on, INTO THE FILE of a config that predates it', () => {
     const dir = seedUpgradeBoot({ theme: 'dark', statusBar: { pins: ['git'] } });
 
     const manager = new ConfigManager(dir);
 
-    expect(manager.getDot('ui.composer.richText')).toBe(true);
+    expect(storedUi(dir).composer).toEqual({ richText: true });
     // The rest of `ui` is untouched — the backfill spreads the stored block.
-    expect(manager.get('ui').theme).toBe('dark');
-    expect(manager.get('ui').statusBar.pins).toEqual(['git']);
+    expect(storedUi(dir).theme).toBe('dark');
+    expect(storedUi(dir).statusBar).toEqual({ pins: ['git'] });
+    // …and that is what a running DorkOS reads back.
+    expect(manager.getDot('ui.composer.richText')).toBe(true);
   });
 
   it('leaves the file valid, so the upgrade boot is not condemned', () => {
@@ -96,16 +123,21 @@ describe('ui.composer on an upgrade boot (real conf + Ajv)', () => {
 
     expect(manager.validate()).toEqual({ valid: true });
     expect(fs.existsSync(path.join(dir, 'config.json.bak'))).toBe(false);
-    // A second boot reads the migrated file cleanly rather than looping.
-    expect(new ConfigManager(dir).getDot('ui.composer.richText')).toBe(true);
+    // A second boot reads the migrated file cleanly rather than looping, and
+    // leaves the section where the first one put it.
+    new ConfigManager(dir);
+    expect(storedUi(dir).composer).toEqual({ richText: true });
   });
 
   it('never turns on a preference someone already turned off', () => {
     // The direction that matters now the seed is `true`: somebody who used the
-    // Settings switch to go back to the plain box keeps it across the upgrade.
+    // Settings switch to go back to the plain box keeps it across the upgrade —
+    // in the file, which is where they will still have it next launch.
     const dir = seedUpgradeBoot({ theme: 'system', composer: { richText: false } });
 
-    expect(new ConfigManager(dir).getDot('ui.composer.richText')).toBe(false);
+    new ConfigManager(dir);
+
+    expect(storedUi(dir).composer).toEqual({ richText: false });
   });
 
   it('a fresh install gets the section from the schema, with rich text on', () => {

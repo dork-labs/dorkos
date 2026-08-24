@@ -18,6 +18,19 @@
  * and adds two leaves to a section already on disk, so the questions worth
  * asking are whether the write validates and whether the person's own numbers
  * came out the other side. Only a real file answers either.
+ *
+ * ## Why the two ADDED leaves are read off `config.json`
+ *
+ * The three RAISED bounds can be read back through the manager, because Ajv
+ * cannot invent them: they are present on disk at the old numbers, and
+ * `useDefaults` only ever fills a key that is ABSENT. The two leaves this key
+ * adds are the opposite case, and a `get` assertion on them was vacuous
+ * (DOR-1496) — suppress `raiseRoomTurnLimits` entirely and they still read back
+ * correct, because conf's `store` getter re-parses the file on every access and
+ * validates the throwaway copy it is about to return, so `useDefaults` fills
+ * them there and the copy is discarded. Nothing reaches the file. conf's own
+ * `defaults` merge cannot cover them either: it is shallow, and a stored `rooms`
+ * object wins it whole. So those two claims read the file.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
@@ -74,31 +87,60 @@ function seedUpgradeBoot(rooms: Record<string, unknown>): string {
   return dir;
 }
 
+/**
+ * The `rooms` block the boot actually left in `config.json`.
+ *
+ * Read straight off the file rather than through the manager, which cannot tell
+ * a value this migration wrote from one Ajv invented on the way out. See the
+ * note at the top of this file.
+ *
+ * @param dir - The data directory holding `config.json`.
+ */
+function storedRooms(dir: string): Record<string, unknown> {
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')) as {
+    rooms: Record<string, unknown>;
+  };
+  return raw.rooms;
+}
+
 describe('the raised room bounds on an upgrade boot (real conf + Ajv)', () => {
   it('really is running the 0.66.0 migration, or none of the rest of this file means anything', () => {
     expect(SERVER_VERSION).toBe('0.66.0');
   });
 
   it('raises every bound the person never touched', () => {
-    const manager = new ConfigManager(seedUpgradeBoot(STOCK_ROOMS));
+    const dir = seedUpgradeBoot(STOCK_ROOMS);
+    const manager = new ConfigManager(dir);
 
-    const rooms = manager.get('rooms');
-    expect(rooms.maxAgentDepth).toBe(30);
-    expect(rooms.maxAutomaticTurnsPerRoomPerHour).toBe(1000);
-    expect(rooms.maxAutomaticTurnsTotalPerHour).toBe(5000);
+    // On the file, because a raise that only exists in memory is undone by the
+    // next launch. Ajv cannot fake these — they are present at the old numbers,
+    // and `useDefaults` fills only what is absent — but the file is the claim.
+    expect(storedRooms(dir).maxAgentDepth).toBe(30);
+    expect(storedRooms(dir).maxAutomaticTurnsPerRoomPerHour).toBe(1000);
+    expect(storedRooms(dir).maxAutomaticTurnsTotalPerHour).toBe(5000);
     // The rest of the section is left exactly as it stood.
-    expect(rooms.replyWaitMinutes).toBe(10);
-    expect(rooms.collectMaxEntries).toBe(20);
+    expect(storedRooms(dir).replyWaitMinutes).toBe(10);
+    expect(storedRooms(dir).collectMaxEntries).toBe(20);
+    expect(manager.get('rooms').maxAgentDepth).toBe(30);
     expect(manager.validate()).toEqual({ valid: true });
   });
 
-  it('adds the two leaves conf would never have merged into an existing section', () => {
+  it('adds the two leaves conf would never have merged, ON DISK', () => {
     // The shallow-merge trap every `rooms` backfill in this table exists for: a
     // section already on disk inherits no new nested field on its own.
-    const manager = new ConfigManager(seedUpgradeBoot(STOCK_ROOMS));
+    //
+    // Asserted against the FILE, and that is the whole point of the case. This
+    // used to read `manager.get('rooms')`, which was vacuous: with the body
+    // suppressed both leaves still came back correct, because conf's `store`
+    // getter validates the copy it is about to return and Ajv's `useDefaults`
+    // fills them into that copy. Nothing was on the file, and the test could not
+    // see the difference.
+    const dir = seedUpgradeBoot(STOCK_ROOMS);
 
-    expect(manager.get('rooms').turnLimitsEnabled).toBe(true);
-    expect(manager.get('rooms').maxTurnsPerAgentPerCascade).toBe(10);
+    new ConfigManager(dir);
+
+    expect(storedRooms(dir).turnLimitsEnabled).toBe(true);
+    expect(storedRooms(dir).maxTurnsPerAgentPerCascade).toBe(10);
   });
 
   it('leaves a number the person chose exactly where they put it', () => {
