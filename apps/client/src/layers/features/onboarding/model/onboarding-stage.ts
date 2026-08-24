@@ -23,9 +23,17 @@ export type OnboardingStage = (typeof ONBOARDING_STAGES)[number];
  * Declared on the router root so the overlay can read and write it from over any
  * route. An invalid or absent value simply means "no stage pinned"; the overlay
  * normalizes it to {@link ONBOARDING_STAGES}[0] on mount.
+ *
+ * `.catch(undefined)` is what makes that true for an *invalid* value, and it is
+ * not optional politeness: this param rides the ROOT route, so it is inherited by
+ * every page. Without the catch, `?onboarding=anything-unknown` on any route — a
+ * hand-edited URL, a stale bookmark, an old release note — throws the whole app
+ * to its error boundary instead of landing on the first stage. Same forgiving
+ * read the other route schemas document (`teamSearchSchema`, `homeSearchSchema`):
+ * a value the app no longer knows is a stale address, not a broken app.
  */
 export const onboardingStageSearchSchema = z.object({
-  onboarding: z.enum(ONBOARDING_STAGES).optional(),
+  onboarding: z.enum(ONBOARDING_STAGES).optional().catch(undefined),
 });
 
 /** Narrow an unknown search value to a valid {@link OnboardingStage}. */

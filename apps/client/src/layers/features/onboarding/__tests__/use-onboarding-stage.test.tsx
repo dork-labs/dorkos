@@ -22,6 +22,16 @@ import { onboardingStageSearchSchema, type OnboardingStage } from '../model/onbo
 import { useOnboarding } from '../model/use-onboarding';
 import { useClearOnboardingStageWhenDone, useOnboardingStage } from '../model/use-onboarding-stage';
 
+// These tests spin a real router + `renderHook` and chain several router-driven
+// waits. Under CI's saturated runner a single slow-but-correct wait can approach
+// its own budget, so the sum of the internal `waitFor`s must sit comfortably
+// UNDER the per-test ceiling — otherwise a slow wait trips vitest's 5000ms
+// default test timeout and the whole test fails as "timed out" even though the
+// anchor fired. Internal waits are kept at ~2000ms; the per-test ceiling is
+// raised well past their sum so a slow run finishes instead of tripping the
+// ceiling (DOR-1431 flake, #1241).
+vi.setConfig({ testTimeout: 15000 });
+
 // ── Router harness (mirrors use-dialog-deep-link.test) ───────
 const HookSlotContext = createContext<ReactNode>(null);
 
@@ -50,7 +60,11 @@ function buildHarness(initialUrl = '/') {
     );
   }
   const readStage = () => (router.state.location.search as { onboarding?: string }).onboarding;
-  const waitForRouterReady = () => waitFor(() => expect(router.state.status).toBe('idle'));
+  // ~2000ms budget for the router-idle wait: comfortably above what a healthy
+  // run needs, well below the per-test ceiling set at the top of this file. See
+  // that note for why the two budgets are chosen together (DOR-1431 flake).
+  const waitForRouterReady = () =>
+    waitFor(() => expect(router.state.status).toBe('idle'), { timeout: 2000 });
 
   return { router, Wrapper, readStage, waitForRouterReady };
 }
@@ -141,6 +155,145 @@ describe('useClearOnboardingStageWhenDone', () => {
     });
     await harness.waitForRouterReady();
     await waitFor(() => expect(harness.readStage()).toBeUndefined());
+  });
+});
+
+// ── Initial anchor: deep links hold on a cold load (DOR-1431) ─
+//
+// The overlay's stage rides `?onboarding=`. A mount-only anchor effect used to
+// read the param captured at first render — before the router had parsed it on a
+// cold load — and rewrite a deep-linked stage back to `welcome`. The anchor now
+// waits for the router to resolve and fires exactly once, so a deep link holds
+// while a bare or unknown load still anchors to the first stage.
+
+describe('useOnboardingStage — initial anchor (DOR-1431)', () => {
+  it('holds a deep-linked stage instead of rewriting it to welcome', async () => {
+    const harness = buildHarness('/?onboarding=requirements');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    // Let any (unwanted) anchor navigation flush, then assert nothing rewound.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(harness.readStage()).toBe('requirements');
+    expect(result.current.stage).toBe('requirements');
+  });
+
+  it('holds the conversation stage on a deep link', async () => {
+    const harness = buildHarness('/?onboarding=conversation');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(harness.readStage()).toBe('conversation');
+    expect(result.current.stage).toBe('conversation');
+  });
+
+  it('anchors a bare load to the first stage without adding a history entry', async () => {
+    const harness = buildHarness('/');
+    const lengthBefore = harness.router.history.length;
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    await waitFor(() => expect(harness.readStage()).toBe('welcome'), { timeout: 2000 });
+    expect(result.current.stage).toBe('welcome');
+    // `replace`, not push: initialization must not leave a history entry that
+    // Back could land on before the app.
+    expect(harness.router.history.length).toBe(lengthBefore);
+  });
+
+  it('anchors an unknown stage value to the first stage', async () => {
+    // A value that is NOT a member of ONBOARDING_STAGES — `.catch(undefined)`
+    // drops it to "no stage" and the anchor pins the first stage. Deliberately
+    // NOT a real stage name: a valid value correctly HOLDS (the anchor never
+    // fires), so this wait would hang. (`power` became a real stage on main, so
+    // once this branch rebases it must remain a genuinely-unknown value here.)
+    const harness = buildHarness('/?onboarding=not-a-real-stage');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    await waitFor(() => expect(harness.readStage()).toBe('welcome'), { timeout: 2000 });
+    expect(result.current.stage).toBe('welcome');
+  });
+
+  it('does not re-anchor once the param is cleared after onboarding ends', async () => {
+    // The anchor is a one-time initialization. When onboarding finishes,
+    // `useClearOnboardingStageWhenDone` strips the param; the anchor must not
+    // fight that by re-adding `?onboarding=welcome`. Guards the run-once ref
+    // against a naive "depend on the parsed value" fix that would re-fire.
+    const harness = buildHarness('/?onboarding=welcome');
+    renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    expect(harness.readStage()).toBe('welcome');
+
+    // Simulate the end-of-onboarding strip (a real navigation that clears it).
+    await act(async () => {
+      await harness.router.navigate({ to: '/', search: {} });
+    });
+    await harness.waitForRouterReady();
+    // Let any (unwanted) re-anchor flush, then assert it stayed cleared.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(harness.readStage()).toBeUndefined();
+  });
+});
+
+// ── History-integrated stage navigation ──────────────────────
+//
+// Stage moves ride real history entries so browser Back/Forward and the in-UI
+// Back walk the same path. `goBack` pops an in-app forward push, but falls back
+// to pushing a stage when the user landed on a later stage directly.
+
+describe('useOnboardingStage — navigation', () => {
+  it('goToStage pushes a history entry and moves the derived stage forward', async () => {
+    const harness = buildHarness('/');
+    const lengthBefore = harness.router.history.length;
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    await waitFor(() => expect(harness.readStage()).toBe('welcome'), { timeout: 2000 });
+
+    await act(async () => {
+      result.current.goToStage('requirements');
+    });
+    await harness.waitForRouterReady();
+    expect(harness.readStage()).toBe('requirements');
+    expect(result.current.stage).toBe('requirements');
+    // A push, so Back can return — the anchor above was a replace (no entry).
+    expect(harness.router.history.length).toBe(lengthBefore + 1);
+  });
+
+  it('goBack pops the forward push after an in-app step', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    await waitFor(() => expect(harness.readStage()).toBe('welcome'), { timeout: 2000 });
+
+    await act(async () => {
+      result.current.goToStage('requirements');
+    });
+    await harness.waitForRouterReady();
+    expect(harness.readStage()).toBe('requirements');
+    const lengthAfterForward = harness.router.history.length;
+
+    await act(async () => {
+      result.current.goBack('welcome');
+    });
+    await harness.waitForRouterReady();
+    expect(harness.readStage()).toBe('welcome');
+    expect(result.current.stage).toBe('welcome');
+    // Discriminates a real pop from a push-fallback — both land on 'welcome', so
+    // the stage alone cannot tell them apart. A history pop moves the index and
+    // keeps the entry count; pushing the fallback would ADD an entry. Without
+    // `pushedSinceMount`, goBack would push here and this length would grow.
+    expect(harness.router.history.length).toBe(lengthAfterForward);
+  });
+
+  it('goBack pushes the fallback on a deep-link landing with nothing to pop', async () => {
+    const harness = buildHarness('/?onboarding=conversation');
+    const { result } = renderHook(() => useOnboardingStage(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    expect(harness.readStage()).toBe('conversation');
+
+    await act(async () => {
+      result.current.goBack('requirements');
+    });
+    await harness.waitForRouterReady();
+    expect(harness.readStage()).toBe('requirements');
+    expect(result.current.stage).toBe('requirements');
   });
 });
 

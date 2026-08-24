@@ -11,7 +11,7 @@
  * @module features/onboarding/model/use-onboarding-stage
  */
 import { useCallback, useEffect, useRef } from 'react';
-import { useRouter, useSearch } from '@tanstack/react-router';
+import { useRouter, useRouterState, useSearch } from '@tanstack/react-router';
 import { useInPlaceNavigate } from '@/layers/shared/model';
 import { isOnboardingStage, type OnboardingStage } from './onboarding-stage';
 
@@ -52,17 +52,35 @@ export function useOnboardingStage(): OnboardingStageNav {
   // landing, where popping would leave the app entirely).
   const pushedSinceMount = useRef(false);
 
-  // Anchor the param on mount so refresh and back have a concrete stage to land
-  // on. `replace` keeps this out of history — it is initialization, not a step.
-  // Mount-only by design: later stage changes go through `goToStage`.
+  // True once the router has resolved the initial location — the moment
+  // `?onboarding=` is actually parsed into `raw`. On a cold load the first render
+  // can precede that parse, so anchoring off `raw` before this point reads the
+  // pre-parse default, not the deep link.
+  const routerResolved = useRouterState({ select: (state) => state.status === 'idle' });
+
+  // Establish the initial history anchor exactly once, from the PARSED param.
+  //
+  // If the URL carries no valid stage on a fresh load, pin it to the first stage
+  // so refresh and Back have a concrete stage to land on. `replace` keeps this
+  // out of history — it is initialization, not a step.
+  //
+  // Gating on `routerResolved` is the deep-link fix (DOR-1431): a mount-only
+  // effect read `raw` before the router had parsed `?onboarding=` on a cold load,
+  // saw the default, and rewrote a deep-linked stage back to `welcome`. Waiting
+  // for the router to resolve means `raw` is the real parsed value here. The ref
+  // keeps this a one-time initialization: later stage steps (`goToStage`) and the
+  // end-of-onboarding param clear must never trigger a re-anchor.
+  const hasAnchored = useRef(false);
   useEffect(() => {
+    if (hasAnchored.current || !routerResolved) return;
+    hasAnchored.current = true;
     if (isOnboardingStage(raw)) return;
     const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: 'welcome' });
     // The overlay rides above whatever route is active, so anchoring its stage
     // is an in-place rewrite, not a departure (DOR-931). `null` only in the
     // router-less embed, which never runs onboarding.
     inPlaceNavigate?.({ search: updater, replace: true });
-  }, []);
+  }, [routerResolved, raw, inPlaceNavigate]);
 
   const goToStage = useCallback(
     (next: OnboardingStage) => {
