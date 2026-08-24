@@ -36,6 +36,7 @@ import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { resolveTrustedOrigins } from './lib/trusted-origins.js';
+import { logger } from './lib/logger.js';
 import { testControlRouter } from './routes/test-control.js';
 import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
 import { env } from './env.js';
@@ -101,12 +102,48 @@ function buildCors(): express.RequestHandler {
   });
 }
 
+/**
+ * Build a one-shot `info` marker: the returned function logs `message` the
+ * first time it is called and does nothing on every call after that.
+ *
+ * This closes a diagnostic blind spot that cost a day of an incident.
+ * Successful requests are logged at `debug`, so a user's log at the default
+ * level contains nothing at all when everything is working — which means it
+ * cannot answer the first question a blank window raises: did the cockpit ever
+ * reach the server, or is this a server that never came up? One `info` line
+ * apiece for the first shell served and the first API call answers it outright,
+ * without touching what the request logger does per request.
+ *
+ * The latch is a closure rather than module state so it is scoped to one
+ * Express app — i.e. to one boot, which is what "first" means here — and so a
+ * test can prove the once-only behaviour by building two apps.
+ *
+ * @param message - The line to log, tagged the way `lib/logger.ts` expects.
+ */
+function createFirstContactMarker(message: string): () => void {
+  let logged = false;
+  return () => {
+    if (logged) return;
+    logged = true;
+    logger.info(message);
+  };
+}
+
 /** Create and configure the Express application with middleware and routes. */
 export function createApp() {
   const app = express();
 
   // Trust the first proxy (ngrok) for correct req.hostname, req.ip, req.protocol
   app.set('trust proxy', 1);
+
+  // Mounted ahead of every other `/api` handler, the host guard included: a
+  // request that arrives and is then rejected still proves the client reached
+  // this process, which is the only thing this line claims.
+  const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');
+  app.use('/api', (_req, _res, next) => {
+    noteFirstApiRequest();
+    next();
+  });
 
   // `credentials: true` sends Access-Control-Allow-Credentials: true so the
   // browser accepts cross-origin responses to the client's `credentials:
@@ -283,9 +320,15 @@ export function finalizeApp(app: express.Express): void {
   // In production, serve the built React app
   if (env.NODE_ENV === 'production') {
     const distPath = env.CLIENT_DIST_PATH ?? path.join(__dirname, '../../client/dist');
+    // Both places the shell can leave this process are latched, because which
+    // one answers depends only on whether the URL was a deep link — and the
+    // marker is about the shell reaching a browser at all. See
+    // `createFirstContactMarker`.
+    const noteShellServed = createFirstContactMarker('[Client] first index.html served');
     app.use(
       express.static(distPath, {
         setHeaders: (res, filePath) => {
+          if (path.basename(filePath) === 'index.html') noteShellServed();
           const cacheControl = cacheControlForDistFile(distPath, filePath);
           if (cacheControl) res.setHeader('Cache-Control', cacheControl);
         },
@@ -300,7 +343,16 @@ export function finalizeApp(app: express.Express): void {
     // the { root } form serves index.html reliably regardless of req.url.
     app.use((req, res, next) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-      res.sendFile('index.html', { root: distPath, headers: SHELL_HEADERS });
+      // Latched from the callback, so the marker means the shell actually went
+      // out. Claiming it before the send would put "first index.html served"
+      // in the log of a build whose dist is missing — precisely the boot where
+      // the line would be read most carefully, and most misleading. Supplying
+      // a callback makes error handling ours, so the failure is forwarded the
+      // way `sendFile` forwards it on its own.
+      res.sendFile('index.html', { root: distPath, headers: SHELL_HEADERS }, (err) => {
+        if (err) return next(err);
+        noteShellServed();
+      });
     });
   }
 }

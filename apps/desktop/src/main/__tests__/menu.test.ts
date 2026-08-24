@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('../auto-updater', () => ({ checkForUpdatesInteractive: vi.fn() }));
 vi.mock('../close-tab', () => ({ requestCloseTab: vi.fn() }));
+vi.mock('../diagnostics', () => ({ saveDiagnosticReportInteractive: vi.fn() }));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test
@@ -193,7 +194,8 @@ describe('setupMenu (B1)', () => {
       | undefined;
     const help = template!.find((item) => item.role === 'help');
     const helpItems = help!.submenu as Electron.MenuItemConstructorOptions[];
-    expect(helpItems).toHaveLength(3);
+    // The 3 links, a separator, then Save Diagnostic Report….
+    expect(helpItems).toHaveLength(5);
 
     helpItems[0].click!({} as never, undefined, {} as never);
     expect(shell.openExternal).toHaveBeenCalledWith('https://dorkos.ai/docs');
@@ -203,6 +205,28 @@ describe('setupMenu (B1)', () => {
 
     helpItems[2].click!({} as never, undefined, {} as never);
     expect(shell.openExternal).toHaveBeenCalledWith('https://dorkos.ai');
+  });
+
+  it('Help menu offers Save Diagnostic Report…, enabled even in an unpackaged build', async () => {
+    const { app, Menu, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = false;
+    const { setupMenu } = await import('../menu');
+    const { saveDiagnosticReportInteractive } = await import('../diagnostics');
+
+    setupMenu(() => null, vi.fn());
+    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
+      | Electron.MenuItemConstructorOptions[]
+      | undefined;
+    const item = findItem(template!, 'Save Diagnostic Report…');
+
+    expect(item).toBeDefined();
+    // Unlike Check for Updates…, this is not gated on `app.isPackaged`: a dev
+    // build's logs are worth collecting, and the report says which it came from.
+    expect(item!.enabled).toBeUndefined();
+
+    item!.click!({} as never, undefined, {} as never);
+    expect(saveDiagnosticReportInteractive).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -334,7 +358,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     ]);
   });
 
-  it('Help has the 3 external links, a gated Check for Updates…, and About DorkOS (role about)', async () => {
+  it('Help has the 3 external links, Save Diagnostic Report…, a gated Check for Updates…, and About DorkOS (role about)', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const { app, Menu, shell, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -367,6 +391,12 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
       {} as never
     );
     expect(shell.openExternal).toHaveBeenCalledWith('https://dorkos.ai');
+
+    const { saveDiagnosticReportInteractive } = await import('../diagnostics');
+    const diagnostics = helpMenu.find((item) => item.label === 'Save Diagnostic Report…');
+    expect(diagnostics).toBeDefined();
+    diagnostics!.click!({} as never, undefined, {} as never);
+    expect(saveDiagnosticReportInteractive).toHaveBeenCalledTimes(1);
 
     const checkForUpdates = helpMenu.find((item) => item.label === 'Check for Updates…');
     expect(checkForUpdates).toBeDefined();

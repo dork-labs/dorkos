@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
+vi.mock('../diagnostics', () => ({ saveDiagnosticReportInteractive: vi.fn() }));
 
 import { hasTray, resetTray, setTrayActivity, setupTray } from '../tray';
+import { saveDiagnosticReportInteractive } from '../diagnostics';
 import {
   app,
   Menu,
@@ -143,12 +145,14 @@ describe('tray menu', () => {
     expect(summary.enabled).toBe(false);
   });
 
-  it('offers opening the cockpit, the activity view, and quitting', () => {
+  it('offers opening the cockpit, the activity view, saving a report, and quitting', () => {
     expect(menuLabels()).toEqual([
       'No agents working',
       undefined,
       'Open DorkOS',
       'Activity',
+      undefined,
+      'Save Diagnostic Report…',
       undefined,
       'Quit DorkOS',
     ]);
@@ -160,6 +164,12 @@ describe('tray menu', () => {
 
     clickItem('Activity');
     expect(options.openActivity).toHaveBeenCalledTimes(1);
+
+    // The tray is the surface that still works when the window is blank, which
+    // is the situation the report exists for — so it has to be reachable here
+    // and not only from a cockpit someone cannot see.
+    clickItem('Save Diagnostic Report…');
+    expect(saveDiagnosticReportInteractive).toHaveBeenCalledTimes(1);
 
     // Routed through app.quit() so the "agents are still working" confirmation
     // applies here as much as it does to Cmd+Q.
