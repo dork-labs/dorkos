@@ -24,6 +24,7 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { slugify, validateSlug } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
@@ -48,6 +49,13 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
 } from '../services/tasks/task-write-policy.js';
 import { mergeTaskFrontmatter } from '../services/tasks/task-frontmatter-merge.js';
+import {
+  describeArmBlocker,
+  isPackageOwned,
+  planTaskFileUpdate,
+  pluginRoots,
+  touchesFile,
+} from '../services/tasks/task-file-update.js';
 import fs from 'node:fs/promises';
 
 /**
@@ -647,7 +655,16 @@ export function createTasksRouter(
     // the permanent path for every task already carrying the `max-runtime: null`
     // corruption this branch fixes, so it is exactly the case that most needs a
     // symptom. It refuses too.
-    if (existing.filePath) {
+    //
+    // **A request that changes nothing in the file does not open the file.**
+    // `touchesFile` is what makes that true, and it is load-bearing rather than
+    // an optimisation: approving a parked schedule sends `status` alone, and
+    // before DOR-1485's review every Approve dragged the person's own SKILL.md
+    // through a read-merge-write it had no reason to touch — which is how a
+    // click on Approve could erase the file's `schedule:` block.
+    const arming = data.status === 'active' && existing.status === 'pending_approval';
+    const changesFile = touchesFile(data, existing);
+    if (existing.filePath && (changesFile || arming)) {
       let content: string | null = null;
       try {
         content = await fs.readFile(existing.filePath, 'utf-8');
@@ -665,26 +682,66 @@ export function createTasksRouter(
         }
       }
 
-      if (content !== null) {
+      // Arming is the one thing a person can ask for that the FILE can refuse.
+      // A schedule whose block or cron DorkOS cannot read has nothing to run on,
+      // so approving it would produce a row that says `active` and never fires,
+      // with the complaint that explained why now gone from the card. Say what
+      // is wrong instead, and leave the schedule parked where they can see it.
+      if (arming && content !== null) {
+        const blocker = describeArmBlocker(existing.filePath, content);
+        if (blocker) {
+          return res.status(409).json({
+            error:
+              `This schedule cannot be switched on yet: ${blocker} ` +
+              `Fix it in ${existing.filePath} and DorkOS will pick the change up on its own.`,
+            code: 'schedule_file_unreadable',
+          });
+        }
+      }
+
+      if (content !== null && changesFile) {
         const parsed = parseSkillFile(existing.filePath, content, TaskFrontmatterSchema);
-        if (!parsed.ok) {
+        const asSkill = parseSkillFile(existing.filePath, content, SkillFrontmatterSchema);
+        // Either shape is fine to EDIT — a block-backed skill is not a legacy
+        // task file and must not be judged by the legacy schema — but a file
+        // neither schema can read is the silent-success defect DOR-1481 closed,
+        // and it still refuses.
+        if (!parsed.ok && !asSkill.ok) {
           return res.status(500).json({
             error: describeTaskFileFailure('parse', existing.filePath, parsed.error),
           });
         }
 
-        const updatedFrontmatter = mergeTaskFrontmatter(
-          parsed.definition.meta as Record<string, unknown>,
-          data
-        );
-        const updatedPrompt = data.prompt ?? parsed.definition.body;
-        const parentDir = path.dirname(parsed.definition.dirPath);
+        // A skill an installed package owns is never ours to rewrite: the edit
+        // would land in `.dork/plugins/`, be shared by every agent that
+        // installed the package, and vanish at the next update.
+        const owningProject = existing.agentId
+          ? meshCore?.getProjectPath(existing.agentId)
+          : undefined;
+        if (
+          await isPackageOwned(existing.filePath, pluginRoots(dorkHome, owningProject ?? undefined))
+        ) {
+          return res.status(409).json({
+            error:
+              `This schedule belongs to an installed package, so DorkOS did not change its ` +
+              `file. You can switch it on or off here; to change what it does, edit the ` +
+              `package or make your own copy of the skill.`,
+            code: 'schedule_package_owned',
+          });
+        }
+
+        const plan = planTaskFileUpdate(existing.filePath, content, data, data.prompt);
+        if (plan.kind === 'refuse') {
+          return res.status(409).json({ error: plan.message, code: 'schedule_file_unreadable' });
+        }
+
+        const dirPath = path.dirname(existing.filePath);
         try {
           await writeSkillFile(
-            parentDir,
-            parsed.definition.name,
-            updatedFrontmatter,
-            updatedPrompt
+            path.dirname(dirPath),
+            path.basename(dirPath),
+            plan.frontmatter,
+            plan.body
           );
         } catch (err) {
           return res.status(500).json({
@@ -701,6 +758,49 @@ export function createTasksRouter(
     let updated = store.updateTask(req.params.id, data);
     if (!updated) {
       return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // **Re-assert the status the caller asked for.** The file is written before
+    // the row, and a watcher event landing in that gap syncs the NEW file
+    // against the OLD row: the content key has changed, so the arm gate parks
+    // the row — and then this update writes the rest of the caller's fields over
+    // a row that is now `pending_approval`, leaving a schedule the person just
+    // edited parked with nothing anywhere saying why (DOR-1485 review, I2).
+    //
+    // `updateTask` cannot fix this on its own: it only lifts `paused`, because
+    // `pending_approval` is deliberately a person's gate to clear. Here we know
+    // a person IS the caller and exactly what they asked for, so re-stating it
+    // is not overriding the gate — it is finishing the write that opened it.
+    // The status the caller is entitled to end up at: the one they asked for,
+    // or — when they only edited fields and the schedule was already live — the
+    // one it already had. The second half is the case a first pass missed: the
+    // cockpit's edit form sends a prompt and no `status`, so a lost race
+    // disarmed a running schedule with nothing anywhere saying why.
+    const intendedStatus =
+      data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined);
+    if (intendedStatus !== undefined && updated.status !== intendedStatus) {
+      updated = store.updateTask(req.params.id, { status: intendedStatus }) ?? updated;
+    }
+
+    // **A person editing their own live schedule re-approves it.**
+    //
+    // The grant is keyed on the schedule's content, so any edit to what it does
+    // or when it runs invalidates it. Without this line the cockpit's ordinary
+    // edit — change the prompt, save — left a live schedule holding a grant for
+    // content that no longer existed, and the next sync within five minutes
+    // parked it with "this file changed since it was last approved". The person
+    // is the one who changed it, and they are standing right there.
+    //
+    // **Here and not in `updateTask`, deliberately.** `prompt` and `cron` are
+    // agent-writable (`task-write-policy.ts`); only `status` is operator-only.
+    // Re-keying on every content write would therefore let an agent rewrite an
+    // approved schedule and carry its approval across — which is precisely the
+    // substitution the bypass clamp exists to refuse, reintroduced one layer up.
+    // So the grant is re-issued only for a caller that cleared the agent bar. An
+    // agent's edit still re-parks, and a person still has to look at it.
+    if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
+      store.recordApproval(updated.id);
+      updated = store.getTask(updated.id) ?? updated;
     }
 
     // Re-register or unregister the cron job to match the new state, through the

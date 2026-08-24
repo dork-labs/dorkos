@@ -64,6 +64,9 @@ import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
+import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
+import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
+import { legacyRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
@@ -344,5 +347,280 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       expect(res.status).toBe(200);
       expect(store.getTask(id)!.maxRuntime).toBeNull();
     });
+  });
+});
+
+/**
+ * Approving a schedule must not touch its file (DOR-1485 review, B1).
+ *
+ * Since schedulability became a frontmatter property, the route's read-merge-
+ * write cycle could destroy the very thing it was reading: an unreadable
+ * `schedule:` block parses to a complaint object, and merging that back replaced
+ * the author's cron with `{invalid, problem}` — after which the next read saw a
+ * valid EMPTY block, the schedule silently became on-demand, and the complaint
+ * that explained why was gone. Every part of that was reachable by clicking
+ * Approve, which changes nothing in the file at all.
+ */
+describe('PATCH /api/tasks/:id and a schedule-block file', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let dorkHome: string;
+  let scheduler: TaskSchedulerService;
+
+  /** A skill in the global skills root whose frontmatter carries a block. */
+  async function writeBlockSkill(slug: string, block: string): Promise<string> {
+    const dir = path.join(dorkHome, 'skills', slug);
+    await fs.mkdir(dir, { recursive: true });
+    const filePath = path.join(dir, SKILL_FILENAME);
+    await fs.writeFile(
+      filePath,
+      `---\nname: ${slug}\ndescription: A skill named ${slug}\nschedule:\n${block}\n---\nDo the thing.`,
+      'utf-8'
+    );
+    return filePath;
+  }
+
+  /** Seed the row discovery would have made, parked and waiting. */
+  function seedParked(slug: string, filePath: string, cron: string): string {
+    const task = store.createTask({
+      name: slug,
+      description: `A skill named ${slug}`,
+      prompt: 'Do the thing.',
+      cron,
+      timezone: 'UTC',
+      filePath,
+    });
+    store.updateTask(task.id, { status: 'pending_approval' });
+    return task.id;
+  }
+
+  beforeEach(async () => {
+    state.writeFailure = null;
+    scheduler = createMockScheduler();
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-block-'));
+
+    app = express();
+    app.use(express.json());
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    );
+  });
+
+  afterEach(async () => {
+    store.close();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('leaves the file byte-identical when a schedule is approved', async () => {
+    const filePath = await writeBlockSkill('nightly', "  cron: '0 9 * * *'");
+    const before = await fs.readFile(filePath, 'utf-8');
+    const id = seedParked('nightly', filePath, '0 9 * * *');
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ status: 'active', enabled: true });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('refuses to arm a schedule whose block does not read, and says why', async () => {
+    const filePath = await writeBlockSkill('broken', '  permissions: yolo');
+    const before = await fs.readFile(filePath, 'utf-8');
+    const id = seedParked('broken', filePath, '');
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ status: 'active', enabled: true });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('permissions');
+    // Refused whole: the file is untouched and the schedule is still waiting,
+    // where the person can see the complaint.
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
+    expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
+
+  it('writes a cron edit into the block, never at the top level', async () => {
+    const filePath = await writeBlockSkill('nightly', "  cron: '0 9 * * *'");
+    const id = seedParked('nightly', filePath, '0 9 * * *');
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    const raw = await fs.readFile(filePath, 'utf-8');
+    // The cron lives INSIDE the block — indented under `schedule:` — and there
+    // is exactly one of it. A file carrying a second, top-level `cron:` beside
+    // the block disagrees with itself forever: the row follows the block, so
+    // every sync reverts the edit and re-parks the schedule.
+    expect(raw).toMatch(/schedule:\n\s+cron: '?0 21 \* \* \*'?/);
+    expect(raw.match(/cron:/g)).toHaveLength(1);
+    expect(raw).not.toMatch(/^cron:/m);
+  });
+
+  it('never rewrites a skill an installed package owns', async () => {
+    // Global installs live at `<dorkHome>/plugins` — the data directory IS the
+    // scope root, the way `conflict-detector.ts` computes it.
+    const dir = path.join(dorkHome, 'plugins', 'pack', 'skills', 'owned');
+    await fs.mkdir(dir, { recursive: true });
+    const filePath = path.join(dir, SKILL_FILENAME);
+    await fs.writeFile(
+      filePath,
+      "---\nname: owned\ndescription: A packaged skill\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.",
+      'utf-8'
+    );
+    const before = await fs.readFile(filePath, 'utf-8');
+    const id = seedParked('owned', filePath, '0 9 * * *');
+
+    const res = await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+
+    expect(res.status).toBe(409);
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
+  });
+
+  // The gap between the file write and the row write. A watcher event landing in
+  // it syncs the NEW file against the OLD row, and the arm gate parks the row —
+  // after which the route's own update would have written the caller's other
+  // fields over a schedule that was now silently waiting (DOR-1485 review, I2).
+  it('keeps the status the caller asked for when a sync parks the row mid-write', async () => {
+    const filePath = await writeBlockSkill('racy', "  cron: '0 9 * * *'");
+    const id = seedParked('racy', filePath, '0 9 * * *');
+    store.updateTask(id, { status: 'active' });
+
+    // Stand in for the watcher firing between the two writes.
+    const realUpdate = store.updateTask.bind(store);
+    let raced = false;
+    vi.spyOn(store, 'updateTask').mockImplementation((taskId, data) => {
+      if (!raced) {
+        raced = true;
+        realUpdate(taskId, { status: 'pending_approval' });
+      }
+      return realUpdate(taskId, data);
+    });
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ status: 'active', cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    vi.restoreAllMocks();
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+});
+
+/**
+ * Editing a live schedule must not quietly disarm it (DOR-1485 review, R1).
+ *
+ * The arm grant is keyed on the schedule's content, so any edit invalidates it.
+ * That is right for a file DorkOS found and wrong for a person using the
+ * cockpit: they changed the prompt, they are standing right there, and the next
+ * sync five minutes later would park their own schedule and tell them its file
+ * had changed. Re-issuing the grant is the route's job and only for a caller
+ * that cleared the agent bar — an agent that rewrites an approved schedule must
+ * still send it back for a look.
+ */
+describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let dorkHome: string;
+  let scheduler: TaskSchedulerService;
+  let registrar: TaskRegistrar;
+  let reconciler: TaskReconciler;
+
+  beforeEach(async () => {
+    state.writeFailure = null;
+    scheduler = createMockScheduler();
+    db = createTestDb();
+    store = new TaskStore(db);
+    registrar = new TaskRegistrar({ store, scheduler });
+    reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-approval-'));
+    await fs.mkdir(path.join(dorkHome, 'tasks'), { recursive: true });
+    reconciler.addRoot(legacyRoot(path.join(dorkHome, 'tasks'), 'global'));
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/tasks', createTasksRouter(store, scheduler, registrar, dorkHome));
+  });
+
+  afterEach(async () => {
+    store.close();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  /** An operator-created, already-live schedule. */
+  async function liveSchedule(): Promise<string> {
+    const res = await request(app).post('/api/tasks').send({
+      name: 'nightly-sweep',
+      description: 'sweeps the backlog',
+      prompt: 'sweep the backlog',
+      cron: '0 3 * * *',
+      target: 'global',
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.status).toBe('active');
+    return res.body.id as string;
+  }
+
+  it('keeps a schedule armed when a person edits what it does', async () => {
+    const id = await liveSchedule();
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .send({ prompt: 'sweep the backlog and file anything stale' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.status).toBe('active');
+
+    // The five minutes later that used to undo it.
+    await reconciler.reconcile();
+
+    expect(store.getTask(id)!.status).toBe('active');
+    expect(store.getTask(id)!.reason).toBeNull();
+  });
+
+  it('keeps a schedule armed when a person edits when it runs', async () => {
+    const id = await liveSchedule();
+
+    await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    await reconciler.reconcile();
+
+    expect(store.getTask(id)!.status).toBe('active');
+    expect(store.getTask(id)!.cron).toBe('0 21 * * *');
+  });
+
+  // The other half, and the reason this lives in the route rather than in
+  // `updateTask`: `prompt` and `cron` are agent-writable, so re-keying on every
+  // content write would let an agent rewrite an approved schedule and keep it
+  // armed — the substitution the bypass clamp exists to refuse.
+  it('sends a schedule back for approval when an AGENT edits what it does', async () => {
+    const id = await liveSchedule();
+
+    const res = await request(app)
+      .patch(`/api/tasks/${id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ prompt: 'sweep the backlog and then delete everything' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    await reconciler.reconcile();
+
+    const after = store.getTask(id)!;
+    expect(after.status).toBe('pending_approval');
+    expect(after.reason).toMatch(/changed since/i);
+  });
+
+  it('does not re-approve a schedule that was already waiting', async () => {
+    const id = await liveSchedule();
+    await request(app).patch(`/api/tasks/${id}`).send({ status: 'pending_approval' });
+
+    await request(app).patch(`/api/tasks/${id}`).send({ prompt: 'something else' });
+    await reconciler.reconcile();
+
+    expect(store.getTask(id)!.status).toBe('pending_approval');
   });
 });

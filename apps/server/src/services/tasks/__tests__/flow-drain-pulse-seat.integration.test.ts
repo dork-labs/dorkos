@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Cron } from 'croner';
 import { TaskFileWatcher } from '../task-file-watcher.js';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import { legacyRoot } from './task-root-fixtures.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { FakeScheduler } from './fake-scheduler.js';
 import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
@@ -99,7 +101,11 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     db = createTestDb();
     store = new TaskStore(db);
     watcherScheduler = new FakeScheduler();
-    watcher = new TaskFileWatcher(store, new TaskRegistrar({ store, scheduler: watcherScheduler }));
+    watcher = new TaskFileWatcher(
+      store,
+      new TaskRegistrar({ store, scheduler: watcherScheduler }),
+      new ScheduleIdentityRegistry()
+    );
   });
 
   afterEach(async () => {
@@ -118,7 +124,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
 
     // 2. Watch the project tasks dir — real chokidar, linked to a project agent.
-    watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
+    watcher.watch(legacyRoot(tasksDir, 'project', projectPath, AGENT_ID));
 
     // 3. The watcher syncs the file into the pulseSchedules cache (file-first).
     const task = await waitForTask(
@@ -200,7 +206,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     const skillDir = path.join(tasksDir, 'flow-drain');
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
-    watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
+    watcher.watch(legacyRoot(tasksDir, 'project', projectPath, AGENT_ID));
     const task = await waitForTask(
       store,
       path.join(tasksDir, 'flow-drain', 'SKILL.md'),
@@ -245,7 +251,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     const skillDir = path.join(tasksDir, 'flow-drain');
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
-    watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
+    watcher.watch(legacyRoot(tasksDir, 'project', projectPath, AGENT_ID));
     const task = await waitForTask(
       store,
       path.join(tasksDir, 'flow-drain', 'SKILL.md'),

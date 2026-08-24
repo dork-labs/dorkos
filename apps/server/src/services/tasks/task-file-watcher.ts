@@ -1,6 +1,6 @@
 /**
- * Watches task directories for SKILL.md file changes and syncs them to the DB
- * cache and the running scheduler.
+ * Watches the roots where scheduled work can live and syncs what it finds to
+ * the DB cache and the running scheduler.
  *
  * @module services/tasks/task-file-watcher
  */
@@ -9,18 +9,24 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
-import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import type { ScheduleIdentityRegistry } from './schedule-identity.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
-import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
+import { readTaskRootFile } from './skills-root-discovery.js';
+import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 import { logger } from '../../lib/logger.js';
 
 /**
- * Watches task directories for file changes and syncs them to the DB cache and
- * the scheduler.
+ * Watches task roots for file changes and syncs them to the DB cache and the
+ * scheduler.
  *
- * - Global tasks: `{dorkHome}/tasks/` — started unconditionally on server startup
- * - Project tasks: `{projectPath}/.dork/tasks/` — started per agent registration
+ * Two kinds of root, both live until DOR-1486 retires the second
+ * (`skills-roots.ts`):
+ *
+ * - **Skills roots** — `{dorkHome}/skills/` and every registered agent's
+ *   `{projectPath}/.agents/skills/`. Files are read with the unified skill
+ *   schema, and only those carrying a `schedule:` block become schedules.
+ * - **Legacy task roots** — `{dorkHome}/tasks/` and `{projectPath}/.dork/tasks/`.
+ *   Every file is a schedule, read with the old top-level-fields schema.
  *
  * The scheduler half runs through {@link TaskRegistrar}, which is what makes an
  * edit on disk take effect now rather than at the next restart. This class used
@@ -33,32 +39,25 @@ export class TaskFileWatcher {
 
   constructor(
     private store: TaskStore,
-    private registrar: TaskRegistrar
+    private registrar: TaskRegistrar,
+    private identities: ScheduleIdentityRegistry
   ) {}
 
   /**
-   * Watch a task directory for SKILL.md file changes.
+   * Watch one root for SKILL.md changes.
    *
-   * @param tasksDir - Absolute path to the tasks directory
-   * @param scope - 'project' or 'global'
-   * @param projectPath - Project root (for project-scoped tasks)
-   * @param agentId - Agent ID for project-scoped tasks
+   * @param root - The directory to watch and how to read what is in it.
    */
-  watch(
-    tasksDir: string,
-    scope: 'project' | 'global',
-    projectPath?: string,
-    agentId?: string
-  ): void {
-    if (this.watchers.has(tasksDir)) {
-      logger.warn(`[TaskFileWatcher] Already watching ${tasksDir} — skipping duplicate`);
+  watch(root: TaskRoot): void {
+    if (this.watchers.has(root.dir)) {
+      logger.warn(`[TaskFileWatcher] Already watching ${root.dir} — skipping duplicate`);
       return;
     }
 
     // Watch the directory itself and filter to {slug}/SKILL.md in the handler.
     // NO glob: chokidar v4 removed glob support, so a `*/SKILL.md` pattern
     // watches a literal path that never exists and silently never fires.
-    const watcher = chokidar.watch(tasksDir, {
+    const watcher = chokidar.watch(root.dir, {
       persistent: true,
       ignoreInitial: false,
       depth: 1,
@@ -68,9 +67,9 @@ export class TaskFileWatcher {
       },
     });
 
-    // A task is `<tasksDir>/<slug>/SKILL.md`, and `<slug>` may not be a name the
+    // A task is `<root>/<slug>/SKILL.md`, and `<slug>` may not be a name the
     // tasks system reserves for a container. That last clause is not tidiness —
-    // a row for `<tasksDir>/templates/SKILL.md` is genuinely dangerous:
+    // a row for `<root>/templates/SKILL.md` is genuinely dangerous:
     //
     // - It schedules and fires like any other task, but the reconciler skips
     //   reserved names, so it is the one row with no safety net behind it.
@@ -86,16 +85,16 @@ export class TaskFileWatcher {
     // trade. Such a row is now inert: never re-synced, never retired.
     const isSkillFile = (filePath: string): boolean =>
       path.basename(filePath) === SKILL_FILENAME &&
-      path.dirname(path.dirname(filePath)) === tasksDir &&
-      !RESERVED_TASK_DIRNAMES.includes(path.basename(path.dirname(filePath)));
+      path.dirname(path.dirname(filePath)) === root.dir &&
+      !reservedDirsFor(root.kind).includes(path.basename(path.dirname(filePath)));
     watcher.on('add', (filePath) => {
-      if (isSkillFile(filePath)) void this.handleFileChange(filePath, scope, projectPath, agentId);
+      if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);
     });
     watcher.on('change', (filePath) => {
-      if (isSkillFile(filePath)) void this.handleFileChange(filePath, scope, projectPath, agentId);
+      if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);
     });
     watcher.on('unlink', (filePath) => {
-      if (isSkillFile(filePath)) this.handleFileRemove(filePath);
+      if (isSkillFile(filePath)) this.handleFileRemove(filePath, root);
     });
 
     // Without this handler a watcher failure (e.g. EMFILE when the process runs
@@ -109,7 +108,7 @@ export class TaskFileWatcher {
     // directory it fails to (re-)watch, so this latches per distinct error code
     // rather than a single boolean: a benign EACCES on one path must never
     // suppress the EMFILE storm that follows it. The Set lives in this per-call
-    // closure, so one tasks dir's latch cannot silence a sibling's.
+    // closure, so one root's latch cannot silence a sibling's.
     const seenCodes = new Set<string>();
     watcher.on('error', (err) => {
       const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
@@ -119,10 +118,11 @@ export class TaskFileWatcher {
       // spreads what it is given, and `message`/`stack` are non-enumerable on
       // an Error, so they would vanish (DOR-832).
       logger.error(
-        `[watcher-error] TaskFileWatcher: ${tasksDir} (${scope}) — further ${code} errors from this watcher are suppressed`,
+        `[watcher-error] TaskFileWatcher: ${root.dir} (${root.scope}) — further ${code} errors from this watcher are suppressed`,
         {
-          tasksDir,
-          scope,
+          tasksDir: root.dir,
+          scope: root.scope,
+          kind: root.kind,
           code,
           message: err instanceof Error ? err.message : String(err),
           stack: err instanceof Error ? err.stack : undefined,
@@ -131,16 +131,24 @@ export class TaskFileWatcher {
       );
     });
 
-    this.watchers.set(tasksDir, watcher);
-    logger.info(`[TaskFileWatcher] Watching ${tasksDir} (${scope})`);
+    this.watchers.set(root.dir, watcher);
+    logger.info(`[TaskFileWatcher] Watching ${root.dir} (${root.scope}, ${root.kind})`);
   }
 
-  /** Stop watching a specific directory (e.g., on agent unregister). */
+  /**
+   * Stop watching one root (e.g. on agent unregister).
+   *
+   * The root's identity claims go with it: a root nobody watches must not keep
+   * owning files another root can still see (see {@link ScheduleIdentityRegistry}).
+   *
+   * @param tasksDir - The root's directory.
+   */
   async stopWatching(tasksDir: string): Promise<void> {
     const watcher = this.watchers.get(tasksDir);
     if (watcher) {
       await watcher.close();
       this.watchers.delete(tasksDir);
+      this.identities.releaseRoot(tasksDir);
       logger.info(`[TaskFileWatcher] Stopped watching ${tasksDir}`);
     }
   }
@@ -153,44 +161,76 @@ export class TaskFileWatcher {
     this.watchers.clear();
   }
 
-  private async handleFileChange(
-    filePath: string,
-    scope: 'project' | 'global',
-    projectPath?: string,
-    agentId?: string
-  ): Promise<void> {
+  private async handleFileChange(filePath: string, root: TaskRoot): Promise<void> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const result = parseSkillFile(filePath, content, TaskFrontmatterSchema);
+      const outcome = await readTaskRootFile(filePath, content, root);
 
-      if (!result.ok) {
-        logger.warn(`[TaskFileWatcher] Invalid task file ${filePath}: ${result.error}`);
+      if (outcome.kind === 'invalid') {
+        // The row, if there is one, is left exactly as it was: a typo in
+        // frontmatter must never cost a schedule its id and run history.
+        logger.warn(`[TaskFileWatcher] Invalid file ${filePath}: ${outcome.error}`);
         return;
       }
 
-      const def = { ...result.definition, scope, projectPath };
+      if (outcome.kind === 'ignored') {
+        // A file in a skills root with no `schedule:` block is not a schedule.
+        // If it used to be one, the schedule is over: pause the row so it stops
+        // firing content the file no longer claims. Removing the block is how a
+        // person turns a scheduled task back into a plain skill (spec §2).
+        this.retireIfPresent(filePath);
+        return;
+      }
+
       // The row first, then the job that runs from it. Both, or the cockpit
-      // shows one schedule while a different one fires — which is what a
-      // no-op `onTaskChange` left this doing until the next restart.
-      const task = this.store.upsertFromFile(def, agentId);
+      // shows one schedule while a different one fires — which is what a no-op
+      // `onTaskChange` left this doing until the next restart.
+      const { discovered } = outcome;
+      if (!this.identities.claim(discovered.def.filePath, root.dir, outcome.filePath)) return;
+      const task = this.store.upsertFromFile(discovered.def, root.agentId, {
+        source: 'discovery',
+        problem: discovered.problem,
+      });
       this.registrar.syncTask(task.id);
     } catch (err) {
       logger.error(`[TaskFileWatcher] Failed to process ${filePath}`, err);
     }
   }
 
-  private handleFileRemove(filePath: string): void {
+  /**
+   * Pause the row at this path, if there is one, without complaining when there
+   * is not — the ordinary case for a plain skill that was never scheduled.
+   */
+  private retireIfPresent(filePath: string): void {
+    if (this.store.markRemovedByFilePath(filePath) === 0) return;
+    this.registrar.syncTaskByFilePath(filePath);
+    logger.info(`[TaskFileWatcher] Schedule block removed from ${filePath} — paused`);
+  }
+
+  private handleFileRemove(filePath: string, root: TaskRoot): void {
     const dirName = path.basename(path.dirname(filePath));
     try {
       // Pause by exact path, not by slug: the same slug can exist in the global
-      // tasks directory and in any number of project ones, and only this file
-      // was removed.
-      this.store.markRemovedByFilePath(filePath);
+      // root and in any number of project ones, and only this file was removed.
+      //
+      // **By the path the ROW is keyed on, which is the resolved one.** A row
+      // discovered through a skills root holds its file's real path, and chokidar
+      // reports the path it was watching — the symlink. Pausing by the link
+      // therefore matched nothing, so uninstalling a package left its schedule
+      // firing from a row whose file no longer existed (DOR-1485 review, I3).
+      //
+      // A deleted file cannot be `realpath`-ed, so the mapping recorded when the
+      // file was last seen is what answers here; the raw path is the fallback for
+      // a legacy row, which was never resolved in the first place.
+      const identity = this.identities.resolvedFor(filePath) ?? filePath;
+      this.identities.releasePath(filePath);
+      this.store.markRemovedByFilePath(identity);
       // Paused in the DB is not paused on the clock. Without this the job keeps
       // firing a task whose file — the source of truth for what it even does —
-      // is gone.
-      this.registrar.syncTaskByFilePath(filePath);
-      logger.info(`[TaskFileWatcher] Task file removed: ${dirName}`);
+      // is gone. Keyed on the same identity the pause used, or it looks up a row
+      // that is not the one just paused.
+      this.registrar.syncTaskByFilePath(identity);
+      logger.info(`[TaskFileWatcher] Task file removed: ${dirName} (${root.scope})`);
     } catch (err) {
       // Contained for the same reason the change handler is: this runs inside a
       // chokidar event, where a throw has nowhere to go but the process-wide

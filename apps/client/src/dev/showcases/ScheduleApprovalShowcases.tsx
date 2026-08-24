@@ -50,6 +50,8 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: 'ses-42',
     proposedByAgentPath: '/Users/dev/agents/dorkbot',
     proposedByName: 'DorkBot',
+    origin: null,
+    reasonSource: null,
     nextRuns: [minutesFromLoad(180), minutesFromLoad(1620), minutesFromLoad(3060)],
     ...overrides,
   };
@@ -139,6 +141,49 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard task={proposal()} />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Found in a file, not proposed by anyone — names the file, and DorkOS&rsquo;s own words are
+        not dressed as a quotation
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg">
+          <ScheduleApprovalCard
+            task={proposal({
+              id: 'task-file-origin',
+              origin: 'file',
+              proposedBySessionId: null,
+              proposedByAgentPath: null,
+              proposedByName: null,
+              filePath: '/Users/dev/project/.agents/skills/nightly-sweep/SKILL.md',
+              reason:
+                'DorkOS found this schedule in a file on your computer. Nothing runs on a timer until you say so — read what it does below, then approve it or delete it.',
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Found in a file DorkOS cannot fully read — the complaint names the setting to fix
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg">
+          <ScheduleApprovalCard
+            task={proposal({
+              id: 'task-file-broken',
+              origin: 'file',
+              proposedBySessionId: null,
+              proposedByAgentPath: null,
+              proposedByName: null,
+              cron: '',
+              nextRuns: [],
+              filePath: '/Users/dev/project/.agents/skills/broken-sweep/SKILL.md',
+              reason:
+                'Its "cron" setting is not something DorkOS can read (String must contain at least 1 character(s)).',
+            })}
+          />
         </div>
       </ShowcaseDemo>
 

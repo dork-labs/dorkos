@@ -33,6 +33,8 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
     ...overrides,
   };

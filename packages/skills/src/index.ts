@@ -25,10 +25,14 @@ export type { SkillFrontmatter, SkillKind } from './schema.js';
 export {
   ScheduleBlockSchema,
   TASK_PERMISSION_MODES,
+  describeScheduleBlockProblem,
   hasSchedule,
+  isInvalidSchedule,
+  readScheduleField,
+  scheduleProblem,
   scheduleToFrontmatter,
 } from './schedule-schema.js';
-export type { ScheduleBlock } from './schedule-schema.js';
+export type { InvalidSchedule, ScheduleBlock, ScheduleField } from './schedule-schema.js';
 
 export { TaskFrontmatterSchema, legacyTaskToSchedule } from './task-schema.js';
 export type { TaskFrontmatter } from './task-schema.js';

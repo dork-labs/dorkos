@@ -111,6 +111,8 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
     ...overrides,
   };

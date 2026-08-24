@@ -4,13 +4,14 @@
  * @module features/schedule-approval/ui/ScheduleApprovalCard
  */
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, FileCode2 } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
 import {
   cn,
   permissionModeLabel,
   isBypassPermissionMode,
   formatCompactAge,
+  shortenHomePath,
 } from '@/layers/shared/lib';
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
@@ -124,6 +125,16 @@ export function ScheduleApprovalCard({
 
   const name = task.displayName ?? task.name;
   const proposer = task.proposedByName ?? 'an agent';
+  // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
+  // proposed it, so every part of this card that credits a proposer has to say
+  // something else — the file it came from (ADR `260823-200726`).
+  const foundInFile = task.origin === 'file';
+  // Whether the words in `reason` are DorkOS's own. True for a discovered
+  // schedule, and ALSO for a schedule a person made themselves whose file has
+  // since drifted — that sentence is ours, and quoting it under "Proposed by an
+  // agent" attributed our prose to an agent that never said it (DOR-1485
+  // review, residual 2).
+  const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const bypasses = isBypassPermissionMode(task.permissionMode);
 
@@ -241,20 +252,36 @@ export function ScheduleApprovalCard({
       <div className="flex min-w-0 items-center gap-2">
         {/* Who asked, resolved from the path the proposal was stamped with — the
             same disc, badge and unattributed fallback a capability approval
-            draws, so one agent reads as one agent across both cards. */}
-        <RequestingAgent
-          requestedBy={task.proposedByAgentPath ?? undefined}
-          hasAgentPath={task.proposedByAgentPath !== null}
-          className="shrink-0"
-        />
+            draws, so one agent reads as one agent across both cards.
+            A schedule DorkOS found in a file had no asker at all, so it names
+            the file instead of crediting an agent that does not exist. */}
+        {dorkosWrote && !foundInFile ? null : foundInFile ? (
+          <span
+            data-slot="schedule-file-origin"
+            className="text-muted-foreground min-w-0 text-xs break-all"
+          >
+            <FileCode2 aria-hidden className="mr-1 inline size-3.5 shrink-0 align-text-bottom" />
+            {shortenHomePath(task.filePath)}
+          </span>
+        ) : (
+          <RequestingAgent
+            requestedBy={task.proposedByAgentPath ?? undefined}
+            hasAgentPath={task.proposedByAgentPath !== null}
+            className="shrink-0"
+          />
+        )}
       </div>
 
       <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
 
       <AskCard.Detail className="text-xs">
         <p className="min-w-0 break-words">
-          Proposed by {proposer}
-          {task.proposedBySessionId && sessionTitle && (
+          {foundInFile
+            ? 'Found in a file on this computer'
+            : dorkosWrote
+              ? 'Waiting for you'
+              : `Proposed by ${proposer}`}
+          {!dorkosWrote && task.proposedBySessionId && sessionTitle && (
             <>
               {' · from '}
               <button
@@ -272,13 +299,21 @@ export function ScheduleApprovalCard({
       </AskCard.Detail>
 
       {/* The agent's case, in its own words and in full. Never clamped: this is
-          the whole of what the operator is being asked to weigh. */}
+          the whole of what the operator is being asked to weigh.
+
+          For a schedule found in a file the words are DorkOS's own — why it is
+          waiting, or what is wrong with the file — so they are not dressed as a
+          quotation. Attributing our sentence to a proposer who does not exist
+          would be the small dishonesty that makes a person distrust the rest. */}
       {reason && (
         <p
           data-slot="schedule-reason"
-          className="text-foreground/90 border-border/60 min-w-0 border-l-2 pl-2.5 text-xs break-words italic"
+          className={cn(
+            'text-foreground/90 border-border/60 min-w-0 border-l-2 pl-2.5 text-xs break-words',
+            !dorkosWrote && 'italic'
+          )}
         >
-          &ldquo;{reason}&rdquo;
+          {dorkosWrote ? reason : <>&ldquo;{reason}&rdquo;</>}
         </p>
       )}
 
