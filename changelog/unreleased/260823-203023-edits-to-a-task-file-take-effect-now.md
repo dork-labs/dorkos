@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): an edit to a task file reaches the scheduler, not just the database'
+  - 'fix(server): a cron that never comes round is a task you run by hand, not an error'
 ---
 
 ### Fixed
@@ -11,4 +12,4 @@ covers:
 
 ### Changed
 
-- Saving a task now checks the schedule before anything else, so a schedule DorkOS cannot read is refused on the spot with a message naming what is wrong — instead of being accepted and then quietly never running. That covers times it cannot parse, timezones it does not know, and dates that never come round, like February 30th.
+- Saving a task now checks the schedule before anything else, so a schedule DorkOS cannot read is refused on the spot with a message naming what is wrong — instead of being accepted and then quietly never running. That covers times it cannot read and timezones it does not know. A schedule that simply never comes round is still allowed — that is how you write a task you only ever run by hand.

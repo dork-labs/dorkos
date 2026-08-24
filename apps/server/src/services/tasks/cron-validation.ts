@@ -58,10 +58,22 @@ const HARMLESS_PATTERN = '0 0 * * *';
  * so reading the next run here is what makes this ask the same question the
  * scheduler will, rather than a weaker one.
  *
- * A `null` next run is croner saying the pattern is well-formed and can never
- * come round — `0 0 30 2 *`, February 30th. A schedule that will never fire is
- * not something to accept quietly; leap day (`0 0 29 2 *`) resolves normally and
- * is unaffected.
+ * ## Only a THROW is a problem. A `null` next run is a legitimate schedule
+ *
+ * `nextRun()` is read for the throw, and the throw only. When it returns `null`
+ * without throwing, croner is saying the pattern is perfectly well-formed and
+ * simply never comes round — `0 0 31 2 *`, February 31st.
+ *
+ * That is not a typo to refuse; it is the established way to write a task that
+ * exists but never fires on its own, run only when somebody triggers it by hand.
+ * DorkOS's own browser suite relies on it for exactly that (`apps/e2e`), which is
+ * the proof that people write it deliberately. An earlier version of this module
+ * refused it and broke those tests.
+ *
+ * Registering such a schedule is safe and cheap: croner holds the job with a
+ * `null` next run, never fires it, and spins on nothing (measured at ~3ms of CPU
+ * over 1.5s — a busy loop would be a thousand times that). Leap day
+ * (`0 0 29 2 *`) resolves to a real date and was never affected either way.
  *
  * The `Cron` objects here are transient and never started — constructed with no
  * handler, read, and dropped — so this schedules nothing and cannot disturb a
@@ -69,7 +81,8 @@ const HARMLESS_PATTERN = '0 0 * * *';
  *
  * @param cron - The cron expression, or null/undefined for an on-demand task.
  * @param timezone - IANA timezone the expression is written in; UTC when absent.
- * @returns A sentence naming what is wrong, or `null` when the schedule reads.
+ * @returns A sentence naming what is wrong, or `null` when the schedule reads —
+ *   including when it reads as a schedule that never fires.
  */
 export function describeScheduleProblem(
   cron: string | null | undefined,
@@ -84,15 +97,13 @@ export function describeScheduleProblem(
   }
 
   if (cron) {
-    let nextRun: Date | null;
     try {
-      nextRun = new Cron(cron, { timezone: timezone ?? 'UTC' }).nextRun();
+      // Read for the throw, not for the value: a `null` result is a schedule
+      // that never comes round, which is legal. See the note above.
+      new Cron(cron, { timezone: timezone ?? 'UTC' }).nextRun();
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       return `"${cron}" is not a schedule DorkOS can read (${detail}). Use a cron expression like "0 9 * * *" for every day at 9am.`;
-    }
-    if (!nextRun) {
-      return `"${cron}" is a schedule that never comes round, so this task would never run. Check the day and month.`;
     }
   }
 

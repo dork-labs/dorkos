@@ -808,6 +808,30 @@ describe('TaskSchedulerService', () => {
       expect(service.isRegistered(task.id)).toBe(false);
     });
 
+    // A pattern that parses but never matches is a REGISTERED job, not a refused
+    // one. `apps/e2e` calls this expression `NEVER_FIRES_CRON` and seeds its task
+    // fixtures with it precisely because it renders as a live, enabled schedule
+    // while being unable to spawn a (real, billed) agent on that suite's leg.
+    it('registers a schedule that never comes round, and never fires it', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Manual only', prompt: 'test', cron: '0 0 31 2 *', timezone: 'UTC' })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(true);
+      expect(service.isRegistered(task.id)).toBe(true);
+      // Held by croner with no occurrence to wait for — the honest answer to
+      // "when does this run?" is nothing, not an error.
+      expect(service.getNextRun(task.id)).toBeNull();
+
+      // Nothing dispatches: no run row, and the agent was never asked to work.
+      expect(store.listRuns()).toHaveLength(0);
+      expect(mockAgent.ensureSession).not.toHaveBeenCalled();
+      expect(mockAgent.sendMessage).not.toHaveBeenCalled();
+
+      await service.stop();
+    });
+
     // A task edited from a good cron to a bad one must lose its old job, not
     // keep firing on the schedule nobody asked for any more.
     it('drops the old job when a re-register is refused', () => {

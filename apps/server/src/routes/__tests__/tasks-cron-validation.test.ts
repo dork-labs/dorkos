@@ -149,6 +149,34 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
       expect(writeSkillFile).toHaveBeenCalled();
     });
 
+    // The exact expression `apps/e2e/fixtures/tasks-api.ts` exports as
+    // `NEVER_FIRES_CRON`. It parses, schedules and displays, and can never run —
+    // which is why the browser suite seeds its task fixtures with it: that leg
+    // runs the real Claude Code runtime with firing enabled, so an ordinary cron
+    // would eventually spawn a real, billed agent. Refusing this expression broke
+    // those specs, and would have taken that safeguard with it.
+    it('accepts a schedule that never comes round — the manual-only idiom', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .send(createBody({ cron: '0 0 31 2 *' }));
+
+      expect(res.status).toBe(201);
+      expect(writeSkillFile).toHaveBeenCalled();
+      // The fixture throws unless the new schedule comes back `active`, because
+      // the row has to draw a live toggle for the specs to click. Asserted here
+      // so the whole contract those specs depend on is pinned in one place.
+      expect(res.body.status).toBe('active');
+      expect(res.body.cron).toBe('0 0 31 2 *');
+    });
+
+    it('accepts the February 30th twin too', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .send(createBody({ cron: '0 0 30 2 *' }));
+
+      expect(res.status).toBe(201);
+    });
+
     it('accepts an on-demand task, which has no cron to read', async () => {
       const res = await request(app)
         .post('/api/tasks')
@@ -204,6 +232,15 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
 
       expect(res.status).toBe(200);
       expect(store.getTask(task.id)?.cron).toBe('0 2 * * *');
+    });
+
+    it('accepts an edit into a schedule that never comes round', async () => {
+      const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
+
+      const res = await request(app).patch(`/api/tasks/${task.id}`).send({ cron: '0 0 31 2 *' });
+
+      expect(res.status).toBe(200);
+      expect(store.getTask(task.id)?.cron).toBe('0 0 31 2 *');
     });
 
     // The pair that only a combined check catches: each half is fine on its own,

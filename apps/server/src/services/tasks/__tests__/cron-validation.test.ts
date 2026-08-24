@@ -22,6 +22,12 @@ describe('describeScheduleProblem', () => {
         'America/Argentina/Buenos_Aires',
       ],
       ['leap day, which does come round', '0 0 29 2 *', 'UTC'],
+      // A well-formed pattern that never matches is how you write a task that
+      // only ever runs when somebody triggers it by hand. `apps/e2e` names this
+      // exact expression `NEVER_FIRES_CRON` and builds its task fixtures on it.
+      ['February 31st — the never-fire idiom', '0 0 31 2 *', 'UTC'],
+      ['February 30th, the same idiom', '0 0 30 2 *', 'UTC'],
+      ['a never-fire cron with no timezone given', '0 0 31 2 *', undefined],
     ])('%s', (_label, cron, timezone) => {
       expect(describeScheduleProblem(cron, timezone)).toBeNull();
     });
@@ -49,10 +55,6 @@ describe('describeScheduleProblem', () => {
       expect(describeScheduleProblem('99 * * * *', null)).toContain('99 * * * *');
     });
 
-    it('a schedule that can never come round', () => {
-      expect(describeScheduleProblem('0 0 30 2 *', 'UTC')).toContain('never comes round');
-    });
-
     it('a timezone that does not exist', () => {
       const problem = describeScheduleProblem('0 9 * * *', 'Mars/Phobos');
       expect(problem).toContain('Mars/Phobos');
@@ -70,12 +72,21 @@ describe('describeScheduleProblem', () => {
   // which is the only judgement that matters; this asserts the validator gives
   // the same verdict for every case above, so a croner upgrade that changes what
   // is acceptable cannot leave the API and the scheduler disagreeing.
+  //
+  // The shared verdict is "does croner THROW", not "does it produce a next run".
+  // Those two came apart on a schedule that never fires: croner builds and holds
+  // it happily and simply reports `null` forever, and refusing it broke the
+  // browser suite, whose task fixtures are built on exactly that (DOR e2e
+  // `NEVER_FIRES_CRON`). Keying this guard on the throw is what keeps the two
+  // layers agreeing about a case that is legal on both sides.
   describe('agrees with what croner will actually accept', () => {
     const cases: Array<[string | null, string | null]> = [
       ['0 9 * * *', null],
       ['30 0 9 * * *', null],
       ['*/10 * * * *', 'Europe/London'],
       ['0 0 29 2 *', 'UTC'],
+      ['0 0 31 2 *', 'UTC'],
+      ['0 0 30 2 *', null],
       ['banana', null],
       ['99 * * * *', null],
       ['0 9 * * *', 'Mars/Phobos'],
@@ -84,19 +95,35 @@ describe('describeScheduleProblem', () => {
     it.each(cases)('cron %s / timezone %s', (cron, timezone) => {
       const rejected = describeScheduleProblem(cron, timezone) !== null;
 
-      let schedulable: boolean;
+      let schedulerRefuses: boolean;
       let job: Cron | undefined;
       try {
-        // The same construction the scheduler performs, handler and all.
+        // The same construction the scheduler performs, handler and all. With a
+        // handler croner schedules immediately, so a bad timezone throws here
+        // rather than on a later read.
         job = new Cron(cron!, { protect: true, timezone: timezone ?? undefined }, () => {});
-        schedulable = job.nextRun() !== null;
+        job.nextRun();
+        schedulerRefuses = false;
       } catch {
-        schedulable = false;
+        schedulerRefuses = true;
       } finally {
         job?.stop();
       }
 
-      expect(rejected).toBe(!schedulable);
+      expect(rejected).toBe(schedulerRefuses);
+    });
+
+    // Stated separately because it is the distinction the guard above turns on:
+    // the scheduler really does accept a never-firing pattern, and really does
+    // report it as having no next run.
+    it('holds a never-firing schedule without refusing it', () => {
+      const job = new Cron('0 0 31 2 *', { protect: true, timezone: 'UTC' }, () => {});
+      try {
+        expect(job.nextRun()).toBeNull();
+        expect(describeScheduleProblem('0 0 31 2 *', 'UTC')).toBeNull();
+      } finally {
+        job.stop();
+      }
     });
   });
 });
