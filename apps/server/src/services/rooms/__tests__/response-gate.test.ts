@@ -432,6 +432,21 @@ describe('T8 — a gate that throws runs the turn (fail open)', () => {
   });
 });
 
+/**
+ * **What these two pin, and what they do NOT.**
+ *
+ * They pin behaviour: a burst that arrives while an agent is working is parked,
+ * re-judged when the claim releases, and excused exactly once; and a member that
+ * has left writes no refusal. All of that is worth having.
+ *
+ * They do **not** exercise the S3/S4 pre-filter branches in `gateBatch`, and it
+ * would be dishonest to file them as coverage for those. Both branches are
+ * shadowed upstream — a parked collection is given no deadline at `collectOne`
+ * and never reaches a sweep, and a departed member is never selected, so no
+ * collection exists. Deleting both guards leaves every test in this repo green.
+ * `routeCollection`'s own TSDoc carries the same statement and names S3's one
+ * reachable shape: `busyWith` flipping true between the arming and the sweep.
+ */
 describe('T9 — busy is a park, never a skip', () => {
   it('answers an overheard message once the running turn releases', async () => {
     const runner = gatedRunner();
@@ -454,10 +469,12 @@ describe('T9 — busy is a park, never a skip', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(runner.holdsFor(ana)).toBe(1);
 
-    // A message Ana only overhears, arriving while she works. S3 must NOT gate
-    // it: `claimCollected` parks it, and RP8 re-judges it when the claim
-    // releases — against the room as it is THEN. Skipping it here would settle
-    // the collection `refused` and the message would never be re-weighed.
+    // A message Ana only overhears, arriving while she works. It must not be
+    // gated now: it is parked, and RP8 re-judges it when the claim releases —
+    // against the room as it is THEN. Skipping it here would settle the
+    // collection `refused` and the message would never be re-weighed. (The park
+    // happens at `collectOne`, before `gateBatch` is reached at all; S3 is the
+    // belt to that pair of braces, not what this case measures.)
     harness.service.post(room.id, { authorId: harness.human, text: '@nova ship the release' });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(recentRefusals().some((entry) => entry.reason === 'not_addressed_to_me')).toBe(false);
@@ -479,9 +496,10 @@ describe('S4 — a room or roster that moved on writes no refusal', () => {
     await engageAna(w);
     w.service.removeMember(w.room.id, w.human, w.ana);
     await say(w, '@nova ship the release');
-    // Ana is gone. The claim tail settles a departed member as `left`, in its own
-    // words; a `not_addressed_to_me` line here would report a conduct decision
-    // that nobody made and would pollute the one signal §14 tunes against.
+    // Ana is gone, so she is never SELECTED and no collection is opened for her
+    // — which is why S4 is not what makes this pass. What it pins is the outcome
+    // that matters either way: no `not_addressed_to_me` line reporting a conduct
+    // decision nobody made, in the one signal §14 tunes against.
     expect(recentRefusals().some((entry) => entry.reason === 'not_addressed_to_me')).toBe(false);
     expect(turnsFor(w, w.ana)).toBe(0);
   });
@@ -504,8 +522,12 @@ describe('R2 — being named in a question survives one hop', () => {
     // agent-authored answer to a question Nova did not write — which is R2's
     // shape exactly, and would have excused Nova from a question that named her.
     await say(w, '@ana @nova what do you think?');
-    expect(turnsFor(w, w.nova)).toBeGreaterThanOrEqual(1);
-    expect(turnsFor(w, w.ana)).toBeGreaterThanOrEqual(1);
+    // Exactly one apiece. The question is one collection per agent, and each
+    // one's reply is excused for the other by R3 rather than buying a second
+    // turn — so a 2 here would mean the follow-up hop ran, which is a different
+    // bug from the one this case is about.
+    expect(turnsFor(w, w.nova)).toBe(1);
+    expect(turnsFor(w, w.ana)).toBe(1);
     const skips = recentRefusals().filter(
       (entry) => entry.reason === 'not_addressed_to_me' && entry.authorId === w.nova
     );

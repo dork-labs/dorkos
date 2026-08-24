@@ -1098,6 +1098,26 @@ export class RoomTriggerDispatcher {
    * replacement: `claimCollected` stays correct when called with a batch that
    * was never gated, which is exactly what `responseGate: 'off'` produces.
    *
+   * **The busy and gone branches are DEFENSIVE, and no test reaches them.** Say
+   * that plainly rather than leaving the next reader to infer coverage from the
+   * tests that surround them, because both are shadowed by machinery upstream:
+   *
+   * - A collection opened behind a live claim is parked at the `collectOne`
+   *   seam and given no deadline at all, so it is never swept and never arrives
+   *   here. Its one REACHABLE shape is a race — a window that opened while the
+   *   agent was free, and something claiming that agent (an aside turn, or a
+   *   burst in another room sharing its checkout) between the arming and the
+   *   sweep firing. That is the same race `claimCollected` re-asks for, and its
+   *   comment there says so.
+   * - A member that has left the room is never SELECTED, so no collection
+   *   exists to judge; and archiving through the service calls `abandonHolds`,
+   *   which drops every pending collection first.
+   *
+   * They stay because the cost is two comparisons and the failure they prevent
+   * is a refusal line about a conduct decision nobody made — which would be
+   * indistinguishable, in the ledger §14 tunes against, from a real mute. But
+   * they are not load-bearing, and deleting them would leave every test green.
+   *
    * **Judging is guarded and accounting is not**, deliberately. The `try` below
    * covers exactly the part that can have a bug in it — the rules, and the two
    * store reads that feed them — and a throw there falls open to a turn. It does
