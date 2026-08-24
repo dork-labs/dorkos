@@ -43,6 +43,16 @@ describe('ComparisonAudience', () => {
     expect(screen.getByText('you want the thing it is good at')).toBeTruthy();
   });
 
+  it('heads the DorkOS column on a runtime page with a phrase the reasons finish', () => {
+    render(<ComparisonAudience competitor={entry({ framing: 'runtime', name: 'Claude Code' })} />);
+    // The column lists bare reasons, so a heading carrying a pronoun ("DorkOS
+    // adds it when …") leaves "it" pointing at nothing on the page.
+    const heading = screen.getByText('Add DorkOS when');
+    expect(heading).toBeTruthy();
+    expect(heading.textContent).not.toMatch(/\bit\b/);
+    expect(screen.getByText(`you want ${COMPARISON_DIMENSIONS[0].wantPhrase}`)).toBeTruthy();
+  });
+
   it('renders nothing for a product that has shut down', () => {
     const { container } = render(
       <ComparisonAudience competitor={entry({ framing: 'discontinued', theirStrengths: [] })} />
