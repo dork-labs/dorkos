@@ -492,15 +492,28 @@ export class TaskStore {
    * a status added later is protected by default and has to be opted IN to
    * deletion.
    *
+   * ## `retentionCount` counts FINISHED runs
+   *
+   * The keeper query is restricted the same way, so a live run never occupies a
+   * keeper slot. Two things go wrong when it can. `created_at` is an ISO string
+   * at millisecond resolution with no tiebreaker, so runs written in the same
+   * millisecond order arbitrarily — a live run can win a slot on one pass and
+   * lose it on the next, which makes how much history survives depend on a
+   * coin toss. And a slot spent on a run that is protected anyway is a slot not
+   * spent on history, so "keep the last 100" silently kept 99 whenever a run
+   * was in flight.
+   *
    * @param taskId - The task whose history is being trimmed.
-   * @param retentionCount - How many of the newest runs to keep.
+   * @param retentionCount - How many of the newest FINISHED runs to keep.
    * @returns How many rows were deleted.
    */
   pruneRuns(taskId: string, retentionCount: number): number {
     const keepers = this.db
       .select({ id: pulseRuns.id })
       .from(pulseRuns)
-      .where(eq(pulseRuns.scheduleId, taskId))
+      .where(
+        and(eq(pulseRuns.scheduleId, taskId), inArray(pulseRuns.status, FINISHED_RUN_STATUSES))
+      )
       .orderBy(desc(pulseRuns.createdAt))
       .limit(retentionCount)
       .all();

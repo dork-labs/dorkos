@@ -221,17 +221,19 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
             {firstLine(run.outputSummary)}
           </span>
         )}
-        {run.status === 'failed' && run.error && (
-          <span className="text-destructive truncate" title={run.error}>
-            {firstLine(run.error)}
-          </span>
-        )}
-        {/* A skipped run carries its reason in the same column, in muted text
-            rather than the failure red: DorkOS being busy is not a fault of the
-            task, and the row is the only place a person ever learns the
-            occurrence was passed over (DOR-1482). */}
-        {run.status === 'skipped' && run.error && (
-          <span className="text-muted-foreground truncate" title={run.error}>
+        {/* Two runs carry a line of explanation, and they read differently. A
+            failure is the task's own, in the failure red. A skipped run is
+            DorkOS saying it was too busy to start this one — not the task's
+            fault, so muted — and this row is the only place a person ever
+            learns the occurrence was passed over (DOR-1482). */}
+        {(run.status === 'failed' || run.status === 'skipped') && run.error && (
+          <span
+            className={cn(
+              'truncate',
+              run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'
+            )}
+            title={run.error}
+          >
             {firstLine(run.error)}
           </span>
         )}

@@ -490,6 +490,35 @@ describe('TaskStore', () => {
       expect(store.updateRun(live.id, { status: 'completed' })!.status).toBe('completed');
     });
 
+    it('spends every keeper slot on history, never on the run in flight', () => {
+      // A run that just started is the NEWEST row in the table, so it used to
+      // win a keeper slot — and a slot spent on a run that the delete predicate
+      // protects anyway is a slot not spent on history. "Keep the last 2" kept
+      // 1 whenever a run was in flight. Timestamps are set explicitly because
+      // `created_at` is an ISO string at millisecond resolution with no
+      // tiebreaker: rows written in the same millisecond order arbitrarily,
+      // which is what made this flake rather than fail outright.
+      const taskId = createTestTask();
+      const finished = [finishedRun(taskId), finishedRun(taskId), finishedRun(taskId)];
+      finished.forEach((id, i) => {
+        db.update(pulseRuns)
+          .set({ createdAt: `2026-08-24T12:00:0${i}.000Z` })
+          .where(eq(pulseRuns.id, id))
+          .run();
+      });
+      const live = store.createRun(taskId, 'scheduled');
+      db.update(pulseRuns)
+        .set({ createdAt: '2026-08-24T12:00:09.000Z' }) // newest of all
+        .where(eq(pulseRuns.id, live.id))
+        .run();
+
+      // Only the oldest finished run goes: the other two are the retained
+      // history, and the live run was never a candidate for either list.
+      expect(store.pruneRuns(taskId, 2)).toBe(1);
+      expect(store.getRun(live.id)!.status).toBe('running');
+      expect(finished.filter((id) => store.getRun(id) !== null)).toHaveLength(2);
+    });
+
     it('prunes a skipped run like any other finished one', () => {
       const taskId = createTestTask();
       store.claimScheduledRun(taskId, 1_700_000_000_000, {
