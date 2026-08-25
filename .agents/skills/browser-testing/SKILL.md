@@ -137,13 +137,15 @@ Run by tag: `npx playwright test --grep @smoke`
 
 ## 7. Manifest Management
 
-`apps/e2e/manifest.json` is automatically updated by the custom reporter after each run.
+`apps/e2e/manifest.json` is automatically updated by the custom reporter (`apps/e2e/reporters/manifest-reporter.ts`) after each run.
 
 - Test entries keyed by spec filename (e.g., `send-message`)
-- Feature derived from first directory in test path (e.g., `chat`)
+- `specFile`/`feature` refresh from every run that saw the file, so a spec that moves directories is never left pointing at a path that no longer exists
 - Run history capped at 100 entries
 - `/browsertest report` reads this file for health dashboards
 - `/browsertest:maintain` uses `relatedCode` + `lastRun` for stale detection
+
+**`description` is derived, not curated — never hand-edit it.** It is a join of the file's own test titles, kept in sync automatically: **never** touched by a filtered run (`-g`, `--shard`, `.only`), because that view is partial and would collapse the description to whatever titles the filter happened to match. A full, unfiltered run only refreshes it when `E2E_REFRESH_MANIFEST=1` is set (the `e2e` package script sets it; CI's sharded runs never qualify) — so renaming a test's title is enough, but only a run that both opts in and sees the whole file will pick the rename up. Curated, hand-written context — selectors, timing quirks, gotchas specific to a test — belongs in `explorationNotes`, which the reporter never touches.
 
 ## 8. DorkOS-Specific Patterns
 
