@@ -67,9 +67,9 @@ function validShapeManifest(): Record<string, unknown> {
   };
 }
 
-describe('ShapeManifestSchema construction (Zod 3 union-member constraint)', () => {
-  // If ShapeManifestSchema were a ZodEffects (e.g. from attaching .superRefine to
-  // the member), z.discriminatedUnion would throw at module load and this import
+describe('ShapeManifestSchema construction (union-member constraint)', () => {
+  // If ShapeManifestSchema were a refined wrapper (e.g. from attaching .superRefine
+  // to the member), z.discriminatedUnion would throw at module load and this import
   // would fail. A reachable schema object here proves construction did not throw
   // — the exact failure the plain-member + top-level-superRefine placement avoids.
   it('constructs the union with the shape member without throwing', () => {

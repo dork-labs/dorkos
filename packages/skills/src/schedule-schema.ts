@@ -55,8 +55,8 @@ const DEFAULT_PERMISSIONS = 'acceptEdits';
  * asks whether either one is *meaningful*. Cron semantics are croner's
  * question and are answered at the server seam
  * (`apps/server/src/services/tasks/cron-validation.ts`), which is where croner
- * lives: this package is on zod v3, ships to the browser through the barrel,
- * and must stay dependency-light.
+ * lives: this package ships to the browser through the barrel and must stay
+ * dependency-light.
  */
 export const ScheduleBlockSchema = z.object({
   /**
