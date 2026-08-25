@@ -44,15 +44,19 @@ export async function openFromCommandPalette(page: Page, item: string): Promise<
 }
 
 /**
- * The phrase ⌘K's message-search hand-off row draws, in both its wordings —
- * it says "all messages" under a scope chip (`model/search-surface`).
+ * The identity ⌘K's message-search hand-off row gives cmdk.
  *
- * A regex rather than a test id because cmdk puts nothing on an item a spec
- * could aim at: `value` is the row's identity INSIDE cmdk and never reaches the
- * DOM. This is the same match the client's own test uses, so the two go stale
- * together rather than one of them passing on a row that no longer exists.
+ * `PaletteSearchHandoffRow` sets `value="search-messages-handoff"` — a fixed
+ * string rather than the query, so the highlight survives typing — and cmdk
+ * writes that verbatim to the DOM as `data-value` (trimmed, never lowercased:
+ * `setAttribute(T, f)` in cmdk 1.1.1, where `T` is `"data-value"`).
+ *
+ * So the row is addressable by identity rather than by its copy. That matters
+ * beyond tidiness: the row draws the typed query back at you, so a text match
+ * would also claim a room genuinely titled "Search messages for fun", and would
+ * go stale the next time the sentence is reworded.
  */
-export const SEARCH_HANDOFF_ROW = /Search (all )?messages for/;
+const HANDOFF_VALUE = 'search-messages-handoff';
 
 /** The parts of the palette a spec drives, all scoped to its cmdk root. */
 export interface CommandPalette {
@@ -83,17 +87,18 @@ export interface CommandPalette {
    * ⌘K's last row — the hand-off to the surface that searches what was SAID
    * rather than what things are called (P3 AC-6, DOR-685).
    *
-   * Matched by {@link SEARCH_HANDOFF_ROW}. It draws the typed query back at
-   * you, so it matches whatever text a spec is filtering rows on — which is
-   * exactly why {@link CommandPalette.results} exists.
+   * By its cmdk identity, not its wording: see {@link HANDOFF_VALUE}.
    */
   searchHandoff: Locator;
   /**
    * The rows the ranking produced — every option except the hand-off.
    *
-   * Any count of what ⌘K FOUND belongs here rather than on `options`: the
-   * hand-off is not a result, it carries the query, and so it silently pads
-   * every `filter({ hasText })` count by one.
+   * Anything a spec says about what ⌘K FOUND belongs here rather than on
+   * `options`, whether it counts rows or takes the `.first()` of them. The
+   * hand-off is not a result and it carries the query, so on `options` it pads
+   * every `filter({ hasText })` count by one and can satisfy a `.first()`
+   * anchor on its own — which would let "this query DID answer" pass on a run
+   * where nothing was actually found.
    */
   results: Locator;
 }
@@ -115,8 +120,14 @@ function commandPalette(page: Page): CommandPalette {
     options,
     chip: page.getByTestId('palette-scope-chip'),
     archivedMarks: root.getByTestId('palette-archived-mark'),
-    searchHandoff: options.filter({ hasText: SEARCH_HANDOFF_ROW }),
-    results: options.filter({ hasNotText: SEARCH_HANDOFF_ROW }),
+    searchHandoff: options.and(page.locator(`[data-value="${HANDOFF_VALUE}"]`)),
+    // Intersected with a `:not`, NOT `filter({ hasNot })`: `hasNot` asks whether
+    // an element CONTAINS a match, and the attribute is on the hand-off row
+    // itself rather than on anything inside it — so `hasNot` would keep the row
+    // it was written to drop. `and` narrows the same elements `options` already
+    // matched, so `results` stays the accessibility tree's list minus one row
+    // rather than a second, differently-computed list.
+    results: options.and(page.locator(`*:not([data-value="${HANDOFF_VALUE}"])`)),
   };
 }
 

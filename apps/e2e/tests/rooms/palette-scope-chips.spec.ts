@@ -47,8 +47,13 @@ test.describe('Scope chips in the command palette @smoke', () => {
 
     // Before: the agent is a row in the list, which is the control for every
     // "it is gone" below — without it, an empty list would satisfy them all.
+    //
+    // From `results`, so the control is a real one: ⌘K's hand-off row draws the
+    // typed query, which here IS the agent's name, so on `options` this would
+    // also match the hand-off and the control would hold even if the agent's
+    // own row had gone missing (DOR-685).
     await palette.input.fill(`@${agent.name}`);
-    await expect(palette.options.filter({ hasText: agent.name }).first()).toBeVisible({
+    await expect(palette.results.filter({ hasText: agent.name }).first()).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
 
@@ -80,6 +85,12 @@ test.describe('Scope chips in the command palette @smoke', () => {
     //    Counted rather than "the agent row is absent": the status row names the
     //    agent too, so a text filter would match it and pass for the wrong
     //    reason.
+    //
+    //    Over `options` rather than `results`, deliberately — this one is an
+    //    absence claim, so counting the hand-off row IN is the stronger version.
+    //    Picking up a chip clears the query (`applyScope`), and an empty query
+    //    means no hand-off, so the honest total here is 1. If that row ever
+    //    turned up under a chip, this line should be the one that says so.
     await expect(palette.options).toHaveCount(1);
     await expect(palette.options.first()).toHaveText(`No conversations with ${agent.name} yet.`);
 

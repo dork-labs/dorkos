@@ -106,10 +106,14 @@ test.describe('Archived rows in the command palette @smoke', () => {
 
     // The positive anchor: this query DID answer, and what it answered with is
     // the closed channel — so everything below is about the hand-off rather
-    // than about a palette that never rendered. Scoped to this row rather than
-    // counted across the palette: the word cannot appear in this run's slug, so
-    // no neighbour's room can satisfy it.
-    const archivedRow = palette.options.filter({ hasText: slug }).first();
+    // than about a palette that never rendered.
+    //
+    // Taken from `results` rather than `options`, and that is the difference
+    // between an anchor and a tautology: the input holds the bare slug, so the
+    // hand-off row draws the slug too. On `options` this `.first()` would match
+    // the hand-off the day the channel stopped being findable, and the anchor
+    // would go on passing while the thing it anchors had vanished.
+    const archivedRow = palette.results.filter({ hasText: slug }).first();
     await expect(archivedRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(archivedRow).toContainText('Archived');
 
