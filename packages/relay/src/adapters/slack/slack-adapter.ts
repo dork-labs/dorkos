@@ -60,7 +60,7 @@ const MAX_ERROR_UNWRAP_DEPTH = 5;
  * @param depth - Internal recursion counter; callers should omit it.
  * @returns The platform error if one is nested anywhere, else `null`.
  */
-function findPlatformError(error: unknown, depth = 0): WebAPIPlatformError | null {
+export function findPlatformError(error: unknown, depth = 0): WebAPIPlatformError | null {
   if (error instanceof WebAPIPlatformError) return error;
   if (depth >= MAX_ERROR_UNWRAP_DEPTH || typeof error !== 'object' || error === null) return null;
 
@@ -76,6 +76,43 @@ function findPlatformError(error: unknown, depth = 0): WebAPIPlatformError | nul
     if (found) return found;
   }
   return null;
+}
+
+/** What {@link classifySlackError} decided about an error Bolt passed to `app.error`. */
+export interface SlackErrorClassification {
+  /**
+   * The Slack error string that drove the decision — a nested platform
+   * error's `data.error` first, then a duck-typed `data.error`, then Bolt's
+   * own `.code`. `undefined` when none of those were present.
+   */
+  errorCode: string | undefined;
+  /** Whether {@link errorCode} names a fatal install problem (see {@link FATAL_SLACK_ERRORS}). */
+  fatal: boolean;
+}
+
+/**
+ * Classify an error Bolt passed to `app.error` as fatal or recoverable.
+ *
+ * The string that names a fatal install problem ('invalid_auth',
+ * 'token_revoked', …) is Slack's *platform* error, which lives in
+ * `data.error` — usually nested inside a Bolt wrapper, hence
+ * {@link findPlatformError}. A platform error also carries a `code`, but it
+ * is always the SDK-level constant 'slack_webapi_platform_error', so it can
+ * never be the fatal string and must not be consulted first (it used to be,
+ * which is why no fatal error ever matched — DOR-1528). Only when no
+ * platform error is nested anywhere do we fall back to a duck-typed
+ * `data.error` and then to Bolt's own `code`.
+ *
+ * @param error - The error Bolt passed to `app.error`.
+ */
+export function classifySlackError(error: unknown): SlackErrorClassification {
+  const platformError = findPlatformError(error);
+  const errorCode =
+    platformError?.data.error ??
+    (error as { data?: { error?: string } }).data?.error ??
+    (error as { code?: string }).code;
+
+  return { errorCode, fatal: Boolean(errorCode && FATAL_SLACK_ERRORS.has(errorCode)) };
 }
 
 /**
@@ -256,22 +293,9 @@ export class SlackAdapter extends BaseRelayAdapter {
     // Surface unhandled listener errors through adapter status.
     // Fatal auth errors stop the adapter to prevent retry loops.
     app.error(async (error) => {
-      // The string that names a fatal install problem ('invalid_auth',
-      // 'token_revoked', …) is Slack's *platform* error, which lives in
-      // `data.error` — usually nested inside a Bolt wrapper, hence the walk in
-      // `findPlatformError`. A platform error also carries a `code`, but it is
-      // always the SDK-level constant 'slack_webapi_platform_error', so it can
-      // never be the fatal string and must not be consulted first (it used to
-      // be, which is why no fatal error ever matched — DOR-1528). Only when no
-      // platform error is nested anywhere do we fall back to a duck-typed
-      // `data.error` and then to Bolt's own `code`.
-      const platformError = findPlatformError(error);
-      const errorCode =
-        platformError?.data.error ??
-        (error as { data?: { error?: string } }).data?.error ??
-        (error as { code?: string }).code;
+      const { errorCode, fatal } = classifySlackError(error);
 
-      if (errorCode && FATAL_SLACK_ERRORS.has(errorCode)) {
+      if (fatal) {
         this.logger.error('fatal Slack error — stopping adapter', { errorCode });
         // One fatal error is enough: with a dead token every subsequent event
         // fails the same way, and each would otherwise queue its own teardown.
