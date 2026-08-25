@@ -54,7 +54,7 @@
     "@electron/rebuild": "^4.2.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "^41.2.1",
+    "electron": "^41.10.3",
     "electron-builder": "^26.15.7",
     "electron-builder-squirrel-windows": "26.15.7",
     "electron-vite": "^5.0.0",
