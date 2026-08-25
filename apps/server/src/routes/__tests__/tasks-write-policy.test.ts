@@ -466,54 +466,110 @@ describe('operator-only task fields on the REST routes', () => {
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
 
-    describe('the DOR-474 cookie bar stops short of here, and that is the decision', () => {
-      /** What `dorkos task create|update` presents, and all it can present. */
-      const CLI_OPERATOR = { userId: 'user_cli', credential: 'api-key' as const };
+    describe('an API key is not a person, so it cannot self-approve a task (DOR-1569)', () => {
+      /**
+       * What an agent's own `curl` presents once it reads the operator's per-user
+       * API key off `~/.dork` — and, identically, what `dorkos task create|update`
+       * presents from the operator's terminal. Under login-on `sessionGate`
+       * accepts an API key as the same identity a browser cookie proves (DOR-474),
+       * so these two are byte-for-byte indistinguishable and MUST get the same
+       * answer: the untrusted one.
+       */
+      const API_KEY_CALLER = { userId: 'user_cli', credential: 'api-key' as const };
 
-      // DOR-474 put a session-cookie bar on answering an approval, and on the
-      // trusted-caller marker that skips the approval entirely. These routes used
-      // to ask for that marker, so they inherited it — and inheriting it here is a
-      // regression, not a hardening, which is why these two cases exist.
+      // The hole this closes: `clearsTheAgentBar` used to rest on
+      // `resolveDecisionAuthority` alone, which an API key clears exactly as a
+      // cookie does. An agent with a shell reads the operator's key off disk,
+      // drops its `X-DorkOS-Agent` header, and is trusted to un-clamp
+      // `bypassPermissions` and arm a live cron task with no approval. So the task
+      // route now composes the SAME second bar the approval, config, and
+      // extension-approval routes do (`requireOperatorCookieUnderLogin`): under
+      // login-on only a session cookie clears the bar; an API key is treated as a
+      // proposer. This is the DOR-553 question, answered for tasks by DOR-1569.
       //
-      // `dorkos task create|update` authenticates with a per-user API key and has
-      // no cookie by design (`packages/cli/src/lib/api-client.ts`). Under the
-      // inherited bar, PATCH hard-403'd with no approval path — a lockout — and
-      // POST silently parked every task at `pending_approval` while the CLI printed
-      // "Created task <name>" and nothing else, so an operator's cron job would be
-      // reported as created and never fire.
-      //
-      // Whether an agent holding that key should schedule unattended work is a real
-      // question, and `services/tasks/task-write-policy.ts` asks to be reconsidered
-      // deliberately rather than swept into an adjacent fix. It is DOR-553's.
+      // It costs the operator's own login-on CLI an extra cockpit approval, which
+      // is the deliberate, conservative trade in a security fix — never a live
+      // full-power cron nobody looked at. Under the default login-OFF posture this
+      // bar is a no-op and the CLI is unchanged; the residual there is the
+      // documented DOR-505 one, closed only by turning login on.
 
-      it('still lets an API key set an operator-only field on PATCH', async () => {
-        signedInUser = CLI_OPERATOR;
+      it('is refused an operator-only field on PATCH, exactly as a named agent is', async () => {
+        signedInUser = API_KEY_CALLER;
         const res = await request(app)
           .patch(`/api/tasks/${existing.id}`)
           .send({ permissionMode: 'bypassPermissions' });
 
-        expect(res.status).toBe(200);
-        expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_only_task_field');
+        expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
       });
 
-      it('still lets an API key create a LIVE task, unparked, on POST', async () => {
-        // The parking half of the same predicate, and the one a status
-        // assertion alone would miss: a regression here refuses nothing. It answers
-        // 201, says "created", and quietly parks the task so it never runs.
-        signedInUser = CLI_OPERATOR;
+      it('cannot approve a parked task by setting status through an API key', async () => {
+        signedInUser = API_KEY_CALLER;
+        const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+        const res = await request(app)
+          .patch(`/api/tasks/${parked.id}`)
+          .send({ status: 'active', enabled: true });
+
+        expect(res.status).toBe(403);
+        expect(res.body.fields).toEqual(['status']);
+        expect(store.getTask(parked.id)!.status).toBe('pending_approval');
+      });
+
+      it('is refused outright when it names bypassPermissions on POST', async () => {
+        // The strongest outcome, and the most direct read of the exploit: naming
+        // an operator-only field un-clamped a live cron before. Now the whole
+        // create is refused at the field gate and nothing is written.
+        signedInUser = API_KEY_CALLER;
+        const before = store.getTasks().length;
         const res = await request(app).post('/api/tasks').send({
-          name: 'from-the-terminal',
-          description: 'made by dorkos task create',
+          name: 'from-a-stolen-key',
+          description: 'fires later, unattended',
           prompt: 'do a thing',
           cron: '0 3 * * *',
           target: 'global',
+          permissionMode: 'bypassPermissions',
+        });
+
+        expect(res.status).toBe(403);
+        expect(res.body.fields).toEqual(['permissionMode']);
+        expect(store.getTasks()).toHaveLength(before);
+      });
+
+      it('creates a task that PARKS, unarmed, when it omits the power field', async () => {
+        // The parking half, and the one a status assertion alone would miss: the
+        // hole answered 201 "created" and armed the cron. Now an API-key caller
+        // that names no operator-only field still cannot arm its own schedule — it
+        // parks at `pending_approval` for a person to see, and is never handed to
+        // the scheduler.
+        signedInUser = API_KEY_CALLER;
+        const res = await request(app).post('/api/tasks').send({
+          name: 'from-a-stolen-key',
+          description: 'fires later, unattended',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+          // An untrusted proposer must make its case (DOR-1394); without it the
+          // create is refused a step earlier, on the missing reason.
+          reason: 'The overnight run needs to happen.',
         });
 
         expect(res.status).toBe(201);
-        expect(res.body.status, 'a task the operator scheduled must actually be armed').toBe(
-          'active'
-        );
-        expect(scheduler.registerTask).toHaveBeenCalled();
+        expect(res.body.status).toBe('pending_approval');
+
+        const created = store.getTasks().find((t) => t.name === 'from-a-stolen-key')!;
+        expect(created.status).toBe('pending_approval');
+        expect(created.permissionMode).not.toBe('bypassPermissions');
+        expect(scheduler.registerTask).not.toHaveBeenCalled();
+      });
+
+      it('cannot trigger a run on demand through an API key', async () => {
+        signedInUser = API_KEY_CALLER;
+        const res = await request(app).post(`/api/tasks/${existing.id}/trigger`);
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_only_task_field');
+        expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
       });
     });
   });
