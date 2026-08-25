@@ -23,7 +23,7 @@
  *
  * @module server/services/search/row-frontier
  */
-import { searchSources, eq, sql, type Db } from '@dorkos/db';
+import { messages, searchSources, and, eq, sql, type Db } from '@dorkos/db';
 import {
   deleteContainerMessages,
   insertMessages,
@@ -93,6 +93,83 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSwe
   sweep.pruned = pruneVanished(db, source.id, live, state.keys());
   stampAttempt(db, source.id, at);
   return sweep;
+}
+
+/**
+ * Bring ONE container of a row-backed source up to date, now.
+ *
+ * The write-through path (spec §5, Amendment 6): DorkOS owns the room log's
+ * write, so it knows the instant a container has gained something and does not
+ * have to wait up to five minutes for the sweep to notice. Everything else about
+ * the pass is identical — the same resume rule, the same rebuild detection, the
+ * same watermark — because it IS the same function; only the container list and
+ * the prune are skipped, and both of those are the parts that scale with how
+ * many containers exist rather than with what changed.
+ *
+ * **It reads the frontier for this container alone.** Two lookups on primary-key
+ * columns rather than the sweep's two whole-source scans, which is what makes it
+ * cheap enough to sit on a write path.
+ *
+ * **It throws rather than recording a failure**, unlike the sweep. A single-
+ * container caller is not a sweep and has no other containers to protect; the
+ * caller decides what a failure means, and for the room path it means "log it and
+ * let the sweep catch up" (`write-through.ts`).
+ *
+ * @param db - The database. Must have been opened through `createDb`.
+ * @param source - The registry row this container belongs to.
+ * @param container - The container, with its ordinal high-water mark as the
+ *   caller knows it — the `seq` just committed, for a room.
+ * @param at - The ISO-8601 timestamp to stamp the attempt with.
+ * @returns What was written, and what the projection could not use.
+ */
+export function indexRowContainer(
+  db: Db,
+  source: RowSource,
+  container: RowContainer,
+  at: string
+): { indexed: number; skipped: number; rebuilt: boolean } {
+  return indexContainer(db, source, container, readContainerState(db, source.id, container), at);
+}
+
+/**
+ * One container's resume state, read by key rather than by scanning the source.
+ *
+ * The same two facts {@link readFrontierState} gathers for every container —
+ * what the frontier claims and what the index can be seen to hold — narrowed to
+ * one. Both reads ride primary-key columns: `search_sources` is keyed
+ * `(source_id, origin_key)`, and `MAX(ordinal)` for one container rides the
+ * leading columns of `messages_source_id_origin_key_ordinal_unique`.
+ */
+function readContainerState(
+  db: Db,
+  sourceId: string,
+  container: RowContainer
+): Map<string, FrontierState> {
+  const frontier = db
+    .select({ lastOrdinal: searchSources.lastOrdinal })
+    .from(searchSources)
+    .where(
+      and(eq(searchSources.sourceId, sourceId), eq(searchSources.originKey, container.originKey))
+    )
+    .get();
+  const indexed = db
+    .select({ indexedTo: sql<number | null>`MAX(${messages.ordinal})` })
+    .from(messages)
+    .where(and(eq(messages.sourceId, sourceId), eq(messages.originKey, container.originKey)))
+    .get();
+
+  return new Map([
+    [
+      container.originKey,
+      {
+        // `null` when there is no frontier row at all — the state that makes a
+        // container's first write-through create one, exactly as its first sweep
+        // would.
+        watermark: frontier ? (frontier.lastOrdinal ?? 0) : null,
+        indexedTo: indexed?.indexedTo ?? 0,
+      },
+    ],
+  ]);
 }
 
 /**

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): one request answers "where did we talk about X" (DOR-684)'
+  - 'feat(server): a room message is findable the moment it is said (DOR-684)'
 ---
 
 ### Added
@@ -10,6 +11,10 @@ covers:
 - Searching matches whole words, including their other forms: look for `dogs` and you will find "dog", "dogs" and "DOGGED". A piece of a word, like `ogs`, finds nothing (DOR-684)
 - Each result carries what it needs to be opened later — which chat or room it was in, where in it, who said it, and when (DOR-684)
 
+### Changed
+
+- Anything said in a room can be found straight away, instead of after the next few-minute catch-up. Claude Code chats still take up to five minutes to show up, because DorkOS has to notice the file changed rather than being told (DOR-684)
+
 ### Security
 
 - Your own chats with agents stay yours. An agent searching gets only the rooms it is actually in, and only from the point it joined — never what was said in a room before it arrived, and never anything from your Claude Code sessions (DOR-684)
@@ -18,3 +23,4 @@ covers:
 ### Fixed
 
 - If one place DorkOS reads from cannot be read, search still answers with everything else and tells you one of its sources is behind — rather than failing the whole request or quietly returning a short list (DOR-684)
+- Sending a message can never fail because the search copy could not be updated. The room keeps your message either way, and the next catch-up adds it to search (DOR-684)

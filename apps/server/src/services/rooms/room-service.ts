@@ -175,6 +175,25 @@ export interface RoomMessageFinder {
 }
 
 /**
+ * How a committed entry reaches the message index (message-search spec §5,
+ * Amendment 6).
+ *
+ * The write half of the same port {@link RoomMessageFinder} is the read half of,
+ * and it is a port for the same reason: this domain neither imports the index
+ * nor knows it is FTS5. It is handed a coordinate it already has in its hand.
+ *
+ * **It must not throw and must not be slow.** The room log is the truth and the
+ * index is a copy, so a copy that cannot be written is a warning and a
+ * five-minute wait for the reconciler — never a failed post. The implementation
+ * that ships (`services/search/write-through.ts`) owns that guarantee, and this
+ * service guards the call anyway: a port whose contract is "never throws" that
+ * nobody checks is a contract that holds until somebody wires a different one.
+ */
+export interface RoomEntryIndexer {
+  (entry: { roomId: string; seq: number }): void;
+}
+
+/**
  * What one caller may search of the room log, across every room at once
  * (message-search spec §7).
  *
@@ -220,6 +239,17 @@ export interface RoomServiceDeps {
    * the thread filter are applied by the code that already owns them.
    */
   findMessages: RoomMessageFinder;
+  /**
+   * How a committed entry reaches the index, so a message is findable the
+   * moment it is said rather than up to five minutes later (message-search
+   * spec Amendment 6).
+   *
+   * Required rather than optional, and that is the decision: an optional
+   * write-through is one a caller can forget to wire, and forgetting it is
+   * invisible — search simply lags, which is indistinguishable from a quiet
+   * room. A caller that genuinely wants no index passes a no-op and says so.
+   */
+  indexEntry: RoomEntryIndexer;
   /**
    * What bounds automatic replies in one room — the room's own overrides where
    * it has them, Settings otherwise (`resolveRoomLimits`, DOR-1429). Injected
@@ -484,6 +514,8 @@ export class RoomService {
   private readonly reactionBudget: ReactionBudget;
   /** Words in, entry coordinates out. The message index, behind its port. */
   private readonly findMessages: RoomMessageFinder;
+  /** Entries out, the moment they are committed. The write half of that port. */
+  private readonly indexEntry: RoomEntryIndexer;
   private readonly attachments: AttachmentRowStore;
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
@@ -541,6 +573,7 @@ export class RoomService {
     this.reactions = deps.reactions;
     this.reactionBudget = deps.reactionBudget;
     this.findMessages = deps.findMessages;
+    this.indexEntry = deps.indexEntry;
     this.attachments = deps.attachments;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
@@ -3946,6 +3979,23 @@ export class RoomService {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+    // LAST, and guarded twice (message-search spec Amendment 6). The message
+    // index is a derived copy of this log, so it is the least important thing
+    // this write does and the only one that may be skipped: everyone waiting on
+    // this entry already has it, and a failure here costs at most the five
+    // minutes until the reconciler reads the same rows. The port promises not to
+    // throw; this catch is what keeps the promise true for whatever gets wired
+    // in next, because a post that fails because a SEARCH INDEX could not be
+    // updated is the exact inversion of "the log is the truth".
+    try {
+      this.indexEntry({ roomId: entry.roomId, seq: entry.seq });
+    } catch (err) {
+      logger.warn('[rooms] message-index write-through threw', {
+        roomId: entry.roomId,
+        entryId: entry.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

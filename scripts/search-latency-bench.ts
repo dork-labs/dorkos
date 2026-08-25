@@ -65,9 +65,12 @@ import { claudeCodeSource } from '../apps/server/src/services/search/registry.js
  *
  * 5,000 keeps the floor's whole purpose — an empty or broken index is fast, and
  * this is what stops that passing — while sitting far enough below today's
- * corpus that ordinary rotation never reddens it. It matches the floor its
- * sibling script already uses, deliberately. DOR-682 (every root, not just the
- * active one) roughly doubles the corpus and lets this rise.
+ * corpus that ordinary rotation never reddens it. The NUMBER is borrowed from
+ * the sibling script's `MIN_MESSAGES` deliberately, but it is not the same
+ * QUANTITY: that one floors the whole index at 5,000 MESSAGES, this one floors
+ * the commonest single term at 5,000 HITS — the stricter of the two on the same
+ * corpus. DOR-682 (every root, not just the active one) roughly doubles the
+ * corpus and lets this rise.
  */
 const MIN_TOP_TERM_HITS = 5_000;
 

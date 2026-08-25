@@ -33,7 +33,8 @@ export {
   createClaudeCodeSource,
   roomsSource,
 } from './registry.js';
-export { sweepRowSource } from './row-frontier.js';
+export { sweepRowSource, indexRowContainer } from './row-frontier.js';
+export { indexRoomEntry } from './write-through.js';
 export { sweepFileSource, DISCOVERY_FAILURE_KEY } from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
 export { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';

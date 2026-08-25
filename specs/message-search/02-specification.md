@@ -326,6 +326,8 @@ LIMIT 20;
 
 **The visibility clause is scoped by `source_id` as well as `origin_key`, and that is not cosmetic.** `origin_key` is opaque and composed per source (§4), so it is unique _within_ a source and carries no guarantee across sources — a bare `origin_key IN (...)` would let a room key collide with a session key and leak a session row to an agent. The agent path therefore names its source explicitly. **The owner path omits the clause entirely** rather than building a set of every container: a filter that has to enumerate everything is a filter that silently starts excluding things the day enumeration misses one.
 
+**[Amended 2026-08-24 (DOR-684) — the agent path is not one `IN (...)` list with one floor: the visible set is `(roomId, joinedSeq)` PAIRS, applied as a floor PER container. See Amendment 7.]**
+
 Ranking is `bm25()` alone in v1, with recency available as a tiebreak. Learned ranking and click feedback need data this feature has to ship to collect.
 
 #### 6.2 What the tokenizer buys and costs
@@ -413,6 +415,8 @@ Two new tables and one virtual table, all in §4. **No existing table is altered
 **The precondition for unlocking session search is written down rather than left to be discovered:** `resolveCaller` becomes MCP-aware **and** session membership becomes a defined concept. Until both, this is a decision with a stated trigger, not an omission.
 
 **One access rule this index depends on does not exist yet.** **Correction to the brief:** `joinedSeq` is **specced, not shipped** — `room_members` has `joined_at` (text) and `last_read_seq` (`packages/db/src/schema/rooms.ts:134-149`), and no `joined_seq` column appears in any migration under `packages/db/drizzle/`. RP7's §8.3 specs it and RP3 lands it. The consequence is recorded in `specs/room-participation/02-specification.md` §10.3 and in its phasing table: **RP7 now depends on RP3 as well as on this index**, because an index-backed `search_room_history` shipped before `joinedSeq` exists would hand an agent a fast, ranked reader of everything said in its rooms before it joined.
+
+**[Amended 2026-08-24 (DOR-684) — `joinedSeq` exists now. RP3 landed `room_members.joined_seq`, so this paragraph's premise is false and the floor it describes is the one DOR-684 applies. See Amendment 7.]**
 
 ### 8. Surfaces
 
@@ -686,7 +690,7 @@ malformed when split on \n only         : 0
 | FTS5 column-name trap: `snippet()` fails, `MATCH` survives                                      | §4           | verified by running against a deliberate mismatch                                                                                 |
 | `better-sqlite3` declared as the RANGE `^12.11.1`                                               | §Tech deps   | `packages/db/package.json:21` — exact                                                                                             |
 | 37 migrations, zero FTS5 anywhere in `apps/` or `packages/`                                     | §Background  | verified                                                                                                                          |
-| `joinedSeq` does not exist in any migration                                                     | §7           | verified — `room_members` has only `joined_at`, `last_read_seq`                                                                   |
+| `joinedSeq` does not exist in any migration                                                     | §7           | verified 2026-07-29; **no longer true** — RP3 landed `joined_seq` (DOR-684, Amendment 7)                                          |
 | `readFromOffset` advances to `stat.size` unconditionally                                        | §5           | verified, and it has no production consumer                                                                                       |
 
 **Corrected by Amendments 1–3 and 5:** §6.3's latency headroom · §2.1's single root · §2.1's malformed-line explanation · G5/§8/Phase 5's claim on `search_room_history`.
@@ -720,11 +724,15 @@ This document states in three places that `search_room_history` becomes a caller
 
 **RP7 additionally needs `joinedSeq`, which does not exist.** Re-verified 2026-07-29: `grep joined_seq` across `packages/db/` and `apps/server/src/` returns nothing, and `room_members` carries only `joined_at` and `last_read_seq`. **RP3 lands it.** An index-backed `search_room_history` shipped before then would hand an agent a fast, ranked reader of everything said in its rooms before it joined — §7 already says this, and it is the reason the dependency is real rather than bookkeeping.
 
+**[Amended 2026-08-24 (DOR-684) — it exists now; RP3 landed it, and DOR-684 applies it as a per-room floor. See Amendment 7.]**
+
 **G5 as written is therefore not a goal this ticket can meet**, and no task in `03-tasks.json` claims it. What DOR-684 owes RP7 is a query service whose visible-set join is a parameter rather than an assumption, so that RP7 can pass a member-scoped room set without the service needing to know why.
 
 ## Amendment 6 — the room write-through is deferred, and the reconciler is the only path in v1 (DOR-680)
 
 **Amends §5's reconciler paragraph.**
+
+**[Discharged 2026-08-24 (DOR-684) — the write-through is built, on the seam and with the degradation contract this amendment specified. See Amendment 7.]**
 
 §5 promises three things and DOR-680 shipped two: the 300,000 ms reconciler and the startup sweep are in `apps/server/src/services/search/indexer.ts`. **The immediate write-through on the room path is not built.** This amendment exists because a scope removal that lives only in a ticket is exactly the failure Amendment 5 was written to prevent — a reader reaches §5 long before they reach a Linear issue, and §5 as written would have them looking for code that is not there.
 
@@ -742,7 +750,13 @@ This document states in three places that `search_room_history` becomes a caller
 
 ## Amendment 7 — the visible set is PAIRS, and the benchmark's floor is derived (DOR-684)
 
-**Amends §6.1's visibility clause, §7's `joinedSeq` paragraph, Amendment 5's closing claim, and the benchmark requirement in Amendment 1.**
+**Amends §6.1's visibility clause, §7's `joinedSeq` paragraph, §5's reconciler paragraph (via Amendment 6), Amendment 5's closing claim, and the benchmark requirement in Amendment 1.**
+
+**The room write-through is built, and Amendment 6 named this ticket correctly.** Amendment 6 defers it and says it "belongs to whichever ticket can safely edit `services/rooms/` after DOR-634 lands — most naturally DOR-684, which is the first task with a surface that makes the latency visible." It landed here, in the shape that amendment prescribed: one call at the END of `RoomService.publishEntry` through a `RoomEntryIndexer` port, one wiring line in `createRoomSubsystem`, and one indexer entry point that brings a SINGLE container up to date (`indexRowContainer`) — the sweep's own per-container function, reached with a by-key frontier read instead of the two whole-source scans, so nothing that scales with how many rooms exist sits on a write path.
+
+**The degradation contract is the part worth stating, because it inverts the usual direction.** The room log is the truth and the index is a copy of it, so **an index write that fails must never fail the post**. It logs one warning and returns; the entry is durable, the room already has it, and the reconciler's next pass finds the container's watermark below its `max(seq)` and indexes what was missed — which is not a fallback bolted on, it is the sweep doing what it does for any room nobody has posted in for four minutes. Deliberately no `search_sources.last_error` on this path: a room that is four minutes behind is not a broken source, and warning about it would fill the search envelope with something nobody can act on. Both halves are guarded — the implementation catches, and `publishEntry` catches around the port anyway — and both are driven red before green in `services/search/__tests__/write-through.test.ts`.
+
+**It is synchronous, and the number is the argument.** `better-sqlite3` has no asynchronous write to defer to, so a `setImmediate` would move identical blocking work later on the same event loop, buy a window in which a crash loses it, and turn "you can find what you just said" into a race. **Measured 2026-08-24 over a file-backed database: 300 posts cost 156.3 ms without the write-through and 227.4 ms with it — 0.237 ms per post**, against roughly half a millisecond for the post itself. A room post is bounded by how fast a person types, and the write it already made is larger than this one.
 
 **`joinedSeq` exists now.** §7 and Amendment 5 both state, correctly at the time and re-verified on 2026-07-29, that `room_members` carries only `joined_at` and `last_read_seq`. RP3 has since landed the column (`packages/db/src/schema/rooms.ts`, `joined_seq INTEGER NOT NULL DEFAULT 0`), with a backfill and its own migration test. Every claim resting on its absence — that the index-backed room-history tool must wait for it, that DOR-684 could only leave a hole where it goes — is discharged rather than corrected: the floor is real and this task applies it.
 
@@ -750,7 +764,7 @@ This document states in three places that `search_room_history` becomes a caller
 
 `search_room_history`'s port (`RoomMessageFinder`) was migrated to the same shape rather than left beside it. Its only caller searches one room, so the old `roomIds[] + afterSeq` spelling was correct today and a trap tomorrow; two ways to say the same thing is the tolerated legacy pattern this codebase refuses.
 
-**The benchmark's hit floor is derived on the machine it runs on, and 10,000 is not reachable on this one.** Amendment 1 requires a hit-count assertion before any latency assertion, and DOR-684's task text names 10,000 — a figure from the 18,114-row prototype index. The corpus a single Claude Code root actually holds today is **9,110 messages** (measured 2026-08-24, recorded in `scripts/search-corpus-bench.ts`), because Claude Code rotates transcripts older than `cleanupPeriodDays`: one root is a moving 30-day window, not a growing archive. `scripts/search-latency-bench.ts` therefore floors the commonest term at **5,000 hits**, matching its sibling script, which keeps the floor's whole purpose — an empty or broken index answers in microseconds and would sail past a latency-only check — while sitting far enough below today's corpus that ordinary rotation never reddens it. DOR-682 (every root rather than the active one) roughly doubles the corpus and lets it rise.
+**The benchmark's hit floor is derived on the machine it runs on, and 10,000 is not reachable on this one.** Amendment 1 requires a hit-count assertion before any latency assertion, and DOR-684's task text names 10,000 — a figure from the 18,114-row prototype index. The corpus a single Claude Code root actually holds today is **9,110 messages** (measured 2026-08-24, recorded in `scripts/search-corpus-bench.ts`), because Claude Code rotates transcripts older than `cleanupPeriodDays`: one root is a moving 30-day window, not a growing archive. `scripts/search-latency-bench.ts` therefore floors the commonest term at **5,000 hits**. The NUMBER is taken from its sibling's `MIN_MESSAGES` deliberately; the QUANTITY is not the same one, and saying so matters — that script floors the whole index at 5,000 **messages**, this one floors a single term at 5,000 **hits**, which is the stricter bar on the same corpus (the commonest term matched 7,656 of 9,182 on the run below). Both keep the floor's whole purpose — an empty or broken index answers in microseconds and would sail past a latency-only check — while sitting far enough below today's corpus that ordinary rotation never reddens either. DOR-682 (every root rather than the active one) roughly doubles the corpus and lets it rise.
 
 **Two refinements to what that benchmark fits, both learned by running it.** The linearity fit is taken on `ORDER BY bm25()` **without** `snippet()`: ranking is charged per row that MATCHES and is the term that scales, while `snippet()` is charged per row RETURNED — twenty of them, always — so folding them together measures a constant as if it were slope (R² 0.886 combined, 1.000 split). And the flatness claim is asserted **comparatively** as well as absolutely: the unordered spread must be at least ten times smaller than the ranked spread over the same terms, which is scale-free and survives any load, where a bare ratio ceiling over 8–24 µs measurements is mostly measuring the scheduler.
 

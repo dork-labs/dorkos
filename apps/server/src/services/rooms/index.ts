@@ -21,7 +21,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
-import { roomsSource, searchMessages } from '../search/index.js';
+import { indexRoomEntry, roomsSource, searchMessages } from '../search/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry, isOwnerRecord } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
@@ -372,6 +372,11 @@ export function createRoomSubsystem(opts: {
         query,
         limit,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
+    // The write half of that port: an entry is indexed the moment it is
+    // committed, so a person can find what they just said instead of waiting up
+    // to five minutes for the reconciler (spec Amendment 6). It never throws —
+    // a failure logs and leaves the sweep to catch this room up.
+    indexEntry: ({ roomId, seq }) => indexRoomEntry(opts.db, roomId, seq),
     // Resolved per write, not captured once: changing a ceiling in Settings —
     // or on the room — has to bound the very next cascade, not the next server
     // start. Turning limits back ON is the direction that must never wait for a
