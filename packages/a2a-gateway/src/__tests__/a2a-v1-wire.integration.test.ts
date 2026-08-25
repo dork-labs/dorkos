@@ -17,7 +17,11 @@ import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { ClientFactory, JsonRpcTransportFactory } from '@a2a-js/sdk/client';
+import {
+  ClientFactory,
+  DefaultAgentCardResolver,
+  JsonRpcTransportFactory,
+} from '@a2a-js/sdk/client';
 import { Role, TaskState, type Task } from '@a2a-js/sdk';
 import type { RelayCore } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -364,6 +368,111 @@ describe('A2A gateway over the v1.0 wire', () => {
     expect(task.status?.message?.parts[0]?.content).toEqual({
       $case: 'text',
       value: 'Hello real client.',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The documented client, against a token-gated deployment
+// ---------------------------------------------------------------------------
+
+/**
+ * With login on, DorkOS gates card reads as well as calls. That splits the
+ * client's fetch in two: the transport sends messages, but the card is
+ * downloaded by a separate resolver that falls back to the global `fetch`.
+ * The guide's snippet has to authenticate both, and these two tests are what
+ * hold it to that — the first fails exactly the way a reader's copy-paste
+ * would if the snippet only authenticated the transport.
+ */
+describe('a token-gated deployment', () => {
+  const TOKEN = 'test-token';
+  let guardedServer: Server;
+  let guardedUrl: string;
+  let guardedRelay: ScriptedRelay;
+
+  /** Injects the bearer token the guard below demands. */
+  const authedFetch: typeof fetch = (input, init = {}) =>
+    fetch(input, {
+      ...init,
+      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${TOKEN}` },
+    });
+
+  beforeEach(async () => {
+    guardedRelay = new ScriptedRelay();
+    guardedRelay.chunks = ['Authenticated.'];
+
+    const app = express();
+    await new Promise<void>((resolve) => {
+      guardedServer = app.listen(0, '127.0.0.1', () => resolve());
+    });
+    guardedUrl = `http://127.0.0.1:${(guardedServer.address() as AddressInfo).port}`;
+
+    const handlers = createA2aHandlers({
+      agentRegistry: makeRegistry([makeManifest()]),
+      relay: guardedRelay as unknown as RelayCore,
+      db: createTestDb(),
+      config: { baseUrl: guardedUrl, version: '0.0.0-test', authRequired: true },
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    });
+
+    // Guards cards AND calls, which is the posture with login turned on.
+    app.use((req, res, next) => {
+      if (req.headers.authorization !== `Bearer ${TOKEN}`) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+      next();
+    });
+    app.get('/a2a/agents/:id/card', handlers.agentCard);
+    app.post('/a2a/agents/:id', handlers.agentJsonRpc);
+    app.use('/a2a', handlers.jsonRpc);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      guardedServer.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  it('rejects card discovery when only the transport is authenticated', async () => {
+    const factory = new ClientFactory({
+      transports: [new JsonRpcTransportFactory({ fetchImpl: authedFetch })],
+    });
+
+    // The card never reaches the transport's fetch, so this dies at discovery.
+    await expect(
+      factory.createFromUrl(`${guardedUrl}/a2a/agents/agent-backend/card`, '')
+    ).rejects.toThrow();
+  });
+
+  it('completes a turn when the card resolver is authenticated too', async () => {
+    const factory = new ClientFactory({
+      transports: [new JsonRpcTransportFactory({ fetchImpl: authedFetch })],
+      cardResolver: new DefaultAgentCardResolver({ fetchImpl: authedFetch }),
+    });
+    const client = await factory.createFromUrl(`${guardedUrl}/a2a/agents/agent-backend/card`, '');
+
+    const result = await client.sendMessage({
+      tenant: '',
+      message: {
+        messageId: crypto.randomUUID(),
+        contextId: '',
+        taskId: '',
+        role: Role.ROLE_USER,
+        parts: [textPart('Run the tests.')],
+        metadata: undefined,
+        extensions: [],
+        referenceTaskIds: [],
+      },
+      configuration: undefined,
+      metadata: undefined,
+    });
+
+    const task = result as Task;
+    expect(task.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+    expect(task.status?.message?.parts[0]?.content).toEqual({
+      $case: 'text',
+      value: 'Authenticated.',
     });
   });
 });

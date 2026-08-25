@@ -19,7 +19,7 @@
 import { TaskState, type Task } from '@a2a-js/sdk';
 import type { ListTasksRequest, ListTasksResponse } from '@a2a-js/sdk';
 import type { ServerCallContext, TaskStore } from '@a2a-js/sdk/server';
-import { and, eq, a2aTasks, type Db } from '@dorkos/db';
+import { and, eq, gte, a2aTasks, type Db } from '@dorkos/db';
 
 /** The status values accepted by the a2a_tasks Drizzle column. */
 type DbStatus = typeof a2aTasks.$inferInsert.status;
@@ -124,8 +124,14 @@ export class SqliteTaskStore implements TaskStore {
   /**
    * List stored tasks, newest first, with optional filtering and pagination.
    *
-   * Filters on `contextId` and `status` are applied in SQL; `pageToken` is the
-   * offset of the next row, as a decimal string.
+   * Every filter the A2A `ListTasks` request can carry is honored here, and
+   * that is deliberate: the SDK validates these parameters and so advertises
+   * them as supported. Accepting one and ignoring it would answer with the
+   * wrong tasks rather than with an error — the worst of the two failures,
+   * because nothing on the wire says the filter did not happen.
+   *
+   * `contextId`, `status` and `statusTimestampAfter` are applied in SQL;
+   * `pageToken` is the offset of the next row, as a decimal string.
    *
    * @param params - Filtering and pagination parameters.
    * @param _context - The call context; unused, see {@link SqliteTaskStore.load}.
@@ -134,11 +140,17 @@ export class SqliteTaskStore implements TaskStore {
     const pageSize = clampPageSize(params.pageSize);
     const offset = parseOffset(params.pageToken);
 
+    // `updatedAt` IS the status timestamp — `rowToTask` reads the task's
+    // `status.timestamp` from this same column, so filtering on it answers the
+    // question the caller actually asked.
+    const after = normalizeTimestamp(params.statusTimestampAfter);
+
     const filters = [
       params.contextId.length > 0 ? eq(a2aTasks.contextId, params.contextId) : undefined,
       params.status !== undefined && params.status !== TaskState.TASK_STATE_UNSPECIFIED
         ? eq(a2aTasks.status, taskStateToDbStatus(params.status))
         : undefined,
+      after !== undefined ? gte(a2aTasks.updatedAt, after) : undefined,
     ].filter((f) => f !== undefined);
     const where = filters.length > 0 ? and(...filters) : undefined;
 
@@ -154,7 +166,10 @@ export class SqliteTaskStore implements TaskStore {
     const nextOffset = offset + page.length;
 
     return {
-      tasks: page.map(rowToTask),
+      // Artifacts are opt-in, per the A2A spec's own default: a listing is a
+      // survey, and shipping every task's full output by default is how a
+      // page of results becomes megabytes.
+      tasks: page.map((row) => rowToTask(row, params.includeArtifacts === true)),
       nextPageToken: nextOffset < rows.length ? String(nextOffset) : '',
       pageSize,
       totalSize: rows.length,
@@ -175,6 +190,25 @@ function clampPageSize(requested: number | undefined): number {
 }
 
 /**
+ * Normalize an ISO 8601 timestamp filter into the exact spelling the
+ * `updated_at` column stores, or `undefined` when there is nothing to filter on.
+ *
+ * The column holds `Date#toISOString` output, which compares correctly as text
+ * only against another string in that same shape. A caller is free to send
+ * `2026-08-25T10:00:00+02:00`, which sorts nowhere near its own UTC instant —
+ * so the bound is parsed and re-rendered rather than compared as it arrived.
+ * An unparseable value filters nothing, matching how the other filters treat
+ * an absent field.
+ *
+ * @param value - The caller's `statusTimestampAfter`.
+ */
+function normalizeTimestamp(value: string | undefined): string | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+/**
  * Read a page token as a row offset, treating anything unparseable as the start.
  *
  * @param token - The caller's `pageToken`.
@@ -185,8 +219,15 @@ function parseOffset(token: string | undefined): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-/** Convert a database row into an A2A Task object. */
-function rowToTask(row: typeof a2aTasks.$inferSelect): Task {
+/**
+ * Convert a database row into an A2A Task object.
+ *
+ * @param row - The stored row.
+ * @param includeArtifacts - Whether to carry the task's artifacts. Listings
+ *   default this off (see {@link SqliteTaskStore.list}); a direct `load` always
+ *   passes `true`, because asking for one task by id is asking for all of it.
+ */
+function rowToTask(row: typeof a2aTasks.$inferSelect, includeArtifacts = true): Task {
   return {
     id: row.id,
     contextId: row.contextId,
@@ -196,7 +237,7 @@ function rowToTask(row: typeof a2aTasks.$inferSelect): Task {
       timestamp: row.updatedAt,
     },
     history: JSON.parse(row.historyJson),
-    artifacts: JSON.parse(row.artifactsJson),
+    artifacts: includeArtifacts ? JSON.parse(row.artifactsJson) : [],
     metadata: row.metadataJson !== '{}' ? JSON.parse(row.metadataJson) : undefined,
   };
 }

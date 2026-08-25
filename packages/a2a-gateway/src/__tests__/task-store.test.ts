@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { Role, TaskState, type Artifact, type Task } from '@a2a-js/sdk';
@@ -322,9 +322,102 @@ describe('SqliteTaskStore', () => {
       expect((await store.list(makeListRequest({ pageSize: 5_000 }), ctx)).pageSize).toBe(100);
     });
   });
+
+  describe('list — statusTimestampAfter', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('drops tasks last updated before the bound', async () => {
+      await saveAt('2026-01-01T00:00:00.000Z', makeTask({ id: 'task-old' }));
+      await saveAt('2026-06-01T00:00:00.000Z', makeTask({ id: 'task-new' }));
+
+      const result = await store.list(
+        makeListRequest({ statusTimestampAfter: '2026-03-01T00:00:00.000Z' }),
+        ctx
+      );
+
+      expect(result.tasks.map((t) => t.id)).toEqual(['task-new']);
+      expect(result.totalSize).toBe(1);
+    });
+
+    it('includes a task sitting exactly on the bound', async () => {
+      // The spec says "greater than or equal", so the boundary row is IN.
+      await saveAt('2026-03-01T00:00:00.000Z', makeTask({ id: 'task-exact' }));
+
+      const result = await store.list(
+        makeListRequest({ statusTimestampAfter: '2026-03-01T00:00:00.000Z' }),
+        ctx
+      );
+
+      expect(result.tasks.map((t) => t.id)).toEqual(['task-exact']);
+    });
+
+    it('compares by instant, not by the spelling the caller used', async () => {
+      await saveAt('2026-03-01T09:00:00.000Z', makeTask({ id: 'task-nine' }));
+
+      // 10:00+02:00 is 08:00Z — an instant BEFORE the row, even though the
+      // string sorts after it. Comparing the raw text would drop the task.
+      const result = await store.list(
+        makeListRequest({ statusTimestampAfter: '2026-03-01T10:00:00.000+02:00' }),
+        ctx
+      );
+
+      expect(result.tasks.map((t) => t.id)).toEqual(['task-nine']);
+    });
+
+    it('filters nothing when the bound cannot be read as a date', async () => {
+      await saveAt('2026-03-01T00:00:00.000Z', makeTask());
+
+      const result = await store.list(makeListRequest({ statusTimestampAfter: 'not-a-date' }), ctx);
+
+      expect(result.totalSize).toBe(1);
+    });
+  });
+
+  describe('list — includeArtifacts', () => {
+    it('omits artifacts unless they were asked for', async () => {
+      await store.save(makeTask(), ctx);
+
+      const result = await store.list(makeListRequest(), ctx);
+
+      // The A2A default is off: a listing is a survey, not a payload dump.
+      expect(result.tasks[0]!.artifacts).toEqual([]);
+    });
+
+    it('carries artifacts when asked for', async () => {
+      await store.save(makeTask(), ctx);
+
+      const result = await store.list(makeListRequest({ includeArtifacts: true }), ctx);
+
+      expect(result.tasks[0]!.artifacts).toHaveLength(1);
+      expect(result.tasks[0]!.artifacts[0]!.artifactId).toBe('art-001');
+    });
+
+    it('still returns artifacts from a direct load', async () => {
+      // Asking for one task by id is asking for all of it — the listing
+      // default must not leak into `load`.
+      const task = makeTask();
+      await store.save(task, ctx);
+
+      const loaded = await store.load(task.id, ctx);
+
+      expect(loaded!.artifacts).toHaveLength(1);
+    });
+  });
 });
 
-/** Build a `ListTasksRequest` with the protobuf-required fields filled in. */
+/**
+ * Build a `ListTasksRequest` with the protobuf-required fields filled in.
+ *
+ * The defaults are the "no filter" values, and every one of them is meant to
+ * be overridden — `statusTimestampAfter` and `includeArtifacts` especially,
+ * since a filter nothing ever sets is a filter nothing ever checks.
+ */
 function makeListRequest(
   overrides: Partial<Parameters<SqliteTaskStore['list']>[0]> = {}
 ): Parameters<SqliteTaskStore['list']>[0] {
@@ -334,6 +427,18 @@ function makeListRequest(
     status: TaskState.TASK_STATE_UNSPECIFIED,
     pageToken: '',
     statusTimestampAfter: undefined,
+    includeArtifacts: undefined,
     ...overrides,
   };
+}
+
+/**
+ * Save a task as though it were last touched at `when`.
+ *
+ * The store stamps `updatedAt` itself from the clock, so controlling the clock
+ * is the only way to write rows the timestamp filter can tell apart.
+ */
+async function saveAt(when: string, task: Task): Promise<void> {
+  vi.setSystemTime(new Date(when));
+  await store.save(task, ctx);
 }

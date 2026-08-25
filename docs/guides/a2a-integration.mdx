@@ -115,7 +115,7 @@ asks the agent to stop as well, so a caller walking away doesn't leave a model r
 
 ### Authentication
 
-Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. Fetching an Agent Card (the `GET` discovery paths) stays open — that's public metadata, the A2A analogue of listing tools.
+Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. While login is off, fetching an Agent Card (the `GET` discovery paths) stays open — that's public metadata, the A2A analogue of listing tools. Turn login on and card reads need a credential too, so send your token on card fetches as well as on calls.
 
 Which token you send depends on your setup:
 
@@ -193,7 +193,11 @@ curl -X POST http://localhost:6242/a2a/agents/01HZB1AGENTULID0000001 \
 This talks to a single agent through its per-agent endpoint, injecting the bearer token via a custom `fetch`. Verified against `@a2a-js/sdk@1.0`.
 
 ```ts
-import { ClientFactory, JsonRpcTransportFactory } from '@a2a-js/sdk/client';
+import {
+  ClientFactory,
+  DefaultAgentCardResolver,
+  JsonRpcTransportFactory,
+} from '@a2a-js/sdk/client';
 import { Role, TaskState, type Task } from '@a2a-js/sdk';
 import { randomUUID } from 'node:crypto';
 
@@ -213,9 +217,17 @@ console.log('Fleet card:', fleetCard.name);
 
 // 2. Build a client from a per-agent card. The factory reads the card's
 //    `supportedInterfaces` and dials that agent's own RPC endpoint.
+//
+//    `authedFetch` has to be given TWICE. The transport uses one fetch to send
+//    messages; downloading the card is a separate step with its own resolver,
+//    which falls back to the global fetch. Pass it only to the transport and
+//    card discovery goes out with no `Authorization` header — fine while login
+//    is off, since card reads are open then, and a 401 the moment you turn
+//    login on.
 const agentId = '01HZB1AGENTULID0000001'; // a mesh ULID
 const factory = new ClientFactory({
   transports: [new JsonRpcTransportFactory({ fetchImpl: authedFetch })],
+  cardResolver: new DefaultAgentCardResolver({ fetchImpl: authedFetch }),
 });
 const client = await factory.createFromUrl(`${BASE}/a2a/agents/${agentId}/card`, '');
 
