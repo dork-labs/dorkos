@@ -6,6 +6,7 @@ import type {
   Part,
   OpencodeClient,
 } from '@opencode-ai/sdk';
+import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
 
@@ -105,14 +106,26 @@ function createMockClient() {
 type MockClient = ReturnType<typeof createMockClient>;
 
 /**
- * Serve `sessions` the way the real sidecar does — honouring `limit`. Tests
- * that hand back a fixed array regardless of `limit` model a sidecar that
- * IGNORES it, which is precisely what the probe is built to reject.
+ * Serve `sessions` the way the real sidecar does — honouring `limit`, and
+ * honouring `directory` as EXACT STRING EQUALITY unless `scope=project` widens
+ * the read (both live-verified on 1.18.15; see NOTES.md §8).
+ *
+ * The directory half is what makes these tests able to fail: a mock that hands
+ * back every session regardless of `directory` models a sidecar that does the
+ * adapter's job for it, so the subfolder cases would pass with or without the
+ * widening — which is the bug DOR-674 was. Tests that hand back a fixed array
+ * regardless of `limit` model a sidecar that IGNORES it, which is precisely what
+ * the probe is built to reject.
  */
 function serveSessions(client: MockClient, sessions: OpenCodeSession[]): void {
   client.session.list.mockImplementation(
-    ({ query }: { query: { limit: number } }) =>
-      Promise.resolve({ data: sessions.slice(0, query.limit) }) as never
+    ({ query }: { query: { limit: number; directory: string; scope?: 'project' } }) => {
+      const visible =
+        query.scope === 'project'
+          ? sessions
+          : sessions.filter((s) => s.directory === query.directory);
+      return Promise.resolve({ data: visible.slice(0, query.limit) }) as never;
+    }
   );
 }
 
@@ -211,13 +224,18 @@ describe('OpenCodeSessionMapper', () => {
 
     it('lists via the SDK and maps sessions tagged runtime "opencode"', async () => {
       const client = createMockClient();
-      client.session.list.mockResolvedValue({ data: [ocSession()] });
+      serveSessions(client, [ocSession()]);
       const mapper = new OpenCodeSessionMapper(createProvider(client));
 
       const sessions = await mapper.listSessions(PROJECT_DIR);
 
       expect(client.session.list).toHaveBeenCalledWith({
-        query: { directory: PROJECT_DIR, roots: true, limit: SESSION_LIST_LIMIT + 1 },
+        query: {
+          directory: PROJECT_DIR,
+          roots: true,
+          limit: SESSION_LIST_LIMIT + 1,
+          scope: 'project',
+        },
       });
       expect(sessions).toHaveLength(1);
       const session = sessions[0]!;
@@ -228,6 +246,86 @@ describe('OpenCodeSessionMapper', () => {
       expect(session.updatedAt).toBe(new Date(UPDATED_MS).toISOString());
       expect(session.cwd).toBe(PROJECT_DIR);
       expect(session.permissionMode).toBe('default');
+    });
+
+    it('lists a session started in a SUBFOLDER of the open project (DOR-674)', async () => {
+      const client = createMockClient();
+      // The bug: `opencode` run in a subfolder stores THAT folder on the
+      // session, and the sidecar's `?directory=` filter is exact string
+      // equality — so this session appeared in no project's list at all.
+      serveSessions(client, [
+        ocSession({ id: 'ses_root', title: 'at the top' }),
+        ocSession({
+          id: 'ses_sub',
+          title: 'in a subfolder',
+          directory: `${PROJECT_DIR}/packages/api`,
+        }),
+      ]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const sessions = await mapper.listSessions(PROJECT_DIR);
+
+      expect(sessions.map((s) => s.title)).toEqual(['at the top', 'in a subfolder']);
+      // The row keeps its OWN folder, so it still says where it is running.
+      expect(sessions[1]!.cwd).toBe(`${PROJECT_DIR}/packages/api`);
+    });
+
+    it('asks the sidecar to widen past the exact directory it matches on (DOR-674)', async () => {
+      const client = createMockClient();
+      serveSessions(client, [ocSession()]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      await mapper.listSessions(PROJECT_DIR);
+
+      // Filtering can only ever narrow what came back: a subfolder session the
+      // sidecar never sent cannot be recovered client-side.
+      expect(client.session.list.mock.calls[0]![0]!.query.scope).toBe('project');
+    });
+
+    it('keeps a sibling folder that merely shares a prefix out of the list (DOR-674)', async () => {
+      const client = createMockClient();
+      // `/work/project-2` starts with `/work/project` as a STRING but is a
+      // different project — the exact trap a raw `startsWith` walks into.
+      serveSessions(client, [
+        ocSession({ id: 'ses_mine', title: 'mine' }),
+        ocSession({ id: 'ses_sibling', title: 'sibling', directory: `${PROJECT_DIR}-2/src` }),
+      ]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const sessions = await mapper.listSessions(PROJECT_DIR);
+
+      expect(sessions.map((s) => s.title)).toEqual(['mine']);
+    });
+
+    it('drops the unrelated projects the widened read hands back (DOR-674)', async () => {
+      const client = createMockClient();
+      // Live-verified on the pinned sidecar (1.18.15): every worktree reports
+      // `projectID: "global"`, so `scope=project` is effectively machine-wide
+      // and returns other projects' sessions. DorkOS owns the narrowing.
+      serveSessions(client, [
+        ocSession({ id: 'ses_mine', title: 'mine' }),
+        ocSession({ id: 'ses_other', title: 'someone else', directory: '/work/other-project' }),
+        ocSession({ id: 'ses_parent', title: 'a folder above', directory: '/work' }),
+      ]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const sessions = await mapper.listSessions(PROJECT_DIR);
+
+      expect(sessions.map((s) => s.title)).toEqual(['mine']);
+    });
+
+    it('matches a project dir written with a trailing slash or a "." segment', async () => {
+      const client = createMockClient();
+      serveSessions(client, [
+        ocSession({ id: 'ses_root', title: 'at the top' }),
+        ocSession({ id: 'ses_sub', title: 'in a subfolder', directory: `${PROJECT_DIR}/api` }),
+      ]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      // Spelling differences that are the SAME path must not decide whether a
+      // project has any sessions.
+      await expect(mapper.listSessions(`${PROJECT_DIR}/`)).resolves.toHaveLength(2);
+      await expect(mapper.listSessions(`${PROJECT_DIR}/./api/..`)).resolves.toHaveLength(2);
     });
 
     it('keeps DorkOS ids stable across calls and distinct per OpenCode session (1:1)', async () => {
@@ -289,7 +387,7 @@ describe('OpenCodeSessionMapper', () => {
 
     it('excludes child sessions server-side so the limit is not spent on them (DOR-673)', async () => {
       const client = createMockClient();
-      client.session.list.mockResolvedValue({ data: [ocSession()] });
+      serveSessions(client, [ocSession()]);
       const mapper = new OpenCodeSessionMapper(createProvider(client));
 
       await mapper.listSessions(PROJECT_DIR);
@@ -298,6 +396,56 @@ describe('OpenCodeSessionMapper', () => {
       // sessions cost the user N visible ones.
       expect(client.session.list.mock.calls[0]![0]!.query.roots).toBe(true);
     });
+
+    it('does not fail the whole list over one session with no directory at all', async () => {
+      const client = createMockClient();
+      // `Session.directory` is typed as a string, but it arrives off the wire.
+      // A row that lost it must cost that row — a TypeError here would reject
+      // the listing and blank OpenCode for the whole project (ADR-0310 turns
+      // that into "this runtime is down", which would be a lie).
+      serveSessions(client, [
+        ocSession({ id: 'ses_ok' }),
+        ocSession({ id: 'ses_broken', directory: undefined as unknown as string }),
+      ]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const sessions = await mapper.listSessions(PROJECT_DIR);
+
+      expect(sessions.map((s) => s.cwd)).toEqual([PROJECT_DIR]);
+    });
+
+    it('refuses a project path that is not a full folder path, out loud', async () => {
+      const client = createMockClient();
+      serveSessions(client, [ocSession()]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      // The membership rule will not guess a working directory, so a relative
+      // path would match nothing and read as "this project has no OpenCode
+      // sessions". Aggregation turns the rejection into a warning that says so.
+      await expect(mapper.listSessions('work/project')).rejects.toThrow(/full folder path/);
+    });
+
+    describe.each(DIRECTORY_MEMBERSHIP_VECTORS.filter((v) => v.root.startsWith('/')))(
+      'membership vector: $name',
+      ({ root, candidate, within }) => {
+        it(`${within ? 'lists' : 'omits'} it`, async () => {
+          // The adapter answers the SAME table as the server's per-agent
+          // fan-out and the client's selector — one rule, three call sites
+          // (DOR-674). Only POSIX-absolute roots run here: this call site
+          // additionally REQUIRES an absolute path (covered just above), and
+          // `C:\…` is not absolute to a POSIX `path.isAbsolute`. The Windows
+          // spellings are driven where a Windows `cwd` actually crosses a
+          // boundary — the predicate's own suite and the client selector's.
+          const client = createMockClient();
+          serveSessions(client, [ocSession({ id: 'ses_candidate', directory: candidate })]);
+          const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+          const sessions = await mapper.listSessions(root);
+
+          expect(sessions).toHaveLength(within ? 1 : 0);
+        });
+      }
+    );
 
     it('rejects when the sentinel row proves sessions were left behind (DOR-673)', async () => {
       const client = createMockClient();
@@ -312,7 +460,7 @@ describe('OpenCodeSessionMapper', () => {
       });
       const mapper = new OpenCodeSessionMapper(createProvider(client));
 
-      await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/missing some/);
+      await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/could not read far enough/);
     });
 
     it('serves a project sitting exactly on the ceiling — nothing was truncated', async () => {
@@ -330,6 +478,28 @@ describe('OpenCodeSessionMapper', () => {
       await expect(mapper.listSessions(PROJECT_DIR)).resolves.toHaveLength(SESSION_LIST_LIMIT);
     });
 
+    it('will not claim a 3-session project is complete when the MACHINE is saturated (DOR-674)', async () => {
+      const client = createMockClient();
+      // The budget is spent on the widened, machine-wide read now. A machine
+      // holding more sessions than DorkOS can read past means the widened page
+      // was cut off somewhere — and the cut could have landed on this project's
+      // subfolder sessions, so a short list here would be a confident lie.
+      const elsewhere = Array.from({ length: SESSION_LIST_LIMIT + 1 }, (_, i) =>
+        ocSession({ id: `ses_other_${i}`, directory: `/somewhere/else/${i}` })
+      );
+      serveSessions(client, [
+        ocSession({ id: 'ses_1' }),
+        ocSession({ id: 'ses_2' }),
+        ocSession({ id: 'ses_3' }),
+        ...elsewhere,
+      ]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      // Degrades to a per-runtime warning (ADR-0310), which is the honest
+      // answer; it must NOT return the 3 rows it happened to see.
+      await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/on this machine/);
+    });
+
     // Any cap, not one blessed value: a sidecar that dropped `limit` AND moved
     // its default would walk straight through a check pinned to 100. 50 and
     // 120 are the caps such a check misses; 100 is today's.
@@ -342,7 +512,13 @@ describe('OpenCodeSessionMapper', () => {
         const mapper = new OpenCodeSessionMapper(createProvider(client));
 
         await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/ignored the session limit/);
-        expect(client.session.list.mock.calls[1]![0]!.query.limit).toBe(1);
+        const probe = client.session.list.mock.calls[1]![0]!.query;
+        expect(probe.limit).toBe(1);
+        // The probe must ask the SAME question the real read asks. A sidecar
+        // that honoured `limit` for a narrow read but dropped it for the
+        // widened one would clear a probe that never widens — the exact
+        // probe-drift the method's own TSDoc warns about.
+        expect(probe.scope).toBe('project');
       }
     );
 
@@ -661,6 +837,30 @@ describe('OpenCodeSessionMapper', () => {
       // count the list happily shows, so a visible session would fail to open.
       const query = client.session.list.mock.calls[0]![0]!.query;
       expect(query.limit).toBeGreaterThan(SESSION_LIST_LIMIT + 1);
+    });
+
+    it('rebinds a subfolder session after a restart, so a listed row still opens (DOR-674)', async () => {
+      const client = createMockClient();
+      const subDir = `${PROJECT_DIR}/packages/api`;
+      // Directory-aware: with a mock that ignores `directory`, this rebuild
+      // would resolve the id whether or not it asked the sidecar to widen.
+      serveSessions(client, [ocSession({ id: 'ses_sub', directory: subDir })]);
+      client.session.messages.mockResolvedValue({
+        data: [{ info: userMessage(), parts: [textPart('hi')] }],
+      });
+      const [listed] = await new OpenCodeSessionMapper(createProvider(client)).listSessions(
+        PROJECT_DIR
+      );
+
+      // A FRESH mapper is the post-restart state: the derived id has to be
+      // re-minted from a re-list. If that re-list were still scoped to the
+      // exact project dir, the row the list just showed would fail to open.
+      const history = await new OpenCodeSessionMapper(createProvider(client)).getMessageHistory(
+        PROJECT_DIR,
+        listed!.id
+      );
+
+      expect(history).toHaveLength(1);
     });
 
     it('says the search was cut short, not that the session is missing (DOR-673)', async () => {

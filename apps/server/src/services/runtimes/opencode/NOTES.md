@@ -611,3 +611,41 @@ Everything degrades to "no subagent shown", never to a wrong turn: if the metada
 is admitted and only start/done are reported; if the `task` part shape moves, the tool card still
 renders as before; and a `sessionId` naming the parent — the one shape that COULD have broken a turn —
 is refused rather than admitted.
+
+## 8. Session listing scopes by EXACT directory; `scope=project` is the only widening (DOR-674)
+
+Live-verified 2026-08-25 against the pinned build (`opencode-ai@1.18.15`), driven through a real
+`opencode serve` on a throwaway git project.
+
+`GET /session?directory=…` matches the stored `Session.directory` by **exact string equality**, not by
+subtree. Sessions created at `<project>`, `<project>/packages/api` and `<project>/packages/api/src`
+each list only from their own exact path — which is why a session started in a subfolder appeared in no
+project's list at all (DOR-674).
+
+`GET /doc` declares seven query params on `GET /session`: `directory`, `workspace`, `scope`, `path`,
+`roots`, `start`, `limit`. Only three are usable:
+
+| param       | observed behaviour                                                                  |
+| ----------- | ----------------------------------------------------------------------------------- |
+| `scope`     | enum, sole member `project` (`scope=bogus` → **400**). Widens past `directory`.     |
+| `path`      | returned **0 rows** for every spelling tried, including the exact stored directory. |
+| `workspace` | **500** when passed a project path.                                                 |
+
+**`scope=project` is effectively machine-wide on this build.** Every worktree — a fresh git repo under
+`~/Keep/temp`, a fresh git repo under `$TMPDIR`, a plain non-git folder — reports `projectID: "global"`,
+and `/project/current` hands back a per-worktree `worktree` alongside that same shared id. Two unrelated
+git projects therefore list each other's sessions under `scope=project`. The adapter uses it only as
+"the widest list the sidecar will give" and narrows with its own subtree filter
+(`isWithinDirectory` in `session-mapper.ts`), so a later build that repairs `projectID` changes nothing
+DorkOS shows: a repaired `scope=project` narrows to the git worktree, still a superset of the sessions
+under any project dir inside it.
+
+**Directories are stored canonicalized.** A session created with `directory=/var/folders/…` on macOS is
+stored as `/private/var/folders/…` — the server resolves the real path at create time, and resolves the
+query param the same way before matching. DorkOS's own project dir does NOT get that treatment before it
+reaches the mapper (the mapper's import graph is filesystem-free by test guard, so it cannot `realpath`),
+which is the remaining half of the symlink/spelling case tracked as DOR-695.
+
+`limit` still applies to the widened read, and the budget is now spent machine-wide — see
+`SESSION_LIST_LIMIT` and the saturation messages, which say "on this machine" rather than "in this
+folder" for that reason.
