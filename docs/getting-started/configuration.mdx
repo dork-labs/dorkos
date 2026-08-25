@@ -151,6 +151,23 @@ It is still early alpha. Only turn it on when you know what is on the other side
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.
 
+### Memory
+
+Each of your agents keeps a small file of notes — things it learned that are
+worth keeping — and reads it at the start of every conversation it joins. The
+file lives beside the agent, on this machine, and you can open it in any editor.
+
+<TypeTable
+  type={{
+    'memory.provider': {
+      description:
+        'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log — your agents keep working either way. Changing this takes effect the next time DorkOS starts. Only you can change this.',
+      type: 'string',
+      default: 'builtin',
+    },
+  }}
+/>
+
 ### Rooms
 
 A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers — and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.

@@ -19,6 +19,7 @@
  */
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
+import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 
 /**
  * How long a new standing permission lasts by default, in minutes (eight hours —
@@ -1842,6 +1843,28 @@ export const UserConfigSchema = z.object({
       defaultAgent: z.string().default('dorkbot'),
     })
     .default(() => ({ defaultDirectory: DEFAULT_AGENTS_DIRECTORY, defaultAgent: 'dorkbot' })),
+  /**
+   * Where your agents keep what they remember (spec `agent-memory`, D7).
+   *
+   * `MemoryProvider` is a swappable port, so the backend behind an agent's
+   * memory can be something other than the markdown file DorkOS ships with — a
+   * vector store, a hosted memory service. This is the one setting that
+   * chooses.
+   */
+  memory: z
+    .object({
+      /**
+       * Which memory backend serves every agent on this machine.
+       *
+       * `'builtin'` is the file you can open: one small `MEMORY.md` beside each
+       * agent, on this machine and nowhere else. Any other value names a
+       * backend something registered, and an id nothing registered falls back
+       * to `'builtin'` with one warning rather than leaving agents with no
+       * memory at all — memory is never allowed to take down a turn.
+       */
+      provider: z.string().min(1).default(BUILTIN_MEMORY_PROVIDER_ID),
+    })
+    .default(() => ({ provider: BUILTIN_MEMORY_PROVIDER_ID })),
   extensions: z
     .object({
       // `enabled` and `disabled` record DEVIATIONS from each extension's default

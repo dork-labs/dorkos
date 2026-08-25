@@ -2837,6 +2837,39 @@ export function warmClaudeCodeSessionsByDefault(store: {
 }
 
 /**
+ * Seed `memory` — which backend holds what your agents remember (spec
+ * `agent-memory`, D7; DOR-1533).
+ *
+ * **This body is an anchor, and the honest thing to do is say so.** `memory` is
+ * a whole TOP-LEVEL section, so conf's own pre-migration
+ * `Object.assign({}, defaults, fileStore)` has already put it on the file by the
+ * time this runs — on the upgrade path and the fresh-install path alike. The
+ * absence guard therefore never passes and the `set` never executes. See "Which
+ * of these bodies is a real no-op, and which only looks like one" in the
+ * docblock above {@link CONFIG_MIGRATIONS}, and `.claude/rules/safe-defaults.md`
+ * ("no test at this seam can attribute it to the body — write that down rather
+ * than implying otherwise").
+ *
+ * It is kept anyway for one reason and not the other: it makes the intent of the
+ * release reviewable in the one table that records what each version did to
+ * somebody's config. It is NOT a second declaration of the default — it reads
+ * {@link USER_CONFIG_DEFAULTS} rather than a literal, so it cannot drift from the
+ * schema and then lose to it silently.
+ *
+ * Additive + idempotent: seeds only when the section is missing.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedMemoryProviderDefault(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('memory') != null) return;
+  store.set('memory', USER_CONFIG_DEFAULTS.memory);
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3434,6 +3467,25 @@ export const CONFIG_MIGRATIONS = {
     // `scheduler.timezone` — a documented setting that did nothing, because
     // every schedule already carries its own timezone.
     dropSchedulerTimezone(store);
+  },
+  // 0.68.0 has merged (the dead scheduler timezone), so 0.69.0 is the next key.
+  // Frozen from merge, not from the release bump, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.70.0'`.
+  //
+  // Safety-neutral and disjoint from every other key here: it names one new
+  // top-level section and writes nothing that exists.
+  '0.69.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `memory.provider` — which backend holds what an agent remembers (spec
+    // `agent-memory`, D7). Seeds `'builtin'`: the markdown file beside each
+    // agent, on this machine, which is the only backend that exists and the one
+    // that keeps memory local. An ANCHOR, not a mechanism — conf's top-level
+    // defaults pre-write lands the section either way, and
+    // `seedMemoryProviderDefault` says so at length rather than implying
+    // otherwise.
+    seedMemoryProviderDefault(store);
   },
 } as const;
 
