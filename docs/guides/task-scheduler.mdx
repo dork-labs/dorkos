@@ -168,9 +168,18 @@ Cancelled runs never send a message, since you cancelled them yourself. Schedule
 
 ## Coming from an older version
 
-Older versions of DorkOS kept scheduled tasks in their own folders, `~/.dork/tasks/` and `<your project>/.dork/tasks/`. You do not have to move anything. The first time the new version starts, DorkOS rewrites those files into the new format and moves them to the skills folders above.
+Older versions of DorkOS kept scheduled tasks in their own folders, `~/.dork/tasks/` and `<your project>/.dork/tasks/`. You do not have to move anything. DorkOS rewrites those files into the new format and moves them to the skills folders above.
 
-Anything you had already approved stays approved and keeps its timing. If one file is too damaged to read, DorkOS leaves it where it is and parks it on the Schedules page with a note naming the file, so nothing disappears quietly.
+It happens the first time the new version starts, for every project registered with DorkOS at that moment. Register a project later and its old folder is migrated right then, as it registers, so a project you add next month gets the same treatment without waiting for a restart.
+
+A file that already sits in a skills folder but still lists `cron` at the top level, rather than inside a `schedule:` block, is folded into the block in the same pass. DorkOS was ignoring it before; now it runs.
+
+Anything you had already approved stays approved and keeps its timing. One exception, and it is the same rule as everywhere else on this page: if you edited a schedule's file while DorkOS was switched off, what it says no longer matches what you approved, so it parks for you to read again rather than arming itself on content nobody has seen.
+
+Two cases park with a note instead of moving quietly:
+
+- **A name that is already taken.** If a skill of the same name already lives in the skills folder, that skill keeps its name, and the schedule arrives as `<name>-migrated`. It parks with a note naming both the folder it wanted and the one it got, so you can check it is still what you want before approving it.
+- **A file too damaged to read.** DorkOS leaves it exactly where it is and parks it on the Schedules page with a note naming the file, so nothing disappears quietly.
 
 ## How this differs from Claude Code's `/loop`
 
