@@ -544,7 +544,7 @@ export function isSyntheticEndpointHash(endpointHash: string): boolean {
 }
 
 /** Separator for the opaque composite `(id, endpointHash)` pagination cursor. */
-const CURSOR_SEP = ' ';
+const CURSOR_SEP = '\u0000';
 
 /** Encode a row's composite key into an opaque pagination cursor. */
 function encodeCursor(row: { id: string; endpointHash: string }): string {

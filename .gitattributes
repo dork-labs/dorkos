@@ -3,3 +3,14 @@
 # NUL-byte heuristic otherwise renders any diff spanning that boundary as
 # "Binary files differ", in the local CLI and in the GitHub PR view alike.
 apps/client/src/layers/features/dashboard-sidebar/model/boot/use-boot-state.ts diff
+
+# Same fix, same reason, six more files (DOR-1561) — each held a raw NUL byte
+# in a composite-key separator until this fix escaped it. Without this, a
+# diff, blame, or PR view spanning the fix commit still renders "Binary files
+# differ" against the pre-fix blob.
+apps/server/src/services/search/jsonl-frontier.ts diff
+apps/server/src/services/relay/chat-bridge/ingest.ts diff
+apps/server/src/services/relay/chat-bridge/presence.ts diff
+packages/relay/src/sqlite-index.ts diff
+packages/shared/src/untrusted-text.ts diff
+specs/room-per-agent-stop/02-specification.md diff
