@@ -7,7 +7,7 @@ import { AGENTS_BY_KEY } from './cast';
 import { POP } from './motion-tokens';
 
 /** Avatar tile scale: `lg` on hero cards, `md` in the chat. */
-export type TileSize = 'lg' | 'md';
+type TileSize = 'lg' | 'md';
 
 const TILE_SIZES: Record<TileSize, string> = {
   lg: 'size-12 rounded-xl',

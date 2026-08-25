@@ -6,7 +6,6 @@
  */
 
 export { StoryboardSection } from './StoryboardSection';
-export { StoryFrame, FRAME_WIDTH, FRAME_HEIGHT } from './StoryFrame';
 export { BeatStrip } from './BeatStrip';
 export { StageScrubber } from './StageScrubber';
 export { CastGallery } from './CastGallery';
