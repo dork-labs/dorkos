@@ -43,6 +43,17 @@ export async function openFromCommandPalette(page: Page, item: string): Promise<
   await page.getByRole('option', { name: item, exact: true }).first().click();
 }
 
+/**
+ * The phrase ⌘K's message-search hand-off row draws, in both its wordings —
+ * it says "all messages" under a scope chip (`model/search-surface`).
+ *
+ * A regex rather than a test id because cmdk puts nothing on an item a spec
+ * could aim at: `value` is the row's identity INSIDE cmdk and never reaches the
+ * DOM. This is the same match the client's own test uses, so the two go stale
+ * together rather than one of them passing on a row that no longer exists.
+ */
+export const SEARCH_HANDOFF_ROW = /Search (all )?messages for/;
+
 /** The parts of the palette a spec drives, all scoped to its cmdk root. */
 export interface CommandPalette {
   /** The cmdk root — every other locator hangs off it. */
@@ -68,6 +79,23 @@ export interface CommandPalette {
    * never carried it.
    */
   archivedMarks: Locator;
+  /**
+   * ⌘K's last row — the hand-off to the surface that searches what was SAID
+   * rather than what things are called (P3 AC-6, DOR-685).
+   *
+   * Matched by {@link SEARCH_HANDOFF_ROW}. It draws the typed query back at
+   * you, so it matches whatever text a spec is filtering rows on — which is
+   * exactly why {@link CommandPalette.results} exists.
+   */
+  searchHandoff: Locator;
+  /**
+   * The rows the ranking produced — every option except the hand-off.
+   *
+   * Any count of what ⌘K FOUND belongs here rather than on `options`: the
+   * hand-off is not a result, it carries the query, and so it silently pads
+   * every `filter({ hasText })` count by one.
+   */
+  results: Locator;
 }
 
 /**
@@ -80,12 +108,15 @@ export interface CommandPalette {
  */
 function commandPalette(page: Page): CommandPalette {
   const root = page.locator('[cmdk-root]');
+  const options = root.getByRole('option');
   return {
     root,
     input: page.getByTestId('command-palette-input'),
-    options: root.getByRole('option'),
+    options,
     chip: page.getByTestId('palette-scope-chip'),
     archivedMarks: root.getByTestId('palette-archived-mark'),
+    searchHandoff: options.filter({ hasText: SEARCH_HANDOFF_ROW }),
+    results: options.filter({ hasNotText: SEARCH_HANDOFF_ROW }),
   };
 }
 

@@ -2,6 +2,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { visibleText } from '../../pages/RoomsPage';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
+import { SEARCH_HANDOFF_ROW } from '../../pages/command-palette';
 import { openCockpit } from './open-cockpit';
 
 // Same reasoning as `room-identity.spec.ts`: these share one server and one room
@@ -10,14 +11,27 @@ import { openCockpit } from './open-cockpit';
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 /** The command palette's cmdk root, and what is inside it. */
-function paletteIn(page: Page): { root: Locator; input: Locator; options: Locator } {
+function paletteIn(page: Page): {
+  root: Locator;
+  input: Locator;
+  options: Locator;
+  results: Locator;
+  handoff: Locator;
+} {
   const root = page.locator('[cmdk-root]');
+  const options = root.getByRole('option');
   return {
     root,
     // By test id, not the placeholder: that string is user-facing copy and this
     // spec is not the place to pin its wording.
     input: page.getByTestId('command-palette-input'),
-    options: root.getByRole('option'),
+    options,
+    // The rows the ranking produced, without ⌘K's hand-off to message search
+    // (DOR-685). The hand-off draws the typed query back at you, so it matches
+    // whatever text a row filter is looking for — and it is not a result, so no
+    // count of results may include it.
+    results: options.filter({ hasNotText: SEARCH_HANDOFF_ROW }),
+    handoff: options.filter({ hasText: SEARCH_HANDOFF_ROW }),
   };
 }
 
@@ -226,9 +240,18 @@ test.describe('Rooms in the command palette @smoke', () => {
       .first();
     await expect(conversation).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(conversation).toHaveAccessibleName(`Open conversation with ${agent.name}`);
-    // Exactly two: the conversation and the agent. Not "more than one" — the
-    // number is knowable, and a third row would be a duplicate nobody wants.
-    await expect(palette.options.filter({ hasText: agent.name })).toHaveCount(2);
+    // Exactly two RESULTS: the conversation and the agent. Not "more than one"
+    // — the number is knowable, and a third result would be a duplicate nobody
+    // wants.
+    //
+    // Counted over `results` rather than every option, because ⌘K's hand-off
+    // row draws the typed query — which here IS the agent's name — so on
+    // `options` it pads this number by one and the assertion stops being about
+    // duplicates (DOR-685). The two lines below name the row that was excluded,
+    // so "two" cannot be reached by a filter that quietly dropped a result.
+    await expect(palette.results.filter({ hasText: agent.name })).toHaveCount(2);
+    await expect(palette.handoff).toHaveCount(1);
+    await expect(palette.handoff).toContainText(agent.name);
 
     await conversation.click();
     await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${dm.id}`), {
