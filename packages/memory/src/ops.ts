@@ -7,6 +7,7 @@
  */
 import {
   MemoryMatchError,
+  MemoryNoteShapeError,
   type MemoryProvenance,
   type MemoryWriteOp,
 } from '@dorkos/shared/memory-provider';
@@ -26,8 +27,21 @@ const NEAR_MATCH_MAX_CHARS = 120;
  * @param op - The change to make.
  * @throws {MemoryMatchError} When a `replace` or `remove` does not name exactly
  *   one place in `content`.
+ * @throws {MemoryNoteShapeError} When an `add` or `replace` carries a line
+ *   break, which would let it forge a provenance suffix of its own.
  */
 export function applyMemoryOp(content: string, op: MemoryWriteOp): string {
+  // **A note is one line, and that is enforced before anything else happens.**
+  // The provenance suffix lands at the END of the text, so a caller that could
+  // embed a newline could write a first line already carrying a
+  // handler-shaped `(noted in …)` of its own choosing — indistinguishable from
+  // one this engine stamped. Checked for `replace` too, and for the same
+  // reason: replacing one line with two forges the second one's provenance
+  // just as well as adding it did.
+  if ((op.action === 'add' || op.action === 'replace') && /[\r\n]/.test(op.text)) {
+    throw new MemoryNoteShapeError(op.action);
+  }
+
   switch (op.action) {
     case 'add':
       return appendNote(content, op.text, op.provenance);

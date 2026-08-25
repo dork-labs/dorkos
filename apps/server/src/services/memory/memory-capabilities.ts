@@ -16,6 +16,7 @@ import {
   MemoryCapExceededError,
   MemoryIOError,
   MemoryMatchError,
+  MemoryNoteShapeError,
 } from '@dorkos/shared/memory-provider';
 import { defineCapability, type CapabilityDeps } from '../core/capabilities/index.js';
 import type { CapabilityDomain } from '../core/capabilities/index.js';
@@ -69,7 +70,7 @@ const MemoryWriteOutcomeSchema = z.object({
   error: z.string().optional(),
   /** Which kind of refusal, so a caller can tell a fixable one from a fact. */
   code: z
-    .enum(['no-agent', 'not-found', 'ambiguous', 'protected-header', 'too-big', 'io'])
+    .enum(['no-agent', 'not-found', 'ambiguous', 'protected-header', 'multi-line', 'too-big', 'io'])
     .optional(),
   /** Lines that came closest, when a `replace` or `remove` named no single note. */
   nearMatches: z.array(z.string()).optional(),
@@ -114,6 +115,9 @@ function provenanceFor(
 function refusal(err: unknown): z.infer<typeof MemoryWriteOutcomeSchema> {
   if (err instanceof MemoryMatchError) {
     return { saved: false, error: err.message, code: err.kind, nearMatches: err.nearMatches };
+  }
+  if (err instanceof MemoryNoteShapeError) {
+    return { saved: false, error: err.message, code: 'multi-line' };
   }
   if (err instanceof MemoryCapExceededError) {
     return { saved: false, error: err.message, code: 'too-big', limit: err.maxChars };
@@ -165,7 +169,10 @@ export const memoryDomain: CapabilityDomain = {
           .min(1)
           .max(2000)
           .optional()
-          .describe('The note, for `add` and `replace`. One thing worth keeping, in your words.'),
+          .describe(
+            'The note, for `add` and `replace`. ONE thing worth keeping, on one line, in your ' +
+              'words — a line break is refused, so call again for the next note.'
+          ),
         old_text: z
           .string()
           .min(1)

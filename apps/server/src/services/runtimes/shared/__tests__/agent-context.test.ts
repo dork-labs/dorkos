@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
+  _buildSessionModelBlock as buildSessionModelBlock,
   _MEMORY_FENCE_PREAMBLE as MEMORY_FENCE_PREAMBLE,
   _MEMORY_STALENESS_LINE as MEMORY_STALENESS_LINE,
   _MEMORY_TRUST_FRAMING as MEMORY_TRUST_FRAMING,
@@ -973,7 +974,11 @@ describe('what each block costs', () => {
     // A real count per block, not a placeholder — and `agent_memory` is the one
     // this measurement exists for.
     expect(sizes!.agent_memory).toBeGreaterThan(notes.length);
-    expect(sizes!.session_model).toBeGreaterThan(100);
+    // The EXACT length of a block whose text is a known constant. A `>100`
+    // bound passes for a block that lost its last sentence — including the one
+    // naming the memory tool, which is the sentence that makes an agent save
+    // anything at all.
+    expect(sizes!.session_model).toBe(buildSessionModelBlock().length);
 
     const call = vi
       .mocked(logger.debug)

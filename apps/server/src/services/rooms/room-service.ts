@@ -1723,6 +1723,14 @@ export class RoomService {
    * @param viewerAuthorId - The caller, for the visibility check.
    * @returns One binding per agent that has answered here, room-scoped.
    */
+  listRoomSessions(roomId: string, viewerAuthorId: string): RoomSessionBinding[] {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
+    return this.store.sessionLedger
+      .list()
+      .filter((binding) => binding.roomId === roomId)
+      .map(({ authorId, sessionId }) => ({ authorId, sessionId }));
+  }
+
   /**
    * Where a session is answering, as a saved note should record it.
    *
@@ -1747,14 +1755,6 @@ export class RoomService {
     const room = this.store.getRoom(binding.roomId);
     if (!room || room.kind !== 'channel') return null;
     return room.slug ? `#${room.slug}` : room.title;
-  }
-
-  listRoomSessions(roomId: string, viewerAuthorId: string): RoomSessionBinding[] {
-    this.requireVisibleRoom(roomId, viewerAuthorId);
-    return this.store.sessionLedger
-      .list()
-      .filter((binding) => binding.roomId === roomId)
-      .map(({ authorId, sessionId }) => ({ authorId, sessionId }));
   }
 
   /**

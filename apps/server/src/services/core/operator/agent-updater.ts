@@ -20,7 +20,12 @@ import {
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
-import { SOUL_MAX_CHARS, NOPE_MAX_CHARS } from '@dorkos/shared/convention-files';
+import {
+  CONVENTION_FILES,
+  MEMORY_MAX_CHARS,
+  NOPE_MAX_CHARS,
+  SOUL_MAX_CHARS,
+} from '@dorkos/shared/convention-files';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
@@ -78,16 +83,22 @@ export class AgentUpdateError extends Error {
  * @param error - The failed `UpdateAgentConventionsSchema` parse.
  */
 function conventionRefusal(error: z.ZodError): string {
+  // Keyed by the field the schema refused, so a new convention file is one row
+  // here rather than a fourth branch of a ternary — and so a field added to the
+  // schema without a row falls through to the generic message loudly instead of
+  // being reported as somebody else's file.
+  const budgets: Record<string, { file: string; max: number }> = {
+    soulContent: { file: CONVENTION_FILES.soul, max: SOUL_MAX_CHARS },
+    nopeContent: { file: CONVENTION_FILES.nope, max: NOPE_MAX_CHARS },
+    memoryContent: { file: CONVENTION_FILES.memory, max: MEMORY_MAX_CHARS },
+  };
+
   const issue = error.issues.find(
-    (candidate) =>
-      candidate.code === 'too_big' &&
-      (candidate.path[0] === 'soulContent' || candidate.path[0] === 'nopeContent')
+    (candidate) => candidate.code === 'too_big' && budgets[String(candidate.path[0])] !== undefined
   );
   if (!issue) return 'Validation failed';
 
-  const isSoul = issue.path[0] === 'soulContent';
-  const file = isSoul ? 'SOUL.md' : 'NOPE.md';
-  const max = isSoul ? SOUL_MAX_CHARS : NOPE_MAX_CHARS;
+  const { file, max } = budgets[String(issue.path[0])]!;
   // A colon rather than a dash: this sentence is composed with the caller's own
   // ("Couldn't save your instructions — …"), and two dashes in one line read as
   // an aside inside an aside.
@@ -104,8 +115,8 @@ interface MeshSyncLike {
  *
  * Enforces, in the same order as the route: schema validation, existence,
  * the immutable-`name` guard (slug is fixed after creation — use `displayName`),
- * and the system-agent identity protections. `soulContent`/`nopeContent` are
- * written to their convention files; remaining fields merge into `agent.json`
+ * and the system-agent identity protections. `soulContent`/`nopeContent`/
+ * `memoryContent` are written to their convention files; remaining fields merge into `agent.json`
  * with `null` meaning "clear this field" (JSON can't carry `undefined`). After a
  * successful write it best-effort syncs the Mesh DB cache (never fatal).
  *
@@ -191,10 +202,17 @@ export async function updateAgentManifest(opts: {
   const conventionUpdates = conventionsResult.data;
 
   if (conventionUpdates.soulContent !== undefined) {
-    await writeConventionFile(agentPath, 'SOUL.md', conventionUpdates.soulContent);
+    await writeConventionFile(agentPath, CONVENTION_FILES.soul, conventionUpdates.soulContent);
   }
   if (conventionUpdates.nopeContent !== undefined) {
-    await writeConventionFile(agentPath, 'NOPE.md', conventionUpdates.nopeContent);
+    await writeConventionFile(agentPath, CONVENTION_FILES.nope, conventionUpdates.nopeContent);
+  }
+  // The memory file's OTHER writable path (DOR-632). Accepting `memoryContent`
+  // on the wire and then not writing it is the DOR-1253 shape exactly: the
+  // editor reports a save, the file never changes, and the person finds out the
+  // next time they open it.
+  if (conventionUpdates.memoryContent !== undefined) {
+    await writeConventionFile(agentPath, CONVENTION_FILES.memory, conventionUpdates.memoryContent);
   }
 
   // traits and conventions go into agent.json via the manifest update.

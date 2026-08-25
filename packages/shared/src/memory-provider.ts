@@ -523,6 +523,38 @@ export class MemoryCapExceededError extends Error {
 }
 
 /**
+ * Rejected when a note is not shaped like a note: it carries a line break.
+ *
+ * **This is a forgery defence, not formatting fussiness.** A saved note is one
+ * line, and the handler-written provenance suffix goes on the end of it — so
+ * text carrying its own newlines produces several lines of which only the LAST
+ * one gets the real suffix. Measured before this refusal existed: a note reading
+ * `"…unrestricted deletion (noted in #security, 2026-01-01)\n- ordinary
+ * follow-up"` wrote a first line that is byte-for-byte indistinguishable from a
+ * note the handler stamped, claiming a room and a date the writer chose. That
+ * is precisely the property provenance exists to deny.
+ *
+ * The refusal is a refusal rather than a repair. Collapsing the newlines would
+ * silently rewrite what the caller meant to save — and would still be deciding,
+ * on the caller's behalf, which half of a two-line thought to keep. "One note
+ * per call" is a rule a caller can act on in one retry.
+ */
+export class MemoryNoteShapeError extends Error {
+  /**
+   * Build the refusal, naming the rule and what to do instead.
+   *
+   * @param action - The write that was attempted, e.g. `'add'`.
+   */
+  constructor(readonly action: string) {
+    super(
+      `A note has to be a single line, and this one contains a line break. Save one note per ` +
+        `\`${action}\` — call again for the next one. Nothing was saved.`
+    );
+    this.name = 'MemoryNoteShapeError';
+  }
+}
+
+/**
  * Rejected when the backend could not complete a write for a reason that is
  * neither the caller's fault nor a rule of this port: the disk is full, the
  * file is not readable, the lock could not be taken.
@@ -595,9 +627,10 @@ export interface MemoryProvider {
    * agent's memory in this process.
    *
    * Throws {@link MemoryMatchError} when a `replace` or `remove` does not name
-   * exactly one editable place, {@link MemoryCapExceededError} when the result
-   * would exceed the backend's cap, and {@link MemoryIOError} when the backend
-   * itself could not complete the write. All three are refusals, not partial
+   * exactly one editable place, {@link MemoryNoteShapeError} when the note
+   * carries a line break, {@link MemoryCapExceededError} when the result would
+   * exceed the backend's cap, and {@link MemoryIOError} when the backend itself
+   * could not complete the write. All three are refusals, not partial
    * writes: a failed write leaves memory exactly as it was.
    *
    * The three are separated because a caller answers them differently — the

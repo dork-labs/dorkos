@@ -20,6 +20,7 @@ import {
   defaultSoulTemplate,
   defaultNopeTemplate,
   buildSoulContent,
+  CONVENTION_FILES,
 } from '@dorkos/shared/convention-files';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { defaultMemoryTemplate } from '@dorkos/memory';
@@ -399,8 +400,8 @@ export async function createAgentWorkspace(
     // claimed on the ledger like the other two, so a creation that fails later
     // takes the file with it: without the claim, the file outlives the failure
     // and the next agent created at this path inherits a stranger's notes.
-    await ledger.claimFile(path.join(dorkDir, 'MEMORY.md'));
-    await writeConventionFile(resolvedPath, 'MEMORY.md', defaultMemoryTemplate());
+    await ledger.claimFile(path.join(dorkDir, CONVENTION_FILES.memory));
+    await writeConventionFile(resolvedPath, CONVENTION_FILES.memory, defaultMemoryTemplate());
 
     // Scaffold cross-harness instruction files (canonical AGENTS.md + per-harness
     // pointers) for every agent, not just DorkBot. Write-if-absent (ADR-0302), so a

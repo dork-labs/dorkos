@@ -173,9 +173,13 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
 
   // Scaffold convention files
   const traitBlock = renderTraits(DEFAULT_TRAITS);
-  await writeConventionFile(dorkbotDir, 'SOUL.md', defaultSoulTemplate('DorkBot', traitBlock));
-  await writeConventionFile(dorkbotDir, 'NOPE.md', defaultNopeTemplate());
-  await writeConventionFile(dorkbotDir, 'MEMORY.md', defaultMemoryTemplate());
+  await writeConventionFile(
+    dorkbotDir,
+    CONVENTION_FILES.soul,
+    defaultSoulTemplate('DorkBot', traitBlock)
+  );
+  await writeConventionFile(dorkbotDir, CONVENTION_FILES.nope, defaultNopeTemplate());
+  await writeConventionFile(dorkbotDir, CONVENTION_FILES.memory, defaultMemoryTemplate());
 
   // Scaffold cross-harness instruction files: a canonical root AGENTS.md (DorkBot's
   // orientation template) plus per-harness pointers. Replaces the old
