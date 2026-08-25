@@ -113,6 +113,18 @@ means at least two sweeps observe every mutation, the second strictly after the 
 stream observed (62 s) has finished. A test pins the window against
 `SEARCH_RECONCILE_INTERVAL_MS`.
 
+**A re-read DELETES first, and the version that did not was wrong.** The first
+implementation kept `rereadWhole` distinct from a rebuild — resume at ordinal 1 and let the
+upsert rewrite each row, so the FTS5 delete trigger stayed out of the common case. That
+leaves a hole, found in the verify pass: **a message that projects to nothing writes no
+row**, so it cannot overwrite what sits at its ordinal. A container whose count lands
+exactly on the index's high-water mark fails the shrink test too (`maxOrdinal < indexedTo`
+is false at equality), and the stale row answers at that ordinal forever. It is reachable
+rather than theoretical — **25 of the 75 messages on the operator's store project to
+nothing**, because a turn that only called a tool has nothing to search. The two paths are
+now one: a whole re-read deletes and rewrites. The cost is bounded by whoever raises the
+flag, and its only user raises it for conversations touched in the last quarter hour.
+
 **5. Child sessions are not containers.** A session with a `parent_id` is a subagent's own
 transcript — a conversation the human never had — excluded for the same reason
 `claude-code-discovery.ts` walks past `subagents/**`.
@@ -173,16 +185,33 @@ either of:**
   offset and M2's ordinal read. At 1.4 MB and 41 ms per sweep this is free; at a gigabyte
   it would not be, and the answer then is `VACUUM INTO` against a read-only connection or a
   size ceiling, not a live read.
-- **A torn copy is possible, and the dangerous half is the one that OPENS.** OpenCode may
-  checkpoint mid-copy. A torn WAL frame is a discard rather than a corruption, because the
-  log carries per-frame checksums — but **the main database file carries none**, so a copy
-  caught mid-checkpoint can open without complaint and report fewer sessions than exist,
-  which `pruneVanished` would read as "these conversations are gone". Measured: zeroing one
-  interior page of a valid database still answers `SELECT COUNT(*)` with a number. Every
-  snapshot therefore runs `PRAGMA quick_check` (single-digit milliseconds at this size)
-  before it is read from, and a failure is a snapshot failure — recorded, nothing pruned,
-  retried against a fresh copy five minutes later. What remains accepted is the cost of the
-  check and the extra sweep of staleness, not silent data loss.
+- **A copy taken from under a live writer can be torn or merely STALE, and only the second
+  is genuinely undefended.** Torn was measured rather than assumed: four tear shapes against
+  a valid database — two zeroed interior pages, a truncation to 60%, a page of garbage — and
+  **every one threw `SQLITE_CORRUPT` on the first real `SELECT`.** None opened cleanly and
+  returned a short list, so the feared "it lies to you" shape did not reproduce. (A bare
+  `SELECT COUNT(*)` can still answer from a surviving page, which is what made an earlier
+  draft of this bullet believe otherwise.)
+
+  `PRAGMA quick_check` at open is still load-bearing, for a different and sharper reason:
+  `listContainers` runs at the top of `sweepContainers`, OUTSIDE the per-container `try`, so
+  a corrupt read there escapes the source altogether. Checking at open converts a
+  **process-wide sweep abort — which would take rooms and Claude Code down with OpenCode —**
+  into one recorded per-source failure. (A second, independent guard now backs it up: the
+  indexer wraps each source, so no source can end another's tick.)
+
+  **The accepted risk is staleness.** The three files are copied one after another, so a
+  checkpoint landing between them yields an old main file beside a truncated WAL: a
+  perfectly valid database that describes an earlier moment and can be missing whole
+  conversations. `quick_check` passes it. The defence is `SNAPSHOT_MIN_LIVE_SHARE` — the
+  sweep refuses to prune when fewer than half the known containers are listed, records a
+  failure instead, and prunes on a later tick once the count has settled. That is a floor,
+  not a proof: a stale copy losing a third of the sessions still prunes them, and they come
+  back on the next sweep at the cost of a re-read. Making this airtight needs an atomic
+  snapshot (`VACUUM INTO` against a read-only connection, or the backup API), which is the
+  trigger for revisiting: **the day the corpus is large enough that a re-read after a bad
+  prune is expensive, take an atomic copy instead of a file copy.**
+
 - **DorkOS now parses another product's private JSON schema.** `message.data` and
   `part.data` are OpenCode's internals, and they will change. The projection counts every
   row it does not recognise (`SourceSweep.skipped`) precisely so that drift is visible

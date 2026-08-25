@@ -342,20 +342,36 @@ function assertReadOnly(db: SqliteDatabase): string {
 }
 
 /**
- * Fail unless the copy is structurally intact.
+ * Fail unless the copy is structurally intact — and fail HERE, where the sweep
+ * can attribute it.
  *
- * **The failure this exists for is a torn copy that OPENS.** The store is copied
- * while OpenCode may be checkpointing into it, and SQLite's main database file
- * carries no per-page checksums — so a copy caught mid-checkpoint can be missing
- * pages, open without complaint, and report FEWER SESSIONS than exist. That is
- * the one shape this source must never take at face value: a short container
- * list is what {@link pruneVanished} reads as "these conversations are gone", and
- * it would delete indexed history that is perfectly fine on disk.
+ * **This does not exist to catch a torn copy that lies.** An earlier version of
+ * this comment said it did, and that was measured and found false: four tear
+ * shapes were probed against a valid database — two zeroed interior pages, a
+ * truncation to 60%, and a page of garbage — and **every one of them threw
+ * `SQLITE_CORRUPT` on the first real `SELECT`.** None opened cleanly and returned
+ * a short session list. (A bare `SELECT COUNT(*)` can still answer from a page
+ * that survived, which is what made the earlier claim look true; the statement
+ * this source actually runs does not.)
  *
- * `quick_check` is the cheap half of `integrity_check` — it verifies page
- * structure and skips the index-vs-table cross-check — and on a 1.4 MB store it
- * costs single-digit milliseconds. A failure here is a snapshot failure: recorded,
- * nothing pruned, retried on the next sweep against a fresh copy.
+ * **What it exists for is WHERE that throw lands.** {@link OpenCodeSnapshot.listContainers}
+ * is called at the top of `sweepContainers`, outside the per-container `try`, so
+ * an error raised there escapes the source entirely. Without this check the tick
+ * degrades from "one source recorded a failure" to "the whole sweep rejected",
+ * taking rooms and Claude Code down with it. Checking at open converts a
+ * process-wide abort into a clean per-source failure: recorded, nothing pruned,
+ * retried against a fresh copy on the next sweep.
+ *
+ * `quick_check` is the cheap half of `integrity_check` — page structure, no
+ * index-vs-table cross-check — and costs single-digit milliseconds on a 1.4 MB
+ * store.
+ *
+ * **The shape it does NOT defend against is staleness, not corruption**: the
+ * three files are copied one after another, so a checkpoint landing between them
+ * yields an old main file beside a truncated WAL. That copy is perfectly valid
+ * and simply describes an earlier moment — `quick_check` passes it, and it can
+ * carry a SHORT session list. `SNAPSHOT_MIN_LIVE_SHARE` (`snapshot-frontier.ts`)
+ * is what stands between that and a prune.
  */
 function assertIntact(db: SqliteDatabase): void {
   // It reports corruption BOTH ways, which is why this catches as well as
@@ -406,7 +422,7 @@ function assertSchema(db: SqliteDatabase): void {
     }
     // `PRAGMA table_info` is schema metadata, not data: it names columns and
     // returns no row of any table. It cannot reach a credential value, which is
-    // why it is not (and need not be) expressible through `selectFrom`.
+    // why it is not (and need not be) expressible through `buildAllowlistedSelect`.
     const columnInfo = db.pragma(`table_info(${table})`) as { name: string }[];
     const present = new Set(columnInfo.map((row) => row.name));
     for (const column of columns) {
@@ -467,7 +483,7 @@ export function openOpenCodeSnapshot(
 
     listContainers(): RowContainer[] {
       // Three allowlisted selects rather than one joined statement, because a
-      // join would have to name the second table in `tail` — which `selectFrom`
+      // join would have to name the second table in `tail` — which the allowlist
       // now refuses outright, and which was the whole guarantee even before it
       // did. Counting and max-ing in JavaScript costs one pass over a corpus two
       // orders of magnitude smaller than Claude Code's, inside a sweep that has

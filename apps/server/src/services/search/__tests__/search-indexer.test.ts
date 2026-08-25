@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { authors, roomEntries, rooms, messages, searchSources, eq, type Db } from '@dorkos/db';
 import type BetterSqlite3 from 'better-sqlite3';
-import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS } from '../indexer.js';
+import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, SOURCE_FAILURE_KEY } from '../indexer.js';
 import { roomsSource, SEARCH_SOURCES } from '../registry.js';
 import type { RowSource } from '../types.js';
 
@@ -157,6 +157,58 @@ describe('the registry the indexer sweeps by default', () => {
       'jsonl',
       'sqlite-snapshot',
     ]);
+  });
+});
+
+describe('one source having a bad day', () => {
+  it('does not stop the sources swept after it', async () => {
+    // Each mechanism degrades per container, but a throw from OUTSIDE a
+    // container's own `try` — a container list that will not read — escapes the
+    // mechanism. Before the per-source wrap, that also skipped every source
+    // ORDERED AFTER the failing one, silently: rooms would stop indexing because
+    // another runtime's store moved.
+    const exploding: RowSource = {
+      id: 'exploding',
+      mechanism: 'rows',
+      listContainers: () => {
+        throw new Error('the container list would not read');
+      },
+      readSince: () => ({ messages: [], skipped: 0 }),
+    };
+
+    seedRoom('room-a');
+    say('room-a', 'the room still indexes');
+
+    const result = await new SearchIndexer(db, [exploding, roomsSource]).sweep();
+
+    expect(result.failures).toEqual([
+      {
+        sourceId: 'exploding',
+        originKey: SOURCE_FAILURE_KEY,
+        message: 'the container list would not read',
+      },
+    ]);
+    // The ordering is the point: `roomsSource` comes AFTER the thrower, and its
+    // row is in the index anyway.
+    expect(result.indexed).toBe(1);
+    expect(indexedMessages()).toEqual([
+      expect.objectContaining({ source_id: 'rooms', body: 'the room still indexes' }),
+    ]);
+  });
+
+  it('resolves rather than rejecting, so the reconciler logs instead of dying', async () => {
+    const exploding: RowSource = {
+      id: 'exploding',
+      mechanism: 'rows',
+      listContainers: () => {
+        throw new Error('boom');
+      },
+      readSince: () => ({ messages: [], skipped: 0 }),
+    };
+    await expect(new SearchIndexer(db, [exploding]).sweep()).resolves.toMatchObject({
+      indexed: 0,
+      pruned: 0,
+    });
   });
 });
 

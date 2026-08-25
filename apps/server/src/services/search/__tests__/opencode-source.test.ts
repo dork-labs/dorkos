@@ -6,7 +6,12 @@ import Database from 'better-sqlite3';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { messages, searchSources, eq, type Db } from '@dorkos/db';
 import { createOpenCodeSource, openCodeSource } from '../registry.js';
-import { sweepSnapshotSource, SNAPSHOT_FAILURE_KEY } from '../snapshot-frontier.js';
+import {
+  sweepSnapshotSource,
+  SNAPSHOT_FAILURE_KEY,
+  SNAPSHOT_MIN_LIVE_SHARE,
+} from '../snapshot-frontier.js';
+import { PRUNE_GUARD_KEY } from '../row-frontier.js';
 import {
   OPENCODE_CREDENTIAL_TABLES,
   OPENCODE_READ_ALLOWLIST,
@@ -615,6 +620,88 @@ describe('a machine without OpenCode', () => {
   });
 });
 
+describe('a snapshot that describes an earlier moment', () => {
+  // The shape `quick_check` cannot see. The store and its WAL siblings are
+  // copied one after another, so a checkpoint between them yields an OLD main
+  // file beside a truncated log — a perfectly valid database that is simply
+  // behind, and can be missing whole conversations. A prune on that list deletes
+  // history that is intact on disk.
+
+  it('refuses to prune when most of the known containers vanish at once', async () => {
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('a kestrel')]);
+    seedSession('ses_b');
+    say('ses_b', 'user', [text('a pelican')]);
+    seedSession('ses_c');
+    say('ses_c', 'user', [text('a buzzard')]);
+    seedSession('ses_d');
+    say('ses_d', 'user', [text('a harrier')]);
+    await sweep();
+    expect(indexed()).toHaveLength(4);
+
+    // Three of four gone — below the floor.
+    for (const gone of ['ses_b', 'ses_c', 'ses_d']) {
+      store.prepare('DELETE FROM part WHERE session_id = ?').run(gone);
+      store.prepare('DELETE FROM message WHERE session_id = ?').run(gone);
+      store.prepare('DELETE FROM session WHERE id = ?').run(gone);
+    }
+
+    const result = await sweep();
+    expect(result.pruned).toBe(0);
+    expect(result.failures).toEqual([
+      {
+        sourceId: 'opencode',
+        originKey: PRUNE_GUARD_KEY,
+        message: expect.stringContaining('refusing to prune'),
+      },
+    ]);
+    // Nothing was lost while the guard held.
+    expect(indexed()).toHaveLength(4);
+  });
+
+  it('still prunes an ordinary deletion, so the guard is not a way to never prune', async () => {
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('a kestrel')]);
+    seedSession('ses_b');
+    say('ses_b', 'user', [text('a pelican')]);
+    seedSession('ses_c');
+    say('ses_c', 'user', [text('a buzzard')]);
+    await sweep();
+
+    store.prepare('DELETE FROM part WHERE session_id = ?').run('ses_b');
+    store.prepare('DELETE FROM message WHERE session_id = ?').run('ses_b');
+    store.prepare('DELETE FROM session WHERE id = ?').run('ses_b');
+
+    // Two of three survive, which clears the floor.
+    const result = await sweep();
+    expect(2 / 3).toBeGreaterThanOrEqual(SNAPSHOT_MIN_LIVE_SHARE);
+    expect(result.pruned).toBe(1);
+    expect(result.failures).toEqual([]);
+    expect(search('pelican')).toEqual([]);
+  });
+
+  it('prunes on the sweep after, once the short list turns out to be the truth', async () => {
+    // The guard delays a real deletion by one tick; it does not veto it. The
+    // second sweep sees the same short list against a smaller known set, so the
+    // share is 0/1 of what is left... which is still short. What actually clears
+    // it is that the operator's remaining history is now the whole picture.
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('a kestrel')]);
+    seedSession('ses_b');
+    say('ses_b', 'user', [text('a pelican')]);
+    await sweep();
+
+    store.prepare('DELETE FROM part WHERE session_id = ?').run('ses_b');
+    store.prepare('DELETE FROM message WHERE session_id = ?').run('ses_b');
+    store.prepare('DELETE FROM session WHERE id = ?').run('ses_b');
+
+    // 1 of 2 known — exactly the floor, which is not BELOW it, so it prunes.
+    const result = await sweep();
+    expect(result.pruned).toBe(1);
+    expect(search('pelican')).toEqual([]);
+  });
+});
+
 describe('what gets indexed', () => {
   it('keeps text and drops everything that is not speech', async () => {
     seedSession('ses_a');
@@ -891,6 +978,47 @@ describe('a turn that is still streaming', () => {
     await sweepLive();
     expect(search('pelican')).toEqual([]);
     expect(search('kestrel')).toHaveLength(1);
+  });
+
+  it('drops a stale row an ordinal the new content no longer fills', async () => {
+    // **The hole a re-read-without-delete leaves.** A message that projects to
+    // NOTHING — a turn that only called a tool — writes no row, so it cannot
+    // overwrite what is already at its ordinal. Combine that with a revert that
+    // lands the count exactly ON the index's high-water mark and the shrink
+    // rebuild never fires either:
+    //
+    //   indexed  {1:'a', 2:'b'}          indexedTo = 2
+    //   after    [user 'a', tool-only]   maxOrdinal = 2
+    //   rebuilt  maxOrdinal < indexedTo  → 2 < 2 → false
+    //
+    // A re-read then upserts ordinal 1 and writes nothing for ordinal 2, so
+    // ordinal 2 goes on answering 'b' forever. 25 of the 75 messages on the
+    // operator's real store project to nothing, so this is reachable rather than
+    // theoretical.
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('a kestrel on the fence')]);
+    const doomed = say('ses_a', 'user', [text('a pelican by the water')]);
+    await sweepLive();
+    expect(indexed()).toEqual([
+      expect.objectContaining({ ordinal: 1, body: 'a kestrel on the fence' }),
+      expect.objectContaining({ ordinal: 2, body: 'a pelican by the water' }),
+    ]);
+
+    // Revert the second turn and replace it with one that says nothing.
+    store.prepare('DELETE FROM part WHERE message_id = ?').run(doomed);
+    store.prepare('DELETE FROM message WHERE id = ?').run(doomed);
+    say('ses_a', 'assistant', [
+      { type: 'tool', tool: 'bash', callID: 'c1', state: { status: 'completed', output: 'ok' } },
+    ]);
+
+    const counts = store.prepare('SELECT COUNT(*) AS n FROM message').get() as { n: number };
+    expect(counts.n).toBe(2);
+
+    await sweepLive();
+    expect(search('pelican')).toEqual([]);
+    expect(indexed()).toEqual([
+      expect.objectContaining({ ordinal: 1, body: 'a kestrel on the fence' }),
+    ]);
   });
 
   it('leaves a settled session alone, so the window is not a rebuild every tick', async () => {

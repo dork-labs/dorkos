@@ -39,6 +39,28 @@ import type { SnapshotSource, SourceSweep } from './types.js';
 export const SNAPSHOT_FAILURE_KEY = '(snapshot)';
 
 /**
+ * How much of the known container list a snapshot must still show before the
+ * sweep will prune anything.
+ *
+ * **The shape this defends against is a copy that is VALID and STALE**, which is
+ * the one a structural check cannot see. The store and its `-wal`/`-shm`
+ * siblings are copied one after another, so a checkpoint landing between them
+ * produces an old main file beside a truncated log: a perfectly well-formed
+ * database that simply describes an earlier moment, and can therefore be missing
+ * whole conversations. `PRAGMA quick_check` passes it. A prune would then delete
+ * indexed history that is intact on disk, and though the next sweep re-indexes
+ * it, the deletion is real while it lasts and costs a full re-read to undo.
+ *
+ * Half is deliberately blunt. This is not trying to detect a store that lost one
+ * session — it cannot, and a source that reads the file honestly should not — it
+ * is trying to notice that the whole picture changed shape, which is what a
+ * stale copy looks like and what an ordinary deletion does not. An operator who
+ * really does delete more than half their OpenCode history gets one recorded
+ * failure and a prune on the sweep after, once the count has settled.
+ */
+export const SNAPSHOT_MIN_LIVE_SHARE = 0.5;
+
+/**
  * Bring one snapshot-backed source's slice of the index up to date.
  *
  * **A snapshot that cannot be taken is a source failure, not a sweep failure.**
@@ -101,7 +123,9 @@ export async function sweepSnapshotSource(
     // unchanged on the next pass — it is re-read, it throws again, and it
     // re-stamps its own row.
     clearSourceError(db, source.id);
-    return sweepContainers(db, source.id, reader, at);
+    return sweepContainers(db, source.id, reader, at, {
+      minLiveShare: SNAPSHOT_MIN_LIVE_SHARE,
+    });
   } finally {
     reader.close();
   }

@@ -30,7 +30,12 @@
  *
  * @module server/services/search
  */
-export { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, type SweepResult } from './indexer.js';
+export {
+  SearchIndexer,
+  SEARCH_RECONCILE_INTERVAL_MS,
+  SOURCE_FAILURE_KEY,
+  type SweepResult,
+} from './indexer.js';
 export { searchMessages } from './query.js';
 export { searchForCaller } from './search-service.js';
 export {
@@ -43,8 +48,12 @@ export {
   openCodeSource,
   roomsSource,
 } from './registry.js';
-export { sweepContainers, sweepRowSource } from './row-frontier.js';
-export { sweepSnapshotSource, SNAPSHOT_FAILURE_KEY } from './snapshot-frontier.js';
+export { sweepContainers, sweepRowSource, PRUNE_GUARD_KEY } from './row-frontier.js';
+export {
+  sweepSnapshotSource,
+  SNAPSHOT_FAILURE_KEY,
+  SNAPSHOT_MIN_LIVE_SHARE,
+} from './snapshot-frontier.js';
 export {
   buildAllowlistedSelect,
   openOpenCodeSnapshot,

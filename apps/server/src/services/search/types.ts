@@ -98,11 +98,17 @@ export interface RowContainer {
    * body, and without this flag the count would never change again and the
    * truncation would be served forever.
    *
-   * **It is not the same as a rebuild.** A rebuild deletes the container's rows
-   * first, because its ordinals were renumbered and stale rows would survive
-   * above the new end. This only moves the resume position back to the start;
-   * the upsert on `(source, container, ordinal)` rewrites each row in place, and
-   * a container that ALSO shrank still takes the rebuild path.
+   * **It takes the rebuild path — rows deleted first, then rewritten** — and an
+   * earlier version that merely moved the resume position was wrong. A message
+   * that projects to NOTHING writes no row, so it cannot overwrite what sits at
+   * its ordinal; a container that lands on the same count with different content
+   * would keep serving the old row at that position forever. The delete is what
+   * makes "read it again" mean the whole container rather than the rows that
+   * happen to produce output.
+   *
+   * The cost is therefore a delete-and-rewrite per flagged container per sweep,
+   * which is why setting it has to be scoped: OpenCode raises it only for
+   * conversations touched inside a 15-minute window, never for settled ones.
    */
   rereadWhole?: boolean;
 }

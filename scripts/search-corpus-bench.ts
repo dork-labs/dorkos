@@ -12,7 +12,7 @@
  *
  * Each source is benched into its own throwaway database, so `messages=` on a
  * line means that source's messages and nothing else. `--source` narrows to one
- * leg; with no flag both run.
+ * leg; with no flag all three run.
  *
  * **It is env-gated on purpose.** It reads every transcript the operator has,
  * which is slow, machine-specific and nobody's business in CI — so it refuses to

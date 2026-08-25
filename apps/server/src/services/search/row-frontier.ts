@@ -34,6 +34,16 @@ import {
 } from './frontier-store.js';
 import type { ContainerReader, RowContainer, RowSource, SourceSweep } from './types.js';
 
+/**
+ * The `originKey` a failure carries when the prune was REFUSED because the
+ * container list looked implausibly short.
+ *
+ * Not about any one container — it is about the list as a whole — so it borrows
+ * no container's id, for the same reason `jsonl-frontier.ts`'s
+ * `DUPLICATE_CONTAINERS_KEY` does not.
+ */
+export const PRUNE_GUARD_KEY = '(prune guard)';
+
 /** One container's resume state, read once per sweep rather than once per container. */
 interface FrontierState {
   /** What the frontier row claims. `null` means there is no frontier row at all. */
@@ -91,12 +101,18 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSwe
  * @param sourceId - Stamped onto every row this pass writes.
  * @param reader - Where containers come from.
  * @param at - The ISO-8601 timestamp to stamp this attempt with.
+ * @param options - `minLiveShare` refuses to prune when the reader listed fewer
+ *   than that fraction of the containers the index already knows about. Absent
+ *   for a reader that reads DorkOS's own tables, where a short list IS the truth;
+ *   set by the snapshot mechanism, where a short list can also mean the copy
+ *   caught an earlier moment.
  */
 export function sweepContainers(
   db: Db,
   sourceId: string,
   reader: ContainerReader,
-  at: string
+  at: string,
+  options: { minLiveShare?: number } = {}
 ): SourceSweep {
   const sweep: SourceSweep = {
     sourceId,
@@ -126,7 +142,23 @@ export function sweepContainers(
     }
   }
 
-  sweep.pruned = pruneVanished(db, sourceId, live, state.keys());
+  // **A prune is the one irreversible thing a sweep does**, so it is the one
+  // that refuses to act on a container list it has reason to doubt. Everything
+  // else a bad list causes is self-correcting on the next tick.
+  const known = new Set(state.keys());
+  const floor = options.minLiveShare;
+  if (floor !== undefined && known.size > 0 && live.size < known.size * floor) {
+    sweep.failures.push({
+      sourceId,
+      originKey: PRUNE_GUARD_KEY,
+      message:
+        `the source listed ${String(live.size)} containers against ` +
+        `${String(known.size)} already indexed — refusing to prune on a list ` +
+        'that short, in case it describes an earlier moment rather than a deletion',
+    });
+  } else {
+    sweep.pruned = pruneVanished(db, sourceId, live, known);
+  }
   stampAttempt(db, sourceId, at);
   return sweep;
 }
@@ -269,17 +301,33 @@ function resumePosition(
   known: FrontierState | undefined
 ): { rebuilt: boolean; resumeFrom: number } {
   const indexedTo = known?.indexedTo ?? 0;
-  const rebuilt = container.maxOrdinal < indexedTo;
-  // Two different reasons to start over, and they are deliberately not merged.
-  // A REBUILD deletes first, because the container's ordinals were renumbered
-  // and rows above the new end would otherwise survive. A re-read only moves the
-  // resume position: the source says its existing rows may have been rewritten
-  // in place, and the upsert handles that without a delete — which keeps the
-  // FTS5 delete trigger, and the churn it causes, out of the common case.
-  const rereadWhole = rebuilt || container.rereadWhole === true;
+  // **Two reasons to start over, and they take the SAME path: delete first.**
+  //
+  // An earlier version kept them apart — a shrink deleted, while a
+  // `rereadWhole` only moved the resume position and let the upsert rewrite each
+  // row — on the argument that skipping the delete keeps FTS5 churn out of the
+  // common case. That argument was wrong, and the hole it left is sharp:
+  // **a message that projects to NOTHING writes no row, so it cannot overwrite
+  // what is already at its ordinal.** Combine that with a container whose count
+  // lands exactly ON the index's high-water mark and the shrink test never fires
+  // either:
+  //
+  //   indexed  {1:'a', 2:'b'}          indexedTo = 2
+  //   after    [user 'a', tool-only]   maxOrdinal = 2
+  //   shrank?  maxOrdinal < indexedTo  → 2 < 2 → false
+  //
+  // Ordinal 2 then answers 'b' forever. It is not a corner: 25 of the 75
+  // messages on the operator's real OpenCode store project to nothing, because a
+  // turn that only called a tool has nothing to search.
+  //
+  // The cost of folding is bounded by whoever sets the flag. `rereadWhole` is
+  // opt-in per container, and its only user scopes it to containers touched
+  // inside a 15-minute window (`opencode-store.ts`), so the delete-and-rewrite
+  // costs one recently-active conversation per sweep rather than a corpus.
+  const rebuilt = container.maxOrdinal < indexedTo || container.rereadWhole === true;
   return {
     rebuilt,
-    resumeFrom: rereadWhole ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
+    resumeFrom: rebuilt ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
   };
 }
 
@@ -349,15 +397,10 @@ function indexContainer(
   // messages` — the half of the index anyone would actually think to throw away —
   // leave every container reporting "nothing new" forever, with search returning
   // nothing and no error recorded anywhere.
-  // `rereadWhole` disqualifies the skip outright. Every other term here is about
-  // whether the container has GROWN, and the whole point of that flag is a
-  // container whose content changed without growing at all.
-  if (
-    !rebuilt &&
-    container.rereadWhole !== true &&
-    container.maxOrdinal <= watermark &&
-    indexedTo >= watermark
-  ) {
+  // `!rebuilt` already carries `rereadWhole`, which {@link resumePosition} folds
+  // into it — the flag exists for a container whose content changed without
+  // growing at all, and every other term here is about whether it GREW.
+  if (!rebuilt && container.maxOrdinal <= watermark && indexedTo >= watermark) {
     // The frontier row still has to EXIST. A container that has never held a
     // projectable message — an empty room — is a no-op on its very first pass,
     // and skipping the write would leave it undiscovered until somebody spoke.

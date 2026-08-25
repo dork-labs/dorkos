@@ -905,10 +905,17 @@ was wrong was only its choice of column.
 The shipped answer is `OPENCODE_VOLATILE_WINDOW_MS`: fifteen minutes, three sweep intervals,
 measured against `message.time_updated` and `part.time_updated` (timestamps, both added to
 the read allowlist) rather than the session's turn-start stamp. Any session touched inside
-that window is re-read from ordinal 1 on every sweep until it settles. Re-reading costs
-nothing because the index upserts on `(source, container, ordinal)`, and the cost is bounded
-by recent OpenCode use rather than by corpus size. A revert that lowers the count below what
-the index holds still takes §5's shrink-means-rebuild path, which deletes first.
+that window is **re-read from ordinal 1, deleting its rows first**, on every sweep until it
+settles.
+
+**The delete is not optional, and a first version that skipped it was wrong** — caught in
+the verify pass. Letting the upsert rewrite each row in place looks equivalent and is not: a
+message that projects to nothing writes no row, so it cannot overwrite what sits at its
+ordinal, and a container whose count lands exactly on the index's high-water mark also fails
+§5's shrink test (`maxOrdinal < indexedTo` is false at equality). The stale row then answers
+at that ordinal forever. **25 of the 75 messages on the operator's store project to
+nothing**, so it is reachable. The cost of folding is bounded by who raises the flag —
+recently-touched conversations only, never settled ones.
 
 **Two behaviours worth stating because they are the ones a careless version gets wrong.** A
 session with a `parent_id` is a subagent's own transcript and is not a container, for the
