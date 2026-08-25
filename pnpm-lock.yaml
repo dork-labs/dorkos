@@ -966,7 +966,7 @@ importers:
   packages/a2a-gateway:
     dependencies:
       '@a2a-js/sdk':
-        specifier: ^1.0.1
+        specifier: 1.0.1
         version: 1.0.1(express@5.2.1)
       '@dorkos/db':
         specifier: workspace:*
