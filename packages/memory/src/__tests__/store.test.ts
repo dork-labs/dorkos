@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { MemoryCapExceededError, MemoryMatchError } from '@dorkos/shared/memory-provider';
+import {
+  MemoryCapExceededError,
+  MemoryIOError,
+  MemoryMatchError,
+} from '@dorkos/shared/memory-provider';
 
 import { MEMORY_MAX_CHARS } from '../constants.js';
 import { MemoryPathError } from '../paths.js';
@@ -83,17 +87,53 @@ describe('readMemorySnapshot — three-way honesty', () => {
     expect(snapshot.error).toContain('absolute path');
   });
 
-  it('never renders any "you have no memory yet" language, in ANY of the three states', async () => {
+  it('never renders any "you have no memory yet" language, in ANY state it can reach', async () => {
+    // The TRUNCATED snapshot is in this loop deliberately. It is the only state
+    // that carries DorkOS-authored prose at all — `warning` — so a loop over
+    // absent and present alone inspects nothing but the file's own bytes and
+    // would pass against any wording this engine ever writes. Every other
+    // snapshot's `warning` is undefined; this one's is the string under test.
     const absent = await readMemorySnapshot(ref());
-    await seedMemory('## Notes\n');
+
+    await seedMemory('x'.repeat(MEMORY_MAX_CHARS + 10));
+    const truncated = await readMemorySnapshot(ref());
+    expect(truncated.warning).toBeDefined();
+
+    await seedMemory('## Notes\n\n- something\n');
     const present = await readMemorySnapshot(ref());
 
-    for (const snapshot of [absent, present]) {
+    const errored = await readMemorySnapshot({ agentId: 'a', agentPath: '../escape' });
+    expect(errored.status).toBe('error');
+
+    for (const snapshot of [absent, present, truncated, errored]) {
       const text = `${snapshot.content} ${snapshot.warning ?? ''}`.toLowerCase();
       expect(text).not.toContain('no memory');
       expect(text).not.toContain('no notes');
       expect(text).not.toContain('nothing here yet');
+      expect(text).not.toContain('empty');
+      expect(text).not.toContain('first note');
     }
+  });
+
+  // I-3(a). Red when: whitespace-only content is reported as `present`. A
+  // caller would then fence a blank line and announce it as this agent's
+  // memory — which is exactly what an agent that just forgot its last note
+  // would be shown.
+  it('reports a file emptied down to whitespace as absent, not as present-and-blank', async () => {
+    for (const blank of ['', '   ', '\n\n', '\t \n  \n']) {
+      await seedMemory(blank);
+      const snapshot = await readMemorySnapshot(ref());
+      expect(snapshot.status, JSON.stringify(blank)).toBe('absent');
+      expect(snapshot.content).toBe('');
+      expect(snapshot.bytes).toBe(0);
+    }
+  });
+
+  // The positive control for the case above: without it, both pass for a read
+  // that reports everything as absent.
+  it('still reports a file holding one character as present', async () => {
+    await seedMemory('x');
+    expect((await readMemorySnapshot(ref())).status).toBe('present');
   });
 });
 
@@ -113,6 +153,36 @@ describe('readMemorySnapshot — a file bigger than the cap', () => {
     expect(snapshot.content).toHaveLength(MEMORY_MAX_CHARS);
     expect(snapshot.warning).toBe(MEMORY_OVERSIZE_WARNING);
     expect(snapshot.bytes).toBe(MEMORY_MAX_CHARS + 500);
+  });
+
+  // M-1. Red when: the slice is taken without checking what it landed on. The
+  // orphaned half of a surrogate pair is not a character — it renders as U+FFFD
+  // and travels as an unpaired surrogate through JSON and into a prompt.
+  it('never hands back half of an astral character', async () => {
+    // '🙂' is two UTF-16 code units, and this file puts the pair astride the cap.
+    await seedMemory('x'.repeat(MEMORY_MAX_CHARS - 1) + '🙂' + 'tail');
+
+    const snapshot = await readMemorySnapshot(ref());
+
+    expect(snapshot.truncated).toBe(true);
+    // One code unit shorter than the cap, because the half-character was dropped
+    // rather than emitted.
+    expect(snapshot.content).toHaveLength(MEMORY_MAX_CHARS - 1);
+    expect(snapshot.content.endsWith('x')).toBe(true);
+    for (const unit of snapshot.content) {
+      expect(unit.charCodeAt(0)).not.toBeGreaterThanOrEqual(0xd800);
+    }
+  });
+
+  it('keeps a whole astral character that fits inside the cap', async () => {
+    // The positive control: without it, the case above passes for a read that
+    // truncates one character early always, or that strips emoji outright.
+    await seedMemory('x'.repeat(MEMORY_MAX_CHARS - 2) + '🙂' + 'tail');
+
+    const snapshot = await readMemorySnapshot(ref());
+
+    expect(snapshot.content).toHaveLength(MEMORY_MAX_CHARS);
+    expect(snapshot.content.endsWith('🙂')).toBe(true);
   });
 
   it('leaves a file exactly at the cap whole', async () => {
@@ -317,5 +387,55 @@ describe('writeMemory — concurrent sessions of one agent', () => {
     for (let i = 0; i < 8; i += 1) {
       expect(written).toContain(`- note ${i}`);
     }
+  });
+});
+
+describe('writeMemory — when the machine is the problem', () => {
+  // M-8. Red when: a raw filesystem error escapes. The operating system's own
+  // sentence would then land in a tool result mid-turn, and every caller that
+  // wanted to keep the conversation alive would have to guess which thrown
+  // values were safe to swallow.
+  it('wraps an unwritable memory directory in a typed IO error, not a raw errno', async () => {
+    const dorkDir = path.join(agentPath, '.dork');
+    await mkdir(dorkDir, { recursive: true });
+    await chmod(dorkDir, 0o500);
+
+    try {
+      await expect(writeMemory(ref(), { action: 'add', text: 'a note' })).rejects.toBeInstanceOf(
+        MemoryIOError
+      );
+    } finally {
+      await chmod(dorkDir, 0o700);
+    }
+  });
+
+  it('says what happened in words a person or a model can act on', async () => {
+    const dorkDir = path.join(agentPath, '.dork');
+    await mkdir(dorkDir, { recursive: true });
+    await chmod(dorkDir, 0o500);
+
+    try {
+      await writeMemory(ref(), { action: 'add', text: 'a note' });
+      expect.unreachable('the write must fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MemoryIOError);
+      const message = (err as MemoryIOError).message;
+      // Plain language, and it distinguishes itself from the refusals a caller
+      // CAN act on: nothing about caps, nothing about near matches.
+      expect(message).toContain('could not be saved');
+      expect(message).toContain('Nothing was changed');
+      expect(message).not.toMatch(/EACCES|EPERM|ENOSPC/);
+      // The real error survives for the log, off the rendered message.
+      expect((err as MemoryIOError).cause).toBeDefined();
+    } finally {
+      await chmod(dorkDir, 0o700);
+    }
+  });
+
+  // The positive control: the same path succeeds when the directory is writable,
+  // so neither case above passes for a write that always throws.
+  it('writes normally when nothing is wrong with the file', async () => {
+    await writeMemory(ref(), { action: 'add', text: 'a note' });
+    expect((await readMemorySnapshot(ref())).content).toContain('- a note');
   });
 });

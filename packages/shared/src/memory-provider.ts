@@ -169,7 +169,13 @@ export const MemorySnapshotSchema = z
   .object({
     /**
      * - `'present'` — memory exists and `content` is it (possibly truncated).
-     * - `'absent'` — the backend confirmed there is nothing stored. Not an error.
+     *   Guaranteed to carry at least one non-whitespace character, so a consumer
+     *   may render it without a second emptiness check.
+     * - `'absent'` — the backend confirmed there is nothing stored. Not an
+     *   error, and it covers a file that EXISTS but holds nothing but
+     *   whitespace: an agent that forgot its last note has nothing to be shown,
+     *   and a fence around a blank line is a block that says "here is my
+     *   memory" over nothing at all.
      * - `'error'` — the backend could not tell. `error` says why, for a log.
      */
     status: z.enum(['present', 'absent', 'error']),
@@ -234,6 +240,15 @@ export const MemorySnapshotSchema = z
         code: 'custom',
         path: ['error'],
         message: "only an 'error' snapshot may carry an error",
+      });
+    }
+    if (snapshot.status === 'present' && snapshot.content.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['content'],
+        message:
+          "a 'present' snapshot must carry something to render — an empty or whitespace-only " +
+          "memory is 'absent'",
       });
     }
     if (snapshot.truncated && !snapshot.warning) {
@@ -429,8 +444,9 @@ export class MemoryUnsupportedError extends Error {
 }
 
 /**
- * Rejected when the text a write names does not identify exactly one place in
- * the agent's memory — it appears more than once, or not at all.
+ * Rejected when the text a write names does not identify exactly one editable
+ * place in the agent's memory — it appears more than once, it appears not at
+ * all, or it lands inside the header the file explains itself with.
  *
  * **The refusal lists what was near**, because the alternative is an agent
  * retrying the same failing quote with a different guess each turn. The message
@@ -447,21 +463,24 @@ export class MemoryMatchError extends Error {
    * Build the refusal, naming the text that failed and what was near it.
    *
    * @param kind - `'ambiguous'` when the text matched more than once,
-   *   `'not-found'` when it matched nothing.
+   *   `'not-found'` when it matched nothing, `'protected-header'` when it
+   *   matched inside the file's own explanatory header.
    * @param needle - The text the caller named.
    * @param nearMatches - Lines from the current memory that came closest, for
    *   the caller to choose between or correct against. May be empty when
    *   nothing resembled it.
    */
   constructor(
-    readonly kind: 'ambiguous' | 'not-found',
+    readonly kind: 'ambiguous' | 'not-found' | 'protected-header',
     readonly needle: string,
     readonly nearMatches: string[]
   ) {
     const lead =
       kind === 'ambiguous'
         ? `The text you named appears more than once in your memory, so it does not say which note you meant.`
-        : `Nothing in your memory matches the text you named.`;
+        : kind === 'protected-header'
+          ? `The text you named is inside the header comment at the top of your memory file, which explains what the file is and who can see it. That header is not a note and cannot be edited from here — a person can change it by opening the file. Name one of your own notes instead.`
+          : `Nothing in your memory matches the text you named.`;
     const near =
       nearMatches.length > 0
         ? ` Closest lines:\n${nearMatches.map((line) => `- ${line}`).join('\n')}`
@@ -500,6 +519,40 @@ export class MemoryCapExceededError extends Error {
         `this again.`
     );
     this.name = 'MemoryCapExceededError';
+  }
+}
+
+/**
+ * Rejected when the backend could not complete a write for a reason that is
+ * neither the caller's fault nor a rule of this port: the disk is full, the
+ * file is not readable, the lock could not be taken.
+ *
+ * **It exists so a consumer can tell "you asked for something impossible" from
+ * "the machine is having a problem", and answer each differently.** A write path
+ * that let a raw `ENOSPC` escape would surface the operating system's own
+ * sentence to a model, in a tool result, on a turn that has nothing to do with
+ * storage — and every caller that wanted to keep the conversation alive would
+ * have to guess which thrown values were safe to swallow.
+ *
+ * The underlying error is kept on `cause` for the log and deliberately NOT
+ * folded into the message a caller renders.
+ */
+export class MemoryIOError extends Error {
+  /**
+   * Build the refusal, naming the operation and keeping the real error.
+   *
+   * @param operation - What was being done, e.g. `'write'`.
+   * @param cause - The error the filesystem or the lock actually raised.
+   */
+  constructor(
+    readonly operation: string,
+    override readonly cause: unknown
+  ) {
+    super(
+      `Your memory file could not be saved (${operation} failed). Nothing was changed. ` +
+        `This is a problem with the file itself rather than with what you asked for.`
+    );
+    this.name = 'MemoryIOError';
   }
 }
 
@@ -542,9 +595,14 @@ export interface MemoryProvider {
    * agent's memory in this process.
    *
    * Throws {@link MemoryMatchError} when a `replace` or `remove` does not name
-   * exactly one place, and {@link MemoryCapExceededError} when the result would
-   * exceed the backend's cap. Both are refusals, not partial writes: a failed
-   * write leaves memory exactly as it was.
+   * exactly one editable place, {@link MemoryCapExceededError} when the result
+   * would exceed the backend's cap, and {@link MemoryIOError} when the backend
+   * itself could not complete the write. All three are refusals, not partial
+   * writes: a failed write leaves memory exactly as it was.
+   *
+   * The three are separated because a caller answers them differently — the
+   * first two are things the caller can fix by asking for something else, the
+   * third is not.
    *
    * @param ref - Whose memory to change.
    * @param op - The change.

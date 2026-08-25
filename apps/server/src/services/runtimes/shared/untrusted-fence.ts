@@ -136,12 +136,25 @@ export function fenceUntrustedBlock(
   opts: UntrustedFenceOptions
 ): UntrustedFence {
   const nonce = opts.nonce ?? mintFenceNonce();
+  const body = defuseUntrustedText(typeof content === 'string' ? content : content.join('\n'));
   const text = [
     `--- BEGIN ${opts.label} ${nonce} ---`,
     opts.preamble,
     ...(opts.notes ?? []),
-    defuseUntrustedText(typeof content === 'string' ? content : content.join('\n')),
+    body,
     `--- END ${opts.label} ${nonce} ---`,
-  ].join('\n');
+  ]
+    // Elements with nothing in them are dropped rather than joined, so a caller
+    // with no notes and a caller with nothing to fence do not each contribute a
+    // blank line inside the markers. The markers are the boundary and they still
+    // hold around nothing — but a fence whose only content is an empty line
+    // reads, to a model, as a block that had something in it and lost it.
+    //
+    // Trimmed rather than compared to `''` because the empty cases arrive in
+    // more than one shape: `''`, and an array of empty lines that joins to
+    // `'\n'`. Nothing DorkOS-authored is ever whitespace-only, so this can only
+    // ever drop a body that had nothing to say.
+    .filter((line) => line.trim() !== '')
+    .join('\n');
   return { text, nonce };
 }

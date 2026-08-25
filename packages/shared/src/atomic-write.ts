@@ -45,11 +45,15 @@
  *   plugin writes runtime caches in-process). None of those files come through
  *   here. Anyone routing a new file through this module owns checking that no
  *   second process writes it.
- * - **One known cross-process edge, accepted.** Local-scope extension data
- *   lives under `{cwd}/.dork/`, keyed to the project rather than to a
+ * - **Two known cross-process edges, both accepted.** Local-scope extension
+ *   data lives under `{cwd}/.dork/`, keyed to the project rather than to a
  *   `dorkHome` — two servers with different data directories opened on the
- *   same project can both write it. That degrades to last-writer-wins per the
- *   next bullet, never to corruption.
+ *   same project can both write it. And an agent's `MEMORY.md` is a file the
+ *   operator is invited to edit by hand, so an editor holding a stale copy is
+ *   a second writer by design rather than by accident. Both degrade to
+ *   last-writer-wins per the next bullet, never to corruption; what an operator
+ *   can lose in the second case is one note saved during the seconds their
+ *   editor held the file open.
  * - **A crashed holder cannot wedge the next run.** An in-memory lock dies with
  *   the process that held it, so there is no stale-lock reaper to get wrong —
  *   the failure mode that makes on-disk lock files subtle.

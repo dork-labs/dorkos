@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryMatchError } from '@dorkos/shared/memory-provider';
 
 import { applyMemoryOp } from '../ops.js';
+import { defaultMemoryTemplate } from '../scaffold.js';
 
 const NOTES = ['## Notes', '', '- deploys go out on Tuesdays', '- Priya prefers short replies', ''];
 
@@ -154,5 +155,70 @@ describe('remove', () => {
   it('can empty the file completely', () => {
     const next = applyMemoryOp('- the only note\n', { action: 'remove', oldText: 'only note' });
     expect(next).toBe('');
+  });
+});
+
+describe('the header is not a note', () => {
+  // I-3(b). Red when: the header check is removed. `replace` with an empty
+  // string is a delete, so an agent that can reach the header can remove the
+  // one paragraph telling whoever opens this file that its contents can surface
+  // in a shared room — and room text reaches this file through one hop of
+  // ordinary quoting.
+  it('refuses to replace the visibility warning out of the header', () => {
+    const content = defaultMemoryTemplate() + '- a real note\n';
+
+    expect(() =>
+      applyMemoryOp(content, {
+        action: 'replace',
+        oldText: 'store secrets, credentials, or anything you would not say in a shared room.',
+        text: '',
+      })
+    ).toThrow(MemoryMatchError);
+  });
+
+  it('refuses to remove any line of the header, and says why in plain words', () => {
+    const content = defaultMemoryTemplate() + '- a real note\n';
+
+    try {
+      applyMemoryOp(content, { action: 'remove', oldText: 'This file holds up to' });
+      expect.unreachable('the header must not be editable from here');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MemoryMatchError);
+      expect((err as MemoryMatchError).kind).toBe('protected-header');
+      // Addressed to whoever reads the tool result, and it names the way out
+      // that does exist: a person opening the file.
+      expect((err as MemoryMatchError).message).toContain('header comment');
+      expect((err as MemoryMatchError).message).toContain('opening the file');
+    }
+  });
+
+  // The positive control. Without it, both cases above pass for an engine that
+  // refuses every `replace` and `remove` outright.
+  it('still edits a note that sits below the header', () => {
+    const content = defaultMemoryTemplate() + '- the operator prefers short answers\n';
+
+    const after = applyMemoryOp(content, {
+      action: 'replace',
+      oldText: 'short answers',
+      text: 'very short answers',
+    });
+
+    expect(after).toContain('- the operator prefers very short answers');
+    expect(after).toContain('store secrets, credentials');
+  });
+
+  // A `<!--` that is not at the top of the file is inside somebody's note, and
+  // theirs to edit. Red when the check looks for any comment rather than the
+  // leading one.
+  it('does not protect a comment an agent wrote into its own notes', () => {
+    const content = '## Notes\n\n- a note <!-- with an aside -->\n';
+
+    const after = applyMemoryOp(content, {
+      action: 'replace',
+      oldText: 'with an aside',
+      text: 'with a better aside',
+    });
+
+    expect(after).toContain('with a better aside');
   });
 });

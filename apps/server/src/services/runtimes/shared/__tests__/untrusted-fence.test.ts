@@ -226,3 +226,47 @@ describe('the neutralization inside', () => {
     expect(fence.text).toContain('mentions <env> by name');
   });
 });
+
+describe('a fence around nothing', () => {
+  // M-4. Red when: the elements are joined without dropping the empty ones. A
+  // caller with no notes and empty content would then contribute a blank line
+  // inside the markers, which reads to a model as a block that had something in
+  // it and was emptied — not as a block with nothing to say.
+  it('emits no blank line for empty content', () => {
+    const { text, nonce } = fenceUntrustedBlock('', {
+      label: 'TEST BLOCK',
+      preamble: 'This is the preamble.',
+    });
+
+    expect(text).toBe(
+      `--- BEGIN TEST BLOCK ${nonce} ---\nThis is the preamble.\n--- END TEST BLOCK ${nonce} ---`
+    );
+  });
+
+  it('emits no blank line for an empty notes array or an all-empty content array', () => {
+    const { text, nonce } = fenceUntrustedBlock(['', ''], {
+      label: 'TEST BLOCK',
+      preamble: 'This is the preamble.',
+      notes: [],
+    });
+
+    expect(text).toBe(
+      `--- BEGIN TEST BLOCK ${nonce} ---\nThis is the preamble.\n--- END TEST BLOCK ${nonce} ---`
+    );
+  });
+
+  // The positive control: content that IS there still lands between the
+  // markers, so neither case above passes for a fence that drops its body.
+  it('still places real content between the markers', () => {
+    const { text, nonce } = fenceUntrustedBlock('a real line', {
+      label: 'TEST BLOCK',
+      preamble: 'This is the preamble.',
+      notes: ['A note.'],
+    });
+
+    expect(text).toBe(
+      `--- BEGIN TEST BLOCK ${nonce} ---\nThis is the preamble.\nA note.\na real line\n` +
+        `--- END TEST BLOCK ${nonce} ---`
+    );
+  });
+});

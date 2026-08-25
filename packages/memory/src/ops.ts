@@ -32,11 +32,11 @@ export function applyMemoryOp(content: string, op: MemoryWriteOp): string {
     case 'add':
       return appendNote(content, op.text, op.provenance);
     case 'replace': {
-      const at = findUnique(content, op.oldText);
+      const at = findEditable(content, op.oldText);
       return normalizeTail(content.slice(0, at) + op.text + content.slice(at + op.oldText.length));
     }
     case 'remove': {
-      const at = findUnique(content, op.oldText);
+      const at = findEditable(content, op.oldText);
       return removeLinesSpanning(content, at, at + op.oldText.length);
     }
   }
@@ -62,6 +62,55 @@ function appendNote(content: string, text: string, provenance?: MemoryProvenance
   const suffix = provenance ? ` ${renderProvenanceSuffix(provenance)}` : '';
   const base = normalizeTail(content);
   return `${base}- ${text.trim()}${suffix}\n`;
+}
+
+/**
+ * The end of the file's leading `<!-- ... -->` header, or `0` when there is none.
+ *
+ * The header is the only part of a memory file DorkOS wrote, and the only part
+ * that is not a note: it says what the file is, what the cap is, how provenance
+ * works, and — the sentence that matters — that anything in here can surface in
+ * a room full of other people. It is addressed to the operator, not to the
+ * agent.
+ *
+ * Only a header at the very TOP counts. A `<!--` further down is inside
+ * somebody's note and is theirs to edit.
+ *
+ * @param content - The memory as it stands.
+ * @returns Index just past the header's closing `-->`, or `0`.
+ */
+function headerEnd(content: string): number {
+  if (!content.trimStart().startsWith('<!--')) return 0;
+  const close = content.indexOf('-->');
+  return close === -1 ? 0 : close + '-->'.length;
+}
+
+/**
+ * Find the one place `needle` appears in the part of `content` an agent may
+ * edit.
+ *
+ * **The header is out of bounds and that is a security property, not tidiness.**
+ * The visibility warning lives there, and `replace` with an empty string is a
+ * delete: an agent that could reach the header could quietly remove the one
+ * paragraph telling whoever opens this file that its contents can surface in a
+ * shared room. Room text reaches this file through one hop of ordinary quoting
+ * (spec D2 §C1), so "an agent would not do that" is not the same as "nothing
+ * could make it do that". A person editing the file by hand still can, which is
+ * the right place for that power to live.
+ *
+ * @param content - The memory to search.
+ * @param needle - The text that must appear exactly once, outside the header.
+ * @throws {MemoryMatchError} When it appears twice, not at all, or only inside
+ *   the header — with the lines that came closest, so the caller can correct
+ *   itself instead of guessing again next turn.
+ */
+function findEditable(content: string, needle: string): number {
+  const body = headerEnd(content);
+  const at = findUnique(content, needle);
+  if (at < body) {
+    throw new MemoryMatchError('protected-header', needle, nearestLines(content, needle));
+  }
+  return at;
 }
 
 /**

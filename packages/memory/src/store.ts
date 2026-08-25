@@ -10,6 +10,7 @@ import { withFileLock } from '@dorkos/shared/atomic-write';
 import {
   AgentMemoryRefSchema,
   MemoryCapExceededError,
+  MemoryIOError,
   MemorySelectorSchema,
   MemorySnapshotSchema,
   MemoryWriteOpSchema,
@@ -68,7 +69,12 @@ export async function readMemorySnapshot(ref: AgentMemoryRef): Promise<MemorySna
 
   try {
     const raw = await readRawMemory(file);
-    if (raw === null) {
+    // A file that does not exist and a file emptied down to whitespace are the
+    // same situation for a reader: there is nothing to show. Reporting the
+    // second as `present` would put a fence around a blank line and announce it
+    // as this agent's memory — which is what an agent that has just forgotten
+    // its last note would see, and it is worse than seeing nothing.
+    if (raw === null || raw.trim() === '') {
       return MemorySnapshotSchema.parse({
         status: 'absent',
         content: '',
@@ -80,7 +86,7 @@ export async function readMemorySnapshot(ref: AgentMemoryRef): Promise<MemorySna
     const truncated = raw.length > MEMORY_MAX_CHARS;
     return MemorySnapshotSchema.parse({
       status: 'present',
-      content: truncated ? raw.slice(0, MEMORY_MAX_CHARS) : raw,
+      content: truncated ? trimDanglingSurrogate(raw.slice(0, MEMORY_MAX_CHARS)) : raw,
       // The size of the FILE, which is what makes the truncation legible: the
       // reader can see that what it was handed is smaller than what exists.
       bytes: Buffer.byteLength(raw, 'utf8'),
@@ -90,6 +96,22 @@ export async function readMemorySnapshot(ref: AgentMemoryRef): Promise<MemorySna
   } catch (err) {
     return errorSnapshot(err);
   }
+}
+
+/**
+ * Drop a high surrogate left stranded at the end of a slice.
+ *
+ * The cap counts UTF-16 code units, so slicing at exactly the cap can land
+ * between the two halves of an astral character — an emoji, or most of the text
+ * in several writing systems. The orphan half is not a character: it renders as
+ * U+FFFD at best, and travels as an unpaired surrogate through JSON and into a
+ * prompt at worst. One code unit is the whole cost of never emitting one.
+ *
+ * @param text - The slice, possibly ending mid-pair.
+ */
+function trimDanglingSurrogate(text: string): string {
+  const last = text.charCodeAt(text.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? text.slice(0, -1) : text;
 }
 
 /**
@@ -108,6 +130,15 @@ export async function readMemorySnapshot(ref: AgentMemoryRef): Promise<MemorySna
  * - **All-or-nothing.** The cap and the unique-match rule are checked before
  *   anything is written, so a refused write leaves memory exactly as it was.
  *
+ * **What the lock does NOT cover, stated rather than implied.** It is an
+ * in-process lock, and the other realistic writer of this file is a person with
+ * it open in an editor. That race is accepted: the file is small, human edits
+ * are deliberate and rare, and both writers write whole files atomically, so the
+ * outcome is last-writer-wins and never a torn file. What an operator can lose
+ * is one note saved during the seconds their editor held a stale copy — the
+ * same trade every dotfile in this product makes, and the reason the write path
+ * renames rather than appends.
+ *
  * An agent whose memory file does not exist yet gets one here, starting from the
  * scaffold — this is how every agent created before this feature acquires the
  * file.
@@ -115,7 +146,9 @@ export async function readMemorySnapshot(ref: AgentMemoryRef): Promise<MemorySna
  * @param ref - Whose memory to change.
  * @param op - The change.
  * @throws {MemoryCapExceededError} When the result would exceed the cap.
- * @throws {MemoryMatchError} When a `replace` or `remove` names no single place.
+ * @throws {MemoryMatchError} When a `replace` or `remove` names no single
+ *   editable place — including one inside the file's protected header.
+ * @throws {MemoryIOError} When the file itself could not be read or written.
  * @throws {MemoryPathError} When the ref's `agentPath` could reach outside the
  *   agent's own directory.
  */
@@ -128,20 +161,36 @@ export async function writeMemory(
   const file = resolveMemoryFile(parsedRef.agentPath);
 
   return withFileLock(file, async (write) => {
-    const existing = await readRawMemory(file);
+    let existing: string | null;
+    try {
+      existing = await readRawMemory(file);
+    } catch (err) {
+      throw new MemoryIOError('read', err);
+    }
     const created = existing === null;
     const before = existing ?? defaultMemoryTemplate();
     const after = applyMemoryOp(before, parsedOp);
 
     // Strictly greater: a write that lands exactly ON the cap is allowed, so the
     // limit is a limit rather than one character less than one. A file already
-    // over the cap — only reachable by editing it on disk — can still be made
-    // smaller, which is what keeps the fix available from inside.
+    // over the cap — only reachable by editing it on disk — can still be edited
+    // as long as the edit does not make it BIGGER, which is what keeps the fix
+    // available from inside. (Equal length passes too: a correction that swaps
+    // one note for another of the same size is not what the cap is defending
+    // against.)
     if (after.length > MEMORY_MAX_CHARS && after.length > before.length) {
       throw new MemoryCapExceededError(before.length, after.length, MEMORY_MAX_CHARS);
     }
 
-    await write(after);
+    try {
+      await write(after);
+    } catch (err) {
+      // Everything above this line is a refusal the caller could act on. This is
+      // not one: a full disk or an unwritable directory has nothing to do with
+      // what was asked for, and a raw `ENOSPC` reaching a tool result would put
+      // the operating system's own sentence in front of a model mid-turn.
+      throw new MemoryIOError('write', err);
+    }
 
     return {
       created,

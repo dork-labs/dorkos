@@ -3,28 +3,30 @@
  *
  * @module memory/constants
  */
+import { CONVENTION_FILES } from '@dorkos/shared/convention-files';
+import { MANIFEST_DIR } from '@dorkos/shared/manifest';
 
 /**
  * How much memory one agent may keep, in characters (~2K tokens).
  *
- * The cap is not storage thrift — a markdown file could be a megabyte and
- * nobody would notice on disk. It is a **prompt** budget, and it is the reason
- * the worst case of this feature is knowable. On claude-code the memory block
- * rides the cached system prompt, so it costs this much once per cache lifetime;
- * on codex and opencode the agent-context append is re-sent verbatim on every
- * single turn, uncached, so a full memory file is roughly 10 KB per turn, every
- * turn, forever. An uncapped file would make that unbounded on two of three
- * runtimes.
- *
- * Writes that would cross it are refused with an error that says how to fix it
- * (`MemoryCapExceededError`), never trimmed silently. A file already over the
- * cap — only reachable by editing it on disk — still reads, truncated, with a
- * visible warning.
+ * **Re-exported, not declared.** The number is owned by
+ * `@dorkos/shared/convention-files`, beside `SOUL_MAX_CHARS` and
+ * `NOPE_MAX_CHARS`, because three surfaces have to agree on it and one of them
+ * is a browser: this engine's write refusal, the wire cap on
+ * `UpdateAgentConventionsSchema`, and the editor's character counter. It is
+ * re-exported here so the engine reads its own limit from its own module rather
+ * than reaching across the package for it in five files.
  */
-export const MEMORY_MAX_CHARS = 8_000;
+export { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
 
-/** The directory inside an agent's own folder that holds its DorkOS files. */
-export const MEMORY_DIR_NAME = '.dork';
+/**
+ * The directory inside an agent's own folder that holds its DorkOS files.
+ *
+ * The same `.dork` every other convention file lives in, taken from the module
+ * that owns it rather than spelled again — a second literal is a second place
+ * to change on the day it moves.
+ */
+export const MEMORY_DIR_NAME = MANIFEST_DIR;
 
 /** The memory file itself, beside `agent.json`, `SOUL.md` and `NOPE.md`. */
-export const MEMORY_FILE_NAME = 'MEMORY.md';
+export const MEMORY_FILE_NAME = CONVENTION_FILES.memory;

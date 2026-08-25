@@ -285,6 +285,20 @@ export default defineConfig({
           new URL('../../packages/relay/src/adapters/approver-allowlist.ts', import.meta.url)
         ),
       },
+      {
+        // The memory engine, at SOURCE for the same reason as the entries
+        // above — and one of its own. `@dorkos/memory` imports
+        // `@dorkos/shared/convention-files` for the cap and the file name;
+        // resolved through its `dist/`, the server's tests would compare a
+        // prompt built from today's engine against yesterday's cap. The
+        // `<agent_memory>` size bound is measured against `MEMORY_MAX_CHARS`,
+        // so a stale dist makes that bound assert the wrong number and pass.
+        //
+        // Exact, not a prefix: the package has one entry point and aliasing a
+        // bare specifier by prefix would also capture any future subpath.
+        find: /^@dorkos\/memory$/,
+        replacement: fileURLToPath(new URL('../../packages/memory/src/index.ts', import.meta.url)),
+      },
     ],
   },
   test: {
