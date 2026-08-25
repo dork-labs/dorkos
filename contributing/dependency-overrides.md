@@ -55,7 +55,7 @@ Not every deliberate hold belongs in the override map. When the repo declares th
 - **The server typecheck**, through the duplicate-instance mechanism described above — two copies of `@better-auth/core` are two incompatible sets of types.
 - **CLI auth at runtime**, which no typecheck catches: `dorkos auth enable` exits 1, and signing in with a freshly created credential comes back `INVALID_EMAIL_OR_PASSWORD`.
 
-  1.6.30 is not a safe middle ground either. From 1.6.24 the tree pulls `better-call@1.4.0`, which needs `@better-auth/utils@0.5.0` while `better-auth` itself still needs `0.4.2` — two copies of `@better-auth/utils`, same shape of failure.
+**1.6.30 is not a safe middle ground either.** From 1.6.24 the tree pulls `better-call@1.4.0`, which needs `@better-auth/utils@0.5.0` while `better-auth` itself still needs `0.4.2` — two copies of `@better-auth/utils`, same shape of failure.
 
 **Why an exact spec and not an override.** Both were measured against a deleted lockfile and both hold, so the tie-breaker is maintenance: an override duplicating a spec the repo already declares is the redundancy rule 2 below warns about, and it would give the next bump a fourth place to remember. Add an override only if `better-auth` ever arrives transitively, through a dependency we do not declare.
 
