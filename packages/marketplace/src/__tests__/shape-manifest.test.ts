@@ -241,10 +241,11 @@ describe('DependencyDeclarationSchema — shape: prefix', () => {
 
 describe('PermissionMode drift — marketplace mirror vs @dorkos/shared source', () => {
   // What a Shape schedule may declare is re-exported from @dorkos/skills, which
-  // holds the single zod-v3 mirror of @dorkos/shared's PermissionModeSchema (the
-  // zod-version boundary forbids importing the schema itself). This test reads
-  // PermissionModeSchema.options — a plain string array, safe to read across zod
-  // majors — and asserts value-set parity so the chain never silently diverges.
+  // holds the single value mirror of @dorkos/shared's PermissionModeSchema —
+  // inlined there to keep @dorkos/shared/schemas out of the browser bundle for
+  // six strings. That makes this chain a copy of a copy, so this test reads
+  // PermissionModeSchema.options straight from the source and asserts value-set
+  // parity, so the chain never silently diverges.
   it('the two value sets are equal', () => {
     expect([...SCHEDULE_PERMISSION_MODES].sort()).toEqual([...PermissionModeSchema.options].sort());
   });

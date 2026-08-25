@@ -112,8 +112,11 @@ describe('ScheduleBlockSchema', () => {
 });
 
 describe('TASK_PERMISSION_MODES', () => {
-  // The v3/v4 zod boundary means the two lists are inlined copies, not one
-  // composed schema. Read the options as strings so the versions never meet.
+  // `TASK_PERMISSION_MODES` is an inlined copy rather than the imported schema,
+  // so that shipping `schedule-schema.ts` to the browser does not drag all of
+  // `@dorkos/shared/schemas` along for six strings (see its DRIFT NOTE). This is
+  // the assertion that keeps the copy honest, and importing the source HERE
+  // costs the bundle nothing — a test is never bundled.
   //
   // This is now the ONLY copy of this assertion. `task-schema.test.ts` carried a
   // duplicate of it while `@dorkos/marketplace` imported the modes through the

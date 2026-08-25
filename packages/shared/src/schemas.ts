@@ -3960,13 +3960,11 @@ export type SettableTaskStatus = z.infer<typeof SettableTaskStatusSchema>;
  * that request-vs-frontmatter divergence at the door.
  *
  * DRIFT NOTE: an inlined mirror of `@dorkos/skills`' `SkillNameSchema` by value.
- * `@dorkos/skills` depends on `@dorkos/shared`, so shared cannot import it back,
- * and the two packages are on different zod majors besides (see the same
- * boundary in `packages/skills/src/task-schema.ts`). The rules are restated here
- * and a cross-package agreement test
- * (`packages/skills/src/__tests__/task-schema.test.ts`) feeds one set of sample
- * names to both schemas and asserts they accept and reject exactly the same set,
- * so the two cannot drift apart.
+ * `@dorkos/skills` depends on `@dorkos/shared`, so shared cannot import it back
+ * without a cycle. The rules are restated here and a cross-package agreement
+ * test (`packages/skills/src/__tests__/task-request-drift.test.ts`) feeds one
+ * set of sample names to both schemas and asserts they accept and reject
+ * exactly the same set, so the two cannot drift apart.
  *
  * The CREATE request deliberately does NOT use this: `POST /api/tasks` runs
  * `data.name` through `slugify` before it ever touches the file, so a person can
@@ -4150,8 +4148,9 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
  * `@dorkos/skills` holds the frontmatter schema and depends on this package —
  * so importing it here would be a dependency cycle, the same boundary
  * `TASK_PERMISSION_MODES` documents from the other side. The values are
- * therefore restated, and `packages/skills/src/__tests__/task-schema.test.ts`
- * asserts the two sides agree, so they cannot drift apart in silence.
+ * therefore restated, and
+ * `packages/skills/src/__tests__/task-request-drift.test.ts` asserts the two
+ * sides agree, so they cannot drift apart in silence.
  *
  * **`name` is deliberately absent from these mirrors.** The route slugifies it
  * before writing, so the constraint belongs on `slugify(name)` rather than on
