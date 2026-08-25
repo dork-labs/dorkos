@@ -1,33 +1,14 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { visibleText } from '../../pages/RoomsPage';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
+import { openCommandPalette } from '../../pages/command-palette';
 import { openCockpit } from './open-cockpit';
 
 // Same reasoning as `room-identity.spec.ts`: these share one server and one room
 // list, so they run one at a time with a ceiling sized for a machine that is
 // several worktrees deep in concurrent agents.
 test.describe.configure({ mode: 'default', timeout: 90_000 });
-
-/** The command palette's cmdk root, and what is inside it. */
-function paletteIn(page: Page): { root: Locator; input: Locator; options: Locator } {
-  const root = page.locator('[cmdk-root]');
-  return {
-    root,
-    // By test id, not the placeholder: that string is user-facing copy and this
-    // spec is not the place to pin its wording.
-    input: page.getByTestId('command-palette-input'),
-    options: root.getByRole('option'),
-  };
-}
-
-/** Open the palette with the shortcut a person would use, and wait for it. */
-async function openPalette(page: Page): Promise<ReturnType<typeof paletteIn>> {
-  await page.keyboard.press('ControlOrMeta+k');
-  const palette = paletteIn(page);
-  await expect(palette.input).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-  return palette;
-}
 
 /**
  * Open a room and wait until the server agrees the reader is caught up on it.
@@ -97,7 +78,7 @@ test.describe('Rooms in the command palette @smoke', () => {
     await openCockpit(basePage);
     await readRoomFully(page, request, read.id);
 
-    const palette = await openPalette(page);
+    const palette = await openCommandPalette(page);
 
     // 1. An unread channel surfaces in the untyped palette, and this one does.
     //
@@ -112,7 +93,7 @@ test.describe('Rooms in the command palette @smoke', () => {
     //    Scoped to the rooms this test seeded, the surviving claim is the one it
     //    can own: waiting work reaches an untyped palette without being asked
     //    for. Which row is globally first is not assertable here.
-    const unreadRow = palette.options.filter({ hasText: unreadSlug }).first();
+    const unreadRow = palette.results.filter({ hasText: unreadSlug }).first();
     await expect(unreadRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     // 2. Named once, with its count. The whole announced name, not a substring:
@@ -130,7 +111,7 @@ test.describe('Rooms in the command palette @smoke', () => {
     //    its Recent list is where you have BEEN, so a caught-up channel belongs
     //    in it. What did not change is which one a person reaches first — and
     //    that is the claim worth keeping, because recency alone would invert it.
-    const readRow = palette.options.filter({ hasText: readSlug }).first();
+    const readRow = palette.results.filter({ hasText: readSlug }).first();
     await expect(readRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     const [unreadTop, readTop] = await unreadRow.evaluate(
       (unreadEl, readEl) => [unreadEl.getBoundingClientRect().y, readEl!.getBoundingClientRect().y],
@@ -148,7 +129,7 @@ test.describe('Rooms in the command palette @smoke', () => {
     //    wherever the shared server's first unread row happened to be — which is
     //    both unassertable and how this test perturbed its neighbours.
     await palette.input.fill(`#pal-unread-${roomsApi.runId}`);
-    await expect(palette.options.filter({ hasText: unreadSlug }).first()).toBeVisible();
+    await expect(palette.results.filter({ hasText: unreadSlug }).first()).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${unread.id}`), {
       timeout: SERVER_ROUND_TRIP_MS,
@@ -172,11 +153,11 @@ test.describe('Rooms in the command palette @smoke', () => {
     await openCockpit(basePage);
     await readRoomFully(page, request, read.id);
 
-    const palette = await openPalette(page);
+    const palette = await openCommandPalette(page);
     await palette.input.fill('#pal-hash-');
 
-    const unreadRow = palette.options.filter({ hasText: unreadSlug }).first();
-    const readRow = palette.options.filter({ hasText: readSlug }).first();
+    const unreadRow = palette.results.filter({ hasText: unreadSlug }).first();
+    const readRow = palette.results.filter({ hasText: readSlug }).first();
     await expect(unreadRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(readRow).toBeVisible();
 
@@ -217,7 +198,7 @@ test.describe('Rooms in the command palette @smoke', () => {
     const dm = await roomsApi.createDirectMessage(agent.name, [agent]);
 
     await openCockpit(basePage);
-    const palette = await openPalette(page);
+    const palette = await openCommandPalette(page);
     await palette.input.fill(`@${agent.name}`);
 
     // Two rows, two different acts: open the conversation, or open the agent.
@@ -226,9 +207,18 @@ test.describe('Rooms in the command palette @smoke', () => {
       .first();
     await expect(conversation).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(conversation).toHaveAccessibleName(`Open conversation with ${agent.name}`);
-    // Exactly two: the conversation and the agent. Not "more than one" — the
-    // number is knowable, and a third row would be a duplicate nobody wants.
-    await expect(palette.options.filter({ hasText: agent.name })).toHaveCount(2);
+    // Exactly two RESULTS: the conversation and the agent. Not "more than one"
+    // — the number is knowable, and a third result would be a duplicate nobody
+    // wants.
+    //
+    // Counted over `results` rather than every option, because ⌘K's hand-off
+    // row draws the typed query — which here IS the agent's name — so on
+    // `options` it pads this number by one and the assertion stops being about
+    // duplicates (DOR-685). The two lines below name the row that was excluded,
+    // so "two" cannot be reached by a filter that quietly dropped a result.
+    await expect(palette.results.filter({ hasText: agent.name })).toHaveCount(2);
+    await expect(palette.searchHandoff).toHaveCount(1);
+    await expect(palette.searchHandoff).toContainText(agent.name);
 
     await conversation.click();
     await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${dm.id}`), {

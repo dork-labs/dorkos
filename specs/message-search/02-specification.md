@@ -835,3 +835,101 @@ The unit-test half of the same guard is `codex-projection.test.ts`'s two-familie
 **Bench, 2026-08-25, both legs on the machine this was written on:** `claude-code` 497 files / **19,211 messages** / 2.5 s; `codex` 18 files / **214 messages** / 33 ms / 1.8 MB. Codex is **1.1%** of the corpus, and §2.2's argument for it stands unchanged: the multi-runtime cockpit is the product's headline differentiator, and a search box covering one runtime undercuts the claim the product leads with.
 
 **One thing this ticket did NOT do.** The client's scope copy (`message-search-scope.ts`) still lists Codex under what search does not cover. It ships in a separate branch (DOR-685) that had not merged when this landed, so the line moves from "not covered" to "covered" in a follow-up commit once both are on `main`.
+
+## Amendment 9 — OpenCode is indexed, and the port promotion is refused (DOR-688)
+
+**Amends §2.3 in full, the `opencode` row of §2's source table, §1's opening paragraph ("**OpenCode is not in that list**"), and §3's port trigger.**
+
+§2.3 deferred OpenCode on four counts. Three of them still hold, and the design here is what
+each of them forced.
+
+**Count 1 — ADR-0308's ban — is narrowed, not dismissed.** The reason for it is real:
+`opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value`
+in the same file as its messages. What changed is that the danger turned out to be
+answerable structurally. Each sweep copies the store and its `-wal`/`-shm` siblings into a
+temp directory, opens the COPY `readonly` + `PRAGMA query_only`, reads through a frozen
+allowlist of three tables and eight columns, and deletes the copy in a `finally`. **The live
+file is never opened**, so DorkOS is not a participant in the WAL concurrency §2.3 worried
+about — a stronger position than the SDK path offers, since the sidecar holds a live
+connection and this does not. §9.1's rule ("every projection selects explicit fields") is
+not weakened; it is enforced by construction, because `SELECT *` is not expressible when the
+column list IS the allowlist. ADR `260825-110420` carries the decision and the amendment to 0308.
+
+**Count 2 — the SDK path — is UNCHANGED and now explicitly forbidden for indexing.** It was
+re-evaluated and still fails on its own merits: nothing boots the sidecar at startup, a cold
+probe spawns a server as a side effect, and a `peekClient()`-gated indexer makes coverage
+nondeterministic. A reconciler on a timer must never spawn somebody else's agent server.
+**Every other source in this design reads bytes already at rest, and this one now does too**
+— which also discharges the whole "SDK-surface decision blocks everything else" paragraph:
+`before`, `start` and `scope: 'project'` are irrelevant to a source that does not use the
+SDK, and neither DOR-673's 100-session cap nor DOR-674's exact-directory filter can be
+inherited by a read that goes to the file.
+
+**Count 3 — the corpus — is unchanged and was never the argument.** Re-measured 2026-08-25:
+**50 messages across 63 top-level sessions**, against 19,124 from Claude Code. The July
+figures (`session` 6, `message` 24, `part` 73) were not re-derived at the time because the
+store was deliberately not opened, which was the rule working as intended. G4 is why size
+does not decide this: a box that silently covers less for one runtime than another is the
+failure this document exists to refuse.
+
+**Count 4 — the port trigger — FIRED, and the promotion is REFUSED.** §3 named the arrival
+of a third mechanism as the trigger, on the prediction that a third mechanism would need
+frontier logic of its own. **It did not.** M3 reuses M2's entire watermark implementation
+through a four-function `ContainerReader` seam and contributes ~40 lines
+(`snapshot-frontier.ts`): the resume rule, the shrink rebuild, the frontier write and the
+prune are shared. A port here would abstract three mechanisms that already share their
+implementation. The re-trigger is written down in the ADR rather than left to taste — **a
+fourth mechanism whose change detection is neither a byte offset nor a monotonic ordinal, or
+a source that lives outside `apps/server`** — the second because the registry is a private
+constant in one file, and the day a source must register from somewhere that cannot edit
+that file, the registration surface IS the port.
+
+**The `Session.time.updated` caveat was NOT discharged, and an earlier draft of this
+amendment wrongly said it was.** §2.3 insisted the watermark be `>=` plus a forced re-read of
+any session last seen non-idle. The shipped source does not read `Session.time.updated` — a
+session's ordinals are its messages' positions in `(time_created, id)` order, so the
+high-water mark is a row count — but **the count inherits the same disease from a different
+direction, and adversarial review caught it.** OpenCode creates the assistant `message` row
+at turn START and streams its `part` rows in underneath it, mutating them in place as tokens
+arrive: measured on the operator's store 2026-08-25, **236 of 236 parts were created after
+their message row, 55 of 80 text parts were updated in place, 91 of 94 message rows were
+updated after creation, and the last part of a turn landed up to 62 seconds behind it.**
+
+So the count rises at turn start and the content lands for a minute afterwards. Three misses
+follow, all reproduced: a sweep landing mid-stream indexes a truncated body and serves it
+forever, because the count never changes again; a revert plus a new turn inside one sweep
+interval leaves the count exactly where it was; and an in-place `part` edit changes no count
+anywhere. §2.3's instinct — force a re-read of anything recently active — was right, and what
+was wrong was only its choice of column.
+
+The shipped answer is `OPENCODE_VOLATILE_WINDOW_MS`: fifteen minutes, three sweep intervals,
+measured against `message.time_updated` and `part.time_updated` (timestamps, both added to
+the read allowlist) rather than the session's turn-start stamp. Any session touched inside
+that window is **re-read from ordinal 1, deleting its rows first**, on every sweep until it
+settles.
+
+**The delete is not optional, and a first version that skipped it was wrong** — caught in
+the verify pass. Letting the upsert rewrite each row in place looks equivalent and is not: a
+message that projects to nothing writes no row, so it cannot overwrite what sits at its
+ordinal, and a container whose count lands exactly on the index's high-water mark also fails
+§5's shrink test (`maxOrdinal < indexedTo` is false at equality). The stale row then answers
+at that ordinal forever. **25 of the 75 messages on the operator's store project to
+nothing**, so it is reachable. The cost of folding is bounded by who raises the flag —
+recently-touched conversations only, never settled ones.
+
+**Two behaviours worth stating because they are the ones a careless version gets wrong.** A
+session with a `parent_id` is a subagent's own transcript and is not a container, for the
+same reason §2.1 walks past `subagents/**`. And **an absent `opencode.db` is not an empty
+one**: it indexes nothing, prunes nothing, and reports no failure, because reading absence as
+"every session is gone" would delete an entire indexed corpus the first time the runtime was
+uninstalled.
+
+**§1's product statement is now false and the client copy is the follow-up, tracked as
+DOR-1556.** The scope copy task 5.2 shipped names OpenCode as not covered. That copy is
+deliberately NOT changed in this ticket — the file is in flight on another branch — and
+flipping it is the one piece of DOR-688 that lands separately.
+
+**Codex landed first, and this amendment sits on top of it.** DOR-683 (Amendment 8 above)
+added the Codex row while this was in review, so the registry is now `rooms`, `claude-code`,
+`codex`, `opencode` — three mechanisms over four sources, and §1's sentence is true of every
+runtime the product names.

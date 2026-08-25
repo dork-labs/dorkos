@@ -7,13 +7,17 @@
  * here is a copy that can be thrown away and rebuilt, and deleting the index is
  * a supported recovery.
  *
- * Today it indexes three sources: the room log; every Claude Code transcript
- * under EVERY Claude account on the machine; and every Codex rollout, live and
- * archived. Sessions run inside DorkOS and sessions run from the bare `claude`
- * or `codex` CLI alike, because the index reads what each runtime wrote rather
- * than anything DorkOS recorded. Every Claude account, because reading only the
- * active one covered 67% of the operator's own history and said nothing about
- * the rest (spec Amendment 2).
+ * Today it indexes four sources over three mechanisms: the room log; every Claude Code transcript
+ * under EVERY Claude account on the machine; every Codex rollout, live and
+ * archived; and every OpenCode conversation. Sessions run inside DorkOS and
+ * sessions run from the bare `claude`, `codex` or `opencode` CLI alike, because
+ * the index reads what each runtime wrote rather than anything DorkOS recorded.
+ * Every Claude account, because reading only the active one covered 67% of the
+ * operator's own history and said nothing about the rest (spec Amendment 2).
+ * OpenCode through a throwaway snapshot of its SQLite store, which structurally
+ * cannot reach the credential tables sitting beside its messages
+ * (ADR 260825-110420) — and never through its sidecar, which an indexer on a
+ * timer must never boot.
  *
  * {@link searchMessages} is the one way to read it — the room history tool's
  * `search_room_history` calls it inside a scope the rooms domain resolved
@@ -26,7 +30,12 @@
  *
  * @module server/services/search
  */
-export { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, type SweepResult } from './indexer.js';
+export {
+  SearchIndexer,
+  SEARCH_RECONCILE_INTERVAL_MS,
+  SOURCE_FAILURE_KEY,
+  type SweepResult,
+} from './indexer.js';
 export { searchMessages } from './query.js';
 export { searchForCaller } from './search-service.js';
 export {
@@ -35,9 +44,24 @@ export {
   codexSource,
   createClaudeCodeSource,
   createCodexSource,
+  createOpenCodeSource,
+  openCodeSource,
   roomsSource,
 } from './registry.js';
-export { sweepRowSource } from './row-frontier.js';
+export { sweepContainers, sweepRowSource, PRUNE_GUARD_KEY } from './row-frontier.js';
+export {
+  sweepSnapshotSource,
+  SNAPSHOT_FAILURE_KEY,
+  SNAPSHOT_MIN_LIVE_SHARE,
+} from './snapshot-frontier.js';
+export {
+  buildAllowlistedSelect,
+  openOpenCodeSnapshot,
+  OPENCODE_CREDENTIAL_TABLES,
+  OPENCODE_READ_ALLOWLIST,
+  OPENCODE_VOLATILE_WINDOW_MS,
+  type OpenCodeSnapshot,
+} from './opencode-store.js';
 export { indexRoomEntry } from './write-through.js';
 export {
   sweepFileSource,
@@ -52,7 +76,9 @@ export {
   type ClaudeCodeProjectionContext,
 } from './projections/claude-code.js';
 export { projectCodexLines, type CodexProjectionContext } from './projections/codex.js';
+export { projectOpenCodeMessages, type OpenCodeMessageRow } from './projections/opencode.js';
 export type {
+  ContainerReader,
   DiscoveryFailure,
   FileContainer,
   FileDiscovery,
@@ -65,6 +91,7 @@ export type {
   SearchSource,
   SkipReason,
   SkippedFile,
+  SnapshotSource,
   SourceFailure,
   SourceSweep,
 } from './types.js';

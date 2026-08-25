@@ -89,6 +89,18 @@ Supported methods, in both dialects:
 | `SendStreamingMessage` | `message/stream` | The same, streamed over SSE |
 | `GetTask`              | `tasks/get`      | Look a task up              |
 | `CancelTask`           | `tasks/cancel`   | Stop a running task         |
+| `ListTasks`            | —                | List tasks, newest first    |
+
+`ListTasks` answers for whichever endpoint you asked. On `/a2a/agents/:id` you get that
+agent's tasks and nothing else — the count and the paging follow the same scope. On the fleet
+endpoint `/a2a` you get every agent's tasks. Filter either one by `contextId`, by `status`, or
+by `statusTimestampAfter`; artifacts are left out unless you ask for them with
+`includeArtifacts`.
+
+Looking a task up follows the same boundary. On an agent's own endpoint, `GetTask` and
+`CancelTask` answer for that agent's tasks and report anything else as not found — so knowing
+another task's id gets you nothing there. Use the fleet endpoint `/a2a` to reach a task
+whichever agent ran it.
 
 <Callout type="warn">
   **Waiting for the answer works differently in each version.** In v1.0, a send **waits** for the

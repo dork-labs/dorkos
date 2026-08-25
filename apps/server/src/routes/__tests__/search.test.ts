@@ -271,9 +271,14 @@ describe('the calling contract', () => {
   });
 
   it('refuses a source that does not exist', async () => {
+    // Deliberately a name nothing will ever be called, not a runtime that is
+    // merely unregistered TODAY. This test used to pass `opencode` and went
+    // green for the wrong reason the moment OpenCode joined the registry
+    // (DOR-688) — the route's 400 and a registered source's empty result set
+    // are different answers, and only one of them is what this asserts.
     const res = await request(buildApp())
       .get('/api/search')
-      .query({ q: 'scheduler', source: 'opencode' });
+      .query({ q: 'scheduler', source: 'not-a-source' });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('UNKNOWN_SEARCH_SOURCE');

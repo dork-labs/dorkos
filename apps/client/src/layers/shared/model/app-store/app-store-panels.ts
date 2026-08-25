@@ -128,6 +128,26 @@ export interface PanelsSlice {
   openGlobalPaletteWithSearch: (text: string) => void;
   clearGlobalPaletteInitialSearch: () => void;
 
+  /**
+   * The message-search box — the second search surface (spec `message-search`
+   * §8). ⌘K finds things by what they are CALLED; this finds them by what was
+   * SAID in them, and the two stay apart deliberately: Slack keeps ⌘K and ⌘F
+   * separate, and the one product that merged them is the cautionary example.
+   */
+  messageSearchOpen: boolean;
+  /**
+   * Words the box should open holding, or `null` to open empty.
+   *
+   * Set by ⌘K's hand-off row, which carries across whatever was typed there so
+   * nobody types it twice. Cleared when the box closes — a search box that
+   * reopened holding last week's question would be answering nobody.
+   */
+  messageSearchQuery: string | null;
+  setMessageSearchOpen: (open: boolean) => void;
+  toggleMessageSearch: () => void;
+  /** Open the box with words already in it. */
+  openMessageSearch: (query: string) => void;
+
   shortcutsPanelOpen: boolean;
   setShortcutsPanelOpen: (open: boolean) => void;
   toggleShortcutsPanel: () => void;
@@ -218,6 +238,22 @@ export const createPanelsSlice: StateCreator<
   openGlobalPaletteWithSearch: (text) =>
     set({ globalPaletteOpen: true, globalPaletteInitialSearch: text }),
   clearGlobalPaletteInitialSearch: () => set({ globalPaletteInitialSearch: null }),
+
+  messageSearchOpen: false,
+  messageSearchQuery: null,
+  // Closing drops the query with it, the same way `setProfileOpen` drops its
+  // subject: the box is a question somebody asked once, not a setting.
+  setMessageSearchOpen: (open) =>
+    set(
+      open ? { messageSearchOpen: true } : { messageSearchOpen: false, messageSearchQuery: null }
+    ),
+  toggleMessageSearch: () =>
+    set((s) =>
+      s.messageSearchOpen
+        ? { messageSearchOpen: false, messageSearchQuery: null }
+        : { messageSearchOpen: true }
+    ),
+  openMessageSearch: (query) => set({ messageSearchOpen: true, messageSearchQuery: query }),
 
   shortcutsPanelOpen: false,
   setShortcutsPanelOpen: (open) => set({ shortcutsPanelOpen: open }),

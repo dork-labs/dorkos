@@ -133,7 +133,7 @@ function createAgentSessionDeps(overrides: Partial<McpToolDeps> = {}): McpToolDe
 }
 
 describe('in-session tool exposure', () => {
-  it('always-loads exactly the five a turn cannot search for first', async () => {
+  it('always-loads exactly the eight a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -152,6 +152,12 @@ describe('in-session tool exposure', () => {
         // it learns before the turn ends; a tool named in that instruction and
         // then deferred costs the turn it was written to save.
         'memory_write',
+        // DOR-1532, the same rule applied to the same prompt. `<session_model>`
+        // now names `search_member_rooms` as what to do when a turn is asked
+        // about something said in another room — and names `list_member_rooms`
+        // beside it — so both are prompt-named tools and neither may be deferred.
+        'list_member_rooms',
+        'search_member_rooms',
       ].sort()
     );
     // The declared set and the served surface are the same set, in both
@@ -165,7 +171,7 @@ describe('in-session tool exposure', () => {
     const deferred = tools.filter((t) => t._meta?.[ALWAYS_LOAD_META] !== true);
     // The exact surface, so a tool added tomorrow shows up here as a number to
     // look at rather than silently passing a `>` bound.
-    expect(tools).toHaveLength(84);
+    expect(tools).toHaveLength(86);
     expect(deferred).toHaveLength(78);
   });
 
@@ -199,6 +205,8 @@ describe('in-session tool exposure', () => {
         'react_to_room_entry',
         'read_room_history',
         'search_room_history',
+        'list_member_rooms',
+        'search_member_rooms',
         'memory_write',
         'mesh_list',
         'mesh_inspect',

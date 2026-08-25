@@ -21,7 +21,7 @@ import {
   TooltipContent,
   Kbd,
 } from '@/layers/shared/ui';
-import { CommandPaletteDialog } from '@/layers/features/command-palette';
+import { CommandPaletteDialog, MessageSearchDialog } from '@/layers/features/command-palette';
 import { FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { PipHost } from '@/layers/features/pip-panel';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
@@ -203,6 +203,7 @@ export function App({ transformContent }: AppProps) {
           </div>
         </div>
         <CommandPaletteDialog />
+        <MessageSearchDialog />
         <FeedbackDialogHost />
         <ShortcutsPanel />
         <Toaster />

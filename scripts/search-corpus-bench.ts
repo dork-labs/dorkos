@@ -1,17 +1,18 @@
 /**
  * Rebuild the message-search index from this machine's real transcripts — Claude
- * Code's and Codex's — and print what it cost.
+ * Code's, Codex's and OpenCode's — and print what it cost.
  *
  * Run it with:
  *
  * ```bash
  * DORKOS_SEARCH_BENCH=1 pnpm tsx scripts/search-corpus-bench.ts
  * DORKOS_SEARCH_BENCH=1 pnpm tsx scripts/search-corpus-bench.ts --source codex
+ * DORKOS_SEARCH_BENCH=1 pnpm tsx scripts/search-corpus-bench.ts --source opencode
  * ```
  *
  * Each source is benched into its own throwaway database, so `messages=` on a
  * line means that source's messages and nothing else. `--source` narrows to one
- * leg; with no flag both run.
+ * leg; with no flag all three run.
  *
  * **It is env-gated on purpose.** It reads every transcript the operator has,
  * which is slow, machine-specific and nobody's business in CI — so it refuses to
@@ -92,11 +93,14 @@ import { sweepFileSource } from '../apps/server/src/services/search/jsonl-fronti
 import {
   createClaudeCodeSource,
   createCodexSource,
+  createOpenCodeSource,
 } from '../apps/server/src/services/search/registry.js';
 import { discoverClaudeCodeTranscripts } from '../apps/server/src/services/search/claude-code-discovery.js';
 import { discoverCodexRollouts } from '../apps/server/src/services/search/codex-discovery.js';
 import { resolveClaudeRootSet } from '../apps/server/src/services/runtimes/claude-code/claude-config-dir.js';
 import { resolveCodexRolloutRoots } from '../apps/server/src/services/runtimes/codex/codex-home.js';
+import { resolveOpenCodeStorePath } from '../apps/server/src/services/runtimes/opencode/opencode-data-dir.js';
+import { sweepSnapshotSource } from '../apps/server/src/services/search/snapshot-frontier.js';
 import type {
   FileContainer,
   FileDiscovery,
@@ -218,7 +222,7 @@ function readStoredConfig(): { path: string | null; reader: ConfigReader } {
 const config = readStoredConfig();
 
 /** One source this script can rebuild. */
-type Leg = 'claude-code' | 'codex';
+type Leg = 'claude-code' | 'codex' | 'opencode';
 
 /**
  * The legs to run: `--source <id>`, or both when the flag is absent.
@@ -231,10 +235,14 @@ type Leg = 'claude-code' | 'codex';
  */
 function requestedLegs(argv: readonly string[]): Leg[] {
   const index = argv.indexOf('--source');
-  if (index === -1) return ['claude-code', 'codex'];
+  if (index === -1) return ['claude-code', 'codex', 'opencode'];
   const requested = argv[index + 1];
-  if (requested === 'claude-code' || requested === 'codex') return [requested];
-  console.error(`--source takes 'claude-code' or 'codex'; got ${requested ?? '(nothing)'}`);
+  if (requested === 'claude-code' || requested === 'codex' || requested === 'opencode') {
+    return [requested];
+  }
+  console.error(
+    `--source takes 'claude-code', 'codex' or 'opencode'; got ${requested ?? '(nothing)'}`
+  );
   process.exit(2);
 }
 
@@ -577,10 +585,92 @@ async function benchCodex(): Promise<string[]> {
   return problems;
 }
 
+/**
+ * The fewest OpenCode messages a healthy index of this corpus holds.
+ *
+ * **Deliberately 1, not a measurement.** OpenCode's corpus on this machine is 50
+ * messages across 63 top-level sessions (2026-08-25), against Claude Code's
+ * 19,124 and Codex's 214 — small enough that any real floor would red on the
+ * next person's machine, and on this one the week the operator stops using the
+ * runtime. What this catches is the failure that actually matters and is
+ * otherwise invisible: a source that indexes NOTHING while reporting success,
+ * which is the shape every bug in a snapshot read takes.
+ *
+ * A machine where OpenCode has never run legitimately indexes zero, and this leg
+ * says so on its output line and passes.
+ */
+const MIN_OPENCODE_MESSAGES = 1;
+
+/**
+ * Rebuild the OpenCode slice from the real store, through the real snapshot path.
+ *
+ * Unlike the two file legs there is no independent per-root cross-check to make:
+ * a snapshot source reads ONE file, so "did it read every root" has no analogue.
+ * What is asserted instead is that a store which exists produced something, and
+ * that nothing failed.
+ *
+ * @returns Everything that failed this leg, empty when it passed.
+ */
+async function benchOpenCode(): Promise<string[]> {
+  const storePath = resolveOpenCodeStorePath();
+  const { db, dbPath } = openLegDb('opencode');
+
+  // The clock starts before the snapshot: copying the store IS part of what this
+  // source costs, and timing only the read would hide the term that scales with
+  // how much OpenCode history exists.
+  const started = process.hrtime.bigint();
+  const sweep = await sweepSnapshotSource(
+    db,
+    createOpenCodeSource(() => storePath),
+    new Date().toISOString()
+  );
+  const rebuildMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+  const indexed = db.select({ ordinal: messages.ordinal }).from(messages).all().length;
+  const containers = db
+    .select({ originKey: searchSources.originKey })
+    .from(searchSources)
+    .where(eq(searchSources.sourceId, 'opencode'))
+    .all().length;
+  const storeExists = storePath !== null && fs.existsSync(storePath);
+
+  console.log(
+    [
+      'source=opencode',
+      `store=${storePath ?? '(none)'}`,
+      `storeExists=${String(storeExists)}`,
+      `sessions=${sweep.containers}`,
+      `containers=${containers}`,
+      `messages=${indexed}`,
+      `skippedRows=${sweep.skipped}`,
+      `failures=${sweep.failures.length}`,
+      `rebuildMs=${rebuildMs.toFixed(0)}`,
+      `dbBytes=${indexBytes(dbPath)}`,
+    ].join(' ')
+  );
+
+  for (const failure of sweep.failures.slice(0, 10)) {
+    console.error(`  failed: ${failure.originKey} — ${failure.message}`);
+  }
+
+  const problems: string[] = [];
+  // Zero messages is a FAILURE only when there is a store to have read. With no
+  // store there is honestly nothing to index, and saying otherwise would red on
+  // every machine that has never opened OpenCode.
+  if (storeExists && indexed < MIN_OPENCODE_MESSAGES) {
+    problems.push(`the store at ${storePath ?? '(none)'} exists and the index came back empty`);
+  }
+  if (rebuildMs > MAX_REBUILD_MS)
+    problems.push(`rebuildMs=${rebuildMs.toFixed(0)} is above ${MAX_REBUILD_MS}`);
+  return problems;
+}
+
 try {
   const problems: string[] = [];
   for (const leg of requestedLegs(process.argv.slice(2))) {
-    problems.push(...(leg === 'claude-code' ? await benchClaudeCode() : await benchCodex()));
+    if (leg === 'claude-code') problems.push(...(await benchClaudeCode()));
+    else if (leg === 'codex') problems.push(...(await benchCodex()));
+    else problems.push(...(await benchOpenCode()));
   }
   if (problems.length > 0) {
     console.error(`\nFAIL: ${problems.join('; ')}`);

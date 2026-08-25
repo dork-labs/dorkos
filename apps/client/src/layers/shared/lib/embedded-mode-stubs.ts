@@ -1210,3 +1210,24 @@ export const profileStubs = {
     throw new Error('Profile photos need a DorkOS server');
   },
 };
+
+/**
+ * Message search, in a plugin with no message index behind it.
+ *
+ * **It throws rather than answering `{ results: [], warnings: [] }`,** and that
+ * is the whole point of the stub. An empty result list is exactly what "nothing
+ * matched" looks like, so answering emptily here would tell somebody their
+ * history holds no mention of a word they know they wrote. Throwing puts the
+ * box into its error state, which says something true.
+ *
+ * The index lives in the server's SQLite database and is built by a reconciler
+ * that runs there; the embed has neither. When the embed grows one, this stub
+ * is replaced by a `direct/` method, not by an empty envelope.
+ *
+ * @internal
+ */
+export const searchStubs = {
+  async search(): Promise<never> {
+    throw new Error('Searching your messages needs a DorkOS server');
+  },
+};
