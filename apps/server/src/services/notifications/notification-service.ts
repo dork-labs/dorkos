@@ -56,6 +56,7 @@ import {
 } from './notification-registry.js';
 import type { NotificationStore } from './notification-store.js';
 import { cancelEscalationByKey } from './escalation-service.js';
+import { broadcastStandingResolved } from './standing-events.js';
 import {
   deliverOverRelay,
   type RelayChannelDeps,
@@ -197,7 +198,14 @@ export class NotificationService {
     // produce one. Synchronous and before anything else here, because `raise()`
     // below awaits a chat network and a phone ping must not slip out in that
     // window about something a person just dealt with.
-    cancelEscalationByKey(notificationEntry(kind).dedupeKey(payload));
+    const subjectKey = notificationEntry(kind).dedupeKey(payload);
+    cancelEscalationByKey(subjectKey);
+    // And tell the periphery to retire what it drew when this began standing
+    // (DOR-1570). Same reasoning, same moment: a desktop banner about a
+    // schedule somebody just approved is the interruption the tiering exists to
+    // prevent. A kind whose arrival was never announced simply names a subject
+    // no surface is holding, which every listener treats as a no-op.
+    broadcastStandingResolved(kind, subjectKey);
 
     try {
       return await this.raise(kind, payload, opts, {

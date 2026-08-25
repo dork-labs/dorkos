@@ -125,6 +125,132 @@ function sendNotification(overrides: Record<string, unknown> = {}): void {
   });
 }
 
+function sendStandingPending(overrides: Record<string, unknown> = {}): void {
+  stream.sendEvent('standing_pending', {
+    kind: 'schedule.parked',
+    subjectKey: 'schedule:task-1',
+    tier: 'blocking',
+    title: 'Nightly Bot proposed a scheduled task',
+    body: 'nightly-sweep will not run until you approve it.',
+    deepLink: '/tasks',
+    since: '2026-08-25T00:00:00.000Z',
+    ...overrides,
+  });
+}
+
+/**
+ * The two standing conditions that reach the desktop app only through this
+ * event (DOR-1570).
+ *
+ * Before it existed the shell showed NOTHING for either: a schedule an agent
+ * proposed and an approval it needed for something irreversible are both
+ * standing kinds, which store no row while they stand, so nothing was ever
+ * broadcast on the `notification` channel to pop a banner from. The operator
+ * had to ask an agent to open the Tasks panel to find out.
+ */
+describe('watchNotifications — standing conditions', () => {
+  it('shows a banner for a schedule an agent proposed', async () => {
+    await start();
+    sendStandingPending();
+
+    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown[0]?.spec.title).toBe('Nightly Bot proposed a scheduled task');
+    expect(host.shown[0]?.spec.body).toBe('nightly-sweep will not run until you approve it.');
+    // Click-to-open, no buttons: a schedule that will run unattended, and an
+    // irreversible action, both deserve the card in front of you.
+    expect(host.shown[0]?.spec.actions).toBeUndefined();
+    expect(host.shown[0]?.spec.hasReply).toBeUndefined();
+  });
+
+  it('shows a banner for a capability approval an agent is waiting on', async () => {
+    await start();
+    sendStandingPending({
+      kind: 'approval.pending',
+      subjectKey: 'approval:01J1',
+      title: 'Nightly Bot needs your approval',
+      body: 'Delete a scheduled task cannot be undone, so it will not run until you decide.',
+      deepLink: '/',
+    });
+
+    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown[0]?.spec.title).toBe('Nightly Bot needs your approval');
+  });
+
+  it('opens the route the server chose when the banner is clicked', async () => {
+    await start();
+    sendStandingPending({ kind: 'approval.pending', subjectKey: 'approval:01J1', deepLink: '/' });
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    host.shown[0]?.spec.onClick?.();
+
+    expect(focusAndNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('interrupts even while a window is focused — Blocking always does', async () => {
+    unfocused = false;
+    await start();
+    sendStandingPending();
+
+    await eventually(() => expect(host.shown).toHaveLength(1));
+  });
+
+  it('never shows the same condition twice', async () => {
+    await start();
+    sendStandingPending();
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    sendStandingPending();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown).toHaveLength(1);
+  });
+
+  it('closes the banner when the condition resolves', async () => {
+    await start();
+    sendStandingPending();
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    stream.sendEvent('standing_resolved', {
+      kind: 'schedule.parked',
+      subjectKey: 'schedule:task-1',
+      resolvedAt: '2026-08-25T00:01:00.000Z',
+    });
+
+    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+  });
+
+  it('leaves a banner alone when a DIFFERENT condition resolves', async () => {
+    await start();
+    sendStandingPending();
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    stream.sendEvent('standing_resolved', {
+      kind: 'schedule.parked',
+      subjectKey: 'schedule:task-999',
+      resolvedAt: '2026-08-25T00:01:00.000Z',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown[0]?.closed).toBe(false);
+  });
+
+  it('ignores a frame with no usable tier, rather than defaulting to loud', async () => {
+    await start();
+    sendStandingPending({ tier: 'unheard-of' });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown).toHaveLength(0);
+  });
+
+  it('holds a Notable condition back while a window has focus', async () => {
+    unfocused = false;
+    await start();
+    sendStandingPending({ tier: 'notable' });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(host.shown).toHaveLength(0);
+  });
+});
+
 describe('watchNotifications — Asks', () => {
   it('shows a Blocking banner for a pending approval, with Allow/Deny actions', async () => {
     await start();

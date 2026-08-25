@@ -622,4 +622,52 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     const refused = await create(tools, { ...GOOD_ARGS, reason: ' ' });
     expect(refused.isError).toBe(true);
   });
+
+  describe('the nudge that gets the approval in front of a person (DOR-1570)', () => {
+    it('tells the agent to say the schedule is waiting, not to report it as done', async () => {
+      const { payload } = await create(toolsWith(), GOOD_ARGS);
+
+      const note = String(payload.note);
+      expect(note).toContain('will NOT run until the person approves it');
+      expect(note).toContain('Tell them so in your reply');
+      // The old wording stated a status and asked for nothing, which is how an
+      // agent could "create the schedule", end the turn, and leave a person who
+      // had been told nothing to find the approval themselves.
+      expect(note).not.toBe(
+        'Schedule created with pending_approval status. User must approve before it runs.'
+      );
+    });
+
+    it('offers the Schedules panel only where a session makes control_ui reachable', async () => {
+      const inSession = await create(
+        toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/nb' })),
+        GOOD_ARGS
+      );
+      expect(String(inSession.payload.note)).toContain("panel: 'tasks'");
+      expect(String(inSession.payload.note)).toContain('control_ui');
+    });
+
+    it('never names control_ui on the sessionless external server, where it does not exist', async () => {
+      // `control_ui` requires an attached interactive session and is not
+      // registered on `/mcp`. Suggesting it there would be an instruction that
+      // can only fail, so the external surface gets the "tell them" half alone.
+      const { payload } = await create(toolsWith(), GOOD_ARGS);
+
+      expect(String(payload.note)).not.toContain('control_ui');
+      expect(String(payload.note)).toContain('Tell them so in your reply');
+    });
+
+    it('gives the same guidance through the REAL composition root', async () => {
+      const wired = Object.fromEntries(
+        (
+          handRegisteredInSessionTools(deps, {
+            session: { eventQueue: [], cwd: '/tmp/agents/nb', sdkSessionId: 'ses-canonical' },
+          }) as unknown as SessionTool[]
+        ).map((t) => [t.name, t])
+      );
+
+      const { payload } = await create(wired, GOOD_ARGS);
+      expect(String(payload.note)).toContain('control_ui');
+    });
+  });
 });

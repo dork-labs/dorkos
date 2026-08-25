@@ -49,6 +49,10 @@ import {
   type PendingApproval,
 } from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
+import {
+  raiseCapabilityApproval,
+  resolveCapabilityApproval,
+} from '../../notifications/emitters/capability-approval.js';
 import { eventFanOut } from '../event-fan-out.js';
 import { logger } from '../../../lib/logger.js';
 import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
@@ -359,7 +363,19 @@ export class ApprovalService {
     };
     this.db.insert(approvals).values(row).run();
 
-    broadcastApprovalPending(toPendingApproval(row));
+    const pending = toPendingApproval(row);
+    broadcastApprovalPending(pending);
+    // The escalation clock starts HERE, at the write that creates the condition
+    // — the same place a parked schedule arms one, and for the same reason: an
+    // approval has no observer seam, so the hook belongs at the write. This is
+    // also what announces the arrival to the desktop shell, which has no
+    // cockpit query to derive it from (DOR-1570). Nothing is STORED at this
+    // edge: `approval.pending` is a standing kind, and standing kinds write
+    // nothing while they stand (ADR 260819-234828).
+    //
+    // The raw path rather than the card's label, because the label is display
+    // text and the escalation needs the key the agent registry joins on.
+    raiseCapabilityApproval(pending, input.requestedByPath);
 
     return { approvalId: row.id, token, expiresAt: row.expiresAt };
   }
@@ -413,7 +429,7 @@ export class ApprovalService {
     // rebuilding its arguments to chase a token that had already run out of time.
     if (this.isExpired(row)) {
       if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
-      broadcastApprovalResolved(row.id, 'expired');
+      this.settle(row.id, 'expired');
       return { outcome: 'expired', approvalId: row.id };
     }
 
@@ -426,7 +442,7 @@ export class ApprovalService {
     }
 
     if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
-    broadcastApprovalResolved(row.id, 'consumed');
+    this.settle(row.id, 'consumed');
 
     if (row.state === 'denied') {
       return {
@@ -622,6 +638,25 @@ export class ApprovalService {
   }
 
   /**
+   * Retire one approval, everywhere at once.
+   *
+   * The single funnel every ending passes through — granted, denied, spent, or
+   * expired — and the reason it exists is that there are FIVE call sites for
+   * four endings and each one has to do two things now: retire the card, and
+   * stop the escalation clock the request started (DOR-1570). Written as one
+   * method rather than two lines repeated five times, because the fifth copy is
+   * the one somebody forgets, and a forgotten disarm is a phone buzzing about
+   * an approval that was answered ten minutes ago.
+   *
+   * @param approvalId - ULID of the approval that ended.
+   * @param outcome - How it ended.
+   */
+  private settle(approvalId: string, outcome: ApprovalOutcome): void {
+    resolveCapabilityApproval(approvalId);
+    broadcastApprovalResolved(approvalId, outcome);
+  }
+
+  /**
    * Look a token up by its digest, in constant time on the final compare.
    *
    * @param token - The presented token.
@@ -684,7 +719,7 @@ export class ApprovalService {
     if (!row) return 'unknown';
     if (row.consumedAt || row.state !== 'pending') return 'not_pending';
     if (this.isExpired(row)) {
-      if (this.markConsumed(row.id)) broadcastApprovalResolved(row.id, 'expired');
+      if (this.markConsumed(row.id)) this.settle(row.id, 'expired');
       return 'expired';
     }
 
@@ -707,7 +742,7 @@ export class ApprovalService {
       .run();
     if (result.changes !== 1) return 'not_pending';
 
-    broadcastApprovalResolved(approvalId, decision);
+    this.settle(approvalId, decision);
     return undefined;
   }
 }

@@ -691,6 +691,33 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         });
       }
 
+      // DOR-1570: "an approval card is waiting for them" used to be the whole
+      // instruction, and a model reading it would dutifully stop — leaving a
+      // person who had been told nothing to find the card themselves. The
+      // asymmetry below is the load-bearing half: `control_ui` needs an
+      // attached interactive session and is not registered on `/mcp`, so
+      // naming it on the external server would be an instruction that can only
+      // fail. Driven through the real composition roots, so the flag really is
+      // set per server rather than merely accepted by the gate.
+      it(`${server}: tells the agent to surface the approval to the operator`, async () => {
+        const payload = payloadOf(
+          await toolsFor(AGENT).get('tasks_delete')!.call(DESTRUCTIVE_INPUT.tasks_delete)
+        );
+        const instructions = String((payload.retry as { instructions: string }).instructions);
+
+        expect(instructions).toContain('waiting on their approval');
+        expect(instructions).toContain('do not just stop');
+        // The retry contract itself is untouched.
+        expect(instructions).toContain('approvalToken');
+
+        if (server === 'in-session') {
+          expect(instructions).toContain('control_ui');
+          expect(instructions).toContain("panel: 'tasks'");
+        } else {
+          expect(instructions).not.toContain('control_ui');
+        }
+      });
+
       it(`${server}: an observe call is not touched`, async () => {
         // `ping` answers `{ status: 'pong' }`, so this asserts the VALUE rather
         // than the absence of the key — a gate result would say

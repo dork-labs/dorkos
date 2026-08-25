@@ -1,6 +1,6 @@
 import log from 'electron-log';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
-import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
+import type { NotificationDTO, StandingPendingEvent } from '@dorkos/shared/notification-schemas';
 import {
   parseEventPayload,
   subscribeEventStream,
@@ -13,6 +13,7 @@ import {
   earnsNativeBanner,
   notificationDeepLink,
   replyEligibility,
+  standingCopy,
 } from './copy';
 import { approveTool, denyTool, submitReplyAnswer, type AnswerOutcome } from './answer';
 import {
@@ -27,7 +28,7 @@ import {
  * Blocking, always; Notable, only while no DorkOS window has focus (spec
  * `notification-system`, Desktop section; ADR 260819-234830).
  *
- * Two live signals feed this, both riding the shared connection in
+ * Three live signals feed this, all riding the shared connection in
  * `event-stream.ts`:
  *
  * - `interaction_pending` / `interaction_resolved` — the existing addressed
@@ -36,12 +37,25 @@ import {
  *   module doc), so this is the ONLY live signal for a Blocking Ask, and the
  *   one place actions (Allow/Deny/Reply) apply — they answer a specific
  *   interaction, which only this event names.
+ * - `standing_pending` / `standing_resolved` — every OTHER Attention condition
+ *   (DOR-1570). An Ask was not the only thing that stores nothing while it
+ *   stands: a schedule an agent proposes and an approval it needs for
+ *   something irreversible are both standing conditions too, and until this
+ *   pair existed the desktop app showed NOTHING for either — no banner, no
+ *   dock badge, nothing. The operator had to ask an agent to open the Tasks
+ *   panel to find out something was waiting on them. Click-to-open, with no
+ *   action buttons: deciding an irreversible action, or a schedule that will
+ *   run unattended, deserves the card in front of you.
  * - `notification` / `notification_read` — the Activity pipeline (turn/run
  *   completion, DMs, mentions, and Attention kinds' resolution history). These
  *   arrive pre-built with a title and a tier; a row that resolved because the
  *   operator just acted on it arrives already read (`readAt` set) and is
  *   deliberately skipped — popping a banner about a person's own click would
  *   be the exact noise the tiering exists to prevent.
+ *
+ * All three are OS banners, which ADR 260819-234830 admits to the periphery.
+ * None of them is an in-app toast: the toast diet (spec `notification-system`
+ * §6) is intact, and nothing here adds one.
  *
  * @module main/notifications
  */
@@ -87,6 +101,12 @@ export function watchNotifications(options: NotificationsOptions): Notifications
   /** Live Ask banners, by interaction id — closed when `interaction_resolved` names them. */
   const shownAsks = new Map<string, NativeNotificationHandle>();
   /**
+   * Live standing-condition banners, by subject key — closed when
+   * `standing_resolved` names them. Keyed on the server's own `dedupeKey`, so
+   * an arrival and its resolution cannot name one condition two ways.
+   */
+  const shownStanding = new Map<string, NativeNotificationHandle>();
+  /**
    * Activity banners, by notification id. `null` means the id was seen and
    * deliberately not shown (already read, or its tier didn't earn one) — kept
    * so a duplicate upsert of the same id is never reconsidered.
@@ -100,6 +120,12 @@ export function watchNotifications(options: NotificationsOptions): Notifications
         return;
       case 'interaction_resolved':
         handleAskResolved(frame.data);
+        return;
+      case 'standing_pending':
+        handleStandingPending(frame.data);
+        return;
+      case 'standing_resolved':
+        handleStandingResolved(frame.data);
         return;
       case 'notification':
         handleNotificationUpsert(frame.data);
@@ -145,6 +171,30 @@ export function watchNotifications(options: NotificationsOptions): Notifications
     if (!interactionId) return;
     shownAsks.get(interactionId)?.close();
     shownAsks.delete(interactionId);
+  }
+
+  function handleStandingPending(data: string): void {
+    const event = parseStandingPending(data);
+    if (!event || shownStanding.has(event.subjectKey)) return;
+    // The same tier rule every other banner takes, asked once here rather than
+    // assumed: today every standing kind is Blocking, and a future one that is
+    // not must obey the away-only rule like anything else Notable.
+    if (!earnsNativeBanner(event.tier, options.isWindowUnfocused())) return;
+
+    const copy = standingCopy(event);
+    const handle = host.show({
+      title: copy.title,
+      ...(copy.body ? { body: copy.body } : {}),
+      onClick: () => options.focusAndNavigate(event.deepLink),
+    });
+    trackWithCap(shownStanding, event.subjectKey, handle);
+  }
+
+  function handleStandingResolved(data: string): void {
+    const subjectKey = parseStandingResolvedKey(data);
+    if (!subjectKey) return;
+    shownStanding.get(subjectKey)?.close();
+    shownStanding.delete(subjectKey);
   }
 
   function handleNotificationUpsert(data: string): void {
@@ -233,6 +283,7 @@ export function watchNotifications(options: NotificationsOptions): Notifications
     stop(): void {
       subscription.unsubscribe();
       shownAsks.clear();
+      shownStanding.clear();
       shownDtos.clear();
     },
   };
@@ -281,6 +332,47 @@ function parseInteractionPending(data: string): InteractionPendingEvent | null {
 function parseInteractionResolvedId(data: string): string | null {
   const payload = parseEventPayload(data);
   return typeof payload?.interactionId === 'string' ? payload.interactionId : null;
+}
+
+/**
+ * Parse a `standing_pending` frame down to the fields this module reads.
+ *
+ * By hand, for the reason {@link parseInteractionPending} gives: validating
+ * with `StandingPendingEventSchema` would pull zod (and zod-to-openapi with it)
+ * into the main-process bundle for a check on five fields.
+ *
+ * `tier` is checked against the enum rather than merely for presence, the same
+ * way that parser checks an interaction's `type`: it is what `earnsNativeBanner`
+ * branches on, and an unrecognised value would fall through to "show it
+ * always", which is the wrong direction to fail in for a banner.
+ */
+function parseStandingPending(data: string): StandingPendingEvent | null {
+  const payload = parseEventPayload(data);
+  if (!payload) return null;
+  const { kind, subjectKey, tier, title, body, deepLink, since } = payload;
+  if (typeof kind !== 'string' || typeof subjectKey !== 'string' || subjectKey.length === 0) {
+    return null;
+  }
+  if (tier !== 'blocking' && tier !== 'notable' && tier !== 'quiet') return null;
+  if (typeof title !== 'string' || title.length === 0) return null;
+  if (typeof deepLink !== 'string' || deepLink.length === 0) return null;
+  if (body !== undefined && typeof body !== 'string') return null;
+  return {
+    kind,
+    subjectKey,
+    tier,
+    title,
+    ...(body ? { body } : {}),
+    deepLink,
+    since: typeof since === 'string' ? since : '',
+  } as StandingPendingEvent;
+}
+
+/** Read the `subjectKey` off a `standing_resolved` payload. */
+function parseStandingResolvedKey(data: string): string | null {
+  const payload = parseEventPayload(data);
+  const subjectKey = payload?.subjectKey;
+  return typeof subjectKey === 'string' && subjectKey.length > 0 ? subjectKey : null;
 }
 
 /**

@@ -135,7 +135,8 @@ type GateOutcome =
 function runGate(
   action: GatedAction,
   args: unknown,
-  identity: AgentIdentity | undefined
+  identity: AgentIdentity | undefined,
+  interactive: boolean
 ): GateOutcome {
   // Only a destructive tool advertises `approvalToken`, so only a destructive call
   // has one to lift off. Anything else passes its arguments through untouched
@@ -153,6 +154,11 @@ function runGate(
     // An MCP client cannot set an HTTP header on a tool call, so the retry
     // instructions must name the tool ARGUMENT this module advertises.
     retryChannel: 'mcp-argument',
+    // Wording only — see `TierEnforcementRequest.interactive`. The in-session
+    // server can be told to open the panel for the operator; the external
+    // `/mcp` server has no session and no `control_ui`, and the two entry
+    // points below are what already tell those apart.
+    interactive,
   });
 
   if (decision.outcome !== 'allowed')
@@ -230,7 +236,10 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
       ...definition,
       inputSchema: gatedInputSchema(action, definition.inputSchema),
       handler: async (args: never, extra: unknown): Promise<CallToolResult> => {
-        const outcome = runGate(action, args, (await resolveContext?.())?.identity);
+        // `interactive: true` — this entry point wraps the IN-SESSION server,
+        // where `control_ui` exists, so a gated call may be told to put the
+        // approval in front of the operator (DOR-1570).
+        const outcome = runGate(action, args, (await resolveContext?.())?.identity, true);
         if (!outcome.allowed) return outcome.result;
         return handler(outcome.input as never, extra);
       },
@@ -315,7 +324,9 @@ export function gatedToolRegistrar(server: McpServer, identity?: AgentIdentity):
       name,
       { ...config, inputSchema: gatedInputSchema(action, config.inputSchema ?? {}) },
       (async (args: never, extra: unknown): Promise<CallToolResult> => {
-        const outcome = runGate(action, args, identity);
+        // `interactive: false` — the external `/mcp` server is sessionless, so
+        // the UI tools are not registered and must not be suggested.
+        const outcome = runGate(action, args, identity, false);
         if (!outcome.allowed) return outcome.result;
         return cb(outcome.input as never, extra);
         // The SDK's `registerTool` is generic over the input and output shapes it
