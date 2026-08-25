@@ -118,6 +118,7 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
     notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
+    dorkHome: '/tmp/dorkos-test-home',
     relayCore: {
       publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
     } as unknown as McpToolDeps['relayCore'],

@@ -27,6 +27,7 @@ import {
   OPERATOR_ONLY_TASK_FIELDS,
   findOperatorOnlyTaskFields,
   describeOperatorOnlyTaskRefusal,
+  refuseUnknownTaskUpdateFields,
 } from '../task-write-policy.js';
 
 /** Every field name a caller can put in a task create or update body. */
@@ -129,5 +130,52 @@ describe('describeOperatorOnlyTaskRefusal', () => {
     const message = describeOperatorOnlyTaskRefusal(['permissionMode', 'status']);
     expect(message).toContain('those fields');
     expect(message).not.toContain('that field');
+  });
+});
+
+describe('refuseUnknownTaskUpdateFields (DOR-1568)', () => {
+  it('lets a body of real update fields through', () => {
+    expect(refuseUnknownTaskUpdateFields({ prompt: 'go', cron: '0 2 * * *', enabled: true })).toBe(
+      null
+    );
+  });
+
+  it('lets an empty or absent body through', () => {
+    // Express 5 leaves `req.body` undefined on a POST with no payload, and a
+    // caller that changed nothing changed nothing wrongly.
+    for (const body of [{}, null, undefined, 'prompt', 42, ['prompt']]) {
+      expect(refuseUnknownTaskUpdateFields(body)).toBe(null);
+    }
+  });
+
+  it('names target and agentId, the two ways a caller asks to re-home a task', () => {
+    const refusal = refuseUnknownTaskUpdateFields({ target: 'global', agentId: 'bot' })!;
+    expect(refusal.code).toBe('unknown_task_field');
+    expect(refusal.fields).toEqual(['agentId', 'target']);
+    // The refusal has to say what to do instead, or a model just tries again.
+    expect(refusal.message).toContain('delete this task and create it again');
+  });
+
+  it('tells a typo apart from a re-homing attempt', () => {
+    const refusal = refuseUnknownTaskUpdateFields({ promt: 'typo' })!;
+    expect(refusal.fields).toEqual(['promt']);
+    expect(refusal.message).not.toContain('delete this task');
+    // …and lists the fields that do exist, which is the actionable half.
+    expect(refusal.message).toContain('prompt');
+  });
+
+  it('answers both halves at once when a body has each kind', () => {
+    const refusal = refuseUnknownTaskUpdateFields({ agentId: 'bot', promt: 'typo' })!;
+    expect(refusal.fields).toEqual(['agentId', 'promt']);
+    expect(refusal.message).toContain('delete this task and create it again');
+    expect(refusal.message).toContain('no such field');
+  });
+
+  it('accepts every field the update schema declares, so it cannot drift', () => {
+    // The failure mode this guards: a field added to `UpdateTaskRequestSchema`
+    // that this refusal has never heard of, turning a legitimate edit into a 400.
+    for (const field of Object.keys(UpdateTaskRequestSchema.shape)) {
+      expect(refuseUnknownTaskUpdateFields({ [field]: 'anything' }), field).toBe(null);
+    }
   });
 });

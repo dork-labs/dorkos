@@ -17,15 +17,22 @@
  * The parking half of that sentence used to be true of the MCP tool only. Both
  * store insert paths hardcode `status: 'active'`, and `tasks_create` patched it
  * afterwards in the TOOL HANDLER — so `POST /api/tasks`, which is what
- * `dorkos task create` calls, armed a live cron task for the same agent. The
- * route now parks too, on the same trust answer it uses below (`parksOnCreate`
- * in `routes/tasks.ts`).
+ * `dorkos task create` calls, armed a live cron task for the same agent. Both
+ * doors now park on the same trust answer, in the one create sequence they share
+ * (`services/tasks/lifecycle/create-task.ts`).
  *
  * This module is the classification, and it is deliberately the same shape as
  * `core/operator/config-write-policy.ts`: a table with a verdict per field, the
  * operator-only set derived from the table so the two cannot drift, and one
  * function that tells a caller which fields a write body reached for. Read that
  * module first — the reasoning there is the reasoning here, one level down.
+ *
+ * It also answers the adjacent question, added by DOR-1568: what happens to a
+ * field neither schema has ever heard of. Both doors used to drop those in
+ * silence and report success, so a caller could not tell a change that landed
+ * from one that evaporated. {@link refuseUnknownTaskUpdateFields} refuses them
+ * instead, and gives re-homing (`target`, `agentId`) its own answer because it is
+ * the one people actually try.
  *
  * ## How the two surfaces use it, and why they use it differently
  *
@@ -94,6 +101,7 @@
  *
  * @module services/tasks/task-write-policy
  */
+import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
 
 /**
  * Whether an agent may write one field of a scheduled task.
@@ -208,6 +216,111 @@ export function findOperatorOnlyTaskFields(body: unknown): string[] {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return [];
   const keys = new Set(Object.keys(body));
   return OPERATOR_ONLY_TASK_FIELDS.filter((field) => keys.has(field)).sort();
+}
+
+/**
+ * Every field `PATCH /api/tasks/:id` and `tasks_update` accept.
+ *
+ * Read from the request schema rather than restated, so a field added there is
+ * accepted here on the same commit and cannot become an accidental refusal.
+ */
+const UPDATABLE_TASK_FIELDS: readonly string[] = Object.keys(UpdateTaskRequestSchema.shape).sort();
+
+/**
+ * The fields that decide WHERE a task lives. Set once, at create, and never by
+ * an update (DOR-1568).
+ *
+ * `target` is what `POST /api/tasks` and `tasks_create` take; `agentId` is what
+ * the resulting row carries. Neither is in the update schema, so before this
+ * both were STRIPPED in silence: `parseBody` uses a non-strict `z.object`, and
+ * the MCP SDK drops an argument the tool never declared. An agent that tried to
+ * file its own task under itself was told the update succeeded and nothing had
+ * changed — which is how a file-less orphan came to be adopted by nobody.
+ */
+const IMMUTABLE_TASK_FIELDS: readonly string[] = ['agentId', 'target'];
+
+/** The `error` every unknown-or-immutable update-field refusal carries. */
+const UNKNOWN_TASK_FIELD_ERROR = 'DorkOS does not know how to change that on a task';
+
+/** The machine-readable code every unknown-or-immutable update-field refusal carries. */
+const UNKNOWN_TASK_FIELD_CODE = 'unknown_task_field';
+
+/** A whole-call refusal, in the shape both the route and the MCP tools answer with. */
+export interface TaskFieldRefusal {
+  /** The one-line summary. */
+  error: string;
+  /** The machine-readable code. */
+  code: string;
+  /** Which fields stopped the call, sorted. */
+  fields: string[];
+  /** The paragraph a person or a model reads. */
+  message: string;
+}
+
+/**
+ * Refuse an update that names a field this surface cannot change — or return
+ * `null` to let it through (DOR-1568).
+ *
+ * ## Why refusing beats stripping
+ *
+ * Both doors used to strip quietly and answer 200. A caller cannot tell a change
+ * that landed from one that evaporated, so it believes the wrong thing about its
+ * own task and acts on it — the exact failure `findOperatorOnlyTaskFields` exists
+ * to prevent, one class down: not "you may not", but "there is no such thing".
+ *
+ * The check reads the RAW body, before Zod, for the reason the operator-only
+ * guard does: after parsing there is nothing left to see. Callers that pass
+ * arguments alongside the body (`tasks_update` carries `id`) strip those first.
+ *
+ * @param body - The update body a caller supplied; a non-object names nothing.
+ * @returns The refusal envelope, or `null` when every named field is updatable.
+ */
+export function refuseUnknownTaskUpdateFields(body: unknown): TaskFieldRefusal | null {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return null;
+  const fields = Object.keys(body)
+    .filter((key) => !UPDATABLE_TASK_FIELDS.includes(key))
+    .sort();
+  if (fields.length === 0) return null;
+  return {
+    error: UNKNOWN_TASK_FIELD_ERROR,
+    code: UNKNOWN_TASK_FIELD_CODE,
+    fields,
+    message: describeUnknownTaskUpdateRefusal(fields),
+  };
+}
+
+/**
+ * The refusal a caller reads when it named a field an update cannot change.
+ *
+ * Re-homing gets its own paragraph because it is the one people actually try, and
+ * "unknown field" would be a true sentence that teaches nothing: a task IS filed
+ * under an agent, the caller is asking a reasonable question, and the honest
+ * answer is that the filing is decided at create and moving it means making it
+ * again. Everything else gets the list of fields that do work, because a model
+ * told only "no" tries again.
+ *
+ * @param fields - The offending fields, from {@link refuseUnknownTaskUpdateFields}.
+ * @returns One paragraph, written for whoever reads it.
+ */
+function describeUnknownTaskUpdateRefusal(fields: readonly string[]): string {
+  const rehoming = fields.filter((field) => IMMUTABLE_TASK_FIELDS.includes(field));
+  const unknown = fields.filter((field) => !IMMUTABLE_TASK_FIELDS.includes(field));
+  const parts = [`DorkOS changed nothing — not one field of this task.`];
+  if (rehoming.length > 0) {
+    parts.push(
+      `A task is filed under one agent (or under none at all) when it is created, and it stays ` +
+        `there: ${rehoming.join(', ')} cannot be changed afterwards, because the task's file ` +
+        `lives in that agent's folder. To move it, delete this task and create it again with the ` +
+        `target you want.`
+    );
+  }
+  if (unknown.length > 0) {
+    parts.push(
+      `There is no such field on a task as ${unknown.join(', ')}. You can change: ` +
+        `${UPDATABLE_TASK_FIELDS.join(', ')}.`
+    );
+  }
+  return parts.join(' ');
 }
 
 /**

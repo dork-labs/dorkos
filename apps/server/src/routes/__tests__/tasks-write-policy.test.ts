@@ -497,7 +497,7 @@ describe('operator-only task fields on the REST routes', () => {
       });
 
       it('still lets an API key create a LIVE task, unparked, on POST', async () => {
-        // The `parksOnCreate` half of the same predicate, and the one a status
+        // The parking half of the same predicate, and the one a status
         // assertion alone would miss: a regression here refuses nothing. It answers
         // 201, says "created", and quietly parks the task so it never runs.
         signedInUser = CLI_OPERATOR;
@@ -515,6 +515,72 @@ describe('operator-only task fields on the REST routes', () => {
         );
         expect(scheduler.registerTask).toHaveBeenCalled();
       });
+    });
+  });
+  describe('a field this route cannot change is refused, never dropped (DOR-1568)', () => {
+    // `parseBody` uses a non-strict `z.object`, so anything the update schema does
+    // not name was stripped and the caller got a 200 with an unchanged task. An
+    // agent that tried to file a task under itself was told that worked. It did not.
+
+    it('refuses agentId by name, and applies nothing else from the call', async () => {
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ prompt: 'an updated prompt', agentId: 'nightly-bot' });
+
+      expect(res.status, 'a silent 200 is the bug').toBe(400);
+      expect(res.body.code).toBe('unknown_task_field');
+      expect(res.body.fields).toEqual(['agentId']);
+      expect(String(res.body.message)).toContain('delete this task and create it again');
+
+      const after = store.getTask(existing.id)!;
+      expect(after.prompt).toBe('the prompt the person approved');
+      expect(after.agentId).toBeNull();
+      expect(after.updatedAt).toBe(existing.updatedAt);
+    });
+
+    it('refuses target, the create-only field, with the same answer', async () => {
+      const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ target: 'global' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['target']);
+    });
+
+    it('names every unknown field at once, and lists what does work', async () => {
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ agentId: 'x', nonsense: 1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['agentId', 'nonsense']);
+      // The list of updatable fields is what turns a refusal into an instruction.
+      expect(String(res.body.message)).toContain('prompt');
+      expect(String(res.body.message)).toContain('cron');
+    });
+
+    it('applies to the operator too — a typo should be loud on their edits as well', async () => {
+      // Not scoped to agents on purpose: the cockpit only ever sends
+      // `UpdateTaskRequest` fields, so nothing legitimate is caught, and a
+      // misspelled field silently doing nothing is a bad afternoon either way.
+      state.authEnabled = true;
+      signedInUser = { userId: 'user_1', credential: 'cookie' };
+
+      const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ promt: 'typo' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['promt']);
+    });
+
+    it('lets an ordinary partial edit straight through', async () => {
+      // The guard has to be provably narrow: a PATCH of two real fields, and only
+      // those, must still work exactly as it did.
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ prompt: 'an updated prompt', enabled: false });
+
+      expect(res.status).toBe(200);
+      const after = store.getTask(existing.id)!;
+      expect(after.prompt).toBe('an updated prompt');
+      expect(after.enabled).toBe(false);
     });
   });
 });
