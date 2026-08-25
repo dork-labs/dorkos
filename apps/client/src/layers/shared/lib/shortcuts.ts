@@ -79,6 +79,17 @@ export const SHORTCUTS = {
     label: 'Toggle right panel',
     group: 'navigation',
   },
+  // The message-search box — ⌘K's sibling, and a different question (spec
+  // `message-search` §8). NOT `mod+f`: that is the browser's own find-on-page
+  // and belongs to the browser, which people use constantly to find a word in
+  // the transcript already on screen. `mod+shift+f` is free in this registry
+  // and unbound in Chrome, Firefox and Safari.
+  MESSAGE_SEARCH: {
+    id: 'message-search',
+    key: 'mod+shift+f',
+    label: 'Search messages',
+    group: 'navigation',
+  },
   SHORTCUTS_PANEL: {
     id: 'shortcuts-panel',
     key: '?',

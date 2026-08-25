@@ -801,6 +801,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // actually in — a default that threw would make every profile test opt out
     // of an error nothing real produces.
     listMemberRooms: vi.fn().mockResolvedValue({ rooms: [] }),
+    // Message search (spec `message-search` §8). The full envelope, `warnings`
+    // included: that array is ALWAYS present on this route by decision, and a
+    // default that omitted it would let a component read `undefined` in every
+    // test and crash only in production.
+    search: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.
