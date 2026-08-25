@@ -1,9 +1,11 @@
 'use client';
 
+import { useCallback, useState } from 'react';
 import { motion } from 'motion/react';
 import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
 import { Eyebrow } from '../Eyebrow';
 import { PANEL } from '../film-tokens';
+import { ClipAlertDialog } from './ClipAlertDialog';
 import { RailArrows } from './RailArrows';
 import { TutorialRail } from './TutorialRail';
 import type { TutorialRailConfig } from './tutorials';
@@ -40,6 +42,11 @@ const BAND = {
  * back into the cream page, which is the lights coming up: what follows is the
  * page talking in its own voice again, not another screening.
  *
+ * The section owns the signup panel a tile with no footage opens, because the
+ * rail has one panel and the tiles only choose the name printed at the top of
+ * it. Keeping the state here also keeps the tiles from having to know what a
+ * dialog is.
+ *
  * Every word and every tile arrives as one config object, because three
  * sibling pages re-theme this section under their own names and a section
  * whose copy lives in its components is a section re-themed in six files.
@@ -50,6 +57,16 @@ export function TutorialsSection({ config }: { config: TutorialRailConfig }) {
   // The row and the arrows that drive it are siblings in different places, so
   // the shelf's state lives above both.
   const shelf = useRail();
+
+  // Which empty tile asked for the panel, and what to give focus back to when
+  // it closes. One panel for the whole rail: the tile only chooses the name at
+  // the top of it, and a dialog per tile would be three dialogs to keep right.
+  const [alertFor, setAlertFor] = useState<{ title: string; trigger: HTMLElement } | null>(null);
+  const openAlert = useCallback(
+    (title: string, trigger: HTMLElement) => setAlertFor({ title, trigger }),
+    []
+  );
+  const closeAlert = useCallback(() => setAlertFor(null), []);
 
   return (
     <section
@@ -105,9 +122,19 @@ export function TutorialsSection({ config }: { config: TutorialRailConfig }) {
             atStart={shelf.atStart}
             atEnd={shelf.atEnd}
             dragging={shelf.dragging}
+            onOpenAlert={openAlert}
           />
         </motion.div>
       </motion.div>
+
+      {alertFor && (
+        <ClipAlertDialog
+          alert={config.alert}
+          cardTitle={alertFor.title}
+          onClose={closeAlert}
+          restoreFocusTo={alertFor.trigger}
+        />
+      )}
 
       {/* The dissolve out. See the note above: the top edge cuts, this one fades. */}
       <div

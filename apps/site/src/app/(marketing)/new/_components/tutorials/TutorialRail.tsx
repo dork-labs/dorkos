@@ -20,6 +20,8 @@ interface TutorialRailProps {
   atEnd: boolean;
   /** A drag is in flight, so snap stands down. */
   dragging: boolean;
+  /** A tile with no footage was pressed. The section owns the panel it opens. */
+  onOpenAlert: (title: string, trigger: HTMLElement) => void;
 }
 
 /**
@@ -48,6 +50,7 @@ export function TutorialRail({
   atStart,
   atEnd,
   dragging,
+  onOpenAlert,
 }: TutorialRailProps) {
   return (
     <div className="relative">
@@ -63,7 +66,13 @@ export function TutorialRail({
         }}
       >
         {config.cards.map((card) => (
-          <TutorialCard key={card.id} card={card} pendingChip={config.pendingChip} />
+          <TutorialCard
+            key={card.id}
+            card={card}
+            pendingChip={config.pendingChip}
+            alert={config.alert}
+            onOpenAlert={onOpenAlert}
+          />
         ))}
         <TutorialEndCard endCard={config.endCard} />
       </ul>

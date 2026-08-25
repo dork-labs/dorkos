@@ -339,7 +339,9 @@ describe('the clips rail', () => {
     const words = [TUTORIALS.endCard.title, TUTORIALS.endCard.lede, TUTORIALS.endCard.label].join(
       ' '
     );
-    expect(words).not.toMatch(/\b(20\d\d|q[1-4]|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\w*\b/i);
+    expect(words).not.toMatch(
+      /\b(20\d\d|q[1-4]|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\w*\b/i
+    );
     expect(words).not.toMatch(/\b(next|this)\s+(week|month|quarter|year)\b/i);
     // And it sends anyone who wanted the rest to the thing that is written.
     expect(TUTORIALS.endCard.href).toBe('/docs');

@@ -53,6 +53,28 @@ export interface TutorialRailConfig {
   /** What a card says in place of a run time when its clip is not shot yet. */
   pendingChip: string;
   /**
+   * The words on a placeholder tile's press, and in the panel it opens.
+   *
+   * A tile with no footage behind it used to be inert, which taught a visitor
+   * nothing except that the page ignored them. Pressing one now says what is
+   * actually true — the clip is not shot — and offers the one thing that can
+   * be offered honestly, which is the mailing list new clips are announced on.
+   * Nothing here may name a date or promise a feature; the pending chip stays
+   * on the tile either way.
+   */
+  alert: {
+    /** Announced after the card's title and chip, so the press explains itself. */
+    triggerHint: string;
+    /** The line that appears on the tile under a pointer or a focus ring. */
+    cardCta: string;
+    /** The panel's heading. */
+    title: string;
+    /** What the panel says before the email field. */
+    lede: string;
+    /** The dismiss control's accessible name. */
+    close: string;
+  };
+  /**
    * The tile that closes the rail: its words, its destination, and the
    * photograph it stands on.
    *
@@ -94,6 +116,13 @@ export const TUTORIALS: TutorialRailConfig = {
   title: 'Learn it in a minute.',
   lede: 'One film is up. Short walkthroughs of each part are being made.',
   pendingChip: 'clip coming',
+  alert: {
+    triggerHint: 'Open the newsletter signup.',
+    cardCta: 'email me when clips land',
+    title: 'Not shot yet.',
+    lede: 'This one is still being made. New clips get announced in the DorkOS newsletter, so leave your email if you want to hear about them.',
+    close: 'Close',
+  },
   endCard: {
     // The tapes and the manual are the sibling retro page's words, brought
     // over whole by the operator's call. They earn the period vocabulary the

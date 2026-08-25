@@ -4,7 +4,12 @@ import { useCallback, useState } from 'react';
 import Image from 'next/image';
 import { Play } from 'lucide-react';
 import { PANEL } from '../film-tokens';
-import type { TutorialCardSpec, TutorialClip, TutorialPlate } from './tutorials';
+import type {
+  TutorialCardSpec,
+  TutorialClip,
+  TutorialPlate,
+  TutorialRailConfig,
+} from './tutorials';
 
 /** Bottom scrim, so a title stays readable over any frame. */
 const SCRIM =
@@ -82,17 +87,41 @@ function ClipPoster({
 }
 
 /**
- * A frame with no footage in it yet.
+ * A frame with no footage in it yet, and the press that admits it.
  *
  * The still behind it is decoration and is marked as such: it is a 1999 desk,
  * not a picture of the thing the card names, so describing it in alt text
  * would be describing the wrong subject. What the card is about is its title,
  * which is real text a screen reader reads. The ring is dashed and the glyph
  * is faint on purpose — nobody should have to press this to learn it is empty.
+ *
+ * It is a button all the same. An empty tile that swallows a press teaches the
+ * visitor the page is not listening; this one opens a panel that says the clip
+ * is not shot and offers the list new clips are announced on. The accessible
+ * name carries the whole story in the order it matters — what the tile is,
+ * that it has no clip, and what pressing it does — because a screen reader
+ * gets no hover to discover the last part from.
  */
-function PendingPlate({ plate }: { plate?: TutorialPlate }) {
+function PendingTile({
+  card,
+  pendingChip,
+  hint,
+  onOpen,
+}: {
+  card: TutorialCardSpec;
+  pendingChip: string;
+  hint: string;
+  onOpen: (title: string, trigger: HTMLElement) => void;
+}) {
+  const plate: TutorialPlate | undefined = card.plate;
+
   return (
-    <>
+    <button
+      type="button"
+      onClick={(event) => onOpen(card.title, event.currentTarget)}
+      aria-label={`${card.title}. ${pendingChip}. ${hint}`}
+      className="focus-visible:ring-brand-orange block size-full cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
+    >
       {plate && (
         <Image
           src={plate.src}
@@ -107,22 +136,40 @@ function PendingPlate({ plate }: { plate?: TutorialPlate }) {
       )}
       <span
         aria-hidden="true"
-        className="absolute inset-0 grid place-items-center"
+        className="absolute inset-0 grid place-items-center transition-colors"
         style={{ background: 'rgba(11,11,11,0.35)' }}
       >
         <span
-          className="grid size-12 place-items-center rounded-full border border-dashed"
+          className="grid size-12 place-items-center rounded-full border border-dashed transition-colors group-hover:border-[rgba(255,255,255,0.5)] group-hover:text-[rgba(255,255,255,0.7)]"
           style={{ borderColor: 'rgba(255,255,255,0.28)', color: 'rgba(255,255,255,0.34)' }}
         >
           <Play size={16} />
         </span>
       </span>
-    </>
+    </button>
   );
 }
 
-/** The title and the chip, over a scrim, on every tile that is not currently playing. */
-function CardLabel({ title, chip, ready }: { title: string; chip: string; ready: boolean }) {
+/**
+ * The title and the chip, over a scrim, on every tile that is not currently
+ * playing, plus the one line an empty tile keeps for a pointer or a focus ring.
+ *
+ * That line stays hidden until then on purpose. Three tiles each asking for an
+ * email at rest is a rail that begs; one that offers when you reach for it is a
+ * rail that answers. Nothing is lost on a touch screen, where the press opens
+ * the panel and the panel explains itself.
+ */
+function CardLabel({
+  title,
+  chip,
+  ready,
+  cta,
+}: {
+  title: string;
+  chip: string;
+  ready: boolean;
+  cta?: string;
+}) {
   return (
     <div
       className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 p-4"
@@ -144,6 +191,14 @@ function CardLabel({ title, chip, ready }: { title: string; chip: string; ready:
       >
         {chip}
       </p>
+      {cta && (
+        <p
+          aria-hidden="true"
+          className="text-2xs text-brand-orange font-mono tracking-[0.12em] uppercase opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100"
+        >
+          {cta}
+        </p>
+      )}
     </div>
   );
 }
@@ -152,6 +207,10 @@ interface TutorialCardProps {
   card: TutorialCardSpec;
   /** What an unshot card says where a run time would go. */
   pendingChip: string;
+  /** The words a placeholder tile's press carries and opens. */
+  alert: TutorialRailConfig['alert'];
+  /** Open the signup panel for this tile, and remember what to focus after. */
+  onOpenAlert: (title: string, trigger: HTMLElement) => void;
 }
 
 /**
@@ -161,11 +220,14 @@ interface TutorialCardProps {
  * the point: a card with footage wears the brand's solid play button and its
  * run time, a card without one wears a dashed ring and says the clip is
  * coming. Nobody has to press a placeholder to find out it is a placeholder.
+ * Both are pressable; what the press does is what differs. One plays 56
+ * seconds. The other admits there is nothing to play and offers the list new
+ * clips are announced on.
  *
  * Nothing is fetched before a press — `preload="none"`, and the `<video>` does
  * not exist at all until then — so a rail of five tiles costs five stills.
  */
-export function TutorialCard({ card, pendingChip }: TutorialCardProps) {
+export function TutorialCard({ card, pendingChip, alert, onOpenAlert }: TutorialCardProps) {
   const [playing, setPlaying] = useState(false);
   const { clip } = card;
 
@@ -179,13 +241,21 @@ export function TutorialCard({ card, pendingChip }: TutorialCardProps) {
         {clip && !playing && (
           <ClipPoster clip={clip} title={card.title} onPlay={() => setPlaying(true)} />
         )}
-        {!clip && <PendingPlate plate={card.plate} />}
+        {!clip && (
+          <PendingTile
+            card={card}
+            pendingChip={pendingChip}
+            hint={alert.triggerHint}
+            onOpen={onOpenAlert}
+          />
+        )}
 
         {!playing && (
           <CardLabel
             title={card.title}
             chip={clip ? `${clip.seconds}s` : pendingChip}
             ready={Boolean(clip)}
+            cta={clip ? undefined : alert.cardCta}
           />
         )}
       </div>
