@@ -8,6 +8,7 @@ import { copyManifest } from './build-plugins/copy-manifest.js';
 import { fixDirnamePolyfill } from './build-plugins/fix-dirname-polyfill.js';
 import { safeRequires } from './build-plugins/safe-requires.js';
 import { patchElectronCompat } from './build-plugins/patch-electron-compat.js';
+import { sqliteAddon } from './build-plugins/sqlite-addon.js';
 
 const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
 
@@ -27,6 +28,19 @@ const pluginVersion = (
   }
 ).version;
 
+// The exact `better-sqlite3` whose JavaScript ends up in this bundle. Read from
+// `@dorkos/db`'s own resolution rather than from a range declared here, because
+// the add-on staged beside the bundle has to be a build of THAT version — a
+// range that drifted by a patch would ship an add-on the bundled JS refuses.
+const sqliteVersion = (
+  JSON.parse(
+    fs.readFileSync(
+      path.resolve(__dirname, '../../packages/db/node_modules/better-sqlite3/package.json'),
+      'utf-8'
+    )
+  ) as { version: string }
+).version;
+
 export default defineConfig({
   define: {
     __CLI_VERSION__: JSON.stringify(pluginVersion),
@@ -37,6 +51,7 @@ export default defineConfig({
     copyManifest(),
     safeRequires(),
     fixDirnamePolyfill(),
+    sqliteAddon({ root: __dirname, version: sqliteVersion }),
     patchElectronCompat(),
   ],
   build: {
@@ -49,6 +64,13 @@ export default defineConfig({
       external: [
         'obsidian',
         'electron',
+        // The tunnel SDK, which is a native addon behind a `await import()`.
+        // `inlineDynamicImports` turns that lazy import into an eager one, and
+        // Rollup then tries to parse a Mach-O binary as JavaScript — the build
+        // fails on the first byte. Reached from `lib/trusted-origins.ts`, which
+        // the auth module needs. Left external because the embed never opens a
+        // tunnel: the import stays a runtime `require` that nothing here calls.
+        '@ngrok/ngrok',
         '@codemirror/autocomplete',
         '@codemirror/collab',
         '@codemirror/commands',

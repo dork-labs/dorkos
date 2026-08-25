@@ -81,6 +81,22 @@ const config: KnipConfig = {
       // shadcn/ui add-on-demand registry in the marketing app.
       entry: ['src/components/ui/**/*.{ts,tsx}'],
     },
+    'apps/obsidian-plugin': {
+      // The add-on lockfile generator: run by hand (`addons:lock`) when the ABI
+      // window or better-sqlite3 moves, never imported.
+      entry: ['scripts/lock-addons.ts'],
+      ignoreDependencies: [
+        // Not imported by plugin source, and deliberately so — the plugin reads
+        // SQLite through `@dorkos/db`. It is declared here because the BUILD and
+        // the tests need this exact package on disk: `vite.config.ts` reads its
+        // version to name the Electron prebuilds it stages, and
+        // `sqlite-addon-layouts.test.ts` loads its real `.node` to prove the
+        // install layouts resolve. A version resolved by luck rather than
+        // declaration is how the staged add-on and the bundled JavaScript would
+        // silently drift apart.
+        'better-sqlite3',
+      ],
+    },
     'apps/e2e': {
       // Measurement scripts run by hand against a cockpit the operator started
       // (see each file's header for the command). They are entry points with no

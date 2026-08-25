@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260825-194924",
+      "slug": "obsidian-carries-a-prebuilt-sqlite-and-never-migrates",
+      "title": "The Obsidian embed carries a prebuilt SQLite and reads the database without ever writing it",
+      "status": "accepted",
+      "created": "2026-08-25",
+      "extractedFrom": null,
+      "specSlug": "message-search",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/obsidian-plugin/build-plugins/sqlite-addon.ts",
+        "apps/obsidian-plugin/src/lib/embedded-index.ts",
+        "apps/server/src/services/rooms/operator-author.ts",
+        "packages/db/src/index.ts",
+        "packages/db/src/migrations-folder.ts"
+      ]
+    },
+    {
       "id": "260823-200729",
       "slug": "state-driven-version-free-legacy-migration",
       "title": "State-driven, version-free legacy migration with a sunset",

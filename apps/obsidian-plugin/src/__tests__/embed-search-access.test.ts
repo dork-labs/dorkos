@@ -30,7 +30,7 @@
  *
  * @module obsidian-plugin/__tests__/embed-search-access
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -46,6 +46,22 @@ import {
 import { SearchIndexer } from '../../../server/src/services/search/indexer.js';
 import { createEmbeddedSearch } from '../../../server/src/services/search/embedded-search.js';
 import { roomsSource } from '../../../server/src/services/search/registry.js';
+
+/**
+ * Who owns the install, for the vectors that need one.
+ *
+ * `readOwnerAccount` is the ONE thing the rooms domain asks to decide whether a
+ * caller is the operator — `isOwnerAuthor`, `isOwnerRecord` and
+ * `resolveOperatorAuthor` all route through it — so standing an owner up is what
+ * turns the fixture from an unowned machine into an owned one. Default `null`,
+ * which is a real install that nobody has registered on.
+ */
+const owner = vi.hoisted(() => ({ account: null as { id: string } | null }));
+
+vi.mock('../../../server/src/services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  readOwnerAccount: () => owner.account,
+}));
 
 const AT = '2026-08-25T09:00:00.000Z';
 
@@ -95,6 +111,8 @@ function say(roomId: string, seq: number, text: string): void {
 }
 
 beforeEach(async () => {
+  owner.account = null;
+  vi.restoreAllMocks();
   db = createTestDb();
   subsystem = createRoomSubsystem({ db });
   // The router reaches the rooms domain through the singleton, exactly as the
@@ -233,5 +251,63 @@ describe('what the embed refuses', () => {
       code: thrown?.code,
       status: thrown?.status,
     }).toEqual({ message: browser.body.error, code, status: 400 });
+  });
+});
+
+describe('what the embed may see once the rooms domain narrows', () => {
+  // ── The gap this closes ────────────────────────────────────────────────────
+  // Every vector above runs on an install nobody owns, where the local human IS
+  // the operator: `searchScope` answers `'all'` and the session check answers
+  // `true`. So they agree with a seam that DERIVES its scope and equally with
+  // one that hard-codes `{ rooms: 'all', sessions: true }` — the widest possible
+  // answer, which is the one thing an embed must never quietly be. The seam's
+  // own documentation makes a promise those vectors cannot test: "if the rooms
+  // domain ever narrows what an operator may search, this narrows with it on the
+  // same commit."
+  //
+  // So this is that day, arranged. The install is OWNED, and the author the
+  // operator resolves to is not the owner row. Two things are stood up for it —
+  // an owner account, and a registry that hands back the unbound local human —
+  // and NOTHING ELSE IS MOCKED. `searchScope` runs for real and builds its map
+  // out of the membership rows the fixture actually seeded, and the session
+  // check runs for real against the owner id. A hard-coded widening fails here
+  // and passes everywhere else in the file.
+  beforeEach(() => {
+    owner.account = { id: 'owner-x' };
+    // An operator author that is not the owner. `peekOperator` normally looks up
+    // the owner's own natural key, and a row under that key IS the owner by
+    // definition — which would put the fixture back where it started.
+    vi.spyOn(subsystem.authors, 'peekOperator').mockReturnValue(subsystem.authors.localHuman());
+  });
+
+  it('sees only the rooms the operator is actually on the roster of', async () => {
+    const answer = await transport.search({ q: 'scheduler' });
+
+    // `#open` is the one room the fixture put them in. `#closed` says the same
+    // word and is not theirs; the Claude Code session says it too and is
+    // owner-only. The unnarrowed answer to this query is three hits.
+    expect(answer.results.map((hit) => `${hit.source}:${hit.container}`)).toEqual(['rooms:open']);
+  });
+
+  it('cannot reach a room off the roster, even one that matches', async () => {
+    // `pelican` is said only in `#closed`. The owner finds it (asserted above,
+    // as the positive control for the whole file); this caller must not.
+    const answer = await transport.search({ q: 'pelican' });
+
+    expect(answer.results).toEqual([]);
+  });
+
+  it('is the same rows the route would give the same caller', async () => {
+    // The route resolves ITS caller from the request and this seam resolves its
+    // own, so the two cannot be driven to the same identity over HTTP — that is
+    // the one thing this file's other vectors cover and this one cannot. What is
+    // asserted instead is the half that is shared: both hand the same scope to
+    // the same index. Reading it directly through the rooms domain proves the
+    // narrowing came from there rather than from anything in the seam.
+    const caller = subsystem.authors.localHuman();
+    const scope = subsystem.service.searchScope(caller.id);
+
+    expect(scope).toBeInstanceOf(Map);
+    expect([...(scope as Map<string, number>).keys()]).toEqual(['open']);
   });
 });

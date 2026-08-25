@@ -106,13 +106,21 @@ export class SearchIndexer {
    *
    * The startup sweep is not awaited: an index that is a few hundred
    * milliseconds behind is the normal state of this cache, and boot should not
-   * wait on a cache. The timer is `unref`'d so it never holds the process open.
+   * wait on a cache.
+   *
+   * The timer is `unref`'d so it never holds the process open — **optionally**,
+   * because not every host's `setInterval` is Node's. In an Electron renderer
+   * with node integration the global is Blink's, which returns a plain number
+   * with no `unref` on it, and an unguarded call throws a `TypeError` out of
+   * `start()`. Matching `task-scheduler-service.ts` and
+   * `agent-mcp-token-refresher.ts`, which guard for the same reason. A host with
+   * no `unref` also has no process to hold open.
    */
   start(): void {
     if (this.timer) return;
     this.runSweep();
     this.timer = setInterval(() => this.runSweep(), this.intervalMs);
-    this.timer.unref();
+    this.timer.unref?.();
   }
 
   /** Stop sweeping. */

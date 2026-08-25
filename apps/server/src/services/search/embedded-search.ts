@@ -9,21 +9,19 @@
  * the seam it would wire for search: the caller resolution `GET /api/search`
  * does from a request, done for a surface that has no request.
  *
- * ## Nothing in production wires this yet, and that is deliberate
+ * ## What a host must provide, and who provides it
  *
- * The only embedding host DorkOS ships is the Obsidian plugin, and the plugin
- * cannot open the index today: `better-sqlite3` is a native `.node` addon that
- * the plugin bundle does not carry into a vault, and `@dorkos/db`'s migrations
- * folder resolves to a path that does not exist there. A seam wired over that
- * would answer "unavailable" to every search forever, so the embed's search
- * surfaces stay gated (`MessageSearchDialog`, `CommandPaletteDialog`) until the
- * addon ships. That work is filed separately.
+ * An open {@link Db} holding the index, kept swept by a `SearchIndexer` the host
+ * owns, and a {@link RoomService} over the same database. A host that cannot
+ * provide all three has no business offering a search box.
  *
- * **So what a host must provide is stated here rather than built here**: an open
- * {@link Db} holding the index, kept swept by a `SearchIndexer` the host owns,
- * and a {@link RoomService} over the same database. A host that cannot provide
- * all three has no business offering a search box, which is the rule the gate on
- * the client enforces today.
+ * The Obsidian plugin is the one that does (DOR-1563,
+ * `apps/obsidian-plugin/src/lib/embedded-index.ts`). It opens `~/.dork/dork.db`
+ * through a SQLite build staged beside its bundle, checks that the tables search
+ * needs are there, and wires nothing at all when either is missing — an absent
+ * seam makes `DirectTransport.search` refuse in a sentence rather than answer
+ * emptily. **It never migrates**: whoever owns the install owns the schema
+ * (ADR 260825-194924).
  *
  * ## The embed is the operator, and that is a fact about the surface
  *
@@ -55,9 +53,27 @@ import type { Db } from '@dorkos/db';
 import type { SearchAnswer, SearchQuery } from '@dorkos/shared/search-schemas';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { isOwnerRecord } from '../rooms/author-registry.js';
-import { resolveOperatorAuthor } from '../rooms/index.js';
+import { peekOperatorAuthor } from '../rooms/index.js';
 import type { RoomService } from '../rooms/room-service.js';
 import { answerSearch } from './answer-search.js';
+
+/**
+ * What a search says on a database no DorkOS has ever run against.
+ *
+ * Reachable only when the index tables exist but the operator's own author row
+ * does not, which no install DorkOS has booted can be in — it mints that row
+ * itself. It is a refusal rather than an empty result for the reason every
+ * refusal in this feature is: "nothing matched" and "I could not tell who you
+ * are" must never look the same to somebody hunting for a sentence they
+ * remember writing.
+ */
+const NO_OPERATOR_YET = {
+  ok: false,
+  status: 503,
+  error:
+    'This copy of your message history has not been set up yet. Open DorkOS once and it will be ready here.',
+  code: 'SEARCH_OPERATOR_UNKNOWN',
+} as const satisfies SearchAnswer;
 
 /** The search seam an embedding host wires into `DirectTransport`. */
 export interface EmbeddedSearch {
@@ -87,7 +103,12 @@ export function createEmbeddedSearch(deps: { db: Db; rooms: RoomService }): Embe
       // Re-resolved per call, never captured: an install becomes owned partway
       // through its life, and a caller captured at boot would search as the
       // pre-login sentinel forever.
-      const caller = resolveOperatorAuthor(deps.rooms.authorRegistry);
+      //
+      // PEEKED rather than resolved, because a host here may be holding the
+      // database read-only (DOR-1563) and `resolveOperatorAuthor` mints. Same
+      // question, same two natural keys, no write.
+      const caller = peekOperatorAuthor(deps.rooms.authorRegistry);
+      if (caller === null) return NO_OPERATOR_YET;
       return answerSearch(
         deps.db,
         {

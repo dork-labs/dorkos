@@ -19,12 +19,12 @@
  * the box draws the sentence; a plain `Error` here would show a person a
  * different answer to the same typo depending on which window they were in.
  *
- * **An unwired seam refuses too, and never answers emptily.** No host ships one
- * yet (see {@link DirectTransportServices.search}), and the embed's search
- * surfaces are gated off for exactly that reason — so nothing reaches this in
- * practice. It still has to be honest if something does: an empty result list is
- * indistinguishable from "no matches", which is the silent failure this whole
- * feature refuses everywhere else.
+ * **An unwired seam refuses too, and never answers emptily.** A host wires the
+ * seam only when this machine has an index to open (see
+ * {@link DirectTransportServices.search}), so "no seam" is a state a person can
+ * really be in. An empty result list there would be indistinguishable from "no
+ * matches", which is the silent failure this whole feature refuses everywhere
+ * else.
  *
  * @module shared/lib/direct/search-methods
  */
