@@ -116,8 +116,14 @@ export interface Competitor {
    * product that no longer exists, so there is nothing to recommend.
    */
   theirStrengths?: string[];
-  /** Their cell for every dimension in {@link COMPARISON_DIMENSIONS}, keyed by dimension id. */
-  cells: Record<string, ComparisonCell>;
+  /**
+   * Their cell for every dimension in {@link COMPARISON_DIMENSIONS}, keyed by
+   * dimension id. A lookup is optional because a newly added dimension is
+   * unscored until someone checks it: the invariant suite requires every entry
+   * to score every dimension, and the table says "Not checked yet" rather than
+   * rendering an empty cell if one ever slips through.
+   */
+  cells: Record<string, ComparisonCell | undefined>;
   /** 2-5 questions, rendered visibly on the page and mirrored into FAQPage markup. */
   faq: { q: string; a: string }[];
   /** ISO date the facts were last checked; shown on the page and used as the sitemap's `lastModified`. */
