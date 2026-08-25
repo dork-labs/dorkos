@@ -8612,6 +8612,94 @@
           "memberCount"
         ]
       },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchSourceWarning"
+            }
+          }
+        },
+        "required": [
+          "results",
+          "warnings"
+        ]
+      },
+      "SearchHit": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "container": {
+            "type": "string",
+            "minLength": 1
+          },
+          "containerPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/SearchHitRole"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "container",
+          "containerPath",
+          "ordinal",
+          "role",
+          "createdAt",
+          "excerpt"
+        ]
+      },
+      "SearchHitRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant"
+        ]
+      },
+      "SearchSourceWarning": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source",
+          "message"
+        ]
+      },
       "ProfileUpdateResponse": {
         "type": "object",
         "properties": {
@@ -19062,6 +19150,75 @@
           },
           "500": {
             "description": "The membership read failed (`MEMBER_ROOMS_FAILED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Find messages by what was said in them",
+        "description": "One ranked read over the derived message index — rooms and Claude Code transcripts alike, in a single relevance order, because \"where did we talk about X\" does not know which one X was said in. A hit is a COORDINATE plus a marked excerpt (source, container, ordinal, role, timestamp), never the message itself: the index holds a copy of the text and none of the access rules, so resolving a hit back to a message stays the owning store's job. Matching is by word STEM, not substring: `dogs` finds \"dog\", \"dogs\" and \"DOGGED\", and `ogs` finds nothing. The index is as fresh as the last five-minute sweep. **Who sees what**: the operator gets every room and every session; anybody else gets only the rooms they are on the roster of, each above the point they joined it, and NO sessions at all — a caller presenting an agent identity, resolved or not, never reaches a transcript. A search scoped to something the caller may not see returns exactly what a search for words nobody ever said returns, so neither a room id nor a query string is a capability. **The calling contract**: at least one WORD of 2 characters, and wait 200 ms after the last keystroke. Ranking cost grows with how many rows MATCH rather than with `limit`, so a one-letter search is the most expensive one there is and the least useful. `limit` is clamped to 50 rather than refused. Degradation follows ADR-0310: a source that could not be fully indexed contributes zero hits and one `warnings[]` entry naming it — never a failed request. `warnings` is always present, `[]` included, and names no container, since a container id is a room or a session id.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "source",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hits, best first, across every source this caller may read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`INVALID_SEARCH_QUERY`), or it named a source that does not exist (`UNKNOWN_SEARCH_SOURCE`). The `error` sentence says which field was wrong: `q` holds no WORD of at least the minimum length — counted over the words a search is split into, so `a,` and a string of spaces are refused exactly as `a` is — or `limit` was not a whole number above zero.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an agent token this machine could not verify (`AGENT_IDENTITY_UNVERIFIED`)",
             "content": {
               "application/json": {
                 "schema": {

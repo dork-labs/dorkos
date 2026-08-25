@@ -23,7 +23,7 @@
  *
  * @module server/services/search/row-frontier
  */
-import { searchSources, eq, sql, type Db } from '@dorkos/db';
+import { messages, searchSources, and, eq, sql, type Db } from '@dorkos/db';
 import {
   deleteContainerMessages,
   insertMessages,
@@ -96,6 +96,83 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSwe
 }
 
 /**
+ * Bring ONE container of a row-backed source up to date, now.
+ *
+ * The write-through path (spec §5, Amendment 6): DorkOS owns the room log's
+ * write, so it knows the instant a container has gained something and does not
+ * have to wait up to five minutes for the sweep to notice. Everything else about
+ * the pass is identical — the same resume rule, the same rebuild detection, the
+ * same watermark — because it IS the same function; only the container list and
+ * the prune are skipped, and both of those are the parts that scale with how
+ * many containers exist rather than with what changed.
+ *
+ * **It reads the frontier for this container alone.** Two lookups on primary-key
+ * columns rather than the sweep's two whole-source scans, which is what makes it
+ * cheap enough to sit on a write path.
+ *
+ * **It throws rather than recording a failure**, unlike the sweep. A single-
+ * container caller is not a sweep and has no other containers to protect; the
+ * caller decides what a failure means, and for the room path it means "log it and
+ * let the sweep catch up" (`write-through.ts`).
+ *
+ * @param db - The database. Must have been opened through `createDb`.
+ * @param source - The registry row this container belongs to.
+ * @param container - The container, with its ordinal high-water mark as the
+ *   caller knows it — the `seq` just committed, for a room.
+ * @param at - The ISO-8601 timestamp to stamp the attempt with.
+ * @returns What was written, and what the projection could not use.
+ */
+export function indexRowContainer(
+  db: Db,
+  source: RowSource,
+  container: RowContainer,
+  at: string
+): { indexed: number; skipped: number; rebuilt: boolean } {
+  return indexContainer(db, source, container, readContainerState(db, source.id, container), at);
+}
+
+/**
+ * One container's resume state, read by key rather than by scanning the source.
+ *
+ * The same two facts {@link readFrontierState} gathers for every container —
+ * what the frontier claims and what the index can be seen to hold — narrowed to
+ * one. Both reads ride primary-key columns: `search_sources` is keyed
+ * `(source_id, origin_key)`, and `MAX(ordinal)` for one container rides the
+ * leading columns of `messages_source_id_origin_key_ordinal_unique`.
+ */
+function readContainerState(
+  db: Db,
+  sourceId: string,
+  container: RowContainer
+): Map<string, FrontierState> {
+  const frontier = db
+    .select({ lastOrdinal: searchSources.lastOrdinal })
+    .from(searchSources)
+    .where(
+      and(eq(searchSources.sourceId, sourceId), eq(searchSources.originKey, container.originKey))
+    )
+    .get();
+  const indexed = db
+    .select({ indexedTo: sql<number | null>`MAX(${messages.ordinal})` })
+    .from(messages)
+    .where(and(eq(messages.sourceId, sourceId), eq(messages.originKey, container.originKey)))
+    .get();
+
+  return new Map([
+    [
+      container.originKey,
+      {
+        // `null` when there is no frontier row at all — the state that makes a
+        // container's first write-through create one, exactly as its first sweep
+        // would.
+        watermark: frontier ? (frontier.lastOrdinal ?? 0) : null,
+        indexedTo: indexed?.indexedTo ?? 0,
+      },
+    ],
+  ]);
+}
+
+/**
  * Read every container's resume state for one source, in two queries.
  *
  * The high-water ordinal comes from `messages` itself, and that is what makes
@@ -121,6 +198,52 @@ function readFrontierState(db: Db, sourceId: string): Map<string, FrontierState>
   }
 
   return state;
+}
+
+/**
+ * Where a pass over this container would resume, and whether it would rebuild.
+ *
+ * Extracted so {@link indexRowContainer}'s backlog guard and {@link indexContainer}
+ * itself read ONE answer. A guard that computed "how far behind is this" from its
+ * own arithmetic would be a second copy of the resume rule, and the two would
+ * disagree the first time either changed.
+ *
+ * Resume is whichever is lower — what the frontier claims, or what the index can
+ * be seen to hold. Re-reading is idempotent, so resuming too early costs a wasted
+ * read while resuming too late leaves a permanent hole.
+ *
+ * @param container - The container, with its current high-water ordinal.
+ * @param known - Its frontier state, or `undefined` when the index has never
+ *   seen it.
+ * @returns The exclusive floor a read would start above, and whether the
+ *   container has to be re-read whole.
+ */
+function resumePosition(
+  container: RowContainer,
+  known: FrontierState | undefined
+): { rebuilt: boolean; resumeFrom: number } {
+  const indexedTo = known?.indexedTo ?? 0;
+  const rebuilt = container.maxOrdinal < indexedTo;
+  return {
+    rebuilt,
+    resumeFrom: rebuilt ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
+  };
+}
+
+/**
+ * How far behind the index is on one container — how many ordinals a pass would
+ * have to project right now.
+ *
+ * @param db - The database.
+ * @param source - The registry row this container belongs to.
+ * @param container - The container, with its current high-water ordinal.
+ * @returns The number of ordinals between the resume position and the
+ *   container's end. A rebuild counts as the whole container, which is what it is.
+ */
+export function containerBacklog(db: Db, source: RowSource, container: RowContainer): number {
+  const state = readContainerState(db, source.id, container);
+  const { resumeFrom } = resumePosition(container, state.get(container.originKey));
+  return Math.max(0, container.maxOrdinal - resumeFrom);
 }
 
 /**
@@ -165,7 +288,7 @@ function indexContainer(
   // keeping it is that M2 is generic machinery and this is one integer
   // comparison: a DorkOS-owned table that reallocates its own ordinals is
   // expressible here, and this is the answer when one arrives.
-  const rebuilt = container.maxOrdinal < indexedTo;
+  const { rebuilt, resumeFrom } = resumePosition(container, known);
 
   // Nothing new AND the index really holds what the frontier claims. Both halves
   // are load-bearing. `maxOrdinal <= watermark` on its own let a `DELETE FROM
@@ -182,10 +305,6 @@ function indexContainer(
     return { indexed: 0, skipped: 0, rebuilt: false };
   }
 
-  // Resume from whichever is lower: what the frontier claims, or what the index
-  // can be seen to hold. Re-reading is idempotent, so resuming too early costs a
-  // wasted read while resuming too late leaves a permanent hole.
-  const resumeFrom = rebuilt ? 0 : Math.min(watermark, indexedTo);
   const projection = source.readSince(db, container.originKey, resumeFrom);
   const highest = projection.messages.at(-1)?.ordinal ?? 0;
 
@@ -203,6 +322,14 @@ function indexContainer(
   // `indexedTo` above the watermark and trip the rebuild above on a container
   // that only grew. Unreachable for rooms, where the two statements run
   // synchronously on one connection, and not unreachable for M1.
+  //
+  // **The write-through does not weaken that, and the invariant that keeps it
+  // true is that `RoomService.publishEntry` stays SYNCHRONOUS** (spec Amendment
+  // 6): it hands this function the `seq` it has just committed, on the same
+  // connection, with no await between the commit and the call. Defer that call —
+  // a `setImmediate`, a queue, a worker — and two writers can interleave, a stale
+  // `maxOrdinal` can arrive after a newer one, and this rebuild branch becomes
+  // reachable for rooms.
   //
   // On a rebuild it is `maxOrdinal` outright and never a `max`: guarding the
   // watermark against moving backwards is exactly what a renumbered container

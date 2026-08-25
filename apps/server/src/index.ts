@@ -152,6 +152,7 @@ import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
+import { createSearchRouter } from './routes/search.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -2687,6 +2688,13 @@ async function start() {
       },
     })
   );
+
+  // Message search — "where did we talk about X", over the derived index the
+  // reconciler above keeps caught up (message-search spec §6, §7). Always
+  // mounted and read-only. An install whose index is empty answers `[]`, which is
+  // the honest answer and needs no flag; who may see what is resolved per request
+  // through the rooms domain, never from this line.
+  app.use('/api/search', createSearchRouter({ db }));
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
