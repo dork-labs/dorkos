@@ -78,7 +78,7 @@ function FilteredEmptyState({ categories, onClear, className }: FilteredEmptySta
         <Activity className="text-muted-foreground size-6" aria-hidden />
       </div>
       <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">No {label} events found</p>
+        <p className="text-foreground text-sm font-medium">No {label} activity found</p>
         <p className="text-muted-foreground text-sm">Try adjusting your filters.</p>
       </div>
       <Button variant="outline" size="sm" onClick={onClear}>

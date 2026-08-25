@@ -15,31 +15,19 @@ Come here when you want to change one specific thing, like turning on the autono
 
 ## Quick win: turn on the autonomous loop
 
-By default, `/flow` only runs when you type a command. Letting it work on its own schedule (a "tick" that claims one ready item and carries it forward) takes two steps: say you want it, then approve it.
+By default, `/flow` only runs when you type a command. Letting it work on its own schedule (a "tick" that claims one ready item and carries it forward) takes one step: approve it.
 
-First, open `.dork/plugins/flow/skills/flow-drain/SKILL.md` and find the `schedule:` block at the top. (flow 0.6.0 and later ships the `schedule:` block. If your copy lists `cron` and `enabled` flat at the top instead, it is an older install: update the plugin from the Marketplace.)
+Open the **Schedules** tab on Home, find `flow-drain`, and approve it. Approving is the only step that matters: it arms the schedule and switches it on together, in one action.
+
+flow-drain ships with its `schedule:` block set to `enabled: false` in `.dork/plugins/flow/skills/flow-drain/SKILL.md`. That flag is just the file's starting point, not something you need to hand-edit: DorkOS never arms a schedule from the file alone, and approving it flips `enabled` to `true` for you regardless of what the file says. (flow 0.6.0 and later ships the `schedule:` block shown below. If your copy lists `cron` and `enabled` flat at the top instead, it is an older install: update the plugin from the Marketplace.)
 
 ```yaml
 ---
-# before
 schedule:
   enabled: false
   cron: '0 * * * *'
 ---
 ```
-
-Change `enabled` to `true`:
-
-```yaml
----
-# after
-schedule:
-  enabled: true
-  cron: '0 * * * *'
----
-```
-
-Then open the **Schedules** tab on Home, find `flow-drain`, and approve it. DorkOS never arms a schedule it finds in a file, so the flag alone fires nothing. The flag is your intent; the approval is your permission.
 
 <Callout type="warn">
   Autonomous mode also needs a **running DorkOS server**. That's what actually fires the schedule.
