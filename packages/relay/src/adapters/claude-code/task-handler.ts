@@ -13,13 +13,7 @@ import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type {
-  RelayPublisher,
-  AdapterContext,
-  DeliveryResult,
-  PublishOptions,
-  TraceStoreLike,
-} from '../../types.js';
+import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
 import type { AbortRegistry } from '../../lib/abort-registry.js';
@@ -52,8 +46,8 @@ const RUN_STOPPED = Symbol('run-stopped');
  * Deliberately duplicated from `consumeRunStream` in
  * `apps/server/src/services/tasks/run-stream.ts` (the direct-dispatch twin of
  * this path): sharing it would mean a new `@dorkos/shared` subpath for ~20
- * lines, and the two differ in how they forward events (this one awaits an
- * async publish). Fix both if you fix one.
+ * lines. Fix both if you fix one — since DOR-1567 dropped the progress republish
+ * that used to make this copy `await` its `onEvent`, they do the same work.
  *
  * @param stream - The agent's per-turn event stream.
  * @param signal - Aborts when the run is stopped or out of budget.
@@ -129,13 +123,20 @@ export interface TasksHandlerConfig {
  * Validates the TaskDispatchPayload, runs the agent, and updates
  * the TasksStore with the final run status (completed/failed/cancelled).
  *
+ * **A task run publishes nothing while it runs**, unlike an agent turn. The
+ * scheduler that dispatched it does not listen — the run row is the only thing
+ * that knows how the run ends — so the progress stream this used to republish
+ * to `<subject>.response` had no reader at all, and re-entered the adapter's own
+ * tasks prefix as a malformed dispatch, one dead letter per event (DOR-1567).
+ * If a reader for a run's progress is ever wanted, give it a subject OUTSIDE
+ * this prefix, the way the stop path did.
+ *
  * @param _subject - The tasks subject (unused, kept for interface consistency)
  * @param envelope - The relay envelope containing the tasks dispatch payload
  * @param context - Optional adapter context with agent directory info
  * @param startTime - Timestamp when delivery began (for durationMs calculation)
  * @param config - Resolved adapter configuration
  * @param deps - Injected dependencies
- * @param relay - The relay publisher for response streaming (may be null)
  */
 export async function handleTasksMessage(
   _subject: string,
@@ -143,8 +144,7 @@ export async function handleTasksMessage(
   context: AdapterContext | undefined,
   startTime: number,
   config: TasksHandlerConfig,
-  deps: TasksHandlerDeps,
-  relay: RelayPublisher | null
+  deps: TasksHandlerDeps
 ): Promise<DeliveryResult> {
   const traceId = randomUUID();
   const spanId = randomUUID();
@@ -177,7 +177,7 @@ export async function handleTasksMessage(
   }
 
   const payload = parsed.data;
-  const { taskId, runId, prompt, cwd, permissionMode } = payload;
+  const { taskId, runId, prompt, cwd, permissionMode, systemPromptAppend } = payload;
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
 
   // Record trace span as delivered
@@ -223,24 +223,33 @@ export async function handleTasksMessage(
       permissionMode,
       cwd: effectiveCwd,
       hasStarted: false,
+      // Nobody is coming back to a scheduled run, so an unanswered prompt is
+      // refused at ten minutes instead of parking for four hours and stalling
+      // the run (spec `ask-parks-on-timeout` §7). The direct-dispatch twin in
+      // `task-scheduler-service.ts` says the same thing; a run must not depend
+      // on which path carried it.
+      unattended: true,
     });
 
     const eventStream = deps.agentManager.sendMessage(runId, prompt, {
+      permissionMode,
       cwd: effectiveCwd,
+      // Built server-side by `buildTaskAppend` and carried on the wire, because
+      // the pieces it is made of (the task's agent, the run's trigger) do not
+      // otherwise reach this process. Without it a relay-dispatched run was
+      // never told it was unattended and would stop to ask questions nobody
+      // was there to answer (DOR-1567).
+      ...(systemPromptAppend ? { systemPromptAppend } : {}),
     });
 
     const stopped = await consumeRunStream(
       eventStream,
       controller.signal,
       () => void interruptTurn(deps.agentManager, runId, `run ${runId}`, deps.logger),
-      async (event) => {
+      (event) => {
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };
           outputSummary += data.text;
-        }
-
-        if (envelope.replyTo && relay) {
-          await publishResponse(envelope, event, runId, relay);
         }
       }
     );
@@ -320,28 +329,4 @@ export async function handleTasksMessage(
     // finds it gone — never a half-finalized run it could stop twice.
     deps.runningTasks.release(runId, controller);
   }
-}
-
-/**
- * Publish a response event for tasks flows (no correlationId).
- *
- * @param originalEnvelope - The original incoming envelope
- * @param event - The StreamEvent to publish
- * @param fromId - The run ID to use as the sender
- * @param relay - The relay publisher
- */
-async function publishResponse(
-  originalEnvelope: RelayEnvelope,
-  event: StreamEvent,
-  fromId: string,
-  relay: RelayPublisher
-): Promise<void> {
-  if (!originalEnvelope.replyTo) return;
-  const opts: PublishOptions = {
-    from: `agent:${fromId}`,
-    budget: {
-      hopCount: originalEnvelope.budget.hopCount + 1,
-    },
-  };
-  await relay.publish(originalEnvelope.replyTo, event, opts);
 }

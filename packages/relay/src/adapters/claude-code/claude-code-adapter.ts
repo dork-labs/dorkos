@@ -27,6 +27,7 @@
  *                 = agentId (Mesh ULID) on first-ever message to this agent
  */
 import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { TASK_DISPATCH_SUBJECT_PREFIX, isTaskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import type {
   RelayAdapter,
   RelayPublisher,
@@ -112,9 +113,6 @@ const AGENT_SUBJECT_PREFIX_RUNTIME_SCOPED = 'relay.agent.claude-code.';
  */
 const AGENT_SUBJECT_PREFIX_LEGACY = 'relay.agent.';
 
-/** Subject prefix for Tasks dispatch messages. */
-const TASKS_SUBJECT_PREFIX = 'relay.system.tasks.';
-
 /**
  * What the adapter reports when it never got a slot.
  *
@@ -184,10 +182,18 @@ function slotRefusal(
  */
 export class ClaudeCodeAdapter implements RelayAdapter {
   readonly id: string;
+  /**
+   * What reaches this adapter — deliberately wider than what it will run.
+   *
+   * A claim is a PREFIX, so the tasks entry also catches every subject beneath
+   * a dispatch subject. Only `relay.system.tasks.<taskId>` exactly is a
+   * dispatch ({@link isTaskDispatchSubject}); anything deeper is skipped in
+   * {@link ClaudeCodeAdapter.deliver} rather than parsed as one.
+   */
   readonly subjectPrefix = [
     AGENT_SUBJECT_PREFIX_RUNTIME_SCOPED,
     AGENT_SUBJECT_PREFIX_LEGACY,
-    TASKS_SUBJECT_PREFIX,
+    TASK_DISPATCH_SUBJECT_PREFIX,
   ] as const;
   readonly displayName = 'Claude Code';
 
@@ -348,6 +354,18 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       },
     };
 
+    // A subject under the tasks branch that is not a dispatch subject is not
+    // work this adapter has been given — it is somebody publishing beneath one,
+    // which the prefix claim above cannot distinguish on its own. Answered here,
+    // before a concurrency slot or a turn handle exists, and answered as
+    // `skipped` rather than as a failure: the publish pipeline dead-letters
+    // every unsuccessful adapter delivery, and reading a run's own progress
+    // stream as a malformed dispatch is exactly how one run produced 279 "could
+    // not be delivered" notifications (DOR-1567).
+    if (subject.startsWith(TASK_DISPATCH_SUBJECT_PREFIX) && !isTaskDispatchSubject(subject)) {
+      return { success: true, skipped: true, durationMs: Date.now() - startTime };
+    }
+
     // The handle on this turn, created HERE rather than inside the handler.
     // Two things stand between a message arriving and its turn starting — the
     // concurrency line, and the per-session queue — and a turn stopped while it
@@ -357,7 +375,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // and billed anyway (DOR-791). Tasks dispatch keeps its own registry, keyed
     // by run id, and ignores this one.
     const turnController = new AbortController();
-    const turnKey = subject.startsWith(TASKS_SUBJECT_PREFIX) ? undefined : envelope.replyTo;
+    const turnKey = isTaskDispatchSubject(subject) ? undefined : envelope.replyTo;
     if (turnKey) this.runningTurns.register(turnKey, turnController);
 
     try {
@@ -421,7 +439,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     }
 
     try {
-      if (subject.startsWith(TASKS_SUBJECT_PREFIX)) {
+      if (isTaskDispatchSubject(subject)) {
         return await handleTasksMessage(
           subject,
           envelope,
@@ -434,8 +452,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             taskStore: this.deps.taskStore,
             runningTasks: this.runningTasks,
             logger: this.deps.logger,
-          },
-          this.relay
+          }
         );
       }
 
