@@ -7,16 +7,15 @@
  * ## Two sources of paths
  *
  * 1. **Legacy hand-registered paths** — the bulk of this file: each route is
- *    described by a `registry.registerPath(...)` call by hand. Some of these
- *    schemas are Zod-3 mirrors (see the `Local*Schema` block below): the
- *    Zod-3 `@dorkos/marketplace` schemas cannot compose with this Zod-4 /
- *    zod-to-openapi-v8 registry, so they are redeclared here as Zod-4 and kept
- *    in sync by hand.
+ *    described by a `registry.registerPath(...)` call by hand. Several of the
+ *    marketplace and Shape ones use the `Local*Schema` block below: simplified
+ *    documentation shapes, either standing in for a plain TypeScript interface
+ *    that has no schema at all, or modelling just the fields the HTTP API
+ *    surfaces out of a much larger one. They are kept in sync by hand.
  * 2. **Registry-projected paths** — every capability that declares an `http`
  *    surface auto-registers its path via {@link registerCapabilitiesInOpenApi}
  *    at the bottom of this module (spec `capability-registry`, task 2.5). New
- *    capabilities appear in `/api/docs` automatically with no edit here; their
- *    schemas are native Zod-4, so no hand-mirroring is ever needed for them.
+ *    capabilities appear in `/api/docs` automatically with no edit here.
  *
  * The two sets never overlap: the projection throws at generation time if a
  * capability path collides with a hand-registered one. Migrating the legacy
@@ -136,6 +135,13 @@ import {
   ProfileUpdateResponseSchema,
   TeamRosterResponseSchema,
 } from '@dorkos/shared/team-schemas';
+import {
+  SearchQuerySchema,
+  SearchResponseSchema,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_MAX_LIMIT,
+  SEARCH_MIN_QUERY_LENGTH,
+} from '@dorkos/shared/search-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
@@ -172,18 +178,12 @@ import {
   AgentConnectorListResponseSchema,
   AgentConnectorAttachResultSchema,
 } from '@dorkos/shared/connector-provider';
+import { PackageTypeSchema } from '@dorkos/marketplace';
 import { z } from 'zod';
 
 /**
- * Local Zod 4 mirror of `@dorkos/marketplace`'s `PackageTypeSchema`. The
- * package exports a Zod 3 schema that cannot be composed with the server's
- * Zod 4 OpenAPI registry, so we redeclare it here. Keep in sync with
- * `packages/marketplace/src/package-types.ts`.
- */
-const LocalPackageTypeSchema = z.enum(['agent', 'plugin', 'skill-pack', 'adapter', 'shape']);
-
-/**
- * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplaceJsonSchema` shape.
+ * Simplified documentation mirror of `@dorkos/marketplace`'s
+ * `MarketplaceJsonSchema` shape.
  * Only the fields surfaced by the API are modelled — the `passthrough()`
  * behaviour of the source schema is approximated with `.catchall(z.unknown())`
  * so unknown fields still round-trip through OpenAPI.
@@ -205,7 +205,7 @@ const LocalMarketplaceJsonSchema = z
   .catchall(z.unknown());
 
 /**
- * Local Zod 4 mirror of a single marketplace.json entry with the
+ * Simplified documentation mirror of a single marketplace.json entry with the
  * discovered marketplace name tag appended. Returned by
  * `GET /api/marketplace/packages`. Keep in sync with
  * `packages/marketplace/src/marketplace-json-schema.ts` and the
@@ -223,7 +223,7 @@ const LocalAggregatedPackageSchema = z
   .catchall(z.unknown());
 
 /**
- * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
+ * Simplified documentation mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
  * Only the fields surfaced by the HTTP API are modelled. Keep in sync with
  * `packages/marketplace/src/package-manifest-schema.ts`.
  */
@@ -232,13 +232,13 @@ const LocalMarketplacePackageManifestSchema = z
     schemaVersion: z.number(),
     name: z.string(),
     version: z.string(),
-    type: LocalPackageTypeSchema,
+    type: PackageTypeSchema,
     description: z.string().optional(),
   })
   .catchall(z.unknown());
 
 /**
- * Local Zod 4 mirror of the server-side `InstallRequest` minus `name`
+ * Simplified documentation mirror of the server-side `InstallRequest` minus `name`
  * (the package name is taken from the URL `:name` parameter). Keep in sync
  * with `apps/server/src/services/marketplace/types.ts`.
  */
@@ -251,7 +251,7 @@ const LocalInstallRequestBodySchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/types.js').ConflictReport}.
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').ConflictReport}.
  * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
  */
 const LocalConflictReportSchema = z.object({
@@ -262,7 +262,7 @@ const LocalConflictReportSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/types.js').PermissionPreview}.
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').PermissionPreview}.
  * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
  */
 const LocalPermissionPreviewSchema = z.object({
@@ -312,21 +312,21 @@ const LocalPermissionPreviewSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/types.js').InstallResult}.
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').InstallResult}.
  * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
  */
 const LocalInstallResultSchema = z.object({
   ok: z.boolean(),
   packageName: z.string(),
   version: z.string(),
-  type: LocalPackageTypeSchema,
+  type: PackageTypeSchema,
   installPath: z.string(),
   manifest: LocalMarketplacePackageManifestSchema,
   warnings: z.array(z.string()),
   dependencyWarnings: z.array(z.string()).optional(),
 });
 
-/** Local Zod 4 mirror of the update flow's per-package advisory check. */
+/** Simplified documentation mirror of the update flow's per-package advisory check. */
 const LocalUpdateCheckResultSchema = z.object({
   packageName: z.string(),
   installedVersion: z.string(),
@@ -336,7 +336,7 @@ const LocalUpdateCheckResultSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/flows/update.js').UpdateResult}.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/update.js').UpdateResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/update.ts`.
  */
 const LocalUpdateResultSchema = z.object({
@@ -345,7 +345,7 @@ const LocalUpdateResultSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
  */
 const LocalUninstallResultSchema = z.object({
@@ -2006,7 +2006,7 @@ const PackageProvidesSchema = z.object({
 const InstalledPackageSchema = z.object({
   name: z.string(),
   version: z.string(),
-  type: LocalPackageTypeSchema,
+  type: PackageTypeSchema,
   installPath: z.string(),
   installedFrom: z.string().optional(),
   installedAt: z.string().optional(),
@@ -2548,9 +2548,9 @@ registry.registerPath({
 // --- Shapes (DOR-355) ---
 
 /**
- * Local Zod 4 mirror of the resolved Shape chrome (`ShapeLayoutSchema`). The
- * source is the Zod-3 `@dorkos/marketplace` schema, which cannot compose with
- * this Zod-4 registry — keep in sync with `packages/marketplace/manifest-schema.ts`.
+ * Simplified documentation mirror of the resolved Shape chrome
+ * (`ShapeLayoutSchema`) — keep in sync with
+ * `packages/marketplace/manifest-schema.ts`.
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
@@ -2574,7 +2574,7 @@ const LocalShapeLayoutSchema = z.object({
   focusDashboardSections: z.array(z.string()),
 });
 
-/** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').OfferedAgent}. */
+/** Simplified documentation mirror of {@link import('../shapes/apply-shape.js').OfferedAgent}. */
 const LocalOfferedAgentSchema = z.object({
   ref: z.string(),
   affinity: z.enum(['suggested', 'default']),
@@ -2588,7 +2588,7 @@ const LocalOfferedAgentSchema = z.object({
   scheduleSummary: z.string().optional(),
 });
 
-/** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */
+/** Simplified documentation mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */
 const LocalApplyShapeResultSchema = z
   .object({
     ok: z.boolean(),
@@ -2605,7 +2605,7 @@ const LocalApplyShapeResultSchema = z
   })
   .openapi('ApplyShapeResult');
 
-/** Local Zod 4 mirror of {@link import('../shapes/shape-services.js').InstalledShapeSummary}. */
+/** Simplified documentation mirror of {@link import('../shapes/shape-services.js').InstalledShapeSummary}. */
 const LocalInstalledShapeSummarySchema = z.object({
   name: z.string(),
   displayName: z.string().optional(),
@@ -2619,7 +2619,7 @@ const LocalInstalledShapeSummarySchema = z.object({
     .optional(),
 });
 
-/** Local Zod 4 mirror of {@link import('../shapes/fork.js').ForkShapeResult}. */
+/** Simplified documentation mirror of {@link import('../shapes/fork.js').ForkShapeResult}. */
 const LocalForkShapeResultSchema = z
   .object({
     ok: z.literal(true),
@@ -4146,6 +4146,56 @@ registry.registerPath({
     },
     500: {
       description: 'The membership read failed (`MEMBER_ROOMS_FAILED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Message search (spec `message-search` §6.1, §7, ADR 260728-214214) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/search',
+  tags: ['Search'],
+  summary: 'Find messages by what was said in them',
+  description:
+    'One ranked read over the derived message index — rooms and Claude Code transcripts alike, ' +
+    'in a single relevance order, because "where did we talk about X" does not know which one X ' +
+    'was said in. A hit is a COORDINATE plus a marked excerpt (source, container, ordinal, role, ' +
+    'timestamp), never the message itself: the index holds a copy of the text and none of the ' +
+    "access rules, so resolving a hit back to a message stays the owning store's job. " +
+    'Matching is by word STEM, not substring: `dogs` finds "dog", "dogs" and "DOGGED", and `ogs` ' +
+    'finds nothing. The index is as fresh as the last five-minute sweep. ' +
+    '**Who sees what**: the operator gets every room and every session; anybody else gets only ' +
+    'the rooms they are on the roster of, each above the point they joined it, and NO sessions at ' +
+    'all — a caller presenting an agent identity, resolved or not, never reaches a transcript. ' +
+    'A search scoped to something the caller may not see returns exactly what a search for words ' +
+    'nobody ever said returns, so neither a room id nor a query string is a capability. ' +
+    `**The calling contract**: at least one WORD of ${SEARCH_MIN_QUERY_LENGTH} characters, and wait ` +
+    `${SEARCH_DEBOUNCE_MS} ms after the last keystroke. Ranking cost grows with how many rows ` +
+    'MATCH rather than with `limit`, so a one-letter search is the most expensive one there is ' +
+    `and the least useful. \`limit\` is clamped to ${SEARCH_MAX_LIMIT} rather than refused. ` +
+    'Degradation follows ADR-0310: a source that could not be fully indexed contributes zero hits ' +
+    'and one `warnings[]` entry naming it — never a failed request. `warnings` is always present, ' +
+    '`[]` included, and names no container, since a container id is a room or a session id.',
+  request: { query: SearchQuerySchema },
+  responses: {
+    200: {
+      description: 'Hits, best first, across every source this caller may read',
+      content: { 'application/json': { schema: SearchResponseSchema } },
+    },
+    400: {
+      description:
+        'The request could not be read (`INVALID_SEARCH_QUERY`), or it named a source that does ' +
+        'not exist (`UNKNOWN_SEARCH_SOURCE`). The `error` sentence says which field was wrong: `q` ' +
+        'holds no WORD of at least the minimum length — counted over the words a search is split ' +
+        'into, so `a,` and a string of spaces are refused exactly as `a` is — or `limit` was not a ' +
+        'whole number above zero.',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description:
+        'The caller presented an agent token this machine could not verify (`AGENT_IDENTITY_UNVERIFIED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

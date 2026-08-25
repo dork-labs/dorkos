@@ -8,15 +8,13 @@
  * battle-tested widget shape to reuse turn after turn instead of hand-rolling
  * document JSON every time.
  *
- * **The zod version boundary.** `@dorkos/shared` is on zod v4; this package
- * is still on zod v3 (a mixed-version migration is in flight across the
- * monorepo — see `packages/marketplace` and `packages/harness` for other v3
- * holdouts). Nesting a v4 `ZodType` inside a v3 `z.object()` is not
- * supported: v3's object parser reaches into `_def` internals whose shape
- * changed in v4, so composition silently misbehaves rather than erroring
- * loudly. Instead of composing schemas, `document` is validated by calling
- * `WidgetDocumentSchema.safeParse()` as an opaque function — a call
- * boundary, not a type-composition boundary — inside a `superRefine`.
+ * **Why `document` is not simply `WidgetDocumentSchema`.** A template holds
+ * unfilled `{{placeholder}}` tokens, so it does not satisfy the widget schema
+ * as written. Validation therefore substitutes a dummy value for every
+ * whole-string placeholder first and checks *that* against
+ * `WidgetDocumentSchema.safeParse()` inside a `superRefine`, while returning
+ * the original unsubstituted value. Composing the schemas directly would
+ * validate the wrong thing and hand back the substituted document.
  *
  * **Where placeholders are allowed — the three-bucket convention.**
  * Whole-string `{{token}}` placeholders are validated by substituting a dummy

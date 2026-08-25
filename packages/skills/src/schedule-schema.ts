@@ -7,13 +7,12 @@ import { coerceYamlBoolean } from './yaml-boolean.js';
  * frontmatter — the same set a chat session may run under.
  *
  * DRIFT NOTE: an inlined mirror of `PermissionModeSchema`
- * (`packages/shared/src/schemas.ts`) by value. `@dorkos/shared` is on zod v4
- * and this package is still on v3, and nesting a v4 `ZodType` inside a v3
- * `z.object()` silently misbehaves rather than erroring (the same boundary
- * `ui-template.ts` documents), so the six values are inlined here instead of
- * composed. `__tests__/task-schema.test.ts` reads `PermissionModeSchema.options`
- * — a version-safe string-array read, never a cross-version schema composition
- * — and asserts the two sets are equal, so they cannot drift apart.
+ * (`packages/shared/src/schemas.ts`) by value. This module ships to the browser
+ * through the barrel and stays deliberately light, and importing that schema at
+ * runtime would pull all of `@dorkos/shared/schemas` in behind it for six
+ * strings. `__tests__/schedule-schema.test.ts` reads
+ * `PermissionModeSchema.options` — a test-only import, which costs the bundle
+ * nothing — and asserts the two sets are equal, so they cannot drift apart.
  *
  * `@dorkos/marketplace` re-exports this as `SCHEDULE_PERMISSION_MODES`
  * rather than keeping a third copy: what a Shape manifest may declare for a
@@ -55,8 +54,8 @@ const DEFAULT_PERMISSIONS = 'acceptEdits';
  * asks whether either one is *meaningful*. Cron semantics are croner's
  * question and are answered at the server seam
  * (`apps/server/src/services/tasks/cron-validation.ts`), which is where croner
- * lives: this package is on zod v3, ships to the browser through the barrel,
- * and must stay dependency-light.
+ * lives: this package ships to the browser through the barrel and must stay
+ * dependency-light.
  */
 export const ScheduleBlockSchema = z.object({
   /**

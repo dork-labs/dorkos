@@ -155,16 +155,55 @@ import type { RoomTurnBudget } from './limits/turn-budget.js';
  */
 export interface RoomMessageFinder {
   (input: {
-    /** The rooms to search — already resolved to what this caller may read. */
-    roomIds: readonly string[];
+    /**
+     * The rooms to search, each with the `seq` it may be read above — already
+     * resolved to what this caller may see.
+     *
+     * **A floor per room, never one for the request.** A member joins different
+     * rooms at different points, so a single floor across several rooms is
+     * wrong in both directions at once: it leaks what was said before they
+     * arrived in a room they joined late, and hides what is theirs in a room
+     * they joined early. One room per entry keeps the pair that decides
+     * visibility together.
+     */
+    rooms: ReadonlyArray<{ roomId: string; afterSeq: number }>;
     /** What the caller typed. */
     query: string;
     /** The most hits to bring back, best first. */
     limit: number;
-    /** Ignore entries at or below this `seq`. */
-    afterSeq: number;
   }): Array<{ roomId: string; seq: number }>;
 }
+
+/**
+ * How a committed entry reaches the message index (message-search spec §5,
+ * Amendment 6).
+ *
+ * The write half of the same port {@link RoomMessageFinder} is the read half of,
+ * and it is a port for the same reason: this domain neither imports the index
+ * nor knows it is FTS5. It is handed a coordinate it already has in its hand.
+ *
+ * **It must not throw and must not be slow.** The room log is the truth and the
+ * index is a copy, so a copy that cannot be written is a warning and a
+ * five-minute wait for the reconciler — never a failed post. The implementation
+ * that ships (`services/search/write-through.ts`) owns that guarantee, and this
+ * service guards the call anyway: a port whose contract is "never throws" that
+ * nobody checks is a contract that holds until somebody wires a different one.
+ */
+export interface RoomEntryIndexer {
+  (entry: { roomId: string; seq: number }): void;
+}
+
+/**
+ * What one caller may search of the room log, across every room at once
+ * (message-search spec §7).
+ *
+ * `'all'` is the operator, whose clause is OMITTED rather than filled with every
+ * room on the machine — a filter that has to enumerate everything silently
+ * starts excluding things the day enumeration misses one. Everybody else gets a
+ * map of room id to the `seq` they joined at, which is the floor their search
+ * runs above.
+ */
+export type RoomSearchScope = 'all' | ReadonlyMap<string, number>;
 
 export interface RoomServiceDeps {
   store: RoomStore;
@@ -200,6 +239,17 @@ export interface RoomServiceDeps {
    * the thread filter are applied by the code that already owns them.
    */
   findMessages: RoomMessageFinder;
+  /**
+   * How a committed entry reaches the index, so a message is findable the
+   * moment it is said rather than up to five minutes later (message-search
+   * spec Amendment 6).
+   *
+   * Required rather than optional, and that is the decision: an optional
+   * write-through is one a caller can forget to wire, and forgetting it is
+   * invisible — search simply lags, which is indistinguishable from a quiet
+   * room. A caller that genuinely wants no index passes a no-op and says so.
+   */
+  indexEntry: RoomEntryIndexer;
   /**
    * What bounds automatic replies in one room — the room's own overrides where
    * it has them, Settings otherwise (`resolveRoomLimits`, DOR-1429). Injected
@@ -464,6 +514,8 @@ export class RoomService {
   private readonly reactionBudget: ReactionBudget;
   /** Words in, entry coordinates out. The message index, behind its port. */
   private readonly findMessages: RoomMessageFinder;
+  /** Entries out, the moment they are committed. The write half of that port. */
+  private readonly indexEntry: RoomEntryIndexer;
   private readonly attachments: AttachmentRowStore;
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
@@ -521,6 +573,7 @@ export class RoomService {
     this.reactions = deps.reactions;
     this.reactionBudget = deps.reactionBudget;
     this.findMessages = deps.findMessages;
+    this.indexEntry = deps.indexEntry;
     this.attachments = deps.attachments;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
@@ -2433,12 +2486,11 @@ export class RoomService {
     const { floor } = this.requireHistoryFloor(roomId, viewerAuthorId);
     const wanted = clampHistoryLimit(opts.limit);
     const hits = this.findMessages({
-      roomIds: [roomId],
+      rooms: [{ roomId, afterSeq: floor }],
       query: opts.query,
       // Over-fetch only when something will be filtered out afterwards, so the
       // ordinary search costs exactly what it asked for.
       limit: opts.threadRootEntryId === undefined ? wanted : HISTORY_PAGE_MAX,
-      afterSeq: floor,
     });
     if (hits.length === 0) return [];
 
@@ -2454,6 +2506,66 @@ export class RoomService {
       .sort((a, b) => (ranked.get(a.seq) ?? 0) - (ranked.get(b.seq) ?? 0))
       .slice(0, wanted);
     return this.withRollups(roomId, found);
+  }
+
+  /**
+   * How much of the room log one caller may search across EVERY room at once —
+   * the whole-install read `GET /api/search` needs (message-search spec §7).
+   *
+   * The same two rules {@link RoomService.requireVisibleRoom} and
+   * {@link RoomService.readHistory} keep, expressed for a query that names no
+   * room: the owner may see every room, everybody else exactly the rooms they
+   * are on the roster of, each from their own `joinedSeq` up.
+   *
+   * **The floors are per room and cannot be collapsed into one.** A member joins
+   * different rooms at different points, so a single lowest floor would leak what
+   * was said before they arrived in the rooms they joined late, and a single
+   * highest one would hide what is theirs in the rooms they joined early. This is
+   * the reason the shape is a map rather than a list plus a number.
+   *
+   * **The owner's `'all'` diverges from {@link RoomService.readHistory}, and it is
+   * meant to.** That path requires a MEMBER row even of the owner — "reading a
+   * room's log is a membership, not a visibility" — so the operator cannot read
+   * back a room they never joined, an agent-to-agent DM included. Search does not
+   * apply that bar: the owner's scope is every room on the install. Three reasons,
+   * and the first is the decisive one.
+   *
+   * - **The spec says so in a table.** message-search §7 gives the operator
+   *   "all" rooms, {@link RoomService.seesEveryRoom} says "nothing on their own
+   *   machine hides from them", and `GET /api/search`'s own reference text tells
+   *   every caller that is what it does.
+   * - **Search is the export path, not the reading path.** The nearest neighbour
+   *   is {@link RoomService.exportRoom}, which deliberately drops the join floor
+   *   for the owner because "an owner handed a copy of their own room with the
+   *   first months missing has not been given their data". A person searching
+   *   their own machine for something they half-remember is in that situation,
+   *   not in an agent's.
+   * - **A hit is a coordinate, not the log.** What comes back is where something
+   *   was said plus one marked sentence; opening it goes through the room's own
+   *   read path, which still applies every rule it applies today.
+   *
+   * The consequence is stated rather than left to be discovered: **the operator's
+   * search reaches rooms they are not on the roster of**, including rooms their
+   * agents opened between themselves. Narrowing this later means giving the owner
+   * a container list, which is the enumerate-everything filter §6.1 refuses — so
+   * the honest place to change the answer is the spec, not this method.
+   *
+   * It returns a scope rather than results, and the difference is the access
+   * model: the index is handed what this domain resolved and is never asked to
+   * work out who anybody is.
+   *
+   * @param viewerAuthorId - The caller's author id.
+   * @returns `'all'` for the operator, or every room they are in keyed to the
+   *   `seq` they may read above. An empty map is a real answer — somebody in no
+   *   rooms — and matches nothing.
+   */
+  searchScope(viewerAuthorId: string): RoomSearchScope {
+    if (this.seesEveryRoom(viewerAuthorId)) return 'all';
+    const floors = new Map<string, number>();
+    for (const membership of this.store.listMembershipsFor(viewerAuthorId)) {
+      floors.set(membership.roomId, membership.joinedSeq);
+    }
+    return floors;
   }
 
   /**
@@ -3920,6 +4032,23 @@ export class RoomService {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+    // LAST, and guarded twice (message-search spec Amendment 6). The message
+    // index is a derived copy of this log, so it is the least important thing
+    // this write does and the only one that may be skipped: everyone waiting on
+    // this entry already has it, and a failure here costs at most the five
+    // minutes until the reconciler reads the same rows. The port promises not to
+    // throw; this catch is what keeps the promise true for whatever gets wired
+    // in next, because a post that fails because a SEARCH INDEX could not be
+    // updated is the exact inversion of "the log is the truth".
+    try {
+      this.indexEntry({ roomId: entry.roomId, seq: entry.seq });
+    } catch (err) {
+      logger.warn('[rooms] message-index write-through threw', {
+        roomId: entry.roomId,
+        entryId: entry.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

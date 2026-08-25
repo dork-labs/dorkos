@@ -29,6 +29,19 @@ describe('export-openapi', () => {
     expect(team?.get?.description).toContain('warnings');
   });
 
+  it('documents message search as a read, with the rule that bounds it', () => {
+    const spec = generateOpenAPISpec();
+    const search = spec.paths?.['/api/search'];
+
+    // One verb: the index is derived and nothing writes to it through the API.
+    expect(Object.keys(search ?? {})).toEqual(['get']);
+    expect(search?.get?.tags).toEqual(['Search']);
+    // The access model is the half of this route a reader most needs from the
+    // reference, since no request shape reveals it.
+    expect(search?.get?.description).toContain('never reaches a transcript');
+    expect(search?.get?.description).toContain('warnings');
+  });
+
   it('produces valid JSON output', () => {
     const spec = generateOpenAPISpec();
     const json = JSON.stringify(spec, null, 2);

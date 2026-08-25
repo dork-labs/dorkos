@@ -3,7 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { authors, roomEntries, rooms, messages, searchSources, eq, type Db } from '@dorkos/db';
 import type BetterSqlite3 from 'better-sqlite3';
 import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS } from '../indexer.js';
-import { roomsSource } from '../registry.js';
+import { roomsSource, SEARCH_SOURCES } from '../registry.js';
 import type { RowSource } from '../types.js';
 
 /**
@@ -122,6 +122,26 @@ function search(query: string): { origin_key: string; excerpt: string }[] {
     .all(query) as { origin_key: string; excerpt: string }[];
 }
 
+describe('the registry the indexer sweeps by default', () => {
+  it('is exactly rooms then claude-code', () => {
+    // An exact array, not a `toContain`. Every other test in this file passes a
+    // source list explicitly — which is right, because a room test has no
+    // business reading the operator's transcripts — and the cost of that is that
+    // NOTHING else here would notice a source being dropped from the registry.
+    // A whole indexed corpus can be deleted from this array and leave a fully
+    // green suite behind: the feature ships, and indexes nothing.
+    //
+    // The order is asserted too, because it is the sweep order: rooms are
+    // DorkOS's own write and cheap to reconcile, so they land before a
+    // filesystem walk that can take seconds on a cold index.
+    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual(['rooms', 'claude-code']);
+  });
+
+  it('names each mechanism on the row rather than leaving it to be inferred', () => {
+    expect(SEARCH_SOURCES.map((source) => source.mechanism)).toEqual(['rows', 'jsonl']);
+  });
+});
+
 describe('SearchIndexer over the room log', () => {
   it('rebuilds to exactly what three incremental sweeps produced', async () => {
     // THE test that makes "start the index again" a recovery rather than a hope:
@@ -142,7 +162,7 @@ describe('SearchIndexer over the room log', () => {
     // a missing one.
     seedRoom('room-a');
     seedRoom('room-b');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
 
     say('room-a', 'the first thing anyone said');
     say('room-b', 'a different room entirely', { author: 'author-agent' });
@@ -182,7 +202,7 @@ describe('SearchIndexer over the room log', () => {
     say('room-a', 'a message about pineapples');
     say('room-a', 'another about pineapples', { author: 'author-agent' });
     say('room-b', 'pineapples elsewhere');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     const before = indexedMessages();
     expect(search('pineapples')).toHaveLength(3);
@@ -205,7 +225,7 @@ describe('SearchIndexer over the room log', () => {
     seedRoom('room-b');
     say('room-a', 'kept throughout');
     say('room-b', 'deleted from the index only');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     const before = indexedMessages();
 
@@ -221,7 +241,7 @@ describe('SearchIndexer over the room log', () => {
     // correctly did nothing AND for one that re-read and re-upserted every row.
     seedRoom('room-a');
     say('room-a', 'something worth finding');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
 
     expect((await indexer.sweep()).indexed).toBe(1);
     expect((await indexer.sweep()).indexed).toBe(0);
@@ -234,7 +254,7 @@ describe('SearchIndexer over the room log', () => {
     // stuck" and "nothing has happened" read identically.
     seedRoom('room-a');
     say('room-a', 'said once');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     const first = raw.prepare('SELECT last_indexed_at AS t FROM search_sources').get();
 
@@ -252,7 +272,7 @@ describe('SearchIndexer over the room log', () => {
     seedRoom('room-a');
     say('room-a', 'said once and only once');
     say('room-a', 'and a second time', { author: 'author-agent' });
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     const before = indexedMessages();
 
@@ -280,7 +300,7 @@ describe('SearchIndexer over the room log', () => {
       'eps herring',
     ];
     texts.forEach((text, i) => sayAt('room-a', 10 + i, text));
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     expect(search('herring')).toHaveLength(5);
 
@@ -315,7 +335,7 @@ describe('SearchIndexer over the room log', () => {
     seedRoom('room-a');
     const texts = ['alpha marlin', 'beta marlin', 'gamma marlin', 'delta marlin', 'eps marlin'];
     texts.forEach((text, i) => sayAt('room-a', 10 + i, text));
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     expect(search('marlin')).toHaveLength(5);
 
@@ -347,6 +367,7 @@ describe('SearchIndexer over the room log', () => {
     // can, so the mechanism answers it rather than the source.
     let discovered = 5;
     const laggy: RowSource = {
+      mechanism: 'rows',
       id: 'laggy',
       listContainers: () => [{ originKey: 'c', containerPath: null, maxOrdinal: discovered }],
       readSince: (_db, _key, after) => ({
@@ -379,6 +400,7 @@ describe('SearchIndexer over the room log', () => {
     say('room-a', 'this room is fine');
 
     const broken: RowSource = {
+      mechanism: 'rows',
       id: 'broken',
       listContainers: () => [{ originKey: 'container-x', containerPath: null, maxOrdinal: 7 }],
       readSince: () => {
@@ -416,6 +438,7 @@ describe('SearchIndexer over the room log', () => {
     say('room-a', 'still here');
     let failing = true;
     const flaky: RowSource = {
+      mechanism: 'rows',
       id: 'flaky',
       listContainers: () => [{ originKey: 'container-x', containerPath: null, maxOrdinal: 1 }],
       readSince: () => {
@@ -454,7 +477,7 @@ describe('SearchIndexer over the room log', () => {
     say('room-a', 'an ordinary message');
     say('room-a', '', { rawBody: JSON.stringify({ blocks: [{ type: 'text', value: 'hi' }] }) });
 
-    const result = await new SearchIndexer(db).sweep();
+    const result = await new SearchIndexer(db, [roomsSource]).sweep();
 
     expect(result.skipped).toBe(1);
     expect(result.indexed).toBe(1);
@@ -477,7 +500,7 @@ describe('SearchIndexer over the room log', () => {
     seedRoom('room-doomed');
     say('room-a', 'a message that stays');
     say('room-doomed', 'a message about pineapples');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
     await indexer.sweep();
     expect(search('pineapples')).toHaveLength(1);
 
@@ -499,7 +522,7 @@ describe('SearchIndexer over the room log', () => {
     say('room-a', 'we spent the afternoon talking about a dog');
     say('room-a', 'two dogs actually', { author: 'author-agent' });
     say('room-a', 'nothing relevant in this one');
-    await new SearchIndexer(db).sweep();
+    await new SearchIndexer(db, [roomsSource]).sweep();
 
     const hits = search('dogs');
 
@@ -525,7 +548,7 @@ describe('SearchIndexer over the room log', () => {
       }
     })();
 
-    const result = await new SearchIndexer(db).sweep();
+    const result = await new SearchIndexer(db, [roomsSource]).sweep();
 
     expect(result.indexed).toBe(6000);
     expect(indexedMessages()).toHaveLength(6000);
@@ -541,7 +564,7 @@ describe('SearchIndexer over the room log', () => {
     seedRoom('room-a');
     say('room-a', 'written by somebody the authors table has lost', { author: 'author-ghost' });
 
-    const result = await new SearchIndexer(db).sweep();
+    const result = await new SearchIndexer(db, [roomsSource]).sweep();
 
     expect(result.indexed).toBe(1);
     expect(search('lost')).toHaveLength(1);
@@ -549,7 +572,7 @@ describe('SearchIndexer over the room log', () => {
 
   it('indexes a room with no entries as a container and reads nothing', async () => {
     seedRoom('room-empty');
-    const result = await new SearchIndexer(db).sweep();
+    const result = await new SearchIndexer(db, [roomsSource]).sweep();
 
     expect(result.containers).toBe(1);
     expect(result.indexed).toBe(0);
@@ -577,7 +600,7 @@ describe('SearchIndexer over the room log', () => {
     say('room-a', 'a real message');
     say('room-a', 'limit reached', { author: 'author-system', kind: 'notice' });
     say('room-a', 'limit reached again', { author: 'author-system', kind: 'notice' });
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
 
     await indexer.sweep();
 
@@ -603,7 +626,7 @@ describe('SearchIndexer scheduling', () => {
   it('indexes once at startup without waiting for the first interval', async () => {
     seedRoom('room-a');
     say('room-a', 'said before the server was even listening');
-    const indexer = new SearchIndexer(db);
+    const indexer = new SearchIndexer(db, [roomsSource]);
 
     indexer.start();
     await vi.waitFor(() => expect(indexedMessages()).toHaveLength(1));
@@ -614,6 +637,7 @@ describe('SearchIndexer scheduling', () => {
     vi.useFakeTimers();
     let sweeps = 0;
     const counting: RowSource = {
+      mechanism: 'rows',
       id: 'counting',
       listContainers: () => {
         sweeps += 1;

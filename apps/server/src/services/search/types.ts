@@ -96,6 +96,12 @@ export interface RowSource {
   /** `'rooms'`. Stamped onto every row this source contributes. */
   readonly id: string;
 
+  /**
+   * Which mechanism sweeps this source. The registry row names it rather than
+   * the indexer guessing from the shape of the record (spec §3).
+   */
+  readonly mechanism: 'rows';
+
   /** Every container that exists right now, with its current high-water ordinal. */
   listContainers(db: Db): RowContainer[];
 
@@ -111,6 +117,210 @@ export interface RowSource {
 }
 
 /**
+ * One append-only file discovery found, with the two signals that say whether
+ * it has changed since the last sweep (spec §5).
+ *
+ * `sizeBytes` and `mtimeMs` are the whole change-signal taxonomy this design
+ * carries: a file grew, or a file appeared. Everything else is a rebuild.
+ */
+export interface FileContainer {
+  /** The opaque container id — the session id, for a transcript. */
+  originKey: string;
+
+  /** Absolute path to the file. */
+  filePath: string;
+
+  /**
+   * The working directory a hit opens in, or `null` when the file never named
+   * one. Read from the file's own head record, never from its directory name:
+   * the slug is a lossy `cwd.replace(/[^a-zA-Z0-9-]/g, '-')` and cannot be
+   * inverted (spec §2.1).
+   */
+  containerPath: string | null;
+
+  /** Size right now. Below the recorded size means the file was replaced. */
+  sizeBytes: number;
+
+  /** Modification time right now, in epoch milliseconds. */
+  mtimeMs: number;
+}
+
+/** Why discovery walked past a file instead of indexing it. */
+export type SkipReason =
+  /** `<slug>/<sessionId>/subagents/**` — a conversation the human never had. */
+  | 'subagent-transcript'
+  /** A main session whose head-record `cwd` is an eval-harness sandbox. */
+  | 'eval-sandbox'
+  /** `<slug>/vercel-plugin/skill-injections.jsonl` — harness plumbing. */
+  | 'plugin-artifact'
+  /** Nested deeper than `<slug>/<sessionId>.jsonl` and matching no known kind. */
+  | 'not-a-main-session';
+
+/** One file discovery decided against, and the decision it made. */
+export interface SkippedFile {
+  /** Absolute path to the file that was not indexed. */
+  path: string;
+
+  /** The decision. */
+  reason: SkipReason;
+}
+
+/**
+ * What one discovery pass found — and, just as load-bearing, what it decided
+ * against.
+ *
+ * The skipped set is not diagnostics. Discovery **walks** the tree rather than
+ * globbing one level down, so that subagent transcripts are excluded by a
+ * predicate someone can flip rather than by an accident of depth (spec §2.1) —
+ * and the only way to tell those two implementations apart is that one of them
+ * reports having visited the nested paths. A count-only assertion passes for
+ * both.
+ */
+export interface FileDiscovery {
+  /** Files to index, in walk order. */
+  files: FileContainer[];
+
+  /** Files visited and deliberately not indexed. */
+  skipped: SkippedFile[];
+}
+
+/**
+ * What the frontier already knows about one file, as discovery needs it.
+ *
+ * Handed to discovery so an unchanged file can be classified from what the last
+ * sweep decided instead of from its bytes. Reading the head of every transcript
+ * on every tick is the difference between a sweep that costs one `stat` per file
+ * and one that costs ~11 MB of reads per five minutes on this corpus, growing
+ * with it.
+ */
+export interface KnownContainer {
+  /**
+   * Size at the last read.
+   *
+   * Accepted limitation of the `(sizeBytes, mtimeMs)` pair, stated once: a
+   * replacement that lands on the SAME size and the SAME mtime is
+   * indistinguishable from no change at all, and is treated as unchanged. It
+   * takes a rewrite inside one millisecond that preserves the byte count
+   * exactly; the answer if it ever happens is `DELETE FROM messages` and a
+   * rebuild, which is a supported recovery rather than a repair.
+   */
+  sizeBytes: number;
+
+  /** Mtime at the last read, in epoch milliseconds. */
+  mtimeMs: number;
+
+  /** The working directory the last sweep recorded for it. */
+  containerPath: string | null;
+}
+
+/**
+ * **M1** — a source whose containers are append-only files tailed at a byte
+ * offset (spec §3). Claude Code uses it, and Codex will.
+ *
+ * Discovery reaches the filesystem; the projection never does. That split is
+ * what keeps the projection a pure function over lines, and it is why this
+ * interface has no `read`: reading is the mechanism's, written once in
+ * `jsonl-frontier.ts`.
+ */
+export interface FileSource {
+  /** `'claude-code'`. Stamped onto every row this source contributes. */
+  readonly id: string;
+
+  /**
+   * Which mechanism sweeps this source. The registry row names it rather than
+   * the indexer guessing from the shape of the record (spec §3).
+   */
+  readonly mechanism: 'jsonl';
+
+  /**
+   * Every file that should be indexed right now, and every one that should not.
+   *
+   * @param known - What the frontier already holds, keyed by container id. A
+   *   file whose `(size, mtime)` match an entry here has not changed since the
+   *   last sweep, so discovery may answer from it rather than re-reading the
+   *   file to classify it.
+   */
+  discover(known: ReadonlyMap<string, KnownContainer>): Promise<FileDiscovery>;
+
+  /**
+   * Project raw JSONL lines into messages. **Pure** — no filesystem, no
+   * database, no clock.
+   *
+   * Called once per batch of lines rather than once per file, so a large first
+   * read never holds a whole transcript's raw text in memory. Ordinals are
+   * therefore handed in rather than started from zero.
+   *
+   * @param lines - Complete lines, in file order, blank lines already dropped.
+   * @param context - Which container these belong to, and the ordinal to give
+   *   the first message produced.
+   */
+  project(
+    lines: readonly string[],
+    context: { originKey: string; firstOrdinal: number }
+  ): Projection;
+}
+
+/**
+ * One source the indexer sweeps — a record in the registry array, never a port.
+ *
+ * A port abstracting two mechanisms and three functions is a class hierarchy
+ * standing where a record does. The trigger that changes that is written down:
+ * the day a third mechanism is needed the promotion fires (spec §3, D12).
+ */
+export type SearchSource = RowSource | FileSource;
+
+/** What one pass over one source did, whichever mechanism swept it. */
+export interface SourceSweep {
+  /** Which source. */
+  sourceId: string;
+
+  /** Containers that exist right now. */
+  containers: number;
+
+  /**
+   * Message rows written this pass.
+   *
+   * The number a no-op sweep has to report as `0`. Asserting an unchanged
+   * `count(*)` instead would pass for a sweep that correctly did nothing AND for
+   * a broken one that re-read and re-upserted every row.
+   */
+  indexed: number;
+
+  /**
+   * Rows the projection read, recognised as its own, and could not make a
+   * message out of.
+   *
+   * The quiet half of the format-change problem. A projection that THROWS is
+   * loud — it writes `last_error` and stops the container. A projection handed a
+   * record whose shape has drifted underneath it does not throw; it returns fewer
+   * rows, which is indistinguishable from a source with nothing to say. This is
+   * the count that tells the two apart, and it is deliberately not an error: one
+   * drifted row must not stop a whole container from indexing.
+   */
+  skipped: number;
+
+  /** Containers that no longer exist and were dropped from the index. */
+  pruned: number;
+
+  /**
+   * Containers re-read whole because the index no longer matches them —
+   * renumbered ordinals under M2, a file that shrank under M1.
+   */
+  rebuilt: number;
+
+  /**
+   * Containers that contributed nothing and said why.
+   *
+   * Most of them also wrote `search_sources.last_error`, and two kinds cannot:
+   * a discovery that failed before any container was enumerated has no row to
+   * write to, and two files claiming one container id have no row that could
+   * honestly describe them. Those live here only, which is why this array is on
+   * the result rather than being left implicit in the table.
+   */
+  failures: SourceFailure[];
+}
+
+/**
  * One container whose indexing failed, and why.
  *
  * This is what `search_sources.last_error` exists to make visible: a projection
@@ -122,9 +332,16 @@ export interface SourceFailure {
   /** Which source. */
   sourceId: string;
 
-  /** Which container within it. */
+  /**
+   * Which container within it, or the source's discovery-failure key when the
+   * failure happened before any container was enumerated.
+   */
   originKey: string;
 
-  /** What went wrong, as it was written to `search_sources.last_error`. */
+  /**
+   * What went wrong. Usually the text written to `search_sources.last_error`
+   * as well — but not always, since some failures have no single row to own
+   * them (see {@link SourceSweep.failures}).
+   */
   message: string;
 }

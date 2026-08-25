@@ -13,21 +13,21 @@
   "dependencies": {
     "@dorkos/client": "workspace:*",
     "@dorkos/server": "workspace:*",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@tailwindcss/vite": "^4.2.2",
-    "@tanstack/react-query": "^5.99.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "5.1.4",
-    "lucide-react": "1.21.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.102.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "5.2.0",
+    "lucide-react": "1.34.0",
     "obsidian": "latest",
-    "tailwindcss": "^4.2.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^6.4.2"
+    "vite": "^6.4.3"
   }
 }

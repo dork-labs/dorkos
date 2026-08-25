@@ -248,6 +248,10 @@
     "./handle": {
       "types": "./src/handle.ts",
       "default": "./dist/handle.js"
+    },
+    "./search-schemas": {
+      "types": "./src/search-schemas.ts",
+      "default": "./dist/search-schemas.js"
     }
   },
   "scripts": {
@@ -258,7 +262,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
     "ulidx": "^2.4.1",
     "zod": "^4.4.3"
   },
@@ -266,6 +270,6 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

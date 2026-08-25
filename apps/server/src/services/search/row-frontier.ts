@@ -3,8 +3,11 @@
  * (message-search spec §3, §5, §6.4).
  *
  * Written once for the mechanism, not once per source: discovery, change
- * detection, the incremental read, the upsert and the prune all live here, and
- * a source contributes only two functions and a projection.
+ * detection and the incremental read live here, and a source contributes only
+ * two functions and a projection. The writes it makes are the ones both
+ * mechanisms make, and they live in `frontier-store.ts` — a copy per mechanism
+ * is how the two would drift on the `ON CONFLICT` clause that keeps FTS5 in
+ * sync.
  *
  * Nothing in this file is a store. Every row it writes is derived from a source
  * DorkOS reads and never owns, and deleting the index is a supported recovery
@@ -21,69 +24,15 @@
  * @module server/services/search/row-frontier
  */
 import { messages, searchSources, and, eq, sql, type Db } from '@dorkos/db';
-import type { Projection, RowContainer, RowSource, SourceFailure } from './types.js';
-
-/**
- * A database handle or a transaction on one.
- *
- * Every write below runs inside a transaction the caller opened, so the helpers
- * take the transaction handle rather than reaching back for the connection —
- * which happens to work under `better-sqlite3` and reads like a bug.
- */
-type Writer = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
-
-/**
- * How many message rows go into one `INSERT`.
- *
- * SQLite caps a statement at 32,766 host parameters and each row here binds six,
- * so the hard ceiling is 5,461 rows and an unchunked insert of a large container
- * fails outright above it. 500 is a tenth of that rather than the ceiling itself,
- * and it is safe for any content: parameters are **bound**, never inlined into
- * the SQL text, so a chunk of 500 costs 3,000 parameters whether the bodies are
- * ten characters or ten thousand. Every chunk runs inside the container's one
- * transaction, so this does not weaken the one-transaction-per-container rule.
- */
-const INSERT_CHUNK_ROWS = 500;
-
-/** What one pass over one row-backed source did. */
-export interface RowSourceSweep {
-  /** Which source. */
-  sourceId: string;
-
-  /** Containers that exist right now. */
-  containers: number;
-
-  /**
-   * Message rows written this pass.
-   *
-   * The number a no-op sweep has to report as `0`. Asserting an unchanged
-   * `count(*)` instead would pass for a sweep that correctly did nothing AND for
-   * a broken one that re-read and re-upserted every row.
-   */
-  indexed: number;
-
-  /**
-   * Rows the projection read, recognised as its own, and could not make a
-   * message out of.
-   *
-   * The quiet half of the format-change problem. A projection that THROWS is
-   * loud — it writes `last_error` and stops the container. A projection handed a
-   * record whose shape has drifted underneath it does not throw; it returns fewer
-   * rows, which is indistinguishable from a source with nothing to say. This is
-   * the count that tells the two apart, and it is deliberately not an error: one
-   * drifted row must not stop a whole container from indexing.
-   */
-  skipped: number;
-
-  /** Containers that no longer exist and were dropped from the index. */
-  pruned: number;
-
-  /** Containers re-read whole because the index held rows they no longer have. */
-  rebuilt: number;
-
-  /** Containers whose read or projection threw. Each also wrote `last_error`. */
-  failures: SourceFailure[];
-}
+import {
+  deleteContainerMessages,
+  insertMessages,
+  pruneVanished,
+  readIndexedOrdinals,
+  stampAttempt,
+  type Writer,
+} from './frontier-store.js';
+import type { RowContainer, RowSource, SourceSweep } from './types.js';
 
 /** One container's resume state, read once per sweep rather than once per container. */
 interface FrontierState {
@@ -112,8 +61,8 @@ interface FrontierState {
  * @param source - The registry row being swept.
  * @param at - The ISO-8601 timestamp to stamp this attempt with.
  */
-export function sweepRowSource(db: Db, source: RowSource, at: string): RowSourceSweep {
-  const sweep: RowSourceSweep = {
+export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSweep {
+  const sweep: SourceSweep = {
     sourceId: source.id,
     containers: 0,
     indexed: 0,
@@ -141,9 +90,86 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): RowSource
     }
   }
 
-  sweep.pruned = pruneVanished(db, source.id, live, state);
+  sweep.pruned = pruneVanished(db, source.id, live, state.keys());
   stampAttempt(db, source.id, at);
   return sweep;
+}
+
+/**
+ * Bring ONE container of a row-backed source up to date, now.
+ *
+ * The write-through path (spec §5, Amendment 6): DorkOS owns the room log's
+ * write, so it knows the instant a container has gained something and does not
+ * have to wait up to five minutes for the sweep to notice. Everything else about
+ * the pass is identical — the same resume rule, the same rebuild detection, the
+ * same watermark — because it IS the same function; only the container list and
+ * the prune are skipped, and both of those are the parts that scale with how
+ * many containers exist rather than with what changed.
+ *
+ * **It reads the frontier for this container alone.** Two lookups on primary-key
+ * columns rather than the sweep's two whole-source scans, which is what makes it
+ * cheap enough to sit on a write path.
+ *
+ * **It throws rather than recording a failure**, unlike the sweep. A single-
+ * container caller is not a sweep and has no other containers to protect; the
+ * caller decides what a failure means, and for the room path it means "log it and
+ * let the sweep catch up" (`write-through.ts`).
+ *
+ * @param db - The database. Must have been opened through `createDb`.
+ * @param source - The registry row this container belongs to.
+ * @param container - The container, with its ordinal high-water mark as the
+ *   caller knows it — the `seq` just committed, for a room.
+ * @param at - The ISO-8601 timestamp to stamp the attempt with.
+ * @returns What was written, and what the projection could not use.
+ */
+export function indexRowContainer(
+  db: Db,
+  source: RowSource,
+  container: RowContainer,
+  at: string
+): { indexed: number; skipped: number; rebuilt: boolean } {
+  return indexContainer(db, source, container, readContainerState(db, source.id, container), at);
+}
+
+/**
+ * One container's resume state, read by key rather than by scanning the source.
+ *
+ * The same two facts {@link readFrontierState} gathers for every container —
+ * what the frontier claims and what the index can be seen to hold — narrowed to
+ * one. Both reads ride primary-key columns: `search_sources` is keyed
+ * `(source_id, origin_key)`, and `MAX(ordinal)` for one container rides the
+ * leading columns of `messages_source_id_origin_key_ordinal_unique`.
+ */
+function readContainerState(
+  db: Db,
+  sourceId: string,
+  container: RowContainer
+): Map<string, FrontierState> {
+  const frontier = db
+    .select({ lastOrdinal: searchSources.lastOrdinal })
+    .from(searchSources)
+    .where(
+      and(eq(searchSources.sourceId, sourceId), eq(searchSources.originKey, container.originKey))
+    )
+    .get();
+  const indexed = db
+    .select({ indexedTo: sql<number | null>`MAX(${messages.ordinal})` })
+    .from(messages)
+    .where(and(eq(messages.sourceId, sourceId), eq(messages.originKey, container.originKey)))
+    .get();
+
+  return new Map([
+    [
+      container.originKey,
+      {
+        // `null` when there is no frontier row at all — the state that makes a
+        // container's first write-through create one, exactly as its first sweep
+        // would.
+        watermark: frontier ? (frontier.lastOrdinal ?? 0) : null,
+        indexedTo: indexed?.indexedTo ?? 0,
+      },
+    ],
+  ]);
 }
 
 /**
@@ -165,18 +191,59 @@ function readFrontierState(db: Db, sourceId: string): Map<string, FrontierState>
     state.set(row.originKey, { watermark: row.lastOrdinal ?? 0, indexedTo: 0 });
   }
 
-  for (const row of db
-    .select({ originKey: messages.originKey, indexedTo: sql<number>`MAX(${messages.ordinal})` })
-    .from(messages)
-    .where(eq(messages.sourceId, sourceId))
-    .groupBy(messages.originKey)
-    .all()) {
-    const known = state.get(row.originKey);
-    if (known) known.indexedTo = row.indexedTo;
-    else state.set(row.originKey, { watermark: null, indexedTo: row.indexedTo });
+  for (const [originKey, indexedTo] of readIndexedOrdinals(db, sourceId)) {
+    const known = state.get(originKey);
+    if (known) known.indexedTo = indexedTo;
+    else state.set(originKey, { watermark: null, indexedTo });
   }
 
   return state;
+}
+
+/**
+ * Where a pass over this container would resume, and whether it would rebuild.
+ *
+ * Extracted so {@link indexRowContainer}'s backlog guard and {@link indexContainer}
+ * itself read ONE answer. A guard that computed "how far behind is this" from its
+ * own arithmetic would be a second copy of the resume rule, and the two would
+ * disagree the first time either changed.
+ *
+ * Resume is whichever is lower — what the frontier claims, or what the index can
+ * be seen to hold. Re-reading is idempotent, so resuming too early costs a wasted
+ * read while resuming too late leaves a permanent hole.
+ *
+ * @param container - The container, with its current high-water ordinal.
+ * @param known - Its frontier state, or `undefined` when the index has never
+ *   seen it.
+ * @returns The exclusive floor a read would start above, and whether the
+ *   container has to be re-read whole.
+ */
+function resumePosition(
+  container: RowContainer,
+  known: FrontierState | undefined
+): { rebuilt: boolean; resumeFrom: number } {
+  const indexedTo = known?.indexedTo ?? 0;
+  const rebuilt = container.maxOrdinal < indexedTo;
+  return {
+    rebuilt,
+    resumeFrom: rebuilt ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
+  };
+}
+
+/**
+ * How far behind the index is on one container — how many ordinals a pass would
+ * have to project right now.
+ *
+ * @param db - The database.
+ * @param source - The registry row this container belongs to.
+ * @param container - The container, with its current high-water ordinal.
+ * @returns The number of ordinals between the resume position and the
+ *   container's end. A rebuild counts as the whole container, which is what it is.
+ */
+export function containerBacklog(db: Db, source: RowSource, container: RowContainer): number {
+  const state = readContainerState(db, source.id, container);
+  const { resumeFrom } = resumePosition(container, state.get(container.originKey));
+  return Math.max(0, container.maxOrdinal - resumeFrom);
 }
 
 /**
@@ -221,7 +288,7 @@ function indexContainer(
   // keeping it is that M2 is generic machinery and this is one integer
   // comparison: a DorkOS-owned table that reallocates its own ordinals is
   // expressible here, and this is the answer when one arrives.
-  const rebuilt = container.maxOrdinal < indexedTo;
+  const { rebuilt, resumeFrom } = resumePosition(container, known);
 
   // Nothing new AND the index really holds what the frontier claims. Both halves
   // are load-bearing. `maxOrdinal <= watermark` on its own let a `DELETE FROM
@@ -238,10 +305,6 @@ function indexContainer(
     return { indexed: 0, skipped: 0, rebuilt: false };
   }
 
-  // Resume from whichever is lower: what the frontier claims, or what the index
-  // can be seen to hold. Re-reading is idempotent, so resuming too early costs a
-  // wasted read while resuming too late leaves a permanent hole.
-  const resumeFrom = rebuilt ? 0 : Math.min(watermark, indexedTo);
   const projection = source.readSince(db, container.originKey, resumeFrom);
   const highest = projection.messages.at(-1)?.ordinal ?? 0;
 
@@ -260,6 +323,14 @@ function indexContainer(
   // that only grew. Unreachable for rooms, where the two statements run
   // synchronously on one connection, and not unreachable for M1.
   //
+  // **The write-through does not weaken that, and the invariant that keeps it
+  // true is that `RoomService.publishEntry` stays SYNCHRONOUS** (spec Amendment
+  // 6): it hands this function the `seq` it has just committed, on the same
+  // connection, with no await between the commit and the call. Defer that call —
+  // a `setImmediate`, a queue, a worker — and two writers can interleave, a stale
+  // `maxOrdinal` can arrive after a newer one, and this rebuild branch becomes
+  // reachable for rooms.
+  //
   // On a rebuild it is `maxOrdinal` outright and never a `max`: guarding the
   // watermark against moving backwards is exactly what a renumbered container
   // needs it NOT to do.
@@ -267,51 +338,11 @@ function indexContainer(
 
   db.transaction((tx) => {
     if (rebuilt) deleteContainerMessages(tx, source.id, container.originKey);
-    insertMessages(tx, source.id, projection);
+    insertMessages(tx, source.id, projection.messages);
     writeFrontier(tx, source.id, container, reached, at, null);
   });
 
   return { indexed: projection.messages.length, skipped: projection.skipped, rebuilt };
-}
-
-/** Write one container's projected messages, in chunks, inside the caller's transaction. */
-function insertMessages(writer: Writer, sourceId: string, projection: Projection): void {
-  const rows = projection.messages;
-  for (let start = 0; start < rows.length; start += INSERT_CHUNK_ROWS) {
-    const chunk = rows.slice(start, start + INSERT_CHUNK_ROWS).map((message) => ({
-      sourceId,
-      originKey: message.originKey,
-      ordinal: message.ordinal,
-      role: message.role,
-      createdAt: message.createdAt,
-      body: message.body,
-    }));
-    writer
-      .insert(messages)
-      .values(chunk)
-      // NEVER a bare `INSERT OR REPLACE`: it skips the `messages_fts_ad` trigger
-      // unless `recursive_triggers` is on, and both `PRAGMA integrity_check` and
-      // FTS5's own integrity-check report `ok` while the index holds terms for
-      // text that no longer exists anywhere (see `packages/db/src/index.ts`).
-      //
-      // The conflict clause is what makes re-reading a container idempotent. On
-      // every path that ships today DO UPDATE and DO NOTHING are indistinguishable,
-      // because a re-read replays identical text and nothing is ever actually
-      // updated — measured, by swapping them. DO UPDATE is kept as the safer of
-      // two equals: it is the branch that would matter if a projection's output
-      // for an ordinal ever changed without the container being rebuilt. `excluded`
-      // is the row being inserted; reading the chunk's first element here would
-      // write one row's text onto every conflicting row in the chunk.
-      .onConflictDoUpdate({
-        target: [messages.sourceId, messages.originKey, messages.ordinal],
-        set: {
-          role: sql`excluded.role`,
-          createdAt: sql`excluded.created_at`,
-          body: sql`excluded.body`,
-        },
-      })
-      .run();
-  }
 }
 
 /** Upsert the container's frontier row. */
@@ -346,24 +377,6 @@ function writeFrontier(
 }
 
 /**
- * Stamp every one of this source's containers with the time of this attempt.
- *
- * One statement rather than one transaction per container, which is the whole
- * point of it being here: a source with 2,458 unchanged containers used to cost
- * 2,458 write transactions per tick just to record that nothing had happened.
- * `last_indexed_at` keeps the meaning its column documents — the last indexing
- * ATTEMPT, successful or not — because that is the one a person debugging "why
- * has my message not shown up" needs. "We looked at 12:05" answers it; "it last
- * changed at 09:00" does not.
- */
-function stampAttempt(db: Db, sourceId: string, at: string): void {
-  db.update(searchSources)
-    .set({ lastIndexedAt: at })
-    .where(eq(searchSources.sourceId, sourceId))
-    .run();
-}
-
-/**
  * Record why a container produced nothing, leaving its watermark alone.
  *
  * The watermark is deliberately not advanced: the next pass must retry the same
@@ -379,51 +392,4 @@ function recordFailure(
 ): void {
   const watermark = state.get(container.originKey)?.watermark ?? 0;
   db.transaction((tx) => writeFrontier(tx, sourceId, container, watermark, at, message));
-}
-
-/**
- * Drop every indexed container of this source that no longer exists.
- *
- * This is the FIRST of the two things the single word "prune" hides (spec §6.4):
- * a container that is **gone**, whose rows would otherwise be served forever out
- * of a source nobody can open. The second — a container that is intact but whose
- * working directory has vanished — is NEVER pruned, and cannot arise for a
- * row-backed source at all, because such a source has no directory to lose.
- *
- * This is also, on its own, the entire answer to a room being retired underneath
- * the index: the room stops being discovered, so its rows and its frontier go
- * together, with no watermark reasoning involved.
- *
- * `messages` goes before the frontier row, and it goes at all: dropping only the
- * frontier resets the watermark but strands the indexed copies, since discovery
- * never returns a container that does not exist. The DELETE is a plain statement
- * so `messages_fts_ad` fires and retracts the text from FTS5 — an
- * external-content index keeps no copy of its own and cannot notice otherwise.
- */
-function pruneVanished(
-  db: Db,
-  sourceId: string,
-  live: ReadonlySet<string>,
-  state: ReadonlyMap<string, FrontierState>
-): number {
-  let pruned = 0;
-  for (const originKey of state.keys()) {
-    if (live.has(originKey)) continue;
-    db.transaction((tx) => {
-      deleteContainerMessages(tx, sourceId, originKey);
-      tx.delete(searchSources)
-        .where(and(eq(searchSources.sourceId, sourceId), eq(searchSources.originKey, originKey)))
-        .run();
-    });
-    pruned += 1;
-  }
-  return pruned;
-}
-
-/** Delete one container's message rows, letting the FTS5 delete trigger fire. */
-function deleteContainerMessages(writer: Writer, sourceId: string, originKey: string): void {
-  writer
-    .delete(messages)
-    .where(and(eq(messages.sourceId, sourceId), eq(messages.originKey, originKey)))
-    .run();
 }

@@ -8,7 +8,7 @@
  *
  * A write says "clear this field" by sending `null`. Copying the value in on
  * `!== undefined` put that `null` straight into the YAML, and
- * `TaskFrontmatterSchema` rejects `null` for every one of the four clearable
+ * the frontmatter schema rejects `null` for every one of the four clearable
  * fields (`display-name`, `cron`, `timezone`, `max-runtime`). A file that does
  * not parse is a file the watcher logs as invalid and stops syncing, the
  * reconciler keeps rebuilding the row from, and this route silently skips
@@ -26,7 +26,7 @@
  * a rewrite.
  *
  * **One thing this deliberately does not fight.** The `base` an update passes in
- * is the frontmatter as PARSED, which means `TaskFrontmatterSchema`'s defaults
+ * is the frontmatter as PARSED, which means the schema's defaults
  * have already been filled in — so rewriting a file that omitted `timezone`,
  * `enabled` or `permissions` materializes them into the YAML as `UTC`, `true`
  * and `acceptEdits`. That is a cosmetic change to a file a person may have
@@ -43,7 +43,9 @@
  *
  * The two names differ for three of them — YAML frontmatter is kebab-case and
  * the request body is camelCase — and `permissionMode` lands on `permissions`,
- * which is the name `TaskFrontmatterSchema` gave it. Keeping the mapping
+ * which is the name the frontmatter gives it (inside the `schedule:` block
+ * since DOR-1486 — `task-file-update.ts` is what puts it there). Keeping the
+ * mapping
  * in one table is what lets the merge below be a loop rather than eight
  * hand-written branches that can each be wrong in their own way.
  */

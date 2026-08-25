@@ -10,11 +10,11 @@ export default defineConfig({
     // failure.
     //
     // `src/__tests__/shape-manifest.test.ts` is a DRIFT GUARD, and an unusually
-    // load-bearing one: this package cannot import `@dorkos/shared` in SOURCE (the
-    // Zod-version boundary forbids it), so its own permission-mode list is a hand
-    // copy, and that test reading `PermissionModeSchema.options` is the only thing
-    // holding the copy to the original. Against a stale dist it compares two
-    // yesterdays and agrees.
+    // load-bearing one: this package's permission-mode list is a hand copy (of
+    // the copy `@dorkos/skills` keeps to stay out of the browser bundle), and
+    // that test reading `PermissionModeSchema.options` is the only thing holding
+    // it to the original. Against a stale dist it compares two yesterdays and
+    // agrees — a drift guard that cannot see drift is worse than none.
     alias: [
       {
         find: '@dorkos/shared/schemas',

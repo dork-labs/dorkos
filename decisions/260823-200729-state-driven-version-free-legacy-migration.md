@@ -51,7 +51,12 @@ forever carries two parsers, for a pre-launch install base tiny enough not to ne
   person on the previous release and a person eight releases behind identically.
 - Approved schedules survive the upgrade transparently — re-keying rides the same
   transaction as the rewrite, so an operator never has to re-approve a schedule they
-  already approved before upgrading.
+  already approved before upgrading. With one exception worth stating plainly: when the
+  schedule's name is already taken at its destination, the file moves aside under a
+  suffixed name and the approval is dropped, because the thing at that name is no longer
+  the thing the operator approved. That schedule parks with a reason naming both paths.
+  "Transparently" is therefore true of every schedule whose name is free, which is nearly
+  all of them, and knowingly untrue of the rest.
 - The removal condition lives in one place (a header comment plus a filed, dated ticket),
   so the migration module doesn't linger as permanent legacy-compat code nobody remembers
   to delete.

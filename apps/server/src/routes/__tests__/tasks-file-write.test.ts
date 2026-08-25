@@ -9,7 +9,7 @@
  *
  * - **A cleared field used to poison the file.** `maxRuntime: null` means
  *   "remove the cap". The route copied the value in on `!== undefined`, so the
- *   file got `max-runtime: null`, which `TaskFrontmatterSchema` rejects. From
+ *   file got `max-runtime: null`, which the frontmatter schema rejects. From
  *   then on the watcher logged the file as invalid, the reconciler kept
  *   restoring the row from it, and every later PATCH silently skipped the file
  *   write — the route only rewrites a file that parsed. One cleared field, and
@@ -59,14 +59,14 @@ vi.mock('@dorkos/skills/writer', async (importOriginal) => {
   };
 });
 
-import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
-import { legacyRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
+import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
@@ -90,9 +90,23 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
   let dorkHome: string;
   let scheduler: TaskSchedulerService;
 
-  /** The SKILL.md a `target: 'global'` task lands at. */
+  /** The SKILL.md a `target: 'global'` schedule lands at. */
   function skillPath(slug: string): string {
-    return path.join(dorkHome, 'tasks', slug, SKILL_FILENAME);
+    return path.join(dorkHome, 'skills', slug, SKILL_FILENAME);
+  }
+
+  /**
+   * The `schedule:` mapping exactly as it sits in the file.
+   *
+   * Read RAW rather than through the schema, because the whole question these
+   * tests ask is which keys are PRESENT: the schema fills `timezone`, `enabled`
+   * and `permissions` back in on the way past, so a parsed block can never show
+   * that a cleared key is gone.
+   */
+  function rawSchedule(content: string): Record<string, unknown> {
+    const raw = readRawFrontmatter(content);
+    expect(raw, 'the file no longer has readable frontmatter').not.toBeNull();
+    return (raw?.data.schedule ?? {}) as Record<string, unknown>;
   }
 
   /** Create a task through the route, the way the cockpit does. */
@@ -131,6 +145,39 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
+  describe('the file a create writes', () => {
+    it('puts the schedule in a block, in the skills root, and nothing else', async () => {
+      // The create path used to build its frontmatter with a bare merge over
+      // `{name, description}`, which put `cron:` and friends at the top level —
+      // the retired shape, written fresh by the newest code in the system, into
+      // a directory nothing scans any more (DOR-1486). Both halves are pinned
+      // here: the place and the shape.
+      await createTask({ displayName: 'Nightly Sweep', maxRuntime: '30m' });
+
+      const raw = readRawFrontmatter(await fs.readFile(skillPath('nightly-sweep'), 'utf-8'));
+      expect(raw?.data.schedule).toEqual({ cron: '0 3 * * *', 'max-runtime': '30m' });
+      // `display-name` and `description` describe the SKILL, so they stay at the
+      // top level where every other skill keeps them.
+      expect(raw?.data['display-name']).toBe('Nightly Sweep');
+      // And no scheduling field is left at the top level to disagree with the
+      // block on the next sync.
+      for (const key of ['cron', 'timezone', 'enabled', 'max-runtime', 'permissions']) {
+        expect(key in (raw?.data ?? {}), `${key} should not be at the top level`).toBe(false);
+      }
+    });
+
+    it('writes no line for a value that is already the default', async () => {
+      // A file that spells out `timezone: UTC`, `enabled: true` and
+      // `permissions: acceptEdits` says nothing a reader did not already know,
+      // and every one of those lines is one more thing for a person to wonder
+      // about when they open their own schedule.
+      await createTask({});
+
+      const raw = readRawFrontmatter(await fs.readFile(skillPath('nightly-sweep'), 'utf-8'));
+      expect(raw?.data.schedule).toEqual({ cron: '0 3 * * *' });
+    });
+  });
+
   describe('clearing a field', () => {
     it('leaves a file that still parses, and a frontmatter key that is simply gone', async () => {
       const id = await createTask({ maxRuntime: '30m' });
@@ -141,10 +188,10 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       const raw = await fs.readFile(skillPath('nightly-sweep'), 'utf-8');
       expect(raw).not.toContain('max-runtime: null');
 
-      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, TaskFrontmatterSchema);
+      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, SkillFrontmatterSchema);
       expect(parsed.ok, `the file no longer parses: ${JSON.stringify(parsed)}`).toBe(true);
       if (!parsed.ok) return;
-      expect('max-runtime' in (parsed.definition.meta as Record<string, unknown>)).toBe(false);
+      expect('max-runtime' in rawSchedule(raw)).toBe(false);
       expect(store.getTask(id)!.maxRuntime).toBeNull();
     });
 
@@ -159,17 +206,19 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       const raw = await fs.readFile(skillPath('nightly-sweep'), 'utf-8');
       expect(raw).not.toContain('null');
 
-      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, TaskFrontmatterSchema);
+      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, SkillFrontmatterSchema);
       expect(parsed.ok, `the file no longer parses: ${JSON.stringify(parsed)}`).toBe(true);
       if (!parsed.ok) return;
-      const meta = parsed.definition.meta as Record<string, unknown>;
-      for (const key of ['display-name', 'cron']) {
-        expect(key in meta, `${key} should be gone`).toBe(false);
+      // `display-name` describes the SKILL and stays at the top level; the two
+      // scheduling keys live in the block.
+      expect('display-name' in (parsed.definition.meta as Record<string, unknown>)).toBe(false);
+      for (const key of ['cron', 'timezone']) {
+        expect(key in rawSchedule(raw), `${key} should be gone from the block`).toBe(false);
       }
-      // `timezone` carries a schema default, so the key comes back as 'UTC'
-      // rather than absent — what matters is that it is not the literal null
-      // that made the whole file unreadable.
-      expect(meta.timezone).toBe('UTC');
+      // A cleared timezone means the default, which the block writes by leaving
+      // the key out — what matters is that it is not the literal null that made
+      // the whole file unreadable.
+      expect(store.getTask(id)!.timezone).toBe('UTC');
     });
 
     it('clears a cron all the way to the row, and lands the rest of the edit with it', async () => {
@@ -193,10 +242,10 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       expect(after.prompt).toBe('sweep the backlog more gently');
 
       const raw = await fs.readFile(skillPath('nightly-sweep'), 'utf-8');
-      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, TaskFrontmatterSchema);
+      const parsed = parseSkillFile(skillPath('nightly-sweep'), raw, SkillFrontmatterSchema);
       expect(parsed.ok, `the file no longer parses: ${JSON.stringify(parsed)}`).toBe(true);
       if (!parsed.ok) return;
-      expect('cron' in (parsed.definition.meta as Record<string, unknown>)).toBe(false);
+      expect('cron' in rawSchedule(raw)).toBe(false);
       expect(parsed.definition.body).toBe('sweep the backlog more gently');
     });
 
@@ -251,7 +300,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       // row here points at a directory, so the read fails with EISDIR — a real
       // failure, which must not be mistaken for a missing file and quietly
       // turned into a DB-only edit.
-      const aDirectory = path.join(dorkHome, 'tasks');
+      const aDirectory = path.join(dorkHome, 'skills');
       await fs.mkdir(aDirectory, { recursive: true });
       const notAFile = store.createTask({
         name: 'unreadable',
@@ -305,7 +354,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         description: 'from before the files',
         prompt: 'do a thing',
         cron: '0 4 * * *',
-        filePath: path.join(dorkHome, 'tasks', 'legacy', SKILL_FILENAME),
+        filePath: path.join(dorkHome, 'skills', 'legacy', SKILL_FILENAME),
       });
 
       const res = await request(app)
@@ -541,8 +590,8 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
     registrar = new TaskRegistrar({ store, scheduler });
     reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-tasks-approval-'));
-    await fs.mkdir(path.join(dorkHome, 'tasks'), { recursive: true });
-    reconciler.addRoot(legacyRoot(path.join(dorkHome, 'tasks'), 'global'));
+    await fs.mkdir(path.join(dorkHome, 'skills'), { recursive: true });
+    reconciler.addRoot(skillsRoot(path.join(dorkHome, 'skills'), 'global'));
 
     app = express();
     app.use(express.json());

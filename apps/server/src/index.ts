@@ -97,6 +97,7 @@ import {
 import { attachAgentRoots, attachTaskRoot } from './services/tasks/attach-task-roots.js';
 import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
+import { migrateLegacySchedules } from './services/tasks/legacy-migration.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
 import {
@@ -151,6 +152,7 @@ import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
+import { createSearchRouter } from './routes/search.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -372,6 +374,27 @@ let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
+/**
+ * Every registered agent that has a project on disk, as the legacy migration
+ * wants them.
+ *
+ * Lives here rather than inline because the filter is the interesting part: an
+ * agent with no resolvable project path has no `.dork/tasks/` to migrate and no
+ * `.agents/skills/` to migrate into, and asking about it would only produce a
+ * pair of ENOENTs.
+ *
+ * @param meshCore - The registry, absent when Mesh is switched off.
+ */
+function registeredAgentRoots(
+  meshCore: MeshCore | undefined
+): { agentId: string; projectPath: string }[] {
+  if (!meshCore) return [];
+  return meshCore.list().flatMap((agent) => {
+    const projectPath = meshCore.getProjectPath(agent.id);
+    return projectPath ? [{ agentId: agent.id, projectPath }] : [];
+  });
+}
+
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
@@ -383,7 +406,7 @@ let taskRegistrar: TaskRegistrar | undefined;
  * function. `undefined` when the tasks subsystem is switched off, which is why
  * the caller uses `?.`.
  */
-let attachAgentTaskRoots: ((projectPath: string, agentId: string) => void) | undefined;
+let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -2192,8 +2215,7 @@ async function start() {
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
-        // Stop watching and reconciling every root that belonged to the agent —
-        // its skills root and, until DOR-1486, its legacy tasks root.
+        // Stop watching and reconciling every root that belonged to the agent.
         for (const root of agentTaskRoots(projectPath, agentId)) {
           taskFileWatcher?.stopWatching(root.dir).catch(() => {});
           taskReconciler?.removeDirectory(root.dir);
@@ -2210,6 +2232,21 @@ async function start() {
     taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
     taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
     const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
+
+    // Schedules written in the old shape move to the new one, once, on the boot
+    // that finds them — files rewritten, directories moved, rows re-keyed with
+    // their approvals intact (`legacy-migration.ts`, ADR `260823-200729`).
+    //
+    // FIRST, and the order is load-bearing twice over: before any watcher, so
+    // discovery never races a file being rewritten under it, and before the
+    // grant backfill below, which reads each row's own content and so has to see
+    // the finished migration rather than the middle of it. A no-op in
+    // microseconds once there is nothing left to migrate.
+    await migrateLegacySchedules({
+      dorkHome,
+      store: taskStore,
+      agents: registeredAgentRoots(meshCore),
+    });
 
     // Every schedule that was already live keeps its approval across this
     // upgrade. The arm grant is a stored key now, and rows written before that
@@ -2241,7 +2278,22 @@ async function start() {
       // the one seam every arrival funnels through (create, register,
       // marketplace install, discovery adoption) and it carries the project
       // path, so nothing has to be looked up.
-      attachAgentTaskRoots = (projectPath: string, agentId: string): void => {
+      attachAgentTaskRoots = async (projectPath: string, agentId: string): Promise<void> => {
+        // Migrate BEFORE watching, for the same reason boot does. An agent that
+        // registers after boot brings its own project with it, legacy
+        // `.dork/tasks/` and all — and that directory is no longer watched, so
+        // without this pass its schedules would be neither migrated nor
+        // discovered until the next restart. That is a REGRESSION against the
+        // build before this wave, where the legacy root was attached here and
+        // its schedules started working immediately.
+        //
+        // Safe to call from a hook: it is idempotent, it never throws, and
+        // scoping it to one agent means it reads two directories.
+        await migrateLegacySchedules({
+          dorkHome,
+          store: taskStore,
+          agents: [{ agentId, projectPath }],
+        });
         attachAgentRoots(discovery, projectPath, agentId);
         logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
       };
@@ -2483,7 +2535,7 @@ async function start() {
         })
       : {
           listSchedules: () => [],
-          createSchedule: async () => undefined,
+          createSchedule: async () => false,
           rebindSchedule: async () => undefined,
           deleteSchedulesForShape: async () => [],
         };
@@ -2509,11 +2561,13 @@ async function start() {
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
-    // Watch this agent's `.agents/skills/` (and, until DOR-1486, its legacy
-    // `.dork/tasks/`) NOW rather than at the next restart. Boot used to be the
-    // only place roots were attached, so a schedule shipped with a
-    // just-installed agent was invisible for the rest of the process's life.
-    attachAgentTaskRoots?.(agent.path, agent.id);
+    // Migrate anything this agent's project still keeps in the old shape, then
+    // watch its `.agents/skills/` — NOW rather than at the next restart. Boot
+    // used to be the only place roots were attached, so a schedule shipped with
+    // a just-installed agent was invisible for the rest of the process's life.
+    // Awaited so the roots are live before the Shape re-bind below writes into
+    // them.
+    await attachAgentTaskRoots?.(agent.path, agent.id);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,
@@ -2634,6 +2688,13 @@ async function start() {
       },
     })
   );
+
+  // Message search — "where did we talk about X", over the derived index the
+  // reconciler above keeps caught up (message-search spec §6, §7). Always
+  // mounted and read-only. An install whose index is empty answers `[]`, which is
+  // the honest answer and needs no flag; who may see what is resolved per request
+  // through the rooms domain, never from this line.
+  app.use('/api/search', createSearchRouter({ db }));
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));

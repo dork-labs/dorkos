@@ -94,7 +94,7 @@ export function readRawFrontmatter(
 export function parseSkillFile<T>(
   filePath: string,
   content: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T, unknown>,
   options?: ParseSkillFileOptions
 ): ParseResult<ParsedSkill<T>> {
   // Validate filename

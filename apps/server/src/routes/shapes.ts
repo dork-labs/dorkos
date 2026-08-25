@@ -25,6 +25,7 @@
  * @module routes/shapes
  */
 import { Router, type Request, type Response } from 'express';
+import { ZodError } from 'zod';
 import { ForkShapeRequestSchema } from '@dorkos/shared/schemas';
 import { parseBody } from '../lib/route-utils.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
@@ -244,11 +245,10 @@ export function createShapesRouter(deps: ShapesRouterDeps): Router {
       if (err instanceof ShapeForkConflictError) {
         return res.status(409).json({ error: err.message });
       }
-      // Belt: the fork re-validates the forked manifest through the (Zod 3)
-      // marketplace union. A refused manifest is a client-visible input problem,
-      // not a server fault — surface it as a 400. Name-based check because the
-      // server's own zod is v4 (cross-version `instanceof ZodError` never matches).
-      if (err instanceof Error && err.name === 'ZodError') {
+      // Belt: the fork re-validates the forked manifest through the marketplace
+      // union. A refused manifest is a client-visible input problem, not a
+      // server fault — surface it as a 400.
+      if (err instanceof ZodError) {
         return res.status(400).json({ error: `Forked manifest failed validation: ${err.message}` });
       }
       throw err;

@@ -261,6 +261,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
       'services/shapes/shape-schedule-service.ts':
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
+      'services/tasks/legacy-migration.ts':
+        'the boot migration (DOR-1486), on ONE branch: a legacy file it could not read, which it leaves on disk and reports as a parked row so the person is told about it. Gated by the strongest gate there is — the call passes `source: discovery`, which cannot arm anything (`resolveFileArmStatus`), and the definition it hands over carries no cron and `enabled: false`, so even an approval produces a schedule with no timer. Every file the migration CAN read goes nowhere near this call: it is rewritten on disk and its row is moved by `rekeyMigratedFile`, which writes a path and a grant and never a permission mode. Deleted with the module at its sunset',
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },

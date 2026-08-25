@@ -34,9 +34,6 @@ export {
 } from './schedule-schema.js';
 export type { InvalidSchedule, ScheduleBlock, ScheduleField } from './schedule-schema.js';
 
-export { TaskFrontmatterSchema, legacyTaskToSchedule } from './task-schema.js';
-export type { TaskFrontmatter } from './task-schema.js';
-
 export { CommandFrontmatterSchema } from './command-schema.js';
 export type { CommandFrontmatter } from './command-schema.js';
 
