@@ -810,9 +810,13 @@ export class TaskSchedulerService {
     const startTime = Date.now();
     let outputChars = 0;
     let outputSummary = '';
+    // Use run ID as session ID for isolation. Declared out here, not inside the
+    // `try`, because the failure finalizer needs it too: a run that failed is
+    // exactly when somebody wants to open the transcript, and a row with no
+    // sessionId is not clickable in the run history.
+    const sessionId = run.id;
 
     try {
-      const sessionId = run.id; // Use run ID as session ID for isolation
       // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
       // unreachable through the shipped store: `pulse_schedules.permission_mode`
       // is `NOT NULL DEFAULT 'acceptEdits'`, so a row always carries a mode and
@@ -907,6 +911,7 @@ export class TaskSchedulerService {
         durationMs,
         outputSummary: outputSummary.slice(0, 500),
         error: errorMsg,
+        sessionId,
       });
       logger.error(`run ${run.id} failed:`, err);
       emitRunActivity(this.activityService, task, run, 'failed', durationMs, errorMsg);

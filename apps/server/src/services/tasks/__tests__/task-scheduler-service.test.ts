@@ -1244,10 +1244,18 @@ describe('TaskSchedulerService', () => {
       expect(dispatch.taskName).toBe('Payload Test');
       expect(dispatch.cron).toBe('30 2 * * *');
       expect(dispatch.trigger).toBe('manual');
+      // The unattended briefing the direct path builds, carried on the wire so
+      // the receiving process can hand it to the agent (DOR-1567).
+      expect(dispatch.systemPromptAppend).toContain('Job: Payload Test');
+      expect(dispatch.systemPromptAppend).toContain('Do not ask questions');
 
       // Verify publish options
       expect(options.from).toBe('relay.system.tasks.scheduler');
-      expect(options.replyTo).toBe(`relay.system.tasks.${task.id}.response`);
+      // NO replyTo. Nothing subscribes to a run's progress, and the subject
+      // this used to name sits under the tasks prefix the runtime adapter
+      // claims — so every progress event came back in as a malformed dispatch
+      // and dead-lettered (DOR-1567).
+      expect(options.replyTo).toBeUndefined();
       expect(options.budget.maxHops).toBe(3);
       expect(options.budget.callBudgetRemaining).toBe(5);
 
@@ -1650,6 +1658,31 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const updatedRun = store.getRun(run!.id);
     expect(updatedRun!.status).toBe('failed');
     expect(updatedRun!.error).toContain('not found in registry');
+
+    await service.stop();
+  });
+
+  it('leaves a failed direct run pointing at its own transcript', async () => {
+    // Purpose: a run that failed is exactly when somebody wants to read what it
+    // was saying, and the run-history panel opens the transcript from
+    // `sessionId`. The completed and cancelled rows carried it and the failed
+    // one did not, so the one run worth opening was the one you could not
+    // (DOR-1567).
+    const task = store.createTask(
+      taskInput({ name: 'Boom', prompt: 'explode please', cron: '0 * * * *' })
+    );
+    vi.mocked(mockAgent.sendMessage).mockImplementation((() => {
+      throw new Error('the runtime fell over');
+    }) as unknown as SchedulerAgentManager['sendMessage']);
+
+    const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+    const run = await service.triggerManualRun(task.id);
+    await new Promise((r) => setTimeout(r, 100));
+
+    const updated = store.getRun(run!.id);
+    expect(updated!.status).toBe('failed');
+    expect(updated!.error).toContain('the runtime fell over');
+    expect(updated!.sessionId).toBe(run!.id);
 
     await service.stop();
   });

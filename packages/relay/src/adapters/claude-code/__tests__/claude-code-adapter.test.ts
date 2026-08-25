@@ -1018,6 +1018,114 @@ describe('ClaudeCodeAdapter', () => {
     expect(result.success).toBe(false);
   });
 
+  // === The tasks prefix is a claim, not a dispatch test (DOR-1567) ===
+
+  describe('subjects beneath a task dispatch subject', () => {
+    // A run's own progress used to be republished to
+    // `relay.system.tasks.<id>.response`, which is under the prefix this
+    // adapter claims. Every event came straight back in, failed to parse as a
+    // dispatch, and dead-lettered: one live run produced 279 "could not be
+    // delivered" notifications.
+    const ECHO_SUBJECT = 'relay.system.tasks.sched-1.response';
+
+    it('skips the echo instead of reading it as a malformed dispatch', async () => {
+      await adapter.start(relay);
+      const echo = createTasksEnvelope({
+        subject: ECHO_SUBJECT,
+        payload: { type: 'text_delta', data: { text: 'partial answer' } },
+      });
+
+      const result = await adapter.deliver(ECHO_SUBJECT, echo);
+
+      // `skipped` is what keeps it out of the dead-letter queue: the publish
+      // pipeline dead-letters every unsuccessful adapter delivery.
+      expect(result).toMatchObject({ success: true, skipped: true });
+      expect(traceStore.insertSpan).not.toHaveBeenCalled();
+    });
+
+    it('never starts a run from one', async () => {
+      await adapter.start(relay);
+      const echo = createTasksEnvelope({ subject: ECHO_SUBJECT });
+
+      await adapter.deliver(ECHO_SUBJECT, echo);
+
+      expect(agentManager.ensureSession).not.toHaveBeenCalled();
+      expect(agentManager.sendMessage).not.toHaveBeenCalled();
+      expect(taskStore.updateRun).not.toHaveBeenCalled();
+    });
+
+    it('still runs the dispatch subject itself', async () => {
+      // The other half of the same rule: narrowing the match must not stop the
+      // adapter answering the subject it exists for.
+      await adapter.start(relay);
+      const envelope = createTasksEnvelope({ subject: 'relay.system.tasks.sched-1' });
+
+      const result = await adapter.deliver('relay.system.tasks.sched-1', envelope);
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBeUndefined();
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // === What a scheduled run is told about itself (DOR-1567) ===
+
+  describe('Tasks: the unattended context a relay-dispatched run carries', () => {
+    it('starts the session unattended, so a prompt nobody answers is refused', async () => {
+      await adapter.start(relay);
+      const envelope = createTasksEnvelope();
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      expect(agentManager.ensureSession).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ unattended: true, permissionMode: 'default' })
+      );
+    });
+
+    it('hands the run its briefing and its permission mode', async () => {
+      await adapter.start(relay);
+      const envelope = createTasksEnvelope({
+        payload: {
+          ...(createTasksEnvelope().payload as Record<string, unknown>),
+          systemPromptAppend: '=== TASK SCHEDULER CONTEXT ===\nDo not ask questions',
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      expect(agentManager.sendMessage).toHaveBeenCalledWith(
+        'run-1',
+        'Check the budget',
+        expect.objectContaining({
+          permissionMode: 'default',
+          systemPromptAppend: '=== TASK SCHEDULER CONTEXT ===\nDo not ask questions',
+        })
+      );
+    });
+
+    it('runs a dispatch that carries no briefing rather than sending an empty one', async () => {
+      // A dead-letter replay written before the field existed.
+      await adapter.start(relay);
+      const envelope = createTasksEnvelope();
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const opts = vi.mocked(agentManager.sendMessage).mock.calls[0][2];
+      expect(opts).not.toHaveProperty('systemPromptAppend');
+    });
+
+    it('publishes nothing while the run is going — nobody is listening', async () => {
+      // The republish this replaced is the echo loop's other half.
+      await adapter.start(relay);
+      const envelope = createTasksEnvelope();
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+  });
+
   // === StreamEvent filter (Bug 1 guard) ===
 
   describe('agent message delivery', () => {

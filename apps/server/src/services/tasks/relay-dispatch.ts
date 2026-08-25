@@ -16,7 +16,8 @@
 import type { RelayCore } from '@dorkos/relay';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
-import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
+import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
+import { buildTaskAppend } from './task-append.js';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -45,8 +46,9 @@ const DEFAULT_DISPATCH_TTL_MS = 3_600_000;
  * Builds an envelope with the task/run metadata and publishes to
  * `relay.system.tasks.{taskId}`. If no receiver is subscribed
  * (`deliveredTo === 0`), the run is immediately marked as failed. Otherwise it is
- * marked as running — the receiver will update status on completion via a
- * separate response flow.
+ * marked as running, and the receiver writes the terminal status onto the run
+ * row itself. Nothing is published back: the envelope carries no `replyTo` and
+ * this function subscribes to nothing (DOR-1567).
  *
  * DOR-248: in-process relay delivery is synchronous, so by the time `publish()`
  * resolves the receiving task handler may have already run the agent turn to
@@ -97,11 +99,22 @@ export async function dispatchRunViaRelay(
     taskName: task.name,
     cron: task.cron,
     trigger: run.trigger,
+    // The same briefing the direct path builds, from the same builder. The
+    // receiver runs in another process and cannot rebuild it — the task's agent
+    // and the run's trigger are not otherwise on the wire — so it travels.
+    systemPromptAppend: buildTaskAppend(task, run),
   };
 
-  const result = await deps.relay.publish(`relay.system.tasks.${task.id}`, payload, {
+  // No `replyTo`. Nothing subscribes to a task run's progress: this function
+  // publishes and never listens, and the run row is the only thing that knows
+  // how the run ends. What the reply subject actually did was feed every event
+  // of the run back into the adapter that was running it — `<subject>.response`
+  // is under the tasks prefix the adapter claims — where each one failed to
+  // parse as a dispatch and dead-lettered. One live run produced 279 "could not
+  // be delivered" notifications (DOR-1567). A future reader for run progress
+  // needs a subject outside this prefix.
+  const result = await deps.relay.publish(taskDispatchSubject(task.id), payload, {
     from: TASK_SCHEDULER_PRINCIPAL,
-    replyTo: `relay.system.tasks.${task.id}.response`,
     budget: {
       maxHops: 3,
       ttl: Date.now() + (task.maxRuntime || DEFAULT_DISPATCH_TTL_MS),
