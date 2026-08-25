@@ -758,6 +758,21 @@ export const RunSummarySchema = z.object({
   /** The tier the run was launched on. */
   tier: RuntimeTierSchema,
   /**
+   * The model every credentialed case in this run was answered by — the
+   * resolved value, `--model` or the default, never the flag as typed. Omitted
+   * on `test-mode`, which reaches no model at all.
+   *
+   * **Recorded because the tier does not identify it and the evidence tables
+   * assume it does** (DOR-1564). `claude-code-cheap` is a cost class, not a
+   * model: the same tier answered by `claude-haiku-4-5` and by
+   * `claude-sonnet-5` produced opposite verdicts on the same build for
+   * `memory-recall-cross-surface`, and every artifact of both runs said only
+   * `claude-code-cheap`. A prose-sensitive case whose run cannot name its model
+   * cannot be re-read later; a README row claiming one is then resting on
+   * somebody's memory.
+   */
+  model: z.string().optional(),
+  /**
    * How this run reached a model (see {@link CredentialSourceSchema}). Omitted
    * on `test-mode`, which needs no credential, and on a credentialed run where
    * none resolved (every case then errors, fail-closed).

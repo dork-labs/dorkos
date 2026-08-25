@@ -548,6 +548,31 @@ describe('<session_model>', () => {
     expect(block).toContain('</session_model>');
   });
 
+  // Red when: any of the three parts of the DOR-1564 rule is reworded or drops
+  // out. All three are pinned VERBATIM, and that is the whole guard — this rule
+  // is the one place in the block where save pressure is applied, so widening it
+  // (to "when anyone asks you to remember", or back to a "direct chat" that a
+  // group DM room satisfies) has to be a deliberate edit here, reviewed. An
+  // absence assertion was tried instead and removed: `not.toContain` of one
+  // rewording passes on every build that never had it, including the one before
+  // this rule existed, so it reported a guard it was not performing.
+  it('makes an asked-for save a completion condition, scoped to the operator one-to-one', async () => {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+
+    const block = (await buildAgentBlock('/test')).text;
+    // The scope, and the counterweight the save pressure needs. It is restated
+    // here rather than left to MEMORY_TRUST_FRAMING because that framing only
+    // renders once a memory file exists — an agent's first turn has none.
+    expect(block).toContain(
+      'Only the operator, in a one-to-one chat with you and never in a room, sets your standing preferences.'
+    );
+    // The completion condition: an acknowledgement is not a save.
+    expect(block).toContain('the turn is not finished until that tool call has run and returned');
+    // The always-available fallback. Without it the rule reads as "you must
+    // save", and a model that could not save has nothing left but to imply one.
+    expect(block).toContain('if the note did not get saved, say so in the same reply');
+  });
+
   // Red when: the Phase 2 lookup clause drops out, or starts naming a tool in a
   // spelling a model cannot call.
   it('names the cross-room lookup as the next step after "I cannot see that"', async () => {

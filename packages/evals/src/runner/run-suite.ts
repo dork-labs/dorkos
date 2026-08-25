@@ -21,6 +21,7 @@ import {
 } from '../types.js';
 import { BudgetTracker, DEFAULT_RUN_BUDGET_USD } from './budget.js';
 import { runEval } from './run-eval.js';
+import { DEFAULT_CHEAP_MODEL } from './harness-server.js';
 import { runWithInfrastructureRetry, transcriptNameForAttempt } from './retry.js';
 import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
 import { resolveModelCredential } from './credentials.js';
@@ -222,6 +223,11 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
     runId,
     startedAt,
     tier: opts.tier,
+    // The RESOLVED model, and resolved the same way the boot resolves it
+    // (`startChildProcessServer` sets `ANTHROPIC_MODEL` to exactly this), so
+    // the recorded value is what answered rather than what was typed. Omitted
+    // on `test-mode`, which reaches no model.
+    ...(opts.tier === 'test-mode' ? {} : { model: opts.model ?? DEFAULT_CHEAP_MODEL }),
     ...(credential ? { credentialSource: credential.source } : {}),
     budgetUsd,
     totalCostUsd: tracker.totalCostUsd,
