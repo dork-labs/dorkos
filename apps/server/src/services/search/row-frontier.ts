@@ -270,9 +270,16 @@ function resumePosition(
 ): { rebuilt: boolean; resumeFrom: number } {
   const indexedTo = known?.indexedTo ?? 0;
   const rebuilt = container.maxOrdinal < indexedTo;
+  // Two different reasons to start over, and they are deliberately not merged.
+  // A REBUILD deletes first, because the container's ordinals were renumbered
+  // and rows above the new end would otherwise survive. A re-read only moves the
+  // resume position: the source says its existing rows may have been rewritten
+  // in place, and the upsert handles that without a delete — which keeps the
+  // FTS5 delete trigger, and the churn it causes, out of the common case.
+  const rereadWhole = rebuilt || container.rereadWhole === true;
   return {
     rebuilt,
-    resumeFrom: rebuilt ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
+    resumeFrom: rereadWhole ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
   };
 }
 
@@ -342,7 +349,15 @@ function indexContainer(
   // messages` — the half of the index anyone would actually think to throw away —
   // leave every container reporting "nothing new" forever, with search returning
   // nothing and no error recorded anywhere.
-  if (!rebuilt && container.maxOrdinal <= watermark && indexedTo >= watermark) {
+  // `rereadWhole` disqualifies the skip outright. Every other term here is about
+  // whether the container has GROWN, and the whole point of that flag is a
+  // container whose content changed without growing at all.
+  if (
+    !rebuilt &&
+    container.rereadWhole !== true &&
+    container.maxOrdinal <= watermark &&
+    indexedTo >= watermark
+  ) {
     // The frontier row still has to EXIST. A container that has never held a
     // projectable message — an empty room — is a no-op on its very first pass,
     // and skipping the write would leave it undiscovered until somebody spoke.

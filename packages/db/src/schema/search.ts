@@ -4,9 +4,10 @@ import { sqliteTable, text, integer, uniqueIndex, primaryKey } from 'drizzle-orm
  * One thing someone said, projected out of whichever store actually owns it
  * (message-search spec §4, ADR 260728-214214).
  *
- * **This is a derived index, not a store.** Rooms, Claude Code and Codex each
+ * **This is a derived index, not a store.** Rooms, Claude Code and OpenCode each
  * keep their own canonical record and DorkOS never writes to any of them
- * (ADR-0310). Every row here is a copy that can be thrown away and rebuilt in
+ * (ADR-0310; for OpenCode that means reading a throwaway copy of its SQLite
+ * store and never the live file — ADR 260825-110420). Every row here is a copy that can be thrown away and rebuilt in
  * seconds, which is what lets the table be this small: no attachments, no tool
  * calls, no thinking blocks — only what was *said*.
  *
@@ -36,7 +37,7 @@ export const messages = sqliteTable(
     /** Rowid alias. Bound to `messages_fts` via `content_rowid='id'`. */
     id: integer('id').primaryKey(),
 
-    /** `'rooms' | 'claude-code' | 'codex'`. Labels a result and scopes the frontier. */
+    /** `'rooms' | 'claude-code' | 'opencode'`. Labels a result and scopes the frontier. */
     sourceId: text('source_id').notNull(),
 
     /** Opaque container id composed by the projection. Never parsed here. */
@@ -110,7 +111,7 @@ export const messages = sqliteTable(
 export const searchSources = sqliteTable(
   'search_sources',
   {
-    /** `'rooms' | 'claude-code' | 'codex'`. */
+    /** `'rooms' | 'claude-code' | 'opencode'`. */
     sourceId: text('source_id').notNull(),
 
     /** The opaque container id, same composition as `messages.origin_key`. */

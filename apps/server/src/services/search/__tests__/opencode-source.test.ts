@@ -10,10 +10,13 @@ import { sweepSnapshotSource, SNAPSHOT_FAILURE_KEY } from '../snapshot-frontier.
 import {
   OPENCODE_CREDENTIAL_TABLES,
   OPENCODE_READ_ALLOWLIST,
+  OPENCODE_VOLATILE_WINDOW_MS,
+  buildAllowlistedSelect,
   openOpenCodeSnapshot,
 } from '../opencode-store.js';
 import { projectOpenCodeMessages } from '../projections/opencode.js';
-import { SearchIndexer } from '../indexer.js';
+import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS } from '../indexer.js';
+import { searchForCaller } from '../search-service.js';
 
 /**
  * The OpenCode search source (DOR-688, ADR 260825-110420).
@@ -98,19 +101,19 @@ function seedSession(id: string, directory = '/Users/dork/code/dorkos', parentId
 }
 
 /**
- * Append one message with its parts.
+ * Create a message row with NO parts — a turn that has just started.
+ *
+ * This is the state OpenCode actually writes first, and it is why the streaming
+ * tests below exist: measured on the operator's store, **236 of 236 parts were
+ * created after their message row**. A helper that inserted a message and its
+ * parts in one statement would be staging a shape OpenCode never produces.
  *
  * @param sessionId - Which session.
  * @param role - `user`, `assistant`, or anything else the drift tests need.
- * @param parts - Raw part envelopes, already shaped the way OpenCode stores them.
  * @param opts - `data` replaces the whole message envelope, for the malformed cases.
+ * @returns The new message id.
  */
-function say(
-  sessionId: string,
-  role: string,
-  parts: unknown[],
-  opts: { data?: string } = {}
-): string {
+function beginTurn(sessionId: string, role: string, opts: { data?: string } = {}): string {
   clock += 1_000;
   const id = `msg_${String(clock)}`;
   store
@@ -125,21 +128,77 @@ function say(
       clock,
       opts.data ?? JSON.stringify({ role, time: { created: clock } })
     );
-  parts.forEach((part, index) => {
-    store
-      .prepare(
-        `INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        `prt_${String(clock)}_${String(index).padStart(3, '0')}`,
-        id,
-        sessionId,
-        clock,
-        clock,
-        typeof part === 'string' ? part : JSON.stringify(part)
-      );
-  });
+  return id;
+}
+
+/**
+ * Stream one part into an existing message, the way OpenCode does mid-turn.
+ *
+ * @param messageId - The message the part belongs to.
+ * @param sessionId - Denormalised onto `part` by OpenCode, and read by the
+ *   volatility scan.
+ * @param part - The part envelope, or raw text for the malformed cases.
+ * @returns The new part id, so a test can mutate it in place afterwards.
+ */
+function streamPart(messageId: string, sessionId: string, part: unknown): string {
+  clock += 1_000;
+  const id = `prt_${String(clock)}`;
+  store
+    .prepare(
+      `INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      messageId,
+      sessionId,
+      clock,
+      clock,
+      typeof part === 'string' ? part : JSON.stringify(part)
+    );
+  // OpenCode stamps the message as updated when its parts move — 91 of 94
+  // message rows on the operator's store carry `time_updated > time_created`.
+  store.prepare('UPDATE message SET time_updated = ? WHERE id = ?').run(clock, messageId);
+  return id;
+}
+
+/**
+ * Rewrite a part that is already there, as OpenCode does while tokens arrive.
+ *
+ * **55 of 80 text parts on the operator's store were updated in place.** Nothing
+ * about the row COUNT changes here, which is the whole reason the count cannot
+ * be the only change signal.
+ *
+ * @param partId - The part to rewrite.
+ * @param part - Its new envelope.
+ */
+function mutatePart(partId: string, part: unknown): void {
+  clock += 1_000;
+  store
+    .prepare('UPDATE part SET data = ?, time_updated = ? WHERE id = ?')
+    .run(typeof part === 'string' ? part : JSON.stringify(part), clock, partId);
+}
+
+/**
+ * Append one message with its parts, as a finished turn.
+ *
+ * Built out of {@link beginTurn} and {@link streamPart} so that even the tests
+ * which do not care about streaming stage the real write order.
+ *
+ * @param sessionId - Which session.
+ * @param role - `user`, `assistant`, or anything else the drift tests need.
+ * @param parts - Raw part envelopes, already shaped the way OpenCode stores them.
+ * @param opts - `data` replaces the whole message envelope, for the malformed cases.
+ * @returns The new message id.
+ */
+function say(
+  sessionId: string,
+  role: string,
+  parts: unknown[],
+  opts: { data?: string } = {}
+): string {
+  const id = beginTurn(sessionId, role, opts);
+  for (const part of parts) streamPart(id, sessionId, part);
   return id;
 }
 
@@ -148,14 +207,37 @@ function text(value: string, extra: Record<string, unknown> = {}): Record<string
   return { type: 'text', text: value, ...extra };
 }
 
-/** The source under test, pointed at the fixture rather than the real store. */
-function fixtureSource() {
-  return createOpenCodeSource(() => storePath);
+/**
+ * A wall clock far enough past the fixture that nothing in it is volatile.
+ *
+ * The default for every test that is about append-only behaviour. Without it the
+ * volatility window would re-read every container on every sweep and the
+ * incremental assertions — `indexed: 0` on a second pass — would be measuring
+ * nothing.
+ */
+const QUIET_NOW = 1_780_000_000_000 + 3_600_000;
+
+/**
+ * The source under test, pointed at the fixture rather than the real store.
+ *
+ * @param options - `live` runs the sweep as though the fixture had just been
+ *   written, which puts every recently-touched session inside the volatility
+ *   window. Absent, the fixture reads as an hour old and nothing is volatile.
+ */
+function fixtureSource(options: { live?: boolean } = {}) {
+  return createOpenCodeSource(() => storePath, {
+    now: options.live === true ? () => clock + 1_000 : () => QUIET_NOW,
+  });
 }
 
-/** Sweep the fixture source into the index once. */
+/** Sweep the fixture source into the index once, with the fixture reading as settled. */
 async function sweep() {
   return sweepSnapshotSource(db, fixtureSource(), '2026-08-25T11:00:00.000Z');
+}
+
+/** Sweep as though OpenCode had just written the fixture — the volatile path. */
+async function sweepLive() {
+  return sweepSnapshotSource(db, fixtureSource({ live: true }), '2026-08-25T11:00:00.000Z');
 }
 
 /** Every indexed row, in index order. */
@@ -251,7 +333,7 @@ describe('the credential tables', () => {
     // in the upstream schema.
     const columns = Object.values(OPENCODE_READ_ALLOWLIST).flatMap((list) => [...list]);
     for (const column of columns) {
-      expect(column).not.toMatch(/token|secret|credential|password/i);
+      expect(column).not.toMatch(/token|secret|credential|password|key|auth|bearer|share/i);
     }
   });
 
@@ -356,6 +438,86 @@ describe('the live store', () => {
   });
 });
 
+describe('the guarantees the read rests on', () => {
+  it('proves its own connection refuses writes, and says what SQLite answered', () => {
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('anything at all')]);
+
+    const snapshot = openOpenCodeSnapshot(storePath);
+    // Non-empty by construction: `openOpenCodeSnapshot` refuses to hand back a
+    // connection that ACCEPTED the probe write, so reaching this line at all is
+    // half the assertion. Deleting either `readonly: true` or
+    // `PRAGMA query_only` from the open path makes it throw instead.
+    expect(snapshot?.writeRefusal).toMatch(/readonly|read-only/i);
+    snapshot?.close();
+  });
+
+  it('refuses a query tail that could name another table', () => {
+    // The one seam that could reach past the allowlist: the tail is raw text, so
+    // `WHERE (SELECT access_token FROM account) IS NOT NULL` is a perfectly good
+    // WHERE clause that reads a credential column the column check never sees.
+    seedSession('ses_a');
+    const snapshot = openOpenCodeSnapshot(storePath);
+    try {
+      for (const tail of [
+        'WHERE (SELECT access_token FROM account) IS NOT NULL',
+        'JOIN account ON account.id = session.id',
+        'WHERE id IN (SELECT id FROM credential)',
+      ]) {
+        expect(() => buildAllowlistedSelect('session', ['id'], tail)).toThrow(
+          /may not name another table/
+        );
+      }
+      // And the shapes the module actually uses are still fine.
+      expect(() =>
+        buildAllowlistedSelect('message', ['id'], 'WHERE session_id = ? ORDER BY time_created ASC')
+      ).not.toThrow();
+    } finally {
+      snapshot?.close();
+    }
+  });
+
+  it('refuses a snapshot the copy tore, rather than pruning on a short list', async () => {
+    // **A torn copy that OPENS is the dangerous one.** SQLite's main database
+    // file has no per-page checksums, so a copy caught mid-checkpoint can open,
+    // report FEWER sessions than exist, and let the prune delete indexed history
+    // that is perfectly fine on disk.
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('a kestrel, indexed while the copy was whole')]);
+    seedSession('ses_b');
+    say('ses_b', 'user', [text('a pelican, also indexed')]);
+    await sweep();
+    expect(indexed()).toHaveLength(2);
+
+    // Tear the file the way a mid-checkpoint copy does: zero one INTERIOR page
+    // and leave the header alone. Measured on this shape — the database opens
+    // without complaint and `SELECT COUNT(*)` answers with a number, so nothing
+    // in the read path notices. Only `quick_check` does.
+    store.pragma('wal_checkpoint(TRUNCATE)');
+    store.close();
+    const whole = fs.readFileSync(storePath);
+    const pageSize = 4096;
+    expect(whole.length).toBeGreaterThan(pageSize * 3);
+    whole.fill(0, pageSize * 2, pageSize * 3);
+    fs.writeFileSync(storePath, whole);
+    fs.rmSync(`${storePath}-wal`, { force: true });
+    fs.rmSync(`${storePath}-shm`, { force: true });
+
+    const result = await sweep();
+    store = new Database(storePath);
+
+    expect(result.failures).toEqual([
+      {
+        sourceId: 'opencode',
+        originKey: SNAPSHOT_FAILURE_KEY,
+        message: expect.stringContaining('did not survive the copy'),
+      },
+    ]);
+    expect(result.pruned).toBe(0);
+    expect(indexed()).toHaveLength(2);
+  });
+});
+
 describe('a machine without OpenCode', () => {
   it('indexes nothing and reports no failure', async () => {
     const absent = createOpenCodeSource(() => path.join(workdir, 'nowhere', 'opencode.db'));
@@ -400,14 +562,55 @@ describe('a machine without OpenCode', () => {
     // The rows that were already indexed are untouched. A schema change upstream
     // is not a reason to lose history that was read correctly last week.
     expect(indexed()).toHaveLength(1);
+
+    // **And somebody searching is told.** `searchForCaller` builds warnings from
+    // `search_sources.last_error`, so a failure recorded only on the sweep
+    // result is one only the server log knows about — and this is the failure
+    // the ADR expects, since DorkOS now parses another product's private schema.
+    const answer = searchForCaller(
+      db,
+      { rooms: 'all', sessions: true },
+      {
+        query: 'kestrel',
+        limit: 10,
+      }
+    );
+    expect(answer.warnings).toEqual([{ source: 'opencode', message: expect.any(String) }]);
+  });
+
+  it('stops warning once the store is readable again', async () => {
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('a kestrel')]);
+    await sweep();
+    store.exec('ALTER TABLE part RENAME TO part_v2');
+    await sweep();
+
+    store.exec('ALTER TABLE part_v2 RENAME TO part');
+    await sweep();
+
+    const answer = searchForCaller(
+      db,
+      { rooms: 'all', sessions: true },
+      {
+        query: 'kestrel',
+        limit: 10,
+      }
+    );
+    expect(answer.warnings).toEqual([]);
+    expect(answer.results).toHaveLength(1);
   });
 
   it('leaves no snapshot behind when the schema check fails', async () => {
     seedSession('ses_a');
     store.exec('ALTER TABLE part RENAME TO part_v2');
-    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('dorkos-opencode-'));
+    // Scoped to this module's own prefix: `dorkos-opencode-` also matches the
+    // adapter conformance suite's `dorkos-opencode-live-` directories, which are
+    // none of this test's business and would make it flaky under a parallel run.
+    const snapshotDirs = () =>
+      fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('dorkos-opencode-snapshot-'));
+    const before = snapshotDirs();
     await sweep();
-    const after = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('dorkos-opencode-'));
+    const after = snapshotDirs();
     expect(after).toEqual(before);
   });
 });
@@ -595,6 +798,115 @@ describe('sweeping twice', () => {
     const result = await sweep();
     expect(result.pruned).toBe(1);
     expect(search('pelican')).toEqual([]);
+  });
+});
+
+describe('a turn that is still streaming', () => {
+  // OpenCode creates the assistant message row at turn START and streams its
+  // parts in for up to a minute, rewriting them as tokens arrive. So the message
+  // COUNT rises before the content lands, and a count-only watermark would index
+  // a truncated body and never look again. Measured on the operator's store
+  // 2026-08-25: 236/236 parts created after their message row, 55/80 text parts
+  // updated in place, 91/94 message rows updated after creation, last part up to
+  // 62 s behind.
+
+  it('indexes the whole answer once the turn finishes, not the half it caught', async () => {
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('what bird was that')]);
+    const turn = beginTurn('ses_a', 'assistant');
+    const part = streamPart(turn, 'ses_a', text('a kes'));
+
+    // The sweep lands mid-stream. The count is already 2.
+    await sweepLive();
+    expect(search('kes')).toHaveLength(1);
+
+    // The rest of the answer arrives, rewriting the part that is already there.
+    // Nothing about the count changes.
+    mutatePart(part, text('a kestrel, going by the hover'));
+    streamPart(turn, 'ses_a', text('it was hunting over the verge'));
+
+    const second = await sweepLive();
+    expect(second.indexed).toBe(2);
+    expect(search('hover')).toHaveLength(1);
+    expect(search('verge')).toHaveLength(1);
+    // And the truncation is gone rather than sitting beside the full text.
+    expect(indexed()).toEqual([
+      expect.objectContaining({ ordinal: 1, body: 'what bird was that' }),
+      expect.objectContaining({
+        ordinal: 2,
+        body: 'a kestrel, going by the hover\nit was hunting over the verge',
+      }),
+    ]);
+  });
+
+  it('serves the truncation forever when the window is switched off — the defect itself', async () => {
+    // The control that proves the window is what fixes it rather than something
+    // else in the pass. `sweep()` reads the fixture as an hour old, so no
+    // container is volatile, and the count never changes again.
+    seedSession('ses_a');
+    const turn = beginTurn('ses_a', 'assistant');
+    const part = streamPart(turn, 'ses_a', text('a kes'));
+    await sweep();
+
+    mutatePart(part, text('a kestrel, going by the hover'));
+    const second = await sweep();
+
+    expect(second.indexed).toBe(0);
+    expect(search('hover')).toEqual([]);
+  });
+
+  it('re-reads a session whose message count did not move at all', async () => {
+    // The revert-plus-new-turn shape: one message deleted, one added, inside a
+    // single sweep interval. The count is identical on both sides, so nothing
+    // about growth or shrinkage can detect it.
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('the first question')]);
+    say('ses_a', 'assistant', [text('an answer about pelicans')]);
+    await sweepLive();
+    expect(indexed()).toHaveLength(2);
+
+    store.exec("DELETE FROM part WHERE data LIKE '%pelicans%'");
+    store.exec('DELETE FROM message WHERE id NOT IN (SELECT message_id FROM part)');
+    say('ses_a', 'assistant', [text('an answer about kestrels instead')]);
+
+    const before = store.prepare('SELECT COUNT(*) AS n FROM message').get() as { n: number };
+    expect(before.n).toBe(2);
+
+    await sweepLive();
+    expect(search('pelicans')).toEqual([]);
+    expect(search('kestrels')).toHaveLength(1);
+  });
+
+  it('picks up an in-place part edit that changes no count anywhere', async () => {
+    seedSession('ses_a');
+    const turn = say('ses_a', 'user', [text('a pelican, I think')]);
+    await sweepLive();
+    expect(search('pelican')).toHaveLength(1);
+
+    const part = store.prepare('SELECT id FROM part WHERE message_id = ?').get(turn) as {
+      id: string;
+    };
+    mutatePart(part.id, text('a kestrel, on reflection'));
+
+    await sweepLive();
+    expect(search('pelican')).toEqual([]);
+    expect(search('kestrel')).toHaveLength(1);
+  });
+
+  it('leaves a settled session alone, so the window is not a rebuild every tick', async () => {
+    // The cost bound. A session OpenCode has not touched in a quarter of an hour
+    // resumes at its watermark and reads nothing.
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('said and finished long ago')]);
+    expect((await sweep()).indexed).toBe(1);
+    expect((await sweep()).indexed).toBe(0);
+  });
+
+  it('gives the window room for at least two sweeps per mutation', () => {
+    // The margin IS the guarantee: a mutation is first seen somewhere inside one
+    // interval, and a window of exactly two would put the next sweep on the
+    // boundary. Shortening either constant without the other reds here.
+    expect(OPENCODE_VOLATILE_WINDOW_MS).toBeGreaterThanOrEqual(2 * SEARCH_RECONCILE_INTERVAL_MS);
   });
 });
 

@@ -167,9 +167,14 @@ export const claudeCodeSource: FileSource = createClaudeCodeSource(() =>
  *   operator who sets `$OPENCODE_DB` or `$XDG_DATA_HOME` mid-session must be
  *   indexed from the new store on the next tick rather than after a restart.
  *   Answers `null` when OpenCode is configured to keep no file at all.
+ * @param options - Test seams for the volatility window, passed straight through
+ *   to {@link openOpenCodeSnapshot}. Production passes none.
  * @returns The registry row.
  */
-export function createOpenCodeSource(resolveStorePath: () => string | null): SnapshotSource {
+export function createOpenCodeSource(
+  resolveStorePath: () => string | null,
+  options: { now?: () => number; volatileWindowMs?: number } = {}
+): SnapshotSource {
   return {
     id: 'opencode',
     mechanism: 'sqlite-snapshot',
@@ -177,7 +182,7 @@ export function createOpenCodeSource(resolveStorePath: () => string | null): Sna
       const storePath = resolveStorePath();
       // Resolved to nothing, or nothing at the path: OpenCode may never have run
       // here. The sweep indexes nothing and prunes nothing.
-      return Promise.resolve(storePath === null ? null : openOpenCodeSnapshot(storePath));
+      return Promise.resolve(storePath === null ? null : openOpenCodeSnapshot(storePath, options));
     },
   };
 }
@@ -198,7 +203,7 @@ export function createOpenCodeSource(resolveStorePath: () => string | null): Sna
  * because a reconciler on a timer must never spawn somebody else's agent server
  * to read what is already at rest on disk.
  *
- * The corpus is small — 51 messages across 63 top-level sessions on the
+ * The corpus is small — 50 messages across 63 top-level sessions on the
  * operator's machine, 2026-08-25, against 19,124 from Claude Code — and that is
  * not the point. A search box that silently covers less for one runtime than
  * another is the failure this feature exists to refuse (spec G4), and "one place

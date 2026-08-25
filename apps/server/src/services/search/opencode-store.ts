@@ -22,7 +22,7 @@
  * 2. **The copy is opened read-only**, `readonly: true` plus `PRAGMA query_only`.
  *    Belt and braces on a file that is about to be deleted anyway.
  * 3. **Every statement is built from {@link OPENCODE_READ_ALLOWLIST}.** There is
- *    no raw SQL in this module that names a table directly; {@link selectFrom}
+ *    no raw SQL in this module that names a table directly; {@link buildAllowlistedSelect}
  *    throws on a table or column the allowlist does not carry, so reaching a
  *    credential column takes a deliberate edit to a frozen constant that a test
  *    pins by name. `SELECT *` cannot occur, because the column list is the
@@ -40,13 +40,30 @@
  * a lower count, the index notices it holds ordinals the container no longer
  * has, and the container is re-read whole.
  *
- * **This is why `Session.time.updated` is not the change signal**, and the
- * caveat the spec insisted be written down before anyone polls is therefore
- * moot: OpenCode stamps that column at turn START, not on message write, so
- * `updated > lastSeen` misses the assistant half of every in-flight turn. A
- * count of rows cannot miss it — the assistant message either exists or it does
- * not, and when it appears the count goes up. Re-reading a message twice is a
- * no-op regardless: the index upserts on `(source, container, ordinal)`.
+ * **A count is the change signal, and a count alone is not enough.** OpenCode
+ * does not write a turn once. It creates the assistant `message` row at turn
+ * START and then streams `part` rows in underneath it, MUTATING them in place as
+ * tokens arrive. Measured on the operator's store 2026-08-25: **236 of 236 parts
+ * were created after their message row, 55 of 80 text parts were updated in
+ * place after creation, 91 of 94 message rows were updated after creation, and
+ * the last part of a turn landed up to 62 seconds after the message row.**
+ *
+ * So the count rises the moment a turn STARTS, and the content arrives for a
+ * minute afterwards. A sweep landing in that window indexes a truncated body,
+ * and — because the count never changes again — would serve that truncation
+ * forever. Two more shapes have the same cause: a revert plus a new turn inside
+ * one sweep interval leaves the count exactly where it was while the content is
+ * different, and an in-place edit of a `part` changes no count at all.
+ *
+ * **The answer is {@link OPENCODE_VOLATILE_WINDOW_MS}: a session whose newest
+ * `time_updated` is recent is re-read from ordinal 1, every sweep, until it goes
+ * quiet.** Re-reading is free — the index upserts on
+ * `(source, container, ordinal)`, so a re-read of unchanged content writes the
+ * same rows — and the corpus is two orders of magnitude smaller than Claude
+ * Code's. `Session.time.updated` is still not consulted: the spec's caveat about
+ * it (stamped at turn start, so `updated > lastSeen` misses the assistant half)
+ * is the reason this reads `message.time_updated` and `part.time_updated`
+ * instead, which are stamped by the writes themselves.
  *
  * **Child sessions are not containers.** A session with a `parent_id` is a
  * subagent's own transcript — a conversation the human never had — and it is
@@ -69,7 +86,7 @@ import type { Projection, RowContainer } from './types.js';
  * **The security boundary is this constant.** It is not a denylist of credential
  * tables — a denylist is a list somebody has to remember to extend when upstream
  * adds `oauth_token_v2` — it is the complete set of what may be reached, and
- * {@link selectFrom} refuses anything outside it at the point the statement is
+ * {@link buildAllowlistedSelect} refuses anything outside it at the point the statement is
  * built rather than at review time.
  *
  * `sqlite_master` is here because schema detection has to read it, and it is
@@ -81,10 +98,23 @@ import type { Projection, RowContainer } from './types.js';
 export const OPENCODE_READ_ALLOWLIST = Object.freeze({
   /** Containers: which conversations exist, where they ran, and which are children. */
   session: Object.freeze(['id', 'directory', 'parent_id'] as const),
-  /** The messages themselves. `data` is the message envelope — role and time. */
-  message: Object.freeze(['id', 'session_id', 'time_created', 'data'] as const),
-  /** The text. `data` is the part envelope — type, text, `ignored`, `synthetic`. */
-  part: Object.freeze(['id', 'message_id', 'data'] as const),
+  /**
+   * The messages themselves. `data` is the message envelope — role and time.
+   *
+   * `time_updated` is here because OpenCode mutates a turn after creating it, so
+   * it is the only honest signal that a message the index already holds may have
+   * changed underneath it. It is a timestamp, not content.
+   */
+  message: Object.freeze(['id', 'session_id', 'time_created', 'time_updated', 'data'] as const),
+  /**
+   * The text. `data` is the part envelope — type, text, `ignored`, `synthetic`.
+   *
+   * `session_id` is denormalised onto `part` by OpenCode, which is what lets the
+   * volatility scan read one table instead of joining two. `time_updated` is the
+   * signal that matters most here: parts are where in-place mutation actually
+   * happens.
+   */
+  part: Object.freeze(['id', 'message_id', 'session_id', 'time_updated', 'data'] as const),
   /** Schema detection only. Never a source of message content. */
   sqlite_master: Object.freeze(['type', 'name'] as const),
 });
@@ -114,6 +144,40 @@ export const OPENCODE_CREDENTIAL_TABLES = Object.freeze([
  */
 const PART_LOOKUP_CHUNK = 400;
 
+/**
+ * How recently a session must have been touched to be re-read from the start.
+ *
+ * Fifteen minutes — three times the reconciler's five-minute cadence. The margin
+ * is what makes the guarantee hold rather than nearly hold: a mutation at time
+ * `T` is first seen by a sweep somewhere in `T … T+5min`, and a window of two
+ * intervals would put the sweep AFTER that one exactly on the boundary. Three
+ * intervals means at least two sweeps observe every mutation, the second of them
+ * strictly after the turn that caused it has finished streaming (the longest
+ * observed stream on the operator's store was 62 seconds).
+ *
+ * `__tests__/opencode-source.test.ts` asserts this against
+ * `SEARCH_RECONCILE_INTERVAL_MS`, so shortening either without the other is a red
+ * test rather than a silent hole.
+ *
+ * **The cost is bounded by how much OpenCode you used in the last quarter hour**,
+ * not by corpus size: quiet sessions are still resumed at their watermark and
+ * cost nothing.
+ */
+export const OPENCODE_VOLATILE_WINDOW_MS = 900_000;
+
+/**
+ * SQL that must never appear in a {@link buildAllowlistedSelect} tail.
+ *
+ * The tail is raw text, which is the one seam in this module that could reach
+ * past the allowlist: `WHERE (SELECT access_token FROM account) IS NOT NULL` is a
+ * perfectly good `WHERE` clause and reads a credential column. Rejecting the
+ * keywords that can introduce another table makes the module doc's claim — no
+ * statement here names a table outside the allowlist — true rather than
+ * conventional. Every shipped tail is a `WHERE`/`ORDER BY`/`LIMIT` over columns
+ * already selected, so nothing legitimate is excluded.
+ */
+const FORBIDDEN_IN_TAIL = /\b(from|join|select|union|attach|pragma|with)\b/i;
+
 /** A table name the allowlist carries. */
 type AllowedTable = keyof typeof OPENCODE_READ_ALLOWLIST;
 
@@ -126,6 +190,16 @@ type AllowedTable = keyof typeof OPENCODE_READ_ALLOWLIST;
 export interface OpenCodeSnapshot {
   /** Where the copy lives. Always under {@link os.tmpdir}, never the live store. */
   readonly snapshotPath: string;
+
+  /**
+   * What SQLite said when this connection was asked to write, at open time.
+   *
+   * Non-empty by construction — {@link assertReadOnly} refuses to hand back a
+   * connection that accepted the probe — so this is evidence rather than a flag.
+   * A test reads it, and the seeded-defect protocol for this module is to delete
+   * `readonly: true` or `PRAGMA query_only` and watch the open throw.
+   */
+  readonly writeRefusal: string;
 
   /** Every top-level session, with its message count as the high-water ordinal. */
   listContainers(): RowContainer[];
@@ -145,20 +219,28 @@ export interface OpenCodeSnapshot {
 /**
  * A `SELECT` over allowlisted columns of an allowlisted table.
  *
- * The only way this module produces SQL that names a table. It throws rather
- * than returning a narrowed statement, because a read that silently dropped a
- * column would produce rows with missing fields and look like a schema drift
- * somewhere else entirely.
+ * The only way this module produces SQL that names a table, and therefore the
+ * security primitive the whole design rests on — which is why it is exported:
+ * a boundary nobody can call directly is a boundary nobody can test directly.
+ *
+ * It throws rather than returning a narrowed statement, because a read that
+ * silently dropped a column would produce rows with missing fields and look like
+ * a schema drift somewhere else entirely.
  *
  * @param table - Must be a key of {@link OPENCODE_READ_ALLOWLIST}.
  * @param columns - Must all be listed for that table.
- * @param tail - Everything after the `FROM` clause: `WHERE`, `ORDER BY`, joins
- *   onto already-selected columns. It never names a table, because the caller
- *   would have to write one, and the two call sites that need a join build it
- *   from this helper twice instead.
+ * @param tail - `WHERE`, `ORDER BY` and `LIMIT` over columns already selected.
+ *   It may not name a table: {@link FORBIDDEN_IN_TAIL} rejects the keywords that
+ *   could introduce one, so a subquery cannot smuggle a credential column in
+ *   through a clause the column check never looks at. The call sites that need a
+ *   second table run this helper twice and join in JavaScript.
  * @returns The statement text.
  */
-function selectFrom(table: AllowedTable, columns: readonly string[], tail: string): string {
+export function buildAllowlistedSelect(
+  table: AllowedTable,
+  columns: readonly string[],
+  tail: string
+): string {
   const allowed: readonly string[] = OPENCODE_READ_ALLOWLIST[table];
   for (const column of columns) {
     if (!allowed.includes(column)) {
@@ -168,17 +250,24 @@ function selectFrom(table: AllowedTable, columns: readonly string[], tail: strin
       );
     }
   }
+  if (FORBIDDEN_IN_TAIL.test(tail)) {
+    throw new Error(
+      `search/opencode: a query tail may not name another table (got: ${tail.trim()}). ` +
+        'Read the second table with a second call and join in JavaScript — ' +
+        'see ADR 260825-110420.'
+    );
+  }
   return `SELECT ${columns.join(', ')} FROM ${table} ${tail}`;
 }
 
-/** One row of `message`, as {@link selectFrom} returns it. */
+/** One row of `message`, as {@link buildAllowlistedSelect} returns it. */
 interface MessageRow {
   id: string;
   time_created: number;
   data: string;
 }
 
-/** One row of `part`, as {@link selectFrom} returns it. */
+/** One row of `part`, as {@link buildAllowlistedSelect} returns it. */
 interface PartRow {
   message_id: string;
   data: string;
@@ -220,6 +309,77 @@ function copyStore(storePath: string): { dir: string; dbPath: string } {
 }
 
 /**
+ * Prove the connection cannot write, and return SQLite's own refusal.
+ *
+ * Two independent guarantees, checked independently because each catches a
+ * different edit. `db.readonly` reports the open flag, so deleting
+ * `readonly: true` reds here even though `PRAGMA query_only` would still refuse
+ * the write. The probe catches the case where BOTH are gone, which is the state
+ * that actually lets DorkOS modify a database.
+ *
+ * The probe is a `CREATE TABLE` of a DorkOS-named table rather than an `UPDATE`
+ * of an OpenCode one: it touches nothing that exists, so on the impossible path
+ * where it succeeds the damage is a stray table in a temp file that is deleted
+ * seconds later — and we throw immediately rather than reading through a
+ * connection that has just proven it is writable.
+ *
+ * @param db - The freshly opened snapshot connection.
+ * @returns The message SQLite raised when refusing the write.
+ * @throws When the connection is writable by either measure.
+ */
+function assertReadOnly(db: SqliteDatabase): string {
+  if (!db.readonly) {
+    throw new Error('the OpenCode snapshot was not opened read-only — refusing to read through it');
+  }
+  try {
+    db.prepare('CREATE TABLE dorkos_write_probe (x)').run();
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  throw new Error(
+    'the OpenCode snapshot connection accepted a write — refusing to read through it'
+  );
+}
+
+/**
+ * Fail unless the copy is structurally intact.
+ *
+ * **The failure this exists for is a torn copy that OPENS.** The store is copied
+ * while OpenCode may be checkpointing into it, and SQLite's main database file
+ * carries no per-page checksums — so a copy caught mid-checkpoint can be missing
+ * pages, open without complaint, and report FEWER SESSIONS than exist. That is
+ * the one shape this source must never take at face value: a short container
+ * list is what {@link pruneVanished} reads as "these conversations are gone", and
+ * it would delete indexed history that is perfectly fine on disk.
+ *
+ * `quick_check` is the cheap half of `integrity_check` — it verifies page
+ * structure and skips the index-vs-table cross-check — and on a 1.4 MB store it
+ * costs single-digit milliseconds. A failure here is a snapshot failure: recorded,
+ * nothing pruned, retried on the next sweep against a fresh copy.
+ */
+function assertIntact(db: SqliteDatabase): void {
+  // It reports corruption BOTH ways, which is why this catches as well as
+  // compares: a page SQLite cannot even parse raises `SQLITE_CORRUPT` out of the
+  // pragma, while a structure it can parse and disagrees with comes back as a
+  // row of complaints. Measured: zeroing one interior page of a valid database
+  // throws "database disk image is malformed" — and `SELECT COUNT(*)` over that
+  // same file still answers, with a number, cheerfully. That is the exact shape
+  // this guard exists for.
+  let verdict: string;
+  try {
+    const result = db.pragma('quick_check') as { quick_check: string }[];
+    verdict = result[0]?.quick_check ?? 'no answer';
+  } catch (err) {
+    verdict = err instanceof Error ? err.message : String(err);
+  }
+  if (verdict !== 'ok') {
+    throw new Error(
+      `the OpenCode store snapshot did not survive the copy (quick_check: ${verdict})`
+    );
+  }
+}
+
+/**
  * Fail unless the snapshot has the tables and columns this module reads.
  *
  * Checked once per sweep rather than defended at every read, because the two
@@ -234,7 +394,7 @@ function copyStore(storePath: string): { dir: string; dbPath: string } {
 function assertSchema(db: SqliteDatabase): void {
   const tables = new Set(
     db
-      .prepare(selectFrom('sqlite_master', ['name'], "WHERE type = 'table'"))
+      .prepare(buildAllowlistedSelect('sqlite_master', ['name'], "WHERE type = 'table'"))
       .all()
       .map((row) => (row as { name: string }).name)
   );
@@ -264,24 +424,36 @@ function assertSchema(db: SqliteDatabase): void {
  *
  * @param storePath - The live store's path, from
  *   `resolveOpenCodeStorePath()`. Never opened by this function.
+ * @param options - Test seams, both about the volatility window. `now` replaces
+ *   the wall clock so a fixture can stage a session as streaming or as long
+ *   finished; `volatileWindowMs` shortens the window. Production passes neither.
  * @returns A reader, or `null` when there is no store at that path — OpenCode
  *   may simply never have run on this machine, which is not a failure and must
  *   never be reported as one.
- * @throws When the store exists and cannot be copied, opened, or recognised. The
- *   sweep records that and prunes nothing.
+ * @throws When the store exists and cannot be copied, opened, recognised, or
+ *   proven read-only and intact. The sweep records that and prunes nothing.
  */
-export function openOpenCodeSnapshot(storePath: string): OpenCodeSnapshot | null {
+export function openOpenCodeSnapshot(
+  storePath: string,
+  options: { now?: () => number; volatileWindowMs?: number } = {}
+): OpenCodeSnapshot | null {
   if (!fs.existsSync(storePath)) return null;
+  const now = options.now ?? Date.now;
+  const volatileWindowMs = options.volatileWindowMs ?? OPENCODE_VOLATILE_WINDOW_MS;
 
   const { dir, dbPath } = copyStore(storePath);
   let db: SqliteDatabase;
+  let writeRefusal: string;
   try {
     db = new Database(dbPath, { readonly: true, fileMustExist: true });
     // `readonly` already opened the file `SQLITE_OPEN_READONLY`; this refuses a
     // write at the statement layer too. Two independent refusals on a file that
     // is deleted minutes later is cheap insurance on the one property this whole
-    // module is for.
+    // module is for — and neither is taken on trust: `assertReadOnly` makes the
+    // connection prove it.
     db.pragma('query_only = 1');
+    writeRefusal = assertReadOnly(db);
+    assertIntact(db);
     assertSchema(db);
   } catch (err) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -291,23 +463,50 @@ export function openOpenCodeSnapshot(storePath: string): OpenCodeSnapshot | null
   let closed = false;
   return {
     snapshotPath: dbPath,
+    writeRefusal,
 
     listContainers(): RowContainer[] {
-      // Two allowlisted selects rather than one joined statement, because a join
-      // would have to name the second table in `tail` — outside `selectFrom`'s
-      // check, which is the whole guarantee. Counting in JS costs one pass over
-      // a corpus measured in tens of thousands of rows at the outside.
+      // Three allowlisted selects rather than one joined statement, because a
+      // join would have to name the second table in `tail` — which `selectFrom`
+      // now refuses outright, and which was the whole guarantee even before it
+      // did. Counting and max-ing in JavaScript costs one pass over a corpus two
+      // orders of magnitude smaller than Claude Code's, inside a sweep that has
+      // already copied the entire file.
       const sessions = db
-        .prepare(selectFrom('session', ['id', 'directory'], 'WHERE parent_id IS NULL ORDER BY id'))
+        .prepare(
+          buildAllowlistedSelect(
+            'session',
+            ['id', 'directory'],
+            'WHERE parent_id IS NULL ORDER BY id'
+          )
+        )
         .all() as { id: string; directory: string | null }[];
 
       const counts = new Map<string, number>();
-      for (const row of db.prepare(selectFrom('message', ['session_id'], '')).all() as {
-        session_id: string;
-      }[]) {
+      const touched = new Map<string, number>();
+      const touch = (sessionId: string, at: unknown): void => {
+        if (typeof at !== 'number' || !Number.isFinite(at)) return;
+        const seen = touched.get(sessionId);
+        if (seen === undefined || at > seen) touched.set(sessionId, at);
+      };
+
+      for (const row of db
+        .prepare(buildAllowlistedSelect('message', ['session_id', 'time_updated'], ''))
+        .all() as { session_id: string; time_updated: number }[]) {
         counts.set(row.session_id, (counts.get(row.session_id) ?? 0) + 1);
+        touch(row.session_id, row.time_updated);
       }
 
+      // Parts carry `session_id` themselves, so the mutation signal that matters
+      // most — a `part` rewritten in place while a turn streams — is one scan
+      // rather than a join back through `message`.
+      for (const row of db
+        .prepare(buildAllowlistedSelect('part', ['session_id', 'time_updated'], ''))
+        .all() as { session_id: string; time_updated: number }[]) {
+        touch(row.session_id, row.time_updated);
+      }
+
+      const cutoff = now() - volatileWindowMs;
       return sessions.map((session) => ({
         originKey: session.id,
         // OpenCode records the directory a session ran in, so unlike a room, an
@@ -318,6 +517,11 @@ export function openOpenCodeSnapshot(storePath: string): OpenCodeSnapshot | null
             ? session.directory
             : null,
         maxOrdinal: counts.get(session.id) ?? 0,
+        // The count says how many messages exist; it says nothing about whether
+        // the ones already indexed still say what they said. For a session
+        // OpenCode has touched recently, the honest answer is "assume not" —
+        // see the module doc's measurements.
+        rereadWhole: (touched.get(session.id) ?? 0) >= cutoff,
       }));
     },
 
@@ -330,7 +534,7 @@ export function openOpenCodeSnapshot(storePath: string): OpenCodeSnapshot | null
       // change.
       const rows = db
         .prepare(
-          selectFrom(
+          buildAllowlistedSelect(
             'message',
             ['id', 'time_created', 'data'],
             'WHERE session_id = ? ORDER BY time_created ASC, id ASC LIMIT -1 OFFSET ?'
@@ -386,7 +590,7 @@ function readParts(db: SqliteDatabase, messageIds: readonly string[]): Map<strin
     const placeholders = chunk.map(() => '?').join(', ');
     const rows = db
       .prepare(
-        selectFrom(
+        buildAllowlistedSelect(
           'part',
           ['message_id', 'data'],
           `WHERE message_id IN (${placeholders}) ORDER BY message_id ASC, id ASC`

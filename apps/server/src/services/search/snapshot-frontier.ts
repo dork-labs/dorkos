@@ -21,7 +21,7 @@
  *
  * @module server/services/search/snapshot-frontier
  */
-import type { Db } from '@dorkos/db';
+import { searchSources, eq, type Db } from '@dorkos/db';
 import { sweepContainers } from './row-frontier.js';
 import type { SnapshotSource, SourceSweep } from './types.js';
 
@@ -30,10 +30,11 @@ import type { SnapshotSource, SourceSweep } from './types.js';
  *
  * Same shape and same reasoning as `jsonl-frontier.ts`'s
  * `DISCOVERY_FAILURE_KEY`: no container was enumerated, so there is nothing to
- * blame, and no `search_sources` row is written — a row keyed on an invented
+ * blame, and no NEW `search_sources` row is invented — a row keyed on a made-up
  * container id would be one the reader can never return, which the prune would
  * then delete on the first healthy sweep. The visibility comes through
- * {@link SourceSweep.failures}, which the reconciler logs.
+ * {@link SourceSweep.failures}, which the reconciler logs, and through
+ * {@link stampSourceError}, which marks the containers that really do exist.
  */
 export const SNAPSHOT_FAILURE_KEY = '(snapshot)';
 
@@ -71,15 +72,18 @@ export async function sweepSnapshotSource(
   try {
     reader = await source.open();
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // **The whole source is dark, and somebody searching has to be told.**
+    // `searchForCaller` builds its warnings from `search_sources.last_error`, so
+    // a failure recorded only on the sweep result is a failure only the server
+    // log knows about — and this is exactly the failure the ADR EXPECTS, since
+    // DorkOS now parses another product's private schema and that schema will
+    // move. The stamp goes onto the containers that already exist, never onto an
+    // invented one, so the prune has nothing new to delete.
+    stampSourceError(db, source.id, message, at);
     return {
       ...empty,
-      failures: [
-        {
-          sourceId: source.id,
-          originKey: SNAPSHOT_FAILURE_KEY,
-          message: err instanceof Error ? err.message : String(err),
-        },
-      ],
+      failures: [{ sourceId: source.id, originKey: SNAPSHOT_FAILURE_KEY, message }],
     };
   }
 
@@ -88,8 +92,45 @@ export async function sweepSnapshotSource(
   if (reader === null) return empty;
 
   try {
+    // The snapshot opened, so whatever was wrong with the source as a WHOLE is
+    // over, and the warning must stop. Cleared BEFORE the pass rather than
+    // after, so a per-container failure recorded during this sweep survives.
+    //
+    // It cannot erase a live per-container error either: a container whose
+    // projection threw did not advance its watermark, so it is never skipped as
+    // unchanged on the next pass — it is re-read, it throws again, and it
+    // re-stamps its own row.
+    clearSourceError(db, source.id);
     return sweepContainers(db, source.id, reader, at);
   } finally {
     reader.close();
   }
+}
+
+/**
+ * Mark every container this source already has as unreadable.
+ *
+ * @param db - The database holding the index.
+ * @param sourceId - Which source went dark.
+ * @param message - What went wrong, as `search_sources.last_error` will carry it.
+ * @param at - The ISO-8601 timestamp of this attempt.
+ */
+function stampSourceError(db: Db, sourceId: string, message: string, at: string): void {
+  db.update(searchSources)
+    .set({ lastError: message, lastIndexedAt: at })
+    .where(eq(searchSources.sourceId, sourceId))
+    .run();
+}
+
+/**
+ * Clear a whole-source error stamp, because the source is readable again.
+ *
+ * @param db - The database holding the index.
+ * @param sourceId - Which source recovered.
+ */
+function clearSourceError(db: Db, sourceId: string): void {
+  db.update(searchSources)
+    .set({ lastError: null })
+    .where(eq(searchSources.sourceId, sourceId))
+    .run();
 }

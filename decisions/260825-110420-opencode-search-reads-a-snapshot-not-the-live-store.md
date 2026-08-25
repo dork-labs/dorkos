@@ -4,7 +4,7 @@ title: OpenCode search reads a throwaway snapshot, never the live store or the s
 status: accepted
 created: 2026-08-25
 spec: message-search
-amends: 0308
+amends: [0308, 260728-214214]
 superseded-by: null
 ---
 
@@ -81,15 +81,37 @@ indexes what was typed into it. Redacting here would be exactly the content filt
 allowlist exists to make unnecessary, and it would be a filter that is wrong in both
 directions.
 
-**4. The watermark is a count of messages, not `Session.time.updated`.**
-OpenCode stamps that column at turn START and never on message write, so a
-`updated > lastSeen` poll misses the assistant half of every in-flight turn — the caveat
-the spec insisted be written down before anyone polled. A session's ordinals are its
-messages' positions in `(time_created, id)` order, so the high-water mark is a row count:
-the assistant message either exists or it does not, and when it appears the count rises.
-Re-reading is idempotent regardless, because the index upserts on
-`(source, container, ordinal)`. A revert that deletes messages lowers the count below what
-the index holds, which is M2's existing shrink-means-rebuild rule.
+**4. The watermark is a count of messages PLUS a volatility window, because a count alone
+is provably not enough.**
+`Session.time.updated` is stamped at turn START and never on message write, so the
+`updated > lastSeen` poll the spec warned about misses the assistant half of every
+in-flight turn. A session's ordinals are its messages' positions in `(time_created, id)`
+order, so the high-water mark is a row count — and **the count has the same disease for a
+different reason.** OpenCode creates the assistant `message` row at turn start and streams
+its `part` rows in underneath it, mutating them in place as tokens arrive. Measured on the
+operator's store 2026-08-25: **236 of 236 parts created after their message row, 55 of 80
+text parts updated in place, 91 of 94 message rows updated after creation, last part up to
+62 seconds behind.** So the count rises when a turn STARTS and the content lands for a
+minute afterwards, and three shapes follow — a sweep landing mid-stream indexes a truncated
+body and, because the count never moves again, serves it forever; a revert plus a new turn
+inside one interval leaves the count identical while the content differs; an in-place part
+edit changes no count at all.
+
+**This was caught in adversarial review, after an earlier version of this ADR claimed the
+caveat was "discharged". It was not.** The fix is
+`OPENCODE_VOLATILE_WINDOW_MS` (15 minutes, three sweep intervals): `listContainers` reads
+`message.time_updated` and `part.time_updated` — timestamps, not content, both added to the
+allowlist — and marks any session touched inside that window `rereadWhole`, which moves the
+resume position back to ordinal 1. Re-reading is free because the index upserts on
+`(source, container, ordinal)`, and the cost is bounded by how much OpenCode was used in the
+last quarter hour rather than by corpus size. A revert that lowers the count below what the
+index holds still takes M2's shrink-means-rebuild path, which deletes first.
+
+The margin is the guarantee: a mutation is first seen somewhere inside one interval, so a
+two-interval window would land the following sweep exactly on the boundary. Three intervals
+means at least two sweeps observe every mutation, the second strictly after the longest
+stream observed (62 s) has finished. A test pins the window against
+`SEARCH_RECONCILE_INTERVAL_MS`.
 
 **5. Child sessions are not containers.** A session with a `parent_id` is a subagent's own
 transcript — a conversation the human never had — excluded for the same reason
@@ -138,6 +160,11 @@ either of:**
   position than the SDK path offers: the sidecar holds a live connection, and this does not.
 - The frontier logic stayed one implementation for three mechanisms, which is now measured
   rather than asserted.
+- **A source that has gone dark says so to the person searching.** A failed snapshot stamps
+  `search_sources.last_error` on the containers that already exist, so `searchForCaller`
+  raises its warning rather than leaving the failure in a log nobody reads. That matters
+  here more than for the other sources, because this is the one that parses another
+  product's private schema and the ADR expects that schema to move.
 
 ### Negative
 
@@ -146,10 +173,16 @@ either of:**
   offset and M2's ordinal read. At 1.4 MB and 41 ms per sweep this is free; at a gigabyte
   it would not be, and the answer then is `VACUUM INTO` against a read-only connection or a
   size ceiling, not a live read.
-- **A torn copy is possible.** OpenCode may checkpoint mid-copy. SQLite's own checksums
-  make a torn WAL frame a discard rather than a corruption, and a snapshot that will not
-  open is recorded as one failure with nothing pruned and retried five minutes later — but
-  the failure mode exists and is accepted rather than eliminated.
+- **A torn copy is possible, and the dangerous half is the one that OPENS.** OpenCode may
+  checkpoint mid-copy. A torn WAL frame is a discard rather than a corruption, because the
+  log carries per-frame checksums — but **the main database file carries none**, so a copy
+  caught mid-checkpoint can open without complaint and report fewer sessions than exist,
+  which `pruneVanished` would read as "these conversations are gone". Measured: zeroing one
+  interior page of a valid database still answers `SELECT COUNT(*)` with a number. Every
+  snapshot therefore runs `PRAGMA quick_check` (single-digit milliseconds at this size)
+  before it is read from, and a failure is a snapshot failure — recorded, nothing pruned,
+  retried against a fresh copy five minutes later. What remains accepted is the cost of the
+  check and the extra sweep of staleness, not silent data loss.
 - **DorkOS now parses another product's private JSON schema.** `message.data` and
   `part.data` are OpenCode's internals, and they will change. The projection counts every
   row it does not recognise (`SourceSweep.skipped`) precisely so that drift is visible

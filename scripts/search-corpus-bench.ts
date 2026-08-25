@@ -68,11 +68,13 @@ import path from 'path';
 import { createDb, runMigrations, messages, searchSources, eq } from '../packages/db/src/index.js';
 import { resolveDorkHome } from '../apps/server/src/lib/dork-home.js';
 import { sweepFileSource } from '../apps/server/src/services/search/jsonl-frontier.js';
-import { createClaudeCodeSource } from '../apps/server/src/services/search/registry.js';
+import {
+  createClaudeCodeSource,
+  createOpenCodeSource,
+} from '../apps/server/src/services/search/registry.js';
 import { discoverClaudeCodeTranscripts } from '../apps/server/src/services/search/claude-code-discovery.js';
 import { resolveClaudeRootSet } from '../apps/server/src/services/runtimes/claude-code/claude-config-dir.js';
 import { resolveOpenCodeStorePath } from '../apps/server/src/services/runtimes/opencode/opencode-data-dir.js';
-import { createOpenCodeSource } from '../apps/server/src/services/search/registry.js';
 import { sweepSnapshotSource } from '../apps/server/src/services/search/snapshot-frontier.js';
 import type { KnownContainer } from '../apps/server/src/services/search/types.js';
 
@@ -155,7 +157,7 @@ const benchSource = readSourceFlag();
 /**
  * The fewest OpenCode messages a healthy index of this corpus holds.
  *
- * **Deliberately 1, not a measurement.** OpenCode's corpus on this machine is 51
+ * **Deliberately 1, not a measurement.** OpenCode's corpus on this machine is 50
  * messages across 63 top-level sessions (2026-08-25), against 19,124 from Claude
  * Code — two orders of magnitude smaller, and made entirely of whatever the
  * operator last tried the runtime for. Any real floor would red on the next

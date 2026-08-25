@@ -4912,7 +4912,7 @@
       "status": "accepted",
       "created": "2026-08-25",
       "specSlug": "message-search",
-      "amends": ["0308"],
+      "amends": ["0308", "260728-214214"],
       "supersedes": null,
       "affects": [
         "apps/server/src/services/search/opencode-store.ts",

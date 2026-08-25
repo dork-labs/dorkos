@@ -82,6 +82,29 @@ export interface RowContainer {
 
   /** The container's highest ordinal right now. `0` when it holds nothing. */
   maxOrdinal: number;
+
+  /**
+   * Read this container from ordinal 1 again, even though it has not shrunk.
+   *
+   * For a source that only ever APPENDS, this is always absent: the watermark is
+   * a complete description of what has been read, and re-reading is waste. It
+   * exists for a source whose rows are **mutated in place**, where the ordinal
+   * high-water mark is a true statement about how many rows there are and says
+   * nothing about whether the ones already indexed still say what they said.
+   *
+   * OpenCode is that source: it creates a message row at turn start and streams
+   * its parts in underneath it for up to a minute, rewriting them as tokens
+   * arrive (`opencode-store.ts`). A sweep landing mid-stream indexes a truncated
+   * body, and without this flag the count would never change again and the
+   * truncation would be served forever.
+   *
+   * **It is not the same as a rebuild.** A rebuild deletes the container's rows
+   * first, because its ordinals were renumbered and stale rows would survive
+   * above the new end. This only moves the resume position back to the start;
+   * the upsert on `(source, container, ordinal)` rewrites each row in place, and
+   * a container that ALSO shrank still takes the rebuild path.
+   */
+  rereadWhole?: boolean;
 }
 
 /**

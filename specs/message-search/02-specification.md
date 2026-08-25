@@ -842,14 +842,31 @@ a source that lives outside `apps/server`** — the second because the registry 
 constant in one file, and the day a source must register from somewhere that cannot edit
 that file, the registration surface IS the port.
 
-**The `Session.time.updated` caveat is discharged rather than handled.** §2.3 insisted the
-watermark be `>=` plus a forced re-read of any session last seen non-idle, because OpenCode
-stamps that column at turn start and a `updated > lastSeen` poll misses the assistant half
-of an in-flight turn. The shipped source does not read that column at all: a session's
-ordinals are its messages' positions in `(time_created, id)` order, so the high-water mark is
-a row count, and a count cannot miss a row that exists. A revert that deletes messages lowers
-the count below what the index holds, which is §5's shrink-means-rebuild rule arriving
-unchanged.
+**The `Session.time.updated` caveat was NOT discharged, and an earlier draft of this
+amendment wrongly said it was.** §2.3 insisted the watermark be `>=` plus a forced re-read of
+any session last seen non-idle. The shipped source does not read `Session.time.updated` — a
+session's ordinals are its messages' positions in `(time_created, id)` order, so the
+high-water mark is a row count — but **the count inherits the same disease from a different
+direction, and adversarial review caught it.** OpenCode creates the assistant `message` row
+at turn START and streams its `part` rows in underneath it, mutating them in place as tokens
+arrive: measured on the operator's store 2026-08-25, **236 of 236 parts were created after
+their message row, 55 of 80 text parts were updated in place, 91 of 94 message rows were
+updated after creation, and the last part of a turn landed up to 62 seconds behind it.**
+
+So the count rises at turn start and the content lands for a minute afterwards. Three misses
+follow, all reproduced: a sweep landing mid-stream indexes a truncated body and serves it
+forever, because the count never changes again; a revert plus a new turn inside one sweep
+interval leaves the count exactly where it was; and an in-place `part` edit changes no count
+anywhere. §2.3's instinct — force a re-read of anything recently active — was right, and what
+was wrong was only its choice of column.
+
+The shipped answer is `OPENCODE_VOLATILE_WINDOW_MS`: fifteen minutes, three sweep intervals,
+measured against `message.time_updated` and `part.time_updated` (timestamps, both added to
+the read allowlist) rather than the session's turn-start stamp. Any session touched inside
+that window is re-read from ordinal 1 on every sweep until it settles. Re-reading costs
+nothing because the index upserts on `(source, container, ordinal)`, and the cost is bounded
+by recent OpenCode use rather than by corpus size. A revert that lowers the count below what
+the index holds still takes §5's shrink-means-rebuild path, which deletes first.
 
 **Two behaviours worth stating because they are the ones a careless version gets wrong.** A
 session with a `parent_id` is a subagent's own transcript and is not a container, for the
@@ -858,7 +875,13 @@ one**: it indexes nothing, prunes nothing, and reports no failure, because readi
 "every session is gone" would delete an entire indexed corpus the first time the runtime was
 uninstalled.
 
-**§1's product statement is now false and the client copy is the follow-up.** The scope copy
-task 5.2 shipped names OpenCode as not covered. That copy is deliberately NOT changed in this
-ticket — the file is in flight on another branch — and flipping it is the one piece of
-DOR-688 that lands separately.
+**§1's product statement is now false and the client copy is the follow-up, tracked as
+DOR-1556.** The scope copy task 5.2 shipped names OpenCode as not covered. That copy is
+deliberately NOT changed in this ticket — the file is in flight on another branch — and
+flipping it is the one piece of DOR-688 that lands separately.
+
+**Codex is still not a search source as of this amendment.** §1's sentence names rooms,
+Claude Code and Codex; DOR-683 (PR #1297) is what adds the third, and it had not merged when
+this landed. Nothing here depends on it either way — M1 gains a row and a projection — but
+the prose in this repository should not be read as claiming Codex coverage that a reader
+would go looking for and not find.

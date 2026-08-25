@@ -41,9 +41,11 @@ export {
 export { sweepContainers, sweepRowSource } from './row-frontier.js';
 export { sweepSnapshotSource, SNAPSHOT_FAILURE_KEY } from './snapshot-frontier.js';
 export {
+  buildAllowlistedSelect,
   openOpenCodeSnapshot,
   OPENCODE_CREDENTIAL_TABLES,
   OPENCODE_READ_ALLOWLIST,
+  OPENCODE_VOLATILE_WINDOW_MS,
   type OpenCodeSnapshot,
 } from './opencode-store.js';
 export { indexRoomEntry } from './write-through.js';
