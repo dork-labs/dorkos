@@ -370,14 +370,27 @@ describe('SlackAdapter', () => {
 
   // Fatal error handling
   describe('fatal Slack error detection', () => {
+    /**
+     * Drive the error handler and wait for the teardown it queues.
+     *
+     * The adapter defers stopping to a later tick (it is called from inside
+     * Bolt's own error handler), so the assertions have to wait for the queued
+     * work rather than read status straight after the handler resolves.
+     */
+    async function deliverFatalError(error: unknown): Promise<void> {
+      await capturedErrorHandler!(error as Error);
+      await vi.waitFor(() => {
+        expect(adapter.getStatus().lastError).toContain('Re-check your bot token');
+      });
+    }
+
     it('stops the adapter on fatal error code (e.g. invalid_auth)', async () => {
       await adapter.start(mockRelay);
       expect(capturedErrorHandler).toBeDefined();
 
-      const fatalError = Object.assign(new Error('An API error occurred'), {
-        code: 'invalid_auth',
-      });
-      await capturedErrorHandler!(fatalError);
+      await deliverFatalError(
+        Object.assign(new Error('An API error occurred'), { code: 'invalid_auth' })
+      );
 
       expect(mockAppStop).toHaveBeenCalled();
       const status = adapter.getStatus();
@@ -389,10 +402,9 @@ describe('SlackAdapter', () => {
     it('stops the adapter when fatal error is in data.error field', async () => {
       await adapter.start(mockRelay);
 
-      const fatalError = Object.assign(new Error('An API error occurred'), {
-        data: { error: 'token_revoked' },
-      });
-      await capturedErrorHandler!(fatalError);
+      await deliverFatalError(
+        Object.assign(new Error('An API error occurred'), { data: { error: 'token_revoked' } })
+      );
 
       expect(mockAppStop).toHaveBeenCalled();
       const status = adapter.getStatus();
@@ -409,15 +421,104 @@ describe('SlackAdapter', () => {
       const { WebAPIPlatformError } = await import('@slack/web-api');
       await adapter.start(mockRelay);
 
-      await capturedErrorHandler!(
-        new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }) as unknown as Error
-      );
+      await deliverFatalError(new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }));
 
       expect(mockAppStop).toHaveBeenCalled();
       const status = adapter.getStatus();
       expect(status.state).toBe('error');
       expect(status.lastError).toContain('invalid_auth');
       expect(status.lastError).not.toContain('slack_webapi_platform_error');
+    });
+
+    it('stops the adapter when Bolt wraps the platform error in an AuthorizationError', async () => {
+      // The path a revoked token ACTUALLY takes. Bolt authorizes every incoming
+      // event, and an authorize() failure reaches the error handler as
+      // `new AuthorizationError(msg, original)` (App.js) — the platform error is
+      // on `.original`, never at the top level. Testing only the outer error
+      // sees code 'slack_bolt_authorization_error', matches nothing, and leaves
+      // the adapter retrying forever against a dead token (DOR-1528).
+      const { WebAPIPlatformError } = await import('@slack/web-api');
+      await adapter.start(mockRelay);
+
+      const wrapped = Object.assign(
+        new Error('Authorization of incoming event did not succeed. An API error occurred'),
+        {
+          code: 'slack_bolt_authorization_error',
+          original: new WebAPIPlatformError({ ok: false, error: 'token_revoked' }),
+        }
+      );
+      await deliverFatalError(wrapped);
+
+      expect(mockAppStop).toHaveBeenCalled();
+      const status = adapter.getStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toContain('token_revoked');
+      expect(status.lastError).not.toContain('slack_bolt_authorization_error');
+    });
+
+    it('finds the platform error through `cause` and through `originals`', async () => {
+      // The other two Bolt wrappers: a non-Error throw is re-thrown with the
+      // value on `.cause`, and MultipleListenerError collects them on
+      // `.originals` (an array, not a single `.original`).
+      const { WebAPIPlatformError } = await import('@slack/web-api');
+      await adapter.start(mockRelay);
+
+      const viaOriginals = Object.assign(new Error('Multiple errors occurred'), {
+        code: 'slack_bolt_multiple_listener_error',
+        originals: [
+          new Error('unrelated listener failure'),
+          new WebAPIPlatformError({ ok: false, error: 'account_inactive' }),
+        ],
+      });
+      await deliverFatalError(viaOriginals);
+
+      expect(mockAppStop).toHaveBeenCalled();
+      expect(adapter.getStatus().lastError).toContain('account_inactive');
+    });
+
+    it('survives a self-referential error chain without hanging', async () => {
+      // The unwrap walk follows `original`/`cause`/`originals`, so a cycle must
+      // terminate on the depth guard rather than recurse forever.
+      await adapter.start(mockRelay);
+      const cyclic: { code: string; cause?: unknown } = { code: 'boom' };
+      cyclic.cause = cyclic;
+
+      await capturedErrorHandler!(cyclic as unknown as Error);
+
+      expect(mockAppStop).not.toHaveBeenCalled();
+      expect(adapter.getStatus().state).toBe('error');
+    });
+
+    it('runs the full stop path, not just app.stop(), so timers are cleared', async () => {
+      // Calling `app.stop()` directly left `this.app` set and skipped `_stop()`,
+      // so the approval and presence timers kept firing against a dead token.
+      // Going through `stop()` clears them and nulls the app — observable here
+      // because a follow-up stop() then has no app left to stop (DOR-1528).
+      const { WebAPIPlatformError } = await import('@slack/web-api');
+      await adapter.start(mockRelay);
+      mockAppStop.mockClear();
+
+      await deliverFatalError(new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }));
+      await adapter.stop();
+
+      expect(mockAppStop).toHaveBeenCalledTimes(1);
+    });
+
+    it('queues only one teardown when every event fails the same way', async () => {
+      // A dead token fails every incoming event, so the handler fires
+      // repeatedly; the adapter must not stack a teardown per event.
+      const { WebAPIPlatformError } = await import('@slack/web-api');
+      await adapter.start(mockRelay);
+
+      await deliverFatalError(new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }));
+      const stopCallsAfterFirst = mockAppStop.mock.calls.length;
+
+      await capturedErrorHandler!(
+        new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }) as unknown as Error
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockAppStop.mock.calls.length).toBe(stopCallsAfterFirst);
     });
 
     it('records non-fatal errors without stopping the adapter', async () => {
@@ -435,10 +536,9 @@ describe('SlackAdapter', () => {
     it('produces a descriptive error message mentioning bot token', async () => {
       await adapter.start(mockRelay);
 
-      const fatalError = Object.assign(new Error('An API error occurred'), {
-        code: 'app_uninstalled',
-      });
-      await capturedErrorHandler!(fatalError);
+      await deliverFatalError(
+        Object.assign(new Error('An API error occurred'), { code: 'app_uninstalled' })
+      );
 
       const status = adapter.getStatus();
       expect(status.lastError).toMatch(/Fatal Slack error: app_uninstalled/);
