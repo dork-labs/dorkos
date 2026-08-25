@@ -619,9 +619,11 @@ export function DiagramV15({ modules }: { modules: SystemModule[] }) {
     return connected;
   }, [hoveredId]);
 
-  // ── Drag lagRef — for rubber-band control point pull ──────────────────────
+  // ── Drag lag — for rubber-band control point pull ──────────────────────────
+  // State (not a ref) so the render below can read it directly — it always
+  // changes alongside a position update in the same pointer handler anyway.
 
-  const dragLag = useRef(0);
+  const [dragLag, setDragLag] = useState(0);
 
   // ── Pointer handlers ───────────────────────────────────────────────────────
 
@@ -641,7 +643,7 @@ export function DiagramV15({ modules }: { modules: SystemModule[] }) {
     };
     dragStateRef.current = state;
     setDragState(state);
-    dragLag.current = 0;
+    setDragLag(0);
     lastPointerPos.current = { x: e.clientX, y: e.clientY };
 
     // Capture pointer so we receive events outside SVG
@@ -663,7 +665,7 @@ export function DiagramV15({ modules }: { modules: SystemModule[] }) {
     setDragVelocity({ x: vx, y: vy });
 
     // Control point lag — pulls Bezier curve as you drag
-    dragLag.current = Math.sign(dx) * Math.min(Math.abs(dx) * 0.08, 20);
+    setDragLag(Math.sign(dx) * Math.min(Math.abs(dx) * 0.08, 20));
 
     const newX = Math.max(NODE_R + 4, Math.min(VIEWBOX_W - NODE_R - 4, state.startNodeX + dx));
     const newY = Math.max(NODE_R + 4, Math.min(VIEWBOX_H - NODE_R - 4, state.startNodeY + dy));
@@ -709,7 +711,7 @@ export function DiagramV15({ modules }: { modules: SystemModule[] }) {
       });
     }
 
-    dragLag.current = 0;
+    setDragLag(0);
     dragStateRef.current = null;
     setDragState(null);
     setDragVelocity({ x: 0, y: 0 });
@@ -850,7 +852,7 @@ export function DiagramV15({ modules }: { modules: SystemModule[] }) {
                   conn={conn}
                   positions={positions}
                   isDragging={isDraggingConn}
-                  dragLag={isDraggingConn ? dragLag.current : 0}
+                  dragLag={isDraggingConn ? dragLag : 0}
                   highlighted={isHighlighted}
                 />
               </motion.g>
