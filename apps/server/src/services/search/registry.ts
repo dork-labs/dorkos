@@ -19,7 +19,7 @@
  */
 import path from 'path';
 import { authors, roomEntries, rooms, and, asc, eq, gt, sql, type Db } from '@dorkos/db';
-import { resolveActiveClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
+import { resolveClaudeRootSet } from '../runtimes/claude-code/claude-config-dir.js';
 import { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
 import { projectClaudeCodeLines } from './projections/claude-code.js';
 import { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
@@ -93,21 +93,22 @@ export const roomsSource: RowSource = {
 };
 
 /**
- * Build a Claude Code source over one projects root.
+ * Build a Claude Code source over a set of projects roots.
  *
- * The root is a parameter rather than a call so a test can point the source at a
- * fixture tree instead of at the operator's real history.
+ * The roots are a parameter rather than a call so a test can point the source at
+ * fixture trees instead of at the operator's real history.
  *
- * @param resolveProjectsRoot - Called at the start of every sweep, never cached:
- *   an operator who switches Claude account mid-session must be indexed from the
- *   new root on the next tick rather than after a restart.
+ * @param resolveProjectsRoots - Called at the start of every sweep, never
+ *   cached: an operator who registers or removes a Claude account mid-session
+ *   must be indexed from the new set on the next tick rather than after a
+ *   restart.
  * @returns The registry row.
  */
-export function createClaudeCodeSource(resolveProjectsRoot: () => string): FileSource {
+export function createClaudeCodeSource(resolveProjectsRoots: () => readonly string[]): FileSource {
   return {
     id: 'claude-code',
     mechanism: 'jsonl',
-    discover: (known) => discoverClaudeCodeTranscripts(resolveProjectsRoot(), known),
+    discover: (known) => discoverClaudeCodeTranscripts(resolveProjectsRoots(), known),
     project: projectClaudeCodeLines,
   };
 }
@@ -120,21 +121,36 @@ export function createClaudeCodeSource(resolveProjectsRoot: () => string): FileS
  * the same way, because the index reads what the SDK wrote rather than anything
  * DorkOS recorded.
  *
- * **The root is resolved, never hardcoded.** A hardcoded `~/.claude` silently
+ * **The roots are resolved, never hardcoded.** A hardcoded `~/.claude` silently
  * split-brains the moment anything sets `CLAUDE_CONFIG_DIR` (DOR-250), and
- * `resolveActiveClaudeRoot()` is the one place that decides which account is
- * active. `os.homedir()` is banned in this tree for the same reason: there is
- * exactly one module allowed to know where a home directory is.
+ * `os.homedir()` is banned in this tree for the same reason: there is exactly
+ * one module allowed to know where a home directory is.
  *
- * **One root, deliberately, and it is not enough.** The operator's own machine
- * holds three, and reading only the active one covers at most 67% of their
- * Claude Code history — 3.5% when a server inherits a minor root from its shell.
- * `resolveClaudeRootSet()` already returns the full set; DOR-682 is the ticket
- * that reads from it, and it is a separate ticket because the frontier has to be
- * proved correct on one root before it is asked to span several.
+ * **And it is a SET, because one root is measurably wrong.** Measured on the
+ * operator's machine 2026-07-29, when three Claude Code accounts were live:
+ * indexing only the active root covered at most 67% of their Claude Code
+ * history, and 3.5% when the server inherited a minor root from its shell —
+ * which is how this feature's own decomposition ran. Re-measured 2026-08-25 with
+ * two accounts registered: 9,110 messages of 19,124. Nothing reported an error
+ * on any of those runs, because a short result list is indistinguishable from a
+ * complete one. That is spec G4's refusal — "a search box that silently covers
+ * less for one runtime than another" — landing on the same runtime twice over.
+ *
+ * **Which set is not this module's decision.** {@link resolveClaudeRootSet} owns
+ * it, and it is deliberately not a glob: `~/.claude*` on this machine sweeps up
+ * `.claude-worktrees` and `.claudekit`, which are not accounts. The set is the
+ * active root, `$CLAUDE_CONFIG_DIR`, `~/.claude`, and every account registered
+ * in `runtimes.claudeCode.accounts` — so a fourth profile is added by
+ * configuration rather than by a code change, and none of it is guessed.
+ *
+ * Reading the SET rather than the active root is also the difference between the
+ * two questions a Claude root resolver gets asked. `resolveActiveClaudeRoot()`
+ * answers "where does new work run and bill", and a session listing or a
+ * transcript read-back MUST match the SDK exactly. The index asks "where does
+ * this person's history live", and the honest answer is all of it.
  */
 export const claudeCodeSource: FileSource = createClaudeCodeSource(() =>
-  path.join(resolveActiveClaudeRoot(), 'projects')
+  resolveClaudeRootSet().map((root) => path.join(root, 'projects'))
 );
 
 /**
