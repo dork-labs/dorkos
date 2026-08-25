@@ -28,23 +28,23 @@ Manage scheduled tasks on the running DorkOS server.
 Subcommands:
   list                       List every scheduled task
   create [options]           Create a scheduled task
-  trigger <id>               Run a task now
-  runs [options]             List recent task runs
+  trigger <id>               Run a scheduled task now
+  runs [options]             List recent runs
 
 Options (all subcommands):
       --json   Print raw JSON instead of a table
 
 create options:
-      --name <name>          Task name (required)
-      --description <text>   What the task does (required)
+      --name <name>          Scheduled task name (required)
+      --description <text>   What the scheduled task does (required)
       --prompt <text>        The instruction the agent runs (required)
       --target <ref>         Agent id, or 'global' (required)
-      --cron <expr>          Cron schedule (omit for a manual-only task)
+      --cron <expr>          Cron schedule (omit for a run-on-request task)
       --timezone <tz>        IANA timezone for the schedule
       --display-name <name>  Human-friendly name
 
 runs options:
-      --schedule <id>        Only runs for this task
+      --schedule <id>        Only runs for this scheduled task
       --status <status>      Filter by run status
       --limit <n>            Maximum runs to return
 
@@ -315,7 +315,7 @@ export async function runTaskCreate(args: TaskCreateArgs): Promise<number> {
       printJson(created);
       return 0;
     }
-    console.log(`Created task ${created.displayName ?? created.name} (${created.id})`);
+    console.log(`Created scheduled task ${created.displayName ?? created.name} (${created.id})`);
     // Printed after the success line, and only when there is something a person
     // would want to have been told. `--json` callers get the mode in the payload
     // and no prose.
@@ -345,7 +345,7 @@ export async function runTaskTrigger(id: string, json: boolean): Promise<number>
       printJson(result);
       return 0;
     }
-    console.log(`Triggered task ${id} — run ${result.runId}`);
+    console.log(`Triggered scheduled task ${id}: run ${result.runId}`);
     return 0;
   } catch (err) {
     printError(err);
@@ -374,7 +374,7 @@ export async function runTaskRuns(args: TaskRunsArgs): Promise<number> {
       return 0;
     }
     if (runs.length === 0) {
-      console.log('No task runs.');
+      console.log('No runs yet.');
       return 0;
     }
     const rows = runs.map((r) => [r.id, r.scheduleId, r.status, r.startedAt ?? '-']);

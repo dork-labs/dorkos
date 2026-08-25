@@ -12,7 +12,7 @@ import type { Locator, Page } from '@playwright/test';
  * selector reported itself as a timeout and read like flake. A real locator
  * fails saying what it could not find. It still waits out its timeout — what
  * changed is the diagnosis, not the speed: "waiting for
- * getByRole('option', { name: 'Tasks Scheduler' })" points at the missing
+ * getByRole('option', { name: 'Scheduled tasks' })" points at the missing
  * control, where the old failure pointed at a dialog that was never asked to
  * open.
  *
@@ -24,12 +24,12 @@ import type { Locator, Page } from '@playwright/test';
  *
  * The name is TYPED, never hunted for in the untyped list. Before anyone types,
  * ⌘K is only Continue / Recent / New (`design-decisions.md` §15) — Settings,
- * Tasks Scheduler and Connections are not rows on that first screen and never
+ * Scheduled tasks and Connections are not rows on that first screen and never
  * will be again. They come back on the first keystroke, which is exactly what
  * this does and exactly what a person now does.
  *
  * @param page - The page to drive.
- * @param item - Exact palette entry to pick, e.g. `Tasks Scheduler`. Doubles as
+ * @param item - Exact palette entry to pick, e.g. `Scheduled tasks`. Doubles as
  *   the query typed to bring it back, so it must be the label as rendered.
  */
 export async function openFromCommandPalette(page: Page, item: string): Promise<void> {

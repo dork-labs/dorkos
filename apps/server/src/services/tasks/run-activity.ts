@@ -50,7 +50,7 @@ export function emitRunActivity(
         : 'tasks.run_failed';
 
   const actorType = run.trigger === 'scheduled' ? 'tasks' : 'user';
-  const actorLabel = run.trigger === 'scheduled' ? 'Tasks' : 'You';
+  const actorLabel = run.trigger === 'scheduled' ? 'Scheduled' : 'You';
 
   const verb =
     status === 'completed'

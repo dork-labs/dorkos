@@ -100,8 +100,8 @@ export function PreferencesTab() {
           />
 
           <SwitchSettingRow
-            label="Task celebrations"
-            description="Show animations when tasks complete"
+            label="To-do celebrations"
+            description="Show animations when to-dos complete"
             checked={showTaskCelebrations}
             onCheckedChange={setShowTaskCelebrations}
           />

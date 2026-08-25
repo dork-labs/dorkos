@@ -357,7 +357,7 @@ export function ScheduleForm({
                           data-testid="trust-dial-unavailable"
                           className="text-muted-foreground px-1 text-xs leading-relaxed"
                         >
-                          This task is set to “{modeLabel}”. The agent that runs it hasn’t said what
+                          This scheduled task is set to “{modeLabel}”. The agent that runs it hasn’t said what
                           it can do, so there is nothing to choose from yet — saving keeps it as it
                           is.
                         </p>
@@ -390,7 +390,7 @@ export function ScheduleForm({
                         strandsWorkingMode
                         strandedNote={
                           <>
-                            This task is set to “{modeLabel}”, which is not one of these. Saving
+                            This scheduled task is set to “{modeLabel}”, which is not one of these. Saving
                             keeps it as it is — pick a stop to change it.
                           </>
                         }

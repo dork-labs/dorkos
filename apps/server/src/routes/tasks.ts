@@ -80,7 +80,7 @@ import fs from 'node:fs/promises';
  * caught on a live server rather than in review: `dorkos task create` presents a
  * per-user API key and no cookie, so `POST /api/tasks` would have parked every
  * task the operator scheduled at `pending_approval` while the CLI printed
- * `Created task <name>` and nothing else (`packages/cli/src/commands/task.ts:252`).
+ * `Created scheduled task <name>` and nothing else (`packages/cli/src/commands/task.ts`).
  * A cron job reported as created that never fires is worse than a refusal. And
  * `PATCH /api/tasks/:id` with `permissionMode` would have hard-403'd with no
  * approval path at all, which is a lockout by the same rule
@@ -237,7 +237,7 @@ const NEXT_RUNS_PREVIEW_COUNT = 3;
 
 /** What a create or park refuses when the proposal makes no case for itself. */
 const MISSING_REASON_MESSAGE =
-  'A task that has to be approved needs a reason. Say why this schedule should exist — ' +
+  'A scheduled task that has to be approved needs a reason. Say why it should exist: ' +
   'whoever approves it has only that to go on.';
 
 /**
@@ -432,7 +432,9 @@ export function createTasksRouter(
     const existingPath = path.join(skillsDir, slug, SKILL_FILENAME);
     try {
       await fs.access(existingPath);
-      return res.status(409).json({ error: `Task "${slug}" already exists in target directory` });
+      return res
+        .status(409)
+        .json({ error: `Scheduled task "${slug}" already exists in target directory` });
     } catch {
       // File doesn't exist — good
     }
@@ -577,7 +579,7 @@ export function createTasksRouter(
       resourceType: 'schedule',
       resourceId: schedule.id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Created task ${schedule.displayName ?? schedule.name}`,
+      summary: `Created scheduled task ${schedule.displayName ?? schedule.name}`,
       linkPath: '/',
     });
 
@@ -598,7 +600,7 @@ export function createTasksRouter(
 
     const existing = store.getTask(req.params.id);
     if (!existing) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
     // The MERGED schedule is what gets registered, so the merged schedule is
@@ -778,7 +780,7 @@ export function createTasksRouter(
 
     let updated = store.updateTask(req.params.id, data);
     if (!updated) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
     // **Re-assert the status the caller asked for.** The file is written before
@@ -837,7 +839,7 @@ export function createTasksRouter(
         resourceType: 'schedule',
         resourceId: req.params.id,
         resourceLabel: updated.displayName ?? updated.name,
-        summary: `Paused task ${updated.displayName ?? updated.name}`,
+        summary: `Paused scheduled task ${updated.displayName ?? updated.name}`,
         linkPath: '/',
       });
     }
@@ -883,7 +885,7 @@ export function createTasksRouter(
     const { id } = req.params;
     const schedule = store.getTask(id);
     if (!schedule) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
     // Delete file from disk first
@@ -911,7 +913,7 @@ export function createTasksRouter(
       resourceType: 'schedule',
       resourceId: id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Deleted task ${schedule.displayName ?? schedule.name}`,
+      summary: `Deleted scheduled task ${schedule.displayName ?? schedule.name}`,
     });
 
     // Rejecting a proposed schedule is deleting it — the cockpit's Reject button
@@ -960,7 +962,7 @@ export function createTasksRouter(
 
     const run = await scheduler.triggerManualRun(req.params.id);
     if (!run) {
-      return res.status(404).json({ error: 'Schedule not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
     return res.status(201).json({ runId: run.id });
   });

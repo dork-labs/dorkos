@@ -61,7 +61,7 @@ The block takes a handful of settings. Only `cron` is worth learning first:
     },
     enabled: {
       type: 'boolean',
-      description: 'Set false to park the task without deleting it.',
+      description: 'Set false to switch it off without deleting it.',
       default: 'true',
     },
     permissions: {
@@ -317,6 +317,11 @@ DorkOS uses standard five-field cron expressions:
     completed: { type: 'status', description: 'The agent finished the run without errors' },
     failed: { type: 'status', description: 'The agent encountered an error during execution' },
     cancelled: { type: 'status', description: 'The run was manually cancelled' },
+    skipped: {
+      type: 'status',
+      description:
+        'The server was already at its limit of runs at once, so this turn never started. The row says so, and no message is sent',
+    },
   }}
 />
 

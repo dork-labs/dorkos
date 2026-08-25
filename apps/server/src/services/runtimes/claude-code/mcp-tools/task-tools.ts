@@ -295,7 +295,7 @@ export function createCreateScheduleHandler(
         resourceType: 'schedule',
         resourceId: updated.id,
         resourceLabel: updated.displayName ?? updated.name,
-        summary: `Proposed task ${updated.displayName ?? updated.name}, which needs your approval before it runs`,
+        summary: `Proposed scheduled task ${updated.displayName ?? updated.name}, which needs your approval before it runs`,
         linkPath: '/',
         metadata: { status: updated.status },
       });

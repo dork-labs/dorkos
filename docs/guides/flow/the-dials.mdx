@@ -17,7 +17,7 @@ Come here when you want to change one specific thing, like turning on the autono
 
 By default, `/flow` only runs when you type a command. Letting it work on its own schedule (a "tick" that claims one ready item and carries it forward) takes two steps: say you want it, then approve it.
 
-First, open `.dork/plugins/flow/skills/flow-drain/SKILL.md` and find the `schedule:` block at the top:
+First, open `.dork/plugins/flow/skills/flow-drain/SKILL.md` and find the `schedule:` block at the top. (flow 0.6.0 and later ships the `schedule:` block. If your copy lists `cron` and `enabled` flat at the top instead, it is an older install: update the plugin from the Marketplace.)
 
 ```yaml
 ---

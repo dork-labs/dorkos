@@ -479,7 +479,7 @@ describe('operator-only task fields on the REST routes', () => {
       // no cookie by design (`packages/cli/src/lib/api-client.ts`). Under the
       // inherited bar, PATCH hard-403'd with no approval path — a lockout — and
       // POST silently parked every task at `pending_approval` while the CLI printed
-      // "Created task <name>" and nothing else, so an operator's cron job would be
+      // "Created scheduled task <name>" and nothing else, so an operator's cron job would be
       // reported as created and never fire.
       //
       // Whether an agent holding that key should schedule unattended work is a real

@@ -4,6 +4,7 @@
  * @module services/relay/subject-resolver
  */
 import { extractSessionIdFromSubject } from '@dorkos/relay';
+import { TASK_SUBJECT_LABEL, TASK_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 
 export interface SubjectLabel {
   label: string;
@@ -33,8 +34,8 @@ export async function resolveSubjectLabel(
   if (subject === 'relay.system.console') {
     return { label: 'System Console', raw };
   }
-  if (subject.startsWith('relay.system.tasks.')) {
-    return { label: 'Tasks Scheduler', raw };
+  if (subject.startsWith(TASK_SUBJECT_PREFIX)) {
+    return { label: TASK_SUBJECT_LABEL, raw };
   }
   if (subject.startsWith('relay.human.console.')) {
     return { label: 'You', raw };

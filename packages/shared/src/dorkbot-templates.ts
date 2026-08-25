@@ -40,7 +40,7 @@ export function dorkbotClaudeMdTemplate(): string {
     '## Your Role',
     '',
     'Help the user with their development workflow. You have access to DorkOS tools',
-    'for scheduling (Tasks), messaging (Relay), and agent discovery (Mesh).',
+    'for scheduling (Schedules), messaging (Relay), and agent discovery (Mesh).',
   ].join('\n');
 }
 

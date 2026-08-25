@@ -56,6 +56,30 @@ const DEFAULT_PERMISSIONS = 'acceptEdits';
  * (`apps/server/src/services/tasks/cron-validation.ts`), which is where croner
  * lives: this package ships to the browser through the barrel and must stay
  * dependency-light.
+ *
+ * @example
+ * A skill that also runs itself every weekday morning. Everything below `name`
+ * and `description` is the block; drop it and the same file is a plain skill.
+ *
+ * ```yaml
+ * ---
+ * name: daily-health-check
+ * description: Runs lint, tests, and type checks and reports what broke
+ * schedule:
+ *   cron: '0 9 * * 1-5'
+ *   timezone: America/New_York
+ *   max-runtime: 20m
+ * ---
+ * Run lint, the test suite, and the type checker. Report anything that failed.
+ * ```
+ *
+ * @example
+ * On-demand only: no `cron`, so nothing fires it on a clock, but it can still be
+ * run by hand or by another agent.
+ *
+ * ```yaml
+ * schedule: {}
+ * ```
  */
 export const ScheduleBlockSchema = z.object({
   /**
