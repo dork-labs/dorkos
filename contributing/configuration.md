@@ -825,10 +825,19 @@ never be able to take down a turn:
   past the cap, "this backend cannot search") are the backend working correctly
   and bench nobody.
 
-The value is read once, at the first memory call. Changing it takes effect on the
+While a backend is benched, agents read the BUILTIN file rather than the backend
+that stopped answering — so notes kept only in that backend are out of view until
+it is fixed and DorkOS restarts. That is the honest trade: an agent that
+temporarily knows less, rather than a turn that dies.
+
+The value is read once, at the first memory call that can reach the config (a
+read attempted before the config manager exists is not cached, so the operator's
+choice is honored as soon as it can be read). Changing it takes effect on the
 next restart — a swap mid-run would leave two backends holding half an agent's
 notes each. `operator-only` to write: one write moves every agent's notes to
-whatever the new id names, so it is a person's decision, made in Settings.
+whatever the new id names, so it is a person's decision. There is no Settings
+switch for it, because no second backend ships yet — change it with
+`dorkos config set memory.provider <id>` or by editing `~/.dork/config.json`.
 
 ### rooms.turnLimitsEnabled
 

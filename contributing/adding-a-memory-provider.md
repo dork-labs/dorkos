@@ -12,7 +12,8 @@ Spec: [`specs/agent-memory/02-specification.md`](../specs/agent-memory/02-specif
 
 | Concept                         | Location                                                                                           |
 | ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| The contract                    | `packages/shared/src/memory-provider.ts` (`MemoryProvider`, schemas, the six typed errors)         |
+| The contract                    | `packages/shared/src/memory-provider.ts` (`MemoryProvider`, schemas, five of the six typed errors) |
+| The sixth typed error           | `packages/memory/src/paths.ts` (`MemoryPathError` — the engine's, not the port's)                  |
 | The engine behind `builtin`     | `packages/memory/` (`createBuiltinMemoryProvider`, the store, the ops, the path jail)              |
 | Conformance suite + fake        | `packages/test-utils/src/memory-conformance.ts`, `packages/test-utils/src/fake-memory-provider.ts` |
 | Registry, quarantine, fallback  | `apps/server/src/services/memory/registry.ts`                                                      |
@@ -85,7 +86,11 @@ at the composition root. The factory is called at most once per process, on firs
 - The port's refusals (`MemoryUnsupportedError`, `MemoryMatchError`, `MemoryCapExceededError`, `MemoryNoteShapeError`, `MemoryIOError`, plus the engine's `MemoryPathError`) bench **nobody**. They are the backend working correctly. `MemoryIOError` is on that list deliberately: a full disk is a fact about the machine, not evidence that your backend is broken, and swapping backends would not fix it.
 - `builtin` itself is never benched, because there is nothing behind it. When the fallback fails, memory degrades to **nothing injected** and the turn still runs.
 
+Two consequences worth planning for. **The fallback swaps which memory an agent has**, not just which code serves it: `builtin` starts from its own scaffold, so an agent whose notes live in your backend reads an empty file and its next `write` reports `created: true`. To a person watching, that reads as amnesia rather than as an outage, which is why the warning names your backend and the changelog says it out loud. And **a `write` that faults is re-attempted against `builtin`**, so a backend that faults AFTER committing has stored the note twice — once with you, once in the file. Fail before you commit, or make your writes idempotent.
+
 What this means for you as an author: **throw the typed errors.** A backend that wraps a network failure in a `MemoryIOError` keeps serving; the same failure thrown as a bare `Error` benches you for the rest of the run. That is the correct outcome for a genuinely broken backend and an annoying one for a transient blip, and the typed error is how you tell the registry which you had.
+
+If you ship your own copy of `@dorkos/shared`, your errors are different class objects from this server's and `instanceof` cannot see them — so the classification also accepts any `Error` whose `name` is one of the six. Setting `this.name` (which every error here does) is enough; the class identity is not required.
 
 ## Verification
 

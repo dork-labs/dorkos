@@ -48,6 +48,24 @@
  * A conversation is never lost over a notes file — that is the whole invariant,
  * and every branch here exists to keep it.
  *
+ * ## What the AGENT is told, and why it is not told here (future work)
+ *
+ * Nothing. A degraded read renders as silence, exactly like an agent that has
+ * never saved a note — so an agent whose backend is benched believes it knows
+ * nothing rather than that it cannot see what it knows, and may write a fresh
+ * note over the top. That is the same three-way-honesty failure this port
+ * refuses everywhere else, displaced one layer up.
+ *
+ * It is not fixed here because the fix is not in this module and is not one
+ * line. The `'error'` snapshot's message is deliberately never rendered into a
+ * prompt (`agent-context.ts`: a raw I/O message is neither useful to a model nor
+ * safe to hand it), and the block set an agent's append carries is pinned by the
+ * D9 prompt-content tests — so telling the agent means minting a DorkOS-authored
+ * sentence inside `<agent_memory>` and moving that pin, which is an injection-path
+ * decision with its own spec question ("what does an agent do differently when
+ * told its memory is unavailable?"). Filed as follow-up work rather than smuggled
+ * in as a string.
+ *
  * @module server/services/memory/registry
  */
 import { MemoryPathError, createBuiltinMemoryProvider } from '@dorkos/memory';
@@ -58,8 +76,11 @@ import {
   MemoryIOError,
   MemoryMatchError,
   MemoryNoteShapeError,
+  MemoryQuerySchema,
+  MemorySelectorSchema,
   MemorySnapshotSchema,
   MemoryUnsupportedError,
+  MemoryWriteOpSchema,
   type AgentMemoryRef,
   type MemoryHits,
   type MemoryProvider,
@@ -142,19 +163,52 @@ function warnOnce(key: string, message: string, ...args: unknown[]): void {
 }
 
 /**
+ * The six refusals this port and its engine declare, by the `name` every one of
+ * them sets on itself.
+ *
+ * The names exist for a case `instanceof` cannot answer: a third-party backend
+ * that ships with its OWN copy of `@dorkos/shared` throws errors from a
+ * different module instance, so `instanceof` says `false` for a class that is
+ * the same class by every meaning a person would use. Benching a backend for
+ * refusing an ambiguous edit — because its `node_modules` are laid out
+ * differently from ours — is exactly the false positive quarantine must not
+ * have.
+ */
+const REFUSAL_NAMES: ReadonlySet<string> = new Set([
+  'MemoryUnsupportedError',
+  'MemoryMatchError',
+  'MemoryCapExceededError',
+  'MemoryNoteShapeError',
+  'MemoryIOError',
+  'MemoryPathError',
+]);
+
+/**
  * Whether an error is the provider working correctly rather than failing.
+ *
+ * `instanceof` first, because it is exact for everything that shares this
+ * process's module instances (the builtin engine, anything registered from
+ * inside this repo). The name check is the fallback for a duplicated module
+ * graph, and it is deliberately generous in the direction that keeps a healthy
+ * backend serving: the cost of believing a foreign `MemoryIOError` is one
+ * unbenched provider that will fail again and be reported by whoever called it,
+ * while the cost of disbelieving it is a working backend taken out for the rest
+ * of the run.
  *
  * @param err - Whatever a provider threw.
  */
 function isContractRefusal(err: unknown): boolean {
-  return (
+  if (
     err instanceof MemoryUnsupportedError ||
     err instanceof MemoryMatchError ||
     err instanceof MemoryCapExceededError ||
     err instanceof MemoryNoteShapeError ||
     err instanceof MemoryIOError ||
     err instanceof MemoryPathError
-  );
+  ) {
+    return true;
+  }
+  return err instanceof Error && REFUSAL_NAMES.has(err.name);
 }
 
 /**
@@ -188,23 +242,31 @@ function bench(id: string, err: unknown): void {
 }
 
 /**
- * The id this machine is configured to use, read once.
+ * The id this machine is configured to use, read once — **once it can be read
+ * at all**.
  *
  * Defensive about the config manager itself: this is reached from the injection
  * path, and a server booted without config (or a test that never initialised it)
  * must get `builtin` rather than an exception on the way into a turn.
+ *
+ * **The failure is deliberately not cached, and that distinction is the whole
+ * point of the branch.** `configManager` is a `let` assigned at boot, so
+ * anything that reaches memory before `initConfigManager` runs sees `undefined`.
+ * Caching the `builtin` answer from that moment would disable the operator's
+ * configured backend for the rest of the process, silently, with no warning to
+ * find — a bug whose only symptom is an agent that remembers nothing. A read
+ * that could not happen is not an answer, so it is not remembered; the next
+ * caller asks again, and the first one that succeeds fixes the choice.
  */
 function configuredId(): string {
   if (chosenId !== null) return chosenId;
+  const manager = configManager as ConfigManager | undefined;
+  if (!manager) return BUILTIN_MEMORY_PROVIDER_ID;
   let id: unknown;
   try {
-    // `configManager` is a `let` populated at boot, so despite its non-optional
-    // type it really is `undefined` for anything that reaches memory before the
-    // server has configured itself — including a unit test that never
-    // initialised it. Reading through it without the cast throws there.
-    id = (configManager as ConfigManager | undefined)?.getDot('memory.provider');
+    id = manager.getDot('memory.provider');
   } catch {
-    id = undefined;
+    return BUILTIN_MEMORY_PROVIDER_ID;
   }
   chosenId = typeof id === 'string' && id.length > 0 ? id : BUILTIN_MEMORY_PROVIDER_ID;
   return chosenId;
@@ -297,15 +359,89 @@ async function dispatch<T>(
   }
 }
 
-/** Shape a failure the injection path can render as nothing at all. */
+/**
+ * The read's own dispatch, because reading is the one call that may not reject.
+ *
+ * `getSnapshot` is called on the way INTO a turn and the port says outright that
+ * it never throws: absence and failure are both states the injection path
+ * renders (as nothing), not states that abort a conversation. So this variant
+ * differs from {@link dispatch} in exactly one way — **a refusal is reported
+ * rather than raised** — and is identical in every other: a fault still benches,
+ * a refusal still benches nobody.
+ *
+ * Without the difference, a backend that carefully wrapped its disk failure in
+ * `MemoryIOError` would get a WORSE outcome than one that threw a bare `Error`:
+ * the bare throw becomes an empty memory and a turn that runs, the typed one
+ * becomes an exception in the caller. That inverts the incentive the author
+ * guide states ("throw the typed errors"), and it is the sort of inversion
+ * nobody discovers until a turn dies in front of an operator.
+ *
+ * A refusal is answered on the spot rather than retried on `builtin`, and the
+ * asymmetry with a fault is deliberate. A fault says this backend is broken, so
+ * the fallback is the mitigation. A refusal says this READ did not work, on a
+ * backend that is otherwise fine — and quietly answering it with a different
+ * store's notes would inject the wrong agent's memory rather than none.
+ *
+ * @param call - The read, applied to whichever provider is serving.
+ */
+async function dispatchRead(
+  call: (provider: MemoryProvider) => Promise<MemorySnapshot>
+): Promise<MemorySnapshot> {
+  const chosen = primary();
+  if (chosen) {
+    try {
+      return await call(chosen);
+    } catch (err) {
+      if (isContractRefusal(err)) return errorSnapshot(err);
+      bench(configuredId(), err);
+    }
+  }
+
+  const builtin = fallback();
+  if (!builtin) {
+    return errorSnapshot(new Error('no memory provider could be built'));
+  }
+  try {
+    return await call(builtin);
+  } catch (err) {
+    if (!isContractRefusal(err)) bench(BUILTIN_MEMORY_PROVIDER_ID, err);
+    return errorSnapshot(err);
+  }
+}
+
+/**
+ * What an `'error'` snapshot says when the failure itself said nothing.
+ *
+ * `MemorySnapshotSchema` requires a non-empty `error`, and a thrown `new
+ * Error()` or a thrown `''` produces exactly the empty string it refuses — so
+ * without a floor here the SHAPING of the failure would throw, out of the one
+ * branch whose whole job is that the turn still runs.
+ */
+const UNEXPLAINED_FAILURE = 'the memory backend failed without saying why';
+
+/**
+ * Shape a failure the injection path can render as nothing at all.
+ *
+ * **This function may not throw**, which is why it neither trusts the error to
+ * carry a message nor trusts the schema to accept what it built. Both belts are
+ * cheap and each covers a case the other does not: the message floor handles the
+ * empty-message error, and the `safeParse` handles whatever future invariant the
+ * snapshot schema grows that this call site has not been taught about.
+ *
+ * @param err - Whatever went wrong.
+ */
 function errorSnapshot(err: unknown): MemorySnapshot {
-  return MemorySnapshotSchema.parse({
-    status: 'error',
+  const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : String(err);
+  const message = raw.trim() === '' ? UNEXPLAINED_FAILURE : raw;
+  const shaped = {
+    status: 'error' as const,
     content: '',
     bytes: 0,
     truncated: false,
-    error: err instanceof Error ? err.message : String(err),
-  });
+    error: message,
+  };
+  const parsed = MemorySnapshotSchema.safeParse(shaped);
+  return parsed.success ? parsed.data : { ...shaped, error: UNEXPLAINED_FAILURE };
 }
 
 /** Re-raise, for the methods whose caller needs to know nothing happened. */
@@ -317,10 +453,16 @@ function rethrow(err: unknown): never {
  * The single facade every caller in this server addresses.
  *
  * It IS a `MemoryProvider`, so nothing at a call site knows a registry exists —
- * which is the point of a seam. Refs are validated here rather than in each
- * branch: a malformed ref is the CALLER's bug, refused identically whichever
- * backend is installed, and benching a provider for it would take a healthy
- * backend out over somebody else's mistake.
+ * which is the point of a seam. It is also the object `memoryConformance` runs
+ * against in `__tests__/conformance.test.ts`, which is what keeps "the facade is
+ * a provider" a checked claim rather than a comment.
+ *
+ * **Every argument is validated here rather than in each branch**, and for one
+ * reason: a malformed ref, op, query or selector is the CALLER's bug. It is
+ * refused identically whichever backend is installed, so passing it down would
+ * bench a perfectly healthy provider for somebody else's mistake — the same
+ * false positive quarantine exists to avoid. The parsed value is what reaches
+ * the provider, so a backend is handed the port's canonical shape.
  */
 const facade: MemoryProvider = {
   get info(): MemoryProviderInfo {
@@ -348,25 +490,31 @@ const facade: MemoryProvider = {
     // The one method that never rejects, because it is called on the way INTO a
     // turn. Everything that could go wrong arrives as an `'error'` snapshot,
     // which the injection path already renders as silence.
-    return dispatch((provider) => provider.getSnapshot(parsed.data), errorSnapshot);
+    return dispatchRead((provider) => provider.getSnapshot(parsed.data));
   },
 
   write(ref: AgentMemoryRef, op: MemoryWriteOp): Promise<MemoryWriteResult> {
     const parsed = AgentMemoryRefSchema.safeParse(ref);
     if (!parsed.success) return Promise.reject(parsed.error);
-    return dispatch((provider) => provider.write(parsed.data, op), rethrow);
+    const parsedOp = MemoryWriteOpSchema.safeParse(op);
+    if (!parsedOp.success) return Promise.reject(parsedOp.error);
+    return dispatch((provider) => provider.write(parsed.data, parsedOp.data), rethrow);
   },
 
   query(ref: AgentMemoryRef, query: MemoryQuery): Promise<MemoryHits> {
     const parsed = AgentMemoryRefSchema.safeParse(ref);
     if (!parsed.success) return Promise.reject(parsed.error);
-    return dispatch((provider) => provider.query(parsed.data, query), rethrow);
+    const parsedQuery = MemoryQuerySchema.safeParse(query);
+    if (!parsedQuery.success) return Promise.reject(parsedQuery.error);
+    return dispatch((provider) => provider.query(parsed.data, parsedQuery.data), rethrow);
   },
 
   forget(ref: AgentMemoryRef, selector: MemorySelector): Promise<void> {
     const parsed = AgentMemoryRefSchema.safeParse(ref);
     if (!parsed.success) return Promise.reject(parsed.error);
-    return dispatch((provider) => provider.forget(parsed.data, selector), rethrow);
+    const parsedSelector = MemorySelectorSchema.safeParse(selector);
+    if (!parsedSelector.success) return Promise.reject(parsedSelector.error);
+    return dispatch((provider) => provider.forget(parsed.data, parsedSelector.data), rethrow);
   },
 
   consolidate(ref: AgentMemoryRef): Promise<void> {

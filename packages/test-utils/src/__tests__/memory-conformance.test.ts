@@ -14,6 +14,12 @@ import {
   MemoryCapExceededError,
   MemoryMatchError,
   MemoryUnsupportedError,
+  type AgentMemoryRef,
+  type MemoryHits,
+  type MemorySelector,
+  type MemorySnapshot,
+  type MemoryWriteOp,
+  type MemoryWriteResult,
 } from '@dorkos/shared/memory-provider';
 import {
   FAKE_MEMORY_CAP_CHARS,
@@ -64,64 +70,163 @@ memoryConformance(() => new FakeMemoryProvider({ capChars: 120 }), {
   makeRef,
 });
 
-describe('memoryConformance can fail — the properties a broken backend loses', () => {
-  // The suite's own discrimination check, in the idiom of
-  // `connector-conformance.test.ts`'s null-branch guard: each of these is a
-  // property the suite gates, asserted here against a provider that violates it,
-  // so "the suite passed" cannot mean "the suite asserted nothing".
+/**
+ * A backend that funnels every ref into one store — the scope violation.
+ *
+ * Every violator below is a real, complete `MemoryProvider` that breaks exactly
+ * one of the suite's promises, so the checks in the next describe block have
+ * something that genuinely fails to run against. An earlier version of that
+ * block asserted the same properties against a HEALTHY fake, which proved only
+ * that the fake was healthy — it could not have caught a suite that asserted
+ * nothing.
+ */
+class LeakyFake extends FakeMemoryProvider {
+  /** Flatten any ref onto one shared scope. */
+  private static flat(ref: AgentMemoryRef): AgentMemoryRef {
+    return { ...ref, agentId: 'every-agent-shares-this' };
+  }
 
-  it('a capability declared off that answers anyway would fail the gate', async () => {
-    const provider = new FakeMemoryProvider({ search: false });
+  override getSnapshot(ref: AgentMemoryRef): Promise<MemorySnapshot> {
+    return super.getSnapshot(LeakyFake.flat(ref));
+  }
+
+  override write(ref: AgentMemoryRef, op: MemoryWriteOp): Promise<MemoryWriteResult> {
+    return super.write(LeakyFake.flat(ref), op);
+  }
+
+  override forget(ref: AgentMemoryRef, selector: MemorySelector): Promise<void> {
+    return super.forget(LeakyFake.flat(ref), selector);
+  }
+}
+
+/** A backend that declares `search: false` and then answers anyway — the silent no-op. */
+class SilentSearchFake extends FakeMemoryProvider {
+  /** Build a fake whose declared capability and behavior disagree. */
+  constructor() {
+    super({ search: false });
+  }
+
+  override query(_ref: AgentMemoryRef, _query: { text: string }): Promise<MemoryHits> {
+    // "Nothing found" and "I cannot search" are the same sentence to a model.
+    // This is the failure `MemoryUnsupportedError` exists to keep apart.
+    return Promise.resolve({ hits: [] });
+  }
+}
+
+/** A backend that trims a write to fit instead of refusing it — the silent truncation. */
+class TruncatingFake extends FakeMemoryProvider {
+  override async write(ref: AgentMemoryRef, op: MemoryWriteOp): Promise<MemoryWriteResult> {
+    try {
+      return await super.write(ref, op);
+    } catch (err) {
+      if (!(err instanceof MemoryCapExceededError)) throw err;
+      const kept = (await this.getSnapshot(ref)).content;
+      const trimmed = `${kept}${'action' in op && 'text' in op ? op.text : ''}`.slice(
+        0,
+        err.maxChars
+      );
+      this.seed(ref.agentId, trimmed);
+      return { created: false, chars: trimmed.length, bytes: Buffer.byteLength(trimmed, 'utf8') };
+    }
+  }
+}
+
+/** A backend that picks the first match when the caller named two — the guess. */
+class GuessingFake extends FakeMemoryProvider {
+  override async write(ref: AgentMemoryRef, op: MemoryWriteOp): Promise<MemoryWriteResult> {
+    try {
+      return await super.write(ref, op);
+    } catch (err) {
+      if (!(err instanceof MemoryMatchError) || err.kind !== 'ambiguous') throw err;
+      const current = (await this.getSnapshot(ref)).content;
+      const guessed = current.replace(op.action === 'replace' ? op.oldText : '', '');
+      this.seed(ref.agentId, guessed);
+      return { created: false, chars: guessed.length, bytes: Buffer.byteLength(guessed, 'utf8') };
+    }
+  }
+}
+
+/** A backend that reports an unreadable memory as an empty one — the amnesia. */
+class AmnesiacFake extends FakeMemoryProvider {
+  override async getSnapshot(ref: AgentMemoryRef): Promise<MemorySnapshot> {
+    const snapshot = await super.getSnapshot(ref);
+    if (snapshot.status !== 'error') return snapshot;
+    return { status: 'absent', content: '', bytes: 0, truncated: false };
+  }
+}
+
+/**
+ * Assert that a check the suite makes FAILS against this backend.
+ *
+ * The check passed in is the suite's own assertion, copied from
+ * `memory-conformance.ts`. Running it against a violator and demanding that it
+ * throws is what "the suite reds against this backend" means mechanically — so
+ * a suite that stopped asserting the property would fail HERE, in the file whose
+ * job is to notice.
+ *
+ * @param check - The suite's assertion, applied to the violating backend.
+ * @param hint - What the suite promises, for the failure message.
+ */
+async function expectSuiteCaseToRed(check: () => Promise<void>, hint: string): Promise<void> {
+  await expect(check(), `the suite no longer asserts: ${hint}`).rejects.toThrowError();
+}
+
+describe('memoryConformance can fail — its own cases, run against violators', () => {
+  it('the capability gate reds against a backend that answers a capability it declared off', async () => {
+    const provider = new SilentSearchFake();
     const ref = makeRef();
     await provider.write(ref, { action: 'add', text: 'anything' });
-    // What the suite demands of an off capability, stated directly.
-    await expect(provider.query(ref, { text: 'anything' })).rejects.toBeInstanceOf(
-      MemoryUnsupportedError
-    );
-    // …and what it demands of an on one, so neither branch is vacuous.
-    const searching = new FakeMemoryProvider({ search: true });
-    const other = makeRef();
-    await searching.write(other, { action: 'add', text: 'anything' });
-    await expect(searching.query(other, { text: 'anything' })).resolves.toMatchObject({
-      hits: [{ text: 'anything' }],
-    });
+
+    await expectSuiteCaseToRed(async () => {
+      await expect(provider.query(ref, { text: 'anything' })).rejects.toBeInstanceOf(
+        MemoryUnsupportedError
+      );
+    }, 'a capability that is off refuses with the typed error');
   });
 
-  it('a backend that let two refs share a store would fail the scope case', async () => {
-    const provider = new FakeMemoryProvider();
+  it('the scope case reds against a backend that funnels every ref into one store', async () => {
+    const provider = new LeakyFake();
     const alpha = makeRef();
     const beta = makeRef();
     await provider.write(alpha, { action: 'add', text: 'alpha only' });
-    expect((await provider.getSnapshot(beta)).status).toBe('absent');
+
+    await expectSuiteCaseToRed(async () => {
+      expect((await provider.getSnapshot(beta)).status).toBe('absent');
+    }, 'two refs never read each other');
   });
 
-  it('a backend that truncated instead of refusing would fail the cap case', async () => {
-    const provider = new FakeMemoryProvider({ capChars: 50 });
+  it('the cap case reds against a backend that truncates instead of refusing', async () => {
+    const provider = new TruncatingFake({ capChars: 50 });
     const ref = makeRef();
     await provider.write(ref, { action: 'add', text: 'small' });
-    const before = (await provider.getSnapshot(ref)).content;
-    await expect(
-      provider.write(ref, { action: 'add', text: 'x'.repeat(51) })
-    ).rejects.toBeInstanceOf(MemoryCapExceededError);
-    expect((await provider.getSnapshot(ref)).content).toBe(before);
+
+    await expectSuiteCaseToRed(async () => {
+      await expect(
+        provider.write(ref, { action: 'add', text: 'x'.repeat(51) })
+      ).rejects.toBeInstanceOf(MemoryCapExceededError);
+    }, 'a write past the cap is refused, never trimmed to fit');
   });
 
-  it('a backend that guessed at an ambiguous edit would fail the match case', async () => {
-    const provider = new FakeMemoryProvider();
+  it('the match case reds against a backend that guesses at an ambiguous edit', async () => {
+    const provider = new GuessingFake();
     const ref = makeRef();
     await provider.write(ref, { action: 'add', text: 'ship on Fridays once' });
     await provider.write(ref, { action: 'add', text: 'ship on Fridays twice' });
-    await expect(
-      provider.write(ref, { action: 'replace', oldText: 'ship on Fridays', text: 'x' })
-    ).rejects.toBeInstanceOf(MemoryMatchError);
+
+    await expectSuiteCaseToRed(async () => {
+      await expect(
+        provider.write(ref, { action: 'replace', oldText: 'ship on Fridays', text: 'x' })
+      ).rejects.toMatchObject({ name: 'MemoryMatchError', kind: 'ambiguous' });
+    }, 'text that matches twice is refused rather than guessed at');
   });
 
-  it('a backend that reported an unreadable memory as empty would fail the honesty case', async () => {
-    const provider = new FakeMemoryProvider();
+  it('the honesty case reds against a backend that reports an unreadable memory as empty', async () => {
+    const provider = new AmnesiacFake();
     const ref = makeRef();
     provider.setUnreadable(ref.agentId);
-    const snapshot = await provider.getSnapshot(ref);
-    expect(snapshot.status).toBe('error');
-    expect(snapshot.status).not.toBe('absent');
+
+    await expectSuiteCaseToRed(async () => {
+      expect((await provider.getSnapshot(ref)).status).toBe('error');
+    }, "a failed read reports 'error', never 'absent'");
   });
 });

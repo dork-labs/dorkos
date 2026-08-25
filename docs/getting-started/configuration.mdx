@@ -161,7 +161,7 @@ file lives beside the agent, on this machine, and you can open it in any editor.
   type={{
     'memory.provider': {
       description:
-        'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log — your agents keep working either way. Changing this takes effect the next time DorkOS starts. Only you can change this.',
+        'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log — your agents keep working either way, though while that is happening they read the notes file, so anything kept only in the backend that stopped answering is out of view until you fix it and restart. Changing this takes effect the next time DorkOS starts. Only you can change this.',
       type: 'string',
       default: 'builtin',
     },

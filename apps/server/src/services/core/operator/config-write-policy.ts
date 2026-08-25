@@ -383,7 +383,10 @@ export const CONFIG_WRITE_POLICY = {
   // whatever backend the new id names, and the notes are the one store an agent
   // writes to itself. An agent that could set this could arrange for its own
   // memory — and every other agent's — to be kept somewhere the operator never
-  // chose. Changing backends is a person's decision, made in Settings.
+  // chose. There is no Settings switch for it, and saying otherwise would name a
+  // surface that does not exist: no second backend ships yet, so a person changes
+  // this with `dorkos config set memory.provider <id>` or by editing
+  // `~/.dork/config.json`, and it takes effect on the next restart.
   'memory.provider': 'operator-only',
 
   // How far agents may reply to each other in a room before it stops them

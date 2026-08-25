@@ -221,10 +221,20 @@ export function memoryConformance(
         ).toBe(true);
       });
 
-      it('info is stable for the life of the instance', () => {
+      it('info is stable across the work the instance does', async () => {
+        // Read it, do something real, read it again. The port calls `info`
+        // static for the life of the instance, and a backend that recomputed it
+        // — flipping `search` once an index warmed up, renaming itself after
+        // connecting — would make every capability branch a caller took
+        // conditional on when it asked.
         const provider = makeProvider();
-        expect(provider.info).toEqual(provider.info);
-        expect(provider.info.id).toBe(provider.info.id);
+        const ref = await makeRef();
+        const before = { ...provider.info, capabilities: { ...provider.info.capabilities } };
+
+        await provider.write(ref, { action: 'add', text: NOTE });
+        await provider.getSnapshot(ref);
+
+        expect(provider.info).toEqual(before);
       });
     });
 
