@@ -115,10 +115,24 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
  * It renders inside {@link buildAgentBlock}, so it reaches all three runtimes
  * through `buildAgentContextAppend` and inherits the no-manifest guard: a
  * bare-folder session has no other sessions of itself and is told nothing.
+ *
+ * **The write instruction names the tool as an ENDING, not as a bare name, and
+ * the deviation from the specification's verbatim sentence is deliberate.** The
+ * spec writes "save it with the `memory_write` tool"; this block renders on
+ * claude-code, codex and opencode alike, and the three do not agree on what the
+ * tool is called — claude-code qualifies it `mcp__dorkos__memory_write`, while
+ * the other two reach it under whatever prefix the person's harness gave
+ * DorkOS's MCP server. A bare name is uncallable on claude-code and unreliable
+ * everywhere else: that is DOR-1292, measured, where a model followed the prose
+ * literally and lost the turn. The one wording true on all three is the
+ * searchable ending, which `<dorkos_context>` already uses for the same reason
+ * and `claude-code/messaging/__tests__/context-tool-names.test.ts` enforces for
+ * every runtime-neutral block. The instruction is unchanged; only the spelling
+ * of the tool is.
  */
 function buildSessionModelBlock(): string {
   return `<session_model>
-You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing.
+You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down.
 </session_model>`;
 }
 

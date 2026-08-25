@@ -299,7 +299,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // through by having nothing to compare against.
     // The exact surface, so a tool added or lost is a line to look at here rather
     // than a change a bound absorbs. Same number as `tool-exposure.test.ts` sees.
-    expect(advertised.size).toBe(83);
+    expect(advertised.size).toBe(84);
     expect(advertised.has('react_to_room_entry')).toBe(true);
 
     const { prose } = await claudeCodeProse();

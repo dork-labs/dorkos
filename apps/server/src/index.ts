@@ -3078,6 +3078,11 @@ async function start() {
       // REST routes and the trigger dispatcher hold — one set of membership
       // rules, one cascade guard, one budget, whichever surface reaches them.
       roomDeps: { rooms: roomService },
+      // How a saved note learns which room it was written in (DOR-632). The
+      // room service answers for the CALLING session, so the label is derived
+      // rather than supplied — a model that could name its own provenance could
+      // make a poisoned note claim it came from somewhere trustworthy.
+      memoryDeps: { roomLabelForSession: (id: string) => roomService.roomLabelForSession(id) },
     },
     createCapabilityAttributionObserver(activityService)
   );

@@ -88,7 +88,12 @@ export function inSessionToolName(bare: string): string {
  * - the four room verbs, because a room turn is a person waiting in a shared
  *   channel, and DOR-1292 measured a whole turn lost to searching for one;
  * - `list_capabilities`, because it is how an agent finds everything else, and a
- *   discovery entry point nobody can discover is not one.
+ *   discovery entry point nobody can discover is not one;
+ * - `memory_write`, because there must be **no ToolSearch hop between an agent
+ *   and remembering** (the A-06 lesson). The prompt tells every agent, on every
+ *   turn of every runtime, to save what it learns before the turn ends; a tool
+ *   named in that instruction and then deferred is the DOR-1292 defect with a
+ *   different name. The thing an agent fails to save is gone.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -96,6 +101,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'read_room_history',
   'search_room_history',
   'list_capabilities',
+  'memory_write',
 ]);
 
 /**
