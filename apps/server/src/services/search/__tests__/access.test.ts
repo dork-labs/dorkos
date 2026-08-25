@@ -86,11 +86,24 @@ function join(roomId: string, authorId: string, joinedSeq: number): void {
     .run();
 }
 
-/** A session transcript row, as the claude-code projection would write it. */
-function transcribe(sessionId: string, ordinal: number, text: string): void {
+/**
+ * A session transcript row, as a session-history projection would write it.
+ *
+ * The source is a parameter because "owner-only" is a statement about EVERY
+ * session source, not about the one that happened to ship first: `buildScopes`
+ * knows `rooms` by name and treats everything else as session history, so a
+ * second and third source have to be asserted through the same door rather than
+ * assumed to inherit it.
+ */
+function transcribe(
+  sessionId: string,
+  ordinal: number,
+  text: string,
+  sourceId = 'claude-code'
+): void {
   db.insert(messages)
     .values({
-      sourceId: 'claude-code',
+      sourceId,
       originKey: sessionId,
       ordinal,
       role: 'user',
@@ -100,7 +113,7 @@ function transcribe(sessionId: string, ordinal: number, text: string): void {
     .run();
   db.insert(searchSources)
     .values({
-      sourceId: 'claude-code',
+      sourceId,
       originKey: sessionId,
       lastOrdinal: ordinal,
       containerPath: '/Users/dork/code/dorkos',
@@ -162,6 +175,10 @@ beforeEach(async () => {
   // collision that a visibility clause scoped on `origin_key` alone would let
   // through — and the only way the session assertions below can catch it.
   transcribe('open', 9, 'kestrel, said in a session that shares a room’s id');
+  // The third source, added by DOR-688. It reads another program's SQLite store
+  // and is session history like the others — so it is owner-only on the day it
+  // lands rather than on the day somebody remembers.
+  transcribe('ses_oc', 1, 'a kestrel, said to OpenCode', 'opencode');
 
   await new SearchIndexer(db, [roomsSource]).sweep();
 });
@@ -207,6 +224,13 @@ describe('the owner', () => {
       .map((hit) => hit.container)
       .sort();
     expect(sessions).toEqual(['open', 'session-b']);
+  });
+
+  it('finds OpenCode transcripts too, on the same scope', () => {
+    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
+    expect(hits).toContainEqual(
+      expect.objectContaining({ source: 'opencode', container: 'ses_oc' })
+    );
   });
 
   it('carries the working directory a session hit opens in', () => {
@@ -289,15 +313,19 @@ describe('session history over an MCP-shaped caller', () => {
     // reaches neither.
     for (const term of ['kestrel', 'pelican']) {
       const hits = search(scopeFor(agentId, false), term).results;
-      expect(hits.filter((hit) => hit.source === 'claude-code')).toEqual([]);
+      expect(
+        hits.filter((hit) => hit.source === 'claude-code' || hit.source === 'opencode')
+      ).toEqual([]);
     }
   });
 
   it('returns no session row even when the caller asks for that source by name', () => {
-    expect(search(scopeFor(agentId, false), 'kestrel', 'claude-code')).toEqual({
-      results: [],
-      warnings: [],
-    });
+    for (const source of ['claude-code', 'opencode']) {
+      expect(search(scopeFor(agentId, false), 'kestrel', source)).toEqual({
+        results: [],
+        warnings: [],
+      });
+    }
   });
 
   it('returns those very rows to the owner — the positive control', () => {

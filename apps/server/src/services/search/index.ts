@@ -7,12 +7,14 @@
  * here is a copy that can be thrown away and rebuilt, and deleting the index is
  * a supported recovery.
  *
- * Today it indexes two sources: the room log, and every Claude Code transcript
+ * Today it indexes three sources: the room log; every Claude Code transcript
  * under EVERY Claude account on the machine — sessions run inside DorkOS and
  * sessions run from the bare `claude` CLI alike, because the index reads what
- * the SDK wrote rather than anything DorkOS recorded. Every account, because
- * reading only the active one covered 67% of the operator's own history and
- * said nothing about the rest (spec Amendment 2).
+ * the SDK wrote rather than anything DorkOS recorded, and every account, because
+ * reading only the active one covered 67% of the operator's own history and said
+ * nothing about the rest (spec Amendment 2); and OpenCode's own SQLite store,
+ * read through a throwaway snapshot that structurally cannot reach the
+ * credential tables sitting beside its messages (ADR 260825-110420).
  *
  * {@link searchMessages} is the one way to read it — the room history tool's
  * `search_room_history` calls it inside a scope the rooms domain resolved
@@ -32,9 +34,18 @@ export {
   SEARCH_SOURCES,
   claudeCodeSource,
   createClaudeCodeSource,
+  createOpenCodeSource,
+  openCodeSource,
   roomsSource,
 } from './registry.js';
-export { sweepRowSource } from './row-frontier.js';
+export { sweepContainers, sweepRowSource } from './row-frontier.js';
+export { sweepSnapshotSource, SNAPSHOT_FAILURE_KEY } from './snapshot-frontier.js';
+export {
+  openOpenCodeSnapshot,
+  OPENCODE_CREDENTIAL_TABLES,
+  OPENCODE_READ_ALLOWLIST,
+  type OpenCodeSnapshot,
+} from './opencode-store.js';
 export { indexRoomEntry } from './write-through.js';
 export {
   sweepFileSource,
@@ -47,7 +58,9 @@ export {
   projectClaudeCodeLines,
   type ClaudeCodeProjectionContext,
 } from './projections/claude-code.js';
+export { projectOpenCodeMessages, type OpenCodeMessageRow } from './projections/opencode.js';
 export type {
+  ContainerReader,
   DiscoveryFailure,
   FileContainer,
   FileDiscovery,
@@ -60,6 +73,7 @@ export type {
   SearchSource,
   SkipReason,
   SkippedFile,
+  SnapshotSource,
   SourceFailure,
   SourceSweep,
 } from './types.js';

@@ -13,6 +13,7 @@ import { logger } from '../../lib/logger.js';
 import { sweepFileSource } from './jsonl-frontier.js';
 import { SEARCH_SOURCES } from './registry.js';
 import { sweepRowSource } from './row-frontier.js';
+import { sweepSnapshotSource } from './snapshot-frontier.js';
 import type { SearchSource, SourceFailure } from './types.js';
 
 /**
@@ -132,7 +133,9 @@ export class SearchIndexer {
       const swept =
         source.mechanism === 'jsonl'
           ? await sweepFileSource(this.db, source, at)
-          : sweepRowSource(this.db, source, at);
+          : source.mechanism === 'sqlite-snapshot'
+            ? await sweepSnapshotSource(this.db, source, at)
+            : sweepRowSource(this.db, source, at);
       result.containers += swept.containers;
       result.indexed += swept.indexed;
       result.skipped += swept.skipped;

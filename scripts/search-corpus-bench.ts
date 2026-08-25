@@ -1,12 +1,21 @@
 /**
- * Rebuild the message-search index from this machine's real Claude Code
- * transcripts, and print what it cost.
+ * Rebuild the message-search index from this machine's real transcripts, and
+ * print what it cost.
  *
  * Run it with:
  *
  * ```bash
  * DORKOS_SEARCH_BENCH=1 pnpm tsx scripts/search-corpus-bench.ts
+ * DORKOS_SEARCH_BENCH=1 pnpm tsx scripts/search-corpus-bench.ts --source opencode
  * ```
+ *
+ * **`--source` picks which corpus.** `claude-code` is the default and is the
+ * measurement everything below is calibrated against; `opencode` runs the
+ * snapshot source (DOR-688, ADR 260825-110420) against the real
+ * `~/.local/share/opencode/opencode.db`. The two are separate runs rather than
+ * one combined number because their floors are not comparable: Claude Code is
+ * five figures of messages and OpenCode is two, so a combined count would let a
+ * completely broken OpenCode source hide inside Claude Code's rounding.
  *
  * **It is env-gated on purpose.** It reads every transcript the operator has,
  * which is slow, machine-specific and nobody's business in CI — so it refuses to
@@ -62,6 +71,9 @@ import { sweepFileSource } from '../apps/server/src/services/search/jsonl-fronti
 import { createClaudeCodeSource } from '../apps/server/src/services/search/registry.js';
 import { discoverClaudeCodeTranscripts } from '../apps/server/src/services/search/claude-code-discovery.js';
 import { resolveClaudeRootSet } from '../apps/server/src/services/runtimes/claude-code/claude-config-dir.js';
+import { resolveOpenCodeStorePath } from '../apps/server/src/services/runtimes/opencode/opencode-data-dir.js';
+import { createOpenCodeSource } from '../apps/server/src/services/search/registry.js';
+import { sweepSnapshotSource } from '../apps/server/src/services/search/snapshot-frontier.js';
 import type { KnownContainer } from '../apps/server/src/services/search/types.js';
 
 /**
@@ -118,11 +130,104 @@ const MAX_REBUILD_MS = 60_000;
 // eslint-disable-next-line no-restricted-syntax
 if (process.env.DORKOS_SEARCH_BENCH !== '1') {
   console.error(
-    'search-corpus-bench reads every Claude Code transcript on this machine.\n' +
+    'search-corpus-bench reads every transcript on this machine.\n' +
       'Run it deliberately:\n\n' +
       '  DORKOS_SEARCH_BENCH=1 pnpm tsx scripts/search-corpus-bench.ts\n'
   );
   process.exit(2);
+}
+
+/** Which corpus to measure. `--source <id>` or `--source=<id>`. */
+function readSourceFlag(): 'claude-code' | 'opencode' {
+  const flag = process.argv.indexOf('--source');
+  const value =
+    flag !== -1 && flag + 1 < process.argv.length
+      ? process.argv[flag + 1]
+      : process.argv.find((arg) => arg.startsWith('--source='))?.slice('--source='.length);
+  if (value === undefined || value === 'claude-code') return 'claude-code';
+  if (value === 'opencode') return 'opencode';
+  console.error(`Unknown --source '${value}'. Known: claude-code, opencode.`);
+  process.exit(2);
+}
+
+const benchSource = readSourceFlag();
+
+/**
+ * The fewest OpenCode messages a healthy index of this corpus holds.
+ *
+ * **Deliberately 1, not a measurement.** OpenCode's corpus on this machine is 51
+ * messages across 63 top-level sessions (2026-08-25), against 19,124 from Claude
+ * Code — two orders of magnitude smaller, and made entirely of whatever the
+ * operator last tried the runtime for. Any real floor would red on the next
+ * person's machine, and on this one it would red the week the operator stops
+ * using OpenCode. What this catches is the failure that actually matters and is
+ * otherwise invisible: a source that indexes NOTHING while reporting success,
+ * which is the shape every bug in a snapshot read takes.
+ *
+ * A machine where OpenCode has never run legitimately indexes zero, and the run
+ * says so and passes — the store's absence is reported on the output line rather
+ * than swallowed, so a zero is never ambiguous.
+ */
+const MIN_OPENCODE_MESSAGES = 1;
+
+if (benchSource === 'opencode') {
+  const storePath = resolveOpenCodeStorePath();
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-search-bench-'));
+  const dbPath = path.join(workdir, 'bench.db');
+  try {
+    const db = createDb(dbPath);
+    runMigrations(db);
+
+    // The clock starts before the snapshot: copying the store IS part of what
+    // this source costs, and timing only the read would hide the term that
+    // scales with how much OpenCode history exists.
+    const started = process.hrtime.bigint();
+    const sweep = await sweepSnapshotSource(
+      db,
+      createOpenCodeSource(() => storePath),
+      new Date().toISOString()
+    );
+    const rebuildMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    const indexed = db.select({ ordinal: messages.ordinal }).from(messages).all().length;
+    const containers = db
+      .select({ originKey: searchSources.originKey })
+      .from(searchSources)
+      .where(eq(searchSources.sourceId, 'opencode'))
+      .all().length;
+    const storeExists = storePath !== null && fs.existsSync(storePath);
+
+    console.log(
+      [
+        'source=opencode',
+        `store=${storePath ?? '(none)'}`,
+        `storeExists=${String(storeExists)}`,
+        `sessions=${sweep.containers}`,
+        `containers=${containers}`,
+        `messages=${indexed}`,
+        `skippedRows=${sweep.skipped}`,
+        `failures=${sweep.failures.length}`,
+        `rebuildMs=${rebuildMs.toFixed(0)}`,
+      ].join(' ')
+    );
+
+    for (const failure of sweep.failures.slice(0, 10)) {
+      console.error(`  failed: ${failure.originKey} — ${failure.message}`);
+    }
+
+    // Zero messages is a FAILURE only when there is a store to have read. With
+    // no store there is honestly nothing to index, and saying otherwise would be
+    // a red run on every machine that has never opened OpenCode.
+    if (storeExists && indexed < MIN_OPENCODE_MESSAGES) {
+      console.error(
+        `\nFAIL: the store at ${storePath ?? '(none)'} exists and the index came back empty`
+      );
+      process.exit(1);
+    }
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true });
+  }
+  process.exit(0);
 }
 
 /** The config reader shape {@link resolveClaudeRootSet} takes. */

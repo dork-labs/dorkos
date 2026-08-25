@@ -32,7 +32,7 @@ import {
   stampAttempt,
   type Writer,
 } from './frontier-store.js';
-import type { RowContainer, RowSource, SourceSweep } from './types.js';
+import type { ContainerReader, RowContainer, RowSource, SourceSweep } from './types.js';
 
 /** One container's resume state, read once per sweep rather than once per container. */
 interface FrontierState {
@@ -62,8 +62,44 @@ interface FrontierState {
  * @param at - The ISO-8601 timestamp to stamp this attempt with.
  */
 export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSweep {
+  return sweepContainers(
+    db,
+    source.id,
+    {
+      listContainers: () => source.listContainers(db),
+      readSince: (originKey, afterOrdinal) => source.readSince(db, originKey, afterOrdinal),
+    },
+    at
+  );
+}
+
+/**
+ * The watermark pass itself, over any reader that can list containers and read
+ * one above an ordinal.
+ *
+ * Extracted from {@link sweepRowSource} when M3 arrived (ADR 260825-110420).
+ * **That extraction is the evidence behind refusing the port promotion**: a
+ * third mechanism was supposed to force the registry into a `SearchAdapter`
+ * hierarchy, and instead it turned out to need none of the frontier logic
+ * rewritten — M2 and M3 differ in where a container list comes from (this
+ * database, versus a read-only copy of somebody else's) and in nothing else. The
+ * resume rule, the shrink rebuild, the watermark write and the prune are the
+ * same four paragraphs for both, so they stayed one implementation.
+ *
+ * @param db - The database the INDEX is written to. Never the source, unless the
+ *   caller's reader happens to read it too.
+ * @param sourceId - Stamped onto every row this pass writes.
+ * @param reader - Where containers come from.
+ * @param at - The ISO-8601 timestamp to stamp this attempt with.
+ */
+export function sweepContainers(
+  db: Db,
+  sourceId: string,
+  reader: ContainerReader,
+  at: string
+): SourceSweep {
   const sweep: SourceSweep = {
-    sourceId: source.id,
+    sourceId,
     containers: 0,
     indexed: 0,
     skipped: 0,
@@ -72,26 +108,26 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSwe
     failures: [],
   };
 
-  const containers = source.listContainers(db);
+  const containers = reader.listContainers();
   sweep.containers = containers.length;
-  const state = readFrontierState(db, source.id);
+  const state = readFrontierState(db, sourceId);
   const live = new Set(containers.map((container) => container.originKey));
 
   for (const container of containers) {
     try {
-      const outcome = indexContainer(db, source, container, state, at);
+      const outcome = indexContainer(db, sourceId, reader, container, state, at);
       sweep.indexed += outcome.indexed;
       sweep.skipped += outcome.skipped;
       if (outcome.rebuilt) sweep.rebuilt += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      recordFailure(db, source.id, container, state, at, message);
-      sweep.failures.push({ sourceId: source.id, originKey: container.originKey, message });
+      recordFailure(db, sourceId, container, state, at, message);
+      sweep.failures.push({ sourceId, originKey: container.originKey, message });
     }
   }
 
-  sweep.pruned = pruneVanished(db, source.id, live, state.keys());
-  stampAttempt(db, source.id, at);
+  sweep.pruned = pruneVanished(db, sourceId, live, state.keys());
+  stampAttempt(db, sourceId, at);
   return sweep;
 }
 
@@ -128,7 +164,17 @@ export function indexRowContainer(
   container: RowContainer,
   at: string
 ): { indexed: number; skipped: number; rebuilt: boolean } {
-  return indexContainer(db, source, container, readContainerState(db, source.id, container), at);
+  return indexContainer(
+    db,
+    source.id,
+    {
+      listContainers: () => source.listContainers(db),
+      readSince: (originKey, afterOrdinal) => source.readSince(db, originKey, afterOrdinal),
+    },
+    container,
+    readContainerState(db, source.id, container),
+    at
+  );
 }
 
 /**
@@ -254,7 +300,8 @@ export function containerBacklog(db: Db, source: RowSource, container: RowContai
  */
 function indexContainer(
   db: Db,
-  source: RowSource,
+  sourceId: string,
+  reader: ContainerReader,
   container: RowContainer,
   state: ReadonlyMap<string, FrontierState>,
   at: string
@@ -300,12 +347,12 @@ function indexContainer(
     // projectable message — an empty room — is a no-op on its very first pass,
     // and skipping the write would leave it undiscovered until somebody spoke.
     if (known?.watermark == null) {
-      db.transaction((tx) => writeFrontier(tx, source.id, container, watermark, at, null));
+      db.transaction((tx) => writeFrontier(tx, sourceId, container, watermark, at, null));
     }
     return { indexed: 0, skipped: 0, rebuilt: false };
   }
 
-  const projection = source.readSince(db, container.originKey, resumeFrom);
+  const projection = reader.readSince(container.originKey, resumeFrom);
   const highest = projection.messages.at(-1)?.ordinal ?? 0;
 
   // The watermark tracks the CONTAINER, not the projection: a container whose
@@ -337,9 +384,9 @@ function indexContainer(
   const reached = rebuilt ? container.maxOrdinal : Math.max(container.maxOrdinal, highest);
 
   db.transaction((tx) => {
-    if (rebuilt) deleteContainerMessages(tx, source.id, container.originKey);
-    insertMessages(tx, source.id, projection.messages);
-    writeFrontier(tx, source.id, container, reached, at, null);
+    if (rebuilt) deleteContainerMessages(tx, sourceId, container.originKey);
+    insertMessages(tx, sourceId, projection.messages);
+    writeFrontier(tx, sourceId, container, reached, at, null);
   });
 
   return { indexed: projection.messages.length, skipped: projection.skipped, rebuilt };

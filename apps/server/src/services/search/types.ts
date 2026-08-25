@@ -302,13 +302,76 @@ export interface FileSource {
 }
 
 /**
+ * Where a watermark pass gets its containers.
+ *
+ * The one thing M2 and M3 do differently, isolated. M2's containers are rows in
+ * DorkOS's own database; M3's are rows in a read-only copy of somebody else's.
+ * Everything after that — the resume rule, the shrink rebuild, the watermark
+ * write, the prune — is identical, which is why `row-frontier.ts` has one
+ * implementation of it and not two.
+ */
+export interface ContainerReader {
+  /** Every container that exists right now, with its current high-water ordinal. */
+  listContainers(): RowContainer[];
+
+  /**
+   * The container's rows strictly above `afterOrdinal`, already projected and
+   * ordered by ordinal.
+   *
+   * @param originKey - Which container.
+   * @param afterOrdinal - Read rows above this. `0` reads the whole container.
+   */
+  readSince(originKey: string, afterOrdinal: number): Projection;
+}
+
+/**
+ * **M3** — a source whose containers live in another program's SQLite file,
+ * read through a throwaway snapshot copy (ADR 260825-110420).
+ *
+ * OpenCode uses it, and it is the third mechanism the design said would promote
+ * this shape to a port. **The promotion was refused, with evidence rather than
+ * taste**: M3 reuses M2's entire frontier implementation through
+ * {@link ContainerReader} and contributes one function of its own. The ADR
+ * carries the re-trigger condition.
+ *
+ * The snapshot has a lifetime, which is the only structural difference from a
+ * row source: {@link SnapshotSource.open} produces a reader that must be closed,
+ * and closing deletes the copy. That is why this is `open()` rather than two
+ * standalone functions — a `listContainers` that opened its own snapshot and a
+ * `readSince` that opened another would copy the store once per container.
+ */
+export interface SnapshotSource {
+  /** `'opencode'`. Stamped onto every row this source contributes. */
+  readonly id: string;
+
+  /**
+   * Which mechanism sweeps this source. The registry row names it rather than
+   * the indexer guessing from the shape of the record (spec §3).
+   */
+  readonly mechanism: 'sqlite-snapshot';
+
+  /**
+   * Copy the store, open the copy read-only, and hand back a reader.
+   *
+   * @returns A reader the caller must `close()`, or `null` when there is no
+   *   store to read — the runtime may never have run on this machine, which is
+   *   not a failure. The distinction is load-bearing: `null` means the sweep
+   *   prunes nothing, because "no store" is not "every session was deleted".
+   */
+  open(): Promise<(ContainerReader & { close(): void }) | null>;
+}
+
+/**
  * One source the indexer sweeps — a record in the registry array, never a port.
  *
- * A port abstracting two mechanisms and three functions is a class hierarchy
- * standing where a record does. The trigger that changes that is written down:
- * the day a third mechanism is needed the promotion fires (spec §3, D12).
+ * A port abstracting three mechanisms and four functions is still a class
+ * hierarchy standing where a record does. The design named the day a third
+ * mechanism arrived as the trigger that would change that (spec §3, D12); the
+ * day came with OpenCode, and ADR 260825-110420 refused the promotion and
+ * recorded the next trigger — a FOURTH mechanism, or a source that lives outside
+ * `apps/server`.
  */
-export type SearchSource = RowSource | FileSource;
+export type SearchSource = RowSource | FileSource | SnapshotSource;
 
 /** What one pass over one source did, whichever mechanism swept it. */
 export interface SourceSweep {
