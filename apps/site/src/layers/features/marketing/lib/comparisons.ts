@@ -973,7 +973,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'The desktop app is open under the Apache licence. Its cloud and enterprise versions are not published as open source.',
     verdict:
-      'Emdash is the closest open source thing to DorkOS, and it is genuinely good: local, free, and built on the same belief that you should run any agent you like under your own accounts. Its documentation lists 34 of them, a wider list than DorkOS drives. The two part company after the agents start. Emdash gives each one a clean lane and leaves you as the place they meet. DorkOS puts them in shared rooms, caps how much they may say to each other, and puts the whole thing on a screen you can open from your phone.',
+      'Emdash makes the same bet DorkOS does, and makes it well: open source, on your own machine, free, and driving whatever agent you already signed in to. Its documentation lists 34 of them, a wider list than DorkOS drives. The two part company after the agents start. Emdash gives each one a clean lane and leaves you as the place they meet. DorkOS puts them in shared rooms, caps how much they may say to each other, and puts the whole thing on a screen you can open from your phone.',
     theirStrengths: [
       'you want the widest choice of agents, because its documentation lists 34 command-line tools',
       'you want to set an outside tool up once and have every agent you installed pick it up',
@@ -1025,7 +1025,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'Each job gets its own branch and workspace and works alone. Nothing in its documentation lets one agent message another or hand work along.',
         detail:
-          'This is the one real gap between the two, and it is narrower than it sounds: parallel lanes are what most people want most days, and Emdash keeps clean ones. If your work divides neatly into separate jobs, you will not miss what is not here.',
+          'This is the one real gap between the two, and it is narrower than it sounds: parallel lanes are what most people want most days, and Emdash keeps clean ones. If your work divides neatly into separate jobs, you are unlikely to miss what is not here.',
       },
       'local-first': {
         verdict: 'yes',
@@ -1849,7 +1849,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Its phone app reaches a running session, so you can answer one from anywhere.',
         detail:
-          'If you last looked a while ago: in August 2026 Anthropic made Auto mode the default on the Pro, Max and Team plans, so Claude Code stops to ask you less often than it used to. DorkOS shows you where each session stops, and changes that for every agent from one panel.',
+          'If you last looked a while ago: in August 2026 Anthropic made Auto mode the default on the Pro, Max and Team plans, so Claude Code stops to ask you less often than it used to. DorkOS shows you where each session stops, and lets you change that for every agent from one panel.',
         source: 'https://code.claude.com/docs/en/mobile',
       },
       'attention-management': {
@@ -1909,7 +1909,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Is this only useful for writing code?',
-        a: 'No, and Anthropic’s own research says so. Across roughly 400,000 Claude Code sessions, only half were writing or fixing code. The rest ran software, analysed data and wrote documents. People run their inbox, their notes and their week through it, and most hand-build the scaffolding themselves: named agents, a schedule, and some way of being asked for approval. DorkOS ships those parts.',
+        a: 'No, and Anthropic’s own research says so. Across roughly 400,000 Claude Code sessions, only half were writing or fixing code. The rest ran software, analysed data and wrote documents. People run their inbox, their notes and their week through it, and many hand-build the scaffolding themselves: named agents, a schedule, and some way of being asked for approval. DorkOS ships those parts.',
       },
       {
         q: 'Claude Code can already schedule work. Why add DorkOS?',
@@ -2009,7 +2009,9 @@ export const comparisons: Competitor[] = [
       },
       extensibility: {
         verdict: 'yes',
-        note: 'Yes: skills, plugins, hooks, a project instructions file, and outside-tool connections that work the same from the command line, the desktop app and the editor extension.',
+        note: 'Yes: skills, plugins, hooks, a project instructions file, and connections to outside tools that carry across its apps.',
+        detail:
+          'The setup follows you between surfaces: the same outside-tool connections work from the command line, the desktop app and the editor extension, so you write them once.',
         source: 'https://learn.chatgpt.com/docs/extend/mcp',
       },
       pricing: {
@@ -2592,7 +2594,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. A desktop app for Mac and Windows and an iPhone app, so you can pick a job up from your pocket. There is no Linux desktop app.',
         detail:
-          'The phone app is a real one rather than a viewer: you can start work, answer a bot’s questions, approve steps and review results from it. They are straight about where it stops. Some advanced desktop controls and teach-by-demonstration are missing, and editing a routine, changing a bot’s instructions, reviewing run history or deleting a routine all send you back to a desktop. It is iPhone only, not iPad or Android. So this row is close rather than level: both let you approve work from your pocket, and theirs asks you to finish some of it at a desk.',
+          'The phone app is a real one rather than a viewer: you can start work, answer a bot’s questions, approve steps and review results from it. They are straight about where it stops. Some advanced desktop controls and teach-by-demonstration are not on iPhone, and editing a routine’s schedule, changing a bot’s instructions, reviewing run history or deleting a routine all send you back to a desktop. It is iPhone only, not iPad or Android. So this row is close rather than level: both let you approve work from your pocket, and theirs asks you to finish some of it at a desk.',
         source: 'https://docs.x.ai/grok-bot/get-started',
       },
       extensibility: {

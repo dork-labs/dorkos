@@ -1,5 +1,5 @@
 ---
-paths: apps/site/src/layers/features/marketing/**, apps/site/src/app/(marketing)/**
+paths: apps/site/src/layers/features/marketing/**, apps/site/src/app/\(marketing\)/**
 ---
 
 # Marketing Copy on dorkos.ai
@@ -24,7 +24,7 @@ Every string here is read by a stranger deciding whether to trust us. The plain-
 `comparisons.ts` is the catalog; `ui/compare/` renders it.
 
 - **DorkOS cells are derived, never authored.** `dorkosCellFor` scores our side from the backing features' status: any alpha or unreleased feature forces `partial` and gets named. Bias belongs in which axes exist, never in a shaded cell. Do not hand-edit a DorkOS verdict, `lastVerified`, or a source.
-- **The DorkOS audience column reads first** in every framing, phone and desktop, with `text-brand-green` ticks; the other product keeps `text-brand-orange`. The table is the exception: a runtime page leads with the engine, because before-and-after is the point.
+- **The DorkOS audience column reads first** in every framing, phone and desktop, with `text-brand-green` ticks; the other product keeps `text-brand-orange`. `ComparisonAudience` is the only section that ignores `theirColumnFirst`. The table and the criteria deep-dives both honour it, so a runtime or shut-down page leads with the other product in those two — before-and-after is the point there.
 - **`oneLiner` is 120–160 characters** — it is the meta description, and the invariant suite fails outside that range.
 - `theirStrengths` entries and `wantPhrase` finish a heading, so both start lowercase and carry no trailing period.
 - FAQ answers: 2–5 per page, every one visible on the page rather than behind a click.

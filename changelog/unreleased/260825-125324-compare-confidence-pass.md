@@ -3,6 +3,7 @@ covers:
   - 'feat(site): the comparison pages state what DorkOS is, in fewer words (DOR-1557)'
   - 'feat(site): the DorkOS answer leads the comparison recommendation, in green (DOR-1557)'
   - 'refactor(site): a comparison cell type that admits an unscored dimension (DOR-1557)'
+  - 'fix(site): review fixes — restore the scope words the condense pass widened (DOR-1557)'
 ---
 
 ### Changed
