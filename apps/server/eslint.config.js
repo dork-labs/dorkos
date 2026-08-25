@@ -146,6 +146,12 @@ export default defineConfig([
       // subprocess's own config-dir resolution 1:1 (DOR-250). Same rationale
       // as tunnel.ts's NGROK_AUTHTOKEN above.
       'src/services/runtimes/claude-code/claude-config-dir.ts',
+      // XDG_DATA_HOME and OPENCODE_DB are the OpenCode CLI's own env vars (not
+      // DorkOS config values env.ts should model), read here to mirror
+      // OpenCode's own data-directory resolution 1:1 so the search snapshot
+      // reads the store OpenCode actually writes. Same rationale as
+      // claude-config-dir.ts above.
+      'src/services/runtimes/opencode/opencode-data-dir.ts',
     ],
     rules: { 'no-restricted-syntax': 'off' },
   },
@@ -188,6 +194,8 @@ export default defineConfig([
       'src/lib/dork-home.ts',
       // Mirrors the Claude Agent SDK subprocess's own ~/.claude resolution 1:1.
       'src/services/runtimes/claude-code/claude-config-dir.ts',
+      // Mirrors the OpenCode CLI's own ~/.local/share/opencode resolution 1:1.
+      'src/services/runtimes/opencode/opencode-data-dir.ts',
       // Tests assert the fallback behavior and stage fixtures under a fake HOME.
       // Both patterns, matching the process.env carve-out block above: every
       // server test lives under __tests__/ today, and a lone `*.test.ts` beside
