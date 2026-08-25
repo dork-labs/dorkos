@@ -80,7 +80,16 @@ vi.mock('@slack/web-api', () => {
   class MockWebClient {
     auth = { test: mockAuthTest };
   }
-  return { WebClient: MockWebClient };
+  // Mirrors the real @slack/web-api 8 class closely enough for `instanceof`:
+  // a platform error carries the Slack error string in `data.error` while its
+  // `code` is always the same SDK-level constant.
+  class MockWebAPIPlatformError extends Error {
+    readonly code = 'slack_webapi_platform_error';
+    constructor(readonly data: { ok: false; error: string }) {
+      super('An API error occurred');
+    }
+  }
+  return { WebClient: MockWebClient, WebAPIPlatformError: MockWebAPIPlatformError };
 });
 
 describe('SlackAdapter', () => {
@@ -389,6 +398,26 @@ describe('SlackAdapter', () => {
       const status = adapter.getStatus();
       expect(status.state).toBe('error');
       expect(status.lastError).toContain('token_revoked');
+    });
+
+    it('stops the adapter on a real WebAPIPlatformError, whose code is never the Slack error', async () => {
+      // The shape Slack actually throws: `data.error` holds 'invalid_auth'
+      // while `code` is the constant 'slack_webapi_platform_error'. Reading
+      // `code` first shadowed the real string and no fatal error ever matched
+      // — the two tests above missed it because neither shape carried both
+      // fields at once (DOR-1528).
+      const { WebAPIPlatformError } = await import('@slack/web-api');
+      await adapter.start(mockRelay);
+
+      await capturedErrorHandler!(
+        new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }) as unknown as Error
+      );
+
+      expect(mockAppStop).toHaveBeenCalled();
+      const status = adapter.getStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toContain('invalid_auth');
+      expect(status.lastError).not.toContain('slack_webapi_platform_error');
     });
 
     it('records non-fatal errors without stopping the adapter', async () => {

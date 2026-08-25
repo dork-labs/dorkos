@@ -8,6 +8,7 @@
  * @module relay/adapters/slack-adapter
  */
 import { App, LogLevel } from '@slack/bolt';
+import { WebAPIPlatformError } from '@slack/web-api';
 import type { RelayEnvelope, SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
@@ -214,8 +215,20 @@ export class SlackAdapter extends BaseRelayAdapter {
     // Surface unhandled listener errors through adapter status.
     // Fatal auth errors stop the adapter to prevent retry loops.
     app.error(async (error) => {
+      // The string that names a fatal install problem ('invalid_auth',
+      // 'token_revoked', …) is Slack's *platform* error, which lives in
+      // `data.error`. A platform error also carries a `code`, but it is always
+      // the SDK-level constant 'slack_webapi_platform_error' — so reading
+      // `code` first silently shadowed the real string and no fatal error ever
+      // matched (fixed in DOR-1528). @slack/web-api 8 made these error classes
+      // instanceof-able, and Bolt forwards them unwrapped, so the platform
+      // error can now be identified directly instead of duck-typed. Non-Slack
+      // failures still fall back to Bolt's own `code`.
       const errorCode =
-        (error as { code?: string }).code ?? (error as { data?: { error?: string } }).data?.error;
+        error instanceof WebAPIPlatformError
+          ? error.data.error
+          : ((error as { data?: { error?: string } }).data?.error ??
+            (error as { code?: string }).code);
 
       if (errorCode && FATAL_SLACK_ERRORS.has(errorCode)) {
         this.logger.error('fatal Slack error — stopping adapter', { errorCode });
