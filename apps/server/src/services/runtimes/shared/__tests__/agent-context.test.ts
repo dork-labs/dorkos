@@ -548,6 +548,26 @@ describe('<session_model>', () => {
     expect(block).toContain('</session_model>');
   });
 
+  // Red when: the Phase 2 lookup clause drops out, or starts naming a tool in a
+  // spelling a model cannot call.
+  it('names the cross-room lookup as the next step after "I cannot see that"', async () => {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+
+    const block = (await buildAgentBlock('/test')).text;
+    // The clause the specification pins (D6), in the runtime-neutral spelling
+    // this block is required to use — a bare `search_member_rooms` is uncallable
+    // on claude-code, which is the DOR-1292 defect.
+    expect(block).toContain('To recall something said in another room you belong to');
+    expect(block).toContain('whose name ends in `search_member_rooms`');
+    expect(block).toContain('whose name ends in `list_member_rooms`');
+
+    // And the honest limit rides with it. Without this sentence the clause reads
+    // as "you can look up anything you cannot remember", which is false: neither
+    // tool reaches another session's transcript, and an agent that believes
+    // otherwise reports a search miss as "we never discussed it".
+    expect(block).toContain('Neither reaches your other sessions — only rooms.');
+  });
+
   // Red when: the block moves out of `buildAgentBlock` into a caller that has
   // no manifest guard — a bare-folder session would then be told it has other
   // sessions of itself, which is not true of a folder.

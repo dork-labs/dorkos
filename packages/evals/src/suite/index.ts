@@ -96,6 +96,8 @@ export {
   memoryRecallCrossSurfaceCase,
   memoryCapConsolidationCase,
   memoryPoisonedNoteCase,
+  memoryRecallOtherRoomCase,
+  memoryRecallProvenanceAcrossRoomsCase,
   memoryCases,
 } from './memory.js';
 export {

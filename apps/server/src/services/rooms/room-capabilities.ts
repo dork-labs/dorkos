@@ -3,25 +3,41 @@
  * to (room-participation spec §10.2 and §10.3, plus the E16b reversal in
  * ADR 260814-195522).
  *
- * Four verbs, and between them they are everything an agent can do in a room that
+ * Six verbs, and between them they are everything an agent can do in a room that
  * is not simply answering the message it was handed:
  *
  * | Capability          | Tool                    | Tier      | What it is |
  * | ------------------- | ----------------------- | --------- | ---------- |
  * | `rooms.post`        | `post_to_room`          | `act`     | Say something into a channel, on purpose. |
  * | `rooms.react`       | `react_to_room_entry`   | `act`     | Put one emoji on one message. |
- * | `rooms.read_history`| `read_room_history`     | `observe` | Read back what was said. |
- * | `rooms.search_history`| `search_room_history` | `observe` | Find where something was said. |
+ * | `rooms.read_history`| `read_room_history`     | `observe` | Read back what was said in ONE room. |
+ * | `rooms.search_history`| `search_room_history` | `observe` | Find where something was said in ONE room. |
+ * | `rooms.list_member_rooms`| `list_member_rooms` | `observe` | Which rooms this agent is in at all. |
+ * | `rooms.search_member_rooms`| `search_member_rooms` | `observe` | Find where something was said across ALL of them. |
+ *
+ * ## The last two close a gap the first four had (agent-memory spec D6)
+ *
+ * Every one of the original four takes a room id, and the only id an agent held
+ * was the room it was answering in. So an agent seated in six rooms could read
+ * and search exactly one of them, and asked "where did we decide that" about a
+ * conversation in a channel it belongs to, it had no way to look. The lookup pair
+ * is that gap and nothing more: `list_member_rooms` hands over the ids, and
+ * `search_member_rooms` is `search_room_history` with the caller's whole
+ * membership as its scope. **Neither creates access.** The scope is exactly what
+ * `specs/message-search/02-specification.md` §7's table already grants an agent —
+ * its member rooms, each floored at its own `joinedSeq` — and the per-room floors
+ * are mandatory rather than a nicety: see {@link RoomService.searchMemberRooms}
+ * for why one global floor is wrong in both directions at once.
  *
  * ## The tiers, and what they honestly gate
  *
- * The two reads are `observe`, the tier that returns allowed before any other
+ * The four reads are `observe`, the tier that returns allowed before any other
  * check runs — so the thing standing between a caller and a room's log is the
  * MEMBERSHIP check, not the tier. That is the honest statement, and it is why
- * both reads resolve membership first and answer "not a member" exactly as "no
+ * every read resolves membership first and answers "not a member" exactly as "no
  * such room".
  *
- * **Neither read takes `readOnlyCarveOut`, and that is a deliberate omission
+ * **No read takes `readOnlyCarveOut`, and that is a deliberate omission
  * rather than an oversight.** The flag would make them reachable on the
  * login-off external `/mcp` surface with no token at all
  * (`middleware/mcp-auth.ts`), and what they return is other people's messages —
@@ -85,7 +101,7 @@ import { readOwnerAccount } from '../core/auth/index.js';
 import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
-import { HISTORY_PAGE_MAX, type RoomService } from './room-service.js';
+import { HISTORY_PAGE_MAX, MEMBER_ROOMS_PAGE_MAX, type RoomService } from './room-service.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -292,8 +308,9 @@ const historyScope = {
 };
 
 /**
- * The rooms domain: the affirmative posting verb, the reaction, and the two ways
- * to look back. Registration order is the order they are advertised in.
+ * The rooms domain: the affirmative posting verb, the reaction, the two ways to
+ * look back inside one room, and the two that look across every room the caller
+ * belongs to. Registration order is the order they are advertised in.
  */
 export const roomsDomain: CapabilityDomain = {
   name: 'rooms',
@@ -501,6 +518,93 @@ export const roomsDomain: CapabilityDomain = {
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
           matches: entries.map((entry) => projectEntry(rooms, entry)),
+        });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.list_member_rooms',
+      title: 'List the rooms you are in',
+      description:
+        'List the rooms and direct messages you are a member of, most recently active first. ' +
+        'Use it when you need a room id for one of the other room tools and do not have one — ' +
+        'inside a room turn your room context names the room you are in, and this is how you ' +
+        'find the others. It returns only rooms you belong to, and rooms nobody has archived. ' +
+        `At most ${MEMBER_ROOMS_PAGE_MAX} come back; there is no next page, because a list ` +
+        'longer than that is a directory rather than an answer.',
+      tier: 'observe',
+      input: z.object({}),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'list_member_rooms',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, _input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const listed = answering(() => rooms.listMemberRooms(callerAuthor(rooms, context).id));
+        return Promise.resolve({
+          rooms: listed.map((room) => ({
+            roomId: room.roomId,
+            kind: room.kind,
+            // A room's name is typed by a person and read by a model, so it goes
+            // through the same sanitizer every other label in this file does.
+            name: sanitizeIdentity(room.name),
+            joined: room.joinedAt,
+            lastActivity: room.lastActivityAt,
+          })),
+        });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.search_member_rooms',
+      title: 'Search every room you are in',
+      description:
+        'Find where something was said across ALL the rooms and direct messages you are a ' +
+        'member of, best match first — the way to recall something from a room other than the ' +
+        'one you are in now. It matches whole words and their variants — searching for ' +
+        '"deploys" finds "deploy" and "deployed" — and finds nothing for part of a word. ' +
+        'Every match says which room it came from, so you can quote where a thing was decided ' +
+        'and read that room back for the rest of it. ' +
+        'You can only find messages from after you joined each room, and only rooms you belong ' +
+        'to: a room you are not in has nothing to find. ' +
+        'Something said in the last few minutes may not be findable yet; read the room back ' +
+        'instead for the recent end of a conversation. ' +
+        'It does not search your own past sessions — only rooms.',
+      tier: 'observe',
+      input: z.object({
+        query: z.string().min(1).describe('The words to look for.'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .default(20)
+          .describe(`How many matches, best first. Clamped to ${HISTORY_PAGE_MAX}.`),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'search_member_rooms',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const matches = answering(() =>
+          rooms.searchMemberRooms(callerAuthor(rooms, context).id, {
+            query: input.query,
+            limit: input.limit,
+          })
+        );
+        return Promise.resolve({
+          note: UNTRUSTED_NOTE,
+          matches: matches.map((match) => ({
+            roomId: match.roomId,
+            room: sanitizeIdentity(match.name),
+            ...projectEntry(rooms, match.entry),
+          })),
         });
       },
     }),
