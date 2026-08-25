@@ -9,9 +9,10 @@
  *
  * @module a2a-gateway/dorkos-executor
  */
-import type { Message, Task, TaskStatusUpdateEvent } from '@a2a-js/sdk';
-import { A2AError } from '@a2a-js/sdk/server';
+import { Role, TaskState, type Message, type Task, type TaskStatusUpdateEvent } from '@a2a-js/sdk';
+import { AgentEvent } from '@a2a-js/sdk/server';
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
+import { TaskNotCancelableError } from '@a2a-js/sdk/errors';
 import type {
   AgentCancelPayload,
   AgentCancelReason,
@@ -21,6 +22,7 @@ import { AGENT_CANCEL_SUBJECT_PREFIX, A2A_GATEWAY_PRINCIPAL } from '@dorkos/shar
 import type { ExecutorDeps } from './types.js';
 import { a2aMessageToRelayPayload } from './schema-translator.js';
 import { parseReplyEvent } from './reply-events.js';
+import { buildMessage } from './a2a-model.js';
 
 /** Response subscription timeout in milliseconds (2 minutes). */
 const RESPONSE_TIMEOUT_MS = 120_000;
@@ -95,24 +97,25 @@ function buildMissingTargetError(agentCount: number): string {
 }
 
 /**
- * Build the initial A2A Task event for a new request.
+ * Build the initial A2A Task for a new request.
  *
- * The SDK's ResultManager only persists tasks it has seen as a `kind: 'task'`
- * event — status-updates for unknown task IDs are dropped with a warning. This
- * initial event is what makes `tasks/get`, `tasks/cancel`, and every later
- * status transition (including error diagnostics) reach the task store.
+ * The SDK's ResultManager only persists tasks it has seen as a `task` event —
+ * status-updates for unknown task IDs are dropped with a warning. This initial
+ * event is what makes task lookup, cancellation, and every later status
+ * transition (including error diagnostics) reach the task store.
  */
 function buildInitialTask(requestContext: RequestContext, agentId: string | undefined): Task {
   const { taskId, contextId, userMessage } = requestContext;
   return {
-    kind: 'task',
     id: taskId,
     contextId,
     status: {
-      state: 'submitted',
+      state: TaskState.TASK_STATE_SUBMITTED,
+      message: undefined,
       timestamp: new Date().toISOString(),
     },
     history: [userMessage],
+    artifacts: [],
     metadata: {
       ...(userMessage.metadata ?? {}),
       ...(agentId ? { agentId } : {}),
@@ -123,29 +126,30 @@ function buildInitialTask(requestContext: RequestContext, agentId: string | unde
 /**
  * Build a TaskStatusUpdateEvent for emitting status transitions via the event bus.
  *
+ * A2A v1.0 dropped the `final` flag these events used to carry: whether an
+ * update ends the stream is now read from the state itself, so a terminal
+ * state IS the terminal event and the two can no longer disagree.
+ *
  * @param taskId - The A2A task ID
  * @param contextId - The A2A context ID
  * @param state - The target task state
- * @param isFinal - Whether this is the final event in the stream
  * @param statusMessage - Optional status message to include
  */
 function buildStatusEvent(
   taskId: string,
   contextId: string,
-  state: TaskStatusUpdateEvent['status']['state'],
-  isFinal: boolean,
+  state: TaskState,
   statusMessage?: Message
 ): TaskStatusUpdateEvent {
   return {
-    kind: 'status-update',
     taskId,
     contextId,
-    final: isFinal,
     status: {
       state,
+      message: statusMessage,
       timestamp: new Date().toISOString(),
-      ...(statusMessage ? { message: statusMessage } : {}),
     },
+    metadata: undefined,
   };
 }
 
@@ -169,14 +173,7 @@ interface StopOutcome {
 
 /** Build an agent-role A2A Message with a single text part. */
 function buildAgentMessage(taskId: string, contextId: string, text: string): Message {
-  return {
-    kind: 'message',
-    role: 'agent',
-    messageId: crypto.randomUUID(),
-    parts: [{ kind: 'text', text }],
-    taskId,
-    contextId,
-  };
+  return buildMessage({ role: Role.ROLE_AGENT, text, taskId, contextId });
 }
 
 /**
@@ -254,7 +251,9 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     // Persist the task before anything else — including error paths — so
     // failure diagnostics land in the task store instead of vanishing.
     if (!requestContext.task) {
-      eventBus.publish(buildInitialTask(requestContext, agent?.id ?? requestedAgentId));
+      eventBus.publish(
+        AgentEvent.task(buildInitialTask(requestContext, agent?.id ?? requestedAgentId))
+      );
     } else {
       // Follow-up turn: re-emit the stored task snapshot (it already includes
       // this turn's user message in history — the SDK appends it before
@@ -262,17 +261,18 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       // shares this event bus and holds a stale in-memory task copy; without
       // the refresh, its stale history wins the last write to the task store
       // and silently drops this turn's user message.
-      eventBus.publish(requestContext.task);
+      eventBus.publish(AgentEvent.task(requestContext.task));
     }
 
     const failTask = (errorText: string) => {
       eventBus.publish(
-        buildStatusEvent(
-          taskId,
-          contextId,
-          'failed',
-          true,
-          buildAgentMessage(taskId, contextId, errorText)
+        AgentEvent.statusUpdate(
+          buildStatusEvent(
+            taskId,
+            contextId,
+            TaskState.TASK_STATE_FAILED,
+            buildAgentMessage(taskId, contextId, errorText)
+          )
         )
       );
       eventBus.finished();
@@ -309,11 +309,29 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     let streamErrorMessage: string | undefined;
     const cleanups: Array<() => void> = [];
 
+    /**
+     * Resolves when this turn is over, and `execute()` waits on it.
+     *
+     * A2A v1.0 ties the event bus's lifetime to this method's promise: the
+     * SDK calls `eventBus.finished()` and discards the bus as soon as
+     * `execute()` resolves. So returning at the point the message is merely
+     * *sent* — which is what this method used to do, the reply arriving later
+     * on a subscription — now publishes the completion to a bus nobody is
+     * listening to any more, and the caller is answered with the `working`
+     * snapshot instead of the answer. The turn is not over until its reply
+     * says so, and now the promise says the same thing.
+     */
+    let finishTurn!: () => void;
+    const turnFinished = new Promise<void>((resolve) => {
+      finishTurn = resolve;
+    });
+
     const settle = () => {
       if (settled) return;
       settled = true;
       this.forgetTurn(taskId, replySubject);
       for (const fn of cleanups) fn();
+      finishTurn();
     };
 
     // Registered before the publish, so a cancel that races the message out is
@@ -324,12 +342,13 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     const completeTask = (text: string) => {
       settle();
       eventBus.publish(
-        buildStatusEvent(
-          taskId,
-          contextId,
-          'completed',
-          true,
-          buildAgentMessage(taskId, contextId, text)
+        AgentEvent.statusUpdate(
+          buildStatusEvent(
+            taskId,
+            contextId,
+            TaskState.TASK_STATE_COMPLETED,
+            buildAgentMessage(taskId, contextId, text)
+          )
         )
       );
       eventBus.finished();
@@ -409,24 +428,30 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       });
 
       if (result.deliveredTo === 0) {
-        if (settled) return;
-        settle();
-        failTask(`Message not delivered — no subscribers on '${subject}'`);
-        return;
-      }
-
-      // Emit working status — but only if the reply did not already settle
-      // the task while we were awaiting the publish (a terminal event must
-      // be the last status the client sees).
-      if (!settled) {
-        eventBus.publish(buildStatusEvent(taskId, contextId, 'working', false));
+        if (!settled) {
+          settle();
+          failTask(`Message not delivered — no subscribers on '${subject}'`);
+        }
+      } else if (!settled) {
+        // Emit working status — but only if the reply did not already settle
+        // the task while we were awaiting the publish (a terminal event must
+        // be the last status the client sees).
+        eventBus.publish(
+          AgentEvent.statusUpdate(buildStatusEvent(taskId, contextId, TaskState.TASK_STATE_WORKING))
+        );
       }
     } catch (error: unknown) {
-      if (settled) return;
-      settle();
-      const errorMessage = error instanceof Error ? error.message : 'Unknown publish error';
-      failTask(`Relay publish failed: ${errorMessage}`);
+      if (!settled) {
+        settle();
+        const errorMessage = error instanceof Error ? error.message : 'Unknown publish error';
+        failTask(`Relay publish failed: ${errorMessage}`);
+      }
     }
+
+    // Stay pending until the turn is genuinely over — see `turnFinished`.
+    // Every path out of here settles: a reply's terminal event, a stream
+    // error, a refused delivery, or the response deadline.
+    await turnFinished;
   };
 
   /**
@@ -466,7 +491,7 @@ export class DorkOSAgentExecutor implements AgentExecutor {
         `[a2a] task ${taskId}: cancel requested but this gateway holds no turn for it — ` +
           'nothing was stopped'
       );
-      throw A2AError.taskNotCancelable(taskId);
+      throw new TaskNotCancelableError({ message: `Task not cancelable: ${taskId}` });
     }
 
     // Marked BEFORE the stop goes out, and withdrawn below if nothing takes it:
@@ -497,7 +522,7 @@ export class DorkOSAgentExecutor implements AgentExecutor {
         `[a2a] task ${taskId}: nothing acknowledged the stop for ${turns.length} turn(s) ` +
           `— they may still be running. ${why}`
       );
-      throw A2AError.taskNotCancelable(taskId);
+      throw new TaskNotCancelableError({ message: `Task not cancelable: ${taskId}` });
     }
 
     if (stopped < turns.length) {
@@ -519,7 +544,9 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     for (const turn of turns) turn.settle();
 
     // Use an empty contextId — the SDK populates the real one from the stored task
-    eventBus.publish(buildStatusEvent(taskId, '', 'canceled', true));
+    eventBus.publish(
+      AgentEvent.statusUpdate(buildStatusEvent(taskId, '', TaskState.TASK_STATE_CANCELED))
+    );
 
     eventBus.finished();
 

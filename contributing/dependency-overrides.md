@@ -21,6 +21,17 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 | `eslint-plugin-react-hooks`            | 7.1.x flags seven pre-existing violations in `apps/site`. Held until those are fixed (DOR-1526)                                                                                                                        |
 | `vite@7`                               | Scoped to the vite-7 consumers only; the apps stay on vite 6                                                                                                                                                           |
 | `@esbuild-kit/core-utils>esbuild`      | Scoped to the one stale consumer that asks for the vulnerable `~0.18.20`. Deliberately **not** a blanket `esbuild` pin — vite 6 needs `^0.25.0` and tsx needs `~0.28.0`, so a single forced version breaks one of them |
+| `jose`                                 | Deduped to keep `@better-auth/core` a single instance. See below (DOR-1538)                                                                                                                                            |
+
+### `jose` — why a dedupe pin, and when it goes
+
+`@a2a-js/sdk@1.0` requires `jose@^6.2.3`, against a lockfile that held `6.2.2` for `better-auth`. Both specs are satisfiable, so pnpm did the reasonable thing and kept two copies — but `jose` is a **peer** of `@better-auth/core`, so a second `jose` forked `@better-auth/core@1.6.23` into two peer-resolved instances too.
+
+Two instances of that package are two different `HookEndpointContext` types, and the server typecheck fails with a wall of `better-auth` errors that name neither `jose` nor A2A. The pin collapses both back to one instance by putting every consumer on `^6.2.10`, which is inside `better-auth`'s own range — nothing is being held back.
+
+**Drop it when `better-auth` moves past 1.6.23** and the tree re-resolves to a single `@better-auth/core` on its own. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
+
+This is the shape to recognize, because the error never points at the cause: **a new dependency bumps a transitive package that is somebody else's peer, and an unrelated package's types break.** If a routine upgrade produces type errors in a package you did not touch, look for a duplicated peer in the lockfile before you look at the types.
 
 **Transient security pins** — the only reason is an unpatched advisory reachable through a transitive dependency we do not control. **Drop each one as soon as the dependency that pulls it in ships a version that resolves past it**; `pnpm audit` is the check.
 
