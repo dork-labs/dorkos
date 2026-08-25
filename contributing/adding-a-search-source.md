@@ -438,7 +438,7 @@ If you hit either, write the ADR before the code. If you hit neither, add the ro
 ### A source indexes nothing and reports no error
 
 **Cause**: usually the frontier believes it is caught up. Check `search_sources` for that container — a stale `byte_offset` or `last_ordinal` with an emptied `messages` table is the classic shape.
-**Fix**: it is already handled — both mechanisms read the index's own high-water ordinal alongside the frontier and rebuild when they disagree. If yours does not recover, you are reading the frontier as the only signal. `DELETE FROM messages; DELETE FROM search_sources;` and re-sweep is a **supported recovery**, not data loss.
+**Fix**: it is already handled — every mechanism reads the index's own high-water ordinal alongside the frontier and rebuilds when the two disagree (`readIndexedOrdinals`, called from both frontier implementations; M3 inherits it through M2's). If yours does not recover, you are reading the frontier as the only signal. `DELETE FROM messages; DELETE FROM search_sources;` and re-sweep is a **supported recovery**, not data loss.
 
 ### Sweep reports `skipped > 0` and the reconciler warns
 
