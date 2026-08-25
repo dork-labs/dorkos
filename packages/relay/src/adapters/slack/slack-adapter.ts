@@ -8,6 +8,7 @@
  * @module relay/adapters/slack-adapter
  */
 import { App, LogLevel } from '@slack/bolt';
+import { WebAPIPlatformError, WebClient } from '@slack/web-api';
 import type { RelayEnvelope, SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
@@ -37,6 +38,46 @@ import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
 // Re-export for consumers that import from this module
 export { SLACK_MANIFEST };
 
+/** How far to walk a wrapped error chain before giving up (also breaks cycles). */
+const MAX_ERROR_UNWRAP_DEPTH = 5;
+
+/**
+ * Find the Slack platform error inside whatever Bolt hands its error handler.
+ *
+ * Bolt rarely delivers a {@link WebAPIPlatformError} directly, and the wrapped
+ * path is the one that matters most: an `authorize()` failure arrives as an
+ * `AuthorizationError` carrying the real error on `.original`. Because Bolt
+ * authorizes every incoming event, a revoked or de-scoped token funnels EVERY
+ * event through that wrapper — so a check that only tests the top-level error
+ * never sees the platform error, never matches a fatal code, and leaves the
+ * adapter retrying forever against a token that will never work again.
+ *
+ * Listener failures nest too: `UnknownError` wraps on `.original`,
+ * `MultipleListenerError` on `.originals` (an array), and a non-Error throw is
+ * re-thrown with the value on `.cause`. All three are walked here.
+ *
+ * @param error - The error Bolt passed to `app.error`.
+ * @param depth - Internal recursion counter; callers should omit it.
+ * @returns The platform error if one is nested anywhere, else `null`.
+ */
+function findPlatformError(error: unknown, depth = 0): WebAPIPlatformError | null {
+  if (error instanceof WebAPIPlatformError) return error;
+  if (depth >= MAX_ERROR_UNWRAP_DEPTH || typeof error !== 'object' || error === null) return null;
+
+  const { original, originals, cause } = error as {
+    original?: unknown;
+    originals?: unknown;
+    cause?: unknown;
+  };
+
+  for (const nested of [original, cause, ...(Array.isArray(originals) ? originals : [])]) {
+    if (nested === undefined) continue;
+    const found = findPlatformError(nested, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
 /**
  * Slack adapter for the Relay message bus.
  *
@@ -59,6 +100,8 @@ export class SlackAdapter extends BaseRelayAdapter {
   /** Instance-scoped inbound caches (dedup + name resolution). */
   private readonly inboundState: SlackInboundState = createSlackInboundState();
   private platformClient: SlackPlatformClient | null = null;
+  /** Set once a fatal Slack error has queued a teardown, so only one runs. */
+  private fatalStopScheduled = false;
   private readonly codec: SlackThreadIdCodec;
   private readonly threadTracker: ThreadParticipationTracker;
 
@@ -118,8 +161,7 @@ export class SlackAdapter extends BaseRelayAdapter {
    */
   async testConnection(): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
     try {
-      // Import WebClient directly to avoid starting a full Bolt app
-      const { WebClient } = await import('@slack/web-api');
+      // A bare WebClient, so validating credentials never starts a Bolt app.
       const tempClient = new WebClient(this.config.botToken);
       const result = await SlackAdapter.withInitTimeout(tempClient.auth.test());
       return { ok: true, botUsername: result.user as string | undefined };
@@ -214,19 +256,51 @@ export class SlackAdapter extends BaseRelayAdapter {
     // Surface unhandled listener errors through adapter status.
     // Fatal auth errors stop the adapter to prevent retry loops.
     app.error(async (error) => {
+      // The string that names a fatal install problem ('invalid_auth',
+      // 'token_revoked', …) is Slack's *platform* error, which lives in
+      // `data.error` — usually nested inside a Bolt wrapper, hence the walk in
+      // `findPlatformError`. A platform error also carries a `code`, but it is
+      // always the SDK-level constant 'slack_webapi_platform_error', so it can
+      // never be the fatal string and must not be consulted first (it used to
+      // be, which is why no fatal error ever matched — DOR-1528). Only when no
+      // platform error is nested anywhere do we fall back to a duck-typed
+      // `data.error` and then to Bolt's own `code`.
+      const platformError = findPlatformError(error);
       const errorCode =
-        (error as { code?: string }).code ?? (error as { data?: { error?: string } }).data?.error;
+        platformError?.data.error ??
+        (error as { data?: { error?: string } }).data?.error ??
+        (error as { code?: string }).code;
 
       if (errorCode && FATAL_SLACK_ERRORS.has(errorCode)) {
         this.logger.error('fatal Slack error — stopping adapter', { errorCode });
-        this.recordError(
-          `Fatal Slack error: ${errorCode}. Re-check your bot token and app configuration.`
-        );
-        try {
-          await app.stop();
-        } catch {
-          // best-effort — app may already be disconnected
-        }
+        // One fatal error is enough: with a dead token every subsequent event
+        // fails the same way, and each would otherwise queue its own teardown.
+        if (this.fatalStopScheduled) return;
+        this.fatalStopScheduled = true;
+
+        // Tear down on a later tick rather than inline. We are inside Bolt's
+        // own error handler, which it awaits while still processing the event,
+        // and stopping disconnects the very socket that delivered it — so
+        // deferring lets Bolt finish (ack included) before the transport goes
+        // away, and avoids re-entering the adapter from within its own handler.
+        setImmediate(() => {
+          void (async () => {
+            try {
+              // The full stop path, not `app.stop()` alone: it also clears the
+              // approval timers and presence timers, which would otherwise keep
+              // firing against a token that is already dead.
+              await this.stop();
+            } catch {
+              // best-effort — the socket may already be gone
+            }
+            // Recorded AFTER stopping: `stop()` rebuilds status as
+            // 'disconnected' and drops `lastError`, so recording first would
+            // erase the one message the operator needs to see.
+            this.recordError(
+              `Fatal Slack error: ${errorCode}. Re-check your bot token and app configuration.`
+            );
+          })();
+        });
         return;
       }
 
