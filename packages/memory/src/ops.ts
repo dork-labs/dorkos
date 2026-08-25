@@ -14,6 +14,17 @@ import {
 
 import { renderProvenanceSuffix } from './provenance.js';
 
+/**
+ * Every character that ends a line for a reader.
+ *
+ * CR and LF are the obvious two. NEL (U+0085) and the LINE/PARAGRAPH
+ * SEPARATORS (U+2028/U+2029) are the ones a `[\r\n]` check misses and a
+ * renderer does not — which is the whole of the forgery this guard prevents.
+ * Not a global regex: `.test()` on a `/g` pattern carries `lastIndex` between
+ * calls and would answer `false` every other time.
+ */
+const LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
+
 /** How many near matches a refusal offers. Enough to choose from, few enough to read. */
 const NEAR_MATCH_LIMIT = 3;
 
@@ -33,12 +44,19 @@ const NEAR_MATCH_MAX_CHARS = 120;
 export function applyMemoryOp(content: string, op: MemoryWriteOp): string {
   // **A note is one line, and that is enforced before anything else happens.**
   // The provenance suffix lands at the END of the text, so a caller that could
-  // embed a newline could write a first line already carrying a
+  // embed a line break could write a first line already carrying a
   // handler-shaped `(noted in …)` of its own choosing — indistinguishable from
   // one this engine stamped. Checked for `replace` too, and for the same
   // reason: replacing one line with two forges the second one's provenance
   // just as well as adding it did.
-  if ((op.action === 'add' || op.action === 'replace') && /[\r\n]/.test(op.text)) {
+  //
+  // **All five line terminators, not just CR and LF.** `untrusted-text.ts`
+  // names NEL (U+0085) and the U+2028/U+2029 separators as line-forgers in its
+  // own documentation, and it is right: a markdown renderer and a model both
+  // break a line on them, so a note carrying one renders as two. An earlier
+  // revision of this guard checked `[\r\n]` alone and all three walked
+  // straight through it — measured.
+  if ((op.action === 'add' || op.action === 'replace') && LINE_BREAK.test(op.text)) {
     throw new MemoryNoteShapeError(op.action);
   }
 

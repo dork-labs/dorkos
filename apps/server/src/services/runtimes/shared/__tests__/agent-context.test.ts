@@ -2,9 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
   _buildSessionModelBlock as buildSessionModelBlock,
-  _MEMORY_FENCE_PREAMBLE as MEMORY_FENCE_PREAMBLE,
-  _MEMORY_STALENESS_LINE as MEMORY_STALENESS_LINE,
-  _MEMORY_TRUST_FRAMING as MEMORY_TRUST_FRAMING,
   _buildAgentBlock as buildAgentBlock,
   _buildUserProfileBlock as buildUserProfileBlock,
   buildAgentContextAppend,
@@ -50,7 +47,12 @@ import { extractCustomProse, buildSoulContent } from '@dorkos/shared/convention-
 import { readConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { configManager } from '../../../core/config-manager.js';
-import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
+import {
+  MEMORY_FENCE_PREAMBLE,
+  MEMORY_MAX_CHARS,
+  MEMORY_STALENESS_LINE,
+  MEMORY_TRUST_FRAMING,
+} from '@dorkos/shared/convention-files';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
 import { getMemoryProvider } from '../../../memory/index.js';
 import { logger } from '../../../../lib/logger.js';
@@ -971,9 +973,10 @@ describe('what each block costs', () => {
     expect(Object.keys(sizes!).sort()).toEqual(
       ['agent_identity', 'agent_memory', 'dorkos_context', 'env', 'session_model'].sort()
     );
-    // A real count per block, not a placeholder — and `agent_memory` is the one
-    // this measurement exists for.
-    expect(sizes!.agent_memory).toBeGreaterThan(notes.length);
+    // The EXACT size of the block, against the block itself — this measurement
+    // exists to say what `<agent_memory>` costs, and a `>` bound would report a
+    // block that had silently lost its fence or its framing as healthy.
+    expect(sizes!.agent_memory).toBe(append.memory.length);
     // The EXACT length of a block whose text is a known constant. A `>100`
     // bound passes for a block that lost its last sentence — including the one
     // naming the memory tool, which is the sentence that makes an agent save

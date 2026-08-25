@@ -17,8 +17,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@dorkos/shared": "workspace:*",
-    "zod": "^4.4.3"
+    "@dorkos/shared": "workspace:*"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

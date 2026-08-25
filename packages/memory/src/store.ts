@@ -7,6 +7,7 @@
 import { readFile } from 'node:fs/promises';
 
 import { withFileLock } from '@dorkos/shared/atomic-write';
+import { MEMORY_OVERSIZE_WARNING } from '@dorkos/shared/convention-files';
 import {
   AgentMemoryRefSchema,
   MemoryCapExceededError,
@@ -29,15 +30,12 @@ import { defaultMemoryTemplate } from './scaffold.js';
 /**
  * The one line a reader sees when a memory file is bigger than the cap.
  *
- * Exported because whoever renders the snapshot has to render this too, and a
- * warning that each surface words for itself is a warning one surface forgets.
- * A file can only get this big by being edited on disk — the tool and the wire
- * both refuse to cross the cap — so the honest thing is to show what fits and
- * say plainly that there is more.
+ * **Re-exported, not declared.** It is owned by
+ * `@dorkos/shared/convention-files` because the cockpit's Injection Preview
+ * renders the same warning and cannot import this package — see that constant
+ * for why a per-surface wording is the failure mode.
  */
-export const MEMORY_OVERSIZE_WARNING =
-  `Only the first ${MEMORY_MAX_CHARS} characters of this file are shown here — it is longer ` +
-  `than that. Tidy it up so nothing important is left out.`;
+export { MEMORY_OVERSIZE_WARNING } from '@dorkos/shared/convention-files';
 
 /**
  * Read one agent's memory, reporting which of three things is true: it is
@@ -130,14 +128,24 @@ function trimDanglingSurrogate(text: string): string {
  * - **All-or-nothing.** The cap and the unique-match rule are checked before
  *   anything is written, so a refused write leaves memory exactly as it was.
  *
- * **What the lock does NOT cover, stated rather than implied.** It is an
- * in-process lock, and the other realistic writer of this file is a person with
- * it open in an editor. That race is accepted: the file is small, human edits
- * are deliberate and rare, and both writers write whole files atomically, so the
- * outcome is last-writer-wins and never a torn file. What an operator can lose
- * is one note saved during the seconds their editor held a stale copy — the
- * same trade every dotfile in this product makes, and the reason the write path
- * renames rather than appends.
+ * **What the lock covers, and what it does not — corrected.** An earlier
+ * revision of this comment claimed "both writers write whole files atomically",
+ * and that was false in the direction that mattered: the in-app editor wrote
+ * through `writeConventionFile`, which was a bare `fs.writeFile` with no lock
+ * and no rename. `O_TRUNC` left a window in which the file was zero bytes, and a
+ * read landing inside it saw an empty memory and committed the truncation as a
+ * successful save — measured at ~1% of interleaves here and ~3.5% on the
+ * reviewer's machine, silently, reporting `{ saved: true }`. That writer now
+ * takes THIS lock, on the same path, so the two are strictly serialised and the
+ * claim is true because it was made true.
+ *
+ * What remains uncovered is genuinely uncovered: the lock lives in this
+ * process's memory, so a person editing the file in a real text editor is a
+ * second writer nothing here can serialise against. That race is accepted — the
+ * file is small, human edits are deliberate and rare, and both sides now publish
+ * through a rename, so the outcome is last-writer-wins and never a torn file.
+ * What an operator can lose is one note saved during the seconds their editor
+ * held a stale copy.
  *
  * An agent whose memory file does not exist yet gets one here, starting from the
  * scaffold — this is how every agent created before this feature acquires the

@@ -286,6 +286,20 @@ export default defineConfig({
         ),
       },
       {
+        // The memory cap AND the four `<agent_memory>` framing strings, which
+        // back two drift guards: the envelope bound in `agent-context.test.ts`
+        // computes itself from the preamble's length, and `prompt-content`
+        // pins the framing's placement outside the fence. Measured against a
+        // stale dist, both assert against yesterday's strings and pass — the
+        // exact "guard becomes decoration" failure this alias list exists for.
+        // It is also what the client renders in the Injection Preview, so a
+        // drift here is a preview that lies about what the agent is told.
+        find: /^@dorkos\/shared\/convention-files$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/convention-files.ts', import.meta.url)
+        ),
+      },
+      {
         // The memory engine, at SOURCE for the same reason as the entries
         // above — and one of its own. `@dorkos/memory` imports
         // `@dorkos/shared/convention-files` for the cap and the file name;

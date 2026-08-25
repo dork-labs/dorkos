@@ -153,7 +153,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all five: **the per-call card an operator watching a DIRECT session
+ * thing for all six: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT

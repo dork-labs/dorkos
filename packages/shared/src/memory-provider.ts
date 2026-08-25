@@ -513,8 +513,9 @@ export class MemoryCapExceededError extends Error {
     readonly maxChars: number
   ) {
     super(
-      `Your memory file is ${currentChars} characters and this change would make it ` +
-        `${attemptedChars}. The limit is ${maxChars} characters. Tidy it up first — combine ` +
+      `Your memory file is ${currentChars.toLocaleString('en-US')} characters and this change ` +
+        `would make it ${attemptedChars.toLocaleString('en-US')}. The limit is ` +
+        `${maxChars.toLocaleString('en-US')} characters. Tidy it up first — combine ` +
         `notes that say the same thing and delete the ones that no longer matter — then save ` +
         `this again.`
     );

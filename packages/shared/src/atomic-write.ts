@@ -49,11 +49,21 @@
  *   data lives under `{cwd}/.dork/`, keyed to the project rather than to a
  *   `dorkHome` — two servers with different data directories opened on the
  *   same project can both write it. And an agent's `MEMORY.md` is a file the
- *   operator is invited to edit by hand, so an editor holding a stale copy is
- *   a second writer by design rather than by accident. Both degrade to
+ *   operator is invited to edit by hand in a real text editor, so that editor
+ *   is a second writer by design rather than by accident. Both degrade to
  *   last-writer-wins per the next bullet, never to corruption; what an operator
  *   can lose in the second case is one note saved during the seconds their
  *   editor held the file open.
+ *
+ *   **The IN-APP editor is not one of these edges, and used to be worse than
+ *   one.** It writes through `convention-files-io.ts`, which was a bare
+ *   `fs.writeFile` — same process, no lock, no rename — racing the memory
+ *   engine's read-modify-write on one file. `O_TRUNC` gave it a zero-byte
+ *   window, and a read landing inside it committed the truncation as a
+ *   successful save (~1–3.5% of interleaves, measured). That writer now routes
+ *   through {@link withFileLock}, so it is inside the guarantee this module
+ *   makes rather than an exception to it. Anything else that writes an agent's
+ *   files must do the same.
  * - **A crashed holder cannot wedge the next run.** An in-memory lock dies with
  *   the process that held it, so there is no stale-lock reaper to get wrong —
  *   the failure mode that makes on-disk lock files subtle.

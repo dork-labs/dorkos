@@ -37,7 +37,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
+import { MEMORY_MAX_CHARS, MEMORY_OVERSIZE_WARNING } from '@dorkos/shared/convention-files';
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn(), getAll: vi.fn() },
@@ -224,7 +224,8 @@ describe('a memory file bigger than the cap', () => {
     const { memory } = await buildAgentContextAppend(agentDir);
 
     expect(memory.match(/x{100,}/)?.[0]).toHaveLength(MEMORY_MAX_CHARS);
-    expect(memory).toContain(`Only the first ${MEMORY_MAX_CHARS} characters`);
+    expect(memory).toContain(MEMORY_OVERSIZE_WARNING);
+    expect(memory).toContain('Only the first 8,000 characters');
     expect(memory).toContain('Tidy it up');
   });
 
@@ -314,6 +315,15 @@ describe('the fence around the memory file', () => {
   // imports the fence, so importing back would evaluate the list in the temporal
   // dead zone — so a test holds them together instead. Red the day a ninth block
   // is added without teaching the fence to defuse it.
+  //
+  // **Two limits worth knowing before trusting it.** It can only see blocks THIS
+  // fixture renders, so a block that appears solely under some other condition
+  // (a convention toggled off here, a runtime-specific branch) is invisible to
+  // it — add such a block to `EXPECTED_BLOCKS` and stage the condition, or it
+  // ships undefused. And `tagsIn` matches `[a-z_]+` only, so a tag containing a
+  // digit or a capital would be skipped by the guard while still reading as a
+  // tag to a model; keep block tags lowercase and digit-free, which every one of
+  // them is today.
   it('defuses every tag the append itself renders', async () => {
     await stageAgent(NOTES);
 

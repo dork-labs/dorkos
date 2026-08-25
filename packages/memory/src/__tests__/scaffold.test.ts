@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MEMORY_MAX_CHARS } from '../constants.js';
+import { formatMemoryCap } from '@dorkos/shared/convention-files';
 import { defaultMemoryTemplate } from '../scaffold.js';
 
 describe('defaultMemoryTemplate', () => {
@@ -27,9 +27,12 @@ describe('defaultMemoryTemplate', () => {
   });
 
   it('states the cap, using the real constant', () => {
-    // Hard-coding 8000 here would let the prose and the enforcement drift apart
+    // Hard-coding 8,000 here would let the prose and the enforcement drift apart
     // silently — the file would promise one limit and the writer enforce another.
-    expect(template).toContain(`up to ${MEMORY_MAX_CHARS} characters`);
+    // Through `formatMemoryCap`, so this also pins that every surface a person
+    // reads spells the number the SAME way.
+    expect(template).toContain(`up to ${formatMemoryCap()} characters`);
+    expect(template).toContain('up to 8,000 characters');
   });
 
   it('explains the provenance convention and that the agent does not choose it', () => {

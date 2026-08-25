@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(server,memory,shared): wave-3 review fixes (DOR-632)'
   - 'feat(memory,shared,server): agent-memory wave 1 — the engine package, the port, the fence primitive (DOR-632)'
   - 'feat(server): tell an agent it is one session of itself, on every runtime (DOR-632)'
   - 'fix(memory,shared): wave-1 review fixes (DOR-632)'
@@ -35,3 +36,13 @@ covers:
   conversation, and an agent asked about work it cannot see should say so
   rather than guess. That last one is the difference between an agent that
   forgot and an agent that was never there (DOR-632)
+
+### Changed
+
+- Text somebody pastes into a room is neutralised a little more thoroughly
+  before an agent reads it. DorkOS already wraps other people's messages in a
+  marked-off block so an agent treats them as words rather than instructions,
+  and a handful of DorkOS's own internal markers could previously survive inside
+  that block. They no longer can. Nothing you type looks different and the same
+  words reach the agent — they just cannot pretend to be part of DorkOS's own
+  instructions any more (DOR-632)

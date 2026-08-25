@@ -3,7 +3,7 @@
  *
  * @module memory/scaffold
  */
-import { MEMORY_MAX_CHARS } from './constants.js';
+import { formatMemoryCap } from '@dorkos/shared/convention-files';
 
 /** Heading the engine appends new notes under. */
 export const MEMORY_NOTES_HEADING = '## Notes';
@@ -43,7 +43,7 @@ export function defaultMemoryTemplate(): string {
     '"(noted in #general, 2026-01-31)". The agent does not choose that part — it',
     'is added automatically — so a note always says where it came from.',
     '',
-    `This file holds up to ${MEMORY_MAX_CHARS} characters. When it fills up, the agent is`,
+    `This file holds up to ${formatMemoryCap()} characters. When it fills up, the agent is`,
     'asked to tidy it up — combine notes that say the same thing, drop the ones',
     'that no longer matter — rather than being allowed to grow it.',
     '',

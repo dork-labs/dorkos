@@ -14,7 +14,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
-import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
+import { MEMORY_MAX_CHARS, formatMemoryCap } from '@dorkos/shared/convention-files';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
 import { MEMORY_NO_AGENT_MESSAGE, memoryDomain } from '../memory-capabilities.js';
@@ -389,7 +389,10 @@ describe('the cap', () => {
 
     expect(result.saved).toBe(false);
     expect(result.code).toBe('too-big');
-    expect(result.error).toContain(String(MEMORY_MAX_CHARS));
+    // Rendered for a person — `8,000` — and the same way everywhere else the
+    // cap is quoted.
+    expect(result.error).toContain(formatMemoryCap());
+    expect(result.error).toContain('8,000');
     expect(result.error).toContain('Tidy it up first');
     // Refused, not trimmed: the file is untouched.
     expect(await readMemory(alphaPath)).toBe(before);

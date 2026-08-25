@@ -292,8 +292,14 @@ describe('writeMemory — the cap', () => {
     await seedMemory(fileOf(current));
 
     // An error naming only the limit leaves an agent guessing how much to cut.
+    // Every number rendered the way a person reads it — `8,000`, not `8000` —
+    // and the same way on every other surface that quotes the cap.
+    const n = (value: number): string => value.toLocaleString('en-US');
     await expect(writeMemory(ref(), { action: 'add', text: NOTE })).rejects.toThrow(
-      new RegExp(`${current} characters.*${MEMORY_MAX_CHARS + 1}.*${MEMORY_MAX_CHARS}`, 's')
+      new RegExp(
+        `${n(current)} characters.*${n(MEMORY_MAX_CHARS + 1)}.*${n(MEMORY_MAX_CHARS)}`,
+        's'
+      )
     );
     await expect(writeMemory(ref(), { action: 'add', text: NOTE })).rejects.toThrow(/Tidy it up/);
   });
