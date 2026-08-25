@@ -3,6 +3,7 @@ covers:
   - 'feat(server): OpenCode conversations join the searchable copy of your history (DOR-688)'
   - "feat(server): resolve OpenCode's own data directory, as the fourth homedir carve-out (DOR-688)"
   - 'feat(server): index OpenCode conversations from a read-only snapshot of its store (DOR-688)'
+  - 'fix(server): re-read OpenCode sessions while their turns are still streaming (DOR-688 review)'
 ---
 
 ### Added
