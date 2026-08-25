@@ -10,7 +10,6 @@ import {
   ChatWindow,
   DOCK,
   LaptopFrame,
-  NIGHT_VARS,
   nextBeat,
   PART_ONE_COUNT,
   shellOpacityAt,
@@ -87,8 +86,8 @@ export function StageScrubber() {
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       <div
-        style={{ ...NIGHT_VARS, width: FRAME_WIDTH * SCALE, height: FRAME_HEIGHT * SCALE }}
-        className="relative shrink-0 overflow-hidden rounded-xl border border-(--line) bg-(--pitch)"
+        style={{ width: FRAME_WIDTH * SCALE, height: FRAME_HEIGHT * SCALE }}
+        className="border-border-warm bg-cream-primary relative shrink-0 overflow-hidden rounded-xl border"
       >
         <div
           style={{
@@ -106,7 +105,7 @@ export function StageScrubber() {
           <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
           <p
             style={{ opacity: captionOpacity }}
-            className="text-2xs absolute bottom-8 font-mono tracking-[0.2em] text-(--cream-dim) uppercase"
+            className="text-2xs text-warm-gray absolute bottom-8 font-mono tracking-[0.2em] uppercase"
           >
             home sweet localhost
           </p>

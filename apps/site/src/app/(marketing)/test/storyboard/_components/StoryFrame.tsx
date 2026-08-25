@@ -1,7 +1,6 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { NIGHT_VARS } from '../../../new/_components';
 
 /** Reference viewport every frame is composed against, then scaled down. */
 export const FRAME_WIDTH = 1440;
@@ -40,11 +39,10 @@ export function StoryFrame({
     <figure className="m-0 flex flex-col gap-3">
       <div
         style={{
-          ...NIGHT_VARS,
           width: FRAME_WIDTH * scale,
           height: FRAME_HEIGHT * scale,
         }}
-        className="relative overflow-hidden rounded-xl border border-(--line) bg-(--pitch)"
+        className="border-border-warm bg-cream-primary relative overflow-hidden rounded-xl border"
       >
         <div
           style={{

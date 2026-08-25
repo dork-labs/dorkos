@@ -46,13 +46,13 @@ export function PromoPlayer() {
   }, []);
 
   return (
-    <div className="mx-auto aspect-[9/16] w-full max-w-[26rem] overflow-hidden rounded-2xl border border-(--line) bg-(--panel) shadow-[0_24px_80px_rgba(0,0,0,0.5)] sm:aspect-video sm:max-w-3xl">
+    <div className="border-border-warm bg-cream-white mx-auto aspect-[9/16] w-full max-w-[26rem] overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.5)] sm:aspect-video sm:max-w-3xl">
       {cut === null ? (
         <button
           type="button"
           onClick={play}
           aria-label={`Play the video, ${PROMO_SECONDS} seconds, with sound`}
-          className="group relative block size-full cursor-pointer focus-visible:ring-2 focus-visible:ring-(--ember) focus-visible:outline-none"
+          className="group focus-visible:ring-brand-orange relative block size-full cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
         >
           <picture>
             <source
@@ -72,7 +72,7 @@ export function PromoPlayer() {
             />
           </picture>
           <span className="absolute inset-0 grid place-items-center bg-[rgba(19,17,16,0.35)] transition-colors group-hover:bg-[rgba(19,17,16,0.2)]">
-            <span className="grid size-16 place-items-center rounded-full bg-(--ember) text-[#131110] shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110 sm:size-20">
+            <span className="bg-brand-orange grid size-16 place-items-center rounded-full text-[#131110] shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110 sm:size-20">
               <Play size={26} fill="currentColor" aria-hidden="true" />
             </span>
           </span>

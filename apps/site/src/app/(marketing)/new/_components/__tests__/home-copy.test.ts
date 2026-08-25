@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { features } from '@/layers/features/marketing/lib/features';
+import { CAST, DAVE, RUNTIMES } from '../cast';
 import { CHAT_SCRIPT, PART_ONE_COUNT } from '../chat-script';
 import { BEATS, CLOSE, DOWNLOAD, HERO, INSTALL_ASIDE, LOCALHOST_CAPTION, PROMO } from '../copy';
 import { DOCK, findDockApp, type DockAppId } from '../dock-apps';
@@ -104,17 +105,72 @@ describe('the demo-claim gate', () => {
     // The promo film this page hosts promises the agents suggest and the
     // person approves, and Tool Approval / Action Approvals are what actually
     // ships. A script of completed actions with no approval would oversell it.
-    const youSaidGo = CHAT_SCRIPT.filter((line) => line.from === 'you');
-    const askedFirst = CHAT_SCRIPT.filter((line) => line.from !== 'you' && line.text.includes('?'));
+    const daveSaidGo = CHAT_SCRIPT.filter((line) => line.from === 'dave');
+    const askedFirst = CHAT_SCRIPT.filter(
+      (line) => line.from !== 'dave' && line.text.includes('?')
+    );
 
     expect(askedFirst.length).toBeGreaterThanOrEqual(2);
-    expect(youSaidGo.length).toBeGreaterThanOrEqual(3);
+    expect(daveSaidGo.length).toBeGreaterThanOrEqual(3);
 
     // Each approval must follow a question, not float free.
-    for (const approval of youSaidGo.slice(1)) {
+    for (const approval of daveSaidGo.slice(1)) {
       const at = CHAT_SCRIPT.indexOf(approval);
       const before = CHAT_SCRIPT[at - 1];
       expect(before.text, `"${approval.text}" answers nothing`).toContain('?');
+    }
+  });
+
+  it('leaves the film’s own joke to the film', () => {
+    // Dave never ordered the flowers, Pip did, and the callback only works
+    // cold. The page hosts the film; it must not narrate it, caption the
+    // flowers as a feature, or name Betty at all.
+    const chat = CHAT_SCRIPT.map((line) => line.text).join(' ');
+    expect(chat).not.toMatch(/flower|betty|birthday/i);
+    expect(ALL_COPY.join(' ')).not.toMatch(/flower|betty|birthday/i);
+  });
+});
+
+describe('the cast from the film', () => {
+  // These are locked by the film's `characters.md` and are not the site's to
+  // re-pick. The colours come from `chat-ui.tsx`, which is the screen truth;
+  // two of the four are deliberately absent from `brand.tokens.json`.
+  it('carries the film’s three agents, in the film’s colours', () => {
+    expect(CAST.map((member) => member.name)).toEqual(['Otto', 'Pip', 'Hal']);
+    expect(CAST.map((member) => member.ring)).toEqual(['#e8801f', '#4a90a4', '#c9b458']);
+  });
+
+  it('renders Pip smaller, which is narrative and not a layout tweak', () => {
+    const pip = CAST.find((member) => member.key === 'pip');
+    expect(pip?.sizeScale).toBe(0.86);
+    for (const other of CAST.filter((member) => member.key !== 'pip')) {
+      expect(other.sizeScale).toBe(1);
+    }
+  });
+
+  it('marks Dave as the person, in the brand accent rather than a lane colour', () => {
+    expect(DAVE.ring).toBe('#e85d04');
+    expect(CAST.map((member) => member.ring)).not.toContain(DAVE.ring);
+  });
+
+  it('gives each agent a distinct runtime, so the badges say the real story', () => {
+    const runtimes = CAST.map((member) => RUNTIMES[member.key].runtime);
+    expect(new Set(runtimes).size).toBe(CAST.length);
+    expect(runtimes.sort()).toEqual(['Claude Code', 'Codex', 'OpenCode']);
+  });
+
+  it('ships a loop and a still for every face', () => {
+    const publicDir = findPublicDir(import.meta.dirname);
+    for (const member of [...CAST, DAVE]) {
+      expect(existsSync(join(publicDir ?? '', member.loop)), member.loop).toBe(true);
+      expect(existsSync(join(publicDir ?? '', member.still)), member.still).toBe(true);
+    }
+  });
+
+  it('only puts the film’s cast in the chat', () => {
+    const known = new Set<string>([...CAST.map((member) => member.key), DAVE.key, 'system']);
+    for (const line of CHAT_SCRIPT) {
+      expect(known.has(line.from), `unknown speaker "${line.from}"`).toBe(true);
     }
   });
 });

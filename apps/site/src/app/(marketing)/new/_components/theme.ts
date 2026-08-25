@@ -1,27 +1,24 @@
-import type { CSSProperties } from 'react';
-
 /**
- * The night palette, scoped to this page via CSS custom properties on the
- * page root. This is the brand's cream-on-charcoal identity inverted —
- * the "night shift" of the site — so nothing here leaks into globals.
+ * The page runs on the site's own warm palette, not a theme of its own.
+ *
+ * An earlier pass gave this page a charcoal "night shift" of its own invention.
+ * It is gone: the cream-and-charcoal scheme the rest of dorkos.ai already uses
+ * is the one that sits with the film's 1999 office, and a page that ships its
+ * own colour system is a second brand to keep in step. Everything here reaches
+ * for the site's Tailwind tokens (`cream-primary`, `charcoal`, `warm-gray`,
+ * `brand-orange`) instead.
+ *
+ * The one surface that does not is the chat panel, which stays the film's dark
+ * glass. See `film-tokens.ts` for why that is the rule and not the exception.
  */
-export const NIGHT_VARS = {
-  '--pitch': '#131110',
-  '--panel': '#1c1917',
-  '--panel-raised': '#26211c',
-  '--cream': '#f5f0e6',
-  '--cream-dim': '#a49c8e',
-  '--line': 'rgba(245, 240, 230, 0.09)',
-  '--ember': '#e85d04',
-} as CSSProperties;
 
 /** The one command the whole page asks the visitor to run. */
 export const INSTALL_COMMAND = 'npx dorkos@latest';
 
-/** Laptop shell colors, shared by the bezel and its base. */
+/** Laptop shell colours, shared by the bezel and its base. */
 export const SHELL = {
-  bezel: '#2b2620',
-  baseTop: '#332d26',
-  baseBottom: '#211d18',
-  foot: '#171310',
+  bezel: '#d8d2c4',
+  baseTop: '#e5dcc8',
+  baseBottom: '#cdc5b4',
+  foot: '#b9b0a0',
 } as const;

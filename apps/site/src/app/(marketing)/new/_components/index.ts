@@ -17,7 +17,7 @@
 // The page
 export { HomeExperience } from './HomeExperience';
 export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
-export { NIGHT_VARS, INSTALL_COMMAND, SHELL } from './theme';
+export { INSTALL_COMMAND, SHELL } from './theme';
 
 // Pieces the storyboard pins, one frame at a time
 export { Hero } from './Hero';
@@ -26,11 +26,19 @@ export { BeatHeadline } from './BeatHeadline';
 export { ChatWindow } from './ChatWindow';
 export { LaptopFrame } from './LaptopFrame';
 export { Dock } from './Dock';
-export { AvatarTile } from './AvatarTile';
-export { HumanFace } from './avatars';
+export { Avatar } from './Avatar';
 
 // The data and timing the storyboard reads, so its numbers are the live ones
-export { CAST, type CastMember } from './cast';
+export {
+  CAST,
+  DAVE,
+  RUNTIMES,
+  SPEAKERS,
+  type CastKey,
+  type CastMember,
+  type SpeakerKey,
+} from './cast';
+export { DONE_GREEN, FILM_SCALE, PANEL, filmPx } from './film-tokens';
 export { DOCK } from './dock-apps';
 export { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
 export { nextBeat, type Beat } from './beats';

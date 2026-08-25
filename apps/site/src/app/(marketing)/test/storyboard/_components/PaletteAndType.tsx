@@ -1,6 +1,6 @@
 'use client';
 
-import { INSTALL_COMMAND, NIGHT_VARS, SHELL } from '../../../new/_components';
+import { INSTALL_COMMAND, SHELL } from '../../../new/_components';
 
 const SWATCHES: { name: string; token: string; value: string; note: string }[] = [
   { name: 'Pitch', token: '--pitch', value: '#131110', note: 'page background' },
@@ -19,19 +19,19 @@ const SWATCHES: { name: string; token: string; value: string; note: string }[] =
 export function PaletteAndType() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <div style={NIGHT_VARS} className="rounded-xl border border-(--line) bg-(--panel) p-6">
+      <div className="border-border-warm bg-cream-white rounded-xl border p-6">
         <ul className="list-none space-y-3">
           {SWATCHES.map((swatch) => (
             <li key={swatch.token} className="flex items-center gap-4">
               <span
-                className="size-10 shrink-0 rounded-lg border border-(--line)"
+                className="border-border-warm size-10 shrink-0 rounded-lg border"
                 style={{ backgroundColor: swatch.value }}
               />
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-(--cream)">{swatch.name}</span>
-                <span className="block text-xs text-(--cream-dim)">{swatch.note}</span>
+                <span className="text-charcoal block text-sm font-medium">{swatch.name}</span>
+                <span className="text-warm-gray block text-xs">{swatch.note}</span>
               </span>
-              <span className="ml-auto font-mono text-xs text-(--cream-dim)">
+              <span className="text-warm-gray ml-auto font-mono text-xs">
                 {swatch.token} · {swatch.value}
               </span>
             </li>
@@ -39,40 +39,37 @@ export function PaletteAndType() {
         </ul>
       </div>
 
-      <div
-        style={NIGHT_VARS}
-        className="flex flex-col gap-5 rounded-xl border border-(--line) bg-(--panel) p-6"
-      >
+      <div className="border-border-warm bg-cream-white flex flex-col gap-5 rounded-xl border p-6">
         <div>
-          <p className="text-2xs font-mono tracking-[0.2em] text-(--ember) uppercase">
+          <p className="text-2xs text-brand-orange font-mono tracking-[0.2em] uppercase">
             eyebrow · mono 0.625rem
           </p>
-          <p className="mt-2 text-4xl leading-[0.95] font-semibold tracking-[-0.04em] text-(--cream)">
+          <p className="text-charcoal mt-2 text-4xl leading-[0.95] font-semibold tracking-[-0.04em]">
             Hero headline
           </p>
-          <p className="text-2xs mt-1 font-mono text-(--cream-dim)">
+          <p className="text-2xs text-warm-gray mt-1 font-mono">
             clamp(3rem, 9vw, 6.5rem) · weight 600 · tracking -0.04em
           </p>
         </div>
         <div>
-          <p className="text-2xl leading-none font-semibold tracking-[-0.03em] text-(--cream)">
+          <p className="text-charcoal text-2xl leading-none font-semibold tracking-[-0.03em]">
             Beat headline
           </p>
-          <p className="text-2xs mt-1 font-mono text-(--cream-dim)">
+          <p className="text-2xs text-warm-gray mt-1 font-mono">
             clamp(2rem, 4.5vw, 3.25rem) · weight 600
           </p>
         </div>
         <div>
-          <p className="text-lg text-(--cream-dim)">
+          <p className="text-warm-gray text-lg">
             Body copy — one sentence, plain words, no jargon.
           </p>
-          <p className="text-2xs mt-1 font-mono text-(--cream-dim)">1.125rem · cream-dim</p>
+          <p className="text-2xs text-warm-gray mt-1 font-mono">1.125rem · cream-dim</p>
         </div>
         <div>
-          <p className="font-mono text-sm text-(--cream)">
-            <span className="text-(--ember)">$</span> {INSTALL_COMMAND}
+          <p className="text-charcoal font-mono text-sm">
+            <span className="text-brand-orange">$</span> {INSTALL_COMMAND}
           </p>
-          <p className="text-2xs mt-1 font-mono text-(--cream-dim)">
+          <p className="text-2xs text-warm-gray mt-1 font-mono">
             IBM Plex Mono · the only place code appears
           </p>
         </div>

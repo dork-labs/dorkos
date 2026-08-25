@@ -1,27 +1,39 @@
 'use client';
 
-import { AvatarTile } from './AvatarTile';
-import { agentLayoutId } from './chat-script';
+import { Avatar } from './Avatar';
 import { CAST } from './cast';
+import { agentLayoutId } from './chat-script';
+import { PANEL } from './film-tokens';
 
 /**
- * Chat header: room name, you (always present), and the agents' member tiles.
- * The tiles share layout ids with the hero cards, so flipping `joined` makes
- * the robots physically fly from their cards into this row — and back.
+ * Chat header: room name, Dave (always present), and the agents' member faces.
+ * The faces share layout ids with the hero cards, so flipping `joined` makes
+ * them physically fly from their cards into this row, and back.
  */
 export function ChatHeader({ joined }: { joined: boolean }) {
   return (
-    <div className="flex items-center justify-between border-b border-(--line) px-5 py-3">
-      <span className="text-2xs font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
+    <div
+      className="flex items-center justify-between px-4 py-2.5"
+      style={{ borderBottom: `1px solid ${PANEL.divider}` }}
+    >
+      <span
+        className="text-2xs font-mono tracking-[0.12em] uppercase"
+        style={{ color: PANEL.textMuted }}
+      >
         # launch-day
       </span>
-      <div className="flex h-9 items-center -space-x-2">
+      <div className="flex h-8 items-center -space-x-1.5">
         <span className="relative z-10">
-          <AvatarTile sender="you" />
+          <Avatar who="dave" size={26} ringed />
         </span>
         {joined &&
-          CAST.map((agent) => (
-            <AvatarTile key={agent.key} sender={agent.key} layoutId={agentLayoutId(agent.key)} />
+          CAST.map((member) => (
+            <Avatar
+              key={member.key}
+              who={member.key}
+              size={26}
+              layoutId={agentLayoutId(member.key)}
+            />
           ))}
       </div>
     </div>

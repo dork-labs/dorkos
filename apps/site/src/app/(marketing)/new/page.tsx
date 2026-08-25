@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { MarketingNav, NAV_LINKS } from '@/layers/features/marketing';
-import { ExtensionNoiseGuard, HomeExperience, NIGHT_VARS } from './_components';
+import { ExtensionNoiseGuard, HomeExperience } from './_components';
 
 const TITLE = 'All your agents. One place.';
 const DESCRIPTION = 'A work in progress: the next version of the DorkOS home page.';
@@ -42,10 +42,7 @@ export const metadata: Metadata = {
  */
 export default function NewHomePage() {
   return (
-    <div
-      style={NIGHT_VARS}
-      className="min-h-screen overflow-x-clip bg-(--pitch) text-(--cream) antialiased [overflow-anchor:none] selection:bg-(--ember) selection:text-(--pitch)"
-    >
+    <div className="bg-cream-primary text-charcoal selection:bg-brand-orange selection:text-cream-white min-h-screen overflow-x-clip antialiased [overflow-anchor:none]">
       <ExtensionNoiseGuard />
       <main>
         <HomeExperience />

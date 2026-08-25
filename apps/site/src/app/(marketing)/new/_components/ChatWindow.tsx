@@ -1,9 +1,9 @@
 'use client';
 
-import { motion } from 'motion/react';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessage } from './ChatMessage';
 import type { ChatLine } from './chat-script';
+import { PANEL } from './film-tokens';
 
 interface ChatWindowProps {
   /** Whether the agents have joined the room. */
@@ -15,9 +15,18 @@ interface ChatWindowProps {
 }
 
 /**
- * The live chat card — the one graphic the whole page revolves around. The
- * agents fly into its header, the apps fly into its messages, and the laptop
- * later forms around it.
+ * The live chat card, in the film's own clothes: a dark glass panel with the
+ * brand's orange hairline across the top.
+ *
+ * It stays dark on a cream page on purpose. Dave's office is 1999 and the
+ * DorkOS chat is not — that contrast is the film's whole argument, and the
+ * moment the product UI looks period the page says "this software is old"
+ * instead of "even this guy can do this".
+ *
+ * The message stack is the film's trick and it ports for free: a clipped box
+ * with `justify-content: flex-end` means each new message pushes the others up
+ * and off the top with no height arithmetic anywhere, and the gradient mask
+ * fades the departing message instead of guillotining it.
  *
  * Said and pending lines render as one keyed list so the pending row keeps its
  * identity when it resolves: the same element flips from typing dots to text,
@@ -28,22 +37,23 @@ export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
   const lastIndex = rows.length - 1;
 
   return (
-    <div className="w-full overflow-hidden rounded-2xl border border-(--line) bg-(--panel) shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
+    <div
+      className="w-full overflow-hidden rounded-xl shadow-[0_18px_60px_rgba(26,24,20,0.28)] backdrop-blur-md"
+      style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}` }}
+    >
+      {/* The brand signature, and the panel's only ornament. */}
+      <div className="h-[2px] w-full" style={{ background: PANEL.hairline }} />
       <ChatHeader joined={joined} />
       <div
-        className="flex h-[42vh] max-h-[420px] min-h-[300px] flex-col justify-end gap-3 overflow-hidden px-5 py-5"
+        className="flex h-[42vh] max-h-[420px] min-h-[300px] flex-col justify-end gap-2 overflow-hidden px-4 pt-4 pb-5"
+        style={{
+          maskImage: 'linear-gradient(to bottom, transparent 0, #000 24px, #000 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, #000 24px, #000 100%)',
+        }}
         aria-hidden="true"
       >
         {rows.map((line, i) => (
-          <motion.div
-            key={`line-${i}`}
-            layout
-            initial={{ opacity: 0, y: 26, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            style={{ transformOrigin: 'bottom left' }}
-          >
-            <ChatMessage line={line} revealed={!(pending && i === lastIndex)} />
-          </motion.div>
+          <ChatMessage key={`line-${i}`} line={line} revealed={!(pending && i === lastIndex)} />
         ))}
       </div>
     </div>

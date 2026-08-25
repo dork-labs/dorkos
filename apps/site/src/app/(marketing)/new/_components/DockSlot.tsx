@@ -24,13 +24,13 @@ export function DockSlot({ app, index, used }: DockSlotProps) {
       exit={{ opacity: 0, scale: 0.6 }}
       transition={{ ...POP, delay: index * 0.07 }}
       title={app.label}
-      className="relative grid size-12 place-items-center rounded-xl border border-dashed border-(--line)"
+      className="border-border-warm relative grid size-12 place-items-center rounded-xl border border-dashed"
     >
       {!used && (
         <motion.span
           layoutId={dockLayoutId(app.id)}
           transition={POP}
-          className="absolute inset-0 grid place-items-center rounded-xl border border-(--line) bg-(--panel)"
+          className="border-border-warm bg-cream-white absolute inset-0 grid place-items-center rounded-xl border"
           style={{ color: app.color }}
         >
           <app.Icon size={20} />

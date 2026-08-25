@@ -20,10 +20,10 @@ export function BeatHeadline({ beat }: { beat: Beat }) {
           className="absolute inset-x-0 top-0 flex flex-col items-center text-center"
         >
           <Eyebrow>{copy.eyebrow}</Eyebrow>
-          <h2 className="mt-3 text-[clamp(2rem,4.5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance text-(--cream)">
+          <h2 className="text-charcoal mt-3 text-[clamp(2rem,4.5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance">
             {copy.title}
           </h2>
-          <p className="mt-3 max-w-xl text-base text-pretty text-(--cream-dim) sm:text-lg">
+          <p className="text-warm-gray mt-3 max-w-xl text-base text-pretty sm:text-lg">
             {copy.lede}
           </p>
         </motion.div>

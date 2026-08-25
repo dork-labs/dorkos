@@ -1,71 +1,45 @@
 'use client';
 
-import { AvatarTile, CAST, HumanFace, NIGHT_VARS, type CastMember } from '../../../new/_components';
-
-/** A dark tile so the cast is judged against the background they live on. */
-function DarkCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={NIGHT_VARS}
-      className="flex flex-col items-center gap-4 rounded-xl border border-(--line) bg-(--panel) p-6"
-    >
-      {children}
-    </div>
-  );
-}
-
-function CastMember({ agent }: { agent: CastMember }) {
-  return (
-    <DarkCard>
-      <span
-        className="grid size-24 place-items-center rounded-2xl"
-        style={{ backgroundColor: `${agent.color}24` }}
-      >
-        <agent.Face size={80} />
-      </span>
-      <div className="text-center">
-        <p className="text-base font-semibold text-(--cream)">{agent.name}</p>
-        <p className="text-2xs font-mono tracking-[0.1em] text-(--cream-dim) uppercase">
-          {agent.runtime}
-        </p>
-      </div>
-      <div className="flex items-end gap-4">
-        <AvatarTile sender={agent.key} size="lg" />
-        <AvatarTile sender={agent.key} size="md" />
-      </div>
-      <p className="font-mono text-xs text-(--cream-dim)">
-        {agent.color} · badge {agent.runtimeColor}
-      </p>
-    </DarkCard>
-  );
-}
+import { Avatar, CAST, DAVE, RUNTIMES } from '../../../new/_components';
 
 /**
- * The cast at working size: the cartoon faces, the avatar tiles they become in
- * the chat, and the runtime badge that identifies which agent runs them.
+ * The cast at working size: the three agents and Dave, each playing its own
+ * loop, with the identity hex and the runtime the badge claims.
+ *
+ * Pip renders smaller than the other two and that is deliberate, not a layout
+ * bug — the film fixes it in code at 0.86 because equal circular crops defeat
+ * every attempt to make the small one look small.
  */
 export function CastGallery() {
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {CAST.map((agent) => (
-        <CastMember key={agent.key} agent={agent} />
-      ))}
-      <DarkCard>
-        <span className="grid size-24 place-items-center rounded-2xl bg-[rgba(232,93,4,0.16)]">
-          <HumanFace size={80} />
-        </span>
-        <div className="text-center">
-          <p className="text-base font-semibold text-(--cream)">You</p>
-          <p className="text-2xs font-mono tracking-[0.1em] text-(--cream-dim) uppercase">
+    <div className="border-border-warm bg-cream-white rounded-xl border p-6">
+      <ul className="flex list-none flex-wrap items-end gap-10">
+        {CAST.map((member) => (
+          <li key={member.key} className="flex flex-col items-center gap-2 text-center">
+            <Avatar who={member.key} size={80} speaking />
+            <span className="text-charcoal text-sm font-medium">{member.name}</span>
+            <span className="text-warm-gray-light font-mono text-xs">{member.ring}</span>
+            <span className="text-warm-gray-light font-mono text-[10px] tracking-[0.08em] uppercase">
+              {RUNTIMES[member.key].runtime}
+            </span>
+            <span className="text-warm-gray-light font-mono text-[10px]">
+              {member.sizeScale === 1 ? 'full size' : `${member.sizeScale} scale`}
+            </span>
+          </li>
+        ))}
+        <li className="flex flex-col items-center gap-2 text-center">
+          <Avatar who="dave" size={80} ringed />
+          <span className="text-charcoal text-sm font-medium">{DAVE.name}</span>
+          <span className="text-warm-gray-light font-mono text-xs">{DAVE.ring}</span>
+          <span className="text-warm-gray-light font-mono text-[10px] tracking-[0.08em] uppercase">
             the person
-          </p>
-        </div>
-        <div className="flex items-end gap-4">
-          <AvatarTile sender="you" size="lg" />
-          <AvatarTile sender="you" size="md" />
-        </div>
-        <p className="font-mono text-xs text-(--cream-dim)">no runtime badge</p>
-      </DarkCard>
+          </span>
+        </li>
+      </ul>
+      <p className="text-warm-gray mt-6 max-w-2xl text-sm">
+        Dave carries a lit ring with no glow, which is the mark that says he is the user rather than
+        an agent. An agent&rsquo;s ring lights and glows only while it is the one talking.
+      </p>
     </div>
   );
 }

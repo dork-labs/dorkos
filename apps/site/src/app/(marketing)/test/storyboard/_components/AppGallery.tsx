@@ -1,6 +1,6 @@
 'use client';
 
-import { CHAT_SCRIPT, DOCK, NIGHT_VARS } from '../../../new/_components';
+import { CHAT_SCRIPT, DOCK } from '../../../new/_components';
 
 /** The message each dock tile lands in, so icon and sentence can be judged together. */
 function messageFor(id: string): string {
@@ -13,22 +13,22 @@ function messageFor(id: string): string {
  */
 export function AppGallery() {
   return (
-    <div style={NIGHT_VARS} className="rounded-xl border border-(--line) bg-(--panel) p-6">
+    <div className="border-border-warm bg-cream-white rounded-xl border p-6">
       <ul className="list-none space-y-4">
         {DOCK.map((app) => (
           <li key={app.id} className="flex flex-wrap items-center gap-4">
             <span
-              className="grid size-12 shrink-0 place-items-center rounded-xl border border-(--line) bg-(--panel)"
+              className="border-border-warm bg-cream-white grid size-12 shrink-0 place-items-center rounded-xl border"
               style={{ color: app.color }}
               title={`${app.label} on the dock`}
             >
               <app.Icon size={20} />
             </span>
             <span
-              className="size-12 shrink-0 rounded-xl border border-dashed border-(--line)"
+              className="border-border-warm size-12 shrink-0 rounded-xl border border-dashed"
               title="the empty slot it leaves behind"
             />
-            <span className="min-w-0 text-sm text-(--cream)">
+            <span className="text-charcoal min-w-0 text-sm">
               <span
                 className="mr-1.5 inline-grid size-5 place-items-center rounded-md align-text-bottom"
                 style={{ backgroundColor: `${app.color}22`, color: app.color }}
@@ -37,7 +37,7 @@ export function AppGallery() {
               </span>
               {messageFor(app.id)}
             </span>
-            <span className="ml-auto font-mono text-xs text-(--cream-dim)">
+            <span className="text-warm-gray ml-auto font-mono text-xs">
               {app.label} · {app.color}
             </span>
           </li>

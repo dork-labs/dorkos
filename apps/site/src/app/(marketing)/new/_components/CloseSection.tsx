@@ -26,38 +26,35 @@ export function CloseSection() {
       >
         <motion.h2
           variants={REVEAL}
-          className="text-[clamp(3rem,10vw,7.5rem)] leading-[0.95] font-semibold tracking-[-0.04em] text-balance text-(--cream)"
+          className="text-charcoal text-[clamp(3rem,10vw,7.5rem)] leading-[0.95] font-semibold tracking-[-0.04em] text-balance"
         >
           {CLOSE.title}
         </motion.h2>
-        <motion.p variants={REVEAL} className="mt-6 text-lg text-(--cream-dim) sm:text-xl">
+        <motion.p variants={REVEAL} className="text-warm-gray mt-6 text-lg sm:text-xl">
           {CLOSE.lede}
         </motion.p>
         <motion.div variants={REVEAL} className="mt-10 flex flex-col items-center gap-3">
           <DownloadMacButton placement="preview_close" />
-          <p className="flex flex-wrap items-center justify-center gap-1 text-sm text-(--cream-dim)">
+          <p className="text-warm-gray flex flex-wrap items-center justify-center gap-1 text-sm">
             {INSTALL_ASIDE} <InstallCommand variant="quiet" />
             <span className="text-2xs font-mono tracking-[0.1em] uppercase">{NPX_REQUIREMENT}</span>
           </p>
         </motion.div>
-        <motion.p
-          variants={REVEAL}
-          className="mt-6 max-w-md text-sm text-pretty text-(--cream-dim)"
-        >
+        <motion.p variants={REVEAL} className="text-warm-gray mt-6 max-w-md text-sm text-pretty">
           {CLOSE.cost}
         </motion.p>
         <motion.p
           variants={REVEAL}
-          className="text-2xs mt-5 font-mono tracking-[0.15em] text-(--cream-dim) uppercase"
+          className="text-2xs text-warm-gray mt-5 font-mono tracking-[0.15em] uppercase"
         >
-          <Link href="/install" className="hover:text-(--cream)">
+          <Link href="/install" className="hover:text-charcoal">
             {CLOSE.otherWays}
           </Link>
         </motion.p>
       </motion.div>
-      <div className="text-2xs mt-24 border-t border-(--line) pt-6 text-center font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
+      <div className="text-2xs border-border-warm text-warm-gray mt-24 border-t pt-6 text-center font-mono tracking-[0.15em] uppercase">
         {CLOSE.colophon}{' '}
-        <a href={siteConfig.github} className="hover:text-(--cream)">
+        <a href={siteConfig.github} className="hover:text-charcoal">
           github
         </a>
       </div>

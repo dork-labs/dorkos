@@ -27,11 +27,11 @@ export function PromoSection() {
         </motion.div>
         <motion.h2
           variants={REVEAL}
-          className="mt-3 text-[clamp(2rem,4.5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance text-(--cream)"
+          className="text-charcoal mt-3 text-[clamp(2rem,4.5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance"
         >
           {PROMO.title}
         </motion.h2>
-        <motion.p variants={REVEAL} className="mt-3 text-base text-(--cream-dim) sm:text-lg">
+        <motion.p variants={REVEAL} className="text-warm-gray mt-3 text-base sm:text-lg">
           {PROMO.lede}
         </motion.p>
         <motion.div variants={REVEAL} className="mt-10 w-full">

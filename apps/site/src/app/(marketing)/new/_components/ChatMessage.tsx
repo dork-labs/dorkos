@@ -1,10 +1,10 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { AvatarTile } from './AvatarTile';
+import { Avatar } from './Avatar';
 import { senderColor, senderName, type ChatLine } from './chat-script';
 import { DockBadge } from './DockBadge';
-import { POP } from './motion-tokens';
+import { PANEL } from './film-tokens';
 import { SystemMessage } from './SystemMessage';
 import { TypingDots } from './TypingDots';
 
@@ -14,31 +14,81 @@ interface ChatMessageProps {
   revealed: boolean;
 }
 
-/** One Slack-style chat row: avatar, name, timestamp, message. */
+/**
+ * `usePop` from the film, as a motion keyframe.
+ *
+ * The film's entrances are multi-stop linear interpolations, never springs, so
+ * they port with exact fidelity rather than approximately: 0.86 -> 1.04 -> 1
+ * over 11 frames at 30fps, which is 367ms with the overshoot at 200ms.
+ */
+const POP_IN = {
+  initial: { opacity: 0, scale: 0.86 },
+  animate: { opacity: 1, scale: [0.86, 1.04, 1] },
+  transition: {
+    scale: { duration: 0.367, times: [0, 0.545, 1], ease: 'linear' as const },
+    opacity: { duration: 0.2, ease: 'linear' as const },
+  },
+};
+
+/**
+ * One chat row: face, name, bubble.
+ *
+ * Dave mirrors to the right and his bubble fills with the brand orange; the
+ * agents sit left with a dark card. That one colour split is the whole
+ * legibility argument in the film, and it is why nobody needs to be told which
+ * of the four is the person.
+ *
+ * The transform origin is load-bearing. A bubble that scales from its own
+ * bottom corner reads as landing next to its avatar; one that scales from the
+ * centre reads as a modal opening.
+ */
 export function ChatMessage({ line, revealed }: ChatMessageProps) {
   if (line.from === 'system') {
     return <SystemMessage line={line} />;
   }
+
+  const own = line.from === 'dave';
+
   return (
-    <div className="flex items-start gap-3">
-      <AvatarTile sender={line.from} />
-      <div className="min-w-0 text-left">
-        <p className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold" style={{ color: senderColor(line.from) }}>
-            {senderName(line.from)}
-          </span>
-          <span className="text-2xs font-mono text-(--cream-dim)">{line.time} AM</span>
-        </p>
+    <motion.div
+      layout
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2, ease: 'linear' }}
+      className={`flex items-end gap-2.5 ${own ? 'flex-row-reverse' : 'flex-row'}`}
+    >
+      <Avatar who={line.from} size={30} ringed={own} />
+      <div className={`flex min-w-0 flex-col gap-1 ${own ? 'items-end' : 'items-start'}`}>
+        <span
+          className="text-3xs px-1 font-mono font-semibold tracking-[0.14em] uppercase"
+          style={{ color: senderColor(line.from) }}
+        >
+          {senderName(line.from)}
+        </span>
+        {/*
+          The pop sits on the bubble, not on the row. Putting it on the row let
+          motion's layout projection resolve the transform origin to the row's
+          centre, and a bubble that scales from the centre reads as a modal
+          opening rather than as a message landing beside its avatar.
+        */}
         <motion.div
-          layout
-          transition={POP}
-          className="mt-0.5 text-sm text-(--cream) sm:text-[15px]"
+          {...POP_IN}
+          className="max-w-[34ch] px-3 py-2 text-[13px] leading-[1.28] font-semibold tracking-[-0.01em] text-pretty sm:text-[15px]"
+          style={{
+            transformOrigin: own ? 'right bottom' : 'left bottom',
+            background: own ? PANEL.own : PANEL.bubble,
+            color: PANEL.text,
+            border: own ? 'none' : `1px solid ${PANEL.bubbleBorder}`,
+            borderRadius: 9,
+            [own ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: 3,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          }}
         >
           {revealed ? (
             <span>
               {line.dockApp && <DockBadge id={line.dockApp} />}
               {line.mention && (
-                <span className="rounded bg-[rgba(111,168,220,0.16)] px-1 py-0.5 font-medium text-[#8ec1ee]">
+                <span className="rounded bg-[rgba(255,255,255,0.16)] px-1 py-0.5">
                   {line.mention}
                 </span>
               )}
@@ -50,6 +100,6 @@ export function ChatMessage({ line, revealed }: ChatMessageProps) {
           )}
         </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }
