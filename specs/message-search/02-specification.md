@@ -933,3 +933,9 @@ flipping it is the one piece of DOR-688 that lands separately.
 added the Codex row while this was in review, so the registry is now `rooms`, `claude-code`,
 `codex`, `opencode` — three mechanisms over four sources, and §1's sentence is true of every
 runtime the product names.
+
+## Amendment 10 — the client copy flip landed (DOR-1556, 2026-08-25)
+
+Amendment 8's "did NOT do" note above and §927–930's "deliberately NOT changed" are resolved:
+`message-search-scope.ts` now names Codex and OpenCode in `SEARCH_SCOPE_COVERED`, its pinned
+test moved with it, and §1's product statement is true of every source this index registers.

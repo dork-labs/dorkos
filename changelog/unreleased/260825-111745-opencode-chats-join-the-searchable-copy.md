@@ -9,7 +9,7 @@ covers:
 
 ### Added
 
-- The searchable copy of your chats now covers your **OpenCode** conversations too. With this, every runtime DorkOS can run is in there — your rooms, Claude Code, Codex and OpenCode. Nothing in the app searches this yet; the search box itself comes next (DOR-688)
+- The searchable copy of your chats now covers your **OpenCode** conversations too. With this, every runtime DorkOS can run is in there — your rooms, Claude Code, Codex and OpenCode. You can search these from the search box (⌘⇧F) (DOR-688)
 - DorkOS reads them without ever opening OpenCode's own file. Each pass takes a copy, reads the copy, and deletes it. OpenCode keeps its sign-in details in the same file as its messages, so DorkOS reads only the three tables that hold conversations and cannot reach the rest — no account or password can end up in the search index, and DorkOS never starts OpenCode in the background to read them (DOR-688)
 - Anything you actually typed is kept as you typed it, including a key you happened to paste into a chat. That is your own conversation, and DorkOS treats it the way it treats every other word in it (DOR-688)
 - Conversations a helper agent had with itself are left out, and so is a conversation OpenCode has deleted. If you have never used OpenCode, nothing happens and nothing is reported (DOR-688)
