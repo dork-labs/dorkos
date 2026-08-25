@@ -91,6 +91,34 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 }
 
 /**
+ * Build the `<session_model>` block: the plain statement that this conversation
+ * is one session of an agent that has others.
+ *
+ * An agent in three channels, two DMs and one direct chat holds six disjoint
+ * runtime transcripts and, until this block existed, was never told so. Asked
+ * about work it could not see, it guessed — which reads to a person as an agent
+ * that forgot, not as an agent that was never there. The fix is honesty first:
+ * say what is shared (identity files, the memory file) and what is not
+ * (conversation), and name the correct behaviour when a session is asked about
+ * something outside its own transcript.
+ *
+ * **Static text, and that is load-bearing twice over.** It carries no session
+ * id, no room name and no count of sibling sessions, so on claude-code it sits
+ * in the cacheable system prompt and never invalidates it, and on codex and
+ * opencode — where this append is re-sent verbatim every turn — it costs the
+ * same handful of tokens each time rather than a growing one.
+ *
+ * It renders inside {@link buildAgentBlock}, so it reaches all three runtimes
+ * through `buildAgentContextAppend` and inherits the no-manifest guard: a
+ * bare-folder session has no other sessions of itself and is told nothing.
+ */
+function buildSessionModelBlock(): string {
+  return `<session_model>
+You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing.
+</session_model>`;
+}
+
+/**
  * Flatten one stored profile value onto a single line and strip anything that
  * could end the block early. The profile is `agent-writable` and `config_patch`
  * is reachable from the external `/mcp` endpoint, so "the operator wrote this"
@@ -180,7 +208,7 @@ async function buildEnvBlock(cwd: string): Promise<string> {
  * `persona` field when no SOUL.md exists (pre-migration agents).
  *
  * Injection order: identity -> persona (SOUL.md) -> safety boundaries (NOPE.md)
- * -> DorkOS knowledge.
+ * -> session model -> DorkOS knowledge.
  *
  * @param cwd - Working directory to check for agent manifest and convention files.
  * @returns XML block string, or empty string if no manifest.
@@ -237,6 +265,12 @@ async function buildAgentBlock(cwd: string): Promise<string> {
     }
   }
 
+  // --- Session model block (always, when there is an agent) ---
+  // Not gated on a convention toggle: this is a statement of fact about how the
+  // agent runs, not a preference. An agent allowed to switch it off would be an
+  // agent allowed to believe it is the only one of itself.
+  blocks.push(buildSessionModelBlock());
+
   // --- DorkOS knowledge block (default ON) ---
   if (conventions?.dorkosKnowledge !== false) {
     blocks.push(buildDorkosContextBlock());
@@ -282,6 +316,7 @@ export async function buildAgentContextAppend(cwd: string): Promise<string> {
 export {
   buildAgentBlock as _buildAgentBlock,
   buildEnvBlock as _buildEnvBlock,
+  buildSessionModelBlock as _buildSessionModelBlock,
   buildDorkosContextBlock as _buildDorkosContextBlock,
   buildUserProfileBlock as _buildUserProfileBlock,
 };

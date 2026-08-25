@@ -161,6 +161,21 @@ describe('what an OpenCode turn carries', () => {
     expect(synthetic?.text).toContain(`Working directory: ${agentDir}`);
   });
 
+  // Asserted HERE, on the part this adapter actually sends, and not only in the
+  // shared builder's own suite: the shared suite calls the builder directly, so
+  // it returns the same text whether or not opencode ever receives it. The
+  // first draft of the spec placed this block in the claude-code adapter, where
+  // it would have reached one runtime of three; this assertion is what can fail
+  // for that placement.
+  it('carries the <session_model> block on the synthetic part', async () => {
+    const parts = await capturePromptParts();
+
+    const synthetic = parts.find((p) => p.synthetic);
+    expect(synthetic?.text).toContain('<session_model>');
+    expect(synthetic?.text).toContain('You are one session of this agent.');
+    expect(synthetic?.text).toContain('say so rather than guessing');
+  });
+
   it('keeps the user message in its own non-synthetic part, unmutated', async () => {
     const parts = await capturePromptParts();
 

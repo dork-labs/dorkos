@@ -489,3 +489,76 @@ describe('buildDorkosContextBlock documentation links', () => {
     expect(block).not.toContain('llms-full.txt');
   });
 });
+
+describe('<session_model>', () => {
+  beforeEach(() => {
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+  });
+
+  // Red when: the block stops rendering, or its text drifts from the one the
+  // specification pins.
+  it('tells the agent it is one session of itself, and what siblings do and do not share', async () => {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+
+    const block = await buildAgentBlock('/test');
+    expect(block).toContain('<session_model>');
+    expect(block).toContain('You are one session of this agent.');
+    expect(block).toContain('Other sessions of you exist in other rooms, DMs and direct chats.');
+    expect(block).toContain('they do NOT share conversation context');
+    expect(block).toContain('say so rather than guessing');
+    expect(block).toContain('</session_model>');
+  });
+
+  // Red when: the block moves out of `buildAgentBlock` into a caller that has
+  // no manifest guard — a bare-folder session would then be told it has other
+  // sessions of itself, which is not true of a folder.
+  it('is absent for a directory that hosts no agent manifest', async () => {
+    vi.mocked(readManifest).mockResolvedValue(null);
+
+    expect(await buildAgentBlock('/test')).toBe('');
+    expect(await buildAgentContextAppend('/test')).not.toContain('<session_model>');
+  });
+
+  // Red when: the block is pushed anywhere other than between the safety
+  // boundaries and the DorkOS orientation — the slot task 1.7's block-set pin
+  // asserts, and the slot `<agent_memory>` is inserted after.
+  it('renders after <agent_safety_boundaries> and before <dorkos_context>', async () => {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+    vi.mocked(readConventionFile).mockImplementation(async (_path, filename) =>
+      filename === 'NOPE.md' ? '# Safety Boundaries\n- Never push to main' : null
+    );
+
+    const block = await buildAgentBlock('/test');
+    expect(block.indexOf('<agent_safety_boundaries>')).toBeLessThan(
+      block.indexOf('<session_model>')
+    );
+    expect(block.indexOf('<session_model>')).toBeLessThan(block.indexOf('<dorkos_context>'));
+  });
+
+  // Red when: somebody gates the block on a conventions toggle. It states how
+  // the agent runs; it is not a preference an agent may switch off.
+  it('renders even when every convention toggle is off', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ conventions: { soul: false, nope: false, dorkosKnowledge: false } })
+    );
+    vi.mocked(readConventionFile).mockResolvedValue('some content');
+
+    const block = await buildAgentBlock('/test');
+    expect(block).toContain('<session_model>');
+    expect(block).not.toContain('<agent_persona>');
+    expect(block).not.toContain('<dorkos_context>');
+  });
+
+  // Red when: a session id, a room name or a sibling count is interpolated
+  // into the block. Any of those would invalidate claude-code's prompt cache
+  // per turn and grow the per-turn cost codex and opencode pay uncached.
+  it('is byte-identical between two different sessions (cacheable, per-turn cheap)', async () => {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+
+    const first = await buildAgentBlock('/agents/alpha');
+    const second = await buildAgentBlock('/agents/beta');
+    const extract = (text: string): string =>
+      text.slice(text.indexOf('<session_model>'), text.indexOf('</session_model>'));
+    expect(extract(first)).toBe(extract(second));
+  });
+});

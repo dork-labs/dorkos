@@ -155,6 +155,22 @@ describe('what a Codex turn carries', () => {
     expect(prompt).toContain(`Working directory: ${agentDir}`);
   });
 
+  // Asserted HERE, on the string this adapter actually sends, and not only in
+  // the shared builder's own suite: the shared suite calls the builder
+  // directly, so it returns the same text whether or not codex ever receives
+  // it. The first draft of the spec placed this block in the claude-code
+  // adapter, where it would have reached one runtime of three; this assertion
+  // is what can fail for that placement.
+  it('carries the <session_model> block into the codex prompt', async () => {
+    const runtime = makeRuntime();
+    await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+    const prompt = sdkMocks.prompts[0] ?? '';
+    expect(prompt).toContain('<session_model>');
+    expect(prompt).toContain('You are one session of this agent.');
+    expect(prompt).toContain('say so rather than guessing');
+  });
+
   it('keeps the user message last and byte-identical', async () => {
     const runtime = makeRuntime();
     await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));

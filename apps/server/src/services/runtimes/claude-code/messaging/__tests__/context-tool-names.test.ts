@@ -416,7 +416,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // no stored profile. They carry no tool names — they are the person's own
     // prose — so their absence costs this check nothing, while `<dorkos_context>`
     // being present is the whole point.
-    expect(tags).toEqual(['gen_ui', 'agent_identity', 'dorkos_context', 'env']);
+    // `<session_model>` joins the set here because it renders unconditionally
+    // inside `buildAgentBlock` — and it is precisely the kind of block this case
+    // is for: it tells the agent to save what it learns, which is one word away
+    // from naming a tool that only claude-code exposes under that spelling.
+    // `<agent_memory>` is absent by construction, like the three below: this
+    // fixture's directory holds no `MEMORY.md`.
+    expect(tags).toEqual(['gen_ui', 'agent_identity', 'session_model', 'dorkos_context', 'env']);
 
     for (const block of shared) {
       expect(
