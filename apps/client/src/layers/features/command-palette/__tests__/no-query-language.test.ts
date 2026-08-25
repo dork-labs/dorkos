@@ -10,8 +10,8 @@
  * beside it because one query needed something the chip cannot say, and the
  * palette grows a half-language nobody documents.
  *
- * So this reads the feature's own source, the same way `no-message-search`
- * does. A unit test can only assert about the corpus it was handed; this
+ * So this reads the feature's own source, the same way
+ * `palette-ranks-names-not-content` does. A unit test can only assert about the corpus it was handed; this
  * asserts about every line that ships.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';

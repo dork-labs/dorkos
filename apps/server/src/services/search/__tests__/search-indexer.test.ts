@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { authors, roomEntries, rooms, messages, searchSources, eq, type Db } from '@dorkos/db';
 import type BetterSqlite3 from 'better-sqlite3';
-import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS } from '../indexer.js';
+import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, SOURCE_FAILURE_KEY } from '../indexer.js';
 import { roomsSource, SEARCH_SOURCES } from '../registry.js';
 import type { RowSource } from '../types.js';
 
@@ -123,7 +123,7 @@ function search(query: string): { origin_key: string; excerpt: string }[] {
 }
 
 describe('the registry the indexer sweeps by default', () => {
-  it('is exactly rooms then claude-code', () => {
+  it('is exactly rooms, then claude-code, then codex, then opencode', () => {
     // An exact array, not a `toContain`. Every other test in this file passes a
     // source list explicitly — which is right, because a room test has no
     // business reading the operator's transcripts — and the cost of that is that
@@ -133,12 +133,82 @@ describe('the registry the indexer sweeps by default', () => {
     //
     // The order is asserted too, because it is the sweep order: rooms are
     // DorkOS's own write and cheap to reconcile, so they land before a
-    // filesystem walk that can take seconds on a cold index.
-    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual(['rooms', 'claude-code']);
+    // filesystem walk that can take seconds on a cold index. The two file
+    // sources go largest corpus first — 19,124 messages against 214 — so the
+    // one carrying 99% of the answers is not queued behind the one carrying 1%.
+    // OpenCode goes last: it copies a whole file before it reads one, and it
+    // carries the fewest messages of the three.
+    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual([
+      'rooms',
+      'claude-code',
+      'codex',
+      'opencode',
+    ]);
   });
 
   it('names each mechanism on the row rather than leaving it to be inferred', () => {
-    expect(SEARCH_SOURCES.map((source) => source.mechanism)).toEqual(['rows', 'jsonl']);
+    // Three mechanisms across four sources — Claude Code and Codex share M1.
+    // M3's arrival is what the design named as the trigger for promoting this
+    // array to a `SearchAdapter` port; the promotion was refused with evidence,
+    // and ADR 260825-110420 carries the next trigger.
+    expect(SEARCH_SOURCES.map((source) => source.mechanism)).toEqual([
+      'rows',
+      'jsonl',
+      'jsonl',
+      'sqlite-snapshot',
+    ]);
+  });
+});
+
+describe('one source having a bad day', () => {
+  it('does not stop the sources swept after it', async () => {
+    // Each mechanism degrades per container, but a throw from OUTSIDE a
+    // container's own `try` — a container list that will not read — escapes the
+    // mechanism. Before the per-source wrap, that also skipped every source
+    // ORDERED AFTER the failing one, silently: rooms would stop indexing because
+    // another runtime's store moved.
+    const exploding: RowSource = {
+      id: 'exploding',
+      mechanism: 'rows',
+      listContainers: () => {
+        throw new Error('the container list would not read');
+      },
+      readSince: () => ({ messages: [], skipped: 0 }),
+    };
+
+    seedRoom('room-a');
+    say('room-a', 'the room still indexes');
+
+    const result = await new SearchIndexer(db, [exploding, roomsSource]).sweep();
+
+    expect(result.failures).toEqual([
+      {
+        sourceId: 'exploding',
+        originKey: SOURCE_FAILURE_KEY,
+        message: 'the container list would not read',
+      },
+    ]);
+    // The ordering is the point: `roomsSource` comes AFTER the thrower, and its
+    // row is in the index anyway.
+    expect(result.indexed).toBe(1);
+    expect(indexedMessages()).toEqual([
+      expect.objectContaining({ source_id: 'rooms', body: 'the room still indexes' }),
+    ]);
+  });
+
+  it('resolves rather than rejecting, so the reconciler logs instead of dying', async () => {
+    const exploding: RowSource = {
+      id: 'exploding',
+      mechanism: 'rows',
+      listContainers: () => {
+        throw new Error('boom');
+      },
+      readSince: () => ({ messages: [], skipped: 0 }),
+    };
+    await expect(new SearchIndexer(db, [exploding]).sweep()).resolves.toMatchObject({
+      indexed: 0,
+      pruned: 0,
+    });
   });
 });
 

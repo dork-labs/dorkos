@@ -37,6 +37,7 @@
     "grammy": "^1.45.1",
     "slackify-markdown": "^5.0.0",
     "ulidx": "^2.4.1",
+    "undici": "^7.29.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

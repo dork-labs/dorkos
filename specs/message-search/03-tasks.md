@@ -574,6 +574,8 @@ The ADR records the refusal with the condition that would reverse it, and `specs
 
 OpenCode is out of the first cut and the product says so (task 5.2's scope copy names it). This task is where that changes, and it is blocked on a decision nobody has made yet.
 
+> **2026-08-25 — the decision landed.** ADR `260825-110420` (DOR-688) narrows ADR-0308's read ban to admit a snapshot-based, allowlisted read, keeps the SDK path forbidden for indexing, and **refuses** the port promotion this task predicted would fire. The four counts below are answered in spec Amendment 8; the count-based watermark it describes needed a volatility window on top, because OpenCode mutates a turn's parts in place after creating the message row. The remaining piece is the client scope copy, tracked as DOR-1556. Everything below is left as written — it is the reasoning the ticket inherited, not a record of what shipped.
+
 ## Why it was deferred — four counts, none of them "we ran out of time"
 
 1. **ADR-0308:24 forbids the direct read**: "OpenCode's SQLite store is treated as opaque runtime-owned storage — never read or written directly." The file itself is the argument — `opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value` in the same database as its messages. The security instinct and the ADR converge and **the ADR got there first**; the credentials are evidence it was right, not grounds for an exception. Message text also lives in opaque JSON `data` blobs on `message`, `part` and `session_message`, so indexing it means parsing a private schema, and the file is in WAL mode against a store ADR-0308:37 records as having upstream reliability issues.

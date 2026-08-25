@@ -15,6 +15,10 @@ export { AgentCommandItem } from './ui/AgentCommandItem';
 export { AgentPreviewPanel } from './ui/AgentPreviewPanel';
 export { AgentSubMenu } from './ui/AgentSubMenu';
 export { HighlightedText } from './ui/HighlightedText';
+// The second search surface (spec `message-search` §8). ⌘K finds things by what
+// they are CALLED; this finds them by what was SAID in them, and the app shell
+// mounts both.
+export { MessageSearchDialog } from './ui/MessageSearchDialog';
 export { PaletteCommandCenter } from './ui/PaletteCommandCenter';
 export { PaletteFooter } from './ui/PaletteFooter';
 export { PalettePrefixLegend } from './ui/PalettePrefixLegend';
@@ -28,6 +32,10 @@ export { SessionCommandItem } from './ui/SessionCommandItem';
 
 // --- Model hooks ---
 export { useGlobalPalette } from './model/use-global-palette';
+// ⌘⇧F. Exported for the shortcut registry's own gate
+// (`__tests__/shortcuts-registered.test.tsx`), which mounts every window-level
+// chord's owner and fires the real keystroke at it.
+export { useMessageSearchShortcut } from './model/use-message-search-shortcut';
 export { usePaletteItems } from './model/use-palette-items';
 export type {
   PaletteItems,

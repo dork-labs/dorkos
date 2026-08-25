@@ -43,7 +43,9 @@ vi.mock('../../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 vi.mock('../../messaging/context-builder.js', () => ({
-  buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>test</env>'),
+  buildSystemPromptAppend: vi
+    .fn()
+    .mockResolvedValue({ text: '<env>test</env>', stable: '<env>test</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../../tooling/tool-filter.js', () => ({
@@ -559,7 +561,10 @@ describe('what a warm process must be re-checked for', () => {
     // onto a new system prompt, so riding it would run every later turn under
     // the old one.
     const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
-    vi.mocked(buildSystemPromptAppend).mockResolvedValue('<env>MOVED</env>');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>MOVED</env>',
+      stable: '<env>MOVED</env>',
+    });
 
     await turn(sessionId, 'after the change');
 
@@ -1394,7 +1399,10 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     // rest of the suite, and this test needs an ACTUAL change between turn 1
     // and turn 2 to provoke a relaunch, not whatever value happened to leak in.
     const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
-    vi.mocked(buildSystemPromptAppend).mockResolvedValue('<env>test</env>');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>test</env>',
+      stable: '<env>test</env>',
+    });
 
     const sessionId = nextSession();
     await turn(sessionId);
@@ -1408,7 +1416,10 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     // a cold session's very first turn does (DOR-1191). Dispatched under the
     // CANONICAL id, which is only possible because dispatch's own resolution
     // (case a) finds the right bundle to replace.
-    vi.mocked(buildSystemPromptAppend).mockResolvedValue('<env>MOVED-FOR-J</env>');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>MOVED-FOR-J</env>',
+      stable: '<env>MOVED-FOR-J</env>',
+    });
     cli.deferNextInit = true;
 
     const booting = turn(canonical, 'after the change, addressed by the canonical id');

@@ -23,6 +23,16 @@ export interface McpToolDeps {
   transcriptReader: TranscriptReader;
   /** The default working directory for the server */
   defaultCwd: string;
+  /**
+   * The resolved DorkOS data directory (`lib/dork-home.ts`).
+   *
+   * Required, not optional, and for a reason worth stating: `tasks_create` writes
+   * a SKILL.md into a skills root, and the global root is a path under this
+   * directory. A tool that could not resolve it wrote the row alone and produced a
+   * file-less orphan, which is exactly the bug DOR-1568 closed — so the create
+   * cannot be built without knowing where files go.
+   */
+  dorkHome: string;
   /** Optional Task store — undefined when Tasks is disabled */
   taskStore?: TaskStore;
   /**

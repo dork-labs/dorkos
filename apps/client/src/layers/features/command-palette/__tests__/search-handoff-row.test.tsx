@@ -1,17 +1,19 @@
 /**
  * @vitest-environment jsdom
  *
- * ⌘K's last row, reached the way a person reaches it (P3 AC-6).
+ * ⌘K's last row, reached the way a person reaches it (P3 AC-6,
+ * `specs/message-search` §8).
  *
  * `model/__tests__/search-surface.test.ts` proves the RULE. This file proves it
- * governs the DOM: with the cockpit's real route registry the row is absent —
- * not disabled, not a placeholder, absent — and with a search surface added to
- * that registry the same palette grows the row, with the words that were typed
- * in it. Absence asserted on its own would pass against a palette that never
- * drew the row at all, which is why both halves are here.
+ * governs the DOM: the row is absent from an untyped palette, appears the
+ * moment there is a question to hand across, carries the words rather than the
+ * prefix that narrowed the list, and hands off GLOBALLY under a scope chip
+ * while saying so. Absence asserted on its own would pass against a palette
+ * that never drew the row at all, which is why both halves are here.
  *
- * Only the registry is seeded. The gate, the row, the page and the dialog are
- * all the shipped ones.
+ * Nothing about the row is stubbed. The only seam is the app store, so the
+ * hand-off's one effect — opening the message-search box with those words — can
+ * be observed.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -21,30 +23,10 @@ import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { SEARCH_SURFACE_PATH } from '../model/search-surface';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 
-/**
- * The routes this cockpit is pretending to serve, on top of the real ones.
- *
- * Hoisted so the module mock below can close over it, and read fresh on every
- * call — the gate asks the registry per keystroke, so a test can hand it a
- * cockpit that grew a search page.
- */
-const extraRoutes = vi.hoisted(() => ({ paths: [] as string[] }));
-
-const openLink = vi.hoisted(() => vi.fn());
-
-vi.mock('@/layers/shared/lib', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
-  return {
-    ...actual,
-    get APP_ROUTE_PATHS() {
-      return [...actual.APP_ROUTE_PATHS, ...extraRoutes.paths];
-    },
-    openLink,
-  };
-});
+/** The one effect the row has: it opens the other box, holding these words. */
+const openMessageSearch = vi.hoisted(() => vi.fn());
 
 // --- Fixtures ---
 
@@ -90,6 +72,7 @@ vi.mock('@/layers/shared/model', () => ({
       previousCwd: null,
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: vi.fn(),
+      openMessageSearch,
     };
     return selector ? selector(state) : state;
   },
@@ -163,8 +146,7 @@ vi.mock('motion/react', () => ({
 }));
 
 beforeEach(() => {
-  extraRoutes.paths = [];
-  openLink.mockClear();
+  openMessageSearch.mockClear();
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -199,25 +181,23 @@ function handoffRow(): HTMLElement | null {
   return (
     screen
       .queryAllByRole('option')
-      .find((el) => (el.textContent ?? '').startsWith('Search messages for')) ?? null
+      .find((el) => /^Search (all )?messages for/.test(el.textContent ?? '')) ?? null
   );
 }
 
 describe('the message-search hand-off row', () => {
-  it('is absent from a cockpit with no such surface — while the list around it is not', async () => {
+  it('is not offered before anything has been typed — while the list around it is not empty', async () => {
+    // The untyped palette is a command center, not a search result: there is no
+    // question to hand off yet. The positive anchor keeps this from passing
+    // against a palette that rendered nothing at all.
     render(<CommandPaletteDialog />);
-    type('dash');
 
-    // The positive anchor: results for this query DID arrive, so the absence
-    // below is about the hand-off row rather than about an empty palette.
     await waitFor(() => expect(screen.getByText('Dashboard overhaul')).toBeInTheDocument());
     expect(handoffRow()).toBeNull();
-    // Nor as a disabled row, a placeholder, or a heading over nothing.
     expect(screen.queryByText(/Search messages/)).toBeNull();
   });
 
-  it('appears by itself when the cockpit starts serving one, with the query in it', async () => {
-    extraRoutes.paths = [SEARCH_SURFACE_PATH];
+  it('appears the moment there is something to hand across, with the query in it', async () => {
     render(<CommandPaletteDialog />);
     type('dash');
 
@@ -225,51 +205,49 @@ describe('the message-search hand-off row', () => {
     expect(handoffRow()).toHaveTextContent('Search messages for “dash”…');
   });
 
+  it('tells you which key opens it', async () => {
+    // The hint ships in the same commit as the binding, which is the promise
+    // this row's own TSDoc made while nothing answered ⌘⇧F. A hint for a key
+    // nobody bound is folklore; a binding nobody is told about is worse.
+    render(<CommandPaletteDialog />);
+    type('dash');
+
+    await waitFor(() => expect(handoffRow()).not.toBeNull());
+    expect(handoffRow()?.textContent).toMatch(/⌘⇧F|Ctrl⇧F/);
+  });
+
   it('sends the words that were typed, not the prefix used to narrow the list', async () => {
-    extraRoutes.paths = [SEARCH_SURFACE_PATH];
     render(<CommandPaletteDialog />);
     type('#dash');
 
     await waitFor(() => expect(handoffRow()).not.toBeNull());
-    // Both halves: what the row SAYS and where it GOES. A `#` is how a person
-    // narrowed this list, and asking a message index for "#dash" would find
-    // nothing — so the row said the right thing while the link asked the wrong
-    // question, and only this second assertion caught it.
+    // Both halves: what the row SAYS and what it HANDS OVER. A `#` is how a
+    // person narrowed this list, and asking a message index for "#dash" would
+    // find nothing — so the row said the right thing while the hand-off asked
+    // the wrong question, and only the second assertion caught it.
     expect(handoffRow()).toHaveTextContent('Search messages for “dash”…');
     fireEvent.click(handoffRow() as HTMLElement);
-    expect(openLink).toHaveBeenCalledWith('/search?q=dash');
+    expect(openMessageSearch).toHaveBeenCalledWith('dash');
   });
 
-  it('leaves for the surface when chosen', async () => {
-    extraRoutes.paths = [SEARCH_SURFACE_PATH];
+  it('opens the search box when chosen', async () => {
     render(<CommandPaletteDialog />);
     type('dash');
 
     await waitFor(() => expect(handoffRow()).not.toBeNull());
     fireEvent.click(handoffRow() as HTMLElement);
 
-    expect(openLink).toHaveBeenCalledWith('/search?q=dash');
+    expect(openMessageSearch).toHaveBeenCalledWith('dash');
   });
 
-  it('is not offered before anything has been typed', async () => {
-    // The untyped palette is a command center, not a search result — there is
-    // no question to hand off yet.
-    extraRoutes.paths = [SEARCH_SURFACE_PATH];
-    render(<CommandPaletteDialog />);
-
-    await waitFor(() => expect(screen.getByText('Dashboard overhaul')).toBeInTheDocument());
-    expect(handoffRow()).toBeNull();
-  });
-
-  it('treats a `#` inside a scope as a character, because the chip already fixed the kind', async () => {
-    // The one place this row composes with somebody else's rule (P3.3): under a
-    // chip there are no prefixes — everything a scope admits is a conversation,
-    // so `#` is a character in a title rather than a mode switch. Verified by
-    // execution, not assumed: the hand-off reads `term`, and under a chip
-    // `term` is the WHOLE search string, `#` included. Asking a message index
-    // for "dash" when the person typed "#dash" inside a scope would be dropping
-    // a character they meant.
-    extraRoutes.paths = [SEARCH_SURFACE_PATH];
+  it('says “all messages” under a chip, and hands off globally', async () => {
+    // Two rules composing (P3.3). Under a chip there are no prefixes —
+    // everything a scope admits is a conversation, so `#` is a character in a
+    // title rather than a mode switch, and `term` is the WHOLE search string.
+    // And the hand-off widens to a global search on purpose, because the
+    // message-search box has no scope vocabulary to carry a chip into
+    // (`search-surface`) — so the row has to SAY it is widening or it reads as
+    // searching inside the scope and quietly does not.
     render(<CommandPaletteDialog />);
 
     // Pick up a chip the way a person does: type enough of the agent's name,
@@ -288,17 +266,15 @@ describe('the message-search hand-off row', () => {
     type('#dash');
 
     await waitFor(() => expect(handoffRow()).not.toBeNull());
-    expect(handoffRow()).toHaveTextContent('Search messages for “#dash”…');
+    expect(handoffRow()).toHaveTextContent('Search all messages for “#dash”…');
     fireEvent.click(handoffRow() as HTMLElement);
-    // Exactly this href, and note what is NOT in it: the chip. The hand-off
-    // widens to a global search on purpose — the search surface has no scope
-    // vocabulary to carry a chip into (`search-surface`). Asserted as the whole
-    // string so a scope parameter smuggled in later has to come past this line.
-    expect(openLink).toHaveBeenCalledWith('/search?q=%23dash');
+    // Exactly these words, and note what is NOT with them: the chip. Asserted
+    // as the whole call so a scope argument smuggled in later has to come past
+    // this line.
+    expect(openMessageSearch).toHaveBeenCalledWith('#dash');
   });
 
   it('draws it last, below every row the ranking produced', async () => {
-    extraRoutes.paths = [SEARCH_SURFACE_PATH];
     render(<CommandPaletteDialog />);
     type('dash');
 

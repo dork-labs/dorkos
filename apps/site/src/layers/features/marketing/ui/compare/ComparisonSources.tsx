@@ -47,7 +47,7 @@ export function ComparisonSources({ competitor }: { competitor: Competitor }) {
       </h2>
       <p className="text-warm-gray mt-3 text-sm leading-relaxed">
         We last checked these facts on {formatVerifiedDate(competitor.lastVerified)}. Tools in this
-        space change fast. If something here is out of date,{' '}
+        space change fast. If something is out of date,{' '}
         <Link href="/feedback" className="text-brand-orange hover:text-charcoal transition-smooth">
           tell us
         </Link>{' '}

@@ -13,6 +13,7 @@ import { logger } from '../../lib/logger.js';
 import { sweepFileSource } from './jsonl-frontier.js';
 import { SEARCH_SOURCES } from './registry.js';
 import { sweepRowSource } from './row-frontier.js';
+import { sweepSnapshotSource } from './snapshot-frontier.js';
 import type { SearchSource, SourceFailure } from './types.js';
 
 /**
@@ -24,6 +25,17 @@ import type { SearchSource, SourceFailure } from './types.js';
  * than a silent change in how hard this process works.
  */
 export const SEARCH_RECONCILE_INTERVAL_MS = 300_000;
+
+/**
+ * The `originKey` a failure carries when a whole source threw before its
+ * mechanism could attribute the error to anything.
+ *
+ * Every mechanism catches per container, and two of them also catch their own
+ * setup — a discovery that rejects, a snapshot that will not open. This is the
+ * backstop for whatever neither covers, and it exists so that one source's bad
+ * day cannot stop the sources swept after it.
+ */
+export const SOURCE_FAILURE_KEY = '(source)';
 
 /** What one sweep across every source did. */
 export interface SweepResult {
@@ -127,18 +139,43 @@ export class SearchIndexer {
     };
 
     for (const source of this.sources) {
-      // The registry row names its mechanism, so nothing here infers one from
-      // the shape of the record (spec §3).
-      const swept =
-        source.mechanism === 'jsonl'
-          ? await sweepFileSource(this.db, source, at)
-          : sweepRowSource(this.db, source, at);
-      result.containers += swept.containers;
-      result.indexed += swept.indexed;
-      result.skipped += swept.skipped;
-      result.pruned += swept.pruned;
-      result.rebuilt += swept.rebuilt;
-      result.failures.push(...swept.failures);
+      // **One source may not take the tick down with it.** Each mechanism
+      // already degrades per container, but a throw from OUTSIDE a container's
+      // own `try` — a container list that will not read, a snapshot that will
+      // not open — escapes the mechanism entirely, and before this was wrapped
+      // it also skipped every source ORDERED AFTER the failing one. That is the
+      // worst version of the failure this whole feature refuses: rooms and
+      // Claude Code silently stop indexing because OpenCode's store moved, and
+      // the only trace is one line in a log.
+      //
+      // `SweepResult.failures` already promises a sweep with failures still
+      // resolves; this is what makes that true for the paths a mechanism cannot
+      // catch for itself.
+      try {
+        // The registry row names its mechanism, so nothing here infers one from
+        // the shape of the record (spec §3).
+        const swept =
+          source.mechanism === 'jsonl'
+            ? await sweepFileSource(this.db, source, at)
+            : source.mechanism === 'sqlite-snapshot'
+              ? await sweepSnapshotSource(this.db, source, at)
+              : sweepRowSource(this.db, source, at);
+        result.containers += swept.containers;
+        result.indexed += swept.indexed;
+        result.skipped += swept.skipped;
+        result.pruned += swept.pruned;
+        result.rebuilt += swept.rebuilt;
+        result.failures.push(...swept.failures);
+      } catch (err) {
+        result.failures.push({
+          sourceId: source.id,
+          // No container was reached, so there is nothing to blame and no
+          // `search_sources` row to write — the same reasoning as
+          // `DISCOVERY_FAILURE_KEY` and `SNAPSHOT_FAILURE_KEY`, one level up.
+          originKey: SOURCE_FAILURE_KEY,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     return result;
@@ -149,7 +186,15 @@ export class SearchIndexer {
     this.sweep()
       .then((result) => {
         for (const failure of result.failures) {
-          logger.warn('[Search] a source produced nothing and recorded why', failure);
+          // Deliberately not "a source produced nothing", and deliberately not
+          // pointing at `last_error`. This one line covers four shapes: a
+          // container whose projection threw (which DID write `last_error`), a
+          // discovery that failed outright, several files claiming one container
+          // id, and one root of several that would not open — and in that last
+          // case the source contributed plenty from the roots that did open.
+          // What is true of all four is that something identifiable is missing
+          // from the index, and the entry says which.
+          logger.warn('[Search] a source could not index part of what it covers', failure);
         }
         if (result.skipped > 0) {
           // The quiet failure. Nothing is broken enough to stop a container, and

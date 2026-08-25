@@ -91,6 +91,9 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
     const deps = {
       transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) },
       defaultCwd: '/tmp/test',
+      // Never written to here: every create in this suite is refused before the
+      // file step. Present because `McpToolDeps` requires it (DOR-1568).
+      dorkHome: '/tmp/dorkos-external-mcp-test',
       taskStore: store,
     } as unknown as McpToolDeps;
 
@@ -194,6 +197,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       name: 'self-approving',
       prompt: 'do a thing',
       cron: '0 3 * * *',
+      target: 'global',
       // A reason is required, so the call has to carry one to even reach the
       // guard this test is about — a call missing it is refused by the SDK's
       // own schema parse, which proves something different.
@@ -246,6 +250,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       name: 'sneaky',
       prompt: 'do a thing',
       cron: '0 3 * * *',
+      target: 'global',
       reason: 'It should run nightly.',
       permissionMode: 'bypassPermissions',
     });

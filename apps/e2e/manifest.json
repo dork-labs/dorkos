@@ -263,10 +263,10 @@
       "specFile": "tests/rooms/rooms-in-palette.spec.ts",
       "feature": "rooms",
       "description": "surfaces an unread channel without typing, and names it once, # lists the channels, unread first, and opens the one you pick, @ offers the conversation with an agent beside the agent herself",
-      "lastRun": "2026-08-22T04:44:18.577Z",
+      "lastRun": "2026-08-25T11:24:18.864Z",
       "lastStatus": "passed",
-      "runCount": 14,
-      "passCount": 13,
+      "runCount": 15,
+      "passCount": 14,
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
@@ -681,26 +681,14 @@
       "relatedCode": [],
       "lastModified": ""
     },
-    "archived-in-palette": {
-      "specFile": "tests/rooms/archived-in-palette.spec.ts",
-      "feature": "rooms",
-      "description": "labels a closed channel, names it once, and keeps it under a live one, offers no message-search hand-off, because there is no surface to hand off to",
-      "lastRun": "2026-08-22T04:44:18.577Z",
-      "lastStatus": "passed",
-      "runCount": 3,
-      "passCount": 3,
-      "failCount": 0,
-      "relatedCode": [],
-      "lastModified": ""
-    },
     "palette-scope-chips": {
       "specFile": "tests/rooms/palette-scope-chips.spec.ts",
       "feature": "rooms",
       "description": "an agent becomes a chip on the search line, and Backspace puts it down, a channel scopes the same way, and Tab is not stolen by the dialog",
-      "lastRun": "2026-08-22T04:44:18.577Z",
+      "lastRun": "2026-08-25T11:24:18.864Z",
       "lastStatus": "passed",
-      "runCount": 2,
-      "passCount": 2,
+      "runCount": 3,
+      "passCount": 3,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -1067,18 +1055,33 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "message-search": {
+      "specFile": "tests/search/message-search.spec.ts",
+      "feature": "search",
+      "description": "finds what was said, and opens the channel it was said in, says what it cannot see before anything is typed",
+      "lastRun": "2026-08-25T11:24:18.864Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "archived-in-palette": {
+      "specFile": "tests/rooms/archived-in-palette.spec.ts",
+      "feature": "rooms",
+      "description": "labels a closed channel, names it once, and keeps it under a live one, hands the words to message search, from a closed channel like any other",
+      "lastRun": "2026-08-25T11:24:18.864Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-09T00-06-19",
-      "timestamp": "2026-08-09T00:06:19.907Z",
-      "total": 162,
-      "passed": 159,
-      "failed": 0,
-      "skipped": 3,
-      "duration": 243183
-    },
     {
       "id": "2026-08-10T21-04-34",
       "timestamp": "2026-08-10T21:04:34.690Z",
@@ -1969,6 +1972,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 227251
+    },
+    {
+      "id": "2026-08-25T11-24-18",
+      "timestamp": "2026-08-25T11:24:18.864Z",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 48551
     }
   ]
 }

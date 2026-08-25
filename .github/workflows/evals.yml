@@ -40,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: 'Eval suite to run (core, smoke, rooms, experimental, connector, all, or a case id)'
+        description: 'Eval suite to run (core, smoke, rooms, memory, experimental, connector, all, or a case id)'
         required: false
         default: 'core'
       budget_usd:

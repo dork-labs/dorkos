@@ -116,6 +116,24 @@ describe('createAgentWorkspace rollback', () => {
     expect(await listTree(projectDir)).toEqual(before);
   });
 
+  // Red when: `ledger.claimFile` is dropped from the MEMORY.md scaffold. The
+  // file then survives a failed creation, and the next agent created at this
+  // path inherits a stranger's notes — which, unlike a stray SOUL.md, is
+  // content the new agent will read out in rooms as if it were its own.
+  //
+  // Asserted by name rather than only through the whole-tree comparison above,
+  // because the tree assertion is one line and reads as "nothing is left"
+  // whatever the reason; this one says which file, and why it matters.
+  it('takes the memory file with it when the scaffold fails', async () => {
+    failOnConfigSet();
+
+    await expect(createAgentWorkspace({ name: 'my-agent', directory: projectDir })).rejects.toThrow(
+      AgentCreationError
+    );
+
+    expect(await exists(path.join(projectDir, '.dork', 'MEMORY.md'))).toBe(false);
+  });
+
   it('leaves no empty directories behind after a failed scaffold', async () => {
     failOnConfigSet();
 
@@ -258,6 +276,9 @@ describe('createAgentWorkspace rollback', () => {
     expect(result.manifest.name).toBe('my-agent');
     expect(await exists(path.join(projectDir, '.dork', 'agent.json'))).toBe(true);
     expect(await exists(path.join(projectDir, '.dork', 'SOUL.md'))).toBe(true);
+    // The positive control for the rollback case above: without it, that case
+    // passes for a scaffold that never writes a memory file at all.
+    expect(await exists(path.join(projectDir, '.dork', 'MEMORY.md'))).toBe(true);
     expect(await exists(path.join(projectDir, 'AGENTS.md'))).toBe(true);
     expect(await fs.readFile(path.join(projectDir, 'important.txt'), 'utf-8')).toBe(
       'a year of work'

@@ -9,7 +9,12 @@
  * @module routes/room-caller
  */
 import type { Request, Response } from 'express';
-import { getRoomService, RoomError, type AuthorRecord } from '../services/rooms/index.js';
+import {
+  getRoomService,
+  resolveOperatorAuthor,
+  RoomError,
+  type AuthorRecord,
+} from '../services/rooms/index.js';
 import { readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
 
@@ -122,5 +127,5 @@ export function resolveCaller(
       : registry.human(session.userId);
   }
 
-  return owner ? registry.bindOwner(owner.id) : registry.localHuman();
+  return resolveOperatorAuthor(registry);
 }

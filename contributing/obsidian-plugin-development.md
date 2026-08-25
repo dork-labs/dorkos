@@ -598,6 +598,12 @@ build: {
 }
 ```
 
+**A failed build used to report the wrong error.** Rollup runs `closeBundle` on
+failure too, so `copy-manifest` threw `ENOENT` on the missing `dist/` and that
+error replaced the real one. It now skips when there is no bundle
+(`build-plugins/copy-manifest.ts`); if you see a manifest error, read it as a
+manifest error rather than as a mask.
+
 ### Build Plugins
 
 | Plugin                  | Phase       | Purpose                                                                   |
@@ -1000,6 +1006,7 @@ const transport = new DirectTransport({
   // feeding the session projector; delivery flows over subscribeSession.
   turnTrigger: createEmbeddedTurnTrigger(runtime),
   commandIntentTrigger: createEmbeddedCommandIntentTrigger(runtime),
+  pendingInteractions: { list: () => listPendingInteractionsAcrossSessions() },
 });
 
 // Embedded mode has no HTTP server: source the StreamManager's durable

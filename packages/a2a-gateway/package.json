@@ -17,7 +17,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@a2a-js/sdk": "0.3.14",
+    "@a2a-js/sdk": "1.0.1",
     "@dorkos/db": "workspace:*",
     "@dorkos/mesh": "workspace:*",
     "@dorkos/relay": "workspace:*",

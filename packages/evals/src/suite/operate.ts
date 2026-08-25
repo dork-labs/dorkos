@@ -171,7 +171,7 @@ async function seedSelfEditAgent(sandbox: EvalSandbox): Promise<void> {
     namespace: 'system',
     behavior: { responseMode: 'always' },
     traits: { ...DEFAULT_TRAITS },
-    conventions: { soul: true, nope: true, dorkosKnowledge: true },
+    conventions: { soul: true, nope: true, memory: true, dorkosKnowledge: true },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-evals',
     personaEnabled: true,

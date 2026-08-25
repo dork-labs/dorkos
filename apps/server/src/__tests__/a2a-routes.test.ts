@@ -188,14 +188,26 @@ describe('A2A Express routes', () => {
       const card = res.body;
 
       expect(card.name).toBe('DorkOS Agent Fleet');
-      expect(card.protocolVersion).toBe('0.3.0');
-      expect(card.url).toBe(`${BASE_URL}/a2a`);
+      // A2A v1.0 replaced the card's flat url/preferredTransport/protocolVersion
+      // with a list of interfaces. Both protocol versions are advertised so
+      // v0.3 agents keep working — see packages/a2a-gateway.
+      expect(card.supportedInterfaces).toEqual([
+        {
+          url: `${BASE_URL}/a2a`,
+          protocolBinding: 'JSONRPC',
+          protocolVersion: '1.0',
+        },
+        {
+          url: `${BASE_URL}/a2a`,
+          protocolBinding: 'JSONRPC',
+          protocolVersion: '0.3',
+        },
+      ]);
       expect(card.version).toBe(VERSION);
       expect(card.capabilities).toEqual(
         expect.objectContaining({
           streaming: true,
           pushNotifications: false,
-          stateTransitionHistory: true,
         })
       );
       expect(card.defaultInputModes).toContain('text/plain');
@@ -228,7 +240,9 @@ describe('A2A Express routes', () => {
       const res = await request(app).get('/.well-known/agent.json');
       const card = res.body;
 
-      expect(card.skills).toHaveLength(0);
+      // A2A v1.0 serializes cards as protobuf JSON, which omits empty repeated
+      // fields rather than emitting `[]` — no skills means no `skills` key.
+      expect(card.skills ?? []).toHaveLength(0);
       expect(card.name).toBe('DorkOS Agent Fleet');
       expect(card.description).toContain('no agents registered yet');
     });
@@ -255,8 +269,10 @@ describe('A2A Express routes', () => {
       const res = await request(app).get('/.well-known/agent.json');
       const card = res.body;
 
-      expect(card.securitySchemes?.bearerAuth).toMatchObject({ type: 'http', scheme: 'bearer' });
-      expect(card.security).toBeUndefined();
+      expect(card.securitySchemes?.bearerAuth?.httpAuthSecurityScheme).toMatchObject({
+        scheme: 'bearer',
+      });
+      expect(card.securityRequirements ?? []).toEqual([]);
     });
 
     it('advertises a bearer security requirement when auth is enforced', async () => {
@@ -265,8 +281,10 @@ describe('A2A Express routes', () => {
       const res = await request(app).get('/.well-known/agent.json');
       const card = res.body;
 
-      expect(card.securitySchemes?.bearerAuth).toMatchObject({ type: 'http', scheme: 'bearer' });
-      expect(card.security).toEqual([{ bearerAuth: [] }]);
+      expect(card.securitySchemes?.bearerAuth?.httpAuthSecurityScheme).toMatchObject({
+        scheme: 'bearer',
+      });
+      expect(card.securityRequirements).toEqual([{ schemes: { bearerAuth: {} } }]);
     });
   });
 
@@ -328,11 +346,21 @@ describe('A2A Express routes', () => {
       const res = await request(app).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
       const card = res.body;
 
-      expect(card.protocolVersion).toBe('0.3.0');
-      // Per-agent card advertises the agent's own JSON-RPC endpoint (F5).
-      expect(card.url).toBe(`${BASE_URL}/a2a/agents/${AGENT_ALPHA.id}`);
+      // Per-agent card advertises the agent's own JSON-RPC endpoint (F5), at
+      // both protocol versions.
+      expect(card.supportedInterfaces).toEqual([
+        {
+          url: `${BASE_URL}/a2a/agents/${AGENT_ALPHA.id}`,
+          protocolBinding: 'JSONRPC',
+          protocolVersion: '1.0',
+        },
+        {
+          url: `${BASE_URL}/a2a/agents/${AGENT_ALPHA.id}`,
+          protocolBinding: 'JSONRPC',
+          protocolVersion: '0.3',
+        },
+      ]);
       expect(card.version).toBe(VERSION);
-      expect(card.preferredTransport).toBe('JSONRPC');
     });
 
     it('returns empty skills when agent has no capabilities', async () => {
@@ -346,7 +374,8 @@ describe('A2A Express routes', () => {
       const res = await request(app).get(`/a2a/agents/${noCaps.id}/card`);
 
       expect(res.status).toBe(200);
-      expect(res.body.skills).toHaveLength(0);
+      // Omitted, not `[]` — protobuf JSON drops empty repeated fields.
+      expect(res.body.skills ?? []).toHaveLength(0);
     });
 
     it('falls back to generated description when agent description is empty', async () => {

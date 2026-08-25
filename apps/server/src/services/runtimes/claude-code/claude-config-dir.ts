@@ -25,7 +25,7 @@
  * its `null` default the chain is byte-for-byte the SDK's own.
  *
  * `os.homedir()` is banned everywhere else in `apps/server/src/` (see
- * `.claude/rules/dork-home.md`), and this file is one of the three carve-outs —
+ * `.claude/rules/dork-home.md`), and this file is one of the four carve-outs —
  * exempt from the CALL ban **by filename**, so a sibling module may not call it
  * either. Everything that needs the real `~/.claude` lives here for that reason.
  * The IMPORT ban still reaches this file, so the import must stay spelled

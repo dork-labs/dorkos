@@ -2,13 +2,14 @@
  * Unit tests for the cross-agent recent-sessions fan-out (DOR-329).
  *
  * Built on the aggregate-session-list.test.ts template with `FakeAgentRuntime`:
- * exercises multi-path × multi-runtime fan-out, exact-cwd membership (DOR-203),
+ * exercises multi-path × multi-runtime fan-out, subtree cwd membership
+ * (DOR-203 + DOR-674),
  * agentActivity completeness beyond the trim limit, limit/order, path dedupe,
  * warnings aggregation, and bounded-concurrency correctness — all directly on
  * the service, no HTTP layer.
  */
 import { describe, it, expect } from 'vitest';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { FakeAgentRuntime, DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import { listRecentSessions } from '../recent-sessions.js';
 
@@ -59,12 +60,14 @@ describe('listRecentSessions', () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it('excludes sessions whose cwd does not exactly match the agent path (DOR-203)', async () => {
+  it('excludes sessions whose cwd is outside the agent path (DOR-203)', async () => {
     const a = runtimeReturning('fake-a', {
       '/p1': [
         makeSession('member', '2026-03-01T00:00:00.000Z', '/p1'),
         // cwd points at a different directory — a ghost/foreign session.
         makeSession('foreign', '2026-04-01T00:00:00.000Z', '/other'),
+        // A sibling that merely starts with the same characters is NOT inside.
+        makeSession('sibling', '2026-04-02T00:00:00.000Z', '/p1-archive'),
         // cwd-less session (DOR-202) — excluded by construction.
         makeSession('ghost', '2026-05-01T00:00:00.000Z', undefined),
       ],
@@ -76,6 +79,43 @@ describe('listRecentSessions', () => {
     // agentActivity reflects only the membered session, not the later foreign/ghost ones.
     expect(result.agentActivity).toEqual({ '/p1': '2026-03-01T00:00:00.000Z' });
   });
+
+  it('includes sessions started in a subfolder of the agent path (DOR-674)', async () => {
+    // `opencode`/`claude` run in `<project>/packages/api` belongs to that
+    // agent. An exact-cwd rule dropped it from Recent and from the daily
+    // counts even after the OpenCode adapter went to the trouble of listing it.
+    const a = runtimeReturning('fake-a', {
+      '/p1': [
+        makeSession('root', '2026-03-01T00:00:00.000Z', '/p1'),
+        makeSession('nested', '2026-04-01T00:00:00.000Z', '/p1/packages/api'),
+      ],
+    });
+
+    const result = await listRecentSessions({ runtimes: [a], agentPaths: ['/p1'], limit: 10 });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['nested', 'root']);
+    // The subfolder session is the newest, so it also moves the agent's
+    // last-activity stamp — a "quiet" agent that was actually working was the
+    // user-visible half of this bug.
+    expect(result.agentActivity).toEqual({ '/p1': '2026-04-01T00:00:00.000Z' });
+  });
+
+  describe.each(DIRECTORY_MEMBERSHIP_VECTORS)(
+    'membership vector: $name',
+    ({ root, candidate, within }) => {
+      it(`${within ? 'includes' : 'excludes'} it`, async () => {
+        // The fan-out answers the SAME table as the OpenCode listing and the
+        // client selector — one rule, three call sites (DOR-674).
+        const a = runtimeReturning('fake-a', {
+          [root]: [makeSession('candidate', '2026-03-01T00:00:00.000Z', candidate)],
+        });
+
+        const result = await listRecentSessions({ runtimes: [a], agentPaths: [root], limit: 10 });
+
+        expect(result.sessions.map((s) => s.id)).toEqual(within ? ['candidate'] : []);
+      });
+    }
+  );
 
   it('computes agentActivity before the trim (complete even beyond the limit)', async () => {
     const a = runtimeReturning('fake-a', {

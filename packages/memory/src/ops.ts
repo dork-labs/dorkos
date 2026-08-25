@@ -1,0 +1,273 @@
+/**
+ * The three edits an agent can make to its own memory, as pure text
+ * transformations. No filesystem, no locking, no cap — `store.ts` owns all
+ * three, so everything here is directly testable on a string.
+ *
+ * @module memory/ops
+ */
+import {
+  MemoryMatchError,
+  MemoryNoteShapeError,
+  type MemoryProvenance,
+  type MemoryWriteOp,
+} from '@dorkos/shared/memory-provider';
+
+import { renderProvenanceSuffix } from './provenance.js';
+
+/**
+ * Every character that ends a line for a reader.
+ *
+ * CR and LF are the obvious two. NEL (U+0085) and the LINE/PARAGRAPH
+ * SEPARATORS (U+2028/U+2029) are the ones a `[\r\n]` check misses and a
+ * renderer does not — which is the whole of the forgery this guard prevents.
+ * Not a global regex: `.test()` on a `/g` pattern carries `lastIndex` between
+ * calls and would answer `false` every other time.
+ */
+const LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
+
+/** How many near matches a refusal offers. Enough to choose from, few enough to read. */
+const NEAR_MATCH_LIMIT = 3;
+
+/** How much of a long line a near match shows before it is cut short. */
+const NEAR_MATCH_MAX_CHARS = 120;
+
+/**
+ * Apply one write to the current memory text and return the new text.
+ *
+ * @param content - The memory as it stands.
+ * @param op - The change to make.
+ * @throws {MemoryMatchError} When a `replace` or `remove` does not name exactly
+ *   one place in `content`.
+ * @throws {MemoryNoteShapeError} When an `add` or `replace` carries a line
+ *   break, which would let it forge a provenance suffix of its own.
+ */
+export function applyMemoryOp(content: string, op: MemoryWriteOp): string {
+  // **A note is one line, and that is enforced before anything else happens.**
+  // The provenance suffix lands at the END of the text, so a caller that could
+  // embed a line break could write a first line already carrying a
+  // handler-shaped `(noted in …)` of its own choosing — indistinguishable from
+  // one this engine stamped. Checked for `replace` too, and for the same
+  // reason: replacing one line with two forges the second one's provenance
+  // just as well as adding it did.
+  //
+  // **All five line terminators, not just CR and LF.** `untrusted-text.ts`
+  // names NEL (U+0085) and the U+2028/U+2029 separators as line-forgers in its
+  // own documentation, and it is right: a markdown renderer and a model both
+  // break a line on them, so a note carrying one renders as two. An earlier
+  // revision of this guard checked `[\r\n]` alone and all three walked
+  // straight through it — measured.
+  if ((op.action === 'add' || op.action === 'replace') && LINE_BREAK.test(op.text)) {
+    throw new MemoryNoteShapeError(op.action);
+  }
+
+  switch (op.action) {
+    case 'add':
+      return appendNote(content, op.text, op.provenance);
+    case 'replace': {
+      const at = findEditable(content, op.oldText);
+      return normalizeTail(content.slice(0, at) + op.text + content.slice(at + op.oldText.length));
+    }
+    case 'remove': {
+      const at = findEditable(content, op.oldText);
+      return removeLinesSpanning(content, at, at + op.oldText.length);
+    }
+  }
+}
+
+/**
+ * Append a note to the end of the memory, with its provenance suffix.
+ *
+ * The note lands at the **end of the file**, not under a heading the engine goes
+ * looking for. An agent's memory is a file a person may have reorganised — moved
+ * the notes section, added their own headings — and an engine that hunted for a
+ * heading would either fail on those files or silently invent one. The scaffold
+ * puts its `## Notes` heading last precisely so "the end" and "under Notes" are
+ * the same place in an unedited file.
+ *
+ * @param content - The memory as it stands.
+ * @param text - The note, in the agent's own words. Written verbatim, newlines
+ *   and all, so unicode round-trips exactly.
+ * @param provenance - Where it was learned. Omitted only by a caller with no
+ *   turn context.
+ */
+function appendNote(content: string, text: string, provenance?: MemoryProvenance): string {
+  const suffix = provenance ? ` ${renderProvenanceSuffix(provenance)}` : '';
+  const base = normalizeTail(content);
+  return `${base}- ${text.trim()}${suffix}\n`;
+}
+
+/**
+ * The end of the file's leading `<!-- ... -->` header, or `0` when there is none.
+ *
+ * The header is the only part of a memory file DorkOS wrote, and the only part
+ * that is not a note: it says what the file is, what the cap is, how provenance
+ * works, and — the sentence that matters — that anything in here can surface in
+ * a room full of other people. It is addressed to the operator, not to the
+ * agent.
+ *
+ * Only a header at the very TOP counts. A `<!--` further down is inside
+ * somebody's note and is theirs to edit.
+ *
+ * @param content - The memory as it stands.
+ * @returns Index just past the header's closing `-->`, or `0`.
+ */
+function headerEnd(content: string): number {
+  if (!content.trimStart().startsWith('<!--')) return 0;
+  const close = content.indexOf('-->');
+  return close === -1 ? 0 : close + '-->'.length;
+}
+
+/**
+ * Find the one place `needle` appears in the part of `content` an agent may
+ * edit.
+ *
+ * **The header is out of bounds and that is a security property, not tidiness.**
+ * The visibility warning lives there, and `replace` with an empty string is a
+ * delete: an agent that could reach the header could quietly remove the one
+ * paragraph telling whoever opens this file that its contents can surface in a
+ * shared room. Room text reaches this file through one hop of ordinary quoting
+ * (spec D2 §C1), so "an agent would not do that" is not the same as "nothing
+ * could make it do that". A person editing the file by hand still can, which is
+ * the right place for that power to live.
+ *
+ * @param content - The memory to search.
+ * @param needle - The text that must appear exactly once, outside the header.
+ * @throws {MemoryMatchError} When it appears twice, not at all, or only inside
+ *   the header — with the lines that came closest, so the caller can correct
+ *   itself instead of guessing again next turn.
+ */
+function findEditable(content: string, needle: string): number {
+  const body = headerEnd(content);
+  const at = findUnique(content, needle);
+  if (at < body) {
+    throw new MemoryMatchError('protected-header', needle, nearestLines(content, needle));
+  }
+  return at;
+}
+
+/**
+ * Find the one place `needle` appears in `content`.
+ *
+ * @param content - The memory to search.
+ * @param needle - The text that must appear exactly once.
+ * @throws {MemoryMatchError} When it appears twice or not at all — with the
+ *   lines that came closest, so the caller can correct itself instead of
+ *   guessing again next turn.
+ */
+function findUnique(content: string, needle: string): number {
+  const first = content.indexOf(needle);
+  if (first === -1) {
+    throw new MemoryMatchError('not-found', needle, nearestLines(content, needle));
+  }
+  if (content.indexOf(needle, first + 1) !== -1) {
+    throw new MemoryMatchError('ambiguous', needle, linesContaining(content, needle));
+  }
+  return first;
+}
+
+/**
+ * Remove every line the span `[start, end)` touches.
+ *
+ * Removing only the matched characters would leave the rest of the line behind —
+ * a dangling `- ` bullet, or half a sentence that now says something nobody
+ * wrote. Forgetting a note means the note is gone, so the unit of removal is the
+ * line.
+ *
+ * @param content - The memory as it stands.
+ * @param start - Index of the first matched character.
+ * @param end - Index just past the last matched character.
+ */
+function removeLinesSpanning(content: string, start: number, end: number): string {
+  const lineStart = content.lastIndexOf('\n', Math.max(start - 1, 0)) + 1;
+  const newlineAfter = content.indexOf('\n', end);
+  const cutTo = newlineAfter === -1 ? content.length : newlineAfter + 1;
+
+  const head = content.slice(0, lineStart);
+  const tail = content.slice(cutTo);
+
+  // The removed line usually sat between two blank lines; keeping both would
+  // leave a widening hole every time something is forgotten. Collapse only this
+  // seam — reflowing the whole file would rewrite formatting the operator chose.
+  const joined =
+    head.endsWith('\n\n') && tail.startsWith('\n') ? head + tail.slice(1) : head + tail;
+
+  return normalizeTail(joined);
+}
+
+/** Every line that literally contains `needle`, shortened for display. */
+function linesContaining(content: string, needle: string): string[] {
+  return contentLines(content)
+    .filter((line) => line.includes(needle))
+    .slice(0, NEAR_MATCH_LIMIT)
+    .map(shorten);
+}
+
+/**
+ * The lines that most resemble `needle`, best first.
+ *
+ * Scoring is deliberately crude — how many of the needle's words the line
+ * contains — because its job is to jog a caller toward the right quote, not to
+ * rank search results. A line that shares nothing is never offered: an
+ * unrelated suggestion is worse than none, since a model may quote it back.
+ *
+ * @param content - The memory to search.
+ * @param needle - The text that matched nothing.
+ */
+function nearestLines(content: string, needle: string): string[] {
+  const words = needle
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 3);
+  const terms = words.length > 0 ? words : needle.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  return contentLines(content)
+    .map((line) => {
+      const haystack = line.toLowerCase();
+      return { line, score: terms.filter((term) => haystack.includes(term)).length };
+    })
+    .filter((scored) => scored.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, NEAR_MATCH_LIMIT)
+    .map((scored) => shorten(scored.line));
+}
+
+/**
+ * The lines a near match may be drawn from: the notes themselves.
+ *
+ * The scaffold header is skipped, and so is anything else inside an HTML
+ * comment. Offering the header's own prose back as a "closest line" would send a
+ * caller quoting the instructions instead of the note it meant.
+ */
+function contentLines(content: string): string[] {
+  const lines: string[] = [];
+  let inComment = false;
+  for (const raw of content.split('\n')) {
+    const line = raw.trim();
+    if (inComment) {
+      if (line.includes('-->')) inComment = false;
+      continue;
+    }
+    if (line.startsWith('<!--')) {
+      if (!line.includes('-->')) inComment = true;
+      continue;
+    }
+    if (line === '' || line.startsWith('#')) continue;
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** Cut a long line down so a refusal stays readable. */
+function shorten(line: string): string {
+  return line.length <= NEAR_MATCH_MAX_CHARS ? line : `${line.slice(0, NEAR_MATCH_MAX_CHARS)}…`;
+}
+
+/**
+ * End the file with exactly one newline and no trailing blank lines — or with
+ * nothing at all, when everything in it has been forgotten.
+ */
+function normalizeTail(content: string): string {
+  const trimmed = content.replace(/\s+$/u, '');
+  return trimmed === '' ? '' : `${trimmed}\n`;
+}

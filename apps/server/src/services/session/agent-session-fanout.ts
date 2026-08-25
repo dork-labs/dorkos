@@ -6,9 +6,9 @@
  * runtime-owned and derived per working directory (ADR-0310), so there is no
  * global session list to ask for. The machine-wide answer is assembled here:
  * fan {@link aggregateSessionList} out across every agent's project directory
- * with bounded concurrency, apply the canonical membership rule (DOR-203, exact
- * `cwd` match), and report per-runtime degradation once rather than once per
- * path scanned.
+ * with bounded concurrency, apply the canonical membership rule (DOR-203: the
+ * session's `cwd` is the agent's project directory or sits inside it), and
+ * report per-runtime degradation once rather than once per path scanned.
  *
  * Two readers ride it — the sidebar's cross-agent "Recent" list
  * ({@link listRecentSessions}) and the Activity tab's week line
@@ -20,6 +20,7 @@
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
+import { isWithinDirectory } from '@dorkos/shared/paths';
 import { aggregateSessionList } from './aggregate-session-list.js';
 
 /**
@@ -52,7 +53,7 @@ async function mapWithConcurrency<T, R>(
 export interface AgentSessions {
   /** The agent's project directory. */
   dir: string;
-  /** Sessions whose `cwd` is exactly `dir`. */
+  /** Sessions whose `cwd` is `dir` or a folder inside it. */
   members: Session[];
 }
 
@@ -81,9 +82,17 @@ export async function fanOutAgentSessions(opts: {
     AGENT_SESSION_FANOUT_CONCURRENCY,
     async (dir) => {
       const { sessions, warnings } = await aggregateSessionList({ runtimes, projectDir: dir });
-      // Canonical membership (DOR-203): only sessions whose cwd is exactly this
-      // agent's project path. Excludes cwd-less ghost sessions (DOR-202).
-      return { dir, members: sessions.filter((s) => s.cwd === dir), warnings };
+      // Canonical membership (DOR-203): sessions whose cwd is this agent's
+      // project path OR a folder inside it — a session started in
+      // `<project>/packages/api` belongs to that agent too, and an exact match
+      // dropped it from Recent and from the daily counts (DOR-674). Excludes
+      // cwd-less ghost sessions (DOR-202): `isWithinDirectory` answers false for
+      // an absent cwd rather than throwing, so one malformed row costs that row.
+      return {
+        dir,
+        members: sessions.filter((s) => isWithinDirectory(s.cwd, dir)),
+        warnings,
+      };
     }
   );
 

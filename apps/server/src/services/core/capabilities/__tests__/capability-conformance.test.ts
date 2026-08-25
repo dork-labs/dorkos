@@ -417,6 +417,9 @@ capabilityConformance(registry, {
     // (not a ZodError) refuses them, and the observe/act verbs so they reach the
     // handler and answer with a structured AGENT_NOT_FOUND (the locator has no
     // agent). All are keyed by agent id (spec §5).
+    // No identity in a conformance invocation, so the handler answers its own
+    // `no-agent` refusal — wired and reachable, which is what this suite asks.
+    'memory.write': { action: 'add', text: 'a conformance note' },
     'mcp.list': { agentId: 'conformance-agent' },
     'mcp.add': {
       agentId: 'conformance-agent',

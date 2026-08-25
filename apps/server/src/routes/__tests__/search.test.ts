@@ -271,9 +271,14 @@ describe('the calling contract', () => {
   });
 
   it('refuses a source that does not exist', async () => {
+    // Deliberately a name nothing will ever be called, not a runtime that is
+    // merely unregistered TODAY. This test used to pass `opencode` and went
+    // green for the wrong reason the moment OpenCode joined the registry
+    // (DOR-688) — the route's 400 and a registered source's empty result set
+    // are different answers, and only one of them is what this asserts.
     const res = await request(buildApp())
       .get('/api/search')
-      .query({ q: 'scheduler', source: 'opencode' });
+      .query({ q: 'scheduler', source: 'not-a-source' });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('UNKNOWN_SEARCH_SOURCE');
@@ -306,6 +311,26 @@ describe('who is asking', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ results: [], warnings: [] });
+  });
+
+  it('answers WHO before it reads WHAT, so a stranger is refused before their typo is', async () => {
+    // The ordering moved when the query half of this route became `answerSearch`
+    // (DOR-691): the schema check used to run first, so a caller this machine
+    // could not identify was told their query was malformed — a 400 that
+    // describes the request of somebody who was never going to be answered.
+    // Both halves are asserted, because either alone is satisfied by the wrong
+    // order: the refusal is the identity one, AND the identical query from a
+    // caller who IS identified still gets the 400 it deserves.
+    const stranger = await request(buildApp(undefined, true)).get('/api/search').query({ q: 'a' });
+    const owner = await request(buildApp()).get('/api/search').query({ q: 'a' });
+
+    expect(stranger.status).toBe(401);
+    expect(stranger.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    // And nothing about the query is echoed back to them.
+    expect(stranger.body.error).not.toMatch(/word of at least/);
+
+    expect(owner.status).toBe(400);
+    expect(owner.body.code).toBe('INVALID_SEARCH_QUERY');
   });
 
   it('refuses a caller whose agent token this machine could not verify', async () => {

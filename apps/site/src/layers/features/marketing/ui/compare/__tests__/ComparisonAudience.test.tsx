@@ -30,6 +30,23 @@ function entry(overrides: Partial<Competitor> & Pick<Competitor, 'framing'>): Co
   } as Competitor;
 }
 
+/**
+ * The two recommendation columns, in render order. The section holds exactly
+ * one grid, and each column is one of its children.
+ */
+function renderedColumns(container: HTMLElement): HTMLElement[] {
+  const grid = container.querySelector('section > div');
+  if (!grid) throw new Error('the recommendation grid did not render');
+  return Array.from(grid.children) as HTMLElement[];
+}
+
+/** The `class` of every tick icon inside one column. */
+function tickClasses(column: HTMLElement): string[] {
+  return Array.from(column.querySelectorAll('li svg')).map(
+    (icon) => icon.getAttribute('class') ?? ''
+  );
+}
+
 describe('ComparisonAudience', () => {
   it('recommends the other product on a head-to-head page', () => {
     render(<ComparisonAudience competitor={entry({ framing: 'competitor', name: 'Cursor' })} />);
@@ -51,6 +68,51 @@ describe('ComparisonAudience', () => {
     expect(heading).toBeTruthy();
     expect(heading.textContent).not.toMatch(/\bit\b/);
     expect(screen.getByText(`you want ${COMPARISON_DIMENSIONS[0].wantPhrase}`)).toBeTruthy();
+  });
+
+  it('reads the DorkOS column first in every framing that gets one', () => {
+    // This is a DorkOS page, so the answer it exists to give leads. One grid
+    // holds both columns and it is one column wide until `md`, so DOM order is
+    // reading order on a phone and on a desktop alike.
+    const cases = [
+      { framing: 'competitor', ours: 'Use DorkOS if', theirs: 'Use Cursor if' },
+      { framing: 'runtime', ours: 'Add DorkOS when', theirs: 'Reach for Cursor when' },
+      { framing: 'adjacent', ours: 'Use DorkOS if', theirs: 'Use Cursor if' },
+    ] as const;
+    for (const { framing, ours, theirs } of cases) {
+      const { container, unmount } = render(
+        <ComparisonAudience competitor={entry({ framing, name: 'Cursor' })} />
+      );
+      const [first, second] = renderedColumns(container);
+      expect(first?.textContent, `${framing} leads with the other product`).toContain(ours);
+      expect(second?.textContent, `${framing} does not follow with the other product`).toContain(
+        theirs
+      );
+      unmount();
+    }
+  });
+
+  it('ticks the DorkOS reasons green and the other product’s in the page accent', () => {
+    const { container } = render(
+      <ComparisonAudience competitor={entry({ framing: 'competitor', name: 'Cursor' })} />
+    );
+    const [ourColumn, theirColumn] = renderedColumns(container);
+    const ourTicks = tickClasses(ourColumn!);
+    const theirTicks = tickClasses(theirColumn!);
+    expect(ourTicks.length, 'the DorkOS column rendered no ticks to check').toBeGreaterThan(0);
+    expect(theirTicks.length, 'the other column rendered no ticks to check').toBeGreaterThan(0);
+    for (const cls of ourTicks) {
+      expect(cls, 'a DorkOS tick is not green').toContain('text-brand-green');
+      expect(cls, 'a DorkOS tick still carries the other side’s accent').not.toContain(
+        'text-brand-orange'
+      );
+    }
+    for (const cls of theirTicks) {
+      expect(cls, 'the other product’s tick left the page accent').toContain('text-brand-orange');
+      expect(cls, 'the other product’s tick was given the DorkOS green').not.toContain(
+        'text-brand-green'
+      );
+    }
   });
 
   it('lets each column end at its own height instead of stretching the shorter one', () => {

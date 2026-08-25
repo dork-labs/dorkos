@@ -379,6 +379,72 @@ function clampHistoryLimit(limit: number): number {
 }
 
 /**
+ * The most rooms {@link RoomService.listMemberRooms} answers with (agent-memory
+ * spec D6).
+ *
+ * Fifty rather than everything, and it is a bound on the PROMPT rather than on
+ * the database. The list rides into a model's context whole, and an agent seated
+ * in three hundred rooms would spend the turn reading a directory. Fifty most
+ * recently active rooms is more than any agent in this product has been seated
+ * in, and the ordering means the ones it cannot see are the ones nobody has
+ * touched.
+ */
+export const MEMBER_ROOMS_PAGE_MAX = 50;
+
+/** One room a caller belongs to, as `list_member_rooms` reports it. */
+export interface MemberRoomSummary {
+  /** The id every other room verb takes. */
+  roomId: string;
+  /** Channel, direct message, or thread-bearing kind. */
+  kind: RoomKind;
+  /** `#slug` for a channel that has one, the room's title otherwise. */
+  name: string;
+  /** ISO-8601, when this caller joined. Their history starts here. */
+  joinedAt: string;
+  /** ISO-8601, when anything was last said. The order this list is in. */
+  lastActivityAt: string;
+}
+
+/** One cross-room match, as `search_member_rooms` resolves it. */
+export interface MemberRoomMatch {
+  /** The room it was said in. */
+  roomId: string;
+  /** That room's name, as {@link MemberRoomSummary.name} spells it. */
+  name: string;
+  /** The message itself, resolved through the room's own store. */
+  entry: RoomEntry;
+}
+
+/**
+ * What a room is called when an agent is told about it.
+ *
+ * `#slug` for a channel, because that is the name a person types and the name
+ * the room context block already uses; the title for a direct message, which has
+ * no slug and whose title is who it is with.
+ *
+ * @param room - The room.
+ * @returns The label, never empty — a room's title is required.
+ */
+function memberRoomName(room: Room): string {
+  return room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title;
+}
+
+/**
+ * The key one cross-room match is ranked under: room first, then position.
+ *
+ * Joined on a NUL, written as an escape rather than pasted in as a byte, exactly
+ * as `search-service.ts` composes its container key and for the same reason — a
+ * room id is opaque and NUL is the one character it cannot hold. A bare `seq`
+ * would collide across rooms and rank one room's message by another's relevance.
+ *
+ * @param roomId - The room.
+ * @param seq - The message's position in it.
+ */
+function matchKey(roomId: string, seq: number): string {
+  return `${roomId}\u0000${seq}`;
+}
+
+/**
  * The header badge's and room sheet's view of a room's bridge (chats-as-channels
  * spec §8, §3.4) — `null` for an unbridged room.
  *
@@ -1785,6 +1851,32 @@ export class RoomService {
   }
 
   /**
+   * Where a session is answering, as a saved note should record it.
+   *
+   * The provenance suffix on an agent's memory has to be something the agent
+   * cannot choose (agent-memory spec D4 / review M4), so it is derived from the
+   * session rather than passed in — and the session id is not a value the model
+   * supplies either. `#slug` for a channel; `null` for a direct message, an
+   * unbound session, or a room that has since gone, all of which the note
+   * records honestly as a direct chat.
+   *
+   * **Deliberately unscoped by viewer**, unlike every listing on this service.
+   * It answers about the CALLER'S OWN session, and returns a label the caller is
+   * already looking at — the room context block names the same room by the same
+   * name on every turn — so there is nothing here a membership check would
+   * protect.
+   *
+   * @param sessionId - Either of the session's ids; the ledger follows a rekey.
+   */
+  roomLabelForSession(sessionId: string): string | null {
+    const binding = this.store.sessionLedger.bindingForSession(sessionId);
+    if (!binding) return null;
+    const room = this.store.getRoom(binding.roomId);
+    if (!room || room.kind !== 'channel') return null;
+    return room.slug ? `#${room.slug}` : room.title;
+  }
+
+  /**
    * Patch a room's title, topic, archived flag, or — on a bridged room — its
    * `deliverNotices` override.
    *
@@ -2540,6 +2632,192 @@ export class RoomService {
       floors.set(membership.roomId, membership.joinedSeq);
     }
     return floors;
+  }
+
+  /**
+   * The rooms one member belongs to, newest activity first, bounded to
+   * {@link MEMBER_ROOMS_PAGE_MAX} — `list_member_rooms` (agent-memory spec D6).
+   *
+   * It closes a plain gap: until this existed, an agent could read and search
+   * ONE room by id and had no way to learn which rooms it was in. Every room
+   * verb takes a room id, and the only id an agent held was the room it was
+   * answering in — so `read_room_history` and `search_room_history` were
+   * reachable for exactly one room out of however many it had been seated in.
+   *
+   * **Membership, not visibility, and the owner is not exempt.** This is
+   * {@link RoomStore.listRoomsForMember} for EVERY caller, including the
+   * operator — deliberately unlike {@link RoomService.listRooms}, which
+   * short-circuits to every room on the machine for whoever owns it. The tool is
+   * named for what it answers, "the rooms you belong to", and a version of it
+   * that quietly means "every room on this machine" when the caller happens to
+   * be the owner would be a different question wearing the same name.
+   *
+   * **Archived rooms are left out**, matching the sidebar's own default: a room
+   * somebody archived is one nobody is working in, and an agent's list of where
+   * it can act should hold places it can act. That is a narrower answer than
+   * {@link RoomService.searchScope} gives, which is the safe direction — see
+   * {@link RoomService.searchMemberRooms} for why the two differ on purpose.
+   *
+   * **The bound is a slice of an ORDERED list, never a bare `LIMIT`.** The store
+   * orders by last activity descending with the id as the tiebreak, so the fifty
+   * that come back are the fifty most recently active. A truncation that took an
+   * arbitrary fifty would satisfy a count and be useless.
+   *
+   * @param viewerAuthorId - Whose rooms to list.
+   * @returns At most {@link MEMBER_ROOMS_PAGE_MAX} rooms, newest activity first.
+   *   Empty for somebody in no rooms, which is a real answer.
+   */
+  listMemberRooms(viewerAuthorId: string): MemberRoomSummary[] {
+    const joinedAt = new Map(
+      this.store
+        .listMembershipsFor(viewerAuthorId)
+        .map((member) => [member.roomId, member.joinedAt])
+    );
+    return this.store
+      .listRoomsForMember(viewerAuthorId)
+      .slice(0, MEMBER_ROOMS_PAGE_MAX)
+      .map((room) => ({
+        roomId: room.id,
+        kind: room.kind,
+        name: memberRoomName(room),
+        // Defaulted rather than asserted. The listing INNER JOINS `room_members`,
+        // so every room here has a membership row and the fallback is
+        // unreachable — but a non-null assertion over two separate reads is a
+        // claim about a race, and the room's own creation date is the honest
+        // answer if one ever lost that race.
+        joinedAt: joinedAt.get(room.id) ?? room.createdAt,
+        lastActivityAt: room.lastActivityAt,
+      }));
+  }
+
+  /**
+   * The messages that match some words across EVERY room this member belongs to,
+   * best first — `search_member_rooms` (agent-memory spec D6).
+   *
+   * The cross-room sibling of {@link RoomService.searchHistory}, and it creates
+   * no access that did not already exist: this is exactly the grant
+   * message-search §7's table gives an agent — its member rooms, each floored at
+   * its own `joinedSeq` — made reachable without first knowing a room id. The
+   * same index, the same ranking, the same one search path.
+   *
+   * ## The floors are PER ROOM, and a single global floor is forbidden
+   *
+   * A member joins different rooms at different points, so the visible set is
+   * `(roomId, joinedSeq)` PAIRS. One global floor is wrong in both directions and
+   * there is no third option: the lowest leaks what was said before the caller
+   * arrived in a room they joined late, and the highest hides what is theirs in a
+   * room they joined early. {@link RoomMessageFinder} takes a floor per room for
+   * this reason, and the index applies each INSIDE the query — a floor applied
+   * after the `LIMIT` returns fewer results than were asked for and looks like a
+   * ranking quirk.
+   *
+   * **The floor is then applied a second time, to the resolved entries.** Not
+   * belt-and-braces theatre: the two filters answer different questions — the
+   * first bounds what the INDEX may return, the second bounds what this service
+   * hands back — and they COMPOSE rather than replace. An index row that survived
+   * a room the caller has since left, or a projection that ever wrote an ordinal
+   * that is not a `seq`, dies here rather than in a hit. A room with no floor at
+   * all resolves to nothing, which is the direction a missing answer has to fail
+   * in.
+   *
+   * **The second one is a lock no test can turn, and it is kept anyway.** Nothing
+   * in the shipped code can hand this loop a row above the query's own floor, so
+   * removing it reddens nothing — which is stated rather than papered over, and
+   * is why `__tests__/member-rooms.test.ts` had to seed BOTH floors to make the
+   * leak case fail. The first floor has a case to itself: collapse it alone and
+   * the LIMIT starves, because a floor applied after the `LIMIT` returns fewer
+   * results than were asked for.
+   *
+   * ## Where it deliberately differs from `list_member_rooms`
+   *
+   * The scope is every membership, ARCHIVED ROOMS INCLUDED, because archiving a
+   * room does not un-say what was said in it and does not revoke a member's
+   * history — it is the same rule {@link RoomService.searchScope} applies to a
+   * non-owner, which is the shipped access model for `GET /api/search`. Listing
+   * is about where an agent can act now; searching is about what it may recall.
+   *
+   * **It is NOT `searchScope`, and must never be refactored into it.** That
+   * method has an OWNER branch which answers `'all'`, and this one deliberately
+   * has none: a caller with no agent identity resolves to the person who owns
+   * the install (`callerAuthor`, the login-off default), so an owner branch here
+   * would turn one no-argument call from an ordinary coding session into a
+   * search of every room on the machine — the operator's own DMs and rooms their
+   * agents opened between themselves included. The two methods answer different
+   * questions and only look alike. `__tests__/member-rooms.test.ts` pins it on
+   * both verbs, because a defect seeded here is invisible to every case that
+   * drives an identified agent.
+   *
+   * ## What it does NOT reach
+   *
+   * Session transcripts, and nothing here can be talked into them: the scope
+   * this builds names the rooms source only, container by container, and
+   * `origin_key` carries `source_id` beside it in the query — so a session whose
+   * opaque id collides with a room's is still a different container.
+   *
+   * @param viewerAuthorId - The caller. Their memberships ARE the scope.
+   * @param opts.query - The words to look for. Matched by STEM, not substring.
+   * @param opts.limit - The most matches to return, clamped to
+   *   {@link HISTORY_PAGE_MAX}.
+   * @returns The matching entries with the room each was said in, best first.
+   *   Empty for a caller in no rooms, for a query with no searchable word, and
+   *   for a query that matches nothing — the three are one answer on purpose.
+   */
+  searchMemberRooms(
+    viewerAuthorId: string,
+    opts: { query: string; limit: number }
+  ): MemberRoomMatch[] {
+    const floors = new Map<string, number>();
+    for (const membership of this.store.listMembershipsFor(viewerAuthorId)) {
+      floors.set(membership.roomId, membership.joinedSeq);
+    }
+    if (floors.size === 0) return [];
+
+    const wanted = clampHistoryLimit(opts.limit);
+    const hits = this.findMessages({
+      rooms: [...floors].map(([roomId, joinedSeq]) => ({ roomId, afterSeq: joinedSeq })),
+      query: opts.query,
+      limit: wanted,
+    });
+    if (hits.length === 0) return [];
+
+    // The index ranked these; the store will return them by position. Rank is
+    // the order the caller asked for, so it is captured before anything else
+    // touches the list. Keyed on room AND seq, because a bare seq collides
+    // across rooms and would rank one room's message by another's relevance.
+    const ranked = new Map<string, number>();
+    const seqsByRoom = new Map<string, number[]>();
+    for (const [rank, hit] of hits.entries()) {
+      const key = matchKey(hit.roomId, hit.seq);
+      if (!ranked.has(key)) ranked.set(key, rank);
+      const seqs = seqsByRoom.get(hit.roomId);
+      if (seqs) seqs.push(hit.seq);
+      else seqsByRoom.set(hit.roomId, [hit.seq]);
+    }
+
+    const matches: MemberRoomMatch[] = [];
+    for (const [roomId, seqs] of seqsByRoom) {
+      const room = this.store.getRoom(roomId);
+      // A hit for a room that is gone resolves to nothing rather than to a
+      // coordinate with no room around it.
+      if (!room) continue;
+      // Fails CLOSED. A room absent from the floor map is not in scope, and an
+      // infinite floor is how that is spelled without a second branch.
+      const floor = floors.get(roomId) ?? Number.POSITIVE_INFINITY;
+      const entries = this.withRollups(
+        roomId,
+        this.store.listEntriesBySeq(roomId, seqs).filter((entry) => entry.seq > floor)
+      );
+      const name = memberRoomName(room);
+      for (const entry of entries) matches.push({ roomId, name, entry });
+    }
+
+    return matches
+      .sort(
+        (a, b) =>
+          (ranked.get(matchKey(a.roomId, a.entry.seq)) ?? 0) -
+          (ranked.get(matchKey(b.roomId, b.entry.seq)) ?? 0)
+      )
+      .slice(0, wanted);
   }
 
   /**

@@ -107,13 +107,14 @@ export const SearchHitRoleSchema = z.enum(['user', 'assistant']).openapi('Search
 /** One message that matched, as a coordinate the owning store resolves. */
 export const SearchHitSchema = z
   .object({
-    /** Which source it came from — `'rooms'` or `'claude-code'` today. */
+    /** Which source it came from — `'rooms'`, `'claude-code'` or `'codex'` today. */
     source: z.string().min(1),
     /**
      * The container it lives in: **opaque, composed per source, never parsed by
      * a reader that did not compose it.** A room id for `rooms`, a session id
-     * for `claude-code` — and, once community scoping lands, a room id with a
-     * community in front of it, with no change to this field's meaning.
+     * for `claude-code` and `codex` — and, once community scoping lands, a room
+     * id with a community in front of it, with no change to this field's
+     * meaning.
      */
     container: z.string().min(1),
     /**
@@ -157,7 +158,7 @@ export type SearchHit = z.infer<typeof SearchHitSchema>;
  */
 export const SearchSourceWarningSchema = z
   .object({
-    /** The source that is behind — `'rooms'`, `'claude-code'`. */
+    /** The source that is behind — `'rooms'`, `'claude-code'`, `'codex'`. */
     source: z.string().min(1),
     message: z.string().min(1),
   })
@@ -215,3 +216,33 @@ export const SearchQuerySchema = z
 
 /** The `GET /api/search` query string (see {@link SearchQuerySchema}). */
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;
+
+/**
+ * A search request the contract refuses, in the shape the HTTP route sends it.
+ *
+ * Named here rather than in the route because search is answered on **two**
+ * transports (DOR-691): `GET /api/search` over HTTP, and the same service called
+ * in-process by the Obsidian embed, which has no server to ask. A refusal that
+ * only the route knew how to spell would leave the embed inventing its own
+ * wording for the same mistake, and a person would be told two different things
+ * about one typo depending on which window they were in.
+ */
+export interface SearchRefusal {
+  /** The status the HTTP route answers with — `400` for everything here today. */
+  status: number;
+  /** One plain sentence naming what was actually wrong with the request. */
+  error: string;
+  /** The machine-readable code: `INVALID_SEARCH_QUERY` or `UNKNOWN_SEARCH_SOURCE`. */
+  code: string;
+}
+
+/**
+ * What answering a search produces: the envelope, or the refusal.
+ *
+ * **The whole decision, as data.** Both surfaces that answer a search build one
+ * of these from the same function, so the route renders it as a status plus a
+ * body and the embed's transport raises it as the same error `fetchJSON` would
+ * have raised. Neither owns a rule the other does not, which is the property
+ * that keeps "search in Obsidian" from quietly becoming a second, laxer contract.
+ */
+export type SearchAnswer = { ok: true; response: SearchResponse } | ({ ok: false } & SearchRefusal);

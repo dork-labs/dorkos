@@ -6,31 +6,124 @@
  * serialized as JSON text columns. Upsert semantics ensure idempotent
  * saves — saving the same task ID twice updates the existing row.
  *
+ * The `status` column stores the A2A **v0.3** spelling of each state
+ * (`'input-required'`, not `TASK_STATE_INPUT_REQUIRED`). A2A v1.0 models
+ * `TaskState` as a numeric protobuf enum, whose ordinals are a wire detail
+ * with no business being a durable value — and keeping the readable strings
+ * means the rows written before the v1.0 upgrade are still the rows we read
+ * today, with no migration. {@link taskStateToDbStatus} and
+ * {@link dbStatusToTaskState} are the only places the two spellings meet.
+ *
  * @module a2a-gateway/task-store
  */
-import type { Task } from '@a2a-js/sdk';
-import type { TaskStore } from '@a2a-js/sdk/server';
-import { eq, a2aTasks, type Db } from '@dorkos/db';
+import { TaskState, type Task } from '@a2a-js/sdk';
+import type { ListTasksRequest, ListTasksResponse } from '@a2a-js/sdk';
+import type { ServerCallContext, TaskStore } from '@a2a-js/sdk/server';
+import { and, count, desc, eq, gte, a2aTasks, type Db } from '@dorkos/db';
 
 /** The status values accepted by the a2a_tasks Drizzle column. */
 type DbStatus = typeof a2aTasks.$inferInsert.status;
+
+/** Default page size for {@link SqliteTaskStore.list}, per the A2A spec. */
+const DEFAULT_PAGE_SIZE = 50;
+
+/** Maximum page size for {@link SqliteTaskStore.list}, per the A2A spec. */
+const MAX_PAGE_SIZE = 100;
+
+/**
+ * The `ServerCallContext.state` key naming the agent a request is bound to.
+ *
+ * Set by the per-agent Express endpoint (`/a2a/agents/:id`) and read by
+ * {@link SqliteTaskStore.list}. It is the only way the store can tell the two
+ * endpoints apart: the SDK hands it one `ListTasksRequest`, and that request
+ * has no field for "which agent did the caller address this to".
+ */
+export const BOUND_AGENT_STATE_KEY = 'dorkos.boundAgentId';
+
+/** Every A2A task state, paired with the string the `status` column stores. */
+const DB_STATUS_BY_STATE: ReadonlyMap<TaskState, DbStatus> = new Map([
+  [TaskState.TASK_STATE_SUBMITTED, 'submitted'],
+  [TaskState.TASK_STATE_WORKING, 'working'],
+  [TaskState.TASK_STATE_INPUT_REQUIRED, 'input-required'],
+  [TaskState.TASK_STATE_AUTH_REQUIRED, 'auth-required'],
+  [TaskState.TASK_STATE_COMPLETED, 'completed'],
+  [TaskState.TASK_STATE_CANCELED, 'canceled'],
+  [TaskState.TASK_STATE_FAILED, 'failed'],
+  [TaskState.TASK_STATE_REJECTED, 'rejected'],
+] as const);
+
+/** The reverse of {@link DB_STATUS_BY_STATE}. */
+const STATE_BY_DB_STATUS: ReadonlyMap<string, TaskState> = new Map(
+  [...DB_STATUS_BY_STATE].map(([state, status]) => [status as string, state])
+);
+
+/**
+ * Map an A2A task state to the string the `status` column stores.
+ *
+ * Unspecified and unrecognized states store as `'unknown'` — a task whose
+ * state we cannot name is exactly what that value is for.
+ *
+ * @param state - The A2A task state.
+ */
+export function taskStateToDbStatus(state: TaskState | undefined): DbStatus {
+  return (state !== undefined ? DB_STATUS_BY_STATE.get(state) : undefined) ?? 'unknown';
+}
+
+/**
+ * Map a stored `status` string back to an A2A task state.
+ *
+ * @param status - The value read from the `status` column.
+ */
+export function dbStatusToTaskState(status: string): TaskState {
+  return STATE_BY_DB_STATUS.get(status) ?? TaskState.TASK_STATE_UNSPECIFIED;
+}
 
 /** SQLite-backed TaskStore for A2A task persistence. */
 export class SqliteTaskStore implements TaskStore {
   constructor(private readonly db: Db) {}
 
-  /** Load a task by ID, returning `undefined` if not found. */
-  async load(taskId: string): Promise<Task | undefined> {
-    const row = this.db.select().from(a2aTasks).where(eq(a2aTasks.id, taskId)).get();
+  /**
+   * Load a task by ID, returning `undefined` if not found.
+   *
+   * A call to `/a2a/agents/:id` is bound to that agent, and a task belonging to
+   * a different one reads as not found — the same scope {@link SqliteTaskStore.list}
+   * applies, for the same reason. A boundary that holds for a listing and not
+   * for a lookup by id is not a boundary at all: the listing would only be
+   * hiding ids a caller could ask for directly. The SDK turns the miss into the
+   * protocol's own `TaskNotFound`, so `GetTask` and `CancelTask` both answer it
+   * correctly, and a follow-up message naming another agent's task is refused
+   * rather than appended to that task while running on this one.
+   *
+   * The store is otherwise single-tenant: one operator's own SQLite file, no
+   * owner to scope by, and the fleet endpoint carries no binding at all.
+   *
+   * @param taskId - The task to load.
+   * @param context - The call context, read for the bound agent (see
+   *   {@link BOUND_AGENT_STATE_KEY}).
+   */
+  async load(taskId: string, context: ServerCallContext): Promise<Task | undefined> {
+    const boundAgentId = readBoundAgentId(context);
+    const filters = [
+      eq(a2aTasks.id, taskId),
+      ...(boundAgentId !== undefined ? [eq(a2aTasks.agentId, boundAgentId)] : []),
+    ];
+    const row = this.db
+      .select()
+      .from(a2aTasks)
+      .where(and(...filters))
+      .get();
     return row ? rowToTask(row) : undefined;
   }
 
-  /** Save a task, upserting if the ID already exists. */
-  async save(task: Task): Promise<void> {
+  /**
+   * Save a task, upserting if the ID already exists.
+   *
+   * @param task - The task to persist.
+   * @param _context - The call context; unused, see {@link SqliteTaskStore.load}.
+   */
+  async save(task: Task, _context: ServerCallContext): Promise<void> {
     const now = new Date().toISOString();
-    // The A2A SDK TaskState is a superset of the DB enum — cast to satisfy Drizzle's
-    // column type while SQLite stores the raw string regardless.
-    const status = task.status.state as DbStatus;
+    const status = taskStateToDbStatus(task.status?.state);
     this.db
       .insert(a2aTasks)
       .values({
@@ -57,20 +150,166 @@ export class SqliteTaskStore implements TaskStore {
       })
       .run();
   }
+
+  /**
+   * List stored tasks, newest first, with optional filtering and pagination.
+   *
+   * Every filter the A2A `ListTasks` request can carry is honored here, and
+   * that is deliberate: the SDK validates these parameters and so advertises
+   * them as supported. Accepting one and ignoring it would answer with the
+   * wrong tasks rather than with an error — the worst of the two failures,
+   * because nothing on the wire says the filter did not happen.
+   *
+   * `contextId`, `status` and `statusTimestampAfter` are applied in SQL;
+   * `pageToken` is the offset of the next row, as a decimal string.
+   *
+   * One filter comes from the endpoint rather than the request: a call to
+   * `/a2a/agents/:id` is bound to that agent, and the listing is scoped to its
+   * tasks (see {@link BOUND_AGENT_STATE_KEY}). Everything else on that endpoint
+   * is about the one agent named in the URL, and a caller who asked about it
+   * has no business being handed every other agent's message history. The
+   * fleet endpoint carries no binding and still surveys the whole fleet.
+   *
+   * @param params - Filtering and pagination parameters.
+   * @param context - The call context. Read for the bound agent only; this
+   *   store is otherwise single-tenant, see {@link SqliteTaskStore.load}.
+   */
+  async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
+    const pageSize = clampPageSize(params.pageSize);
+    const offset = parseOffset(params.pageToken);
+    const boundAgentId = readBoundAgentId(context);
+
+    // `updatedAt` IS the status timestamp — `rowToTask` reads the task's
+    // `status.timestamp` from this same column, so filtering on it answers the
+    // question the caller actually asked.
+    const after = normalizeTimestamp(params.statusTimestampAfter);
+
+    const filters = [
+      boundAgentId !== undefined ? eq(a2aTasks.agentId, boundAgentId) : undefined,
+      params.contextId.length > 0 ? eq(a2aTasks.contextId, params.contextId) : undefined,
+      params.status !== undefined && params.status !== TaskState.TASK_STATE_UNSPECIFIED
+        ? eq(a2aTasks.status, taskStateToDbStatus(params.status))
+        : undefined,
+      after !== undefined ? gte(a2aTasks.updatedAt, after) : undefined,
+    ].filter((f) => f !== undefined);
+    const where = filters.length > 0 ? and(...filters) : undefined;
+
+    // Counted and paged in SQL, never in JS: this store holds every task the
+    // gateway has ever run, and reading all of them to hand back fifty makes
+    // each listing cost the whole table — in rows read, in JSON parsed, and in
+    // memory held.
+    //
+    // Two statements rather than one windowed query, and they agree because
+    // better-sqlite3 is synchronous: there is no `await` between them, so no
+    // other write can land in the gap and no transaction is needed to say so.
+    // Introducing an async driver here would need one.
+    const totalSize =
+      this.db.select({ value: count() }).from(a2aTasks).where(where).get()?.value ?? 0;
+
+    const page = this.db
+      .select()
+      .from(a2aTasks)
+      .where(where)
+      // Newest first, with the id giving equal rows a deterministic total
+      // order — NOT a second recency key: the id is a UUIDv4 and says nothing
+      // about when a task was made. Sorting by it is arbitrary on purpose, and
+      // arbitrary-but-fixed is the whole requirement. `updated_at` has
+      // millisecond resolution, so tasks touched in the same millisecond
+      // compare equal, and SQL may order equal rows differently on each query
+      // — which between one page and the next is how a row gets served twice
+      // or skipped entirely.
+      .orderBy(desc(a2aTasks.updatedAt), desc(a2aTasks.id))
+      .limit(pageSize)
+      .offset(offset)
+      .all();
+
+    const nextOffset = offset + page.length;
+
+    return {
+      // Artifacts are opt-in, per the A2A spec's own default: a listing is a
+      // survey, and shipping every task's full output by default is how a
+      // page of results becomes megabytes.
+      tasks: page.map((row) => rowToTask(row, params.includeArtifacts === true)),
+      nextPageToken: nextOffset < totalSize ? String(nextOffset) : '',
+      pageSize,
+      totalSize,
+    };
+  }
 }
 
-/** Convert a database row into an A2A Task object. */
-function rowToTask(row: typeof a2aTasks.$inferSelect): Task {
+/**
+ * Clamp a requested page size into the range the A2A spec allows.
+ *
+ * @param requested - The caller's `pageSize`, if any.
+ */
+function clampPageSize(requested: number | undefined): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested < 1) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return Math.min(Math.floor(requested), MAX_PAGE_SIZE);
+}
+
+/**
+ * Normalize an ISO 8601 timestamp filter into the exact spelling the
+ * `updated_at` column stores, or `undefined` when there is nothing to filter on.
+ *
+ * The column holds `Date#toISOString` output, which compares correctly as text
+ * only against another string in that same shape. A caller is free to send
+ * `2026-08-25T10:00:00+02:00`, which sorts nowhere near its own UTC instant —
+ * so the bound is parsed and re-rendered rather than compared as it arrived.
+ * An unparseable value filters nothing, matching how the other filters treat
+ * an absent field.
+ *
+ * @param value - The caller's `statusTimestampAfter`.
+ */
+function normalizeTimestamp(value: string | undefined): string | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+/**
+ * Read the agent a request is bound to out of the call context.
+ *
+ * Absent on the fleet endpoint, which is what makes that listing fleet-wide.
+ *
+ * @param context - The call context the SDK built for this request.
+ */
+function readBoundAgentId(context: ServerCallContext): string | undefined {
+  const value = context.state.get(BOUND_AGENT_STATE_KEY);
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Read a page token as a row offset, treating anything unparseable as the start.
+ *
+ * @param token - The caller's `pageToken`.
+ */
+function parseOffset(token: string | undefined): number {
+  if (token === undefined || token.length === 0) return 0;
+  const parsed = Number.parseInt(token, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/**
+ * Convert a database row into an A2A Task object.
+ *
+ * @param row - The stored row.
+ * @param includeArtifacts - Whether to carry the task's artifacts. Listings
+ *   default this off (see {@link SqliteTaskStore.list}); a direct `load` always
+ *   passes `true`, because asking for one task by id is asking for all of it.
+ */
+function rowToTask(row: typeof a2aTasks.$inferSelect, includeArtifacts = true): Task {
   return {
-    kind: 'task',
     id: row.id,
     contextId: row.contextId,
     status: {
-      state: row.status as Task['status']['state'],
+      state: dbStatusToTaskState(row.status),
+      message: undefined,
       timestamp: row.updatedAt,
     },
     history: JSON.parse(row.historyJson),
-    artifacts: JSON.parse(row.artifactsJson),
+    artifacts: includeArtifacts ? JSON.parse(row.artifactsJson) : [],
     metadata: row.metadataJson !== '{}' ? JSON.parse(row.metadataJson) : undefined,
   };
 }

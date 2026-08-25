@@ -1,3 +1,6 @@
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtempSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
@@ -98,6 +101,15 @@ interface MockServer {
   tools: { name: string; description: string }[];
 }
 
+/**
+ * A real, empty data directory for the handlers that write one.
+ *
+ * `tasks_create` writes a SKILL.md before it touches the row (DOR-1568), so a
+ * fabricated path would make every create in this file fail on the filesystem
+ * rather than on the thing it is testing.
+ */
+const TASKS_HOME = mkdtempSync(path.join(os.tmpdir(), 'dorkos-mcp-tool-server-'));
+
 /** Create a mock McpToolDeps with a stubbed transcript reader */
 function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {}): McpToolDeps {
   return {
@@ -106,6 +118,7 @@ function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {
       listSessions: overrides.listSessions ?? vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
     defaultCwd: '/test/cwd',
+    dorkHome: TASKS_HOME,
   };
 }
 
@@ -128,6 +141,12 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
       status: 'active',
     }),
     createTask: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
+    // The create path's HAPPY branch since DOR-1568: the file is written first
+    // and the row is derived from reading it back, so this is what a create
+    // normally goes through. `createTask` above is only the fallback for a file
+    // that will not parse.
+    upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
+    recordProposal: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
     deleteTask: vi.fn().mockReturnValue(false),
     listRuns: vi.fn().mockReturnValue([]),
@@ -346,6 +365,7 @@ describe('MCP Tool Handlers', () => {
         name: 'Nightly',
         prompt: 'Run tests',
         cron: '0 2 * * *',
+        target: 'global',
         reason: 'Nobody is watching the overnight test run.',
       });
       const parsed = JSON.parse(result.content[0].text);
@@ -365,6 +385,7 @@ describe('MCP Tool Handlers', () => {
         name: 'Test',
         prompt: 'Do stuff',
         cron: '* * * * *',
+        target: 'global',
         reason: 'It needs to run every minute while we watch it.',
       });
       const parsed = JSON.parse(result.content[0].text);
@@ -374,7 +395,7 @@ describe('MCP Tool Handlers', () => {
 
     it('returns error when Tasks disabled', async () => {
       const handler = createCreateScheduleHandler(makeMockDeps());
-      const result = await handler({ name: 'X', prompt: 'Y', cron: '* * * * *' });
+      const result = await handler({ name: 'X', prompt: 'Y', cron: '* * * * *', target: 'global' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('turned off');
@@ -632,14 +653,14 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 31 tools (24 legacy + 6 operator + list_capabilities)', () => {
+    it('registers 32 tools (24 legacy + 6 operator + list_capabilities + memory_write)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 24 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 1 extension)
-      // plus the 6 operator capabilities and `list_capabilities`, both projected
-      // from the registry.
+      // plus the 6 operator capabilities, `list_capabilities` and `memory_write`,
+      // all projected from the registry.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(31);
+      expect(server.tools).toHaveLength(32);
     });
 
     it('registers tools with correct names', () => {

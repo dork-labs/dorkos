@@ -22,6 +22,7 @@ import {
 import { governanceCases } from './governance.js';
 import { roomsStructuralCases } from './rooms.js';
 import { roomsCredentialedCases } from './rooms-recall.js';
+import { memoryCases } from './memory.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -38,15 +39,17 @@ export const ALL_CASES: EvalCase[] = [
   ...governanceCases,
   ...roomsStructuralCases,
   ...roomsCredentialedCases,
+  ...memoryCases,
 ];
 
 /** The tag values a `--suite` name may select. */
-const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental', 'rooms'];
+const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental', 'rooms', 'memory'];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`/`experimental`/`rooms`) selects every case carrying it;
- * `all` selects every case; otherwise the name is matched against a case id.
+ * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`) selects every case
+ * carrying it; `all` selects every case; otherwise the name is matched against a
+ * case id.
  *
  * @param name - The suite selector.
  * @returns The matching cases (possibly empty).
@@ -89,6 +92,14 @@ export {
   roomsAdversarialInjectionCase,
   roomsCredentialedCases,
 } from './rooms-recall.js';
+export {
+  memoryRecallCrossSurfaceCase,
+  memoryCapConsolidationCase,
+  memoryPoisonedNoteCase,
+  memoryRecallOtherRoomCase,
+  memoryRecallProvenanceAcrossRoomsCase,
+  memoryCases,
+} from './memory.js';
 export {
   approvalGrantedCase,
   approvalDeniedCase,

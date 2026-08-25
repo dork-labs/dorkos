@@ -82,6 +82,35 @@ export interface RowContainer {
 
   /** The container's highest ordinal right now. `0` when it holds nothing. */
   maxOrdinal: number;
+
+  /**
+   * Read this container from ordinal 1 again, even though it has not shrunk.
+   *
+   * For a source that only ever APPENDS, this is always absent: the watermark is
+   * a complete description of what has been read, and re-reading is waste. It
+   * exists for a source whose rows are **mutated in place**, where the ordinal
+   * high-water mark is a true statement about how many rows there are and says
+   * nothing about whether the ones already indexed still say what they said.
+   *
+   * OpenCode is that source: it creates a message row at turn start and streams
+   * its parts in underneath it for up to a minute, rewriting them as tokens
+   * arrive (`opencode-store.ts`). A sweep landing mid-stream indexes a truncated
+   * body, and without this flag the count would never change again and the
+   * truncation would be served forever.
+   *
+   * **It takes the rebuild path — rows deleted first, then rewritten** — and an
+   * earlier version that merely moved the resume position was wrong. A message
+   * that projects to NOTHING writes no row, so it cannot overwrite what sits at
+   * its ordinal; a container that lands on the same count with different content
+   * would keep serving the old row at that position forever. The delete is what
+   * makes "read it again" mean the whole container rather than the rows that
+   * happen to produce output.
+   *
+   * The cost is therefore a delete-and-rewrite per flagged container per sweep,
+   * which is why setting it has to be scoped: OpenCode raises it only for
+   * conversations touched inside a 15-minute window, never for settled ones.
+   */
+  rereadWhole?: boolean;
 }
 
 /**
@@ -145,16 +174,35 @@ export interface FileContainer {
   mtimeMs: number;
 }
 
-/** Why discovery walked past a file instead of indexing it. */
+/**
+ * Why discovery walked past a file instead of indexing it.
+ *
+ * One union across every file-backed source rather than one per source: the
+ * reasons are read together — logged, counted, eyeballed in a bench run — and a
+ * per-source union would make "everything that was skipped" a type-level join
+ * for no gain. Each member names which source can produce it.
+ */
 export type SkipReason =
-  /** `<slug>/<sessionId>/subagents/**` — a conversation the human never had. */
+  /** Claude Code: `<slug>/<sessionId>/subagents/**` — a conversation the human never had. */
   | 'subagent-transcript'
-  /** A main session whose head-record `cwd` is an eval-harness sandbox. */
+  /** Claude Code: a main session whose head-record `cwd` is an eval-harness sandbox. */
   | 'eval-sandbox'
-  /** `<slug>/vercel-plugin/skill-injections.jsonl` — harness plumbing. */
+  /** Claude Code: `<slug>/vercel-plugin/skill-injections.jsonl` — harness plumbing. */
   | 'plugin-artifact'
-  /** Nested deeper than `<slug>/<sessionId>.jsonl` and matching no known kind. */
-  | 'not-a-main-session';
+  /** Claude Code: nested deeper than `<slug>/<sessionId>.jsonl` and matching no known kind. */
+  | 'not-a-main-session'
+  /**
+   * Codex: a `.jsonl` under a rollout root whose name is not
+   * `rollout-<ISO>-<sessionId>.jsonl`, so it carries no session id to index it
+   * under.
+   *
+   * No such file exists on any corpus measured — `$CODEX_HOME` does hold other
+   * newline-delimited files, `session_index.jsonl` among them, but they sit
+   * beside the rollout roots rather than inside one and are never walked. This
+   * is here so a kind of file nobody has seen yet shows up in the skipped set
+   * instead of in the index under an id invented from its filename.
+   */
+  | 'not-a-rollout';
 
 /** One file discovery decided against, and the decision it made. */
 export interface SkippedFile {
@@ -166,8 +214,30 @@ export interface SkippedFile {
 }
 
 /**
+ * One root a discovery pass could not enumerate.
+ *
+ * A file-backed source reads SEVERAL roots — Claude Code has one per account on
+ * this machine, Codex has one per day plus its archive — and the whole point of
+ * reading several is that a person's history is spread across them. So one
+ * unreadable root must be reported rather than either failing the source or
+ * quietly narrowing the corpus, which is the same "a short list looks exactly
+ * like a complete one" failure the feature exists to refuse (spec Amendment 2,
+ * G3).
+ *
+ * A root that simply is not there is NOT a failure and never appears here:
+ * Claude Code may never have run under that account.
+ */
+export interface DiscoveryFailure {
+  /** The root that could not be read, absolute, as an operator would recognise it. */
+  root: string;
+
+  /** Why it could not be read. */
+  message: string;
+}
+
+/**
  * What one discovery pass found — and, just as load-bearing, what it decided
- * against.
+ * against and what it could not reach.
  *
  * The skipped set is not diagnostics. Discovery **walks** the tree rather than
  * globbing one level down, so that subagent transcripts are excluded by a
@@ -175,13 +245,24 @@ export interface SkippedFile {
  * and the only way to tell those two implementations apart is that one of them
  * reports having visited the nested paths. A count-only assertion passes for
  * both.
+ *
+ * {@link FileDiscovery.failures} is the same argument applied to whole roots.
  */
 export interface FileDiscovery {
-  /** Files to index, in walk order. */
+  /** Files to index, across every root, in walk order. */
   files: FileContainer[];
 
   /** Files visited and deliberately not indexed. */
   skipped: SkippedFile[];
+
+  /**
+   * Roots that exist and could not be enumerated.
+   *
+   * Non-empty means `files` is INCOMPLETE, which is why the sweep stops pruning
+   * on it: a container missing because its root was unreadable is not a
+   * container that is gone.
+   */
+  failures: DiscoveryFailure[];
 }
 
 /**
@@ -233,7 +314,15 @@ export interface FileSource {
   readonly mechanism: 'jsonl';
 
   /**
-   * Every file that should be indexed right now, and every one that should not.
+   * Every file that should be indexed right now, across every root this source
+   * reads, and every one that should not.
+   *
+   * **Resolves rather than rejects when one root fails.** A source spanning
+   * several roots that threw on the first unreadable one would contribute zero
+   * rows from the roots that ARE readable — the opposite of the per-root
+   * degradation G3 asks for. Unreachable roots come back in
+   * {@link FileDiscovery.failures}; a rejection is reserved for a discovery that
+   * enumerated nothing at all.
    *
    * @param known - What the frontier already holds, keyed by container id. A
    *   file whose `(size, mtime)` match an entry here has not changed since the
@@ -261,13 +350,76 @@ export interface FileSource {
 }
 
 /**
+ * Where a watermark pass gets its containers.
+ *
+ * The one thing M2 and M3 do differently, isolated. M2's containers are rows in
+ * DorkOS's own database; M3's are rows in a read-only copy of somebody else's.
+ * Everything after that — the resume rule, the shrink rebuild, the watermark
+ * write, the prune — is identical, which is why `row-frontier.ts` has one
+ * implementation of it and not two.
+ */
+export interface ContainerReader {
+  /** Every container that exists right now, with its current high-water ordinal. */
+  listContainers(): RowContainer[];
+
+  /**
+   * The container's rows strictly above `afterOrdinal`, already projected and
+   * ordered by ordinal.
+   *
+   * @param originKey - Which container.
+   * @param afterOrdinal - Read rows above this. `0` reads the whole container.
+   */
+  readSince(originKey: string, afterOrdinal: number): Projection;
+}
+
+/**
+ * **M3** — a source whose containers live in another program's SQLite file,
+ * read through a throwaway snapshot copy (ADR 260825-110420).
+ *
+ * OpenCode uses it, and it is the third mechanism the design said would promote
+ * this shape to a port. **The promotion was refused, with evidence rather than
+ * taste**: M3 reuses M2's entire frontier implementation through
+ * {@link ContainerReader} and contributes one function of its own. The ADR
+ * carries the re-trigger condition.
+ *
+ * The snapshot has a lifetime, which is the only structural difference from a
+ * row source: {@link SnapshotSource.open} produces a reader that must be closed,
+ * and closing deletes the copy. That is why this is `open()` rather than two
+ * standalone functions — a `listContainers` that opened its own snapshot and a
+ * `readSince` that opened another would copy the store once per container.
+ */
+export interface SnapshotSource {
+  /** `'opencode'`. Stamped onto every row this source contributes. */
+  readonly id: string;
+
+  /**
+   * Which mechanism sweeps this source. The registry row names it rather than
+   * the indexer guessing from the shape of the record (spec §3).
+   */
+  readonly mechanism: 'sqlite-snapshot';
+
+  /**
+   * Copy the store, open the copy read-only, and hand back a reader.
+   *
+   * @returns A reader the caller must `close()`, or `null` when there is no
+   *   store to read — the runtime may never have run on this machine, which is
+   *   not a failure. The distinction is load-bearing: `null` means the sweep
+   *   prunes nothing, because "no store" is not "every session was deleted".
+   */
+  open(): Promise<(ContainerReader & { close(): void }) | null>;
+}
+
+/**
  * One source the indexer sweeps — a record in the registry array, never a port.
  *
- * A port abstracting two mechanisms and three functions is a class hierarchy
- * standing where a record does. The trigger that changes that is written down:
- * the day a third mechanism is needed the promotion fires (spec §3, D12).
+ * A port abstracting three mechanisms and four functions is still a class
+ * hierarchy standing where a record does. The design named the day a third
+ * mechanism arrived as the trigger that would change that (spec §3, D12); the
+ * day came with OpenCode, and ADR 260825-110420 refused the promotion and
+ * recorded the next trigger — a FOURTH mechanism, or a source that lives outside
+ * `apps/server`.
  */
-export type SearchSource = RowSource | FileSource;
+export type SearchSource = RowSource | FileSource | SnapshotSource;
 
 /** What one pass over one source did, whichever mechanism swept it. */
 export interface SourceSweep {
@@ -309,13 +461,21 @@ export interface SourceSweep {
   rebuilt: number;
 
   /**
-   * Containers that contributed nothing and said why.
+   * Everything that should have been indexed and was not, and why.
    *
-   * Most of them also wrote `search_sources.last_error`, and two kinds cannot:
-   * a discovery that failed before any container was enumerated has no row to
-   * write to, and two files claiming one container id have no row that could
-   * honestly describe them. Those live here only, which is why this array is on
-   * the result rather than being left implicit in the table.
+   * Most entries also wrote `search_sources.last_error`. **Three kinds cannot**,
+   * and they live here only — which is why this array is on the result rather
+   * than being left implicit in the table:
+   *
+   * 1. A discovery that failed before any container was enumerated. There is no
+   *    row to write to.
+   * 2. Two or more files claiming one container id. No row could honestly
+   *    describe them: it would have to name one file's size, mtime and offset
+   *    while the fault is that there are two.
+   * 3. **One root of several that could not be read.** A root is not a
+   *    container, so it has no row either — and unlike the first two, the source
+   *    still CONTRIBUTED: the readable roots indexed normally. A failure here is
+   *    therefore not the same as "this source produced nothing".
    */
   failures: SourceFailure[];
 }

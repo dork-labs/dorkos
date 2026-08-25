@@ -3,7 +3,7 @@ import {
   COMPARISON_DIMENSIONS,
   COMPARISON_FRAMING_COPY,
   dorkosCellFor,
-  type ComparisonCell,
+  type CapabilityVerdict,
   type Competitor,
 } from '../../lib/comparisons';
 import { VerdictMark } from './VerdictMark';
@@ -16,13 +16,13 @@ function Side({
 }: {
   label: string;
   detail: string;
-  verdict: React.ReactNode;
+  verdict: CapabilityVerdict;
 }) {
   return (
     <div>
       <div className="flex items-center gap-2">
         <span className="text-charcoal font-mono text-sm font-semibold">{label}</span>
-        {verdict}
+        <VerdictMark verdict={verdict} />
       </div>
       <p className="text-warm-gray mt-2 text-sm leading-relaxed">{detail}</p>
     </div>
@@ -43,7 +43,7 @@ export function ComparisonCriteria({ competitor }: { competitor: Competitor }) {
   const sections = COMPARISON_DIMENSIONS.map((dimension) => ({
     dimension,
     ours: dorkosCellFor(dimension),
-    theirs: competitor.cells[dimension.id] as ComparisonCell | undefined,
+    theirs: competitor.cells[dimension.id],
   })).filter((section) => section.ours.detail ?? section.theirs?.detail);
 
   if (sections.length === 0) return null;
@@ -52,19 +52,14 @@ export function ComparisonCriteria({ competitor }: { competitor: Competitor }) {
     <div className="mt-16 space-y-12">
       {sections.map(({ dimension, ours, theirs }) => {
         const ourSide = ours.detail ? (
-          <Side
-            key="ours"
-            label={copy.ourColumn}
-            detail={ours.detail}
-            verdict={<VerdictMark verdict={ours.verdict} />}
-          />
+          <Side key="ours" label={copy.ourColumn} detail={ours.detail} verdict={ours.verdict} />
         ) : null;
         const theirSide = theirs?.detail ? (
           <Side
             key="theirs"
             label={copy.theirColumn(competitor.name)}
             detail={theirs.detail}
-            verdict={<VerdictMark verdict={theirs.verdict} />}
+            verdict={theirs.verdict}
           />
         ) : null;
 

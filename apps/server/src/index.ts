@@ -266,6 +266,7 @@ import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import {
   createRoomSubsystem,
+  resolveOperatorAuthor,
   setRoomService,
   setRoomInternals,
   setWelcomeBackGreeter,
@@ -1137,10 +1138,7 @@ async function start() {
   // partway through its life, so a value captured at boot would go stale). The
   // inbound chat bridge acts as this author for its lifecycle writes
   // (chats-as-channels §3.5, §10.9).
-  const resolveOperatorAuthorId = (): string => {
-    const owner = readOwnerAccount();
-    return owner ? roomAuthors.bindOwner(owner.id).id : roomAuthors.localHuman().id;
-  };
+  const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
   // as-channels §6.7, DOR-899). `config.profile.displayName` ("what the user
@@ -2050,6 +2048,10 @@ async function start() {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
+      // Where `tasks_create` writes a global schedule's SKILL.md. Not optional:
+      // a create that cannot find the skills root writes a row with no file
+      // behind it, which is the orphan DOR-1568 closed.
+      dorkHome,
       runtimeRegistry,
       activityService,
       // The approval primitive the in-session hold (DOR-939) waits on, so a fresh
@@ -3139,6 +3141,11 @@ async function start() {
       // REST routes and the trigger dispatcher hold — one set of membership
       // rules, one cascade guard, one budget, whichever surface reaches them.
       roomDeps: { rooms: roomService },
+      // How a saved note learns which room it was written in (DOR-632). The
+      // room service answers for the CALLING session, so the label is derived
+      // rather than supplied — a model that could name its own provenance could
+      // make a poisoned note claim it came from somewhere trustworthy.
+      memoryDeps: { roomLabelForSession: (id: string) => roomService.roomLabelForSession(id) },
     },
     createCapabilityAttributionObserver(activityService)
   );

@@ -259,6 +259,46 @@ export type EndpointRegistration = z.infer<typeof EndpointRegistrationSchema>;
 
 // === Task Dispatch ===
 
+/**
+ * Subject prefix one task's dispatch envelope is published to.
+ *
+ * The concrete subject is this prefix plus the task id and NOTHING else — see
+ * {@link isTaskDispatchSubject}, which is the rule a receiver must apply rather
+ * than a bare `startsWith`.
+ */
+export const TASK_DISPATCH_SUBJECT_PREFIX = 'relay.system.tasks.';
+
+/**
+ * The subject one task's dispatch is published to.
+ *
+ * @param taskId - The task being dispatched.
+ */
+export function taskDispatchSubject(taskId: string): string {
+  return `${TASK_DISPATCH_SUBJECT_PREFIX}${taskId}`;
+}
+
+/**
+ * Whether a subject is EXACTLY one task's dispatch subject.
+ *
+ * A receiver claims {@link TASK_DISPATCH_SUBJECT_PREFIX} as a prefix, so every
+ * subject BENEATH a dispatch subject reaches it too — and a prefix test alone
+ * then reads `relay.system.tasks.<id>.<anything>` as a dispatch. That is not
+ * hypothetical: the task path used to stream a run's own progress to
+ * `relay.system.tasks.<id>.response`, every event of which came straight back
+ * in as a malformed dispatch and dead-lettered. One live run produced 279
+ * "could not be delivered" notifications (DOR-1567).
+ *
+ * Task ids are ULIDs, which contain no dot, so "the tail is one segment" is the
+ * whole test.
+ *
+ * @param subject - The subject a message arrived on.
+ */
+export function isTaskDispatchSubject(subject: string): boolean {
+  if (!subject.startsWith(TASK_DISPATCH_SUBJECT_PREFIX)) return false;
+  const tail = subject.slice(TASK_DISPATCH_SUBJECT_PREFIX.length);
+  return tail.length > 0 && !tail.includes('.');
+}
+
 export const TaskDispatchPayloadSchema = z
   .object({
     type: z.literal('task_dispatch'),
@@ -273,6 +313,18 @@ export const TaskDispatchPayloadSchema = z
     taskName: z.string(),
     cron: z.string().nullable(),
     trigger: z.string(),
+    /**
+     * The unattended-run briefing the agent starts with — what job this is,
+     * what schedule raised it, and that nobody is here to answer questions
+     * (`buildTaskAppend` server-side).
+     *
+     * On the wire because the receiver runs in another process and cannot
+     * rebuild it: the task's agent id and the run's trigger are not otherwise
+     * here. Optional so an envelope written before this field existed — a
+     * dead-letter replay, say — still parses; a run without it simply gets no
+     * briefing, which is what every relay-dispatched run got before DOR-1567.
+     */
+    systemPromptAppend: z.string().optional(),
   })
   .openapi('TaskDispatchPayload');
 

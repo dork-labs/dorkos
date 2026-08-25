@@ -142,6 +142,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         listSessions: async () => [],
       } as unknown as McpToolDeps['transcriptReader'],
       defaultCwd: agentDir,
+      dorkHome: '/tmp/dorkos-test-home',
       taskStore: {
         getTasks: () => [TASK],
       } as unknown as McpToolDeps['taskStore'],
@@ -241,6 +242,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         listSessions: async () => [],
       } as unknown as McpToolDeps['transcriptReader'],
       defaultCwd: agentDir,
+      dorkHome: '/tmp/dorkos-test-home',
       meshCore: {
         list: () => [MANIFEST],
         getStatus: () => ({ ...MESH_STATUS, totalAgents: 'drifted' }),
