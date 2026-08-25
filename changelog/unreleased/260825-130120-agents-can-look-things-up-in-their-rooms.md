@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,evals): an agent can look things up across the rooms it belongs to (DOR-1532)'
+  - 'fix(server,evals): pin the operator invariant on SEARCH too, and stop an honest reply reading as a lie (DOR-1532)'
 ---
 
 ### Added
