@@ -87,13 +87,13 @@ function join(roomId: string, authorId: string, joinedSeq: number): void {
 }
 
 /**
- * A session transcript row, as a session-history projection would write it.
+ * A session transcript row, as a runtime's projection would write it.
  *
- * The source is a parameter because "owner-only" is a statement about EVERY
- * session source, not about the one that happened to ship first: `buildScopes`
- * knows `rooms` by name and treats everything else as session history, so a
- * second and third source have to be asserted through the same door rather than
- * assumed to inherit it.
+ * The source id is a parameter because the access rule is about the CATEGORY,
+ * not about `claude-code`: every registered source except `rooms` is session
+ * history, and a caller that presented an agent identity reaches none of them.
+ * A helper hardcoding one runtime would let the next one arrive unguarded — and
+ * two have since, so the seam has paid for itself twice.
  */
 function transcribe(
   sessionId: string,
@@ -175,9 +175,11 @@ beforeEach(async () => {
   // collision that a visibility clause scoped on `origin_key` alone would let
   // through — and the only way the session assertions below can catch it.
   transcribe('open', 9, 'kestrel, said in a session that shares a room’s id');
-  // The third source, added by DOR-688. It reads another program's SQLite store
-  // and is session history like the others — so it is owner-only on the day it
-  // lands rather than on the day somebody remembers.
+  // A Codex rollout and an OpenCode conversation, both session history under
+  // source ids `buildScopes` has never been told about. That is the point: each
+  // must be out of an agent's reach on the day it lands rather than on the day
+  // somebody remembers.
+  transcribe('codex-thread-1', 2, 'a kestrel I mentioned to Codex', 'codex');
   transcribe('ses_oc', 1, 'a kestrel, said to OpenCode', 'opencode');
 
   await new SearchIndexer(db, [roomsSource]).sweep();
@@ -310,17 +312,15 @@ describe('a member', () => {
 describe('session history over an MCP-shaped caller', () => {
   it('returns no session row, whatever the words are', () => {
     // The required negative: transcripts hold both search terms, and an agent
-    // reaches neither.
+    // reaches none of the three runtimes that keep them.
     for (const term of ['kestrel', 'pelican']) {
       const hits = search(scopeFor(agentId, false), term).results;
-      expect(
-        hits.filter((hit) => hit.source === 'claude-code' || hit.source === 'opencode')
-      ).toEqual([]);
+      expect(hits.filter((hit) => hit.source !== 'rooms')).toEqual([]);
     }
   });
 
   it('returns no session row even when the caller asks for that source by name', () => {
-    for (const source of ['claude-code', 'opencode']) {
+    for (const source of ['claude-code', 'codex', 'opencode']) {
       expect(search(scopeFor(agentId, false), 'kestrel', source)).toEqual({
         results: [],
         warnings: [],
@@ -333,6 +333,27 @@ describe('session history over an MCP-shaped caller', () => {
       const hits = search(scopeFor(ownerId, true), term).results;
       expect(hits.filter((hit) => hit.source === 'claude-code').length).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('returns no CODEX row either — the default closes a source it was never told about', () => {
+    // `buildScopes` knows one source by name, `rooms`, and treats every other
+    // REGISTERED source as session history. This is the test that the claim
+    // survived a new runtime arriving: nothing in `search-service.ts` was
+    // edited for Codex, and the assertion would have to be edited to let a
+    // widening through.
+    expect(search(scopeFor(agentId, false), 'kestrel', 'codex')).toEqual({
+      results: [],
+      warnings: [],
+    });
+    const hits = search(scopeFor(agentId, false), 'kestrel').results;
+    expect(hits.filter((hit) => hit.source === 'codex')).toEqual([]);
+  });
+
+  it('returns the codex row to the owner — the positive control for it', () => {
+    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
+    expect(hits.filter((hit) => hit.source === 'codex').map((hit) => hit.container)).toEqual([
+      'codex-thread-1',
+    ]);
   });
 });
 

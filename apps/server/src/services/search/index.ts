@@ -7,14 +7,17 @@
  * here is a copy that can be thrown away and rebuilt, and deleting the index is
  * a supported recovery.
  *
- * Today it indexes three sources: the room log; every Claude Code transcript
- * under EVERY Claude account on the machine — sessions run inside DorkOS and
- * sessions run from the bare `claude` CLI alike, because the index reads what
- * the SDK wrote rather than anything DorkOS recorded, and every account, because
- * reading only the active one covered 67% of the operator's own history and said
- * nothing about the rest (spec Amendment 2); and OpenCode's own SQLite store,
- * read through a throwaway snapshot that structurally cannot reach the
- * credential tables sitting beside its messages (ADR 260825-110420).
+ * Today it indexes four sources over three mechanisms: the room log; every Claude Code transcript
+ * under EVERY Claude account on the machine; every Codex rollout, live and
+ * archived; and every OpenCode conversation. Sessions run inside DorkOS and
+ * sessions run from the bare `claude`, `codex` or `opencode` CLI alike, because
+ * the index reads what each runtime wrote rather than anything DorkOS recorded.
+ * Every Claude account, because reading only the active one covered 67% of the
+ * operator's own history and said nothing about the rest (spec Amendment 2).
+ * OpenCode through a throwaway snapshot of its SQLite store, which structurally
+ * cannot reach the credential tables sitting beside its messages
+ * (ADR 260825-110420) — and never through its sidecar, which an indexer on a
+ * timer must never boot.
  *
  * {@link searchMessages} is the one way to read it — the room history tool's
  * `search_room_history` calls it inside a scope the rooms domain resolved
@@ -33,7 +36,9 @@ export { searchForCaller } from './search-service.js';
 export {
   SEARCH_SOURCES,
   claudeCodeSource,
+  codexSource,
   createClaudeCodeSource,
+  createCodexSource,
   createOpenCodeSource,
   openCodeSource,
   roomsSource,
@@ -55,11 +60,13 @@ export {
   DUPLICATE_CONTAINERS_KEY,
 } from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
+export { discoverCodexRollouts } from './codex-discovery.js';
 export { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
 export {
   projectClaudeCodeLines,
   type ClaudeCodeProjectionContext,
 } from './projections/claude-code.js';
+export { projectCodexLines, type CodexProjectionContext } from './projections/codex.js';
 export { projectOpenCodeMessages, type OpenCodeMessageRow } from './projections/opencode.js';
 export type {
   ContainerReader,

@@ -4159,9 +4159,9 @@ registry.registerPath({
   tags: ['Search'],
   summary: 'Find messages by what was said in them',
   description:
-    'One ranked read over the derived message index — rooms, Claude Code transcripts and ' +
-    'OpenCode conversations alike, in a single relevance order, because "where did we talk ' +
-    'about X" does not know which one X ' +
+    'One ranked read over the derived message index — rooms, Claude Code transcripts, Codex ' +
+    'rollouts and OpenCode conversations alike, in a single relevance order, because "where ' +
+    'did we talk about X" does not know which one X ' +
     'was said in. A hit is a COORDINATE plus a marked excerpt (source, container, ordinal, role, ' +
     'timestamp), never the message itself: the index holds a copy of the text and none of the ' +
     "access rules, so resolving a hit back to a message stays the owning store's job. " +

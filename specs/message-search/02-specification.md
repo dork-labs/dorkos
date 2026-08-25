@@ -794,7 +794,49 @@ This document states in three places that `search_room_history` becomes a caller
 
 **One run, 2026-08-24, on a workstation running several agents — illustration, not a budget, per Amendment 1's own instruction:** 9,182 messages indexed; `the` 7,656 hits; unordered p50 0.012–0.013 ms across 3.3 decades of hit count (spread 1.12×); ranked p50 0.032 → 3.476 ms across the same range (spread 109×); ranked slope 0.452 µs/row, inside the 0.375–1.03 µs/row range the three earlier runs bracketed; linearity R² 1.000. **The shape reproduced; no absolute was inherited.**
 
-## Amendment 8 — OpenCode is indexed, and the port promotion is refused (DOR-688)
+## Amendment 8 — codex as shipped: the corpus, the authorship gate, and one carve-out (DOR-683)
+
+**Amends §2's source table, §2.2, §4's `origin_key` table, and §Testing Strategy's codex bullet.**
+
+Recorded here rather than only in the ticket, for the reason every amendment header gives: whoever reads this section next will not read a Linear issue.
+
+**The mechanism claim held.** `jsonl-frontier.ts` was not touched. The twin refusal, the shrink rebuild, the partial-line rule, the carry cap and the prune suppression all apply to Codex without a line of new code, which is what ADR `260728-214214` said would happen. What the source needed beyond "one registry row and one pure projection" is its own `discover` — which the `FileSource` port has always had, because a source is what knows where its files are. Calling that a third thing would be honest; calling it a mechanism would not.
+
+**The corpus, re-measured 2026-08-25** (the figures in §2.2 are from 2026-07-28 and have grown): **18 rollout files** — 14 under `sessions/YYYY/MM/DD/`, 4 in the flat `archived_sessions/` — **7.0 MB, 2,200 lines, zero malformed, a top-level `timestamp` on 2,200 of 2,200.** Line types: `response_item` 1,179 · `event_msg` 928 · `turn_context` 68 · `session_meta` 18 · `world_state` 6 · `compacted` 1. Exactly one `session_meta`, always line 1; 18 session ids, none in two files. **The two-families trap reproduced exactly as §2.2 describes it**: 261 `response_item` messages against 219 in the `event_msg` family.
+
+**The archive is a MOVE, and that is load-bearing.** None of the four archived session ids appears under `sessions/`. If a Codex release ever started copying instead, every archived thread would have a twin, and the M1 sweep refuses both — so those threads would drop out of the index loudly, with one failure each, rather than being double-counted. `__tests__/codex-source.test.ts` drives that case.
+
+**§4's `origin_key` says "the session id from `session_meta`"; the shipped source takes the same id from the FILENAME.** The CLI writes it into both — `rollout-<ISO>-<sessionId>.jsonl` — and they agree on **18 of 18** files. The reason is cost, not preference: the frontier is keyed by container id, so an id that only the bytes carry cannot be consulted before reading those bytes, and every rollout would be head-read on every five-minute tick forever. A Codex `session_meta` record carries the CLI's whole `base_instructions` (largest measured: 34,956 bytes), so that is not a cheap read. The working directory still comes from the head record, and that read IS skipped for an unchanged file. A `.jsonl` in a rollout root whose name carries no id is reported as `not-a-rollout` rather than indexed under something invented.
+
+**The authorship gate is new, and §2.2 did not anticipate needing one.** §2.2 says "role at `payload.role`, text at `payload.content[].text`" and stops there, which would index 261 messages. **214 are indexed.** The other 47, measured:
+
+| Dropped                                              | Count | What it is                                                                                                                                        |
+| ---------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `developer` role                                     | 20    | Codex's own instructions — `<permissions instructions>`, `<skills_instructions>`, `<collaboration_mode>`, `<model_switch>`                        |
+| `user` records that are nothing but injected context | 22    | 9 × the `# AGENTS.md instructions for <path>` dump, 7 × `<environment_context>`, 3 × `<recommended_plugins>`, 2 × `<turn_aborted>`, 1 × `<skill>` |
+| `user` records that are a widget click with no words | 5     | The `<ui_action>` block DorkOS injects on a generative-UI button press (five moves of one tic-tac-toe game)                                       |
+
+**Why Codex needs this and claude-code does not**, which reads as an inconsistency until you see where each runtime puts the same text: claude-code delivers `<gen_ui>`, `<agent_identity>`, `<dorkos_context>` and the rest through `systemPromptAppend`, a channel the transcript never records. Codex has no per-turn system channel, so `codex/turn-input.ts` prepends the identical blocks to the user's own message — and they land inside the user's record in the rollout. The gate strips leading machine-written blocks by SHAPE (an opening tag with a newline after it, up to its closing tag) and keeps the remainder, which is the same position-sensitive move `stripRelayContext` already makes for claude-code, and which cannot drift when either side adds a block. Its stated cost: a message that is entirely a tag-shaped block and no prose indexes as nothing — 0 records on this corpus.
+
+**Cross-checked against the family it does not read.** The gate's 214 differ from the `event_msg` family's 219 by exactly the five widget clicks. That is a genuinely independent oracle — a different record family, a different parse path — and it is what makes "we read one family and kept what people said" a measurement rather than a claim.
+
+**§Testing Strategy's benchmark bullet asks the bench to assert equality with an independently computed `response_item` count. It asserts three separate things instead, and the middle one was got wrong first — which is the part worth recording.** `scripts/search-corpus-bench.ts --source codex` counts BOTH message families itself, with its own parser, over the same files, never through the projection.
+
+- **Doubling** fails on `indexed > responseItems`. A projection reading both families lands at **166%** — verified by seeding exactly that defect: 433 rows against 261 records, exit 1.
+- **Reading the WRONG family** fails on an EQUALITY against the `event_msg` count. An earlier version of this amendment, and of the script's own comments, claimed the share floor below caught this. **It does not, and no share floor can**: the two families hold the same messages, so an `event_msg`-reading projection lands at 219 of 261 — 84%, inside any sane band, exit 0. That was found by seeding it. What separates them is that the shipped projection's authorship gate makes its count differ from the other family's — 214 against 219 — while the defect's count matches it exactly. Both directions verified: 214 ≠ 219 passes, the seeded 219 = 219 fails with the message naming both numbers. Its one false positive (a corpus where the gate happens to drop exactly the difference) is written down beside the check; the script is run deliberately by a person who can read both counts off the line above it.
+- **A projection that indexes almost nothing** fails on the share floor, which is what that floor is actually for, and which is derived rather than picked: 82% on this machine, floored at half.
+
+The unit-test half of the same guard is `codex-projection.test.ts`'s two-families case, which asserts the BODIES are the `response_item` texts rather than only counting rows — a count alone passes for a projection that read the other family. Equality with the `response_item` count, as §Testing Strategy words it, would encode today's ratio of plumbing to speech as a rule. A machine with no Codex asserts nothing and says so.
+
+**A head record too big to scan is now loud.** Found in review. Discovery reads a rollout's first 256 KiB for `session_meta.payload.cwd` — seven times the largest head measured (34,956 B) — but `base_instructions` grows with the CLI, so the window can be outgrown. When it was, the file indexed with no working directory and NOTHING said so: every one of that session's hits would open nowhere while the results looked healthy, which is this document's own G4 failure in miniature. The two cases are distinguishable — a window that FILLED without naming a directory is not a conversation that names none — so the first is warned about by path and the second stays silent. The file is still indexed either way: its messages are what search is for, and dropping a whole conversation to protect against an unknown directory is the larger loss. It is a log line rather than a `DiscoveryFailure` because a failure suppresses the prune for the whole source, and a head that is too big stays too big — that would freeze pruning forever over a container path.
+
+**One carve-out was needed.** `os.homedir()` is banned in `apps/server/src` outside three files; this ticket makes it four. `services/runtimes/codex/codex-home.ts` mirrors the Codex CLI's own `$CODEX_HOME ?? ~/.codex` resolution 1:1, exactly as `claude-config-dir.ts` mirrors the Claude Agent SDK's — and for the identical reason: the index reads files another program wrote, so resolving anything else is DOR-250's split-brain in a second runtime. The carve-out is by filename, pinned in `scripts/test-homedir-guard.sh` alongside a case proving a SIBLING in the same directory is still refused.
+
+**Bench, 2026-08-25, both legs on the machine this was written on:** `claude-code` 497 files / **19,211 messages** / 2.5 s; `codex` 18 files / **214 messages** / 33 ms / 1.8 MB. Codex is **1.1%** of the corpus, and §2.2's argument for it stands unchanged: the multi-runtime cockpit is the product's headline differentiator, and a search box covering one runtime undercuts the claim the product leads with.
+
+**One thing this ticket did NOT do.** The client's scope copy (`message-search-scope.ts`) still lists Codex under what search does not cover. It ships in a separate branch (DOR-685) that had not merged when this landed, so the line moves from "not covered" to "covered" in a follow-up commit once both are on `main`.
+
+## Amendment 9 — OpenCode is indexed, and the port promotion is refused (DOR-688)
 
 **Amends §2.3 in full, the `opencode` row of §2's source table, §1's opening paragraph ("**OpenCode is not in that list**"), and §3's port trigger.**
 
@@ -880,8 +922,7 @@ DOR-1556.** The scope copy task 5.2 shipped names OpenCode as not covered. That 
 deliberately NOT changed in this ticket — the file is in flight on another branch — and
 flipping it is the one piece of DOR-688 that lands separately.
 
-**Codex is still not a search source as of this amendment.** §1's sentence names rooms,
-Claude Code and Codex; DOR-683 (PR #1297) is what adds the third, and it had not merged when
-this landed. Nothing here depends on it either way — M1 gains a row and a projection — but
-the prose in this repository should not be read as claiming Codex coverage that a reader
-would go looking for and not find.
+**Codex landed first, and this amendment sits on top of it.** DOR-683 (Amendment 8 above)
+added the Codex row while this was in review, so the registry is now `rooms`, `claude-code`,
+`codex`, `opencode` — three mechanisms over four sources, and §1's sentence is true of every
+runtime the product names.

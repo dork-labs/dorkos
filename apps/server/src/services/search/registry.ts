@@ -3,9 +3,10 @@
  *
  * Adding a source means adding a row here and a pure projection beside it.
  * Nothing else varies: discovery, change detection and the incremental read are
- * written once per *mechanism* — `row-frontier.ts` for M2, `jsonl-frontier.ts`
- * for M1 — and the writes both mechanisms make (the upsert, the prune, the
- * attempt stamp) are written once for BOTH, in `frontier-store.ts`.
+ * written once per *mechanism* — `jsonl-frontier.ts` for M1, `row-frontier.ts`
+ * for M2, `snapshot-frontier.ts` for M3 — and the writes every mechanism makes
+ * (the upsert, the prune, the attempt stamp) are written once for ALL of them,
+ * in `frontier-store.ts`.
  *
  * This is deliberately a record and not a `SearchAdapter` port. A port
  * abstracting three mechanisms and four functions is a class hierarchy standing
@@ -22,10 +23,13 @@
 import path from 'path';
 import { authors, roomEntries, rooms, and, asc, eq, gt, sql, type Db } from '@dorkos/db';
 import { resolveClaudeRootSet } from '../runtimes/claude-code/claude-config-dir.js';
+import { resolveCodexRolloutRoots } from '../runtimes/codex/codex-home.js';
 import { resolveOpenCodeStorePath } from '../runtimes/opencode/opencode-data-dir.js';
 import { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
+import { discoverCodexRollouts } from './codex-discovery.js';
 import { openOpenCodeSnapshot } from './opencode-store.js';
 import { projectClaudeCodeLines } from './projections/claude-code.js';
+import { projectCodexLines } from './projections/codex.js';
 import { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
 import type { FileSource, RowContainer, RowSource, SearchSource, SnapshotSource } from './types.js';
 
@@ -158,6 +162,26 @@ export const claudeCodeSource: FileSource = createClaudeCodeSource(() =>
 );
 
 /**
+ * Build a Codex source over a set of rollout roots.
+ *
+ * The roots are a parameter for the same reason Claude Code's are: so a test can
+ * point the source at fixture trees instead of at the operator's real history.
+ *
+ * @param resolveRolloutRoots - Called at the start of every sweep, never cached,
+ *   so a `CODEX_HOME` that changes under a running server is picked up on the
+ *   next tick rather than after a restart.
+ * @returns The registry row.
+ */
+export function createCodexSource(resolveRolloutRoots: () => readonly string[]): FileSource {
+  return {
+    id: 'codex',
+    mechanism: 'jsonl',
+    discover: (known) => discoverCodexRollouts(resolveRolloutRoots(), known),
+    project: projectCodexLines,
+  };
+}
+
+/**
  * Build an OpenCode source over a store path.
  *
  * The path is a parameter rather than a call so a test can point the source at a
@@ -188,6 +212,33 @@ export function createOpenCodeSource(
 }
 
 /**
+ * Codex rollout files — **M1**, the same mechanism Claude Code rides.
+ *
+ * **This is the row the design's central claim was written to be tested by.**
+ * ADR 260728-214214 says adding a source is one registry row and one pure
+ * projection because discovery, change detection and the incremental read are
+ * written once per MECHANISM. Codex needed no mechanism: `jsonl-frontier.ts` is
+ * untouched by this source, and the twin refusal, the shrink rebuild, the
+ * partial-line rule and the prune suppression all apply to it without a line of
+ * new code. What it did need beyond "one row, one projection" is its own
+ * `discover` — which the {@link FileSource} interface has always had, because a
+ * source is what knows where its files are and which of them are real.
+ *
+ * **Two roots, and both are somebody's history.** `sessions/` holds live threads
+ * under `YYYY/MM/DD/`; `archived_sessions/` holds the ones the operator
+ * archived, flat. Reading only the first would be DOR-682's failure in a new
+ * place — a box that covers less than the person's history and says nothing
+ * about it.
+ *
+ * **The corpus is small and that is not the argument.** Measured 2026-08-25: 18
+ * files, 7.0 MB, **214 indexable messages** beside Claude Code's 19,124 — about
+ * 1.1%. The case is that the multi-runtime cockpit is the product's headline
+ * differentiator, and a search box covering one runtime undercuts the claim the
+ * product leads with.
+ */
+export const codexSource: FileSource = createCodexSource(() => resolveCodexRolloutRoots());
+
+/**
  * OpenCode conversations — **M3**, another program's SQLite store read through a
  * throwaway snapshot.
  *
@@ -214,15 +265,26 @@ export const openCodeSource: SnapshotSource = createOpenCodeSource(resolveOpenCo
 /**
  * Every source the indexer sweeps.
  *
- * Three entries, one per mechanism. Codex joins Claude Code on M1 with one more
- * row and one more projection.
+ * Four entries over three mechanisms. Claude Code and Codex share M1 (append-only
+ * JSONL tailed at a byte offset); the room log is M2 (rows above a monotonic
+ * watermark); OpenCode is M3 (another program's SQLite store, read through a
+ * throwaway snapshot).
  *
- * The order is the sweep order, cheapest first: rooms are DorkOS's own write and
- * reconcile without leaving the database; Claude Code walks a filesystem;
- * OpenCode copies a file before it reads one.
+ * M3's arrival is what the design named as the trigger for promoting this array
+ * to a `SearchAdapter` port. **The promotion was refused**, on evidence rather
+ * than taste: M3 reuses M2's whole frontier implementation through a
+ * `ContainerReader` seam. ADR 260825-110420 records the refusal and the next
+ * trigger — a FOURTH mechanism, or a source living outside `apps/server`.
+ *
+ * **The order is the sweep order.** Rooms first: DorkOS owns that write, so it
+ * is cheap to reconcile and any bug in it is ours. Then the filesystem walks,
+ * largest corpus first, so the source carrying 99% of the messages is not
+ * waiting behind the one carrying 1%. OpenCode last: it copies a file before it
+ * reads one, and it carries the fewest messages of the three.
  */
 export const SEARCH_SOURCES: readonly SearchSource[] = [
   roomsSource,
   claudeCodeSource,
+  codexSource,
   openCodeSource,
 ];

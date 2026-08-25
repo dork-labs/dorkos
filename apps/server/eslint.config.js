@@ -146,6 +146,10 @@ export default defineConfig([
       // subprocess's own config-dir resolution 1:1 (DOR-250). Same rationale
       // as tunnel.ts's NGROK_AUTHTOKEN above.
       'src/services/runtimes/claude-code/claude-config-dir.ts',
+      // CODEX_HOME is the Codex CLI's own env var, read here for the same
+      // reason and in the same shape: the search index reads rollout files the
+      // CLI wrote, so it must resolve the identical directory the CLI does.
+      'src/services/runtimes/codex/codex-home.ts',
       // XDG_DATA_HOME and OPENCODE_DB are the OpenCode CLI's own env vars (not
       // DorkOS config values env.ts should model), read here to mirror
       // OpenCode's own data-directory resolution 1:1 so the search snapshot
@@ -194,6 +198,9 @@ export default defineConfig([
       'src/lib/dork-home.ts',
       // Mirrors the Claude Agent SDK subprocess's own ~/.claude resolution 1:1.
       'src/services/runtimes/claude-code/claude-config-dir.ts',
+      // Mirrors the Codex CLI's own $CODEX_HOME ?? ~/.codex resolution 1:1, so
+      // the search index reads the rollout files that CLI actually wrote.
+      'src/services/runtimes/codex/codex-home.ts',
       // Mirrors the OpenCode CLI's own ~/.local/share/opencode resolution 1:1.
       'src/services/runtimes/opencode/opencode-data-dir.ts',
       // Tests assert the fallback behavior and stage fixtures under a fake HOME.

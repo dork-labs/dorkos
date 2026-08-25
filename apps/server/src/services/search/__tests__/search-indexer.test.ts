@@ -123,7 +123,7 @@ function search(query: string): { origin_key: string; excerpt: string }[] {
 }
 
 describe('the registry the indexer sweeps by default', () => {
-  it('is exactly rooms, then claude-code, then opencode', () => {
+  it('is exactly rooms, then claude-code, then codex, then opencode', () => {
     // An exact array, not a `toContain`. Every other test in this file passes a
     // source list explicitly — which is right, because a room test has no
     // business reading the operator's transcripts — and the cost of that is that
@@ -131,19 +131,29 @@ describe('the registry the indexer sweeps by default', () => {
     // A whole indexed corpus can be deleted from this array and leave a fully
     // green suite behind: the feature ships, and indexes nothing.
     //
-    // The order is asserted too, because it is the sweep order, cheapest first:
-    // rooms are DorkOS's own write and never leave the database, Claude Code
-    // walks a filesystem that can take seconds on a cold index, and OpenCode
-    // copies a file before it reads one.
-    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual(['rooms', 'claude-code', 'opencode']);
+    // The order is asserted too, because it is the sweep order: rooms are
+    // DorkOS's own write and cheap to reconcile, so they land before a
+    // filesystem walk that can take seconds on a cold index. The two file
+    // sources go largest corpus first — 19,124 messages against 214 — so the
+    // one carrying 99% of the answers is not queued behind the one carrying 1%.
+    // OpenCode goes last: it copies a whole file before it reads one, and it
+    // carries the fewest messages of the three.
+    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual([
+      'rooms',
+      'claude-code',
+      'codex',
+      'opencode',
+    ]);
   });
 
   it('names each mechanism on the row rather than leaving it to be inferred', () => {
-    // Three mechanisms now. M3's arrival is what the design named as the trigger
-    // for promoting this array to a `SearchAdapter` port; the promotion was
-    // refused with evidence, and ADR 260825-110420 carries the next trigger.
+    // Three mechanisms across four sources — Claude Code and Codex share M1.
+    // M3's arrival is what the design named as the trigger for promoting this
+    // array to a `SearchAdapter` port; the promotion was refused with evidence,
+    // and ADR 260825-110420 carries the next trigger.
     expect(SEARCH_SOURCES.map((source) => source.mechanism)).toEqual([
       'rows',
+      'jsonl',
       'jsonl',
       'sqlite-snapshot',
     ]);

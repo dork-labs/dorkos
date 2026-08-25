@@ -18,9 +18,10 @@
  * decided by that application, and a resolver that guessed differently from
  * OpenCode would read a store that does not exist while OpenCode writes the one
  * that does — exactly the split-brain `claude-config-dir.ts` was carved out to
- * prevent (DOR-250). This file is the fourth carve-out and, like
- * `claude-config-dir.ts`, it is exempt from the CALL ban **by filename**, so a
- * sibling module may not call `os.homedir()` either. The IMPORT ban still
+ * prevent (DOR-250). This file is the fifth carve-out — the third of the three
+ * that mirror another program's own resolution, beside `claude-config-dir.ts`
+ * and `codex/codex-home.ts` — and like both of them it is exempt from the CALL
+ * ban **by filename**, so a sibling module may not call `os.homedir()` either. The IMPORT ban still
  * reaches this file, so the import must stay spelled `import os from 'os'`;
  * `import { homedir }` here is a lint error.
  *
