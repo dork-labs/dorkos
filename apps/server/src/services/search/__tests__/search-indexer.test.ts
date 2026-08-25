@@ -123,7 +123,7 @@ function search(query: string): { origin_key: string; excerpt: string }[] {
 }
 
 describe('the registry the indexer sweeps by default', () => {
-  it('is exactly rooms then claude-code', () => {
+  it('is exactly rooms, then claude-code, then codex', () => {
     // An exact array, not a `toContain`. Every other test in this file passes a
     // source list explicitly — which is right, because a room test has no
     // business reading the operator's transcripts — and the cost of that is that
@@ -133,12 +133,14 @@ describe('the registry the indexer sweeps by default', () => {
     //
     // The order is asserted too, because it is the sweep order: rooms are
     // DorkOS's own write and cheap to reconcile, so they land before a
-    // filesystem walk that can take seconds on a cold index.
-    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual(['rooms', 'claude-code']);
+    // filesystem walk that can take seconds on a cold index. The two file
+    // sources go largest corpus first — 19,124 messages against 214 — so the
+    // one carrying 99% of the answers is not queued behind the one carrying 1%.
+    expect(SEARCH_SOURCES.map((source) => source.id)).toEqual(['rooms', 'claude-code', 'codex']);
   });
 
   it('names each mechanism on the row rather than leaving it to be inferred', () => {
-    expect(SEARCH_SOURCES.map((source) => source.mechanism)).toEqual(['rows', 'jsonl']);
+    expect(SEARCH_SOURCES.map((source) => source.mechanism)).toEqual(['rows', 'jsonl', 'jsonl']);
   });
 });
 

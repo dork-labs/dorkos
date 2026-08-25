@@ -146,6 +146,10 @@ export default defineConfig([
       // subprocess's own config-dir resolution 1:1 (DOR-250). Same rationale
       // as tunnel.ts's NGROK_AUTHTOKEN above.
       'src/services/runtimes/claude-code/claude-config-dir.ts',
+      // CODEX_HOME is the Codex CLI's own env var, read here for the same
+      // reason and in the same shape: the search index reads rollout files the
+      // CLI wrote, so it must resolve the identical directory the CLI does.
+      'src/services/runtimes/codex/codex-home.ts',
     ],
     rules: { 'no-restricted-syntax': 'off' },
   },
@@ -188,6 +192,9 @@ export default defineConfig([
       'src/lib/dork-home.ts',
       // Mirrors the Claude Agent SDK subprocess's own ~/.claude resolution 1:1.
       'src/services/runtimes/claude-code/claude-config-dir.ts',
+      // Mirrors the Codex CLI's own $CODEX_HOME ?? ~/.codex resolution 1:1, so
+      // the search index reads the rollout files that CLI actually wrote.
+      'src/services/runtimes/codex/codex-home.ts',
       // Tests assert the fallback behavior and stage fixtures under a fake HOME.
       // Both patterns, matching the process.env carve-out block above: every
       // server test lives under __tests__/ today, and a lone `*.test.ts` beside
