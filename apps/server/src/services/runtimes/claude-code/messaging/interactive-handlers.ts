@@ -117,6 +117,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'react_to_room_entry',
     'read_room_history',
     'search_room_history',
+    // The cross-room half of the same two reads (DOR-1532). Same membership
+    // bound, same identity qualifier — see IDENTITY_SCOPED_TOOLS below.
+    'list_member_rooms',
+    'search_member_rooms',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -153,17 +157,17 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all six: **the per-call card an operator watching a DIRECT session
+ * thing for all eight: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
  * is not necessarily refused, because a wildcard binding's scope covers the whole
  * adapter. The consent that holds is the one on the binding, not one per chat.)
  *
- * ## Why the four rooms verbs need the qualifier
+ * ## Why the six rooms verbs need the qualifier
  *
  * The rooms verbs authorize on MEMBERSHIP: each resolves the caller's roster row
- * before doing anything, and the two reads answer "not a member" with the same
+ * before doing anything, and the reads answer "not a member" with the same
  * `ROOM_NOT_FOUND` they answer "no such room" with, so a room id is not a
  * capability and a probe learns nothing.
  *
@@ -176,8 +180,20 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * readable, the owner's own DMs with agents included — and an owner-attributed
  * post lands as a human message at cascade depth zero, which triggers every
  * always/mentioned agent in the channel and is bounded by no claim. So without
- * the qualifier these four would have been a no-prompt path to the operator's
+ * the qualifier these six would have been a no-prompt path to the operator's
  * whole room history from any ordinary coding session.
+ *
+ * **`list_member_rooms` and `search_member_rooms` are the widest of the six, and
+ * that is exactly why they are here** (DOR-1532). Every other room verb takes a
+ * room id and answers about that one room; these two answer about EVERY room the
+ * caller is in at once, from no argument at all. Under an identity that is still
+ * the agent's own membership and nothing else — both are built from
+ * `room_members` rows for that agent, each room floored at its own `joinedSeq`,
+ * which is precisely the grant message-search §7 already gives it. Without one
+ * the caller is the install owner, and a single no-argument call would enumerate
+ * and then search the operator's whole room history in one hop. The qualifier is
+ * what keeps "list the rooms you are in" from meaning "list every room on this
+ * machine".
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *
@@ -301,6 +317,8 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'react_to_room_entry',
     'read_room_history',
     'search_room_history',
+    'list_member_rooms',
+    'search_member_rooms',
     'relay_notify_user',
     'memory_write',
   ].map(inSessionToolName)

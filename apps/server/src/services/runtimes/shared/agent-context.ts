@@ -135,10 +135,21 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
  * and `claude-code/messaging/__tests__/context-tool-names.test.ts` enforces for
  * every runtime-neutral block. The instruction is unchanged; only the spelling
  * of the tool is.
+ *
+ * **The lookup clause (agent-memory spec D6, Phase 2) is the other half of the
+ * same honesty.** Everything above it tells an agent what it cannot see; on its
+ * own that produces an agent that correctly says "that happened in another
+ * session of me" and then stops. Sometimes it does not have to stop: what was
+ * said in a ROOM the agent belongs to is on the room's log, and
+ * `search_member_rooms` reaches it. So the block now names the one case where
+ * "say so rather than guessing" has a next step — and names it as a searchable
+ * ENDING, for the same runtime-neutrality reason `memory_write` is spelled that
+ * way one sentence earlier. It is deliberately narrow: rooms the agent belongs
+ * to, never sessions, which is exactly what the tool can reach.
  */
 function buildSessionModelBlock(): string {
   return `<session_model>
-You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down.
+You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down. To recall something said in another room you belong to, use the DorkOS tool whose name ends in \`search_member_rooms\`; the tool whose name ends in \`list_member_rooms\` says which rooms those are. Neither reaches your other sessions — only rooms.
 </session_model>`;
 }
 

@@ -198,20 +198,24 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
     }
   });
 
-  it('keeps the rooms history tools out of the tokenless surface', async () => {
+  it('keeps every rooms read out of the tokenless surface', async () => {
     // Named rather than left to the general rule, because this is the security
     // decision the general rule exists to protect: an unauthenticated local
-    // caller may run a health check, and may not read somebody's conversations.
+    // caller may run a health check, and may not read somebody's conversations
+    // — nor find out which rooms they have (DOR-1532).
+    const wanted = [
+      'list_member_rooms',
+      'read_room_history',
+      'search_member_rooms',
+      'search_room_history',
+    ];
     const tools = await fetchLiveTools();
     const roomReads = tools
-      .filter((t) => t.name === 'read_room_history' || t.name === 'search_room_history')
+      .filter((t) => wanted.includes(t.name))
       .map((t) => t.name)
       .sort();
 
-    expect(roomReads, 'both tools are live on the external server').toEqual([
-      'read_room_history',
-      'search_room_history',
-    ]);
+    expect(roomReads, 'all four reads are live on the external server').toEqual(wanted);
     for (const name of roomReads) {
       expect(READ_ONLY_MCP_TOOL_NAMES.has(name)).toBe(false);
     }

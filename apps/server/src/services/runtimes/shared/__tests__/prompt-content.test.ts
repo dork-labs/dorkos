@@ -184,6 +184,27 @@ describe('what an agent is told, and nothing else', () => {
     expect(append.text).toContain('the operator ships on Fridays');
     expect(append.text).toContain('Name: Dorian');
   });
+
+  // Red when: the Phase 2 lookup clause (D6) starts carrying CONTENT rather than
+  // a tool name. The block now tells an agent that what was said in another room
+  // is reachable, which is a sentence one edit away from somebody deciding the
+  // prompt may as well include some of it — and a room's messages injected into
+  // a system prompt would cross the boundary this whole file exists to pin,
+  // unfenced and unattributed. What crosses is a tool name; the messages stay
+  // behind a call that resolves membership first.
+  it('advertises the cross-room lookup as a TOOL, never as injected room content', async () => {
+    await stageAgent(NOTES);
+
+    const append = await buildAgentContextAppend(agentDir);
+
+    // The control: the clause really is there, so the negative below is not
+    // passing against a block that stopped rendering.
+    expect(append.text).toContain('search_member_rooms');
+    // And the whole append still holds exactly one file's worth of content, the
+    // fenced memory file, in exactly the sanctioned blocks.
+    expect(tagsIn(append.text)).toEqual([...EXPECTED_BLOCKS]);
+    expect(append.text).not.toContain(TRANSCRIPT_SENTINEL);
+  });
 });
 
 // ── Case 2: the same pin on a direct session ──────────────────────────────
