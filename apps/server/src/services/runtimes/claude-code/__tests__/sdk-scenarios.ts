@@ -42,6 +42,7 @@ function makeUsage(inputTokens: number, outputTokens: number): NonNullableUsage 
     cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 },
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 0,
+    fallback_credit: { status: { reason: 'not_enabled', type: 'not_applied' } },
     inference_geo: 'test-geo',
     iterations: [],
     output_tokens_details: { thinking_tokens: 0 },

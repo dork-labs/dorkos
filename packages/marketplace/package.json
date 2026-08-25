@@ -66,6 +66,6 @@
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

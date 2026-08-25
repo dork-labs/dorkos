@@ -17,7 +17,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@a2a-js/sdk": "0.3.13",
+    "@a2a-js/sdk": "0.3.14",
     "@dorkos/db": "workspace:*",
     "@dorkos/mesh": "workspace:*",
     "@dorkos/relay": "workspace:*",
@@ -33,6 +33,6 @@
     "@dorkos/typescript-config": "workspace:*",
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

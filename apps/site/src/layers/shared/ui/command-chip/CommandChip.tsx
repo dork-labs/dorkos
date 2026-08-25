@@ -55,7 +55,7 @@ export function CommandChip({ command, onCopied, className }: CommandChipProps) 
       )}
     >
       {/* bg-transparent/p-0 neutralize the global `code` chip styling from globals.css */}
-      <code className="text-charcoal min-w-0 overflow-x-auto rounded-none bg-transparent p-0 font-mono text-[13px] whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <code className="text-charcoal min-w-0 [scrollbar-width:none] overflow-x-auto rounded-none bg-transparent p-0 font-mono text-[13px] whitespace-nowrap [&::-webkit-scrollbar]:hidden">
         <span style={{ color: PROMPT_COLOR }}>$ </span>
         {command}
       </code>
