@@ -13,6 +13,13 @@ import { clamp01 } from './motion-tokens';
  * a native ScrollTimeline that mismaps the offsets. Bounds are measured once
  * per layout instead of per frame, so scrolling never forces a reflow.
  *
+ * Measuring once is only safe if we notice the layout moving underneath us.
+ * A resize is the obvious case; the quiet one is a webfont arriving after
+ * first paint and re-flowing the hero above the stage, which would leave the
+ * whole scrub offset by however much the headline grew. Watching the body
+ * covers both, and `fonts.ready` covers the swap on browsers that reflow
+ * without a body-size change.
+ *
  * @param ref - The tall section that scrolls past a sticky child.
  */
 export function useSectionProgress(ref: RefObject<HTMLElement | null>): MotionValue<number> {
@@ -30,7 +37,15 @@ export function useSectionProgress(ref: RefObject<HTMLElement | null>): MotionVa
     };
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    void document.fonts?.ready.then(measure).catch(() => undefined);
+
+    return () => {
+      window.removeEventListener('resize', measure);
+      observer.disconnect();
+    };
   }, [ref]);
 
   return useTransform(scrollY, (y) => clamp01((y - bounds.current.start) / bounds.current.span));

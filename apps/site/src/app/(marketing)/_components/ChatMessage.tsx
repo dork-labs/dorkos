@@ -3,7 +3,7 @@
 import { motion } from 'motion/react';
 import { AvatarTile } from './AvatarTile';
 import { senderColor, senderName, type ChatLine } from './chat-script';
-import { IntegrationBadge } from './IntegrationBadge';
+import { DockBadge } from './DockBadge';
 import { POP } from './motion-tokens';
 import { SystemMessage } from './SystemMessage';
 import { TypingDots } from './TypingDots';
@@ -36,7 +36,7 @@ export function ChatMessage({ line, revealed }: ChatMessageProps) {
         >
           {revealed ? (
             <span>
-              {line.integration && <IntegrationBadge id={line.integration} />}
+              {line.dockApp && <DockBadge id={line.dockApp} />}
               {line.mention && (
                 <span className="rounded bg-[rgba(111,168,220,0.16)] px-1 py-0.5 font-medium text-[#8ec1ee]">
                   {line.mention}

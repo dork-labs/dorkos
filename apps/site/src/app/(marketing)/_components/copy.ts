@@ -31,14 +31,14 @@ export const BEATS: Record<Beat, Block> = {
     lede: 'You talk to them. They talk to each other. Work happens out loud.',
   },
   yours: {
-    eyebrow: 'your apps',
+    eyebrow: 'what you add',
     title: 'Make it yours.',
-    lede: 'Plug in the apps you already use. Your agents put them to work.',
+    lede: 'Add a skill. Set a schedule. Pick where they reach you.',
   },
   computer: {
     eyebrow: 'yours alone',
     title: 'It all happens on your computer.',
-    lede: 'Your files stay home. You pick what your agents can touch. When you say go, they do the real work: send the email, fix the bug, ship the site.',
+    lede: 'Your files stay home. You pick what your agents can touch, and what needs your say-so.',
   },
 };
 
@@ -56,6 +56,15 @@ export const PROMO: Block = {
 export const CLOSE = {
   title: 'You, multiplied.',
   lede: 'We built it for ourselves. Now it’s yours.',
+  /**
+   * The bill, said once and plainly.
+   *
+   * "free · open source" is true of DorkOS and false of running agents, and
+   * the page says the first part twice. The home page it replaced answered
+   * this in its FAQ; dropping the answer with the FAQ would have left the
+   * cheerful half standing alone.
+   */
+  cost: 'DorkOS is free. Your agents call whichever AI company powers them, and that is the only bill.',
   /** The one link out of the close, to every other way of installing. */
   otherWays: 'other ways to install',
   /** The colophon, before the GitHub link. */
@@ -70,3 +79,11 @@ export const DOWNLOAD = {
 
 /** Introduces the terminal install, wherever the download button appears. */
 export const INSTALL_ASIDE = 'or run';
+
+/**
+ * What the terminal install needs, next to the command itself.
+ *
+ * `/install` says this too, but someone who copies the command straight off
+ * this page never gets there, and the failure it saves them from is opaque.
+ */
+export const NPX_REQUIREMENT = 'needs node 22+';

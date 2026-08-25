@@ -12,8 +12,15 @@ export const PHONE_CUT_QUERY = '(max-width: 639px)';
 export interface PromoAssets {
   src: string;
   poster: string;
-  /** `width/height` of the video, for the box the page reserves. */
-  aspect: string;
+  /**
+   * The still's real pixel size, put on the `<img>`/`<source>`.
+   *
+   * A lazily-loaded image with no declared size collapses to nothing until it
+   * arrives and then shoves the page. These are each twice the box's largest
+   * CSS width, which is what a retina screen asks for and no more.
+   */
+  posterWidth: number;
+  posterHeight: number;
 }
 
 /**
@@ -27,12 +34,14 @@ export const PROMO_CUTS: Record<PromoCut, PromoAssets> = {
   wide: {
     src: '/promo/be-more-like-dave-16x9-web.mp4',
     poster: '/promo/poster-16x9.jpg',
-    aspect: '16 / 9',
+    posterWidth: 1536,
+    posterHeight: 864,
   },
   tall: {
     src: '/promo/be-more-like-dave-9x16-web.mp4',
     poster: '/promo/poster-9x16.jpg',
-    aspect: '9 / 16',
+    posterWidth: 828,
+    posterHeight: 1472,
   },
 };
 

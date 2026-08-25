@@ -1,10 +1,10 @@
 'use client';
 
-import { CHAT_SCRIPT, INTEGRATIONS, NIGHT_VARS } from '../../../_components';
+import { CHAT_SCRIPT, DOCK, NIGHT_VARS } from '../../../_components';
 
-/** The message each app lands in, so icon and sentence can be judged together. */
+/** The message each dock tile lands in, so icon and sentence can be judged together. */
 function messageFor(id: string): string {
-  return CHAT_SCRIPT.find((line) => line.integration === id)?.text ?? '—';
+  return CHAT_SCRIPT.find((line) => line.dockApp === id)?.text ?? '—';
 }
 
 /**
@@ -15,14 +15,14 @@ export function AppGallery() {
   return (
     <div style={NIGHT_VARS} className="rounded-xl border border-(--line) bg-(--panel) p-6">
       <ul className="list-none space-y-4">
-        {INTEGRATIONS.map((integration) => (
-          <li key={integration.id} className="flex flex-wrap items-center gap-4">
+        {DOCK.map((app) => (
+          <li key={app.id} className="flex flex-wrap items-center gap-4">
             <span
               className="grid size-12 shrink-0 place-items-center rounded-xl border border-(--line) bg-(--panel)"
-              style={{ color: integration.color }}
-              title={`${integration.label} on the dock`}
+              style={{ color: app.color }}
+              title={`${app.label} on the dock`}
             >
-              <integration.Icon size={20} />
+              <app.Icon size={20} />
             </span>
             <span
               className="size-12 shrink-0 rounded-xl border border-dashed border-(--line)"
@@ -31,14 +31,14 @@ export function AppGallery() {
             <span className="min-w-0 text-sm text-(--cream)">
               <span
                 className="mr-1.5 inline-grid size-5 place-items-center rounded-md align-text-bottom"
-                style={{ backgroundColor: `${integration.color}22`, color: integration.color }}
+                style={{ backgroundColor: `${app.color}22`, color: app.color }}
               >
-                <integration.Icon size={12} />
+                <app.Icon size={12} />
               </span>
-              {messageFor(integration.id)}
+              {messageFor(app.id)}
             </span>
             <span className="ml-auto font-mono text-xs text-(--cream-dim)">
-              {integration.label} · {integration.color}
+              {app.label} · {app.color}
             </span>
           </li>
         ))}

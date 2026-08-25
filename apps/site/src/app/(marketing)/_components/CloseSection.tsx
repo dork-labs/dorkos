@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { motion } from 'motion/react';
 import { siteConfig } from '@/config/site';
 import { AWAY_FROM_HOME_LINKS, REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
-import { CLOSE, INSTALL_ASIDE } from './copy';
+import { CLOSE, INSTALL_ASIDE, NPX_REQUIREMENT } from './copy';
 import { DownloadMacButton } from './DownloadMacButton';
 import { InstallCommand } from './InstallCommand';
 
@@ -38,8 +38,15 @@ export function CloseSection() {
           <DownloadMacButton placement="home_close" />
           <p className="flex flex-wrap items-center justify-center gap-1 text-sm text-(--cream-dim)">
             {INSTALL_ASIDE} <InstallCommand variant="quiet" />
+            <span className="text-2xs font-mono tracking-[0.1em] uppercase">{NPX_REQUIREMENT}</span>
           </p>
         </motion.div>
+        <motion.p
+          variants={REVEAL}
+          className="mt-6 max-w-md text-sm text-pretty text-(--cream-dim)"
+        >
+          {CLOSE.cost}
+        </motion.p>
         <motion.p
           variants={REVEAL}
           className="text-2xs mt-5 font-mono tracking-[0.15em] text-(--cream-dim) uppercase"

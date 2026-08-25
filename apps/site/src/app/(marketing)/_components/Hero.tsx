@@ -5,7 +5,7 @@ import { motion, useInView } from 'motion/react';
 import { REVEAL, STAGGER } from '@/layers/features/marketing';
 import { AgentCard } from './AgentCard';
 import { CAST } from './cast';
-import { DOWNLOAD, HERO, INSTALL_ASIDE } from './copy';
+import { DOWNLOAD, HERO, INSTALL_ASIDE, NPX_REQUIREMENT } from './copy';
 import { DownloadMacButton } from './DownloadMacButton';
 import { Eyebrow } from './Eyebrow';
 import { InstallCommand } from './InstallCommand';
@@ -53,6 +53,7 @@ export function Hero({ joined }: { joined: boolean }) {
           </p>
           <p className="mt-1 flex flex-wrap items-center justify-center gap-1 text-sm text-(--cream-dim)">
             {INSTALL_ASIDE} <InstallCommand variant="quiet" />
+            <span className="text-2xs font-mono tracking-[0.1em] uppercase">{NPX_REQUIREMENT}</span>
           </p>
         </motion.div>
         <motion.ul

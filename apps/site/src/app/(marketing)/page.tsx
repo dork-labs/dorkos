@@ -4,7 +4,7 @@ import { ExtensionNoiseGuard, HomeExperience, NIGHT_VARS, PageNav } from './_com
 
 const TITLE = 'DorkOS — All your agents. One place.';
 const DESCRIPTION =
-  'One home for every AI agent you run: Claude Code, Codex, and OpenCode. Talk to them like a team. Plug in your apps. It all happens on your computer.';
+  'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Talk to them like a team, add the skills and schedules you want, and keep it all on your computer.';
 
 /**
  * The home page's own card, in place of the `(marketing)` layout's defaults.

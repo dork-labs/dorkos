@@ -1,5 +1,5 @@
 import { AGENTS_BY_KEY, type AgentKey } from './cast';
-import type { IntegrationId } from './integrations';
+import type { DockAppId } from './dock-apps';
 
 /** Who a chat line comes from. */
 export type Sender = 'you' | 'system' | AgentKey;
@@ -12,31 +12,60 @@ export interface ChatLine {
   time: string;
   /** Teammate name highlighted at the start of the message, if any. */
   mention?: string;
-  /** App whose icon flies from the dock into this message. */
-  integration?: IntegrationId;
+  /** Dock tile whose icon flies from the dock into this message. */
+  dockApp?: DockAppId;
 }
 
 /**
  * The one conversation the whole page revolves around. Part one plays in the
- * "talk" beat; the lines from `PART_ONE_COUNT` on play once the apps join in
- * the "yours" beat — one message per app on the dock.
+ * "talk" beat; the lines from `PART_ONE_COUNT` on play once the dock arrives
+ * in the "yours" beat, one message per tile.
+ *
+ * Two things in here are load-bearing rather than flavour, and a rewrite
+ * should keep both:
+ *
+ *  1. **The agents ask, and you answer.** Twice, an agent proposes and "You"
+ *     says go before anything happens. Tool Approval and Action Approvals are
+ *     real shipped features, and the promo film this page hosts makes the same
+ *     promise — the agents suggest, the person approves. A script of five
+ *     completed actions and no approval would sell autonomy the product does
+ *     not claim.
+ *  2. **Every capability named here ships.** Each `dockApp` resolves to a `ga`
+ *     entry in the feature catalog, checked by `__tests__/home-copy.test.ts`.
  */
 export const CHAT_SCRIPT: readonly ChatLine[] = [
   { from: 'system', text: 'Rosie, Johnny 5, and WALL·E joined #launch-day', time: '9:41' },
   { from: 'you', text: 'Can we ship the new page today?', time: '9:41' },
-  { from: 'rosie', text: 'On it! Running the last tests now.', time: '9:41' },
+  { from: 'rosie', text: 'Tests are green. Want me to merge and deploy?', time: '9:41' },
+  { from: 'you', text: 'Go ahead.', time: '9:42' },
   { from: 'rosie', text: 'can you double-check my work?', time: '9:42', mention: '@Johnny 5' },
   { from: 'johnny', text: 'Checked. Looks good ✓', time: '9:42' },
-  { from: 'walle', text: 'Emailed the waitlist. 214 people.', time: '9:43', integration: 'email' },
-  { from: 'johnny', text: 'Launch call booked for Friday.', time: '9:43', integration: 'calendar' },
-  { from: 'rosie', text: 'Merged the release. All green.', time: '9:44', integration: 'git' },
-  { from: 'walle', text: 'Launch notes written and shared.', time: '9:44', integration: 'docs' },
-  { from: 'johnny', text: 'Told the team in #general.', time: '9:45', integration: 'slack' },
-  { from: 'system', text: '🚀 Rosie shipped the site', time: '9:45' },
+  {
+    from: 'walle',
+    text: 'Want the release-notes skill for this?',
+    time: '9:43',
+    dockApp: 'skills',
+  },
+  { from: 'you', text: 'Yes.', time: '9:43' },
+  {
+    from: 'johnny',
+    text: 'Morning checks are on the schedule now.',
+    time: '9:44',
+    dockApp: 'schedule',
+  },
+  { from: 'walle', text: 'Updates will land in #launch-day.', time: '9:44', dockApp: 'slack' },
+  {
+    from: 'johnny',
+    text: 'And Telegram, the moment it ships.',
+    time: '9:45',
+    dockApp: 'telegram',
+  },
+  { from: 'rosie', text: 'Watch from your phone if you step out.', time: '9:45', dockApp: 'phone' },
+  { from: 'system', text: '🚀 Rosie shipped the site', time: '9:46' },
 ];
 
 /** How many lines belong to the "talk" beat. */
-export const PART_ONE_COUNT = 5;
+export const PART_ONE_COUNT = 6;
 
 /** True when the line is spoken by an agent (not you, not the room itself). */
 export function isAgentLine(line: ChatLine): boolean {

@@ -8,7 +8,7 @@ import {
   useReducedMotion,
   useTransform,
 } from 'motion/react';
-import { AppDock } from './AppDock';
+import { Dock } from './Dock';
 import { BeatHeadline } from './BeatHeadline';
 import { nextBeat, type Beat } from './beats';
 import { ChatWindow } from './ChatWindow';
@@ -55,7 +55,7 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
 
   const target = joined && beat !== 'talk' ? CHAT_SCRIPT.length : joined ? PART_ONE_COUNT : 0;
   const { lines, pending } = useChatPlayback(target);
-  const used = new Set(lines.map((line) => line.integration).filter(Boolean) as string[]);
+  const used = new Set(lines.map((line) => line.dockApp).filter(Boolean) as string[]);
 
   return (
     <section ref={sectionRef} className="relative" style={{ height: `${STAGE_VH}vh` }}>
@@ -72,7 +72,7 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
           <ChatWindow joined={joined} lines={lines} pending={pending} />
         </LaptopFrame>
 
-        <AppDock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
+        <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
 
         <motion.p
           style={{ opacity: captionOpacity }}

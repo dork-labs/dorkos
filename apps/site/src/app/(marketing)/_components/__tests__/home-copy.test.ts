@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CHAT_SCRIPT } from '../chat-script';
+import { features } from '@/layers/features/marketing/lib/features';
+import { CHAT_SCRIPT, PART_ONE_COUNT } from '../chat-script';
 import { BEATS, CLOSE, DOWNLOAD, HERO, INSTALL_ASIDE, LOCALHOST_CAPTION, PROMO } from '../copy';
-import { findIntegration } from '../integrations';
+import { DOCK, findDockApp, type DockAppId } from '../dock-apps';
 import { PROMO_CAPTIONS, PROMO_CUTS, PROMO_POSTER_ALT } from '../promo-cuts';
 import { INSTALL_COMMAND } from '../theme';
 
@@ -18,8 +19,14 @@ const ALL_COPY: string[] = [
   INSTALL_ASIDE,
   INSTALL_COMMAND,
   PROMO_POSTER_ALT,
+  ...DOCK.map((app) => app.label),
   ...CHAT_SCRIPT.map((line) => line.text),
 ];
+
+/** Every dock tile the conversation actually puts to work. */
+const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filter(
+  (id): id is DockAppId => Boolean(id)
+);
 
 describe('the settled home page lines', () => {
   // These six are not editorial choices a passing build should be free to
@@ -43,11 +50,63 @@ describe('the settled home page lines', () => {
   });
 
   it('leads with the Mac app and offers the terminal underneath', () => {
-    // Demo-claim gate: the signed Mac build is the verified desktop surface,
-    // so it is the one the page names. Windows is alpha and stays off it.
     expect(DOWNLOAD.label).toBe('Download for Mac');
     expect(INSTALL_COMMAND).toBe('npx dorkos@latest');
-    expect(ALL_COPY.join(' ')).not.toMatch(/windows/i);
+  });
+
+  it('says what running agents costs, since the page says "free" twice', () => {
+    // The home page this replaced answered this in its FAQ. Dropping the FAQ
+    // without carrying the answer over would leave "free · open source"
+    // standing alone, which is true of DorkOS and false of running agents.
+    expect(DOWNLOAD.terms).toContain('free');
+    expect(CLOSE.cost).toMatch(/free/i);
+    expect(CLOSE.cost).toMatch(/only bill|costs?|pay/i);
+  });
+});
+
+describe('the demo-claim gate', () => {
+  // AGENTS.md: a surface that is not verified is never described as working.
+  // The Windows build is an early alpha, the Obsidian plugin is built but
+  // under-tested, and the marketplace's Claude-Code-superset compatibility is
+  // the unverified part of that pillar. None of the three may appear here,
+  // because this page has no room to caveat them.
+  const UNVERIFIED = /\b(windows|obsidian|linux|superset|drop-?in replacement)\b/i;
+
+  it('names no unverified surface', () => {
+    expect(ALL_COPY.filter((line) => UNVERIFIED.test(line))).toEqual([]);
+  });
+
+  it('only animates capabilities the feature catalog calls shipped', () => {
+    // The page shows each dock tile being used. `DockApp.feature` names the
+    // catalog entry each one depicts, and this resolves every one of them.
+    // Connections is the catalog's single `beta` entry, so nothing here may
+    // point at it — which is also what keeps "It all happens on your
+    // computer." true, since its sign-in is held in a third party's vault.
+    const bySlug = new Map(features.map((feature) => [feature.slug, feature]));
+
+    for (const app of DOCK) {
+      const backing = bySlug.get(app.feature);
+      expect(backing, `dock tile "${app.id}" names no feature "${app.feature}"`).toBeDefined();
+      expect(backing?.status, `dock tile "${app.id}" depicts a non-GA feature`).toBe('ga');
+    }
+  });
+
+  it('shows the agents asking before they act', () => {
+    // The promo film this page hosts promises the agents suggest and the
+    // person approves, and Tool Approval / Action Approvals are what actually
+    // ships. A script of completed actions with no approval would oversell it.
+    const youSaidGo = CHAT_SCRIPT.filter((line) => line.from === 'you');
+    const askedFirst = CHAT_SCRIPT.filter((line) => line.from !== 'you' && line.text.includes('?'));
+
+    expect(askedFirst.length).toBeGreaterThanOrEqual(2);
+    expect(youSaidGo.length).toBeGreaterThanOrEqual(3);
+
+    // Each approval must follow a question, not float free.
+    for (const approval of youSaidGo.slice(1)) {
+      const at = CHAT_SCRIPT.indexOf(approval);
+      const before = CHAT_SCRIPT[at - 1];
+      expect(before.text, `"${approval.text}" answers nothing`).toContain('?');
+    }
   });
 });
 
@@ -86,17 +145,24 @@ describe('the promo assets the page points at', () => {
   });
 });
 
-describe('the chat script', () => {
-  it('names an app the dock actually carries, every time it names one', () => {
-    // A typo here is silent in the browser: the icon simply never flies out
-    // of its dock slot and into the message.
-    const named = CHAT_SCRIPT.map((line) => line.integration).filter(
-      (id): id is NonNullable<typeof id> => Boolean(id)
-    );
+describe('the chat script and the dock', () => {
+  it('uses every tile on the dock exactly once', () => {
+    // The animation's whole point is that each icon flies out of its slot and
+    // lands in the message that uses it. A tile nobody names never leaves the
+    // dock; a tile named twice tries to fly to two places at once.
+    expect(NAMED_IN_CHAT).toHaveLength(DOCK.length);
+    expect(new Set(NAMED_IN_CHAT)).toEqual(new Set(DOCK.map((app) => app.id)));
+  });
 
-    expect(named.length).toBeGreaterThan(0);
-    for (const id of named) {
-      expect(findIntegration(id), `no dock app called "${id}"`).toBeDefined();
+  it('names only tiles the dock carries', () => {
+    for (const id of NAMED_IN_CHAT) {
+      expect(findDockApp(id), `no dock tile called "${id}"`).toBeDefined();
     }
+  });
+
+  it('holds the dock back until the second beat', () => {
+    // Part one is the conversation; the tiles arrive with "Make it yours."
+    const early = CHAT_SCRIPT.slice(0, PART_ONE_COUNT).filter((line) => line.dockApp);
+    expect(early).toEqual([]);
   });
 });

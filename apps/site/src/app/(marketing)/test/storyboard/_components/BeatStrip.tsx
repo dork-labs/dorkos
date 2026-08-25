@@ -1,20 +1,20 @@
 'use client';
 
 import {
-  AppDock,
+  Dock,
   BeatHeadline,
   CHAT_SCRIPT,
   ChatWindow,
   CloseSection,
   Hero,
-  INTEGRATIONS,
+  DOCK,
   LaptopFrame,
   PART_ONE_COUNT,
 } from '../../../_components';
 import { StoryFrame } from './StoryFrame';
 
 const NO_APPS: ReadonlySet<string> = new Set();
-const ALL_APPS: ReadonlySet<string> = new Set(INTEGRATIONS.map((entry) => entry.id));
+const ALL_APPS: ReadonlySet<string> = new Set(DOCK.map((entry) => entry.id));
 const TALK_LINES = CHAT_SCRIPT.slice(0, PART_ONE_COUNT);
 const JOIN_LINES = CHAT_SCRIPT.slice(0, 1);
 
@@ -66,7 +66,7 @@ export function BeatStrip() {
       >
         <BeatHeadline beat="yours" />
         <StageChat lines={CHAT_SCRIPT} />
-        <AppDock present visible used={ALL_APPS} />
+        <Dock present visible used={ALL_APPS} />
       </StoryFrame>
 
       <StoryFrame
@@ -78,7 +78,7 @@ export function BeatStrip() {
         <LaptopFrame scale={0.62} shellOpacity={1}>
           <ChatWindow joined lines={CHAT_SCRIPT} pending={null} />
         </LaptopFrame>
-        <AppDock present visible={false} used={ALL_APPS} />
+        <Dock present visible={false} used={ALL_APPS} />
       </StoryFrame>
 
       <StoryFrame
@@ -98,7 +98,7 @@ export function BeatStrip() {
         note="Before any app is used — for comparing icon treatments."
         scale={0.32}
       >
-        <AppDock present visible used={NO_APPS} />
+        <Dock present visible used={NO_APPS} />
       </StoryFrame>
     </div>
   );

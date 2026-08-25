@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import {
-  AppDock,
+  Dock,
   BeatHeadline,
   captionOpacityAt,
   chatScaleAt,
   CHAT_SCRIPT,
   ChatWindow,
-  INTEGRATIONS,
+  DOCK,
   LaptopFrame,
   NIGHT_VARS,
   nextBeat,
@@ -82,7 +82,7 @@ export function StageScrubber() {
   const shellOpacity = shellOpacityAt(progress);
   const captionOpacity = captionOpacityAt(progress);
   const lines = CHAT_SCRIPT.slice(0, messages);
-  const used = new Set(lines.map((line) => line.integration).filter(Boolean) as string[]);
+  const used = new Set(lines.map((line) => line.dockApp).filter(Boolean) as string[]);
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
@@ -103,7 +103,7 @@ export function StageScrubber() {
           <LaptopFrame scale={chatScale} shellOpacity={shellOpacity}>
             <ChatWindow joined={joined} lines={lines} pending={null} />
           </LaptopFrame>
-          <AppDock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
+          <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
           <p
             style={{ opacity: captionOpacity }}
             className="text-2xs absolute bottom-8 font-mono tracking-[0.2em] text-(--cream-dim) uppercase"
@@ -165,7 +165,7 @@ export function StageScrubber() {
               caption {STAGE_TIMING.captionFrom} → {STAGE_TIMING.captionTo}
             </li>
             <li>
-              talk beat ends after {PART_ONE_COUNT} lines · {INTEGRATIONS.length} apps
+              talk beat ends after {PART_ONE_COUNT} lines · {DOCK.length} apps
             </li>
           </ul>
         </div>

@@ -24,7 +24,9 @@ import {
  * exist yet, so a phone can never pull the landscape cut and a laptop can
  * never pull the vertical one — the cut is chosen at the moment of the press,
  * when the viewport is known for certain. The still is picked by a `<picture>`
- * media rule for the same reason: one press, one download, of one file.
+ * media rule for the same reason: one press, one download, of one file. The
+ * still itself is lazy, because this sits roughly six screens down and most
+ * visitors never scroll to it.
  */
 export function PromoPlayer() {
   const [cut, setCut] = useState<PromoCut | null>(null);
@@ -34,9 +36,13 @@ export function PromoPlayer() {
   }, []);
 
   // Start the moment the element exists. The press is the user gesture that
-  // lets it play with sound.
+  // lets it play with sound. Focus moves here too: the button the visitor
+  // just pressed no longer exists, and without this a keyboard user is left
+  // on `<body>` with the controls they asked for out of reach.
   const startPlaying = useCallback((node: HTMLVideoElement | null) => {
-    if (node) void node.play().catch(() => undefined);
+    if (!node) return;
+    void node.play().catch(() => undefined);
+    node.focus({ preventScroll: true });
   }, []);
 
   return (
@@ -49,10 +55,19 @@ export function PromoPlayer() {
           className="group relative block size-full cursor-pointer focus-visible:ring-2 focus-visible:ring-(--ember) focus-visible:outline-none"
         >
           <picture>
-            <source media={PHONE_CUT_QUERY} srcSet={PROMO_CUTS.tall.poster} />
+            <source
+              media={PHONE_CUT_QUERY}
+              srcSet={PROMO_CUTS.tall.poster}
+              width={PROMO_CUTS.tall.posterWidth}
+              height={PROMO_CUTS.tall.posterHeight}
+            />
             <img
               src={PROMO_CUTS.wide.poster}
               alt={PROMO_POSTER_ALT}
+              width={PROMO_CUTS.wide.posterWidth}
+              height={PROMO_CUTS.wide.posterHeight}
+              loading="lazy"
+              decoding="async"
               className="size-full object-cover"
             />
           </picture>
