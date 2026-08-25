@@ -28,9 +28,12 @@ export const metadata: Metadata = {
 };
 
 /**
- * `/new` — one continuous, scroll-driven animation around a single live chat:
- * the agents fly in, the things you add fly in, and the laptop forms around
- * it. The promo film sits between the animation and the close.
+ * `/new` — the film leads.
+ *
+ * A hero half a screen tall, then the 56-second film at full width, then the
+ * turn out of Dave's story into the visitor's: the cast steps out of the last
+ * frame and into a pinned, scroll-driven chat that only ever shows things the
+ * product ships. Watch him win, see it is real, get it.
  *
  * Navigation is the site's own floating pill, unchanged: it already yields
  * while you read downward and comes back when you scroll up, which is exactly

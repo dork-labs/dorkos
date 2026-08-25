@@ -1,6 +1,6 @@
 /**
- * `/new`: one continuous, scroll-driven animation built around a single live
- * chat, plus the promo film and the close.
+ * `/new`: a short hero, the 56-second film, the turn out of it, and a
+ * scroll-driven animation around one live chat that proves the film's promise.
  *
  * This is where the next home page is being worked out. The published home
  * page at `/` is a different composition entirely and shares nothing here.
@@ -21,6 +21,8 @@ export { INSTALL_COMMAND, SHELL } from './theme';
 
 // Pieces the storyboard pins, one frame at a time
 export { Hero } from './Hero';
+export { FilmSection } from './FilmSection';
+export { CastBridge } from './CastBridge';
 export { CloseSection } from './CloseSection';
 export { BeatHeadline } from './BeatHeadline';
 export { ChatWindow } from './ChatWindow';

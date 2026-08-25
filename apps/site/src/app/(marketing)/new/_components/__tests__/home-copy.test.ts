@@ -1,25 +1,45 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { features } from '@/layers/features/marketing/lib/features';
 import { CAST, DAVE, RUNTIMES } from '../cast';
 import { CHAT_SCRIPT, PART_ONE_COUNT } from '../chat-script';
-import { BEATS, CLOSE, DOWNLOAD, HERO, INSTALL_ASIDE, LOCALHOST_CAPTION, PROMO } from '../copy';
+import {
+  BEATS,
+  BRIDGE,
+  CLOSE,
+  DOWNLOAD,
+  FILM,
+  FILM_TURN,
+  HERO,
+  INSTALL_ASIDE,
+  LOCALHOST_CAPTION,
+} from '../copy';
 import { DOCK, findDockApp, type DockAppId } from '../dock-apps';
-import { PROMO_CAPTIONS, PROMO_CUTS, PROMO_POSTER_ALT } from '../promo-cuts';
+import {
+  HANDOFF_STILL,
+  PROMO_CAPTIONS,
+  PROMO_CUTS,
+  PROMO_POSTER_ALT,
+  ROOM_PLATE,
+} from '../promo-cuts';
 import { INSTALL_COMMAND } from '../theme';
+
+/** The page's own words about Dave, in the order a visitor meets them. */
+const FILM_COPY: string[] = [...Object.values(FILM), FILM_TURN, ...Object.values(BRIDGE)];
 
 /** Every string `/new` renders, flattened, for the sweeps below. */
 const ALL_COPY: string[] = [
   ...Object.values(HERO),
   ...Object.values(BEATS).flatMap((beat) => Object.values(beat)),
   LOCALHOST_CAPTION,
-  ...Object.values(PROMO),
+  ...FILM_COPY,
   ...Object.values(CLOSE),
   ...Object.values(DOWNLOAD),
   INSTALL_ASIDE,
   INSTALL_COMMAND,
   PROMO_POSTER_ALT,
+  HANDOFF_STILL.alt,
   ...DOCK.map((app) => app.label),
   ...CHAT_SCRIPT.map((line) => line.text),
 ];
@@ -128,6 +148,63 @@ describe('the demo-claim gate', () => {
     const chat = CHAT_SCRIPT.map((line) => line.text).join(' ');
     expect(chat).not.toMatch(/flower|betty|birthday/i);
     expect(ALL_COPY.join(' ')).not.toMatch(/flower|betty|birthday/i);
+  });
+});
+
+describe('the film leads', () => {
+  // This page's whole bet: the 56 seconds are the strongest asset, so they run
+  // second, while a visitor still has patience, and everything after them is
+  // there to answer "was any of that real". Two things hold that bet in place.
+
+  it('puts the film above the story that proves it', () => {
+    // Order is the argument here, so it is pinned rather than left to a
+    // reviewer's memory. Moving the player below the stage, or the stage above
+    // the hand-off, turns this page back into a different one.
+    const source = readFileSync(join(import.meta.dirname, '..', 'HomeExperience.tsx'), 'utf8');
+    const order = ['<Hero', '<FilmSection', '<CastBridge', '<StageSection', '<CloseSection'].map(
+      (tag) => [tag, source.indexOf(tag)] as const
+    );
+
+    for (const [tag, at] of order) {
+      expect(at, `${tag} is not on the page`).toBeGreaterThan(-1);
+    }
+    const positions = order.map(([, at]) => at);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it('says nothing about Dave the film did not approve', () => {
+    // The four lines below are the film campaign's own, approved word for word.
+    // The page may arrange them; it may not write a fifth. Narrating a film in
+    // the copy above it spends the film before it plays. Scoped to the page's
+    // authored film copy: the poster and still descriptions are alt text, which
+    // has to describe the picture rather than sell it.
+    expect(FILM_COPY.filter((line) => /\bDave\b/.test(line))).toEqual([
+      'Meet Dave.',
+      'Dave is not winning.',
+      'Then Dave got DorkOS.',
+      'Dave isn’t smarter than you.',
+    ]);
+  });
+
+  it('finishes the approved line it breaks in half', () => {
+    // "Dave isn't smarter than you. He just has help." is one line, split so
+    // the pivot from him to you lands on the heading. Dropping the second half
+    // leaves an insult where an argument was.
+    expect(`${BRIDGE.title} ${BRIDGE.lede}`).toContain(
+      'Dave isn’t smarter than you. He just has help.'
+    );
+  });
+
+  it('ships the two film frames the hand-off needs', () => {
+    const publicDir = findPublicDir(import.meta.dirname);
+    for (const asset of [ROOM_PLATE, HANDOFF_STILL.src]) {
+      expect(existsSync(join(publicDir ?? '', asset)), asset).toBe(true);
+    }
+  });
+
+  it('describes the hand-off frame for anyone who cannot see it', () => {
+    expect(HANDOFF_STILL.alt.length).toBeGreaterThan(30);
+    expect(HANDOFF_STILL.width / HANDOFF_STILL.height).toBeCloseTo(16 / 9, 2);
   });
 });
 

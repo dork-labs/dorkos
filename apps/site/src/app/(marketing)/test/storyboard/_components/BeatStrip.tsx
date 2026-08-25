@@ -3,9 +3,11 @@
 import {
   Dock,
   BeatHeadline,
+  CastBridge,
   CHAT_SCRIPT,
   ChatWindow,
   CloseSection,
+  FilmSection,
   Hero,
   DOCK,
   LaptopFrame,
@@ -28,7 +30,7 @@ function StageChat({ lines }: { lines: readonly (typeof CHAT_SCRIPT)[number][] }
 }
 
 /**
- * The six moments of the page, in order, each rendered from the live
+ * The eight moments of the page, in order, each rendered from the live
  * components at the state the scroll would put them in.
  */
 export function BeatStrip() {
@@ -36,17 +38,39 @@ export function BeatStrip() {
     <div className="flex flex-wrap gap-8">
       <StoryFrame
         step={1}
-        title="Meet your team"
-        note="Three agents float, waiting. One command."
+        title="The claim"
+        note="Half a screen: what it is, and how to get it."
         align="start"
       >
         <div className="w-full origin-top scale-[0.62]">
-          <Hero joined={false} />
+          <Hero />
         </div>
       </StoryFrame>
 
       <StoryFrame
         step={2}
+        title="The film"
+        note="Dave's room, full width, one press away."
+        align="start"
+      >
+        <div className="w-full origin-top scale-[0.5]">
+          <FilmSection />
+        </div>
+      </StoryFrame>
+
+      <StoryFrame
+        step={3}
+        title="The turn"
+        note="The cast steps out of the last frame and onto the page."
+        align="start"
+      >
+        <div className="w-full origin-top scale-[0.5]">
+          <CastBridge joined={false} />
+        </div>
+      </StoryFrame>
+
+      <StoryFrame
+        step={4}
         title="They join"
         note="The robots fly out of their cards into the room."
       >
@@ -54,13 +78,13 @@ export function BeatStrip() {
         <StageChat lines={JOIN_LINES} />
       </StoryFrame>
 
-      <StoryFrame step={3} title="They talk" note="You ask. They answer — and ask each other.">
+      <StoryFrame step={5} title="They talk" note="You ask. They answer — and ask each other.">
         <BeatHeadline beat="talk" />
         <StageChat lines={TALK_LINES} />
       </StoryFrame>
 
       <StoryFrame
-        step={4}
+        step={6}
         title="Your apps join"
         note="Five icons fly off the dock into the messages that use them."
       >
@@ -70,7 +94,7 @@ export function BeatStrip() {
       </StoryFrame>
 
       <StoryFrame
-        step={5}
+        step={7}
         title="It was your computer"
         note="The laptop forms around the same chat as it shrinks."
       >
@@ -82,7 +106,7 @@ export function BeatStrip() {
       </StoryFrame>
 
       <StoryFrame
-        step={6}
+        step={8}
         title="The close"
         note="The tagline, then the one thing to do next."
         align="start"

@@ -19,8 +19,16 @@ import { captionOpacityAt, chatScaleAt, shellOpacityAt } from './stage-timing';
 import { useChatPlayback } from './use-chat-playback';
 import { useSectionProgress } from './use-section-progress';
 
-/** Height of the pinned stage, in viewports — the length of the whole story. */
-const STAGE_VH = 440;
+/**
+ * Height of the pinned stage, in viewports.
+ *
+ * Shorter than the animation strictly needs, and deliberately so. On this page
+ * the stage is the proof, not the pitch: the film has already made the case by
+ * the time a visitor reaches it, and every extra viewport of pinned scroll is
+ * a viewport spent re-arguing something they have agreed to. Three beats, one
+ * screen of scroll each, and out.
+ */
+const STAGE_VH = 320;
 
 interface StageSectionProps {
   /** Reports whether the agents have joined, so the hero can empty its seats. */

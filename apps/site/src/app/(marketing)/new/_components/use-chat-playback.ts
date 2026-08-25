@@ -3,8 +3,21 @@
 import { useEffect, useState } from 'react';
 import { CHAT_SCRIPT, isAgentLine, type ChatLine, type Sender } from './chat-script';
 
-const GAP_MS = 700;
-const TYPING_MS = 1000;
+/**
+ * The conversation's pace, tuned against the length of the stage above it.
+ *
+ * A scroll-driven chat has one hard constraint: it has to finish inside the
+ * scroll it is pinned to. This page shortened that scroll deliberately, so the
+ * conversation was still on its sixth line when the second beat's headline had
+ * already arrived, and a visitor met "Make it yours." next to a dock nobody had
+ * used yet.
+ *
+ * These are the floor, not a preference. An agent's turn costs GAP + TYPING =
+ * 1.2s, which keeps it above the film's own rule that nothing appears for less
+ * than a second, and keeps the dots readable as a pause rather than a flicker.
+ */
+const GAP_MS = 500;
+const TYPING_MS = 700;
 
 /** What the chat should render right now. */
 export interface ChatPlayback {

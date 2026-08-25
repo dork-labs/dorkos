@@ -56,3 +56,25 @@ export const PANEL = {
   /** Dave's bubble fills with the brand accent; everyone else gets the dark card. */
   own: '#e85d04',
 } as const;
+
+/**
+ * Dave's room, transcribed from `DorkSpace` in `chat-ui.tsx`.
+ *
+ * Three layers over near-black: the cubicle plate at 55%, a warm centre glow,
+ * and a vignette that closes the edges down. The film added this because its
+ * four middle beats used to sit on flat black, and "four hard cuts between four
+ * black frames read as a slide deck with a voiceover over it."
+ *
+ * The blur is baked into the JPEG (ffmpeg, sigma 30, two stops down) rather
+ * than applied in CSS, which is why the plate is 40KB and why nothing here
+ * asks the browser for a `filter: blur()`.
+ */
+export const ROOM = {
+  base: '#0b0b0b',
+  plateOpacity: 0.55,
+  glow: 'radial-gradient(60% 55% at 50% 45%, #e85d041f 0%, transparent 70%)',
+  vignette: 'radial-gradient(75% 75% at 50% 50%, transparent 35%, rgba(0,0,0,0.72) 100%)',
+  /** The brand off-white, warmer than pure white. */
+  text: '#fffefb',
+  muted: '#7a756a',
+} as const;

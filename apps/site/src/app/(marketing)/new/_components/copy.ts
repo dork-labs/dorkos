@@ -20,7 +20,7 @@ export interface Block {
 export const HERO: Block = {
   eyebrow: 'claude code · codex · opencode',
   title: 'All your agents. One place.',
-  lede: 'DorkOS puts every AI agent you run in one window. Watch them work. Step in when you want.',
+  lede: 'DorkOS puts every AI agent you run in one window. Watch them work.',
 };
 
 /** What the pinned stage says at each of its three moments. */
@@ -45,11 +45,34 @@ export const BEATS: Record<Beat, Block> = {
 /** The line that fades up once the laptop has formed around the chat. */
 export const LOCALHOST_CAPTION = 'home sweet localhost';
 
-/** The promo section. Two lines, then the film. */
-export const PROMO: Block = {
-  eyebrow: '56 seconds',
+/**
+ * The film, which this page puts second and treats as the main event.
+ *
+ * Every word here is one of the four lines the film's own campaign settled on,
+ * used in the film's order: "Meet Dave." / "Dave is not winning." above the
+ * player, {@link FILM_TURN} under it, and {@link BRIDGE} carrying the last one
+ * into the product. The page never invents a new sentence about Dave and never
+ * explains what happens in the film. A page that narrates a joke has spent it.
+ */
+export const FILM: Block = {
+  eyebrow: '56 seconds · sound on',
+  title: 'Meet Dave.',
+  lede: 'Dave is not winning.',
+};
+
+/** The turn, under the player: what the next 56 seconds are about. */
+export const FILM_TURN = 'Then Dave got DorkOS.';
+
+/**
+ * The hand-off from Dave's story to the visitor's.
+ *
+ * The two halves are one approved line broken over a heading and its
+ * supporting sentence, so the pivot from "him" to "you" lands on the heading.
+ */
+export const BRIDGE: Block = {
+  eyebrow: 'now for real',
   title: 'Dave isn’t smarter than you.',
-  lede: 'He just has help.',
+  lede: 'He just has help. Here is what that help looks like.',
 };
 
 /** The close. */

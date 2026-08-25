@@ -32,18 +32,19 @@ export default function StoryboardPage() {
         Storyboard: one page, one animation
       </h1>
       <p className="text-warm-gray mt-4 max-w-2xl text-lg">
-        The whole of{' '}
+        The page at{' '}
         <Link href="/new" className="text-brand-orange underline underline-offset-4">
           /new
         </Link>{' '}
-        is a single scroll-driven animation around one chat. This page pins that animation at each
-        of its moments so the visuals can be worked on without scrolling the page over and over.
-        Everything here is the live components — change one and this page changes with it.
+        leads with the 56-second film and then proves it with a scroll-driven animation around one
+        chat. This page pins every moment of that so the visuals can be worked on without scrolling
+        the page over and over. Everything here is the live components — change one and this page
+        changes with it.
       </p>
 
       <StoryboardSection
         step="the story"
-        title="Six frames, in order"
+        title="Eight frames, in order"
         description="What a visitor sees, moment by moment. Each frame is a real 1440×900 render, scaled down."
       >
         <BeatStrip />

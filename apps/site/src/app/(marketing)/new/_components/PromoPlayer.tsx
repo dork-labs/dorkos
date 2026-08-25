@@ -24,9 +24,12 @@ import {
  * exist yet, so a phone can never pull the landscape cut and a laptop can
  * never pull the vertical one — the cut is chosen at the moment of the press,
  * when the viewport is known for certain. The still is picked by a `<picture>`
- * media rule for the same reason: one press, one download, of one file. The
- * still itself is lazy, because this sits roughly six screens down and most
- * visitors never scroll to it.
+ * media rule for the same reason: one press, one download, of one file.
+ *
+ * The still loads eagerly, unlike almost anything else on a marketing page.
+ * This player sits on the second screen and the whole page is arranged to get
+ * it pressed, so the poster is closer to a hero image than to a thumbnail, and
+ * a play button drawn over an empty box does not invite a press.
  */
 export function PromoPlayer() {
   const [cut, setCut] = useState<PromoCut | null>(null);
@@ -46,7 +49,7 @@ export function PromoPlayer() {
   }, []);
 
   return (
-    <div className="border-border-warm bg-cream-white mx-auto aspect-[9/16] w-full max-w-[26rem] overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.5)] sm:aspect-video sm:max-w-3xl">
+    <div className="mx-auto aspect-[9/16] w-full max-w-[26rem] overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.12)] bg-black shadow-[0_40px_120px_rgba(0,0,0,0.65)] sm:aspect-video sm:max-w-4xl lg:max-w-5xl">
       {cut === null ? (
         <button
           type="button"
@@ -66,7 +69,7 @@ export function PromoPlayer() {
               alt={PROMO_POSTER_ALT}
               width={PROMO_CUTS.wide.posterWidth}
               height={PROMO_CUTS.wide.posterHeight}
-              loading="lazy"
+              loading="eager"
               decoding="async"
               className="size-full object-cover"
             />

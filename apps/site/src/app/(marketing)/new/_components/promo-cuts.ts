@@ -54,3 +54,27 @@ export const PROMO_SECONDS = 56;
 /** What the poster shows, for anyone who cannot see it. */
 export const PROMO_POSTER_ALT =
   'Dave at his 1999 office desk, giving a thumbs up beside a mug that reads World’s Okayest Employee.';
+
+/**
+ * The film's own cubicle plate, used as the backdrop of the film section.
+ *
+ * Already blurred in ffmpeg, which is why it is 40KB at 1920x1080 and why it
+ * is set as a CSS background rather than an optimized `<img>`: it is wallpaper
+ * behind a section, carries no information, and has nothing left to compress.
+ */
+export const ROOM_PLATE = '/promo/dorkspace-bg.jpg';
+
+/**
+ * The frame the page hands off on: the film's own chat, one beat in.
+ *
+ * It is the film's take of the exact four faces the live chat below uses, in
+ * the same arrangement, which is what lets the page cut from the story to the
+ * product without either one looking like a different piece of work. Resized
+ * from the 1920px master to twice its largest rendered width.
+ */
+export const HANDOFF_STILL = {
+  src: '/promo/still-agents.jpg',
+  width: 1600,
+  height: 900,
+  alt: 'A moment from the film: Dave says “Hey, team.” and Otto answers “Morning, Dave.”, with Pip and Hal waiting beside him.',
+} as const;
