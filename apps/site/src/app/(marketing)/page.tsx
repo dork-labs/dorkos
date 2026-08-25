@@ -9,6 +9,9 @@ const DESCRIPTION =
 /**
  * The home page's own card, in place of the `(marketing)` layout's defaults.
  *
+ * The title is `absolute` so the root layout's `%s | DorkOS` template does not
+ * append a second DorkOS to a title that already opens with one.
+ *
  * `openGraph` is re-declared in full rather than merged: Next shallow-merges
  * metadata, so naming the key here drops the layout's image list unless it is
  * repeated. The image stays the site's own generated card at
@@ -16,7 +19,7 @@ const DESCRIPTION =
  * home page is not a campaign page.
  */
 export const metadata: Metadata = {
-  title: TITLE,
+  title: { absolute: TITLE },
   description: DESCRIPTION,
   alternates: { canonical: '/', types: rssFeedAlternateTypes },
   openGraph: {

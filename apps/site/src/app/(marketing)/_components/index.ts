@@ -16,6 +16,8 @@ export { PageNav } from './PageNav';
 export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
 export { Hero } from './Hero';
 export { StageSection } from './StageSection';
+export { PromoSection } from './PromoSection';
+export { PromoPlayer } from './PromoPlayer';
 export { CloseSection } from './CloseSection';
 
 // Stage pieces
@@ -60,6 +62,15 @@ export {
 } from './chat-script';
 export { BEAT_COPY, nextBeat, type Beat, type BeatCopy } from './beats';
 export { NIGHT_VARS, INSTALL_COMMAND, SHELL } from './theme';
+export {
+  PROMO_CUTS,
+  PROMO_CAPTIONS,
+  PROMO_SECONDS,
+  PROMO_POSTER_ALT,
+  PHONE_CUT_QUERY,
+  type PromoCut,
+  type PromoAssets,
+} from './promo-cuts';
 export { POP, clamp01, ramp } from './motion-tokens';
 export { STAGE_TIMING, chatScaleAt, shellOpacityAt, captionOpacityAt } from './stage-timing';
 export { useChatPlayback, type ChatPlayback } from './use-chat-playback';

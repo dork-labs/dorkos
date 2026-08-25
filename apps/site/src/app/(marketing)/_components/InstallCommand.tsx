@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { trackHeroInstallCopy } from '@/lib/analytics';
 import { INSTALL_COMMAND } from './theme';
 
 const COPY_RESET_MS = 2000;
@@ -20,6 +21,7 @@ export function InstallCommand({ variant = 'solid' }: { variant?: keyof typeof V
 
   const copy = async () => {
     await navigator.clipboard.writeText(INSTALL_COMMAND);
+    trackHeroInstallCopy('npm');
     setCopied(true);
     setTimeout(() => setCopied(false), COPY_RESET_MS);
   };

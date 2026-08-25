@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { CloseSection } from './CloseSection';
 import { Hero } from './Hero';
+import { PromoSection } from './PromoSection';
 import { StageSection } from './StageSection';
 
 /**
@@ -18,6 +19,7 @@ export function HomeExperience() {
     <>
       <Hero joined={joined} />
       <StageSection onJoinedChange={handleJoinedChange} />
+      <PromoSection />
       <CloseSection />
     </>
   );

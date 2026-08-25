@@ -40,7 +40,7 @@ export function Hero({ joined }: { joined: boolean }) {
           DorkOS puts every AI agent you run in one window. Watch them work. Step in when you want.
         </motion.p>
         <motion.div variants={REVEAL} className="mt-9 flex flex-col items-center gap-3">
-          <DownloadMacButton />
+          <DownloadMacButton placement="home_hero" />
           <p className="text-2xs font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
             free · open source · apple silicon
           </p>

@@ -34,7 +34,7 @@ export function CloseSection() {
           We built it for ourselves. Now it&rsquo;s yours.
         </motion.p>
         <motion.div variants={REVEAL} className="mt-10 flex flex-col items-center gap-3">
-          <DownloadMacButton />
+          <DownloadMacButton placement="home_close" />
           <p className="flex flex-wrap items-center justify-center gap-1 text-sm text-(--cream-dim)">
             or run <InstallCommand variant="quiet" />
           </p>

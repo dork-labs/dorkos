@@ -119,6 +119,8 @@ export function trackHeroInstallCopy(method: InstallMethod): void {
  */
 export type DownloadPlacement =
   | 'hero'
+  | 'home_hero'
+  | 'home_close'
   | 'terminal_hero_link'
   | 'install_page'
   | 'windows_hero'
