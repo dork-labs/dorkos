@@ -43,7 +43,10 @@
  * message a thread was opened on. Its markers carry a per-turn nonce, so a
  * member cannot end the block early by typing its closing line into a message:
  * they cannot predict the nonce. That is the boundary; the tag defusing inside
- * is defence in depth.
+ * is defence in depth. The fence itself is `untrusted-fence.ts`, shared with
+ * every other block that has to hold text DorkOS did not write; what is
+ * room-specific — the label, the preamble, the trigger line — is passed to it
+ * from here.
  *
  * **`ownRecent` sits between them**, outside the fence, because the agent wrote
  * it (spec §7.1) — fencing an agent's own prior output as untrusted would tell
@@ -73,9 +76,7 @@
  *
  * @module server/services/runtimes/shared/room-context-block
  */
-import { randomBytes } from 'node:crypto';
 import {
-  CONTEXT_TAG,
   type RoomContextAcknowledgment,
   type RoomContextAuthor,
   type RoomContextData,
@@ -83,14 +84,12 @@ import {
   type RoomContextMember,
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import { defuseSystemTags, sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
+import { defuseUntrustedText, fenceUntrustedBlock, mintFenceNonce } from './untrusted-fence.js';
 
 /** What the fence markers are called, on both the opening and closing line. */
 const FENCE_LABEL = 'UNTRUSTED ROOM MESSAGES';
-
-/** Hex characters in the per-turn fence nonce. */
-const NONCE_CHARS = 8;
 
 /**
  * Cap on a rendered room topic — and, reused for the same reason, on a
@@ -157,9 +156,6 @@ const UNNAMEABLE = 'unnamed';
  * disappears entirely once every author has a handle (`specs/handles` Phase 2).
  */
 const NO_HANDLE_NOTE = ', cannot be mentioned';
-
-/** Tags that mean something to a runtime and must not survive in member text. */
-const SYSTEM_TAGS = [...Object.values(CONTEXT_TAG), 'system-reminder'];
 
 /**
  * What the agent is told about the fenced block, inside the fence so it cannot
@@ -421,10 +417,15 @@ function addressNote(author: RoomContextAuthor): string {
 /**
  * A message body, safe to put inside the fence.
  *
+ * Defused HERE, one body at a time, rather than left to the fence: an entry
+ * line interleaves somebody's words with labels DorkOS wrote, and only this
+ * function knows which half is which. The fence defuses what it is handed as
+ * well, which costs nothing — an escaped tag has no `<` left to match on.
+ *
  * @param text - What somebody wrote, exactly as they wrote it.
  */
 function body(text: string): string {
-  return defuseSystemTags(text, SYSTEM_TAGS);
+  return defuseUntrustedText(text);
 }
 
 /**
@@ -1101,15 +1102,23 @@ function fenced(data: RoomContextData, nonce: string): string | null {
   const dropped = data.pendingTruncated
     ? '\nOlder messages than these were dropped to keep this short.'
     : '';
-  return [
-    `${heading}${dropped}`,
-    `--- BEGIN ${FENCE_LABEL} ${nonce} ---`,
-    FENCE_PREAMBLE,
-    gathered.length > 0 ? FENCE_GATHERED_LINE : FENCE_TRIGGER_LINE,
-    ...(data.room.bridged ? [BRIDGED_FENCE_NOTE] : []),
-    ...quoted,
-    `--- END ${FENCE_LABEL} ${nonce} ---`,
-  ].join('\n');
+  // The heading stays OUT here rather than being handed to the fence: it says
+  // what this block is to the turn ("you have not read these yet"), which is a
+  // claim about the messages and not one of them. Everything the fence renders
+  // is either its own markers or text it is fencing.
+  const fence = fenceUntrustedBlock(quoted, {
+    label: FENCE_LABEL,
+    preamble: FENCE_PREAMBLE,
+    notes: [
+      gathered.length > 0 ? FENCE_GATHERED_LINE : FENCE_TRIGGER_LINE,
+      ...(data.room.bridged ? [BRIDGED_FENCE_NOTE] : []),
+    ],
+    // The turn's nonce, minted by the caller: it marks the id labels and the
+    // sub-block headings above as well, and a fence carrying a different one
+    // would leave the preamble naming a marker this block does not have.
+    nonce,
+  });
+  return [`${heading}${dropped}`, fence.text].join('\n');
 }
 
 /**
@@ -1129,7 +1138,7 @@ export function formatRoomContext(data: RoomContextData, opts: { nonce?: string 
   // the two sub-block headings and — since DOR-1263 — every id label, in the
   // preamble as well as inside the fence. One value for all of them is what
   // lets the preamble tell the model which marker to check for.
-  const nonce = opts.nonce ?? randomBytes(NONCE_CHARS / 2).toString('hex');
+  const nonce = opts.nonce ?? mintFenceNonce();
   const where = label(data.room.name);
   const blocks: string[] = [preamble(data, where, nonce).join('\n')];
 

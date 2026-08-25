@@ -381,6 +381,17 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
           value: 'NOPE.md',
           page: 'boundaries',
         },
+        // Beside the other two files, because it is one: the agent's own notes,
+        // in markdown, in the same `.dork/` folder. No count — what an operator
+        // wants from this row is the file, and a number of lines answers a
+        // question nobody asked.
+        {
+          id: 'memory',
+          kind: 'nav',
+          label: 'Memory',
+          value: 'MEMORY.md',
+          page: 'memory',
+        },
       ],
     },
   ];

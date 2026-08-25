@@ -630,6 +630,9 @@ importers:
       '@dorkos/marketplace':
         specifier: workspace:*
         version: link:../../packages/marketplace
+      '@dorkos/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@dorkos/mesh':
         specifier: workspace:*
         version: link:../../packages/mesh
@@ -1296,6 +1299,25 @@ importers:
         version: 24.12.2
       vitest:
         specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.3.0))(vite@7.3.6(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0))
+
+  packages/memory:
+    dependencies:
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@dorkos/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@dorkos/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^24
+        version: 24.12.2
+      vitest:
+        specifier: ^4.1.10
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.3.0))(vite@7.3.6(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/mesh:

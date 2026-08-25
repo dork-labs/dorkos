@@ -617,7 +617,11 @@ export class CodexRuntime implements AgentRuntime {
     // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
     // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
     // Codex agent knows who it is and how to reach its capabilities.
-    const agentContext = await buildAgentContextAppend(cwd);
+    // `.text` — the whole append, memory block included. The `stable` half of
+    // this result exists only for claude-code's relaunch fingerprint; codex has
+    // no warm process to keep, so it sends everything, every turn (see
+    // `buildMemoryBlock` for what that costs).
+    const agentContext = (await buildAgentContextAppend(cwd)).text;
 
     // Mint this session's agent identity token when this cwd hosts a registered
     // agent. It rides the subprocess env, never the prompt, so it stays a

@@ -632,14 +632,14 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 31 tools (24 legacy + 6 operator + list_capabilities)', () => {
+    it('registers 32 tools (24 legacy + 6 operator + list_capabilities + memory_write)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 24 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 1 extension)
-      // plus the 6 operator capabilities and `list_capabilities`, both projected
-      // from the registry.
+      // plus the 6 operator capabilities, `list_capabilities` and `memory_write`,
+      // all projected from the registry.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(31);
+      expect(server.tools).toHaveLength(32);
     });
 
     it('registers tools with correct names', () => {
