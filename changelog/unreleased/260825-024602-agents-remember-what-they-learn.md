@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(shared,server): notes trust their stamp, not their prose (DOR-632)'
   - 'fix(server,memory,shared): wave-3 review fixes (DOR-632)'
   - 'feat(memory,shared,server): agent-memory wave 1 — the engine package, the port, the fence primitive (DOR-632)'
   - 'feat(server): tell an agent it is one session of itself, on every runtime (DOR-632)'
@@ -47,3 +48,8 @@ covers:
   that block. They no longer can. Nothing you type looks different and the same
   words reach the agent — they just cannot pretend to be part of DorkOS's own
   instructions any more (DOR-632)
+- A note that quotes somebody else stays a quote. Every note records the
+  conversation it was written in, and that stamp is written by DorkOS rather
+  than by the agent — so a note saved in a busy channel cannot come back later
+  claiming to be something you asked for. Only what you say in a direct chat
+  sets your agent's standing preferences (DOR-632)
