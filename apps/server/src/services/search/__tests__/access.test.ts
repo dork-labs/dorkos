@@ -92,7 +92,8 @@ function join(roomId: string, authorId: string, joinedSeq: number): void {
  * The source id is a parameter because the access rule is about the CATEGORY,
  * not about `claude-code`: every registered source except `rooms` is session
  * history, and a caller that presented an agent identity reaches none of them.
- * A helper hardcoding one runtime would let the next one arrive unguarded.
+ * A helper hardcoding one runtime would let the next one arrive unguarded — and
+ * two have since, so the seam has paid for itself twice.
  */
 function transcribe(
   sessionId: string,
@@ -174,10 +175,12 @@ beforeEach(async () => {
   // collision that a visibility clause scoped on `origin_key` alone would let
   // through — and the only way the session assertions below can catch it.
   transcribe('open', 9, 'kestrel, said in a session that shares a room’s id');
-  // A Codex rollout, which is session history under a source id `buildScopes`
-  // has never been told about. That is the point: it must be out of an agent's
-  // reach on the day it lands rather than on the day somebody remembers.
+  // A Codex rollout and an OpenCode conversation, both session history under
+  // source ids `buildScopes` has never been told about. That is the point: each
+  // must be out of an agent's reach on the day it lands rather than on the day
+  // somebody remembers.
   transcribe('codex-thread-1', 2, 'a kestrel I mentioned to Codex', 'codex');
+  transcribe('ses_oc', 1, 'a kestrel, said to OpenCode', 'opencode');
 
   await new SearchIndexer(db, [roomsSource]).sweep();
 });
@@ -223,6 +226,13 @@ describe('the owner', () => {
       .map((hit) => hit.container)
       .sort();
     expect(sessions).toEqual(['open', 'session-b']);
+  });
+
+  it('finds OpenCode transcripts too, on the same scope', () => {
+    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
+    expect(hits).toContainEqual(
+      expect.objectContaining({ source: 'opencode', container: 'ses_oc' })
+    );
   });
 
   it('carries the working directory a session hit opens in', () => {
@@ -302,18 +312,20 @@ describe('a member', () => {
 describe('session history over an MCP-shaped caller', () => {
   it('returns no session row, whatever the words are', () => {
     // The required negative: transcripts hold both search terms, and an agent
-    // reaches neither.
+    // reaches none of the three runtimes that keep them.
     for (const term of ['kestrel', 'pelican']) {
       const hits = search(scopeFor(agentId, false), term).results;
-      expect(hits.filter((hit) => hit.source === 'claude-code')).toEqual([]);
+      expect(hits.filter((hit) => hit.source !== 'rooms')).toEqual([]);
     }
   });
 
   it('returns no session row even when the caller asks for that source by name', () => {
-    expect(search(scopeFor(agentId, false), 'kestrel', 'claude-code')).toEqual({
-      results: [],
-      warnings: [],
-    });
+    for (const source of ['claude-code', 'codex', 'opencode']) {
+      expect(search(scopeFor(agentId, false), 'kestrel', source)).toEqual({
+        results: [],
+        warnings: [],
+      });
+    }
   });
 
   it('returns those very rows to the owner — the positive control', () => {

@@ -32,7 +32,17 @@ import {
   stampAttempt,
   type Writer,
 } from './frontier-store.js';
-import type { RowContainer, RowSource, SourceSweep } from './types.js';
+import type { ContainerReader, RowContainer, RowSource, SourceSweep } from './types.js';
+
+/**
+ * The `originKey` a failure carries when the prune was REFUSED because the
+ * container list looked implausibly short.
+ *
+ * Not about any one container — it is about the list as a whole — so it borrows
+ * no container's id, for the same reason `jsonl-frontier.ts`'s
+ * `DUPLICATE_CONTAINERS_KEY` does not.
+ */
+export const PRUNE_GUARD_KEY = '(prune guard)';
 
 /** One container's resume state, read once per sweep rather than once per container. */
 interface FrontierState {
@@ -62,8 +72,50 @@ interface FrontierState {
  * @param at - The ISO-8601 timestamp to stamp this attempt with.
  */
 export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSweep {
+  return sweepContainers(
+    db,
+    source.id,
+    {
+      listContainers: () => source.listContainers(db),
+      readSince: (originKey, afterOrdinal) => source.readSince(db, originKey, afterOrdinal),
+    },
+    at
+  );
+}
+
+/**
+ * The watermark pass itself, over any reader that can list containers and read
+ * one above an ordinal.
+ *
+ * Extracted from {@link sweepRowSource} when M3 arrived (ADR 260825-110420).
+ * **That extraction is the evidence behind refusing the port promotion**: a
+ * third mechanism was supposed to force the registry into a `SearchAdapter`
+ * hierarchy, and instead it turned out to need none of the frontier logic
+ * rewritten — M2 and M3 differ in where a container list comes from (this
+ * database, versus a read-only copy of somebody else's) and in nothing else. The
+ * resume rule, the shrink rebuild, the watermark write and the prune are the
+ * same four paragraphs for both, so they stayed one implementation.
+ *
+ * @param db - The database the INDEX is written to. Never the source, unless the
+ *   caller's reader happens to read it too.
+ * @param sourceId - Stamped onto every row this pass writes.
+ * @param reader - Where containers come from.
+ * @param at - The ISO-8601 timestamp to stamp this attempt with.
+ * @param options - `minLiveShare` refuses to prune when the reader listed fewer
+ *   than that fraction of the containers the index already knows about. Absent
+ *   for a reader that reads DorkOS's own tables, where a short list IS the truth;
+ *   set by the snapshot mechanism, where a short list can also mean the copy
+ *   caught an earlier moment.
+ */
+export function sweepContainers(
+  db: Db,
+  sourceId: string,
+  reader: ContainerReader,
+  at: string,
+  options: { minLiveShare?: number } = {}
+): SourceSweep {
   const sweep: SourceSweep = {
-    sourceId: source.id,
+    sourceId,
     containers: 0,
     indexed: 0,
     skipped: 0,
@@ -72,26 +124,42 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSwe
     failures: [],
   };
 
-  const containers = source.listContainers(db);
+  const containers = reader.listContainers();
   sweep.containers = containers.length;
-  const state = readFrontierState(db, source.id);
+  const state = readFrontierState(db, sourceId);
   const live = new Set(containers.map((container) => container.originKey));
 
   for (const container of containers) {
     try {
-      const outcome = indexContainer(db, source, container, state, at);
+      const outcome = indexContainer(db, sourceId, reader, container, state, at);
       sweep.indexed += outcome.indexed;
       sweep.skipped += outcome.skipped;
       if (outcome.rebuilt) sweep.rebuilt += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      recordFailure(db, source.id, container, state, at, message);
-      sweep.failures.push({ sourceId: source.id, originKey: container.originKey, message });
+      recordFailure(db, sourceId, container, state, at, message);
+      sweep.failures.push({ sourceId, originKey: container.originKey, message });
     }
   }
 
-  sweep.pruned = pruneVanished(db, source.id, live, state.keys());
-  stampAttempt(db, source.id, at);
+  // **A prune is the one irreversible thing a sweep does**, so it is the one
+  // that refuses to act on a container list it has reason to doubt. Everything
+  // else a bad list causes is self-correcting on the next tick.
+  const known = new Set(state.keys());
+  const floor = options.minLiveShare;
+  if (floor !== undefined && known.size > 0 && live.size < known.size * floor) {
+    sweep.failures.push({
+      sourceId,
+      originKey: PRUNE_GUARD_KEY,
+      message:
+        `the source listed ${String(live.size)} containers against ` +
+        `${String(known.size)} already indexed — refusing to prune on a list ` +
+        'that short, in case it describes an earlier moment rather than a deletion',
+    });
+  } else {
+    sweep.pruned = pruneVanished(db, sourceId, live, known);
+  }
+  stampAttempt(db, sourceId, at);
   return sweep;
 }
 
@@ -128,7 +196,17 @@ export function indexRowContainer(
   container: RowContainer,
   at: string
 ): { indexed: number; skipped: number; rebuilt: boolean } {
-  return indexContainer(db, source, container, readContainerState(db, source.id, container), at);
+  return indexContainer(
+    db,
+    source.id,
+    {
+      listContainers: () => source.listContainers(db),
+      readSince: (originKey, afterOrdinal) => source.readSince(db, originKey, afterOrdinal),
+    },
+    container,
+    readContainerState(db, source.id, container),
+    at
+  );
 }
 
 /**
@@ -223,7 +301,30 @@ function resumePosition(
   known: FrontierState | undefined
 ): { rebuilt: boolean; resumeFrom: number } {
   const indexedTo = known?.indexedTo ?? 0;
-  const rebuilt = container.maxOrdinal < indexedTo;
+  // **Two reasons to start over, and they take the SAME path: delete first.**
+  //
+  // An earlier version kept them apart — a shrink deleted, while a
+  // `rereadWhole` only moved the resume position and let the upsert rewrite each
+  // row — on the argument that skipping the delete keeps FTS5 churn out of the
+  // common case. That argument was wrong, and the hole it left is sharp:
+  // **a message that projects to NOTHING writes no row, so it cannot overwrite
+  // what is already at its ordinal.** Combine that with a container whose count
+  // lands exactly ON the index's high-water mark and the shrink test never fires
+  // either:
+  //
+  //   indexed  {1:'a', 2:'b'}          indexedTo = 2
+  //   after    [user 'a', tool-only]   maxOrdinal = 2
+  //   shrank?  maxOrdinal < indexedTo  → 2 < 2 → false
+  //
+  // Ordinal 2 then answers 'b' forever. It is not a corner: 25 of the 75
+  // messages on the operator's real OpenCode store project to nothing, because a
+  // turn that only called a tool has nothing to search.
+  //
+  // The cost of folding is bounded by whoever sets the flag. `rereadWhole` is
+  // opt-in per container, and its only user scopes it to containers touched
+  // inside a 15-minute window (`opencode-store.ts`), so the delete-and-rewrite
+  // costs one recently-active conversation per sweep rather than a corpus.
+  const rebuilt = container.maxOrdinal < indexedTo || container.rereadWhole === true;
   return {
     rebuilt,
     resumeFrom: rebuilt ? 0 : Math.min(known?.watermark ?? 0, indexedTo),
@@ -254,7 +355,8 @@ export function containerBacklog(db: Db, source: RowSource, container: RowContai
  */
 function indexContainer(
   db: Db,
-  source: RowSource,
+  sourceId: string,
+  reader: ContainerReader,
   container: RowContainer,
   state: ReadonlyMap<string, FrontierState>,
   at: string
@@ -295,17 +397,20 @@ function indexContainer(
   // messages` — the half of the index anyone would actually think to throw away —
   // leave every container reporting "nothing new" forever, with search returning
   // nothing and no error recorded anywhere.
+  // `!rebuilt` already carries `rereadWhole`, which {@link resumePosition} folds
+  // into it — the flag exists for a container whose content changed without
+  // growing at all, and every other term here is about whether it GREW.
   if (!rebuilt && container.maxOrdinal <= watermark && indexedTo >= watermark) {
     // The frontier row still has to EXIST. A container that has never held a
     // projectable message — an empty room — is a no-op on its very first pass,
     // and skipping the write would leave it undiscovered until somebody spoke.
     if (known?.watermark == null) {
-      db.transaction((tx) => writeFrontier(tx, source.id, container, watermark, at, null));
+      db.transaction((tx) => writeFrontier(tx, sourceId, container, watermark, at, null));
     }
     return { indexed: 0, skipped: 0, rebuilt: false };
   }
 
-  const projection = source.readSince(db, container.originKey, resumeFrom);
+  const projection = reader.readSince(container.originKey, resumeFrom);
   const highest = projection.messages.at(-1)?.ordinal ?? 0;
 
   // The watermark tracks the CONTAINER, not the projection: a container whose
@@ -337,9 +442,9 @@ function indexContainer(
   const reached = rebuilt ? container.maxOrdinal : Math.max(container.maxOrdinal, highest);
 
   db.transaction((tx) => {
-    if (rebuilt) deleteContainerMessages(tx, source.id, container.originKey);
-    insertMessages(tx, source.id, projection.messages);
-    writeFrontier(tx, source.id, container, reached, at, null);
+    if (rebuilt) deleteContainerMessages(tx, sourceId, container.originKey);
+    insertMessages(tx, sourceId, projection.messages);
+    writeFrontier(tx, sourceId, container, reached, at, null);
   });
 
   return { indexed: projection.messages.length, skipped: projection.skipped, rebuilt };
