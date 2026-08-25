@@ -35,6 +35,8 @@ import {
   TRAIT_SECTION_START,
   extractCustomProse,
 } from '@dorkos/shared/convention-files';
+import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import { AGENT_CONTEXT_BLOCK_TAGS, defuseSystemTags } from '@dorkos/shared/untrusted-text';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { soulFile } from '../lib/soul-file';
@@ -85,6 +87,16 @@ export interface InjectionPreviewProps {
 const PREVIEW_NONCE = '[new code each turn]';
 
 /**
+ * The tag set the server's fence defuses, composed the same way it composes
+ * it. A preview that rendered the raw draft would show forged structural tags
+ * the agent never sees — the one place this screen would overstate what a
+ * poisoned note can do.
+ */
+const PREVIEW_DEFUSED_TAGS = [
+  ...new Set([...Object.values(CONTEXT_TAG), ...AGENT_CONTEXT_BLOCK_TAGS, 'system-reminder']),
+];
+
+/**
  * The three DorkOS-authored lines around the memory file, verbatim from the
  * server (`agent-context.ts`).
  *
@@ -113,7 +125,10 @@ const PREVIEW_NONCE = '[new code each turn]';
  */
 function memoryBlock(content: string): string {
   const truncated = content.length > MEMORY_MAX_CHARS;
-  const shown = truncated ? content.slice(0, MEMORY_MAX_CHARS) : content;
+  const sliced = truncated ? content.slice(0, MEMORY_MAX_CHARS) : content;
+  // The server defuses runtime tags in everything the fence wraps; the slice
+  // happens before defusing there too, so the order here mirrors it.
+  const shown = defuseSystemTags(sliced, PREVIEW_DEFUSED_TAGS);
   return [
     '<agent_memory>',
     MEMORY_TRUST_FRAMING,

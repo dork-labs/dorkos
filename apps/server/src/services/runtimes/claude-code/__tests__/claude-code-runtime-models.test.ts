@@ -18,12 +18,10 @@ vi.mock('../../../../lib/logger.js', () => ({
 // Mock the canonical path so that ClaudeCodeRuntime's direct import is intercepted.
 const { contextBuilderFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
-    buildSystemPromptAppend: vi
-      .fn()
-      .mockResolvedValue({
-        text: '<env>\nWorking directory: /mock\n</env>',
-        stable: '<env>\nWorking directory: /mock\n</env>',
-      }),
+    buildSystemPromptAppend: vi.fn().mockResolvedValue({
+      text: '<env>\nWorking directory: /mock\n</env>',
+      stable: '<env>\nWorking directory: /mock\n</env>',
+    }),
     renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
 }));
