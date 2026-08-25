@@ -28,6 +28,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import { collapseRoots, walkJsonlFiles, type WalkedFile } from './jsonl-walk.js';
 import type {
   DiscoveryFailure,
   FileContainer,
@@ -147,13 +148,8 @@ export async function discoverClaudeCodeTranscripts(
   const files: FileContainer[] = [];
   const skipped: SkippedFile[] = [];
   const failures: DiscoveryFailure[] = [];
-  const visited = new Set<string>();
 
-  for (const projectsRoot of projectsRoots) {
-    const identity = await rootIdentity(projectsRoot);
-    if (visited.has(identity)) continue;
-    visited.add(identity);
-
+  for (const projectsRoot of await collapseRoots(projectsRoots)) {
     const walked = await walkJsonlFiles(projectsRoot);
     if (walked.failure !== null) failures.push({ root: projectsRoot, message: walked.failure });
 
@@ -166,26 +162,6 @@ export async function discoverClaudeCodeTranscripts(
   }
 
   return { files, skipped, failures };
-}
-
-/**
- * What makes two spellings of a root the same root.
- *
- * The real path, so a symlinked account collapses onto its target instead of
- * duplicating every file it holds. A root that cannot be resolved — it does not
- * exist, or a link in it dangles — falls back to the lexical form: an absent
- * root walks to nothing anyway, and guessing that two unresolvable paths are the
- * same directory would be a worse error than scanning one twice.
- *
- * @param projectsRoot - The root as the caller spelled it.
- * @returns A key that is equal for two paths iff they name one directory.
- */
-async function rootIdentity(projectsRoot: string): Promise<string> {
-  try {
-    return await fs.realpath(projectsRoot);
-  } catch {
-    return path.resolve(projectsRoot);
-  }
 }
 
 /**
@@ -254,68 +230,6 @@ async function classifyTranscript(
   }
 
   return { ...container, containerPath };
-}
-
-/** One `.jsonl` file the walk found, with its path relative to the root already split. */
-interface WalkedFile {
-  /** Absolute path. */
-  filePath: string;
-
-  /** Path segments below the projects root — `['<slug>', '<sessionId>.jsonl']` for a main session. */
-  segments: string[];
-}
-
-/**
- * Every `.jsonl` file anywhere under one root, in walk order — plus why the root
- * itself could not be read, when that is what happened.
- *
- * Recursion is the point (see this module's header) and it is also cheap: the
- * result is one `readdir` per directory, with `withFileTypes` so no extra `stat`
- * is paid to tell a file from a directory. Symbolic links are not followed —
- * a link back up the tree would otherwise walk forever.
- *
- * **Only the root's own failure is reported, and only when it is not `ENOENT`.**
- * The two cases mean opposite things and must not be merged. A missing root is
- * an account Claude Code never wrote under, or one whose directory was removed
- * between resolution and this walk; it narrows the corpus by a knowable amount
- * and its containers are correctly pruned. A root that is THERE and refuses to
- * be listed — a permission removed, a volume gone sideways, a `projects` that is
- * no longer a directory — leaves an unknown amount unread, so it is reported and
- * the sweep stops pruning.
- */
-async function walkJsonlFiles(root: string): Promise<{
-  /** Files found under this root. Possibly partial when `failure` is set. */
-  files: WalkedFile[];
-
-  /** Why the root itself could not be enumerated, or `null`. */
-  failure: string | null;
-}> {
-  const found: WalkedFile[] = [];
-  let failure: string | null = null;
-
-  async function visit(dir: string, segments: string[], isRoot: boolean): Promise<void> {
-    let entries;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch (err) {
-      // A directory NESTED in a readable root contributes nothing and says
-      // nothing, which is the same shape as a project with no sessions.
-      if (isRoot && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        failure = err instanceof Error ? err.message : String(err);
-      }
-      return;
-    }
-
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) await visit(full, [...segments, entry.name], false);
-      else if (entry.isFile() && entry.name.endsWith('.jsonl'))
-        found.push({ filePath: full, segments: [...segments, entry.name] });
-    }
-  }
-
-  await visit(root, [], true);
-  return { files: found, failure };
 }
 
 /**

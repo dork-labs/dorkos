@@ -145,16 +145,35 @@ export interface FileContainer {
   mtimeMs: number;
 }
 
-/** Why discovery walked past a file instead of indexing it. */
+/**
+ * Why discovery walked past a file instead of indexing it.
+ *
+ * One union across every file-backed source rather than one per source: the
+ * reasons are read together — logged, counted, eyeballed in a bench run — and a
+ * per-source union would make "everything that was skipped" a type-level join
+ * for no gain. Each member names which source can produce it.
+ */
 export type SkipReason =
-  /** `<slug>/<sessionId>/subagents/**` — a conversation the human never had. */
+  /** Claude Code: `<slug>/<sessionId>/subagents/**` — a conversation the human never had. */
   | 'subagent-transcript'
-  /** A main session whose head-record `cwd` is an eval-harness sandbox. */
+  /** Claude Code: a main session whose head-record `cwd` is an eval-harness sandbox. */
   | 'eval-sandbox'
-  /** `<slug>/vercel-plugin/skill-injections.jsonl` — harness plumbing. */
+  /** Claude Code: `<slug>/vercel-plugin/skill-injections.jsonl` — harness plumbing. */
   | 'plugin-artifact'
-  /** Nested deeper than `<slug>/<sessionId>.jsonl` and matching no known kind. */
-  | 'not-a-main-session';
+  /** Claude Code: nested deeper than `<slug>/<sessionId>.jsonl` and matching no known kind. */
+  | 'not-a-main-session'
+  /**
+   * Codex: a `.jsonl` under a rollout root whose name is not
+   * `rollout-<ISO>-<sessionId>.jsonl`, so it carries no session id to index it
+   * under.
+   *
+   * No such file exists on any corpus measured — `$CODEX_HOME` does hold other
+   * newline-delimited files, `session_index.jsonl` among them, but they sit
+   * beside the rollout roots rather than inside one and are never walked. This
+   * is here so a kind of file nobody has seen yet shows up in the skipped set
+   * instead of in the index under an id invented from its filename.
+   */
+  | 'not-a-rollout';
 
 /** One file discovery decided against, and the decision it made. */
 export interface SkippedFile {

@@ -20,8 +20,11 @@
 import path from 'path';
 import { authors, roomEntries, rooms, and, asc, eq, gt, sql, type Db } from '@dorkos/db';
 import { resolveClaudeRootSet } from '../runtimes/claude-code/claude-config-dir.js';
+import { resolveCodexRolloutRoots } from '../runtimes/codex/codex-home.js';
 import { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
+import { discoverCodexRollouts } from './codex-discovery.js';
 import { projectClaudeCodeLines } from './projections/claude-code.js';
+import { projectCodexLines } from './projections/codex.js';
 import { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
 import type { FileSource, RowContainer, RowSource, SearchSource } from './types.js';
 
@@ -154,12 +157,63 @@ export const claudeCodeSource: FileSource = createClaudeCodeSource(() =>
 );
 
 /**
+ * Build a Codex source over a set of rollout roots.
+ *
+ * The roots are a parameter for the same reason Claude Code's are: so a test can
+ * point the source at fixture trees instead of at the operator's real history.
+ *
+ * @param resolveRolloutRoots - Called at the start of every sweep, never cached,
+ *   so a `CODEX_HOME` that changes under a running server is picked up on the
+ *   next tick rather than after a restart.
+ * @returns The registry row.
+ */
+export function createCodexSource(resolveRolloutRoots: () => readonly string[]): FileSource {
+  return {
+    id: 'codex',
+    mechanism: 'jsonl',
+    discover: (known) => discoverCodexRollouts(resolveRolloutRoots(), known),
+    project: projectCodexLines,
+  };
+}
+
+/**
+ * Codex rollout files — **M1**, the same mechanism Claude Code rides.
+ *
+ * **This is the row the design's central claim was written to be tested by.**
+ * ADR 260728-214214 says adding a source is one registry row and one pure
+ * projection because discovery, change detection and the incremental read are
+ * written once per MECHANISM. Codex needed no mechanism: `jsonl-frontier.ts` is
+ * untouched by this source, and the twin refusal, the shrink rebuild, the
+ * partial-line rule and the prune suppression all apply to it without a line of
+ * new code. What it did need beyond "one row, one projection" is its own
+ * `discover` — which the {@link FileSource} interface has always had, because a
+ * source is what knows where its files are and which of them are real.
+ *
+ * **Two roots, and both are somebody's history.** `sessions/` holds live threads
+ * under `YYYY/MM/DD/`; `archived_sessions/` holds the ones the operator
+ * archived, flat. Reading only the first would be DOR-682's failure in a new
+ * place — a box that covers less than the person's history and says nothing
+ * about it.
+ *
+ * **The corpus is small and that is not the argument.** Measured 2026-08-25: 18
+ * files, 7.0 MB, **214 indexable messages** beside Claude Code's 19,124 — about
+ * 1.1%. The case is that the multi-runtime cockpit is the product's headline
+ * differentiator, and a search box covering one runtime undercuts the claim the
+ * product leads with.
+ */
+export const codexSource: FileSource = createCodexSource(() => resolveCodexRolloutRoots());
+
+/**
  * Every source the indexer sweeps.
  *
- * Two entries, one per mechanism. Codex joins Claude Code on M1 with one more
- * row and one more projection; OpenCode is deferred, and its deferral — its SDK
- * poll has no resumption primitive and needs a live child process, which would
- * be a third mechanism — is what keeps this an array of records rather than a
- * port.
+ * Three entries over two mechanisms. OpenCode is deferred, and its deferral —
+ * its SDK poll has no resumption primitive and needs a live child process, which
+ * would be a third mechanism — is what keeps this an array of records rather
+ * than a port. The day it is indexed, the promotion fires.
+ *
+ * **The order is the sweep order.** Rooms first: DorkOS owns that write, so it
+ * is cheap to reconcile and any bug in it is ours. Then the filesystem walks,
+ * largest corpus first, so the source carrying 99% of the messages is not
+ * waiting behind the one carrying 1%.
  */
-export const SEARCH_SOURCES: readonly SearchSource[] = [roomsSource, claudeCodeSource];
+export const SEARCH_SOURCES: readonly SearchSource[] = [roomsSource, claudeCodeSource, codexSource];

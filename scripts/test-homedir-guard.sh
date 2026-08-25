@@ -240,6 +240,8 @@ echo '--- declared carve-outs stay silent ---'
 check 'lib/dork-home.ts' src/lib/dork-home.ts "$ORDINARY" ''
 check 'claude-config-dir.ts' \
   src/services/runtimes/claude-code/claude-config-dir.ts "$ORDINARY" ''
+check 'codex-home.ts' \
+  src/services/runtimes/codex/codex-home.ts "$ORDINARY" ''
 check 'a test under __tests__/' src/services/core/__tests__/probe.test.ts "$ORDINARY" ''
 check 'a test beside its source' src/services/core/probe.test.ts "$ORDINARY" ''
 
@@ -268,6 +270,17 @@ check 'default import stays exempt' \
   src/services/runtimes/claude-code/claude-config-dir.ts "$ORDINARY" ''
 check 'named import is still refused' \
   src/services/runtimes/claude-code/claude-config-dir.ts "$NAMED" "$IMPORTS"
+
+# codex-home.ts is the second file-level carve-out, added on DOR-683 for the same
+# reason and therefore with the same constraint: it is exempt from the CALL ban
+# by name, while the IMPORT ban still reaches it as ordinary codex source.
+echo '--- the codex-home carve-out is the same shape ---'
+check 'default import stays exempt' \
+  src/services/runtimes/codex/codex-home.ts "$ORDINARY" ''
+check 'named import is still refused' \
+  src/services/runtimes/codex/codex-home.ts "$NAMED" "$IMPORTS"
+check 'a sibling in the same directory is NOT exempt' \
+  src/services/runtimes/codex/codex-runtime.ts "$ORDINARY" "$PROPS"
 
 # If this fired, the ban would be unusable: os.tmpdir() is how every test in the
 # server stages a fixture directory.
