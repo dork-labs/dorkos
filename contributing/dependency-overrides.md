@@ -29,7 +29,7 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 
 Two instances of that package are two different `HookEndpointContext` types, and the server typecheck fails with a wall of `better-auth` errors that name neither `jose` nor A2A. The pin collapses both back to one instance by putting every consumer on `^6.2.10`, which is inside `better-auth`'s own range — nothing is being held back.
 
-**Drop it when `better-auth` moves past 1.6.23** and the tree re-resolves to a single `@better-auth/core` on its own. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
+**Drop it when `better-auth` moves past 1.6.23** and the tree re-resolves to a single `@better-auth/core` on its own. That day is gated on the exact `better-auth` pin below coming off, so read that section first — `better-auth` is held at 1.6.23 on purpose. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
 
 This is the shape to recognize, because the error never points at the cause: **a new dependency bumps a transitive package that is somebody else's peer, and an unrelated package's types break.** If a routine upgrade produces type errors in a package you did not touch, look for a duplicated peer in the lockfile before you look at the types.
 
@@ -41,6 +41,47 @@ Two shapes worth copying when you add to this group:
 
 - **Per-major scoping.** `js-yaml@3` and `js-yaml@4` are separate entries because `gray-matter` needs the 3.x line and a blanket `^4` would break it. Same for `brace-expansion` and `uuid@11` (the direct `uuid` 13 dependency must not move).
 - **Transitive-only.** `uuid@11` pins a transitive copy; the workspace's own `uuid` stays on 13.
+
+## Version holds that are not overrides
+
+Not every deliberate hold belongs in the override map. When the repo declares the package directly in every place it is used, an **exact spec in each declaring `package.json`** does the same job and is visible where a person actually looks — the file they are editing when they bump it.
+
+### `better-auth` — pinned exact at 1.6.23 (DOR-1538)
+
+`better-auth` and `@better-auth/api-key` are declared exact — `"1.6.23"`, not `"^1.6.23"` — in `apps/server`, `apps/site` and `packages/cli`. Do not loosen either one.
+
+**Why.** `better-auth@1.7.1` breaks two things at once:
+
+- **The server typecheck**, through the duplicate-instance mechanism described above — two copies of `@better-auth/core` are two incompatible sets of types.
+- **CLI auth at runtime**, which no typecheck catches: `dorkos auth enable` exits 1, and signing in with a freshly created credential comes back `INVALID_EMAIL_OR_PASSWORD`.
+
+  1.6.30 is not a safe middle ground either. From 1.6.24 the tree pulls `better-call@1.4.0`, which needs `@better-auth/utils@0.5.0` while `better-auth` itself still needs `0.4.2` — two copies of `@better-auth/utils`, same shape of failure.
+
+**Why an exact spec and not an override.** Both were measured against a deleted lockfile and both hold, so the tie-breaker is maintenance: an override duplicating a spec the repo already declares is the redundancy rule 2 below warns about, and it would give the next bump a fourth place to remember. Add an override only if `better-auth` ever arrives transitively, through a dependency we do not declare.
+
+**How the exact spec reaches the rest of the family.** `better-auth@1.6.23` pins its own dependencies exactly — `@better-auth/core@1.6.23`, `@better-auth/utils@0.4.2`, `better-call@1.3.7` — so holding the one package holds all of them. `@better-auth/api-key` needs its own exact spec because it is a separate declaration whose peers would otherwise resolve against a newer core.
+
+**Drop it when** a `better-auth` release resolves, from a deleted lockfile, to a single `@better-auth/core` and a single `@better-auth/utils`, _and_ CLI auth still works end to end. Both halves are required — wave 1 of the 2026-08-24 dependency sweep passed neither, and the runtime half is the one no gate would have caught.
+
+To re-test after changing the spec:
+
+```bash
+rm pnpm-lock.yaml && pnpm install            # fresh resolution, nothing held by the lockfile
+find node_modules/.pnpm -maxdepth 1 \
+  \( -name '@better-auth+core@*' -o -name '@better-auth+utils@*' \) \
+  | sed 's|.*/||' | sort -u                  # must print exactly one of each
+git show HEAD:pnpm-lock.yaml > pnpm-lock.yaml && pnpm install   # restore (git checkout is blocked)
+pnpm exec prettier --write pnpm-lock.yaml
+```
+
+Then the runtime half, which the typecheck does not cover:
+
+```bash
+pnpm vitest run apps/server/src/services/core/auth/__tests__/auth.integration.test.ts
+DORK_HOME=$(mktemp -d) node packages/cli/dist/bin/cli.js auth enable --email you@example.test --password correct-horse-battery-staple
+```
+
+`auth enable` must exit 0 and the integration test's sign-up → sign-in → `get-session` chain must pass; that chain is what 1.7.1 broke.
 
 ## Before you add one
 

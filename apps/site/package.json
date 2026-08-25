@@ -20,11 +20,11 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@better-auth/api-key": "^1.6.23",
+    "@better-auth/api-key": "1.6.23",
     "@dorkos/icons": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@neondatabase/serverless": "^1.1.0",
-    "better-auth": "^1.6",
+    "better-auth": "1.6.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
