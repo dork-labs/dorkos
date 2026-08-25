@@ -9,6 +9,7 @@
 // typechecked program.
 export * from './capability-conformance.js';
 export * from './community-conformance.js';
+export * from './directory-membership-vectors.js';
 export * from './connector-conformance.js';
 export * from './fake-agent-runtime.js';
 export * from './fake-community-adapter.js';

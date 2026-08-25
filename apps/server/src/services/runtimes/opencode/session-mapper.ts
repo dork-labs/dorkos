@@ -17,6 +17,7 @@
  * @module services/runtimes/opencode/session-mapper
  */
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import type {
   OpencodeClient,
   Session as OpenCodeSession,
@@ -32,6 +33,7 @@ import type {
   TextPart,
   ToolCallPart,
 } from '@dorkos/shared/types';
+import { isWithinDirectory } from '@dorkos/shared/paths';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from './runtime-constants.js';
 
 /**
@@ -77,27 +79,44 @@ export interface OpenCodeClientProvider {
 }
 
 /**
- * Query for `GET /session`, including the two params the sidecar accepts but
+ * Query for `GET /session`, including the three params the sidecar accepts but
  * the GENERATED SDK TYPES OMIT (`@opencode-ai/sdk@1.17.13` declares only
- * `directory`). Both were read off the running sidecar's own OpenAPI document
- * (`GET /doc`) at that version and driven live, so this is a gap in the
- * generated client, not an unsupported call:
+ * `directory`). All three were read off the running sidecar's own OpenAPI
+ * document (`GET /doc`) and driven live, so this is a gap in the generated
+ * client, not an unsupported call:
  *
  * - `limit` — lifts the silent 100-session cap ({@link SESSION_LIST_LIMIT}).
  * - `roots` — drops child (subtask) sessions SERVER-side, so the cap is spent
  *   only on real user sessions. Without it the cap is applied first and the
  *   client-side `parentID` filter then removes rows from an already-truncated
  *   page, so N child sessions cost the user N visible ones.
+ * - `scope` — widens the read past `directory`, which the sidecar matches by
+ *   EXACT STRING EQUALITY: a session started in `<project>/packages/api` is
+ *   invisible to a `directory=<project>` read, which is why one never appeared
+ *   in its own project's list (DOR-674).
  *
- * An older sidecar that predates either param ignores it (unknown query params
- * are dropped, verified live) and simply falls back to the capped behavior —
- * never an error.
+ * `scope` is an enum the sidecar validates (`scope=bogus` answers 400), so it
+ * cannot be aimed at a directory subtree — the only member is `project`, and on
+ * the pinned build every worktree reports `projectID: "global"`, which makes
+ * that read effectively machine-wide (live-verified 2026-08-25 on 1.18.15: two
+ * unrelated git projects listed each other's sessions). DorkOS therefore treats
+ * it as nothing more than "the widest list the sidecar will give" and applies
+ * its own subtree filter — see {@link OpenCodeSessionMapper.listSessions}.
+ * Owning the filter is also what keeps the behavior stable if a later build
+ * repairs `projectID`: a repaired `scope=project` narrows to the git worktree,
+ * still a superset of the sessions under any project dir inside it.
+ *
+ * An older sidecar that predates any of these ignores it (unknown query params
+ * are dropped, verified live) and simply falls back to the capped,
+ * exact-directory behavior — never an error.
  */
 interface SessionListQuery {
   directory: string;
   limit: number;
   /** Omitted where child sessions must also be adopted (id-binding rebuilds). */
   roots?: true;
+  /** Always `'project'`; the sidecar rejects any other value. */
+  scope: 'project';
 }
 
 /**
@@ -404,6 +423,18 @@ export class OpenCodeSessionMapper {
   /**
    * List OpenCode sessions for a project directory as DorkOS sessions.
    *
+   * A project's sessions are the ones started ANYWHERE INSIDE it, not only the
+   * ones started at its top folder: `opencode` run in `<project>/packages/api`
+   * stores that subfolder as the session's directory, and the sidecar's
+   * `?directory=` filter is exact string equality, so such a session appeared
+   * in no list at all (DOR-674). The read is therefore widened with `scope` and
+   * narrowed back here by `isWithinDirectory` from `@dorkos/shared/paths` — the
+   * SAME predicate the server's per-agent fan-out and the client's session
+   * selector apply to this list downstream, because three spellings of one rule
+   * is three chances to disagree about which sessions a project has. Each
+   * session keeps its OWN directory as `cwd`, so a row still says where it is
+   * really running.
+   *
    * Child (subtask) sessions are excluded — they are agent-internal, not user
    * sessions. A cold sidecar returns `[]` immediately: `peekClient()` never
    * boots, because session-list aggregation runs on a 2s per-runtime budget
@@ -415,11 +446,23 @@ export class OpenCodeSessionMapper {
    * total and offers no offset paging to fetch the remainder (`start` is a
    * timestamp filter, not a cursor — verified live). Aggregation degrades the
    * rejection to a per-runtime `warnings[]` entry (ADR-0310), so the list is
-   * never silently short.
+   * never silently short. The budget is spent on the WIDENED read, so overflow
+   * now means "too many sessions to read past", not "too many in this project"
+   * — the message says so, because a user looking at a 3-session project would
+   * otherwise be told that project has more than a thousand.
    *
-   * @param projectDir - Working directory, passed as `?directory=`
+   * @param projectDir - ABSOLUTE working directory; sessions under it are included
+   * @throws If `projectDir` is not absolute — the membership rule refuses to
+   *   guess a working directory, so a relative path would quietly match nothing
+   *   and read as "this project has no OpenCode sessions". Aggregation turns
+   *   this into a per-runtime warning (ADR-0310), which says so out loud.
    */
   async listSessions(projectDir: string): Promise<Session[]> {
+    if (!path.isAbsolute(projectDir)) {
+      throw new Error(
+        `OpenCode session listing needs a full folder path, but got "${projectDir}".`
+      );
+    }
     const client = this.provider.peekClient();
     if (!client) return [];
 
@@ -430,11 +473,14 @@ export class OpenCodeSessionMapper {
     });
     if (saturated) {
       throw new Error(
-        `OpenCode has more than ${SESSION_LIST_LIMIT} sessions in this folder, so this list would be missing some. Showing none is safer than showing a list that looks complete.`
+        `OpenCode has more than ${SESSION_LIST_LIMIT} sessions on this machine, so DorkOS could not read far enough to be sure this list is complete. Showing none is safer than showing a list that looks complete.`
       );
     }
     return rows
-      .filter((session) => session.parentID === undefined)
+      .filter(
+        (session) =>
+          session.parentID === undefined && isWithinDirectory(session.directory, projectDir)
+      )
       .map((session) => mapSession(session, this.adoptOpenCodeSession(session.id)));
   }
 
@@ -457,6 +503,12 @@ export class OpenCodeSessionMapper {
    * Overflowing pages need no probe — returning `budget + 1` rows is itself
    * proof that no smaller cap was applied.
    *
+   * Always reads at `scope: 'project'`. Both callers need sessions from the
+   * project's SUBFOLDERS as well as its top folder, and `?directory=` alone
+   * matches one exact string (DOR-674) — the caller that needs a narrower
+   * answer filters the rows it got, which is cheap, while a row the sidecar
+   * never sent cannot be recovered at all.
+   *
    * @param client - Sidecar client to read through
    * @param opts - Read parameters
    * @param opts.directory - Working directory, passed as `?directory=`
@@ -471,6 +523,7 @@ export class OpenCodeSessionMapper {
     const query: SessionListQuery = {
       directory: opts.directory,
       limit: opts.budget + 1,
+      scope: 'project',
       ...(opts.roots === undefined ? {} : { roots: opts.roots }),
     };
     const rows = unwrap(await client.session.list({ query }), 'session.list');
@@ -508,7 +561,10 @@ export class OpenCodeSessionMapper {
    * @param directory - Working directory, passed as `?directory=`
    */
   private async assertLimitHonoured(client: OpencodeClient, directory: string): Promise<void> {
-    const query: SessionListQuery = { directory, limit: 1 };
+    // Same `scope` as the read it vouches for: a build that honoured `limit`
+    // for an exact-directory read but dropped it for the widened one would
+    // otherwise pass a probe that never exercises the query actually used.
+    const query: SessionListQuery = { directory, limit: 1, scope: 'project' };
     const probe = unwrap(await client.session.list({ query }), 'session.list');
     if (probe.length > 1) {
       throw new Error(
@@ -595,6 +651,12 @@ export class OpenCodeSessionMapper {
       // SESSION_REBUILD_LIMIT. Under the default 100-session cap, opening a
       // session older than the 100 most recent could not resolve its id at all
       // and its history 404'd.
+      //
+      // Unfiltered by design, unlike `listSessions`: the row being searched for
+      // may live in a SUBFOLDER of the project (DOR-674), and every row here
+      // only mints a deterministic derived id — adopting one from outside the
+      // project costs a map entry and changes nothing a user can see, while
+      // skipping one strands a session the list already showed.
       const { rows, saturated } = await this.listWithBudget(client, {
         directory: projectDir,
         budget: SESSION_REBUILD_LIMIT,
@@ -607,7 +669,7 @@ export class OpenCodeSessionMapper {
       // for the adapter having stopped reading.
       if (!openCodeId && saturated) {
         throw new Error(
-          `OpenCode has more than ${SESSION_REBUILD_LIMIT} sessions in this folder, so DorkOS could not search far enough to open this one. The session is not missing — the search was cut short.`
+          `OpenCode has more than ${SESSION_REBUILD_LIMIT} sessions on this machine, so DorkOS could not search far enough to open this one. The session is not missing — the search was cut short.`
         );
       }
     }
