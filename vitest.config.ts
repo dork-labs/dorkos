@@ -56,6 +56,7 @@ export default defineConfig({
       'packages/extension-api',
       'packages/harness',
       'packages/marketplace',
+      'packages/memory',
       'packages/mesh',
       'packages/operating-skills',
       'packages/relay',

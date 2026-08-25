@@ -179,10 +179,18 @@ export async function resolveLaunch(args: {
       isRelayEnabled()
     ),
   });
-  // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the base
-  const systemPromptAppend = messageOpts?.systemPromptAppend
-    ? `${baseAppend}\n\n${messageOpts.systemPromptAppend}`
-    : baseAppend;
+  // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the
+  // base — onto BOTH halves, so the caller's own per-run instructions are
+  // digested by the relaunch pin exactly as they were before agent memory
+  // existed. Only the `<agent_memory>` block is out of the digest; nothing else
+  // moved, and a caller append that changed used to relaunch and still does.
+  const callerAppend = messageOpts?.systemPromptAppend;
+  const systemPromptAppend = callerAppend
+    ? `${baseAppend.text}\n\n${callerAppend}`
+    : baseAppend.text;
+  const systemPromptAppendStable = callerAppend
+    ? `${baseAppend.stable}\n\n${callerAppend}`
+    : baseAppend.stable;
 
   // Prepend the server-assembled additional-context bag (git status, UI state,
   // queue note, …) to the user message — keeps it out of the system prompt to
@@ -501,6 +509,11 @@ export async function resolveLaunch(args: {
     launch: {
       accountRoot,
       options: sdkOptions,
+      // The append MINUS the agent's own memory block — see
+      // `LaunchParams.systemPromptAppendStable`. Handed over explicitly rather
+      // than read back off `sdkOptions.systemPrompt`, because what is on the
+      // prompt includes the memory and what the digest may see must not.
+      systemPromptAppendStable,
       credentialEnv: claudeCredentialEnv,
       ...(agentIdentity !== undefined ? { agentIdentity } : { agentIdentity: undefined }),
       // The raw setting, plus whether it was resolved against a known model

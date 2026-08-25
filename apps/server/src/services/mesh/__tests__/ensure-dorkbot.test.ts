@@ -18,6 +18,16 @@ function createMockMeshCore() {
   } as unknown as Parameters<typeof ensureDorkBot>[0];
 }
 
+/** Whether a path exists, without throwing. */
+async function fileExists(target: string): Promise<boolean> {
+  try {
+    await fs.access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('ensureDorkBot', () => {
   let tmpDir: string;
   let meshCore: ReturnType<typeof createMockMeshCore>;
@@ -63,6 +73,74 @@ describe('ensureDorkBot', () => {
 
     // Verify DB sync called
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
+  });
+
+  // ── The memory file (DOR-632) ────────────────────────────────────────────
+
+  it('scaffolds MEMORY.md on a fresh install, with the visibility rule in it', async () => {
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const memory = await fs.readFile(
+      path.join(tmpDir, 'agents', 'dorkbot', '.dork', 'MEMORY.md'),
+      'utf-8'
+    );
+    // The one paragraph an operator must see before writing anything into a
+    // file that can surface in a room full of other people.
+    expect(memory).toContain('can come up in ANY conversation this agent joins');
+    expect(memory).toContain('Never');
+    expect(memory).toContain('store secrets, credentials');
+  });
+
+  // Red when: the backfill is written beside the fresh-install scaffold instead
+  // of in the common tail. Paths 2, 3 and 4 all return before Path 1, so an
+  // install that already has a DorkBot — which is every install an upgrade is
+  // for — would never get the file. A fresh-install test CANNOT fail for that
+  // bug: it takes Path 1 and never reaches the tail.
+  it('backfills MEMORY.md into an EXISTING install that has none', async () => {
+    const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
+    const dorkDir = path.join(dorkbotDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+    const existingManifest: AgentManifest = {
+      id: 'existing-id',
+      name: 'dorkbot',
+      displayName: 'DorkBot',
+      description: 'An install from before memory existed',
+      runtime: 'claude-code',
+      capabilities: ['tasks', 'summaries'],
+      isSystem: true,
+      namespace: 'system',
+      behavior: { responseMode: 'always' },
+      traits: { ...DEFAULT_TRAITS },
+      registeredAt: '2026-01-01T00:00:00.000Z',
+      registeredBy: 'dorkos-system',
+      personaEnabled: true,
+      enabledToolGroups: {},
+    };
+    await fs.writeFile(
+      path.join(dorkDir, 'agent.json'),
+      JSON.stringify(existingManifest, null, 2),
+      'utf-8'
+    );
+    // Path 4 (already correct) is the one that would skip a scaffold-side fix.
+    expect(await fileExists(path.join(dorkDir, 'MEMORY.md'))).toBe(false);
+
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const memory = await fs.readFile(path.join(dorkDir, 'MEMORY.md'), 'utf-8');
+    expect(memory).toContain('can come up in ANY conversation this agent joins');
+  });
+
+  it('never overwrites a memory file the operator or the agent has written to', async () => {
+    // First boot creates it; then it gains real content.
+    await ensureDorkBot(meshCore, tmpDir);
+    const memoryFile = path.join(tmpDir, 'agents', 'dorkbot', '.dork', 'MEMORY.md');
+    const edited = '## Notes\n\n- the operator ships on Fridays (noted in #general, 2026-08-24)\n';
+    await fs.writeFile(memoryFile, edited, 'utf-8');
+
+    // A later boot re-runs the backfill. Write-if-absent means it must not fire.
+    await ensureDorkBot(meshCore, tmpDir);
+
+    expect(await fs.readFile(memoryFile, 'utf-8')).toBe(edited);
   });
 
   it('upgrades existing DorkBot to system agent', async () => {

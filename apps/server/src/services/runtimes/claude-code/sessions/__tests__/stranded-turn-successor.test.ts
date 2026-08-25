@@ -51,7 +51,9 @@ vi.mock('../../../../../lib/logger.js', () => ({
   logError: (err: unknown) => ({ error: String(err) }),
 }));
 vi.mock('../../messaging/context-builder.js', () => ({
-  buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>test</env>'),
+  buildSystemPromptAppend: vi
+    .fn()
+    .mockResolvedValue({ text: '<env>test</env>', stable: '<env>test</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../../tooling/tool-filter.js', () => ({

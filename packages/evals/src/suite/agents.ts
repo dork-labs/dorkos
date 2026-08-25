@@ -139,7 +139,7 @@ async function seedNewbornAgent(sandbox: EvalSandbox): Promise<void> {
     capabilities: [],
     behavior: { responseMode: 'always' },
     traits: DEFAULT_TRAITS,
-    conventions: { soul: true, nope: true, dorkosKnowledge: true },
+    conventions: { soul: true, nope: true, memory: true, dorkosKnowledge: true },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-evals',
     personaEnabled: true,

@@ -1785,6 +1785,32 @@ export class RoomService {
   }
 
   /**
+   * Where a session is answering, as a saved note should record it.
+   *
+   * The provenance suffix on an agent's memory has to be something the agent
+   * cannot choose (agent-memory spec D4 / review M4), so it is derived from the
+   * session rather than passed in — and the session id is not a value the model
+   * supplies either. `#slug` for a channel; `null` for a direct message, an
+   * unbound session, or a room that has since gone, all of which the note
+   * records honestly as a direct chat.
+   *
+   * **Deliberately unscoped by viewer**, unlike every listing on this service.
+   * It answers about the CALLER'S OWN session, and returns a label the caller is
+   * already looking at — the room context block names the same room by the same
+   * name on every turn — so there is nothing here a membership check would
+   * protect.
+   *
+   * @param sessionId - Either of the session's ids; the ledger follows a rekey.
+   */
+  roomLabelForSession(sessionId: string): string | null {
+    const binding = this.store.sessionLedger.bindingForSession(sessionId);
+    if (!binding) return null;
+    const room = this.store.getRoom(binding.roomId);
+    if (!room || room.kind !== 'channel') return null;
+    return room.slug ? `#${room.slug}` : room.title;
+  }
+
+  /**
    * Patch a room's title, topic, archived flag, or — on a bridged room — its
    * `deliverNotices` override.
    *

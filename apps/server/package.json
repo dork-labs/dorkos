@@ -32,6 +32,7 @@
     "@dorkos/extension-api": "workspace:*",
     "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
+    "@dorkos/memory": "workspace:*",
     "@dorkos/mesh": "workspace:*",
     "@dorkos/operating-skills": "workspace:*",
     "@dorkos/relay": "workspace:*",

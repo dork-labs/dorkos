@@ -142,7 +142,20 @@ describe('an agent you manage', () => {
       'Connections nav',
       'Instructions nav',
       'Boundaries nav',
+      // The third convention file, beside the other two rather than in a group
+      // of its own: what an agent is told, what it must not do, and what it has
+      // learned are the same kind of thing to a person looking for them.
+      'Memory nav',
     ]);
+  });
+
+  it('names the three convention files by their files, in the toolkit', () => {
+    // The row's VALUE is the file name — this is the row an operator uses to
+    // find MEMORY.md on disk, so the row has to say which file it is.
+    const rows = flat(build(WITH_FOLDER));
+    expect(rows.find((row) => row.id === 'instructions')!.value).toBe('SOUL.md');
+    expect(rows.find((row) => row.id === 'boundaries')!.value).toBe('NOPE.md');
+    expect(rows.find((row) => row.id === 'memory')!.value).toBe('MEMORY.md');
   });
 
   it('copies the real path while showing the short one', () => {

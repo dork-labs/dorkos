@@ -147,6 +147,11 @@ describe('in-session tool exposure', () => {
         'react_to_room_entry',
         'read_room_history',
         'search_room_history',
+        // DOR-632: there must be no ToolSearch hop between an agent and
+        // remembering. The prompt tells every agent on every turn to save what
+        // it learns before the turn ends; a tool named in that instruction and
+        // then deferred costs the turn it was written to save.
+        'memory_write',
       ].sort()
     );
     // The declared set and the served surface are the same set, in both
@@ -160,7 +165,7 @@ describe('in-session tool exposure', () => {
     const deferred = tools.filter((t) => t._meta?.[ALWAYS_LOAD_META] !== true);
     // The exact surface, so a tool added tomorrow shows up here as a number to
     // look at rather than silently passing a `>` bound.
-    expect(tools).toHaveLength(83);
+    expect(tools).toHaveLength(84);
     expect(deferred).toHaveLength(78);
   });
 
@@ -194,6 +199,7 @@ describe('in-session tool exposure', () => {
         'react_to_room_entry',
         'read_room_history',
         'search_room_history',
+        'memory_write',
         'mesh_list',
         'mesh_inspect',
         'relay_send',

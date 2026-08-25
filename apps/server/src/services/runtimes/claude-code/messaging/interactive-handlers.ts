@@ -129,6 +129,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'mesh_status',
     'mesh_query_topology',
     'get_agent',
+    // The agent's own memory. Always loaded and auto-allowed on identity, for
+    // the argument stated in full under IDENTITY_SCOPED_TOOLS below.
+    'memory_write',
     // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
     // — most of its actions only move pixels, but not all of them, so its calls go
     // through `isAutoAllowedCall` below rather than riding this membership alone.
@@ -150,7 +153,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all five: **the per-call card an operator watching a DIRECT session
+ * thing for all six: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
@@ -220,6 +223,37 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * is harmless because some other layer happens to refuse it. (And the two do not
  * resolve identity through the same store — see below.)
  *
+ * ## Why `memory_write` is here (DOR-632)
+ *
+ * It is not a rooms verb either, and its argument is its own — the spec is
+ * explicit that "like the room verbs" would conflate the tier with the
+ * auto-allow. Three things together are what make a card unnecessary:
+ *
+ * - **It is jailed to the caller's own file.** There is no path parameter, no
+ *   agent parameter, and nothing else the model can name: the target is
+ *   `<agentPath>/.dork/MEMORY.md` for the identity this session presented. An
+ *   agent cannot reach another agent's memory even by trying, so the card would
+ *   be asking about a scope of exactly one file the operator already owns.
+ * - **It has no execution semantics.** Nothing here runs, sends, spends, or
+ *   leaves the machine. The worst outcome of a bad write is a wrong note in a
+ *   small markdown file the operator can open and edit, and `remove` undoes it
+ *   from inside.
+ * - **Its blast radius is bounded by two mechanisms that hold whether or not a
+ *   person is watching**: the file is capped (8,000 characters, refused past
+ *   it, never trimmed), and everything in it is injected FENCED and framed as
+ *   data, with a handler-written provenance suffix on every note. A poisoned
+ *   entry names the room that poisoned it.
+ *
+ * And the reason it must not raise a card is the same one the room verbs have:
+ * the turn that most needs to save something is a room turn, where nobody is
+ * positioned to answer. An agent that parked on an approval card to write a
+ * note would have learned the thing and then failed to keep it.
+ *
+ * Without an identity the tool refuses itself — `no-agent`, a plain sentence —
+ * so the qualifier costs a call nothing today. It is stated anyway, for the same
+ * reason it is stated for `relay_notify_user`: the gate must not be the layer
+ * that decides a call is harmless because another layer happens to refuse it.
+ *
  * ## Where identity comes from
  *
  * One KEY — the session's working directory — resolved here by
@@ -268,6 +302,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'read_room_history',
     'search_room_history',
     'relay_notify_user',
+    'memory_write',
   ].map(inSessionToolName)
 );
 

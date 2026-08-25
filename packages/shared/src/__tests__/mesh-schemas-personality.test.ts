@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { MEMORY_MAX_CHARS } from '../convention-files.js';
 import {
   TraitsSchema,
   ConventionsSchema,
@@ -115,9 +116,21 @@ describe('TraitsSchema — invalid range', () => {
 });
 
 describe('ConventionsSchema — defaults', () => {
-  it('defaults soul, nope, and dorkosKnowledge to true when parsed with empty object', () => {
+  it('defaults every convention toggle to true when parsed with empty object', () => {
+    // Exact equality, not a subset: a toggle added without a decision about its
+    // default shows up here as a diff rather than passing silently. `memory`
+    // defaults ON like the other three — an agent that keeps notes and is never
+    // shown them is the defect this feature exists to fix.
     const result = ConventionsSchema.parse({});
-    expect(result).toEqual({ soul: true, nope: true, dorkosKnowledge: true });
+    expect(result).toEqual({ soul: true, nope: true, memory: true, dorkosKnowledge: true });
+  });
+
+  it('accepts explicit false for memory, leaving the others on', () => {
+    const result = ConventionsSchema.parse({ memory: false });
+    expect(result.memory).toBe(false);
+    expect(result.soul).toBe(true);
+    expect(result.nope).toBe(true);
+    expect(result.dorkosKnowledge).toBe(true);
   });
 
   it('accepts explicit false for soul', () => {
@@ -142,13 +155,23 @@ describe('ConventionsSchema — defaults', () => {
   });
 
   it('accepts all set to false', () => {
-    const result = ConventionsSchema.parse({ soul: false, nope: false, dorkosKnowledge: false });
-    expect(result).toEqual({ soul: false, nope: false, dorkosKnowledge: false });
+    const result = ConventionsSchema.parse({
+      soul: false,
+      nope: false,
+      memory: false,
+      dorkosKnowledge: false,
+    });
+    expect(result).toEqual({ soul: false, nope: false, memory: false, dorkosKnowledge: false });
   });
 
   it('accepts all set to true explicitly', () => {
-    const result = ConventionsSchema.parse({ soul: true, nope: true, dorkosKnowledge: true });
-    expect(result).toEqual({ soul: true, nope: true, dorkosKnowledge: true });
+    const result = ConventionsSchema.parse({
+      soul: true,
+      nope: true,
+      memory: true,
+      dorkosKnowledge: true,
+    });
+    expect(result).toEqual({ soul: true, nope: true, memory: true, dorkosKnowledge: true });
   });
 
   it('rejects non-boolean values', () => {
@@ -207,12 +230,22 @@ describe('AgentManifestSchema — conventions field', () => {
       ...baseManifest,
       conventions: { soul: true, nope: false },
     });
-    expect(result.conventions).toEqual({ soul: true, nope: false, dorkosKnowledge: true });
+    expect(result.conventions).toEqual({
+      soul: true,
+      nope: false,
+      memory: true,
+      dorkosKnowledge: true,
+    });
   });
 
   it('applies ConventionsSchema defaults when conventions is provided as empty object', () => {
     const result = AgentManifestSchema.parse({ ...baseManifest, conventions: {} });
-    expect(result.conventions).toEqual({ soul: true, nope: true, dorkosKnowledge: true });
+    expect(result.conventions).toEqual({
+      soul: true,
+      nope: true,
+      memory: true,
+      dorkosKnowledge: true,
+    });
   });
 });
 
@@ -301,6 +334,24 @@ describe('UpdateAgentConventionsSchema', () => {
 
   it('rejects nopeContent exceeding 2000 chars', () => {
     expect(() => UpdateAgentConventionsSchema.parse({ nopeContent: 'b'.repeat(2001) })).toThrow();
+  });
+
+  // The wire is the OTHER writable path into MEMORY.md. The tool refuses a
+  // write past the cap; without this, the in-app editor could produce a file the
+  // injector has to truncate — the degradation that is meant to be reachable
+  // only by editing the file on disk, where DorkOS genuinely cannot intervene.
+  //
+  // Both directions, because a rejection-only test passes for a schema that
+  // rejects everything, and an acceptance-only test passes for one with no cap.
+  it('accepts memoryContent exactly at the cap and refuses one character past it', () => {
+    const atCap = UpdateAgentConventionsSchema.parse({
+      memoryContent: 'm'.repeat(MEMORY_MAX_CHARS),
+    });
+    expect(atCap.memoryContent).toHaveLength(MEMORY_MAX_CHARS);
+
+    expect(() =>
+      UpdateAgentConventionsSchema.parse({ memoryContent: 'm'.repeat(MEMORY_MAX_CHARS + 1) })
+    ).toThrow();
   });
 
   it('accepts traits with valid values', () => {

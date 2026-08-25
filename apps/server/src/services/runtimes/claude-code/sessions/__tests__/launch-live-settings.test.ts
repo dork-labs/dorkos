@@ -39,6 +39,7 @@ function capture(overrides: Partial<LaunchParams> = {}) {
   return captureLaunchFingerprint({
     accountRoot: CLIENT_ROOT,
     options: options(),
+    systemPromptAppendStable: 'base append',
     credentialEnv: {},
     agentIdentity: undefined,
     effortInput: undefined,

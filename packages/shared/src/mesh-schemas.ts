@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
-import { SOUL_MAX_CHARS, NOPE_MAX_CHARS } from './convention-files.js';
+import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
 
 extendZodWithOpenApi(z);
 
@@ -294,6 +294,15 @@ export const ConventionsSchema = z
   .object({
     soul: z.boolean().default(true),
     nope: z.boolean().default(true),
+    /**
+     * Whether the agent's own saved notes (`MEMORY.md`) are injected.
+     *
+     * Defaults ON, like the other two: an agent that keeps notes and is never
+     * shown them is the DOR-632 defect with extra steps. Turning it off stops
+     * the injection only — the file keeps its contents, so this is a mute
+     * rather than a delete.
+     */
+    memory: z.boolean().default(true),
     dorkosKnowledge: z.boolean().default(true),
   })
   .openapi('Conventions');
@@ -672,15 +681,24 @@ export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
  * Request body for PATCH /api/mesh/agents/:id/conventions — update convention
  * file content and personality toggles.
  *
- * The budgets are {@link SOUL_MAX_CHARS} and {@link NOPE_MAX_CHARS} rather than
- * literals, because this schema is what ENFORCES them and three other places
- * describe them: the editor's counter, the Save gate, and the sentence the
- * server refuses with. A literal here let those drift from the rule.
+ * The budgets are {@link SOUL_MAX_CHARS}, {@link NOPE_MAX_CHARS} and
+ * {@link MEMORY_MAX_CHARS} rather than literals, because this schema is what
+ * ENFORCES them and three other places describe them: the editor's counter, the
+ * Save gate, and the sentence the server refuses with. A literal here let those
+ * drift from the rule.
+ *
+ * `memoryContent` is capped here for a reason worth stating: the `memory_write`
+ * tool refuses a write past the cap, so tool writes keep `block == file`. This
+ * is the OTHER writable path into the same file, and a wire without the cap
+ * would let the in-app editor produce a file the injector has to truncate — the
+ * degradation that is supposed to be reachable only by editing the file on
+ * disk, where DorkOS genuinely cannot intervene.
  */
 export const UpdateAgentConventionsSchema = z
   .object({
     soulContent: z.string().max(SOUL_MAX_CHARS).optional(),
     nopeContent: z.string().max(NOPE_MAX_CHARS).optional(),
+    memoryContent: z.string().max(MEMORY_MAX_CHARS).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
   })

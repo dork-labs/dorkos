@@ -200,6 +200,13 @@ describe('createCanUseTool — approval gate', () => {
     ['mcp__dorkos__read_room_history', { roomId: 'room-1' }],
     ['mcp__dorkos__search_room_history', { roomId: 'room-1', query: 'deploy' }],
     ['mcp__dorkos__relay_notify_user', { message: 'the deploy finished' }],
+    // `memory_write` joins them for a different reason, spelled out in
+    // `interactive-handlers.ts` and in the gate test's own argument: it is
+    // jailed to the caller's own capped file, has no execution semantics, and
+    // without an identity there IS no file — the handler answers `no-agent`.
+    // Both halves are pinned here anyway, because the gate must not decide a
+    // call is harmless on the strength of another layer refusing it.
+    ['mcp__dorkos__memory_write', { action: 'add', text: 'the operator ships on Fridays' }],
   ];
 
   /** A session whose cwd hosts a registered agent, as the resolver reports it. */
