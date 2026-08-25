@@ -234,10 +234,13 @@ describe('SlackAdapter', () => {
   });
 
   // Corporate-proxy support (DOR-1542): @slack/web-api 8 and @slack/socket-mode moved from
-  // axios (which honored HTTP_PROXY/HTTPS_PROXY/NO_PROXY automatically) to native fetch,
-  // which does not. These assert the adapter restores that behavior explicitly, and only
-  // when a proxy env var is actually set — an install with none configured must see no
-  // change in what gets passed to the SDKs.
+  // axios (which honored HTTP_PROXY/HTTPS_PROXY automatically) to native fetch, which does
+  // not. These assert the wiring end to end (real @slack/web-api and undici types, mocked
+  // @slack/bolt) — that a proxy env var actually reaches both SDKs, that HTTP(S)_PROXY alone
+  // is what triggers it (not NO_PROXY, which alone means "use no proxy" — DOR-1542 review,
+  // F5), and only then: an install with none of HTTP_PROXY/HTTPS_PROXY set must see no change
+  // in what gets passed to the SDKs. Whether the returned transport actually tunnels traffic
+  // through a proxy is proven against the real mechanism in proxy.test.ts, not here.
   describe('proxy support (DOR-1542)', () => {
     afterEach(() => {
       vi.unstubAllEnvs();
@@ -253,7 +256,7 @@ describe('SlackAdapter', () => {
       expect(capturedWebClientOptions).toBeUndefined();
     });
 
-    it('wires a fetch and a SocketModeReceiver dispatcher when HTTPS_PROXY is set', async () => {
+    it('wires a fetch and a SocketModeReceiver dispatcher when HTTPS_PROXY is set, both dispatching through the same instance', async () => {
       vi.stubEnv('HTTPS_PROXY', 'http://proxy.example.com:8080');
 
       await adapter.start(mockRelay);
@@ -263,13 +266,44 @@ describe('SlackAdapter', () => {
       expect(capturedSocketModeReceiverOptions).not.toBeNull();
       expect(capturedSocketModeReceiverOptions?.appToken).toBe('xapp-test-token');
       expect(capturedSocketModeReceiverOptions?.dispatcher).toBeDefined();
-      // Both the WebClient fetch and the Socket Mode transport share the exact same
-      // dispatcher instance — one proxy configuration, one connection pool.
-      expect(clientOptions?.fetch).toBeDefined();
+
+      // Identity, not just presence: spy on the *exact* dispatcher instance
+      // handed to the SocketModeReceiver, then drive the WebClient fetch and
+      // confirm it dispatches through that same object. If `_start()` ever
+      // built two separate transports instead of sharing one, this spy would
+      // never fire and the test would fail (DOR-1542 review, F4).
+      const dispatcher = capturedSocketModeReceiverOptions?.dispatcher as {
+        dispatch: (...args: unknown[]) => boolean;
+      };
+      const dispatchSpy = vi.spyOn(dispatcher, 'dispatch');
+      const fetch = clientOptions?.fetch as (url: string) => Promise<unknown>;
+      await fetch('https://slack.invalid.test/api/auth.test').catch(() => {
+        // Expected: nothing is actually listening on that host in a unit test.
+      });
+      expect(dispatchSpy).toHaveBeenCalled();
 
       await adapter.testConnection();
       const webClientOptions = capturedWebClientOptions as { fetch?: unknown } | undefined;
       expect(typeof webClientOptions?.fetch).toBe('function');
+    });
+
+    it('_stop() closes the proxy dispatcher _start() opened', async () => {
+      vi.stubEnv('HTTPS_PROXY', 'http://proxy.example.com:8080');
+      await adapter.start(mockRelay);
+
+      const dispatcher = capturedSocketModeReceiverOptions?.dispatcher as {
+        close: () => Promise<void>;
+      };
+      const closeSpy = vi.spyOn(dispatcher, 'close');
+
+      await adapter.stop();
+
+      // Not toHaveBeenCalledTimes(1): undici's DispatcherBase#close(), called
+      // with no arguments, wraps itself in a Promise by recursively calling
+      // `this.close(callback)` once more internally — so a single logical
+      // close from our code always shows up as 2 recorded calls on this spy.
+      // What we're actually asserting is that _stop() calls close() at all.
+      expect(closeSpy).toHaveBeenCalled();
     });
 
     it('wires the proxy transport when HTTP_PROXY is set', async () => {
@@ -279,11 +313,12 @@ describe('SlackAdapter', () => {
       expect(typeof clientOptions?.fetch).toBe('function');
     });
 
-    it('wires the proxy transport when NO_PROXY is set', async () => {
+    it('does NOT wire the proxy transport when only NO_PROXY is set (DOR-1542 review, F5)', async () => {
       vi.stubEnv('NO_PROXY', 'internal.example.com');
       await adapter.start(mockRelay);
-      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
-      expect(typeof clientOptions?.fetch).toBe('function');
+      expect(capturedAppOptions?.clientOptions).toBeUndefined();
+      expect(capturedAppOptions?.receiver).toBeUndefined();
+      expect(capturedSocketModeReceiverOptions).toBeNull();
     });
 
     it('wires the proxy transport when the lowercase https_proxy is set', async () => {

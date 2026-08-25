@@ -9,6 +9,7 @@
  */
 import { App, LogLevel, SocketModeReceiver } from '@slack/bolt';
 import { WebAPIPlatformError, WebClient } from '@slack/web-api';
+import type { Dispatcher } from 'undici';
 import type { RelayEnvelope, SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
@@ -140,6 +141,13 @@ export class SlackAdapter extends BaseRelayAdapter {
   private platformClient: SlackPlatformClient | null = null;
   /** Set once a fatal Slack error has queued a teardown, so only one runs. */
   private fatalStopScheduled = false;
+  /**
+   * The corporate-proxy dispatcher `_start()` built, if any — held so `_stop()`
+   * can close it. `createSlackProxyTransport()` opens real sockets/connection
+   * pools (via `EnvHttpProxyAgent`) that outlive a single request, so nothing
+   * else closes them once the adapter stops.
+   */
+  private proxyDispatcher: Dispatcher | null = null;
   private readonly codec: SlackThreadIdCodec;
   private readonly threadTracker: ThreadParticipationTracker;
 
@@ -198,11 +206,13 @@ export class SlackAdapter extends BaseRelayAdapter {
    * No side effects (no Socket Mode connection, no event listeners).
    */
   async testConnection(): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
+    // A short-lived transport of its own — not `this.proxyDispatcher`, which
+    // `_start()` owns for the running connection's lifetime. This one is
+    // scoped to the single auth.test() call below and closed in `finally`,
+    // so validating credentials never leaks a socket pool.
+    const proxyTransport = createSlackProxyTransport();
     try {
       // A bare WebClient, so validating credentials never starts a Bolt app.
-      // Routed through the same corporate-proxy transport as `_start()` — see
-      // its comment for why this needs an explicit `fetch` at all.
-      const proxyTransport = createSlackProxyTransport();
       const tempClient = new WebClient(
         this.config.botToken,
         proxyTransport ? { fetch: proxyTransport.fetch } : undefined
@@ -211,6 +221,10 @@ export class SlackAdapter extends BaseRelayAdapter {
       return { ok: true, botUsername: result.user as string | undefined };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      await proxyTransport?.dispatcher.close().catch(() => {
+        // best-effort — nothing waits on a clean close here
+      });
     }
   }
 
@@ -224,6 +238,9 @@ export class SlackAdapter extends BaseRelayAdapter {
     // same undici dispatcher; when none is set, pass nothing and behave
     // exactly as before this existed.
     const proxyTransport = createSlackProxyTransport();
+    // Tracked on `this` (independent of the transport `testConnection()` builds
+    // for itself) so `_stop()` can close it — see the field's own comment.
+    this.proxyDispatcher = proxyTransport?.dispatcher ?? null;
     const app = new App({
       token: this.config.botToken,
       appToken: this.config.appToken,
@@ -390,6 +407,14 @@ export class SlackAdapter extends BaseRelayAdapter {
     if (this.platformClient) {
       await this.platformClient.destroy();
       this.platformClient = null;
+    }
+    if (this.proxyDispatcher) {
+      try {
+        await this.proxyDispatcher.close();
+      } catch {
+        // best-effort — may already be closed alongside the socket it proxied
+      }
+      this.proxyDispatcher = null;
     }
     this.botUserId = '';
     this.streamState.clear();

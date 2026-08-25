@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { WebAPIPlatformError } from '@slack/web-api';
-import { AuthorizationError, MultipleListenerError } from '@slack/bolt';
+import { App, AuthorizationError, MultipleListenerError, SocketModeReceiver } from '@slack/bolt';
 import { findPlatformError, classifySlackError } from '../index.js';
 
 describe('Slack error classification against the real SDKs', () => {
@@ -101,5 +101,27 @@ describe('Slack error classification against the real SDKs', () => {
         fatal: false,
       });
     });
+  });
+
+  // Regression guard for the DOR-1542 proxy wiring (real @slack/bolt, not the
+  // mock in slack-adapter.test.ts): _start() supplies its own SocketModeReceiver
+  // carrying a proxy dispatcher, alongside `socketMode: true`, so it can reach
+  // the Socket Mode connection Bolt's own convenience path never exposes a way
+  // to proxy. Bolt allows this combination today (App.initReceiver checks
+  // `receiver instanceof SocketModeReceiver`) but nothing stops a future bolt
+  // major from tightening that guard — if it ever throws, this is where a
+  // proxy user would find out, not production.
+  it('bolt accepts a custom SocketModeReceiver + dispatcher alongside socketMode: true', () => {
+    const dispatcher = { dispatch: () => true };
+
+    expect(
+      () =>
+        new App({
+          token: 'xoxb-test-token',
+          socketMode: true,
+          receiver: new SocketModeReceiver({ appToken: 'xapp-test-token', dispatcher }),
+          deferInitialization: true,
+        })
+    ).not.toThrow();
   });
 });

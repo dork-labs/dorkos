@@ -15,17 +15,18 @@
 import { EnvHttpProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 import type { FetchFunction } from '@slack/web-api';
 
-/** Every proxy env var (either case) that changes undici's `EnvHttpProxyAgent` behavior. */
-const PROXY_ENV_VARS = [
-  'HTTP_PROXY',
-  'http_proxy',
-  'HTTPS_PROXY',
-  'https_proxy',
-  'NO_PROXY',
-  'no_proxy',
-] as const;
+/**
+ * Every env var (either case) that, on its own, means "use a proxy transport."
+ *
+ * `NO_PROXY` is deliberately excluded: alone it means "use no proxy," so
+ * treating it as a trigger would switch Slack onto the custom
+ * `EnvHttpProxyAgent` path for installs that never asked for one, for no
+ * behavioral benefit. `EnvHttpProxyAgent` still reads `NO_PROXY` itself once
+ * the transport exists for another reason (see {@link createSlackProxyTransport}).
+ */
+const PROXY_ENV_VARS = ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy'] as const;
 
-/** Whether any HTTP(S)_PROXY/NO_PROXY env var is set, in either case. */
+/** Whether `HTTP_PROXY`/`HTTPS_PROXY` (either case) is set — see {@link PROXY_ENV_VARS}. */
 export function hasProxyEnv(): boolean {
   // relay is a library with no env.ts; reading process.env directly here (rather than
   // threading a config value through every adapter constructor) matches how the CLI
