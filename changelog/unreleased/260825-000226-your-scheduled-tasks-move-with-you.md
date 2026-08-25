@@ -3,6 +3,7 @@ covers:
   - 'refactor(server,skills): the legacy task shape has one reader left'
   - 'feat(server): scheduled tasks move themselves to their new home on first start (DOR-1486)'
   - 'fix(server): a Shape never writes over a skill it did not create (DOR-1486)'
+  - 'fix(server): an apply reports the schedule it could not create (DOR-1486)'
 ---
 
 ### Changed
@@ -15,6 +16,6 @@ covers:
 
 - If two things wanted the same name — a task called `digest` and a skill called `digest` — the skill keeps its name and the task moves in beside it as `digest-migrated`, and shows up waiting for you so you can see what happened. Nothing is overwritten (DOR-1486)
 - A task file DorkOS cannot read is left exactly where it is, and appears on your Schedules page with the file's path and what is wrong with it, instead of being quietly left behind in a folder nothing looks at any more (DOR-1486)
-- A Shape can no longer write its schedule over a skill you wrote yourself that happens to have the same name. Your file stays exactly as it is, and DorkOS says which schedule it skipped and why (DOR-1486)
+- A Shape can no longer write its schedule over a skill you wrote yourself that happens to have the same name. Your file stays exactly as it is, and applying the Shape tells you which schedule it skipped and why, instead of reporting one it never made (DOR-1486)
 - Your task templates keep their timing when they move. Before, a template that had moved offered no schedule at all when you picked it (DOR-1486)
 - An agent you add while DorkOS is running brings its scheduled tasks with it straight away, instead of waiting for the next restart (DOR-1486)
