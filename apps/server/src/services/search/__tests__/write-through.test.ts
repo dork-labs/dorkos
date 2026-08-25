@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { messages, searchSources, and, eq, type Db } from '@dorkos/db';
+import { messages, roomEntries, searchSources, and, eq, type Db } from '@dorkos/db';
 import { createRoomSubsystem, type RoomSubsystem } from '../../rooms/index.js';
 import { SearchIndexer } from '../indexer.js';
 import { roomsSource } from '../registry.js';
@@ -37,6 +37,39 @@ function find(query: string): number[] {
     query,
     limit: 20,
   }).map((hit) => hit.ordinal);
+}
+
+/**
+ * Append entries straight to the room log, with no write-through anywhere near
+ * them.
+ *
+ * This is what a room the index has never seen actually looks like — a room that
+ * was talked in before search existed, or one restored from a backup — and it is
+ * the only honest way to build a backlog, since every path THROUGH the service
+ * indexes as it goes.
+ *
+ * @param from - The first `seq` to write.
+ * @param count - How many entries to append.
+ */
+function seedLog(from: number, count: number): void {
+  db.transaction((tx) => {
+    for (let i = 0; i < count; i += 1) {
+      const seq = from + i;
+      tx.insert(roomEntries)
+        .values({
+          id: `${roomId}-${seq}`,
+          roomId,
+          seq,
+          kind: 'post',
+          authorId: human,
+          body: JSON.stringify({ text: `backlog entry ${seq} about kestrels` }),
+          createdAt: '2026-08-01T00:00:00.000Z',
+          cascadeRoot: `${roomId}-${seq}`,
+          cascadeDepth: 0,
+        })
+        .run();
+    }
+  });
 }
 
 /** What the frontier says it has read of this room. */
@@ -110,6 +143,56 @@ describe('a message is findable the moment it is said', () => {
     expect(sweep.indexed).toBe(0);
     expect(sweep.failures).toEqual([]);
     expect(find('kestrel')).toEqual([1]);
+  });
+});
+
+describe('a room the index is far behind on', () => {
+  it('is left to the sweep rather than caught up inside a post', async () => {
+    // A room with a long unindexed backlog — a fresh index, a restored database, a
+    // room that has been quiet since before search existed. The write-through
+    // resumes where the index stopped, so without the bound the FIRST post into
+    // this room would project every one of these entries synchronously inside
+    // `publishEntry`, with a person waiting on it (measured at 406 ms for 20,000
+    // entries).
+    const service = subsystem.service;
+    vi.spyOn(rowFrontier, 'indexRowContainer').mockImplementation(() => {
+      throw new Error('the index must not be written inline for a backlogged room');
+    });
+    for (let i = 0; i < 400; i += 1) {
+      service.post(roomId, { authorId: human, text: `backlog entry ${i} about kestrels` });
+    }
+    vi.restoreAllMocks();
+
+    // The post that crosses the bound: it must not throw, and it must not index.
+    service.post(roomId, { authorId: human, text: 'the kestrel migration is done' });
+    expect(find('kestrel')).toEqual([]);
+    expect(watermark()).toBeNull();
+
+    // And the deferral is exactly the tested degradation: the sweep catches up.
+    const sweep = await new SearchIndexer(db, [roomsSource]).sweep();
+    expect(sweep.indexed).toBe(401);
+    expect(find('migration')).toEqual([401]);
+  });
+
+  it('resumes indexing inline once the sweep has caught the room up', async () => {
+    // The property the bound has to have that the deferral alone does not prove:
+    // it is a fact about the BACKLOG, recomputed per post, not a mark left on the
+    // room. A guard that remembered "this room was too far behind" would pass the
+    // case above and strand the room on the five-minute path forever.
+    seedLog(1, 400);
+
+    // 1. A post while the room is behind: deferred, exactly as above.
+    subsystem.service.post(roomId, { authorId: human, text: 'first kestrel after the backlog' });
+    expect(find('kestrel')).toEqual([]);
+
+    // 2. The sweep does what the deferral handed it.
+    expect((await new SearchIndexer(db, [roomsSource]).sweep()).indexed).toBe(401);
+
+    // 3. And now the room is live again: this post is indexed INLINE, with no
+    //    sweep between it and the search below.
+    subsystem.service.post(roomId, { authorId: human, text: 'a second kestrel, posted live' });
+    expect(find('live')).toEqual([402]);
+    expect(watermark()).toBe(402);
   });
 });
 

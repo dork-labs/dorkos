@@ -148,6 +148,12 @@ beforeEach(async () => {
   join('late', ownerId, 0);
   join('late', agentId, 2);
   join('closed', ownerId, 0);
+  // A room the operator is not in and never was. Two agents opened it between
+  // themselves; the owner has no `room_members` row for it.
+  seedRoom('agents-only');
+  say('agents-only', 1, 'a buzzard, discussed by agents with nobody watching');
+  say('agents-only', 2, 'a kestrel, in the same agents-only room');
+  join('agents-only', agentId, 0);
 
   transcribe('session-a', 1, 'a pelican I mentioned to Claude Code');
   transcribe('session-b', 4, 'kestrel notes from a session');
@@ -161,10 +167,27 @@ beforeEach(async () => {
 });
 
 describe('the owner', () => {
-  it('finds every room, including ones they are the only member of', () => {
+  it('finds every room they are on the roster of', () => {
     const hits = search(scopeFor(ownerId, true), 'kestrel').results;
     const containers = hits.filter((hit) => hit.source === 'rooms').map((hit) => hit.container);
-    expect(new Set(containers)).toEqual(new Set(['open', 'closed', 'late']));
+    expect(new Set(containers)).toEqual(new Set(['open', 'closed', 'late', 'agents-only']));
+  });
+
+  it('finds a room they were never a member of at all', () => {
+    // The deliberate divergence from `readHistory`, driven rather than described
+    // (see `RoomService.searchScope`): that path requires a member row even of the
+    // owner, and this one does not. `agents-only` is a room two agents opened
+    // between themselves — the operator has NO `room_members` row in it — and it
+    // is searchable by them anyway, because spec §7 gives them every room on the
+    // machine. A future decision to narrow this has to start by reddening here.
+    expect(
+      subsystem.store.listMembersForRooms(['agents-only']).map((member) => member.authorId)
+    ).not.toContain(ownerId);
+
+    const hits = search(scopeFor(ownerId, true), 'buzzard').results;
+    expect(hits).toEqual([
+      expect.objectContaining({ source: 'rooms', container: 'agents-only', ordinal: 1 }),
+    ]);
   });
 
   it('reads a room from its first message, floor or no floor', () => {
@@ -226,7 +249,10 @@ describe('a member', () => {
     const containers = search(scopeFor(agentId, false), 'kestrel')
       .results.map((hit) => hit.container)
       .sort();
-    expect(containers).toEqual(['late', 'open']);
+    // `agents-only` is Ana's too — she is on its roster and the owner is not,
+    // which is the pair that makes the owner case above a real divergence rather
+    // than a coincidence. `closed` is the one she is out of.
+    expect(containers).toEqual(['agents-only', 'late', 'open']);
   });
 
   it('never sees what a room said before they joined it', () => {
@@ -285,8 +311,17 @@ describe('session history over an MCP-shaped caller', () => {
 describe('narrowing to one source', () => {
   it('leaves out everything else', () => {
     const hits = search(scopeFor(ownerId, true), 'kestrel', 'rooms').results;
-    expect(hits.every((hit) => hit.source === 'rooms')).toBe(true);
-    expect(hits.length).toBeGreaterThan(0);
+    // Five room rows say "kestrel" — `open:1`, `closed:2`, `late:1..3` — and none
+    // of the two session rows that also say it may come back. A length-agnostic
+    // `every()` passes for a filter that dropped four of the five as well.
+    expect(hits.map((hit) => `${hit.container}:${hit.ordinal}`).sort()).toEqual([
+      'agents-only:2',
+      'closed:2',
+      'late:1',
+      'late:2',
+      'late:3',
+      'open:1',
+    ]);
   });
 });
 
@@ -314,6 +349,36 @@ describe('a source that is behind', () => {
       )
       .run();
     expect(search(scopeFor(ownerId, true), 'kestrel').warnings).toHaveLength(1);
+  });
+
+  it('says nothing to a member about a room they are not in', () => {
+    // `closed` is a room Ana cannot search. Its frontier being broken is not her
+    // problem, and telling her about it would be a statement about a room she
+    // cannot see — on every query, forever. The rooms she IS in are fine, so her
+    // answer carries no warning at all.
+    db.update(searchSources)
+      .set({ lastError: 'the projection threw' })
+      .where(and(eq(searchSources.sourceId, 'rooms'), eq(searchSources.originKey, 'closed')))
+      .run();
+
+    expect(search(scopeFor(agentId, false), 'kestrel').warnings).toEqual([]);
+    // The positive control over the same row: the owner, whose scope includes
+    // that room, IS told.
+    expect(search(scopeFor(ownerId, true), 'kestrel').warnings).toContainEqual(
+      expect.objectContaining({ source: 'rooms' })
+    );
+  });
+
+  it('does warn a member about a room they ARE in', () => {
+    // The pair to the case above: the filter is by scope, not by silence.
+    db.update(searchSources)
+      .set({ lastError: 'the projection threw' })
+      .where(and(eq(searchSources.sourceId, 'rooms'), eq(searchSources.originKey, 'open')))
+      .run();
+
+    expect(search(scopeFor(agentId, false), 'kestrel').warnings).toEqual([
+      { source: 'rooms', message: expect.any(String) },
+    ]);
   });
 
   it('says nothing about a source a caller cannot reach anyway', () => {

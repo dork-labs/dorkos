@@ -12,9 +12,10 @@
  * for a broken query — so every "must not surface" here is paired with a "must
  * still surface" over the same seeded rows.
  */
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { messages, type Db } from '@dorkos/db';
+import { messages, sql, type Db } from '@dorkos/db';
 import { searchMessages } from '../query.js';
 
 let db: Db;
@@ -245,6 +246,48 @@ describe('searchMessages — what a hit carries', () => {
     });
 
     expect(hit?.excerpt).toContain('<mark>scheduler</mark>');
+  });
+});
+
+describe('searchMessages — the plan a narrow scope gets', () => {
+  it('drives the join from the FTS index, not from the container', () => {
+    // The one word of SQL that is load-bearing, asserted where it can be seen.
+    // Without `CROSS JOIN`, SQLite believes `messages` is the selective side of a
+    // single-container scope, drives from the covering index and probes FTS5 once
+    // per row — 7,786 ms against 4.5 ms on a 40,000-row index, and the same plan
+    // `search_room_history` has been running since DOR-680.
+    //
+    // Read off `EXPLAIN QUERY PLAN` rather than timed: a timing assertion at unit
+    // scale would need a corpus big enough to be slow, and would still be a
+    // wall-clock number on a shared machine. The plan is the thing that changed.
+    say('rooms', 'general', 1, 'the kestrel migration');
+    const plan = db
+      .all<{ detail: string }>(
+        sql`EXPLAIN QUERY PLAN ${sql.raw(
+          `SELECT m.id FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid
+           WHERE messages_fts MATCH '"kestrel"'
+             AND (m.source_id = 'rooms' AND (m.origin_key IN ('general') AND m.ordinal > 0))
+           ORDER BY bm25(messages_fts) LIMIT 20`
+        )}`
+      )
+      .map((row) => row.detail);
+
+    // The FTS table is scanned first — `f` is its alias — and `messages` is then
+    // reached one row at a time by rowid, which is the cheap direction.
+    expect(plan[0]).toMatch(/^SCAN f VIRTUAL TABLE/);
+    expect(plan.join(' | ')).toContain('SEARCH m USING INTEGER PRIMARY KEY');
+    expect(plan.join(' | ')).not.toMatch(/SEARCH m USING COVERING INDEX/);
+  });
+
+  it('ships that directive in the query it actually runs', () => {
+    // The pair to the case above, and the half that would otherwise be missing:
+    // explaining a statement written HERE proves what the plan does with the
+    // word, not that the shipped query still carries it. `searchMessages` builds
+    // its SQL through drizzle and runs it, so the source is where the shipped
+    // text can be seen. Deleting the word passes the plan test and fails this one.
+    const source = readFileSync(new URL('../query.ts', import.meta.url), 'utf8');
+    expect(source).toContain('CROSS JOIN messages m ON m.id = f.rowid');
+    expect(source).not.toMatch(/\n\s*JOIN messages m ON m\.id = f\.rowid/);
   });
 });
 

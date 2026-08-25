@@ -2497,6 +2497,33 @@ export class RoomService {
    * highest one would hide what is theirs in the rooms they joined early. This is
    * the reason the shape is a map rather than a list plus a number.
    *
+   * **The owner's `'all'` diverges from {@link RoomService.readHistory}, and it is
+   * meant to.** That path requires a MEMBER row even of the owner — "reading a
+   * room's log is a membership, not a visibility" — so the operator cannot read
+   * back a room they never joined, an agent-to-agent DM included. Search does not
+   * apply that bar: the owner's scope is every room on the install. Three reasons,
+   * and the first is the decisive one.
+   *
+   * - **The spec says so in a table.** message-search §7 gives the operator
+   *   "all" rooms, {@link RoomService.seesEveryRoom} says "nothing on their own
+   *   machine hides from them", and `GET /api/search`'s own reference text tells
+   *   every caller that is what it does.
+   * - **Search is the export path, not the reading path.** The nearest neighbour
+   *   is {@link RoomService.exportRoom}, which deliberately drops the join floor
+   *   for the owner because "an owner handed a copy of their own room with the
+   *   first months missing has not been given their data". A person searching
+   *   their own machine for something they half-remember is in that situation,
+   *   not in an agent's.
+   * - **A hit is a coordinate, not the log.** What comes back is where something
+   *   was said plus one marked sentence; opening it goes through the room's own
+   *   read path, which still applies every rule it applies today.
+   *
+   * The consequence is stated rather than left to be discovered: **the operator's
+   * search reaches rooms they are not on the roster of**, including rooms their
+   * agents opened between themselves. Narrowing this later means giving the owner
+   * a container list, which is the enumerate-everything filter §6.1 refuses — so
+   * the honest place to change the answer is the spec, not this method.
+   *
    * It returns a scope rather than results, and the difference is the access
    * model: the index is handed what this domain resolved and is never asked to
    * work out who anybody is.

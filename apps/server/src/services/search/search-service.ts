@@ -24,7 +24,15 @@
  *
  * @module server/services/search/search-service
  */
-import { searchSources as searchSourcesTable, and, eq, isNotNull, sql, type Db } from '@dorkos/db';
+import {
+  searchSources as searchSourcesTable,
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  sql,
+  type Db,
+} from '@dorkos/db';
 import {
   SEARCH_MAX_LIMIT,
   type SearchHit,
@@ -214,28 +222,46 @@ function containerKey(sourceId: string, originKey: string): string {
 }
 
 /**
- * One warning per source in this caller's scope that has a container it could
- * not index.
+ * One warning per source in this caller's scope that has a container **this
+ * caller could have searched** and could not index.
  *
  * ADR-0310's envelope: a source whose projection an upstream format change broke
  * contributes zero rows and one warning naming it, never a failed request. It
  * reads `search_sources.last_error`, which is the column that exists to make
  * "produced nothing" visible rather than silent.
  *
+ * **The failing container has to be inside the caller's scope**, and that is an
+ * access rule rather than tidiness. A warning is a statement about the world, and
+ * a member told "some of this could not be read" because a room they are not in
+ * has a broken frontier has been told something about a room they cannot see —
+ * every time it happens, on every query, whether or not their own rooms are
+ * perfectly indexed. The owner's `'all'` scope has no container list, so nothing
+ * narrows it and nothing should: they can search everything, so everything that
+ * is behind is theirs to know about.
+ *
  * @param db - The database.
- * @param scopes - The sources this caller may read.
+ * @param scopes - The sources this caller may read, and what part of each.
  * @returns One warning per failing source, in registry order.
  */
 function sourceWarnings(db: Db, scopes: readonly SourceScope[]): SearchSourceWarning[] {
   const warnings: SearchSourceWarning[] = [];
   for (const scope of scopes) {
+    if (scope.visibility === 'containers' && scope.containers.length === 0) continue;
+    const withinScope =
+      scope.visibility === 'all'
+        ? undefined
+        : inArray(
+            searchSourcesTable.originKey,
+            scope.containers.map((container) => container.originKey)
+          );
     const failed = db
       .select({ sourceId: searchSourcesTable.sourceId })
       .from(searchSourcesTable)
       .where(
         and(
           eq(searchSourcesTable.sourceId, scope.sourceId),
-          isNotNull(searchSourcesTable.lastError)
+          isNotNull(searchSourcesTable.lastError),
+          withinScope
         )
       )
       .limit(1)

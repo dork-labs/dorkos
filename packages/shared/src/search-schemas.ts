@@ -24,6 +24,27 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 extendZodWithOpenApi(z);
 
 /**
+ * Split what somebody typed into the words a search will actually look for.
+ *
+ * **The one tokenizer**, shared by the schema that refuses a query and the
+ * server that builds the FTS5 `MATCH` expression out of it — because a minimum
+ * length checked against the RAW string is not a minimum at all. `a,` and `%20a`
+ * and `a.` are all two or more characters and all one letter of search, and each
+ * of them ran the most expensive query there is until this was the thing being
+ * measured.
+ *
+ * It splits on everything that is not a letter, a number or an underscore, which
+ * is what `unicode61` does to the same string, so the count here is the count
+ * FTS5 will see.
+ *
+ * @param raw - What the caller typed.
+ * @returns The words, in order. Empty when the input holds no word at all.
+ */
+export function searchTokens(raw: string): string[] {
+  return raw.split(/[^\p{L}\p{N}_]+/u).filter((word) => word.length > 0);
+}
+
+/**
  * The shortest search DorkOS will run, in characters.
  *
  * **Part of the contract, not a tuning knob** (spec Amendment 1). Ranking is
@@ -33,8 +54,28 @@ extendZodWithOpenApi(z);
  * `t` → `th` → `the` fires three searches whose cost FALLS as the words get more
  * specific. The floor is what stops a search box paying for the first two.
  *
- * Two rather than three, because two-letter searches people really do type
- * (`db`, `ci`, `pr`) match few rows and cost almost nothing.
+ * **What the measurement actually showed, because it is not what this comment
+ * first claimed.** The obvious story — short queries are the expensive ones, so
+ * the floor buys back the cost — is only half true, and the half that is false
+ * matters. Measured over 9,207 real messages by `scripts/search-latency-bench.ts`:
+ * the worst one-character query (`a`) matches **42%** of the index, the worst
+ * two-character one (`it`) **47%**, and the worst three-character one (`the`)
+ * **83%**. **Length does not predict cost** — the commonest word in English is
+ * three letters long, and no floor short of absurd would refuse it.
+ *
+ * So this is not a cost threshold, and pretending otherwise would be a number
+ * dressed up as a derivation. It is the other half of Amendment 1's argument,
+ * which does hold: a one-letter query is **certainly useless AND certainly
+ * expensive**, so a box that fires on every keystroke pays worst-case prices for
+ * answers nobody wanted. Two is the shortest length people really type meaning
+ * something (`db`, `ci`, `pr`); one never is.
+ *
+ * The bench asserts the fact this rests on rather than the literal — that the
+ * queries this floor refuses are expensive ones — so a corpus where that stops
+ * being true reddens instead of quietly refusing people for nothing.
+ *
+ * **It is counted over {@link searchTokens}, never over the raw string**, which
+ * is the difference between a floor and the appearance of one.
  */
 export const SEARCH_MIN_QUERY_LENGTH = 2;
 
@@ -154,8 +195,17 @@ export type SearchResponse = z.infer<typeof SearchResponseSchema>;
  */
 export const SearchQuerySchema = z
   .object({
-    /** What the caller typed. Matched by word STEM, never by substring. */
-    q: z.string().min(SEARCH_MIN_QUERY_LENGTH),
+    /**
+     * What the caller typed. Matched by word STEM, never by substring.
+     *
+     * Refused when it holds no WORD of at least {@link SEARCH_MIN_QUERY_LENGTH}
+     * characters — so `a,`, `%20a` and a string of spaces are all refused, and
+     * all three reached the ranked query while this was a `.min()` on the raw
+     * string.
+     */
+    q: z
+      .string()
+      .refine((raw) => searchTokens(raw).some((token) => token.length >= SEARCH_MIN_QUERY_LENGTH)),
     /** How many hits to return, clamped to {@link SEARCH_MAX_LIMIT}. */
     limit: z.coerce.number().int().positive().optional(),
     /** Narrow to one source. Omitted searches every source the caller may read. */

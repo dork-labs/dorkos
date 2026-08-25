@@ -25,15 +25,14 @@
  */
 export { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, type SweepResult } from './indexer.js';
 export { searchMessages } from './query.js';
-export type { ContainerScope, MessageHit, MessageQuery, SourceScope } from './query.js';
-export { searchForCaller, type SearchRequest, type SearchScope } from './search-service.js';
+export { searchForCaller } from './search-service.js';
 export {
   SEARCH_SOURCES,
   claudeCodeSource,
   createClaudeCodeSource,
   roomsSource,
 } from './registry.js';
-export { sweepRowSource, indexRowContainer } from './row-frontier.js';
+export { sweepRowSource } from './row-frontier.js';
 export { indexRoomEntry } from './write-through.js';
 export { sweepFileSource, DISCOVERY_FAILURE_KEY } from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';

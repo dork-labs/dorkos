@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { messages, roomEntries, roomMembers, rooms, searchSources, type Db } from '@dorkos/db';
+import { messages, roomEntries, roomMembers, rooms, searchSources, eq, type Db } from '@dorkos/db';
 import {
   SEARCH_MAX_LIMIT,
   SEARCH_MIN_QUERY_LENGTH,
@@ -140,7 +140,10 @@ describe('GET /api/search', () => {
 
     expect(res.status).toBe(200);
     expect(SearchResponseSchema.safeParse(res.body).success).toBe(true);
-    expect(res.body.results.length).toBeGreaterThan(0);
+    // Three rows in this fixture say "scheduler" and the owner may see all three:
+    // two rooms and one session. An `at least one` here would pass just as loudly
+    // for a query that had silently lost two of them.
+    expect(res.body.results).toHaveLength(3);
     for (const hit of res.body.results) {
       expect(hit.excerpt).toContain('<mark>scheduler</mark>');
     }
@@ -169,14 +172,24 @@ describe('GET /api/search', () => {
   });
 
   it('names a source that could not be fully read', async () => {
-    db.update(searchSources).set({ lastError: 'ENOENT: the transcript moved' }).run();
+    // Only the transcript source is broken; the rooms are fine. Breaking both
+    // would make "one warning naming the failed source" unfalsifiable.
+    db.update(searchSources)
+      .set({ lastError: 'ENOENT: the transcript moved' })
+      .where(eq(searchSources.sourceId, 'claude-code'))
+      .run();
     const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler' });
 
     expect(res.status).toBe(200);
-    expect(res.body.warnings.map((warning: { source: string }) => warning.source)).toContain(
-      'claude-code'
-    );
-    expect(res.body.results.length).toBeGreaterThan(0);
+    expect(res.body.warnings).toEqual([{ source: 'claude-code', message: expect.any(String) }]);
+    // Every hit still comes back, the degraded source's own included: `last_error`
+    // says a container could not be RE-READ, not that what was already indexed has
+    // become unreadable. The warning is the whole of the degradation.
+    expect(res.body.results.map((hit: { container: string }) => hit.container).sort()).toEqual([
+      'closed',
+      'open',
+      'session-a',
+    ]);
   });
 });
 
@@ -193,6 +206,44 @@ describe('the calling contract', () => {
   it('refuses a request with no query at all', async () => {
     const res = await request(buildApp()).get('/api/search');
     expect(res.status).toBe(400);
+  });
+
+  it('counts the WORDS, not the characters', async () => {
+    // Every one of these clears a raw-length check and asks FTS5 for a single
+    // letter — the most expensive query there is and the least useful one. `a,`
+    // and `%20a` were 200s that ran a one-letter ranked search until the floor
+    // moved onto the tokenizer.
+    for (const q of ['a,', ' a', 'a.', '! a !', '  ']) {
+      const res = await request(buildApp()).get('/api/search').query({ q });
+      expect(res.status, `q=${JSON.stringify(q)} must be refused`).toBe(400);
+      expect(res.body.code).toBe('INVALID_SEARCH_QUERY');
+    }
+  });
+
+  it('accepts a long-enough word however much punctuation rides with it', () => {
+    // The other half of the pair: the floor is on the longest WORD, so a real
+    // search is not refused for the company it keeps.
+    return request(buildApp())
+      .get('/api/search')
+      .query({ q: '"scheduler"?!' })
+      .expect(200)
+      .then((res) => {
+        expect(res.body.results).toHaveLength(3);
+      });
+  });
+
+  it('says which field was wrong, not just that something was', async () => {
+    const short = await request(buildApp()).get('/api/search').query({ q: 'a' });
+    const badLimit = await request(buildApp())
+      .get('/api/search')
+      .query({ q: 'scheduler', limit: 0 });
+
+    expect(short.body.error).toMatch(/word of at least/);
+    expect(badLimit.status).toBe(400);
+    expect(badLimit.body.error).toMatch(/whole number/);
+    // The two answers differ, which is the whole point: one message for both
+    // tells the second caller something untrue about their request.
+    expect(short.body.error).not.toBe(badLimit.body.error);
   });
 
   it('accepts a query exactly at the minimum', async () => {

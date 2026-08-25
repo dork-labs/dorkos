@@ -70,7 +70,7 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
     const parsed = SearchQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({
-        error: `Search needs at least ${SEARCH_MIN_QUERY_LENGTH} characters to look for.`,
+        error: refusalFor(parsed.error.issues[0]?.path[0]),
         code: 'INVALID_SEARCH_QUERY',
       });
       return;
@@ -121,4 +121,33 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
   });
 
   return router;
+}
+
+/**
+ * The sentence that says what was actually wrong with the request.
+ *
+ * Three fields can fail and they fail for unrelated reasons, so one message for
+ * all of them tells two callers out of three something untrue — a `limit=0` is
+ * not a query that was too short. The FIELD is read from Zod's own issue path
+ * rather than re-derived by re-checking the input here, which would be a second
+ * copy of the schema's rules.
+ *
+ * **It fails closed**: a path this function does not recognise — a field added to
+ * the schema without a sentence added here — falls to the general answer rather
+ * than to no answer, so the request is still refused.
+ *
+ * @param field - The first failing key, from `issues[0].path`.
+ * @returns One plain sentence, for the 400 body.
+ */
+function refusalFor(field: PropertyKey | undefined): string {
+  switch (field) {
+    case 'q':
+      return `Search needs a word of at least ${SEARCH_MIN_QUERY_LENGTH} letters to look for.`;
+    case 'limit':
+      return 'How many results you want has to be a whole number above zero.';
+    case 'source':
+      return 'The source to search has to be a name, not an empty value.';
+    default:
+      return 'That search request could not be read.';
+  }
 }

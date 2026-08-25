@@ -4178,7 +4178,7 @@ registry.registerPath({
     'all — a caller presenting an agent identity, resolved or not, never reaches a transcript. ' +
     'A search scoped to something the caller may not see returns exactly what a search for words ' +
     'nobody ever said returns, so neither a room id nor a query string is a capability. ' +
-    `**The calling contract**: at least ${SEARCH_MIN_QUERY_LENGTH} characters, and wait ` +
+    `**The calling contract**: at least one WORD of ${SEARCH_MIN_QUERY_LENGTH} characters, and wait ` +
     `${SEARCH_DEBOUNCE_MS} ms after the last keystroke. Ranking cost grows with how many rows ` +
     'MATCH rather than with `limit`, so a one-letter search is the most expensive one there is ' +
     `and the least useful. \`limit\` is clamped to ${SEARCH_MAX_LIMIT} rather than refused. ` +
@@ -4193,8 +4193,11 @@ registry.registerPath({
     },
     400: {
       description:
-        'The query was shorter than the minimum (`INVALID_SEARCH_QUERY`), or named a source that ' +
-        'does not exist (`UNKNOWN_SEARCH_SOURCE`)',
+        'The request could not be read (`INVALID_SEARCH_QUERY`), or it named a source that does ' +
+        'not exist (`UNKNOWN_SEARCH_SOURCE`). The `error` sentence says which field was wrong: `q` ' +
+        'holds no WORD of at least the minimum length — counted over the words a search is split ' +
+        'into, so `a,` and a string of spaces are refused exactly as `a` is — or `limit` was not a ' +
+        'whole number above zero.',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     401: {

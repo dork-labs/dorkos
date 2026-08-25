@@ -45,6 +45,28 @@
  * specific trick, and every caller's own documentation says so rather than
  * leaving it to be discovered.
  *
+ * ## One word of SQL is load-bearing: `CROSS JOIN`
+ *
+ * It is a **join-order directive**, not a different join — it forbids SQLite from
+ * reordering, and the order it forbids is the one the planner picks by default on
+ * a NARROW scope. With a single container in the visibility clause the planner
+ * believes `messages` is the selective side: it drives from the covering index
+ * `(source_id, origin_key, ordinal)` and probes FTS5 once per row, which is a
+ * full scan of that room dressed as an index lookup. Measured on a 40,000-row
+ * index with one room in scope, term `the`: **7,786 ms as a plain `JOIN`, 4.5 ms
+ * with the directive** — and the owner path unchanged at 10.3 → 10.2 ms, because
+ * the FTS-driven order was already right there.
+ *
+ * The FTS-driven order is right for EVERY scope shape, since `MATCH` is the only
+ * predicate here with an index that answers it; the visibility clause is a filter
+ * over what it returns. DorkOS never runs `ANALYZE`, so the planner has no
+ * statistics with which to reach that conclusion itself.
+ *
+ * This is not a new problem introduced by the search route: `search_room_history`
+ * has been on the slow plan since DOR-680, because a single room is exactly the
+ * narrow scope that triggers it. Both callers share this function, so both are
+ * fixed by this word.
+ *
  * **It is as fresh as the last sweep.** The indexer reconciles on
  * {@link SEARCH_RECONCILE_INTERVAL_MS} (five minutes), so something said a minute
  * ago may not be findable yet. Nothing here hides that; the tool that calls it
@@ -54,6 +76,7 @@
  * @module server/services/search/query
  */
 import { sql, type Db, type SQL } from '@dorkos/db';
+import { searchTokens } from '@dorkos/shared/search-schemas';
 
 /** One hit, as a coordinate the owning store resolves. */
 export interface MessageHit {
@@ -77,8 +100,13 @@ export interface MessageHit {
   excerpt: string | null;
 }
 
-/** One container the caller may read, and the position it may read from. */
-export interface ContainerScope {
+/**
+ * One container the caller may read, and the position it may read from.
+ *
+ * Not exported: it is a member of {@link SourceScope} and every caller builds one
+ * as an object literal, so an export would be a name nothing says.
+ */
+interface ContainerScope {
   /** The opaque container id. */
   originKey: string;
   /**
@@ -178,7 +206,9 @@ export function searchMessages(db: Db, query: MessageQuery): MessageHit[] {
     SELECT m.source_id AS source_id, m.origin_key AS origin_key, m.ordinal AS ordinal,
            m.role AS role, m.created_at AS created_at, ${excerpt} AS excerpt
     FROM messages_fts f
-    JOIN messages m ON m.id = f.rowid
+    -- CROSS JOIN is a join-order DIRECTIVE, not a different join. See the
+    -- module doc: without it a narrow scope runs 1,700x slower.
+    CROSS JOIN messages m ON m.id = f.rowid
     WHERE messages_fts MATCH ${match}
       AND (${visible})
     ORDER BY bm25(messages_fts)
@@ -242,10 +272,12 @@ function scopePredicate(scope: SourceScope): SQL | null {
  * @returns The `MATCH` expression, or `null` when the input holds no word at all.
  */
 function toMatchExpression(raw: string): string | null {
-  const words = raw
-    .split(/[^\p{L}\p{N}_]+/u)
-    .map((word) => word.trim())
-    .filter((word) => word.length > 0);
+  // `searchTokens` rather than a regex of its own, and that is the whole point of
+  // it living in `@dorkos/shared`: the route refuses a query whose longest WORD is
+  // below the minimum, and a second splitter here would let the two disagree about
+  // what a word is — which is exactly how `a,` came to be a two-character query
+  // that ran a one-letter search.
+  const words = searchTokens(raw);
   if (words.length === 0) return null;
   return words.map((word) => `"${word.replaceAll('"', '""')}"`).join(' ');
 }

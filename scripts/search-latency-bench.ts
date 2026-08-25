@@ -49,6 +49,7 @@ import path from 'path';
 // `search-corpus-bench.ts` gives: this file sits in the root workspace, which
 // does not depend on `@dorkos/db`.
 import { createDb, runMigrations, messages } from '../packages/db/src/index.js';
+import { SEARCH_MIN_QUERY_LENGTH } from '../packages/shared/src/search-schemas.js';
 import { sweepFileSource } from '../apps/server/src/services/search/jsonl-frontier.js';
 import { claudeCodeSource } from '../apps/server/src/services/search/registry.js';
 
@@ -99,6 +100,39 @@ const MIN_LINEARITY_R2 = 0.9;
 
 /** How many hit-count decades the flat claim has to span to mean anything. */
 const MIN_DECADES = 3;
+
+/**
+ * How much dearer the container-scoped shape may be than the unscoped one.
+ *
+ * Comparative on purpose. The failure this catches is not "scoped search got a
+ * bit slower" — it is the planner deciding `messages` is the selective side and
+ * probing FTS5 once per row, which measured **1,730× slower** on a 40,000-row
+ * index the day it was found. 5× is far above any honest overhead from an extra
+ * predicate and far below the cliff.
+ */
+const MAX_SCOPED_RATIO = 5;
+
+/**
+ * The least of the index a query the floor REFUSES must be able to match, before
+ * the floor stops being worth having.
+ *
+ * **This is not the assertion this bench first tried to make, and the difference
+ * is a measurement.** The obvious derivation — "the floor is the length at which
+ * the worst query stops scanning most of the corpus" — does not survive contact
+ * with a real corpus: measured 2026-08-25 over 9,207 messages, the worst
+ * one-character term (`a`) matches **42%**, the worst two-character term (`it`)
+ * **47%**, and the worst three-character term (`the`) **83%**. Query LENGTH does
+ * not predict query COST; the commonest word in English is three letters long.
+ *
+ * So the floor is not a cost threshold and this bench does not pretend it is.
+ * What it asserts is the fact that makes the floor worth having at all: a query
+ * the floor refuses is an EXPENSIVE one — it drags a real share of the index
+ * through `bm25()` while being certainly useless, which is Amendment 1's actual
+ * argument. 10% is a wide margin under every figure above; if a corpus ever made
+ * one-letter queries genuinely cheap, this would redden and the contract would be
+ * worth revisiting rather than silently kept.
+ */
+const REFUSED_QUERY_MIN_CORPUS_SHARE = 0.1;
 
 // The rule points at each app's Zod-validated `env.ts`, and this file is not in
 // an app — same carve-out, same reason, as `search-corpus-bench.ts`.
@@ -192,6 +226,12 @@ try {
     `SELECT m.id FROM messages_fts f JOIN messages m ON m.id = f.rowid
      WHERE messages_fts MATCH ? LIMIT 20`
   );
+  // The SCOPED shape — one container in the visibility clause — because that is
+  // what `search_room_history` sends and what an agent's search sends, and it is
+  // the shape whose plan SQLite gets wrong without the `CROSS JOIN` directive
+  // (7,786 ms → 4.5 ms when it was added). Measuring only the unscoped shapes is
+  // how it stayed unmeasured through two tickets.
+  //
   // Ranked WITHOUT the snippet, and ranked WITH it, because they are two
   // different terms of the cost. Ranking is charged per row that MATCHES and is
   // the one that scales; `snippet()` is charged per row RETURNED — twenty of
@@ -207,6 +247,18 @@ try {
      WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts) LIMIT 20`
   );
 
+  // One real container, so the scoped shape is measured against rows that exist.
+  const busiest = raw
+    .prepare(
+      'SELECT source_id, origin_key FROM messages GROUP BY 1, 2 ORDER BY count(*) DESC LIMIT 1'
+    )
+    .get() as { source_id: string; origin_key: string };
+  const scoped = raw.prepare(
+    `SELECT m.id, ${SNIPPET} AS excerpt FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid
+     WHERE messages_fts MATCH ? AND (m.source_id = ? AND (m.origin_key IN (?) AND m.ordinal > 0))
+     ORDER BY bm25(messages_fts) LIMIT 20`
+  );
+
   const measured = terms.map((entry) => {
     const match = `"${entry.term}"`;
     return {
@@ -215,6 +267,7 @@ try {
       bareMs: p50(() => bare.all(match)),
       rankedMs: p50(() => ranked.all(match)),
       snippetMs: p50(() => rankedSnippet.all(match)),
+      scopedMs: p50(() => scoped.all(match, busiest.source_id, busiest.origin_key)),
     };
   });
 
@@ -228,10 +281,12 @@ try {
         `p50_bare=${row.bareMs.toFixed(3)}`,
         `p50_ranked=${row.rankedMs.toFixed(3)}`,
         `p50_snippet=${row.snippetMs.toFixed(3)}`,
+        `p50_scoped=${row.scopedMs.toFixed(3)}`,
         `slope_us_per_row=${slopeUsPerRow.toFixed(3)}`,
       ].join(' ')
     );
   }
+  console.log(`scoped_container=${busiest.source_id}/${busiest.origin_key}`);
   console.log(`messages=${indexed} terms=${measured.length}`);
 
   const problems: string[] = [];
@@ -278,6 +333,53 @@ try {
   if (ranking.r2 < MIN_LINEARITY_R2) {
     problems.push(
       `ranked cost fits a line at R²=${ranking.r2.toFixed(2)}, below ${MIN_LINEARITY_R2} — the cost model in the spec no longer describes this query`
+    );
+  }
+
+  // 4. The scoped shape is on the same plan as the unscoped one. A narrow scope
+  //    that has fallen back to per-row FTS probes is not a little slower, it is
+  //    three orders of magnitude slower — so this compares the two rather than
+  //    asserting a wall-clock ceiling on either.
+  const topScoped = topMeasured.scopedMs;
+  if (topScoped > topMeasured.snippetMs * MAX_SCOPED_RATIO) {
+    problems.push(
+      `the container-scoped shape costs ${(topScoped / topMeasured.snippetMs).toFixed(1)}× the unscoped one, above ${MAX_SCOPED_RATIO}× — the narrow scope has fallen off the FTS-driven plan (has the CROSS JOIN directive gone?)`
+    );
+  }
+
+  // 5. The minimum query length, re-derived against the corpus rather than
+  //    trusted — and reported as a table, because the number it justifies is a
+  //    product decision that a reader should be able to argue with.
+  // Its own read, deliberately: the vocabulary above excludes short terms, since
+  // they are useless for MEASURING a curve — and they are the entire subject
+  // here. Reusing that list is how this check came back "(none)" and passed
+  // vacuously the first time it ran.
+  const worstOfLength = raw.prepare(
+    "SELECT term, doc FROM msg_vocab WHERE term GLOB '[a-z0-9]*' AND length(term) = ? ORDER BY doc DESC LIMIT 1"
+  );
+  const worstAt = (length: number) =>
+    worstOfLength.get(length) as { term: string; doc: number } | undefined;
+  const shareOf = (entry: { doc: number } | undefined) => (entry ? entry.doc / indexed : 0);
+  const byLength = [1, 2, 3, 4].map((length) => ({ length, worst: worstAt(length) }));
+  console.log(
+    `min_query_length=${SEARCH_MIN_QUERY_LENGTH} ` +
+      byLength
+        .map(
+          ({ length, worst }) =>
+            `worst_len${length}=${worst?.term ?? '(none)'}:${worst?.doc ?? 0}(${(shareOf(worst) * 100).toFixed(0)}%)`
+        )
+        .join(' ')
+  );
+
+  // The queries the floor refuses — everything shorter than it — must be
+  // expensive, or the floor is refusing people for nothing.
+  const refused = byLength
+    .filter(({ length }) => length < SEARCH_MIN_QUERY_LENGTH)
+    .map(({ worst }) => shareOf(worst));
+  const worstRefused = refused.length > 0 ? Math.max(...refused) : 0;
+  if (worstRefused < REFUSED_QUERY_MIN_CORPUS_SHARE) {
+    problems.push(
+      `the worst query SEARCH_MIN_QUERY_LENGTH refuses matches only ${(worstRefused * 100).toFixed(0)}% of the index, below ${(REFUSED_QUERY_MIN_CORPUS_SHARE * 100).toFixed(0)}% — short queries are no longer the expensive ones, so the floor is now refusing people for nothing`
     );
   }
 
