@@ -2048,6 +2048,10 @@ async function start() {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
+      // Where `tasks_create` writes a global schedule's SKILL.md. Not optional:
+      // a create that cannot find the skills root writes a row with no file
+      // behind it, which is the orphan DOR-1568 closed.
+      dorkHome,
       runtimeRegistry,
       activityService,
       // The approval primitive the in-session hold (DOR-939) waits on, so a fresh

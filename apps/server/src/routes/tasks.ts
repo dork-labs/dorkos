@@ -9,31 +9,20 @@
  */
 import path from 'node:path';
 import { Router, type Request, type Response } from 'express';
-import {
-  CreateTaskRequestSchema,
-  UpdateTaskRequestSchema,
-  ListTaskRunsQuerySchema,
-} from '@dorkos/shared/schemas';
+import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
 import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
+import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
+import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
+import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
-import { slugify, validateSlug } from '@dorkos/skills/slug';
-import { parseDuration } from '@dorkos/skills/duration';
-import { SKILL_FILENAME } from '@dorkos/skills/constants';
-import { loadTemplates, RESERVED_TASK_DIRNAMES } from '../services/tasks/task-templates.js';
-import {
-  agentSkillsRoot,
-  globalSkillsRoot,
-  resolveRootPath,
-} from '../services/tasks/skills-roots.js';
-import { readScheduleFromSkill } from '../services/tasks/skills-root-discovery.js';
+import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody, toErrorMessage } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
@@ -44,7 +33,6 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { armEscalation } from '../services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
-import { resolveScheduledRunPermissionMode } from '../services/tasks/scheduled-run-power.js';
 import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
 import {
   describeOperatorOnlyTaskRefusal,
@@ -52,11 +40,11 @@ import {
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
   OPERATOR_ONLY_TRIGGER_REFUSAL,
+  refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
 import {
   describeArmBlocker,
   isPackageOwned,
-  planTaskFileCreate,
   planTaskFileUpdate,
   pluginRoots,
   touchesFile,
@@ -135,8 +123,8 @@ function clearsTheAgentBar(req: Request, res: Response): boolean {
  * @param res - The response, answered with 403 when a field is refused.
  * @param trusted - Whether the caller cleared {@link clearsTheAgentBar}. Passed in
  *   rather than resolved here because `POST /` needs the same answer a second
- *   time, to decide whether the new task is parked (see {@link parksOnCreate}),
- *   and asking twice would let the two uses disagree.
+ *   time — it decides whether the new task parks at `pending_approval`
+ *   (`createScheduledTask`) — and asking twice would let the two uses disagree.
  * @returns True when the request was refused and the route must stop.
  */
 function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: boolean): boolean {
@@ -150,40 +138,6 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
   });
   return true;
-}
-
-/**
- * Whether a task created by this caller must wait for a person's approval
- * (DOR-504).
- *
- * ## The gap this closes
- *
- * `tasks_create` on both MCP servers parks every schedule it makes at
- * `pending_approval`, and says so in its own description. That parking lived in
- * the TOOL HANDLER, not in the store: both store insert paths hardcode
- * `status: 'active'`. So the REST twin created a LIVE cron task instead — and
- * `dorkos task create` is that REST surface, sending its agent header. An agent
- * could not arm a task through the tool it was told to use, and could through the
- * CLI it was also told to use.
- *
- * That is worth closing rather than only narrowing the prose around: a cron task
- * is persistence. It fires later, on its own, when nobody is looking, which is a
- * different thing from running a command now.
- *
- * ## Why trust, and not the presence of a `status` field
- *
- * The caller never has to ASK to arm a task here; it arms by default, because
- * the store's insert says `active`. So there is no field to refuse. The question
- * is only "did a person do this", which is the same question
- * {@link refusedOperatorOnlyTaskWrite} already asks, answered by the same
- * predicate — so the cockpit's task form and a signed-in operator are untouched,
- * and an agent's REST-created task now waits exactly like its MCP-created one.
- *
- * @param trusted - Whether the caller cleared {@link clearsTheAgentBar}.
- * @returns True when the new task must be parked at `pending_approval`.
- */
-function parksOnCreate(trusted: boolean): boolean {
-  return !trusted;
 }
 
 /**
@@ -234,11 +188,6 @@ function describeTaskFileFailure(
  * time-of-day at a glance.
  */
 const NEXT_RUNS_PREVIEW_COUNT = 3;
-
-/** What a create or park refuses when the proposal makes no case for itself. */
-const MISSING_REASON_MESSAGE =
-  'A task that has to be approved needs a reason. Say why this schedule should exist — ' +
-  'whoever approves it has only that to go on.';
 
 /**
  * Create the Tasks router with schedule and run management endpoints.
@@ -317,257 +266,33 @@ export function createTasksRouter(
   router.post('/', async (req, res) => {
     const trusted = clearsTheAgentBar(req, res);
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
-    const data = parseBody(CreateTaskRequestSchema, req.body, res);
-    if (!data) return;
 
-    // Asked before ANY write, because the file is written first and never
-    // withdrawn: a cron or timezone croner cannot read would otherwise leave a
-    // permanent SKILL.md on disk backing a row that can never be scheduled. The
-    // question cannot be asked in `CreateTaskRequestSchema` — only croner knows
-    // the answer and `@dorkos/shared` cannot depend on it; see
-    // `services/tasks/cron-validation.ts`.
-    const scheduleProblem = describeScheduleProblem(data.cron, data.timezone);
-    if (scheduleProblem) {
-      return res.status(400).json({ error: scheduleProblem });
-    }
-
-    // How much power this schedule runs with, resolved ONCE (spec
-    // `full-power-defaults`, D6). A caller that named a mode keeps it verbatim;
-    // one that named none gets the operator's own trust stop, mapped through the
-    // runtime the scheduler actually drives, and `'acceptEdits'` when no stop is
-    // configured — byte-for-byte the Zod default this replaced. Resolved here
-    // rather than at each read below because three of them follow (the
-    // frontmatter, the trusted un-clamp, and the DB fallback insert) and three
-    // resolutions is three chances to disagree.
-    const permissionMode = data.permissionMode ?? resolveScheduledRunPermissionMode();
-
-    // …and clamped ONCE, for every caller that did not clear the agent bar
-    // (DOR-1432 stage-2 review). This is the value that gets written to the file
-    // and inserted into the row; the explicit un-clamp below is the only thing
-    // that lifts it, and only for a trusted caller.
-    //
-    // **Why the clamp has to live here rather than on the fallback insert
-    // alone.** Two paths reach the row — `upsertFromFile`, which clamps a
-    // file-declared bypass itself, and the direct `store.createTask` below,
-    // which is not a file path and so has no clamp of its own. WHICH ONE runs is
-    // decided by whether the file the route just wrote parses back, and an agent
-    // could choose that: several request fields were looser than their
-    // frontmatter counterparts, so a body the request schema accepted produced a
-    // file the frontmatter schema rejected, and the resolved
-    // `bypassPermissions` went in unclamped. `maxRuntime` was the reported one,
-    // an over-long `description` and a name that slugifies to nothing did it
-    // too. Those three are tightened at the schema, which is the other half of
-    // the fix — but tightening only ever closes the divergences somebody has
-    // thought of, and this closes the shape of the bug: no path from a caller
-    // that cannot ask for a mode can write one, whichever branch it lands on.
-    const effectivePermissionMode = trusted
-      ? permissionMode
-      : clampSchedulePermissionMode(permissionMode).mode;
-
-    // A task this caller cannot arm itself is a PROPOSAL, and a proposal has to
-    // make its own case (DOR-1394). Asked here rather than in the Zod schema
-    // because it depends on WHO is asking, and asked before the file is written
-    // so a reasonless proposal never lands on disk for the reconciler to find.
-    // The MCP door demands the same thing through its own tool schema, so the
-    // two agent-facing doors now agree.
-    const proposedReason = data.reason?.trim();
-    if (parksOnCreate(trusted) && !proposedReason) {
-      return res.status(400).json({ error: MISSING_REASON_MESSAGE });
-    }
-
-    // Resolve slug and target directory
-    const slug = slugify(data.name);
-
-    // A name that slugifies to something the SKILL.md name rule rejects — most
-    // easily the empty string, which `'!!!'` produces. Refused here rather than
-    // in `CreateTaskRequestSchema`, because the constraint is on the DERIVED
-    // slug and the request body carries the name it was derived from.
-    //
-    // It is a validation fix with a security reason (DOR-1432 stage-2 review):
-    // an unparseable file used to send the route down a create path that skipped
-    // the permission clamp, so any field a caller could make the frontmatter
-    // reject was a lever on which path ran. Both paths clamp now — this closes
-    // the lever as well, which is the layer that stops the next one.
-    if (!validateSlug(slug)) {
-      return res.status(400).json({
-        error: `"${data.name}" has no usable name in it. Use letters or numbers — "Nightly sweep" becomes "nightly-sweep".`,
-      });
-    }
-
-    // `templates/` is a container the tasks system owns, so a task cannot live
-    // at that path. Refused rather than silently allowed, because a row
-    // pointing into a reserved container is worse than useless: the reconciler
-    // skips reserved names, so nothing ever re-syncs it, and the delete route
-    // below derives the directory to remove from `filePath` — which for such a
-    // row is the container itself, taking every template with it.
-    if (RESERVED_TASK_DIRNAMES.includes(slug)) {
-      return res.status(400).json({
-        error: `"${slug}" is a reserved name in the tasks folder. Pick a different name.`,
-      });
-    }
-
-    // A schedule is a skill, so it lands in a SKILLS root — `~/.dork/skills/`
-    // or the agent's `.agents/skills/`. The `tasks/` directories these used to
-    // be are not watched any more (DOR-1486), so writing there would have
-    // created a file nothing ever reads.
-    let skillsDir: string;
-    let agentId: string | null = null;
-    let projectPath: string | undefined;
-
-    if (data.target === 'global') {
-      skillsDir = globalSkillsRoot(dorkHome);
-    } else if (meshCore) {
-      const resolved = meshCore.getProjectPath(data.target);
-      if (!resolved) {
-        return res.status(400).json({ error: `Agent ${data.target} not found in registry` });
-      }
-      skillsDir = agentSkillsRoot(resolved);
-      projectPath = resolved;
-      agentId = data.target;
-    } else {
-      return res.status(400).json({ error: 'Cannot resolve agent — mesh not available' });
-    }
-
-    // Check for duplicate slug
-    const existingPath = path.join(skillsDir, slug, SKILL_FILENAME);
-    try {
-      await fs.access(existingPath);
-      return res.status(409).json({ error: `Task "${slug}" already exists in target directory` });
-    } catch {
-      // File doesn't exist — good
-    }
-
-    // Build the frontmatter through the same planner the update path uses, so
-    // create and update cannot disagree about the shape of a schedule file. The
-    // scheduling fields land inside the `schedule:` block, and anything already
-    // at its default is left out rather than written as a line the person never
-    // typed — which is what the raw spread here used to do.
-    const plan = planTaskFileCreate(
-      { name: slug, description: data.description },
+    // Everything from "is this a valid request" to "the cron job is running" lives
+    // in `createScheduledTask`, because `tasks_create` on both MCP servers has to
+    // do the identical thing and used to do a shorter, wrong version of it — a row
+    // with no SKILL.md behind it (DOR-1568). What is left here is what is genuinely
+    // this door's: who is asking, what the activity feed is told, and the response.
+    const outcome = await createScheduledTask(
+      { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
       {
-        displayName: data.displayName || undefined,
-        cron: data.cron || undefined,
-        timezone: data.timezone || undefined,
-        // Only a schedule the caller turned OFF says so in the file — the
-        // block's own default is `enabled: true`.
-        enabled: data.enabled === false ? false : undefined,
-        maxRuntime: data.maxRuntime || undefined,
-        // The CLAMPED mode, so the file and the row agree. This is a file-first
-        // architecture: the reconciler and the watcher both re-read this file, and a
-        // SKILL.md saying `permissions: bypassPermissions` over a row holding
-        // `acceptEdits` is a standing request from disk that nobody made and no
-        // screen shows. It could not escalate on its own — `resolveFilePermissionMode`
-        // clamps it on every sync, and `keepsApprovedBypass` needs the row to be
-        // bypass AND active already — but a file that disagrees with its own row is
-        // a lie in the source of truth, and the next reader should not have to
-        // rediscover why it is harmless.
-        //
-        // `acceptEdits` is the block default too, so naming it would add a line
-        // that says nothing — `scheduleToFrontmatter` drops it either way.
-        permissionMode: effectivePermissionMode || undefined,
+        input: req.body,
+        trusted,
+        // Stamped from the RESOLVED credential, never from the body:
+        // `getRequestAgentIdentity` answers only for a caller that presented a
+        // live token, so an unidentified one leaves this null and the approval
+        // card honestly says it does not know who asked.
+        proposal: { agentPath: getRequestAgentIdentity(res)?.agentPath ?? null },
       }
     );
-    if (plan.kind === 'refuse') {
-      return res.status(400).json({ error: plan.message });
-    }
 
-    // Write file first (source of truth)
-    const filePath = await writeSkillFile(skillsDir, slug, plan.frontmatter, data.prompt);
-
-    // Sync to DB for immediate consistency, through the SAME reader discovery
-    // uses. The row's identity is the file's REAL path: the watcher that reads
-    // this file seconds from now resolves symlinks before keying its row, and a
-    // create that stored the unresolved path would leave two rows for one file
-    // on any machine whose data directory or checkout sits under a symlink.
-    const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
-    const discovered = parsed.ok
-      ? readScheduleFromSkill(parsed.definition, {
-          scope: data.target === 'global' ? 'global' : 'project',
-          projectPath,
-          resolvedPath: path.join(await resolveRootPath(skillsDir), slug, SKILL_FILENAME),
-        })
-      : null;
-    let schedule: Task;
-    if (discovered) {
-      schedule = store.upsertFromFile(discovered.def, agentId ?? undefined);
-    } else {
-      // Fallback: create directly in DB. NOT a file path, so it gets none of
-      // `upsertFromFile`'s clamping — which is why the mode it is handed was
-      // clamped up at the resolution above rather than here. Do not put the raw
-      // `permissionMode` back into this call.
-      schedule = store.createTask({
-        name: slug,
-        displayName: data.displayName,
-        description: data.description,
-        prompt: data.prompt,
-        cron: data.cron,
-        timezone: data.timezone,
-        agentId,
-        enabled: data.enabled,
-        maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
-        permissionMode: effectivePermissionMode,
-        filePath,
+    if (!outcome.ok) {
+      return res.status(outcome.status).json({
+        error: outcome.error,
+        ...(outcome.code !== undefined && { code: outcome.code }),
+        ...(outcome.details !== undefined && { details: outcome.details }),
       });
     }
-
-    // The ONE un-clamp, after BOTH branches, because both need exactly the same
-    // patch and two copies of a security exception are two chances to fix only
-    // one of them. Above, `upsertFromFile` refuses a file-declared
-    // `bypassPermissions` (a SKILL.md on disk is nobody's approval,
-    // `services/tasks/schedule-permission-clamp.ts`); below, the resolution did
-    // the clamping. Either way the row is now at most `acceptEdits`, and this is
-    // what lifts it.
-    //
-    // It is lifted only for a caller that cleared the agent bar, and the mode it
-    // is lifted to is the one that caller effectively asked for: either they
-    // named `bypassPermissions`, or they named nothing on an install whose
-    // operator set the global stop to full autonomy through the consent-gated
-    // door (spec `full-power-defaults`, D6). The store's file path cannot tell
-    // those from a file that simply declared it, which is why the lift happens
-    // here and not there.
-    //
-    // **What is NOT true, stated because an earlier version of this comment
-    // claimed it:** there is no confirmation dialog standing behind this. The
-    // cockpit's task form always sends an explicit mode and so never reaches the
-    // resolved branch at all; the callers that DO reach it — `dorkos task
-    // create`, a bare HTTP POST, anything with a shell — have no confirm step of
-    // any kind. The CLI prints a line naming the level after the fact, which is
-    // disclosure, not consent. The real protection is the agent bar plus the
-    // clamp; do not add "and the UI asks" to the list.
-    if (trusted && permissionMode === 'bypassPermissions') {
-      schedule = store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
-    }
-
-    // Both store insert paths hardcode `status: 'active'`, so parking is a patch
-    // after the fact — the same two-step `tasks_create` uses on the MCP servers.
-    // It has to happen BEFORE the register below, or the task fires while it is
-    // still waiting to be approved.
-    // The escalation clock starts here (DOR-1387). Parked schedules have no
-    // observer seam, so the hook lands at the write that parks one. Still
-    // nothing RAISED at this edge: `schedule.parked` is a STANDING kind, which
-    // stores nothing while it stands (ADR 260819-234828), and its two
-    // resolutions are recorded where the operator decides them — which is also
-    // where the timer is disarmed, through `resolveStanding`.
-    if (parksOnCreate(trusted)) {
-      store.updateTask(schedule.id, { status: 'pending_approval' });
-      // Stamped from the RESOLVED credential, never from the body: a caller that
-      // could name its own agent path could credit its proposal to any agent the
-      // operator trusts. `getRequestAgentIdentity` answers only for a caller that
-      // presented a live token, so an unidentified one leaves this null and the
-      // card honestly says it does not know who asked.
-      store.recordProposal(schedule.id, {
-        reason: proposedReason ?? null,
-        proposedByAgentPath: getRequestAgentIdentity(res)?.agentPath ?? null,
-      });
-      schedule = store.getTask(schedule.id)!;
-      armEscalation('schedule.parked', await resolveScheduleParkPayload(schedule));
-    }
-
-    // Through the registrar, not `scheduler.registerTask` directly: the same
-    // seam the watcher and the reconciler use, so a task created here and a task
-    // created by dropping a SKILL.md on disk end up in exactly the same state.
-    registrar.syncTask(schedule.id);
+    const schedule = outcome.task;
 
     activityService?.emit({
       actorType: 'user',
@@ -581,8 +306,6 @@ export function createTasksRouter(
       linkPath: '/',
     });
 
-    broadcastTasksChanged();
-
     // Run times and the proposer's name are derived, not persisted on the row,
     // so they must be attached here the same way the list endpoint does —
     // otherwise a freshly created task reports none of them until the next list
@@ -593,6 +316,16 @@ export function createTasksRouter(
   router.patch('/:id', async (req, res) => {
     const trusted = clearsTheAgentBar(req, res);
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
+
+    // Before `parseBody`, which is a non-strict `z.object` and therefore drops
+    // anything it does not recognise WITHOUT saying so. A caller that sent
+    // `agentId` was answered 200 with an unchanged task, which is a lie about its
+    // own request (DOR-1568). Applied to every caller, operator included: a typo
+    // in a field name should be loud on the cockpit's own edits too, and the
+    // client only ever sends `UpdateTaskRequest` fields.
+    const unknownFields = refuseUnknownTaskUpdateFields(req.body);
+    if (unknownFields) return res.status(400).json(unknownFields);
+
     const data = parseBody(UpdateTaskRequestSchema, req.body, res);
     if (!data) return;
 
@@ -886,17 +619,9 @@ export function createTasksRouter(
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    // Delete file from disk first
-    if (schedule.filePath) {
-      try {
-        const dirPath = path.dirname(schedule.filePath);
-        const dirName = path.basename(dirPath);
-        const parentDir = path.dirname(dirPath);
-        await deleteSkillDir(parentDir, dirName);
-      } catch {
-        // File may already be gone — continue with DB cleanup
-      }
-    }
+    // The file goes first, through the seam `tasks_delete` shares: a row deleted
+    // while its SKILL.md remains is brought straight back by the next reconcile.
+    await removeScheduledTaskFile(schedule.filePath);
 
     // Row first, then the seam: with no row to read, `syncTask` unregisters —
     // the same answer the direct call gave, arrived at the one way.

@@ -36,8 +36,9 @@ Read current state before changing anything:
 
 - Tool: \`tasks_create\` with \`name\`, \`prompt\` (the instruction the agent runs each
   time), \`cron\` (required, e.g. \`"0 2 * * *"\` for daily at 2am), \`reason\`
-  (required, see below), and optional \`description\` and \`timezone\` (IANA, e.g.
-  \`"America/New_York"\`). A run-time cap is set with \`tasks_update\`, not here.
+  (required, see below), \`target\` (required, see below), and optional
+  \`description\`, \`timezone\` (IANA, e.g. \`"America/New_York"\`), and \`maxRuntime\`
+  (e.g. \`"5m"\`, \`"1h"\`) to cap how long a run may take.
 - CLI: \`dorkos task create --name <name> --description <text> --prompt <text>
   --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]\`.
 
@@ -54,6 +55,18 @@ Write the sentence you would say out loud: "You asked me to keep an eye on the
 overnight builds, and this checks them at 7am so the summary is waiting for you."
 
 An empty or whitespace-only reason is refused and nothing is created.
+
+### Say where it lives, too
+
+\`target\` is required and there is no default. Give your own agent id to file the
+task under yourself, so it lives in your folder and its runs happen there against
+your files, or \`"global"\` for a task that belongs to no agent. A task
+filed in the wrong place runs against the wrong files, so DorkOS will not guess.
+An agent it has never heard of is refused and nothing is created.
+
+Where a task lives is decided once, when you create it. \`tasks_update\` cannot move
+it: send \`target\` or \`agentId\` there and DorkOS refuses the whole call. To move a
+task, delete it and create it again with the target you want.
 
 ### The approval gate
 

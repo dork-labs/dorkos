@@ -66,6 +66,7 @@ function createFullDeps(): McpToolDeps {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-1292-exposure',
+    dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
     relayCore: stub,
     adapterManager: stub,
