@@ -18,6 +18,7 @@
 export { HomeExperience } from './HomeExperience';
 export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
 export { HomeNav } from './nav';
+export { FOOTER_SOCIAL_LINKS } from './footer-social-links';
 export { INSTALL_COMMAND, SHELL } from './theme';
 
 // Pieces the storyboard pins, one frame at a time

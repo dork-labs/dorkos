@@ -386,6 +386,54 @@ describe('the pill and the page’s own stops', () => {
   });
 });
 
+describe('the page’s one footer', () => {
+  const PAGE = readFileSync(join(import.meta.dirname, '..', '..', 'page.tsx'), 'utf8');
+  const CLOSE_SOURCE = readFileSync(join(import.meta.dirname, '..', 'CloseSection.tsx'), 'utf8');
+  // Walk to the site root the same way the asset checks do, rather than
+  // counting `..` five times to a file in another layer.
+  const SITE_ROOT = dirname(findPublicDir(import.meta.dirname) ?? '');
+  const FOOTER_SOURCE = readFileSync(
+    join(SITE_ROOT, 'src', 'layers', 'features', 'marketing', 'ui', 'MarketingFooter.tsx'),
+    'utf8'
+  );
+
+  it('ends in the site’s own footer, imported rather than rebuilt', () => {
+    // Every other page on dorkos.ai ends here. A page that writes its own
+    // ending has to write its own mailing-list box, its own legal links and
+    // its own logo, and then keep all three in step with the real ones.
+    expect(PAGE).toContain('<MarketingFooter');
+    const shared = PAGE.match(/import \{ ([^}]*) \} from '@\/layers\/features\/marketing'/);
+    expect(shared?.[1], 'the footer is not the shared one').toContain('MarketingFooter');
+  });
+
+  it('renders the footer that carries the newsletter box', () => {
+    // The box is the reason the footer is on this page at all, and it belongs
+    // to the shared component rather than to this route. Reading its source
+    // is what makes "the page ends with an email capture" a checked claim
+    // instead of an assumption about a file nobody here owns.
+    expect(FOOTER_SOURCE).toContain('<NewsletterSignupForm');
+  });
+
+  it('keeps exactly one footer landmark', () => {
+    // The close used to be a `<footer>` too. Two footer landmarks on one page
+    // is a screen reader announcing "footer" twice and meaning it neither
+    // time, and the second one was repeating the source link the real footer
+    // already carries.
+    expect(CLOSE_SOURCE).not.toContain('<footer');
+    expect(CLOSE_SOURCE).toContain('<section');
+  });
+
+  it('retires the colophon the footer replaced, but not the Marketplace', () => {
+    // The colophon said "dorkos · open source, mit" and linked to the source.
+    // The footer says all of that with a logo and a GitHub icon. The one
+    // destination it does not carry is the Marketplace, so that link stays on
+    // the close's own line rather than disappearing with the row it sat in.
+    expect(Object.keys(CLOSE)).not.toContain('colophon');
+    expect(CLOSE_SOURCE).not.toContain('siteConfig.github');
+    expect(CLOSE_SOURCE).toContain('href="/marketplace"');
+  });
+});
+
 describe('the cast from the film', () => {
   // These are locked by the film's `characters.md` and are not the site's to
   // re-pick. The colours come from `chat-ui.tsx`, which is the screen truth;

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import { ExtensionNoiseGuard, HomeExperience, HomeNav } from './_components';
+import { siteConfig } from '@/config/site';
+import { MarketingFooter } from '@/layers/features/marketing';
+import { ExtensionNoiseGuard, FOOTER_SOCIAL_LINKS, HomeExperience, HomeNav } from './_components';
 
 const TITLE = 'All your agents. One place.';
 const DESCRIPTION = 'A work in progress: the next version of the DorkOS home page.';
@@ -42,6 +44,12 @@ export const metadata: Metadata = {
  * for the full divergence. The shared `MarketingNav` is untouched, and so is
  * every page that renders it.
  *
+ * The page ends in the site's own footer, imported unmodified: the same logo,
+ * the same links, and the same newsletter box every other page on dorkos.ai
+ * ends with. A visitor who reads to the bottom of a home page is the visitor
+ * most likely to want the mailing list, and a page that reinvents that ending
+ * has to reinvent the box too.
+ *
  * `overflow-anchor: none` is load-bearing — without it Chrome's scroll
  * anchoring compensates for each message the pinned chat appends and walks
  * the page down on its own.
@@ -53,6 +61,7 @@ export default function NewHomePage() {
       <main>
         <HomeExperience />
       </main>
+      <MarketingFooter email={siteConfig.contactEmail} socialLinks={FOOTER_SOCIAL_LINKS} />
       <HomeNav />
     </div>
   );

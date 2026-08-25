@@ -2,26 +2,29 @@
 
 import Link from 'next/link';
 import { motion } from 'motion/react';
-import { siteConfig } from '@/config/site';
 import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
 import { CLOSE, INSTALL_ASIDE, NPX_REQUIREMENT } from './copy';
 import { DownloadMacButton } from './DownloadMacButton';
 import { InstallCommand } from './InstallCommand';
 
 /**
- * The close: the tagline, the download, the bill, and a one-line colophon.
+ * The close: the tagline, the download, and the bill.
  *
- * It carries no list of site sections. The floating pill does that, on every
- * screen of the page, so a second copy down here would only repeat it. The one
- * destination that does sit in this line is the Marketplace, which moved out
- * of the pill: browsing packages is somewhere you go once you already run
- * DorkOS, which puts it at the end of the page beside the source rather than
- * in the reading path. It is still one press away from every screen, in the
- * pill's overflow menu.
+ * It is a section, not a footer. The site's own `MarketingFooter` follows it
+ * on this page and that is the page's one footer — a landmark repeated twice
+ * is a landmark that means nothing, and the second copy was repeating the
+ * source link the real footer already carries.
+ *
+ * What did not survive that footer is the Marketplace, which the site footer
+ * does not list, so it stays here on the close's own quiet line. It moved out
+ * of the pill when the pill started steering this page's sections: browsing
+ * packages is somewhere you go once you already run DorkOS, which puts it at
+ * the end of the page rather than in the reading path. It is still one press
+ * away from every screen, in the pill's overflow menu.
  */
 export function CloseSection() {
   return (
-    <footer className="mx-auto max-w-5xl px-6 pt-24 pb-16 sm:pt-36">
+    <section className="mx-auto max-w-5xl px-6 pt-24 pb-16 sm:pt-36">
       <motion.div
         variants={STAGGER}
         initial="hidden"
@@ -50,23 +53,17 @@ export function CloseSection() {
         </motion.p>
         <motion.p
           variants={REVEAL}
-          className="text-2xs text-warm-gray mt-5 font-mono tracking-[0.15em] uppercase"
+          className="text-2xs text-warm-gray mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono tracking-[0.15em] uppercase"
         >
           <Link href="/install" className="hover:text-charcoal">
             {CLOSE.otherWays}
           </Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/marketplace" className="hover:text-charcoal">
+            {CLOSE.marketplace}
+          </Link>
         </motion.p>
       </motion.div>
-      <div className="text-2xs border-border-warm text-warm-gray mt-24 border-t pt-6 text-center font-mono tracking-[0.15em] uppercase">
-        {CLOSE.colophon}{' '}
-        <Link href="/marketplace" className="hover:text-charcoal">
-          {CLOSE.marketplace}
-        </Link>{' '}
-        ·{' '}
-        <a href={siteConfig.github} className="hover:text-charcoal">
-          github
-        </a>
-      </div>
-    </footer>
+    </section>
   );
 }

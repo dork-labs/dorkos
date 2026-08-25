@@ -104,17 +104,19 @@ export const CLOSE = {
   /** The one link out of the close, to every other way of installing. */
   otherWays: 'other ways to install',
   /**
-   * The Marketplace, in the footer rather than the pill.
+   * The Marketplace, beside that link rather than in the pill.
    *
    * The floating pill now steers this page's own sections, and browsing
    * packages is not one of them: it is somewhere you go once you already run
-   * DorkOS, which puts it at the end of the page next to the source, not in
-   * the reading path. It is still one click from every screen via the pill's
-   * overflow menu.
+   * DorkOS, which puts it at the end of the page rather than in the reading
+   * path. It is still one click from every screen via the pill's overflow
+   * menu.
+   *
+   * It sits on the close's own quiet line because the site footer underneath
+   * does not carry it, and it is the one destination that would otherwise
+   * vanish with the colophon that used to hold it.
    */
   marketplace: 'marketplace',
-  /** The colophon, before the footer's two links. */
-  colophon: 'dorkos · open source, mit ·',
 } as const;
 
 /** What the download button offers, and what it costs. */
