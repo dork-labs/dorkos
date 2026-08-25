@@ -6,7 +6,7 @@ import { REVEAL, STAGGER } from '@/layers/features/marketing';
 import { AgentCard } from './AgentCard';
 import { DownloadMacButton } from './DownloadMacButton';
 import { Eyebrow } from './Eyebrow';
-import { FLEET } from './fleet';
+import { CAST } from './cast';
 import { InstallCommand } from './InstallCommand';
 
 /** The opening moment: the claim, the command, and your three agents floating. */
@@ -23,7 +23,7 @@ export function Hero({ joined }: { joined: boolean }) {
         className="flex w-full flex-col items-center"
       >
         <motion.div variants={REVEAL}>
-          <Eyebrow>mission control</Eyebrow>
+          <Eyebrow>claude code · codex · opencode</Eyebrow>
         </motion.div>
         <motion.h1
           variants={REVEAL}
@@ -53,7 +53,7 @@ export function Hero({ joined }: { joined: boolean }) {
           variants={STAGGER}
           className="mt-16 flex list-none flex-wrap items-center justify-center gap-4 sm:mt-20"
         >
-          {FLEET.map((agent, i) => (
+          {CAST.map((agent, i) => (
             <AgentCard
               key={agent.key}
               agent={agent}

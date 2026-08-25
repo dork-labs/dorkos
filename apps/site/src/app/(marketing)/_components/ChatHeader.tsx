@@ -2,7 +2,7 @@
 
 import { AvatarTile } from './AvatarTile';
 import { agentLayoutId } from './chat-script';
-import { FLEET } from './fleet';
+import { CAST } from './cast';
 
 /**
  * Chat header: room name, you (always present), and the agents' member tiles.
@@ -20,7 +20,7 @@ export function ChatHeader({ joined }: { joined: boolean }) {
           <AvatarTile sender="you" />
         </span>
         {joined &&
-          FLEET.map((agent) => (
+          CAST.map((agent) => (
             <AvatarTile key={agent.key} sender={agent.key} layoutId={agentLayoutId(agent.key)} />
           ))}
       </div>

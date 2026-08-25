@@ -5,8 +5,8 @@ import { JohnnyFiveFace, RosieFace, WalleFace, type FaceProps } from './avatars'
 /** Stable key for each agent, used as a chat sender and layout id. */
 export type AgentKey = 'rosie' | 'johnny' | 'walle';
 
-/** A named agent in the demo fleet: one famous-robot face per runtime. */
-export interface FleetAgent {
+/** A named agent in the demo cast: one famous-robot face per runtime. */
+export interface CastMember {
   /** Stable sender key used by the chat script. */
   key: AgentKey;
   /** The agent's name — famous, lovable robots. */
@@ -23,8 +23,8 @@ export interface FleetAgent {
   runtimeColor: string;
 }
 
-/** The demo fleet: three famous robots, three runtimes, one chat. */
-export const FLEET: readonly FleetAgent[] = [
+/** The demo cast: three famous robots, three runtimes, one chat. */
+export const CAST: readonly CastMember[] = [
   {
     key: 'rosie',
     name: 'Rosie',
@@ -54,7 +54,7 @@ export const FLEET: readonly FleetAgent[] = [
   },
 ];
 
-/** Fleet agents keyed for direct lookup by sender. */
-export const AGENTS_BY_KEY: Record<string, FleetAgent> = Object.fromEntries(
-  FLEET.map((agent) => [agent.key, agent])
+/** Cast members keyed for direct lookup by sender. */
+export const AGENTS_BY_KEY: Record<string, CastMember> = Object.fromEntries(
+  CAST.map((agent) => [agent.key, agent])
 );

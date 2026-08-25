@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react';
-
 /** The three moments of the pinned stage, in scroll order. */
 export type Beat = 'talk' | 'yours' | 'computer';
 
@@ -7,7 +5,7 @@ export type Beat = 'talk' | 'yours' | 'computer';
 export interface BeatCopy {
   eyebrow: string;
   title: string;
-  lede: ReactNode;
+  lede: string;
 }
 
 /** What the stage says during each beat. */
@@ -20,12 +18,12 @@ export const BEAT_COPY: Record<Beat, BeatCopy> = {
   yours: {
     eyebrow: 'your apps',
     title: 'Make it yours.',
-    lede: 'Plug in the apps you already use — your agents put them to work.',
+    lede: 'Plug in the apps you already use. Your agents put them to work.',
   },
   computer: {
     eyebrow: 'yours alone',
     title: 'It all happens on your computer.',
-    lede: 'Your files stay home. You choose what your agents can touch. And when you say go, they do real work — send the email, fix the bug, ship the site.',
+    lede: 'Your files stay home. You pick what your agents can touch. When you say go, they do the real work: send the email, fix the bug, ship the site.',
   },
 };
 

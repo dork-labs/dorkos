@@ -1,6 +1,6 @@
 'use client';
 
-import { AvatarTile, FLEET, HumanFace, NIGHT_VARS, type FleetAgent } from '../../../_components';
+import { AvatarTile, CAST, HumanFace, NIGHT_VARS, type CastMember } from '../../../_components';
 
 /** A dark tile so the cast is judged against the background they live on. */
 function DarkCard({ children }: { children: React.ReactNode }) {
@@ -14,7 +14,7 @@ function DarkCard({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CastMember({ agent }: { agent: FleetAgent }) {
+function CastMember({ agent }: { agent: CastMember }) {
   return (
     <DarkCard>
       <span
@@ -47,7 +47,7 @@ function CastMember({ agent }: { agent: FleetAgent }) {
 export function CastGallery() {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {FLEET.map((agent) => (
+      {CAST.map((agent) => (
         <CastMember key={agent.key} agent={agent} />
       ))}
       <DarkCard>

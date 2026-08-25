@@ -40,7 +40,7 @@ export { AppleLogo } from './AppleLogo';
 export { RosieFace, JohnnyFiveFace, WalleFace, HumanFace, type FaceProps } from './avatars';
 
 // Data and hooks
-export { FLEET, AGENTS_BY_KEY, type FleetAgent, type AgentKey } from './fleet';
+export { CAST, AGENTS_BY_KEY, type CastMember, type AgentKey } from './cast';
 export {
   INTEGRATIONS,
   findIntegration,

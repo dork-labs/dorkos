@@ -4,13 +4,13 @@ import { motion } from 'motion/react';
 import { REVEAL } from '@/layers/features/marketing';
 import { AvatarTile } from './AvatarTile';
 import { agentLayoutId } from './chat-script';
-import type { FleetAgent } from './fleet';
+import type { CastMember } from './cast';
 
 const FLOAT_BASE_S = 3.6;
 const FLOAT_STAGGER_S = 0.7;
 
 interface AgentCardProps {
-  agent: FleetAgent;
+  agent: CastMember;
   /** Position in the row, used to desynchronise the floating. */
   index: number;
   /** True once this agent has flown into the chat, leaving an empty seat. */

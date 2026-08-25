@@ -3,7 +3,7 @@
 import { motion } from 'motion/react';
 import { HumanFace } from './avatars';
 import type { Sender } from './chat-script';
-import { AGENTS_BY_KEY } from './fleet';
+import { AGENTS_BY_KEY } from './cast';
 import { POP } from './motion-tokens';
 
 /** Avatar tile scale: `lg` on hero cards, `md` in the chat. */

@@ -3,11 +3,17 @@
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import { siteConfig } from '@/config/site';
-import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
+import { AWAY_FROM_HOME_LINKS, REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
 import { DownloadMacButton } from './DownloadMacButton';
 import { InstallCommand } from './InstallCommand';
 
-/** The close: the tagline, the command, and a one-line footer. */
+/**
+ * The close: the tagline, the command, and a one-line footer.
+ *
+ * The footer row is the home page's only path to the rest of the site, and it
+ * is derived from the shared destination list rather than typed out again, so
+ * a page added to the site menu cannot go missing here.
+ */
 export function CloseSection() {
   return (
     <footer className="mx-auto max-w-5xl px-6 pt-24 pb-16 sm:pt-36">
@@ -40,13 +46,19 @@ export function CloseSection() {
           <Link href="/install" className="hover:text-(--cream)">
             other ways to install
           </Link>
-          {' · '}
-          <Link href="/docs" className="hover:text-(--cream)">
-            read the docs
-          </Link>
         </motion.p>
       </motion.div>
-      <div className="text-2xs mt-24 border-t border-(--line) pt-6 text-center font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
+      <nav
+        aria-label="Site sections"
+        className="text-2xs mt-20 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono tracking-[0.15em] text-(--cream-dim) uppercase"
+      >
+        {AWAY_FROM_HOME_LINKS.map((link) => (
+          <Link key={link.href} href={link.href} className="hover:text-(--cream)">
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+      <div className="text-2xs mt-8 border-t border-(--line) pt-6 text-center font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
         dorkos · open source, mit ·{' '}
         <a href={siteConfig.github} className="hover:text-(--cream)">
           github

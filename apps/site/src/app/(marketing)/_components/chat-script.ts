@@ -1,4 +1,4 @@
-import { AGENTS_BY_KEY, type AgentKey } from './fleet';
+import { AGENTS_BY_KEY, type AgentKey } from './cast';
 import type { IntegrationId } from './integrations';
 
 /** Who a chat line comes from. */
@@ -27,9 +27,9 @@ export const CHAT_SCRIPT: readonly ChatLine[] = [
   { from: 'rosie', text: 'On it! Running the last tests now.', time: '9:41' },
   { from: 'rosie', text: 'can you double-check my work?', time: '9:42', mention: '@Johnny 5' },
   { from: 'johnny', text: 'Checked. Looks good ✓', time: '9:42' },
-  { from: 'walle', text: 'Emailed the waitlist — 214 people.', time: '9:43', integration: 'email' },
+  { from: 'walle', text: 'Emailed the waitlist. 214 people.', time: '9:43', integration: 'email' },
   { from: 'johnny', text: 'Launch call booked for Friday.', time: '9:43', integration: 'calendar' },
-  { from: 'rosie', text: 'Merged the release — all green.', time: '9:44', integration: 'git' },
+  { from: 'rosie', text: 'Merged the release. All green.', time: '9:44', integration: 'git' },
   { from: 'walle', text: 'Launch notes written and shared.', time: '9:44', integration: 'docs' },
   { from: 'johnny', text: 'Told the team in #general.', time: '9:45', integration: 'slack' },
   { from: 'system', text: '🚀 Rosie shipped the site', time: '9:45' },
