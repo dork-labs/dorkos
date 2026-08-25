@@ -39,7 +39,7 @@ export const PROMO_CUTS: Record<PromoCut, PromoAssets> = {
 /** Caption track. Off by default: the video already burns in the narrator lines. */
 export const PROMO_CAPTIONS = '/promo/be-more-like-dave.vtt';
 
-/** Run time, rounded to the second, so the page can say what it is asking for. */
+/** Run time in seconds, rounded up from 55.8, so the page never undersells it. */
 export const PROMO_SECONDS = 56;
 
 /** What the poster shows, for anyone who cannot see it. */
