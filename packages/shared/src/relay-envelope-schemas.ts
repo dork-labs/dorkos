@@ -325,6 +325,29 @@ export const TaskDispatchPayloadSchema = z
      * briefing, which is what every relay-dispatched run got before DOR-1567.
      */
     systemPromptAppend: z.string().optional(),
+    /**
+     * The session this run must execute on (DOR-1571).
+     *
+     * Absent means "use `runId`" — the isolated-per-run default every
+     * non-sticky run has always had. A STICKY task resolves this to its stable
+     * `sticky-<taskId>` session on the scheduler side (which has the store to
+     * decide it) and carries it here, so the receiver runs the turn on the
+     * shared session rather than a fresh one and writes that same id onto the
+     * run row. Optional so an envelope written before this field existed still
+     * parses.
+     */
+    sessionId: z.string().optional(),
+    /**
+     * Whether {@link TaskDispatchPayloadSchema.sessionId} already has history to
+     * RESUME rather than start fresh (DOR-1571).
+     *
+     * `hasStarted` at the agent seam. Only meaningful for a sticky run whose
+     * session has run before; the scheduler decides it from the run history and
+     * carries it here, because the receiver cannot see that history. Absent or
+     * false means start fresh, which is every non-sticky run and a sticky task's
+     * first run.
+     */
+    resumeSession: z.boolean().optional(),
   })
   .openapi('TaskDispatchPayload');
 

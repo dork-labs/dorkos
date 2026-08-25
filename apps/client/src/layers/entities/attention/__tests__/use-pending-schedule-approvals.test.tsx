@@ -23,6 +23,7 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     timezone: 'UTC',
     agentId: null,
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
     status: 'pending_approval',

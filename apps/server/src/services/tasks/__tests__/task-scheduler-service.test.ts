@@ -752,6 +752,46 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    it('a non-sticky relay dispatch carries no session on the wire (DOR-1571)', async () => {
+      const task = store.createTask(taskInput({ name: 'Plain relay', cron: '0 * * * *' }));
+      const service = relayScheduler();
+      await service.triggerManualRun(task.id);
+
+      const [, payload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.sessionId).toBeUndefined();
+      expect(payload.resumeSession).toBeUndefined();
+      await service.stop();
+    });
+
+    it('a sticky relay dispatch carries the shared session, resuming after the first (DOR-1571)', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Sticky relay', cron: '0 * * * *', sticky: true })
+      );
+      const expected = `sticky-${task.id}`;
+      const service = relayScheduler();
+
+      // First fire: the shared session, not yet resumed.
+      const first = await service.triggerManualRun(task.id);
+      const [, firstPayload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(firstPayload.sessionId).toBe(expected);
+      expect(firstPayload.resumeSession).toBe(false);
+
+      // The receiver finishes the turn on the sticky session — only the run row
+      // knows how a relay run ends, and it now records that session.
+      store.updateRun(first!.id, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        sessionId: expected,
+      });
+
+      // A later scheduled fire resumes the same session.
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_100_000));
+      const [, secondPayload] = mockRelay.publish.mock.calls[1] as [string, TaskDispatchPayload];
+      expect(secondPayload.sessionId).toBe(expected);
+      expect(secondPayload.resumeSession).toBe(true);
+      await service.stop();
+    });
+
     it('shutdown asks the bus to stop the relay runs it cannot abort itself', async () => {
       const task = store.createTask(taskInput({ name: 'Left running', cron: '0 * * * *' }));
       const service = relayScheduler();
@@ -836,6 +876,98 @@ describe('TaskSchedulerService', () => {
 
       await s1.stop();
       await s2.stop();
+    });
+  });
+
+  describe('sticky sessions resume one session across runs (DOR-1571)', () => {
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+
+    /** ensureSession's calls: [sessionId, opts] per invocation. */
+    function ensureCalls(): Array<[string, { hasStarted?: boolean }]> {
+      return vi.mocked(mockAgent.ensureSession).mock.calls as unknown as Array<
+        [string, { hasStarted?: boolean }]
+      >;
+    }
+
+    it('a sticky task runs every fire on ONE derived session, resuming after the first', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Sticky one', cron: '* * * * *', sticky: true })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      await dispatch(task, new Date(1_700_000_040_000));
+      await dispatch(task, new Date(1_700_000_100_000));
+
+      const expected = `sticky-${task.id}`;
+      // Both runs point their transcript at the SAME session — clicking either
+      // in the history opens the one growing conversation.
+      const runs = store.listRuns({ taskId: task.id });
+      expect(runs).toHaveLength(2);
+      expect(runs[0].sessionId).toBe(expected);
+      expect(runs[1].sessionId).toBe(expected);
+
+      // The agent was asked to run on the sticky id both times; the first fire
+      // started fresh, the second RESUMED it.
+      const calls = ensureCalls();
+      expect(calls[0][0]).toBe(expected);
+      expect(calls[1][0]).toBe(expected);
+      expect(calls[0][1].hasStarted).toBe(false);
+      expect(calls[1][1].hasStarted).toBe(true);
+
+      await service.stop();
+    });
+
+    it('a non-sticky task still gets a fresh session per run (unchanged)', async () => {
+      const task = store.createTask(taskInput({ name: 'Fresh each time', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      await dispatch(task, new Date(1_700_000_040_000));
+      await dispatch(task, new Date(1_700_000_100_000));
+
+      const runs = store.listRuns({ taskId: task.id });
+      expect(runs).toHaveLength(2);
+      // Each run's session id is its own run id, and the two differ.
+      expect(runs[0].sessionId).toBe(runs[0].id);
+      expect(runs[1].sessionId).toBe(runs[1].id);
+      expect(runs[0].sessionId).not.toBe(runs[1].sessionId);
+      // Never resumes.
+      expect(ensureCalls().every(([, opts]) => opts.hasStarted === false)).toBe(true);
+
+      await service.stop();
+    });
+
+    it('a sticky fire while its session is busy is skipped, not run in parallel', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Sticky busy', cron: '* * * * *', sticky: true })
+      );
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      // Cap set high so the ONLY reason to skip is sticky single-session
+      // serialization, not the global concurrency cap.
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 5,
+      });
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      void dispatch(task, new Date(1_700_000_040_000));
+      await parked;
+
+      await dispatch(task, new Date(1_700_000_100_000));
+
+      const runs = store.listRuns({ taskId: task.id });
+      const skipped = runs.find((r) => r.status === 'skipped');
+      expect(skipped, 'the second fire wrote a skipped run').toBeDefined();
+      expect(skipped!.error).toContain('one session');
+      // No second turn was ever started on the session.
+      expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
+
+      await service.stop();
     });
   });
 
@@ -1813,6 +1945,7 @@ describe('buildTaskAppend', () => {
       timezone: null,
       agentId: null,
       enabled: true,
+      sticky: false,
       maxRuntime: null,
       permissionMode: 'acceptEdits',
       status: 'active',

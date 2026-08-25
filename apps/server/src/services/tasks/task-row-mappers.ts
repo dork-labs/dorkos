@@ -30,6 +30,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     timezone: row.timezone,
     agentId: row.agentId ?? null,
     enabled: row.enabled,
+    sticky: row.sticky,
     maxRuntime: row.maxRuntime,
     permissionMode: row.permissionMode,
     status: row.status as Task['status'],

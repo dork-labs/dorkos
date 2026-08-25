@@ -8,6 +8,7 @@ import {
   Label,
   Button,
   PermissionModeScopeNote,
+  Switch,
   TrustDial,
   UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
@@ -60,6 +61,8 @@ export type ScheduleFormValues = {
   timezone: string;
   permissionMode: PermissionMode;
   maxRuntime: string;
+  /** Whether every run resumes one session instead of starting fresh (DOR-1571). */
+  sticky: boolean;
 };
 
 /** Convert milliseconds to a human-friendly duration string (e.g. "10m"). */
@@ -107,6 +110,7 @@ export function buildFormValues(
       timezone: editTask.timezone ?? '',
       permissionMode: editTask.permissionMode,
       maxRuntime: editTask.maxRuntime ? msToRuntimeStr(editTask.maxRuntime) : DEFAULT_MAX_RUNTIME,
+      sticky: editTask.sticky,
     };
   }
   if (preset) {
@@ -119,6 +123,7 @@ export function buildFormValues(
       timezone: preset.timezone ?? '',
       permissionMode: defaultMode,
       maxRuntime: DEFAULT_MAX_RUNTIME,
+      sticky: false,
     };
   }
   return {
@@ -130,6 +135,7 @@ export function buildFormValues(
     timezone: '',
     permissionMode: defaultMode,
     maxRuntime: DEFAULT_MAX_RUNTIME,
+    sticky: false,
   };
 }
 
@@ -179,6 +185,7 @@ export function ScheduleForm({
           ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
           permissionMode: value.permissionMode,
           maxRuntime: value.maxRuntime.trim() || undefined,
+          sticky: value.sticky,
         };
         updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
       } else {
@@ -192,6 +199,7 @@ export function ScheduleForm({
           ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
           permissionMode: value.permissionMode,
           maxRuntime: value.maxRuntime.trim() || undefined,
+          ...(value.sticky ? { sticky: true } : {}),
         };
         createTask.mutate(input, { onSuccess: onSubmitSuccess });
       }
@@ -452,6 +460,26 @@ export function ScheduleForm({
                       onChange={(e) => field.handleChange(e.target.value)}
                       onBlur={field.handleBlur}
                       placeholder="10m"
+                    />
+                  </div>
+                )}
+              </form.AppField>
+
+              {/* Sticky: resume one session across runs (DOR-1571). */}
+              <form.AppField name="sticky">
+                {(field) => (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="schedule-sticky">Sticky</Label>
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        Resume the same session each run, so the agent remembers what it did last
+                        time. Off starts fresh every run.
+                      </p>
+                    </div>
+                    <Switch
+                      id="schedule-sticky"
+                      checked={field.state.value}
+                      onCheckedChange={(checked) => field.handleChange(checked)}
                     />
                   </div>
                 )}

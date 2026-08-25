@@ -57,6 +57,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     timezone: 'UTC',
     agentId: null,
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     status: 'pending_approval',

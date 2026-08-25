@@ -4013,6 +4013,19 @@ export const TaskSchema = z
     timezone: z.string().nullable(),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
+    /**
+     * Whether every run of this schedule resumes ONE persistent session instead
+     * of starting fresh (DOR-1571).
+     *
+     * `false` (the default) is the isolated-per-run behavior: each fire gets its
+     * own session keyed by the run's id and carries no context forward. `true`
+     * makes every fire share one derived, stable session (`sticky-<taskId>`), so
+     * the agent accumulates context across runs — "here's what changed since last
+     * time". Run history stays per-run either way; a sticky run's `sessionId`
+     * simply points at the shared session, so any run in the history opens the
+     * same growing transcript.
+     */
+    sticky: z.boolean().default(false),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     status: TaskStatusSchema,
@@ -4199,6 +4212,11 @@ export const CreateTaskRequestSchema = z
      */
     maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
     /**
+     * Whether every run resumes one persistent session (DOR-1571). Omitted means
+     * off — the isolated-per-run default. See {@link TaskSchema.sticky}.
+     */
+    sticky: z.boolean().optional(),
+    /**
      * How much this schedule's runs may do without asking.
      *
      * **Deliberately without a default** (spec `full-power-defaults`, D6). It
@@ -4350,6 +4368,11 @@ export const UpdateTaskRequestSchema = z
      * the SKILL.md makes the file unreadable to every later sync.
      */
     maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
+    /**
+     * Turn session-resume on or off for this schedule (DOR-1571). See
+     * {@link TaskSchema.sticky}.
+     */
+    sticky: z.boolean().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */

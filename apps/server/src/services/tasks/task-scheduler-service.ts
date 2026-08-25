@@ -23,6 +23,7 @@ import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
+import { resolveRunSession } from './session/sticky-session.js';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -685,7 +686,16 @@ export class TaskSchedulerService {
       return;
     }
 
+    // Two reasons a tick is recorded but not run, in priority order. The global
+    // cap comes first because it is about the whole machine; sticky
+    // single-session serialization is about this one task (DOR-1571). A sticky
+    // task runs everything on one session, so a fire that lands while its
+    // previous run is still going must NOT open a second turn on it — that would
+    // corrupt the very session sticky exists to keep coherent. Checked here, the
+    // same way `atCap` is, so both end in the same `skipped` run row.
     const atCap = this.runs.count() >= this.config.maxConcurrentRuns;
+    const stickyBusy = !atCap && current.sticky && this.store.hasRunningRunForTask(current.id);
+    const skipReason = atCap ? this.atCapReason() : stickyBusy ? this.stickyBusyReason() : null;
 
     // Idempotency gate (ADR-285): atomically claim this scheduled tick, opening
     // its run row in the same transaction. If another process (or a duplicate
@@ -700,7 +710,7 @@ export class TaskSchedulerService {
       run = this.store.claimScheduledRun(
         task.id,
         tickKey,
-        atCap ? { status: 'skipped', reason: this.atCapReason() } : { status: 'running' }
+        skipReason ? { status: 'skipped', reason: skipReason } : { status: 'running' }
       );
       if (!run) {
         logger.debug(
@@ -710,22 +720,22 @@ export class TaskSchedulerService {
       }
     } else {
       // No cron, so no occurrence to claim — an on-demand task can only get
-      // here by being dispatched directly, and the cap still applies.
-      if (atCap) {
-        logger.warn(`skipped "${task.name}" — ${this.atCapReason()}`);
+      // here by being dispatched directly, and the skip reasons still apply.
+      if (skipReason) {
+        logger.warn(`skipped "${task.name}" — ${skipReason}`);
         return;
       }
       run = this.store.createRun(task.id, 'scheduled');
     }
 
-    if (atCap) {
+    if (skipReason) {
       // The run row above is the artifact a person actually finds: it sits in
       // the task's own history, at the time the schedule came round, saying why
       // nothing happened. The operator's mental model is "it runs every hour",
       // and a dropped occurrence that leaves no trace makes that model quietly
       // wrong. Deliberately NOT an activity-feed event as well — one record of
       // a non-event is enough, and the feed is for things that happened.
-      logger.warn(`skipped a scheduled run of "${task.name}" — ${this.atCapReason()}`);
+      logger.warn(`skipped a scheduled run of "${task.name}" — ${skipReason}`);
       return;
     }
 
@@ -736,6 +746,17 @@ export class TaskSchedulerService {
   private atCapReason(): string {
     const cap = this.config.maxConcurrentRuns;
     return `DorkOS was already running ${cap} task${cap === 1 ? '' : 's'} at once, which is its limit`;
+  }
+
+  /**
+   * Why a sticky tick was not run: its own previous run is still going, and a
+   * sticky task keeps everything in one session (DOR-1571).
+   */
+  private stickyBusyReason(): string {
+    return (
+      'This task resumes one session every run, and its previous run was still going when this ' +
+      'one came round — so it was skipped rather than starting a second turn on the same session'
+    );
   }
 
   /**
@@ -810,11 +831,15 @@ export class TaskSchedulerService {
     const startTime = Date.now();
     let outputChars = 0;
     let outputSummary = '';
-    // Use run ID as session ID for isolation. Declared out here, not inside the
-    // `try`, because the failure finalizer needs it too: a run that failed is
-    // exactly when somebody wants to open the transcript, and a row with no
-    // sessionId is not clickable in the run history.
-    const sessionId = run.id;
+    // Which session this run executes on. A non-sticky run is isolated on the
+    // run's own id, exactly as before; a sticky run resumes ONE derived session
+    // shared by every run of the task, so context carries across runs (DOR-1571).
+    // Declared out here, not inside the `try`, because the failure finalizer
+    // needs it too: a run that failed is exactly when somebody wants to open the
+    // transcript, and a row with no sessionId is not clickable in the run
+    // history. Writing the sticky id here is also what makes any sticky run in the
+    // history open the same growing transcript.
+    const { sessionId, hasStarted } = resolveRunSession(this.store, task, run);
 
     try {
       // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
@@ -837,7 +862,12 @@ export class TaskSchedulerService {
       this.agentManager.ensureSession(sessionId, {
         permissionMode,
         cwd: effectiveCwd,
-        hasStarted: false,
+        // Resume a sticky session that has already run, so the turn picks the
+        // conversation back up rather than starting over. This explicit
+        // `ensureSession` short-circuits `sendMessage`'s own transcript probe, so
+        // the answer has to be carried here (DOR-1571). Always false for a
+        // non-sticky run and a sticky task's first fire.
+        hasStarted,
         // Nobody is coming back to a scheduled run, so an unanswered prompt is
         // refused at ten minutes instead of parking for four hours and stalling
         // the run (spec `ask-parks-on-timeout` §7).

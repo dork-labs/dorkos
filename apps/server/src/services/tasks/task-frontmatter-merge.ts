@@ -83,6 +83,12 @@ export interface TaskFrontmatterWrite {
   timezone?: string | null;
   /** Whether the schedule is armed. */
   enabled?: boolean;
+  /**
+   * Whether every run resumes one persistent session (DOR-1571). Lives inside
+   * the `schedule:` block, so it is written through `SCHEDULE_FIELD` in
+   * `task-file-update.ts`, not the top-level {@link FRONTMATTER_KEY} table here.
+   */
+  sticky?: boolean;
   /** How long a run may take, as `30s`/`10m`/`2h30m`. Clearable — no cap. */
   maxRuntime?: string | null;
   /** How much an unattended run may do without asking. */

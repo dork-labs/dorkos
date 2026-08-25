@@ -22,6 +22,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     timezone: null,
     agentId: null,
     enabled: true,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
     status: 'active',

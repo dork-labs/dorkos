@@ -146,4 +146,22 @@ describe('TaskDispatchPayloadSchema systemPromptAppend', () => {
     // Purpose: a dead-letter replay carries the old shape.
     expect(TaskDispatchPayloadSchema.safeParse(base).success).toBe(true);
   });
+
+  it('carries a sticky session and its resume flag when set (DOR-1571)', () => {
+    const result = TaskDispatchPayloadSchema.safeParse({
+      ...base,
+      sessionId: 'sticky-sched-1',
+      resumeSession: true,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.sessionId).toBe('sticky-sched-1');
+    expect(result.data?.resumeSession).toBe(true);
+  });
+
+  it('leaves both absent on a non-sticky envelope (DOR-1571)', () => {
+    const result = TaskDispatchPayloadSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    expect(result.data?.sessionId).toBeUndefined();
+    expect(result.data?.resumeSession).toBeUndefined();
+  });
 });

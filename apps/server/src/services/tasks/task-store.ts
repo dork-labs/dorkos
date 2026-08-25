@@ -39,6 +39,8 @@ export interface CreateTaskStoreInput {
   timezone?: string | null;
   agentId?: string | null;
   enabled?: boolean;
+  /** Whether every run resumes one persistent session (DOR-1571). Defaults off. */
+  sticky?: boolean;
   maxRuntime?: number | null;
   permissionMode?: string;
   filePath: string;
@@ -271,6 +273,7 @@ export class TaskStore {
         timezone: input.timezone ?? 'UTC',
         agentId: input.agentId ?? null,
         enabled: input.enabled ?? true,
+        sticky: input.sticky ?? false,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
@@ -319,6 +322,7 @@ export class TaskStore {
     if (input.cron !== undefined) updates.cron = input.cron ?? '';
     if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
     if (input.enabled !== undefined) updates.enabled = input.enabled;
+    if (input.sticky !== undefined) updates.sticky = input.sticky;
     if (input.maxRuntime !== undefined) {
       updates.maxRuntime =
         typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
@@ -724,6 +728,58 @@ export class TaskStore {
     return rows.map(mapRunRow);
   }
 
+  /**
+   * Whether this task already has a run in flight (DOR-1571).
+   *
+   * The single-session serialization a STICKY task needs: it runs everything on
+   * one session, so a fire that arrives while the previous run is still going
+   * must NOT start a second turn on it. The scheduler asks this before claiming
+   * a tick and writes a `skipped` run instead, exactly as it does at the
+   * concurrency cap — the session is left to finish the turn it is on rather
+   * than corrupted with two at once.
+   *
+   * A `running` row is the only non-terminal status a run can hold (every other
+   * status is in {@link TERMINAL_RUN_STATUSES}), so this is the whole test.
+   *
+   * @param taskId - The task to check.
+   * @returns True when a run of this task is currently `running`.
+   */
+  hasRunningRunForTask(taskId: string): boolean {
+    const row = this.db
+      .select({ id: pulseRuns.id })
+      .from(pulseRuns)
+      .where(and(eq(pulseRuns.scheduleId, taskId), eq(pulseRuns.status, 'running')))
+      .limit(1)
+      .get();
+    return row !== undefined;
+  }
+
+  /**
+   * Whether any run has already executed on this session id (DOR-1571).
+   *
+   * A run row carries `sessionId` only once it reaches a terminal status — that
+   * is where every dispatch path writes it — so a match means a turn genuinely
+   * ran on this session and left a transcript to resume. The scheduler uses this
+   * to decide `hasStarted` for a sticky session: the first fire finds nothing and
+   * starts fresh; a later fire finds the prior run and RESUMES, picking the
+   * conversation back up.
+   *
+   * A `skipped` run never ran and never wrote a `sessionId`, so it is correctly
+   * absent here — a task whose only history is skips still starts fresh.
+   *
+   * @param sessionId - The session id to look up.
+   * @returns True when a prior run executed on this session.
+   */
+  sessionHasRun(sessionId: string): boolean {
+    const row = this.db
+      .select({ id: pulseRuns.id })
+      .from(pulseRuns)
+      .where(eq(pulseRuns.sessionId, sessionId))
+      .limit(1)
+      .get();
+    return row !== undefined;
+  }
+
   /** Count total runs, optionally filtered by task. */
   countRuns(taskId?: string): number {
     if (taskId) {
@@ -1072,6 +1128,7 @@ export class TaskStore {
           timezone: schedule.timezone,
           agentId: agentId ?? null,
           enabled: schedule.enabled,
+          sticky: schedule.sticky,
           maxRuntime: maxRuntimeMs,
           permissionMode,
           // A `paused` row whose file is back is un-paused here, because
@@ -1138,6 +1195,7 @@ export class TaskStore {
         timezone: schedule.timezone,
         agentId: agentId ?? null,
         enabled: schedule.enabled,
+        sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
         permissionMode,
         status: arm?.status ?? 'active',

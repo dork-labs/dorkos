@@ -63,6 +63,7 @@ const FILE_BACKED_COLUMN = {
   cron: 'cron',
   timezone: 'timezone',
   enabled: 'enabled',
+  sticky: 'sticky',
   permissionMode: 'permissionMode',
   prompt: 'prompt',
 } as const satisfies Record<string, string>;
@@ -75,6 +76,7 @@ export interface FileBackedRow {
   cron?: string | null;
   timezone?: string | null;
   enabled: boolean;
+  sticky: boolean;
   permissionMode: string;
   prompt: string;
 }
@@ -219,6 +221,7 @@ const SCHEDULE_FIELD: Record<string, keyof ScheduleBlock> = {
   cron: 'cron',
   timezone: 'timezone',
   enabled: 'enabled',
+  sticky: 'sticky',
   maxRuntime: 'max-runtime',
   permissionMode: 'permissions',
 };

@@ -148,6 +148,10 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
       ...(req.cron ? { cron: req.cron } : {}),
       timezone: req.timezone || 'UTC',
       enabled: req.enabled !== false,
+      // A Shape-declared schedule cannot ask for session-resume yet (DOR-1571):
+      // there is no `sticky` field on a Shape schedule request, so it stays
+      // isolated-per-run. `scheduleToFrontmatter` drops this `false`.
+      sticky: false,
       ...(req.maxRuntime ? { 'max-runtime': req.maxRuntime } : {}),
       permissions: req.permissionMode ?? 'acceptEdits',
       ...(origin ? { origin: 'shape' as const, shape: origin.shape } : {}),

@@ -39,6 +39,7 @@ describe('legacyTaskToSchedule', () => {
       cron: '0 9 * * *',
       timezone: 'America/New_York',
       enabled: false,
+      sticky: false,
       'max-runtime': '30m',
       permissions: 'plan',
       origin: 'shape',
@@ -50,6 +51,7 @@ describe('legacyTaskToSchedule', () => {
     expect(legacyTaskToSchedule(legacy())).toEqual({
       timezone: 'UTC',
       enabled: true,
+      sticky: false,
       permissions: 'acceptEdits',
     });
   });
@@ -79,6 +81,7 @@ describe('legacyTaskToSchedule', () => {
     expect(legacyTaskToSchedule(legacy(extra))).toEqual({
       timezone: 'UTC',
       enabled: true,
+      sticky: false,
       permissions: 'acceptEdits',
       ...expected,
     });

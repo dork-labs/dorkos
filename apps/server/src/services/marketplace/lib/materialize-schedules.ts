@@ -235,6 +235,11 @@ function buildScheduleBlock(
     // no file can grant itself. See the module note. Absent means the safe
     // answer (off), which is also the schema's default.
     enabled: schedule.startEnabled ?? false,
+    // A packaged schedule cannot declare session-resume yet (DOR-1571): a Shape
+    // manifest has no `sticky` field, so a plugin schedule is isolated-per-run
+    // like every schedule was before. `scheduleToFrontmatter` drops this `false`,
+    // so nothing lands in the file.
+    sticky: false,
     permissions: mode,
     origin: 'plugin',
     shape: packageName,

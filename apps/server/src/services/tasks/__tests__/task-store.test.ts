@@ -925,6 +925,83 @@ describe('TaskStore', () => {
     });
   });
 
+  // === Sticky sessions (DOR-1571) ===
+
+  describe('sticky (DOR-1571)', () => {
+    /** A parsed definition for a file at `filePath`, with a sticky flag. */
+    function definition(name: string, filePath: string, sticky: boolean) {
+      return {
+        name,
+        meta: {
+          name,
+          description: 'd',
+          schedule: { timezone: 'UTC', enabled: true, sticky, permissions: 'acceptEdits' },
+        },
+        body: 'do it',
+        filePath,
+        dirPath: filePath.replace(`/${SKILL_FILENAME}`, ''),
+        scope: 'global',
+      } as Parameters<TaskStore['upsertFromFile']>[0];
+    }
+
+    it('defaults sticky off, and round-trips it on through createTask', () => {
+      const off = store.createTask(taskInput({ name: 'plain', cron: '0 2 * * *' }));
+      expect(off.sticky).toBe(false);
+
+      const on = store.createTask(
+        taskInput({ name: 'sticky-one', cron: '0 2 * * *', sticky: true })
+      );
+      // Read back from SQLite, not echoed by the insert.
+      expect(store.getTask(on.id)?.sticky).toBe(true);
+    });
+
+    it('toggles sticky through updateTask', () => {
+      const task = store.createTask(taskInput({ name: 'toggle', cron: '0 2 * * *' }));
+      store.updateTask(task.id, { sticky: true });
+      expect(store.getTask(task.id)?.sticky).toBe(true);
+      store.updateTask(task.id, { sticky: false });
+      expect(store.getTask(task.id)?.sticky).toBe(false);
+    });
+
+    it("caches the file's schedule.sticky through upsertFromFile", () => {
+      const filePath = '/home/u/.dork/tasks/from-file/SKILL.md';
+      const created = store.upsertFromFile(definition('from-file', filePath, true));
+      expect(store.getTask(created.id)?.sticky).toBe(true);
+
+      // Editing the file back to non-sticky is reflected on the row.
+      store.upsertFromFile(definition('from-file', filePath, false));
+      expect(store.getTask(created.id)?.sticky).toBe(false);
+    });
+
+    it('hasRunningRunForTask sees only a run that is still running', () => {
+      const task = store.createTask(taskInput({ name: 'busy', cron: '0 2 * * *' }));
+      expect(store.hasRunningRunForTask(task.id)).toBe(false);
+
+      const run = store.createRun(task.id, 'scheduled'); // opens as `running`
+      expect(store.hasRunningRunForTask(task.id)).toBe(true);
+
+      store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      expect(store.hasRunningRunForTask(task.id)).toBe(false);
+    });
+
+    it('sessionHasRun is true only once a run has written that session id', () => {
+      const task = store.createTask(taskInput({ name: 'resume', cron: '0 2 * * *' }));
+      const sessionId = `sticky-${task.id}`;
+      expect(store.sessionHasRun(sessionId)).toBe(false);
+
+      const run = store.createRun(task.id, 'scheduled');
+      // A running run has not written its session id yet, so still fresh.
+      expect(store.sessionHasRun(sessionId)).toBe(false);
+
+      store.updateRun(run.id, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        sessionId,
+      });
+      expect(store.sessionHasRun(sessionId)).toBe(true);
+    });
+  });
+
   // === ISO 8601 timestamps ===
 
   describe('timestamps', () => {
