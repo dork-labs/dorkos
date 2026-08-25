@@ -99,10 +99,20 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
   };
 }
 
-/** Format a single action as `[kind] artifact "name" -> path  (harness)`. */
+/**
+ * Format a single action as `[kind] artifact "name" -> path  (harness)`, with
+ * its note appended when it carries one.
+ *
+ * `reason` is required on a drop and optional elsewhere, and the optional ones
+ * are exactly the lines that look arbitrary without it: a `native` action writes
+ * no file, and a scheduled plugin skill is linked into `.agents/skills` for the
+ * DorkOS scheduler even when no enabled harness reads that directory. Drops are
+ * rendered by `formatDropList`, not here, so this never double-prints a reason.
+ */
 function formatAction(action: ProjectionAction): string {
   const path = action.target ?? action.source ?? '(no path)';
-  return `  [${action.kind}] ${action.artifact} "${action.name}" -> ${path}  (${action.harness})`;
+  const note = action.reason ? ` — ${action.reason}` : '';
+  return `  [${action.kind}] ${action.artifact} "${action.name}" -> ${path}  (${action.harness})${note}`;
 }
 
 /** Render a per-harness count of each actionable projection kind. */

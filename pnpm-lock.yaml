@@ -1216,6 +1216,9 @@ importers:
       '@dorkos/marketplace':
         specifier: workspace:*
         version: link:../marketplace
+      '@dorkos/skills':
+        specifier: workspace:*
+        version: link:../skills
       zod:
         specifier: ^3.25.76
         version: 3.25.76
