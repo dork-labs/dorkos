@@ -101,14 +101,7 @@ test.describe('Home surface — the shell @smoke', () => {
 
     // The three that moved into the tab bar are gone from the sidebar entirely —
     // not merely renamed or reordered.
-    for (const gone of [
-      'Activity',
-      'Schedules',
-      'Scheduled',
-      'Tasks',
-      'Workspaces',
-      'Dashboard',
-    ]) {
+    for (const gone of ['Activity', 'Schedules', 'Scheduled', 'Tasks', 'Workspaces', 'Dashboard']) {
       await expect(homeSurface.sidebarNav.getByRole('button', { name: gone })).toHaveCount(0);
     }
   });

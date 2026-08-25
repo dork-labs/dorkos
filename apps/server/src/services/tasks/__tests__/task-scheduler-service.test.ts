@@ -1277,7 +1277,7 @@ describe('TaskSchedulerService', () => {
 
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
-      expect(updatedRun?.error).toBe('No receiver for task dispatch');
+      expect(updatedRun?.error).toBe('No receiver for the scheduled run');
 
       await service.stop();
     });

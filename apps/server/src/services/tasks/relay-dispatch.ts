@@ -129,7 +129,14 @@ export async function dispatchRunViaRelay(
       error: 'No receiver for the scheduled run',
     });
     logger.warn(`no receiver for relay dispatch of run ${run.id}`);
-    emitRunActivity(deps.activityService, task, run, 'failed', 0, 'No receiver for the scheduled run');
+    emitRunActivity(
+      deps.activityService,
+      task,
+      run,
+      'failed',
+      0,
+      'No receiver for the scheduled run'
+    );
     return;
   }
 
