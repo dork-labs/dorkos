@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(memory,shared,server,test-utils): the memory backend becomes swappable (DOR-1533)'
+  - 'fix(memory,server,test-utils): a failed read never rejects, and the facade is gated by the suite (DOR-1533)'
 ---
 
 ### Added
