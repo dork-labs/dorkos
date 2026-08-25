@@ -277,10 +277,10 @@ async function buildCLI() {
   });
 
   // 2.5: Copy Drizzle migration files alongside bundled server.
-  // At runtime, `MIGRATIONS_FOLDER` (packages/db/src/migrations-folder.ts) resolves them via
+  // At runtime, `migrationsFolder()` (packages/db/src/migrations-folder.ts) resolves them via
   // path.join(dirname(fileURLToPath(import.meta.url)), '../drizzle'). In the CLI bundle that
   // directory is dist/server/, so ../drizzle resolves to dist/drizzle/. Both the migrator and
-  // the pre-migration snapshot (which reads meta/_journal.json) go through that one constant.
+  // the pre-migration snapshot (which reads meta/_journal.json) go through that one function.
   cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), { recursive: true });
   console.log('  ✓ Copied Drizzle migrations to dist/drizzle/');
 

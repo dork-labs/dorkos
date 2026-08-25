@@ -11,7 +11,7 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema/index.js';
-import { MIGRATIONS_FOLDER } from './migrations-folder.js';
+import { migrationsFolder } from './migrations-folder.js';
 
 /**
  * Thrown when the database at a path exists but will not open.
@@ -139,7 +139,7 @@ function configureAndWrap(sqlite: Database.Database) {
  * @param db - Drizzle database instance from createDb()
  */
 export function runMigrations(db: ReturnType<typeof createDb>): void {
-  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+  migrate(db, { migrationsFolder: migrationsFolder() });
 }
 
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */
