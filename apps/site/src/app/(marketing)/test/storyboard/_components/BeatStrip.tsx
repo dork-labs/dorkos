@@ -10,7 +10,7 @@ import {
   DOCK,
   LaptopFrame,
   PART_ONE_COUNT,
-} from '../../../_components';
+} from '../../../new/_components';
 import { StoryFrame } from './StoryFrame';
 
 const NO_APPS: ReadonlySet<string> = new Set();

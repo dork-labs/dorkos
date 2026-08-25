@@ -16,7 +16,7 @@ import {
   shellOpacityAt,
   STAGE_TIMING,
   type Beat,
-} from '../../../_components';
+} from '../../../new/_components';
 import { FRAME_HEIGHT, FRAME_WIDTH } from './StoryFrame';
 
 const SCALE = 0.62;

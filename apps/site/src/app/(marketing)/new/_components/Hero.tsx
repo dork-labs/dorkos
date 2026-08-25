@@ -47,7 +47,7 @@ export function Hero({ joined }: { joined: boolean }) {
           {HERO.lede}
         </motion.p>
         <motion.div variants={REVEAL} className="mt-9 flex flex-col items-center gap-3">
-          <DownloadMacButton placement="home_hero" />
+          <DownloadMacButton placement="preview_hero" />
           <p className="text-2xs font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
             {DOWNLOAD.terms}
           </p>

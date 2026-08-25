@@ -1,6 +1,6 @@
 'use client';
 
-import { AvatarTile, CAST, HumanFace, NIGHT_VARS, type CastMember } from '../../../_components';
+import { AvatarTile, CAST, HumanFace, NIGHT_VARS, type CastMember } from '../../../new/_components';
 
 /** A dark tile so the cast is judged against the background they live on. */
 function DarkCard({ children }: { children: React.ReactNode }) {

@@ -3,17 +3,16 @@
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import { siteConfig } from '@/config/site';
-import { AWAY_FROM_HOME_LINKS, REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
+import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
 import { CLOSE, INSTALL_ASIDE, NPX_REQUIREMENT } from './copy';
 import { DownloadMacButton } from './DownloadMacButton';
 import { InstallCommand } from './InstallCommand';
 
 /**
- * The close: the tagline, the command, and a one-line footer.
+ * The close: the tagline, the download, the bill, and a one-line colophon.
  *
- * The footer row is the home page's only path to the rest of the site, and it
- * is derived from the shared destination list rather than typed out again, so
- * a page added to the site menu cannot go missing here.
+ * It carries no list of site sections. The floating pill does that, on every
+ * screen of the page, so a second copy down here would only repeat it.
  */
 export function CloseSection() {
   return (
@@ -35,7 +34,7 @@ export function CloseSection() {
           {CLOSE.lede}
         </motion.p>
         <motion.div variants={REVEAL} className="mt-10 flex flex-col items-center gap-3">
-          <DownloadMacButton placement="home_close" />
+          <DownloadMacButton placement="preview_close" />
           <p className="flex flex-wrap items-center justify-center gap-1 text-sm text-(--cream-dim)">
             {INSTALL_ASIDE} <InstallCommand variant="quiet" />
             <span className="text-2xs font-mono tracking-[0.1em] uppercase">{NPX_REQUIREMENT}</span>
@@ -56,17 +55,7 @@ export function CloseSection() {
           </Link>
         </motion.p>
       </motion.div>
-      <nav
-        aria-label="Site sections"
-        className="text-2xs mt-20 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono tracking-[0.15em] text-(--cream-dim) uppercase"
-      >
-        {AWAY_FROM_HOME_LINKS.map((link) => (
-          <Link key={link.href} href={link.href} className="hover:text-(--cream)">
-            {link.label}
-          </Link>
-        ))}
-      </nav>
-      <div className="text-2xs mt-8 border-t border-(--line) pt-6 text-center font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
+      <div className="text-2xs mt-24 border-t border-(--line) pt-6 text-center font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
         {CLOSE.colophon}{' '}
         <a href={siteConfig.github} className="hover:text-(--cream)">
           github

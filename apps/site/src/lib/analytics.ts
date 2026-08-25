@@ -119,13 +119,16 @@ export function trackHeroInstallCopy(method: InstallMethod): void {
  */
 export type DownloadPlacement =
   | 'hero'
-  | 'home_hero'
-  | 'home_close'
   | 'terminal_hero_link'
   | 'install_page'
   | 'windows_hero'
   | 'windows_install_page'
-  | 'windows_other_ways';
+  | 'windows_other_ways'
+  // The two buttons on `/new`, the unindexed page where the next home page is
+  // being worked out. Kept separate from `hero` so an iteration nobody is
+  // linked to cannot quietly move the published funnel's numbers.
+  | 'preview_hero'
+  | 'preview_close';
 
 /** Fires when a visitor clicks a desktop-download link (`/download/mac` or `/download/windows`). */
 export function trackHeroDownload(placement: DownloadPlacement): void {
@@ -183,6 +186,11 @@ export function trackClientError(
     error_message: error.message,
     error_digest: error.digest,
   });
+}
+
+/** Fires when a visitor reveals the plain-text contact email (IdentityClose). */
+export function trackContactEmailRevealed(): void {
+  capture('contact_email_revealed');
 }
 
 /** Whether PostHog currently has capture opted out. Defaults to `true` (opted out) when disabled. */

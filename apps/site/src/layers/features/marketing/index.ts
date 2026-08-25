@@ -1,8 +1,16 @@
-// UI components — the install moment, shared by every catalog and compare page
+// UI components — homepage (new narrative arc)
+export { Prelude } from './ui/Prelude';
+export { ActivityFeedHero } from './ui/ActivityFeedHero';
+export { VillainSection } from './ui/VillainSection';
+export { PivotSection } from './ui/PivotSection';
+export { TimelineSection } from './ui/TimelineSection';
+export { HonestySection } from './ui/HonestySection';
 export { InstallMoment } from './ui/InstallMoment';
+export { IdentityClose } from './ui/IdentityClose';
+export { FAQSection } from './ui/FAQSection';
 
 // Data — the one list of site destinations, shared by every marketing surface
-export { NAV_LINKS, AWAY_FROM_HOME_LINKS, isNavLinkActive } from './lib/nav-links';
+export { NAV_LINKS, HOME_NAV_LINKS, isNavLinkActive } from './lib/nav-links';
 
 // UI components — chrome
 export { MarketingNav } from './ui/MarketingNav';
@@ -24,6 +32,7 @@ export { FutureVisionSection } from './ui/story/FutureVisionSection';
 // Feature catalog components
 export { FeatureCard } from './ui/FeatureCard';
 export { FeatureCatalog } from './ui/FeatureCatalog';
+export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
 export { ProductFrame } from './ui/ProductFrame';
 export { ProductShot } from './ui/ProductShot';
 export { ProductBadge } from './ui/ProductBadge';
@@ -73,7 +82,10 @@ export type { ProductShotMeta, ShotConsumer, ShotKind, ShotFrame } from './lib/s
 
 // Data
 export { systemModules } from './lib/modules';
+export { villainCards } from './lib/villain-cards';
 export { subsystems } from './lib/subsystems';
+export { timelineEntries } from './lib/timeline-entries';
+export { faqItems } from './lib/faq-items';
 
 // Data — story page
 export { bootCards, evolutionSteps, equationItems, futureCards } from './lib/story-data';
@@ -99,4 +111,7 @@ export type { Platform } from './lib/use-platform';
 // Types
 export type { NavLink } from './lib/types';
 export type { SystemModule } from './lib/modules';
+export type { VillainCard } from './lib/villain-cards';
 export type { Subsystem } from './lib/subsystems';
+export type { TimelineEntry } from './lib/timeline-entries';
+export type { FaqItem } from './lib/faq-items';

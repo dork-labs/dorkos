@@ -1,6 +1,6 @@
 'use client';
 
-import { CHAT_SCRIPT, DOCK, NIGHT_VARS } from '../../../_components';
+import { CHAT_SCRIPT, DOCK, NIGHT_VARS } from '../../../new/_components';
 
 /** The message each dock tile lands in, so icon and sentence can be judged together. */
 function messageFor(id: string): string {

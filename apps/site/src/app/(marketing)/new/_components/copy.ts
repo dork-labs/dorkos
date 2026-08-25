@@ -8,7 +8,7 @@ export interface Block {
 }
 
 /**
- * Every word on the home page, in one file.
+ * Every word on `/new`, in one file.
  *
  * The page's whole argument is about six sentences long, and several of them
  * are settled: "All your agents. One place." is the category line, and
@@ -60,9 +60,9 @@ export const CLOSE = {
    * The bill, said once and plainly.
    *
    * "free · open source" is true of DorkOS and false of running agents, and
-   * the page says the first part twice. The home page it replaced answered
-   * this in its FAQ; dropping the answer with the FAQ would have left the
-   * cheerful half standing alone.
+   * this page says the first part twice. `/` can afford to answer it in a FAQ
+   * entry; a page with a word budget this small has to answer it in a line,
+   * or the cheerful half stands alone.
    */
   cost: 'DorkOS is free. Your agents call whichever AI company powers them, and that is the only bill.',
   /** The one link out of the close, to every other way of installing. */

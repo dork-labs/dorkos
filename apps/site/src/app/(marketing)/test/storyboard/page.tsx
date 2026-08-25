@@ -10,13 +10,13 @@ import {
 } from './_components';
 
 export const metadata: Metadata = {
-  title: 'Storyboard — home page',
-  description: 'The beats, cast, and palette behind the home page, driven by its own components.',
+  title: 'Storyboard — /new',
+  description: 'The beats, cast, and palette behind /new, driven by its own components.',
   robots: { index: false, follow: false },
 };
 
 /**
- * `/test/storyboard` — an internal design surface for the home page.
+ * `/test/storyboard` — an internal design surface for `/new`.
  *
  * Every frame and swatch below renders the page's real components rather than
  * a mockup, so the storyboard cannot drift from what ships, and the scrubber
@@ -32,9 +32,9 @@ export default function StoryboardPage() {
         Storyboard: one page, one animation
       </h1>
       <p className="text-warm-gray mt-4 max-w-2xl text-lg">
-        The whole of the{' '}
-        <Link href="/" className="text-brand-orange underline underline-offset-4">
-          home page
+        The whole of{' '}
+        <Link href="/new" className="text-brand-orange underline underline-offset-4">
+          /new
         </Link>{' '}
         is a single scroll-driven animation around one chat. This page pins that animation at each
         of its moments so the visuals can be worked on without scrolling the page over and over.

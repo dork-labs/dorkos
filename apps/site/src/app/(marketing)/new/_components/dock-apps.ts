@@ -12,7 +12,7 @@ export interface DockApp {
   /**
    * The `features.ts` slug this tile depicts.
    *
-   * Load-bearing, not decoration: the home page animates each of these being
+   * Load-bearing, not decoration: this page animates each of these being
    * put to work, and the demo-claim gate says a page may only show a surface
    * that actually ships. `__tests__/home-copy.test.ts` resolves every slug
    * here against the feature catalog and fails if one is missing or is

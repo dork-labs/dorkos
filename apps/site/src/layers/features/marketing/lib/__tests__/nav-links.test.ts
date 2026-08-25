@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_LINKS, AWAY_FROM_HOME_LINKS, isNavLinkActive } from '../nav-links';
+import { NAV_LINKS, HOME_NAV_LINKS, isNavLinkActive } from '../nav-links';
 
 describe('NAV_LINKS', () => {
   it('offers Compare, directly after Features', () => {
@@ -16,20 +16,33 @@ describe('NAV_LINKS', () => {
   });
 });
 
-describe('AWAY_FROM_HOME_LINKS', () => {
-  // The home page used to keep its own copy of this list, which is how Compare
+describe('HOME_NAV_LINKS', () => {
+  // The homepage used to keep its own copy of this list, which is how Compare
   // shipped everywhere except dorkos.ai itself. These pin the derivation.
-  it('offers Compare on the home page too', () => {
-    expect(AWAY_FROM_HOME_LINKS.map((link) => link.label)).toContain('compare');
-    expect(AWAY_FROM_HOME_LINKS.find((link) => link.label === 'compare')?.href).toBe('/compare');
+  it('offers Compare on the homepage too', () => {
+    expect(HOME_NAV_LINKS.map((link) => link.label)).toContain('compare');
+    expect(HOME_NAV_LINKS.find((link) => link.label === 'compare')?.href).toBe('/compare');
   });
 
-  it('carries every shared destination except Home, in the same order', () => {
-    expect(AWAY_FROM_HOME_LINKS).toEqual(NAV_LINKS.slice(1));
+  it('carries every shared destination, in the same order', () => {
+    expect(HOME_NAV_LINKS).toHaveLength(NAV_LINKS.length);
+    expect(HOME_NAV_LINKS.slice(1)).toEqual(NAV_LINKS.slice(1));
   });
 
-  it('drops the Home entry, because home is where you already are', () => {
-    expect(AWAY_FROM_HOME_LINKS.map((link) => link.href)).not.toContain('/');
+  it('swaps only the Home entry, because home is where you already are', () => {
+    expect(HOME_NAV_LINKS.map((link) => link.href)).not.toContain('/');
+    expect(HOME_NAV_LINKS[0]).toEqual({
+      label: 'about',
+      href: '#about',
+      yieldsOnMobile: true,
+    });
+  });
+
+  it('keeps the pill to five words on a phone', () => {
+    const onPhone = (links: typeof NAV_LINKS) => links.filter((link) => !link.yieldsOnMobile);
+
+    expect(onPhone(NAV_LINKS)).toHaveLength(5);
+    expect(onPhone(HOME_NAV_LINKS)).toHaveLength(5);
   });
 });
 

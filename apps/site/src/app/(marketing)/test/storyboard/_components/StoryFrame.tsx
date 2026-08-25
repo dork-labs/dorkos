@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { NIGHT_VARS } from '../../../_components';
+import { NIGHT_VARS } from '../../../new/_components';
 
 /** Reference viewport every frame is composed against, then scaled down. */
 export const FRAME_WIDTH = 1440;

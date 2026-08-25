@@ -1,19 +1,21 @@
 /**
- * The dorkos.ai home page: one continuous, scroll-driven animation built
- * around a single live chat, plus the promo film and the close.
+ * `/new`: one continuous, scroll-driven animation built around a single live
+ * chat, plus the promo film and the close.
  *
- * Route-private to `/` by Next's `_` convention. Inside the folder the parts
- * import each other by relative path; this barrel is the door for the two
- * readers outside it — `page.tsx`, and the `/test/storyboard` design surface
- * that drives these same components so it cannot drift from what ships. It
+ * This is where the next home page is being worked out. The published home
+ * page at `/` is a different composition entirely and shares nothing here.
+ *
+ * Route-private by Next's `_` convention. Inside the folder the parts import
+ * each other by relative path; this barrel is the door for the two readers
+ * outside it — `new/page.tsx`, and the `/test/storyboard` design surface that
+ * drives these same components so it cannot drift from what ships. It
  * therefore exports only what those two ask for, and grows when they do.
  *
- * @module app/(marketing)/_components
+ * @module app/(marketing)/new/_components
  */
 
 // The page
 export { HomeExperience } from './HomeExperience';
-export { PageNav } from './PageNav';
 export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
 export { NIGHT_VARS, INSTALL_COMMAND, SHELL } from './theme';
 

@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 /**
  * The night palette, scoped to this page via CSS custom properties on the
  * page root. This is the brand's cream-on-charcoal identity inverted —
- * the "night shift" of the homepage — so nothing here leaks into globals.
+ * the "night shift" of the site — so nothing here leaks into globals.
  */
 export const NIGHT_VARS = {
   '--pitch': '#131110',

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { features } from '@/layers/features/marketing/lib/features';
 import { CHAT_SCRIPT, PART_ONE_COUNT } from '../chat-script';
@@ -8,7 +8,7 @@ import { DOCK, findDockApp, type DockAppId } from '../dock-apps';
 import { PROMO_CAPTIONS, PROMO_CUTS, PROMO_POSTER_ALT } from '../promo-cuts';
 import { INSTALL_COMMAND } from '../theme';
 
-/** Every string the home page renders, flattened, for the sweeps below. */
+/** Every string `/new` renders, flattened, for the sweeps below. */
 const ALL_COPY: string[] = [
   ...Object.values(HERO),
   ...Object.values(BEATS).flatMap((beat) => Object.values(beat)),
@@ -23,12 +23,21 @@ const ALL_COPY: string[] = [
   ...CHAT_SCRIPT.map((line) => line.text),
 ];
 
+/** The nearest `public/promo` above `from`, or null if this file has drifted out of the site. */
+function findPublicDir(from: string): string | null {
+  for (let dir = from; dirname(dir) !== dir; dir = dirname(dir)) {
+    const candidate = join(dir, 'public');
+    if (existsSync(join(candidate, 'promo'))) return candidate;
+  }
+  return null;
+}
+
 /** Every dock tile the conversation actually puts to work. */
 const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filter(
   (id): id is DockAppId => Boolean(id)
 );
 
-describe('the settled home page lines', () => {
+describe('the settled lines', () => {
   // These six are not editorial choices a passing build should be free to
   // change. "All your agents. One place." is the category line the operator
   // fixed (AGENTS.md, DOR-1517) and "You, multiplied." is the tagline; the
@@ -55,9 +64,9 @@ describe('the settled home page lines', () => {
   });
 
   it('says what running agents costs, since the page says "free" twice', () => {
-    // The home page this replaced answered this in its FAQ. Dropping the FAQ
-    // without carrying the answer over would leave "free · open source"
-    // standing alone, which is true of DorkOS and false of running agents.
+    // `/` answers this in its FAQ; a page this short has to say it in a line,
+    // or "free · open source" stands alone, which is true of DorkOS and false
+    // of running agents.
     expect(DOWNLOAD.terms).toContain('free');
     expect(CLOSE.cost).toMatch(/free/i);
     expect(CLOSE.cost).toMatch(/only bill|costs?|pay/i);
@@ -110,7 +119,7 @@ describe('the demo-claim gate', () => {
   });
 });
 
-describe('the home page voice', () => {
+describe('the /new voice', () => {
   // Retired and soft-banned vocabulary, per .claude/rules/site-marketing-copy.md.
   // The two CI scripts cover prose files and render-path JSX; neither reads a
   // data module like `copy.ts`, which is where this page keeps its words.
@@ -127,7 +136,15 @@ describe('the home page voice', () => {
 });
 
 describe('the promo assets the page points at', () => {
-  const PUBLIC_DIR = join(import.meta.dirname, '../../../../../public');
+  // Found by walking up rather than by counting `..`, because a relative depth
+  // is silently wrong the moment the route moves — which is exactly what
+  // happened when this page went from `/` to `/new`, and five asset checks
+  // went red at once for a reason none of them named.
+  const PUBLIC_DIR = findPublicDir(import.meta.dirname);
+
+  it('finds the site’s public directory at all', () => {
+    expect(PUBLIC_DIR, 'no apps/site/public above this test').not.toBeNull();
+  });
 
   it.each([
     PROMO_CUTS.wide.src,
@@ -136,7 +153,7 @@ describe('the promo assets the page points at', () => {
     PROMO_CUTS.tall.poster,
     PROMO_CAPTIONS,
   ])('ships %s', (assetPath) => {
-    expect(existsSync(join(PUBLIC_DIR, assetPath))).toBe(true);
+    expect(existsSync(join(PUBLIC_DIR ?? '', assetPath))).toBe(true);
   });
 
   it('serves a different file for each shape', () => {
