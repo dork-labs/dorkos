@@ -117,6 +117,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'react_to_room_entry',
     'read_room_history',
     'search_room_history',
+    // The cross-room half of the same two reads (DOR-1532). Same membership
+    // bound, same identity qualifier — see IDENTITY_SCOPED_TOOLS below.
+    'list_member_rooms',
+    'search_member_rooms',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -129,6 +133,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'mesh_status',
     'mesh_query_topology',
     'get_agent',
+    // The agent's own memory. Always loaded and auto-allowed on identity, for
+    // the argument stated in full under IDENTITY_SCOPED_TOOLS below.
+    'memory_write',
     // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
     // — most of its actions only move pixels, but not all of them, so its calls go
     // through `isAutoAllowedCall` below rather than riding this membership alone.
@@ -150,17 +157,17 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all five: **the per-call card an operator watching a DIRECT session
+ * thing for all eight: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
  * is not necessarily refused, because a wildcard binding's scope covers the whole
  * adapter. The consent that holds is the one on the binding, not one per chat.)
  *
- * ## Why the four rooms verbs need the qualifier
+ * ## Why the six rooms verbs need the qualifier
  *
  * The rooms verbs authorize on MEMBERSHIP: each resolves the caller's roster row
- * before doing anything, and the two reads answer "not a member" with the same
+ * before doing anything, and the reads answer "not a member" with the same
  * `ROOM_NOT_FOUND` they answer "no such room" with, so a room id is not a
  * capability and a probe learns nothing.
  *
@@ -173,8 +180,20 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * readable, the owner's own DMs with agents included — and an owner-attributed
  * post lands as a human message at cascade depth zero, which triggers every
  * always/mentioned agent in the channel and is bounded by no claim. So without
- * the qualifier these four would have been a no-prompt path to the operator's
+ * the qualifier these six would have been a no-prompt path to the operator's
  * whole room history from any ordinary coding session.
+ *
+ * **`list_member_rooms` and `search_member_rooms` are the widest of the six, and
+ * that is exactly why they are here** (DOR-1532). Every other room verb takes a
+ * room id and answers about that one room; these two answer about EVERY room the
+ * caller is in at once, from no argument at all. Under an identity that is still
+ * the agent's own membership and nothing else — both are built from
+ * `room_members` rows for that agent, each room floored at its own `joinedSeq`,
+ * which is precisely the grant message-search §7 already gives it. Without one
+ * the caller is the install owner, and a single no-argument call would enumerate
+ * and then search the operator's whole room history in one hop. The qualifier is
+ * what keeps "list the rooms you are in" from meaning "list every room on this
+ * machine".
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *
@@ -219,6 +238,37 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * stated rather than assumed: the gate must not be the layer that decides a call
  * is harmless because some other layer happens to refuse it. (And the two do not
  * resolve identity through the same store — see below.)
+ *
+ * ## Why `memory_write` is here (DOR-632)
+ *
+ * It is not a rooms verb either, and its argument is its own — the spec is
+ * explicit that "like the room verbs" would conflate the tier with the
+ * auto-allow. Three things together are what make a card unnecessary:
+ *
+ * - **It is jailed to the caller's own file.** There is no path parameter, no
+ *   agent parameter, and nothing else the model can name: the target is
+ *   `<agentPath>/.dork/MEMORY.md` for the identity this session presented. An
+ *   agent cannot reach another agent's memory even by trying, so the card would
+ *   be asking about a scope of exactly one file the operator already owns.
+ * - **It has no execution semantics.** Nothing here runs, sends, spends, or
+ *   leaves the machine. The worst outcome of a bad write is a wrong note in a
+ *   small markdown file the operator can open and edit, and `remove` undoes it
+ *   from inside.
+ * - **Its blast radius is bounded by two mechanisms that hold whether or not a
+ *   person is watching**: the file is capped (8,000 characters, refused past
+ *   it, never trimmed), and everything in it is injected FENCED and framed as
+ *   data, with a handler-written provenance suffix on every note. A poisoned
+ *   entry names the room that poisoned it.
+ *
+ * And the reason it must not raise a card is the same one the room verbs have:
+ * the turn that most needs to save something is a room turn, where nobody is
+ * positioned to answer. An agent that parked on an approval card to write a
+ * note would have learned the thing and then failed to keep it.
+ *
+ * Without an identity the tool refuses itself — `no-agent`, a plain sentence —
+ * so the qualifier costs a call nothing today. It is stated anyway, for the same
+ * reason it is stated for `relay_notify_user`: the gate must not be the layer
+ * that decides a call is harmless because another layer happens to refuse it.
  *
  * ## Where identity comes from
  *
@@ -267,7 +317,10 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'react_to_room_entry',
     'read_room_history',
     'search_room_history',
+    'list_member_rooms',
+    'search_member_rooms',
     'relay_notify_user',
+    'memory_write',
   ].map(inSessionToolName)
 );
 

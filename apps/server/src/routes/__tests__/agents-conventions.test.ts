@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -164,6 +165,66 @@ describe('Agent Convention File Operations', () => {
     });
   });
 
+  describe('POST /api/agents (registering a directory that may already be one)', () => {
+    // Red when: MEMORY.md is scaffolded unconditionally here. This route
+    // registers a directory that may ALREADY have been an agent — a
+    // re-register after a rename, a workspace moved and pointed at again — and
+    // the memory file is the one convention file the AGENT wrote. Overwriting
+    // it deletes everything the agent had learned, at a moment nobody
+    // associates with data loss.
+    it('never overwrites an existing MEMORY.md', async () => {
+      mockReadConventionFile.mockImplementation(async (_path: string, filename: string) =>
+        filename === 'MEMORY.md' ? '## Notes\n\n- years of notes\n' : null
+      );
+
+      await request(server)
+        .post('/api/agents')
+        .send({ path: '/home/user/project', name: 'My Agent' });
+
+      expect(mockWriteConventionFile).not.toHaveBeenCalledWith(
+        '/home/user/project',
+        'MEMORY.md',
+        expect.anything()
+      );
+    });
+
+    it('scaffolds MEMORY.md when the directory has none', async () => {
+      // The control: the guard must not turn the scaffold off entirely, or a
+      // freshly registered directory never gets the file at all.
+      mockReadConventionFile.mockResolvedValue(null);
+
+      await request(server)
+        .post('/api/agents')
+        .send({ path: '/home/user/project', name: 'My Agent' });
+
+      expect(mockWriteConventionFile).toHaveBeenCalledWith(
+        '/home/user/project',
+        'MEMORY.md',
+        expect.stringContaining('can come up in ANY conversation')
+      );
+    });
+
+    it('still rewrites SOUL.md and NOPE.md, which are scaffolds rather than notes', async () => {
+      // The distinction the guard encodes, asserted rather than implied.
+      mockReadConventionFile.mockResolvedValue('## existing content');
+
+      await request(server)
+        .post('/api/agents')
+        .send({ path: '/home/user/project', name: 'My Agent' });
+
+      expect(mockWriteConventionFile).toHaveBeenCalledWith(
+        '/home/user/project',
+        'SOUL.md',
+        expect.anything()
+      );
+      expect(mockWriteConventionFile).toHaveBeenCalledWith(
+        '/home/user/project',
+        'NOPE.md',
+        expect.anything()
+      );
+    });
+  });
+
   describe('GET /api/agents/current (convention file contents)', () => {
     it('returns soulContent and nopeContent alongside manifest', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
@@ -183,6 +244,25 @@ describe('Agent Convention File Operations', () => {
       expect(res.body.id).toBe('test-agent-id');
     });
 
+    // Red when: the read half of `memoryContent` is dropped. This is the round
+    // trip a person actually performs — save, reload, look — and the failure it
+    // guards is the DOR-1253 shape: the PATCH reports success and the field
+    // comes back empty on the next load.
+    it('returns memoryContent alongside the other two', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+      mockReadConventionFile.mockImplementation(async (_path: string, filename: string) => {
+        if (filename === 'MEMORY.md') return '## Notes\n\n- the operator ships on Fridays\n';
+        return null;
+      });
+
+      const res = await request(server)
+        .get('/api/agents/current')
+        .query({ path: '/home/user/project' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.memoryContent).toBe('## Notes\n\n- the operator ships on Fridays\n');
+    });
+
     it('returns null for missing convention files', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
       mockReadConventionFile.mockResolvedValue(null);
@@ -194,6 +274,7 @@ describe('Agent Convention File Operations', () => {
       expect(res.status).toBe(200);
       expect(res.body.soulContent).toBeNull();
       expect(res.body.nopeContent).toBeNull();
+      expect(res.body.memoryContent).toBeNull();
     });
   });
 
@@ -212,6 +293,58 @@ describe('Agent Convention File Operations', () => {
         'SOUL.md',
         '## My custom soul'
       );
+    });
+
+    // Red when: the write branch is missing. Accepting the field on the wire and
+    // never writing it is worse than rejecting it — the editor reports a save
+    // that did not happen (DOR-1253).
+    it('writes MEMORY.md when memoryContent is provided', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(server)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ memoryContent: '## Notes\n\n- edited by hand\n' });
+
+      expect(res.status).toBe(200);
+      expect(mockWriteConventionFile).toHaveBeenCalledWith(
+        '/home/user/project',
+        'MEMORY.md',
+        '## Notes\n\n- edited by hand\n'
+      );
+    });
+
+    it('refuses memoryContent past the cap, naming the file and the limit', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(server)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ memoryContent: 'm'.repeat(MEMORY_MAX_CHARS + 1) });
+
+      expect(res.status).toBe(400);
+      // The refusal names MEMORY.md and its own budget — not SOUL.md's, which is
+      // what a `too_big` map that forgot this field would have said.
+      expect(res.body.error).toContain('MEMORY.md');
+      expect(res.body.error).toContain('8,000');
+      expect(mockWriteConventionFile).not.toHaveBeenCalledWith(
+        '/home/user/project',
+        'MEMORY.md',
+        expect.anything()
+      );
+    });
+
+    it('accepts memoryContent exactly at the cap', async () => {
+      // The control: without it, the refusal above passes for a route that
+      // rejects every memoryContent.
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(server)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ memoryContent: 'm'.repeat(MEMORY_MAX_CHARS) });
+
+      expect(res.status).toBe(200);
     });
 
     it('writes NOPE.md when nopeContent is provided', async () => {

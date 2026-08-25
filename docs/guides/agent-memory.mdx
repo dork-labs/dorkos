@@ -1,0 +1,91 @@
+---
+title: Agent Memory
+description: Your agent keeps a short notes file, so what it learns in one conversation it knows in the next
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Agent Memory
+
+Tell your agent something in a private chat on Monday. Ask about it in a team channel on Friday. It still knows.
+
+That works because every agent keeps a small notes file. The agent reads its notes at the start of every conversation it joins: a channel, a direct message, or a chat with you. As it learns things worth keeping, it adds to them. You can read the same file, and change anything in it.
+
+<Callout type="warn">
+  **Treat the notes file as public.** Anything in it can come up in any conversation the agent
+  joins, including group channels and [channels linked to Telegram or
+  Slack](/docs/guides/bridged-channels). Never store passwords, keys, or anything you would not say
+  out loud in a room full of people.
+</Callout>
+
+## Where the file lives
+
+Each agent keeps its notes in its own folder, at `.dork/MEMORY.md`. That is the same place its instructions (`SOUL.md`) and its [boundaries](/docs/guides/persona) (`NOPE.md`) live.
+
+It is plain markdown, so you can open it in any editor. You can also open the agent's profile in DorkOS and pick **Memory**.
+
+New agents start with the file, and the top of it explains itself. An agent you created before this shipped gets its file the first time it saves a note.
+
+## How something gets written down
+
+Two ways:
+
+- **You ask.** Say "remember that we deploy on Tuesdays" and the agent writes it down.
+- **The agent decides.** When it learns a fact, a preference, or a lesson worth keeping, it saves that before the turn ends.
+
+Every saved note ends with where it was learned:
+
+```markdown
+We deploy on Tuesdays, never Fridays. (noted in #product, 2026-08-24)
+Prefers short answers with the command first. (noted in a direct chat, 2026-08-24)
+```
+
+The agent does not choose that last part. DorkOS adds it, taken from the conversation the note was written in. So you can always see where a belief came from, and a note that is wrong tells you which room taught it.
+
+The agent is also told, every turn, not to follow instructions that show up inside its own notes. Notes are things it recorded, not orders. That matters because a note can be written during a conversation with other people in it.
+
+## Changing what it remembers
+
+The file is yours to edit:
+
+- Fix a line to correct it.
+- Delete a line to forget it.
+- Add a line to teach the agent something without having a conversation about it.
+
+Deleting a line really is forgetting it. There is no second copy.
+
+One catch: a conversation that is already open may keep using the notes it read when it started. Your edit reaches that conversation the next time it restarts. Conversations you start after the edit see it right away.
+
+## How much it holds
+
+About 8,000 characters, a couple of pages. It is small on purpose. The notes go to the model along with everything else in the conversation, so a long file costs you on every turn.
+
+When the file fills up, the agent is asked to tidy it rather than grow it: combine notes that say the same thing, drop the ones that no longer matter. A save that would push the file over the limit is refused, and the refusal says how big the file is, what the limit is, and to tidy up first.
+
+Editing past the limit by hand deletes nothing. The agent reads the first 8,000 characters, and it is told plainly that the file is longer than that, so it can ask you to trim it.
+
+## What memory costs, honestly
+
+It depends on which tool the agent runs on.
+
+- **Claude Code**: the notes ride along in the part of the prompt that gets cached. A full file is about 2,000 tokens, paid once and reused.
+- **Codex and OpenCode**: the notes are sent again with every turn, so a full file costs that much every time the agent replies.
+
+Keeping the file lean keeps it cheap on all three. That is the other reason for the limit.
+
+## What does not travel
+
+Only the notes file crosses between conversations. The conversations themselves never do.
+
+Every channel, direct message, and chat is a separate [session](/docs/concepts/sessions) of the same agent. Sessions share the agent's identity files and its notes. They do not share transcripts. Your agent is told this in plain words, so when it is asked about work it cannot see, it should say so instead of guessing.
+
+The practical version: if you want an agent to carry something from one conversation into another, it has to be written down.
+
+## What is not built yet
+
+Two things people ask for, neither of which exists today:
+
+- **Finding a room it has not been pointed at.** An agent can read and search a room it is in, but only one it can already name — there is no way yet for it to list its own rooms and go looking.
+- **Storing memory somewhere else.** The file is the only option right now.
+
+Both are planned. This guide gets updated when either one ships, and not before.

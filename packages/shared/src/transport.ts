@@ -169,6 +169,7 @@ import type {
   AgentConnectorAttachment,
   AgentConnectorAttachResult,
 } from './connector-provider.js';
+import type { SearchQuery, SearchResponse } from './search-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -2482,4 +2483,28 @@ export interface Transport extends RoomTransport {
    * @param id - The unclaimed-chat row id.
    */
   leaveUnclaimedChat(id: string): Promise<void>;
+
+  /**
+   * Find messages by what was said in them (spec `message-search` §8).
+   *
+   * **A port method rather than a `fetch`**, because a surface that reached the
+   * route directly would work on the web and answer nothing in the Obsidian
+   * embed — and an empty result list is indistinguishable from "no matches",
+   * which is the silent failure this feature refuses everywhere else. The embed
+   * has no message index in process, so its adapter REJECTS rather than
+   * answering `[]`.
+   *
+   * The response is the route's envelope untouched, `warnings` included: a
+   * source that could not be indexed contributes zero hits and one warning
+   * naming it, never a failed request (ADR-0310).
+   *
+   * Callers hold to two numbers the server publishes rather than rediscovering
+   * them: `SEARCH_MIN_QUERY_LENGTH` (counted over `searchTokens`, not over the
+   * raw string) and `SEARCH_DEBOUNCE_MS`. Sending a query below the floor is a
+   * 400, not an empty list.
+   *
+   * @param query - What to look for, how many hits to take, and optionally one
+   *   source to look in.
+   */
+  search(query: SearchQuery): Promise<SearchResponse>;
 }

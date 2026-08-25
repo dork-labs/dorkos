@@ -31,7 +31,9 @@ import type { Session } from '@dorkos/shared/types';
 // filtering are irrelevant here and must not touch the filesystem.
 const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
-    buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>mock</env>'),
+    buildSystemPromptAppend: vi
+      .fn()
+      .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
     renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
   toolFilterFactory: () => ({

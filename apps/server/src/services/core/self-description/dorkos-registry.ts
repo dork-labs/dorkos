@@ -33,6 +33,7 @@ import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilitie
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
+import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 
 /**
@@ -59,6 +60,12 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.mcpDeps) domains.push(mcpDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
+  // Unconditional, unlike every domain above it: memory has no service handle to
+  // switch off. Every install has a filesystem, the builtin provider needs
+  // nothing else, and an agent that could not save what it learns is the defect
+  // this domain exists to fix — so there is no configuration under which the
+  // right answer is to leave the verb out.
+  domains.push(memoryDomain);
   domains.push(capabilitiesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
@@ -91,6 +98,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorDomain,
     mcpDomain,
     roomsDomain,
+    memoryDomain,
     capabilitiesDomain,
   ];
   const deps: CapabilityDeps = {

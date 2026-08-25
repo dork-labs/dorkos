@@ -25,7 +25,7 @@
  * two escapes and this module uses both, deliberately unevenly:
  *
  * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
- *   {@link ALWAYS_LOADED_TOOLS} five on every session. A room turn is the case that
+ *   {@link ALWAYS_LOADED_TOOLS} eight on every session. A room turn is the case that
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other
@@ -82,20 +82,36 @@ export function inSessionToolName(bare: string): string {
  * attached at registration, before Claude Code qualifies anything.
  *
  * Kept deliberately short — see the module note on why the server as a whole stays
- * deferred. Each of these five earns it by being needed in a turn that has no
+ * deferred. Each of these eight earns it by being needed in a turn that has no
  * room for a lookup first:
  *
  * - the four room verbs, because a room turn is a person waiting in a shared
  *   channel, and DOR-1292 measured a whole turn lost to searching for one;
  * - `list_capabilities`, because it is how an agent finds everything else, and a
- *   discovery entry point nobody can discover is not one.
+ *   discovery entry point nobody can discover is not one;
+ * - `memory_write`, because there must be **no ToolSearch hop between an agent
+ *   and remembering** (the A-06 lesson). The prompt tells every agent, on every
+ *   turn of every runtime, to save what it learns before the turn ends; a tool
+ *   named in that instruction and then deferred is the DOR-1292 defect with a
+ *   different name. The thing an agent fails to save is gone;
+ * - `list_member_rooms` and `search_member_rooms` (agent-memory spec D6), for the
+ *   same reason and in the same turn. `<session_model>` now tells every agent to
+ *   use `search_member_rooms` when it is asked about something said in another
+ *   room, and the ask lands in a room turn — the same waiting-person turn the
+ *   four verbs are here for. A tool the prompt names and the SDK defers is the
+ *   DOR-1292 defect wearing a third name. They ride together because the pair is
+ *   one act: the search hands back a room id, and the list is where an agent gets
+ *   one when the search found nothing to start from.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
   'react_to_room_entry',
   'read_room_history',
   'search_room_history',
+  'list_member_rooms',
+  'search_member_rooms',
   'list_capabilities',
+  'memory_write',
 ]);
 
 /**
@@ -103,7 +119,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
  *
  * Granted eagerly only to sessions that ARE a registered mesh agent with Relay
  * on — never to a plain session, which is most of them. The trade is the same
- * one the five above make and it is paid by a different set of turns: reaching
+ * one the eight above make and it is paid by a different set of turns: reaching
  * a peer means finding it (`mesh_list`), reading its address
  * (`mesh_inspect`), and sending (`relay_send`, `relay_send_async`,
  * `relay_send_and_wait`, `relay_inbox`), and DorkOS's own tester watched an

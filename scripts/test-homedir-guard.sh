@@ -242,6 +242,8 @@ check 'claude-config-dir.ts' \
   src/services/runtimes/claude-code/claude-config-dir.ts "$ORDINARY" ''
 check 'codex-home.ts' \
   src/services/runtimes/codex/codex-home.ts "$ORDINARY" ''
+check 'opencode-data-dir.ts' \
+  src/services/runtimes/opencode/opencode-data-dir.ts "$ORDINARY" ''
 check 'a test under __tests__/' src/services/core/__tests__/probe.test.ts "$ORDINARY" ''
 check 'a test beside its source' src/services/core/probe.test.ts "$ORDINARY" ''
 
@@ -281,6 +283,21 @@ check 'named import is still refused' \
   src/services/runtimes/codex/codex-home.ts "$NAMED" "$IMPORTS"
 check 'a sibling in the same directory is NOT exempt' \
   src/services/runtimes/codex/codex-runtime.ts "$ORDINARY" "$PROPS"
+# opencode-data-dir.ts is the fifth carve-out (DOR-688), on identical terms:
+# exempt from the CALL ban by name so the search snapshot can resolve OpenCode's
+# own ~/.local/share/opencode, still reached by the IMPORT ban. Pinned in both
+# directions for the same reason as the block above — the carve-out survives an
+# import-style refactor only in one of them.
+echo '--- the opencode-data-dir carve-out has the same shape ---'
+check 'default import stays exempt' \
+  src/services/runtimes/opencode/opencode-data-dir.ts "$ORDINARY" ''
+check 'named import is still refused' \
+  src/services/runtimes/opencode/opencode-data-dir.ts "$NAMED" "$IMPORTS"
+# The carve-out is per FILE, not per directory: a sibling in the same adapter
+# must still be refused, or "the OpenCode adapter may call homedir" is what
+# actually shipped.
+check 'a sibling in the same directory is not exempt' \
+  src/services/runtimes/opencode/opencode-runtime.ts "$ORDINARY" "$PROPS"
 
 # If this fired, the ban would be unusable: os.tmpdir() is how every test in the
 # server stages a fixture directory.

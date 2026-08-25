@@ -89,7 +89,7 @@ Gotchas: under a running `pnpm dev`/`pnpm dev:dogfood`, `@dorkos/shared` rebuild
 
 Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 semantics (`req.body` undefined on empty POSTs; changed wildcard routing). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
 
-**Service domains** under `services/`: activity, communities, core, core-extensions, extensions, harness, marketplace, marketplace-mcp, mesh, relay, runtimes, session, tasks, workspace. Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
+**Service domains** under `services/`: activity, communities, core, core-extensions, extensions, harness, marketplace, marketplace-mcp, mesh, relay, runtimes, search, session, tasks, workspace. Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
 `CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the **fourth swappable seam** beside `AgentRuntime`, `Transport` and `ConnectorProvider` — one port for rooms in more than one place, gated by `communityConformance`. This machine's own SQLite rooms are the first backend behind it (`services/communities/local/`), registered as `LOCAL_COMMUNITY` at startup; it wraps `RoomService` rather than replacing it. `GET /api/rooms` is its production consumer (`services/communities/list-rooms-across-communities.ts`): it aggregates every OTHER configured community with per-community degradation, while this machine's own rooms stay off the port — it is single-identity and that list is per-caller. Telegram/Slack bridged rooms are **projections into local rooms, not community backends** (ADR `260814-024525`); the port is reserved for communities whose truth is remote.
 
@@ -97,7 +97,7 @@ Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 seman
 
 **Key conventions:**
 
-- `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` prod, `apps/server/.temp/.dork/` dev). `os.homedir()` is banned outside the four carve-outs in Hard Rule 3.
+- `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` prod, `apps/server/.temp/.dork/` dev). `os.homedir()` is banned outside the five carve-outs in Hard Rule 3.
 - `lib/resolve-root.ts` resolves the default working directory; each app has its own Zod-validated `env.ts`.
 - Persistent user config: `~/.dork/config.json` via `conf` (`services/core/config-manager.ts`); Zod is the authoritative schema. Schema changes require a semver-keyed migration — `contributing/configuration.md` + the `adding-config-fields` skill.
 - External MCP server at `/mcp` (Streamable HTTP, stateless, optional `MCP_API_KEY`) exposes all DorkOS tools, including the 8 marketplace tools.
@@ -109,6 +109,10 @@ Session storage is runtime-owned (ADR-0310): claude-code derives from SDK JSONL 
 ### Agent Storage (ADR-0043)
 
 `.dork/agent.json` on disk (source of truth) + SQLite `agents` table (derived cache); **file-first write-through**, reconciler syncs every 5 min. **DorkBot** is the system agent, auto-created at `~/.dork/agents/dorkbot/` by `ensureDorkBot()`; system agents (`isSystem: true`) cannot be renamed, deleted, or unregistered — enforced at routes, MCP tools, and client UI.
+
+### Message search
+
+One derived, rebuildable FTS5 index over everything that was said, read by `GET /api/search` and by ⌘⇧F in the app (`apps/server/src/services/search/`, `features/command-palette/ui/MessageSearchDialog.tsx`, spec `specs/message-search/`). It indexes **rooms and Claude Code transcripts, bare-CLI sessions included** — never tool output, and **not Codex or OpenCode yet**; the surface states that gap itself, and the copy is pinned by a test so a coverage claim cannot drift out of date silently. Sessions are owner-only and reachable by no agent (spec §7). Deleting the index is a supported recovery.
 
 ### Client (`apps/client/src/`)
 
@@ -138,7 +142,7 @@ Non-negotiable, enforced by ESLint/CI/convention:
 
 1. **FSD layer violations are errors** — `no-restricted-imports` enforces the hierarchy
 2. **SDK imports confined** — each runtime SDK is banned outside its adapter dir: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
-3. **`os.homedir()` banned in `apps/server/src`** — use `lib/dork-home.ts`. Four carve-outs beyond tests, enumerated in `.claude/rules/dork-home.md`: `lib/dork-home.ts`, `lib/boundary.ts` (two inline-disabled call sites), `claude-code/claude-config-dir.ts`, `codex/codex-home.ts` — the last two mirror another program's resolution of its own directory 1:1
+3. **`os.homedir()` banned in `apps/server/src`** — use `lib/dork-home.ts`. Five carve-outs beyond tests, enumerated in `.claude/rules/dork-home.md`: `lib/dork-home.ts`, `lib/boundary.ts` (two inline-disabled call sites), `claude-code/claude-config-dir.ts`, `codex/codex-home.ts`, `opencode/opencode-data-dir.ts` — the last three mirror another program's resolution of its own directory 1:1, never DorkOS's
 4. **TSDoc on exports** — enforced by `eslint-plugin-jsdoc`
 5. **Prettier + Tailwind class sorting** are automatic — never hand-sort. Formatting runs at **turn end** (`Stop` hook) and again at `pre-commit`, deliberately **not** after each edit: rewriting a file the moment you edit it makes your in-context copy stale and breaks your next string-replace (`.claude/hooks/format-changed.sh` header). So a file you just wrote is not formatted yet, and that is fine — do not chase it
 6. **`git stash` and `git checkout -- <path>` are refused** — the stash is shared by every worktree and holds your auto-checkpoints; the pathspec checkout silently reverts uncommitted work. Both have eaten work here. Park files in the session scratchpad and restore with `cp`. Enforced by `.claude/hooks/git-guard.mjs`; `git stash list`/`show` and branch switching still work

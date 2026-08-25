@@ -71,7 +71,7 @@ import {
   useAppTabsSync,
   useAppTabShortcuts,
 } from '@/layers/features/app-tabs';
-import { CommandPaletteDialog } from '@/layers/features/command-palette';
+import { CommandPaletteDialog, MessageSearchDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
 import { ImportProjectsDialog } from '@/layers/features/mesh';
 import { PipHost } from '@/layers/features/pip-panel';
@@ -705,6 +705,7 @@ export function AppShell() {
         <MomentHost onboardingOverlayVisible={showOnboarding} />
         <FeedbackDialogHost />
         <CommandPaletteDialog />
+        <MessageSearchDialog />
         <CreateAgentDialog />
         <ImportProjectsDialog />
         <ShortcutsPanel />

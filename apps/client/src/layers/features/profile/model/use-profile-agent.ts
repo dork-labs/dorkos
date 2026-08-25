@@ -25,16 +25,18 @@ import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 /**
  * The manifest as `GET /api/agents/current` actually answers it.
  *
- * The route appends the two convention files to the manifest it read
+ * The route appends the convention files to the manifest it read
  * (`routes/agents.ts`), but the transport is typed to the schema, which has no
- * room for them. Named here so the Instructions and Boundaries pages can read
- * what the server sends without each inventing its own cast.
+ * room for them. Named here so the Instructions, Boundaries and Memory pages
+ * can read what the server sends without each inventing its own cast.
  */
 export type ProfileAgentManifest = AgentManifest & {
   /** SOUL.md as it is on disk, or `null` when the file does not exist. */
   soulContent?: string | null;
   /** NOPE.md as it is on disk, or `null` when the file does not exist. */
   nopeContent?: string | null;
+  /** MEMORY.md as it is on disk, or `null` when the file does not exist. */
+  memoryContent?: string | null;
 };
 
 /**

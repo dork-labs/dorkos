@@ -150,6 +150,12 @@ export default defineConfig([
       // reason and in the same shape: the search index reads rollout files the
       // CLI wrote, so it must resolve the identical directory the CLI does.
       'src/services/runtimes/codex/codex-home.ts',
+      // XDG_DATA_HOME and OPENCODE_DB are the OpenCode CLI's own env vars (not
+      // DorkOS config values env.ts should model), read here to mirror
+      // OpenCode's own data-directory resolution 1:1 so the search snapshot
+      // reads the store OpenCode actually writes. Same rationale as
+      // claude-config-dir.ts above.
+      'src/services/runtimes/opencode/opencode-data-dir.ts',
     ],
     rules: { 'no-restricted-syntax': 'off' },
   },
@@ -195,6 +201,8 @@ export default defineConfig([
       // Mirrors the Codex CLI's own $CODEX_HOME ?? ~/.codex resolution 1:1, so
       // the search index reads the rollout files that CLI actually wrote.
       'src/services/runtimes/codex/codex-home.ts',
+      // Mirrors the OpenCode CLI's own ~/.local/share/opencode resolution 1:1.
+      'src/services/runtimes/opencode/opencode-data-dir.ts',
       // Tests assert the fallback behavior and stage fixtures under a fake HOME.
       // Both patterns, matching the process.env carve-out block above: every
       // server test lives under __tests__/ today, and a lone `*.test.ts` beside

@@ -78,27 +78,72 @@ test.describe('Archived rows in the command palette @smoke', () => {
     expect(shutTop).toBeGreaterThan(liveTop!);
   });
 
-  test('offers no message-search hand-off, because there is no surface to hand off to', async ({
+  test('hands the words to message search, from a closed channel like any other', async ({
     page,
     basePage,
     roomsApi,
   }) => {
-    // P3 AC-6, in the shipping cockpit. Absent, not disabled and not a
-    // placeholder — a row that leads nowhere teaches a person that ⌘K's last
-    // line is a dead end.
+    // P3 AC-6, in the shipping app. This case used to assert the hand-off row
+    // was ABSENT — "there is no surface to hand off to" — and that premise held
+    // only while nothing answered ⌘⇧F. `MessageSearchDialog` answers it now
+    // (DOR-685), so the claim inverts rather than relaxes: the row is offered,
+    // it says what it would look for, and it carries the words across. What the
+    // old assertion was really guarding is still guarded below — a row that
+    // opened an empty box, or lost the query on the way, is the same dead end.
+    //
+    // The channel is ARCHIVED because that is this file's subject. Closing a
+    // channel does not close the question of what was said in it, and the
+    // search box includes archived rooms for exactly that reason
+    // (`MessageSearchDialog`) — so the hand-off must be offered here too.
     const slug = `arc-hand-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug);
     await roomsApi.postEntries(room.id, ['hello']);
+    await roomsApi.archive(room.id);
 
     await openCockpit(basePage);
     const palette = await openCommandPalette(page);
     await palette.input.fill(slug);
 
-    // The positive anchor: this query DID answer, so the absence below is
-    // about the hand-off row rather than about a palette that never rendered.
-    await expect(palette.options.filter({ hasText: slug }).first()).toBeVisible({
+    // The positive anchor: this query DID answer, and what it answered with is
+    // the closed channel — so everything below is about the hand-off rather
+    // than about a palette that never rendered.
+    //
+    // Taken from `results` rather than `options`, and that is the difference
+    // between an anchor and a tautology: the input holds the bare slug, so the
+    // hand-off row draws the slug too. On `options` this `.first()` would match
+    // the hand-off the day the channel stopped being findable, and the anchor
+    // would go on passing while the thing it anchors had vanished.
+    const archivedRow = palette.results.filter({ hasText: slug }).first();
+    await expect(archivedRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(archivedRow).toContainText('Archived');
+
+    // 1. One row, saying what it would go and look for.
+    await expect(palette.searchHandoff).toHaveCount(1);
+    await expect(palette.searchHandoff).toContainText(slug);
+
+    // 2. Under the channel, because it is not a result and is never promoted.
+    //    Measured as painted position — this file's whole reason for being in a
+    //    browser — and both tops come out of ONE evaluate so a re-render
+    //    between two reads cannot invert the comparison.
+    const [handoffTop, rowTop] = await palette.searchHandoff.evaluate(
+      (handoffEl, rowEl) => [handoffEl.getBoundingClientRect().y, rowEl!.getBoundingClientRect().y],
+      await archivedRow.elementHandle()
+    );
+    expect(handoffTop).toBeGreaterThan(rowTop!);
+
+    // 3. And it goes somewhere: the palette leaves, the search box arrives
+    //    HOLDING the words. Asserted as the box's value rather than as "a
+    //    dialog opened", because a hand-off that dropped the query on the way
+    //    would open the same dialog and answer nobody.
+    await palette.searchHandoff.click();
+    // The palette is gone, asserted through its own input rather than through
+    // `[cmdk-root]`: the search box that replaces it is a cmdk root too, so a
+    // count on the root can never reach zero and would fail a hand-off that
+    // worked perfectly.
+    await expect(palette.input).toHaveCount(0);
+    await expect(page.getByTestId('message-search-dialog')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(palette.root.getByText(/Search messages for/)).toHaveCount(0);
+    await expect(page.getByTestId('message-search-input')).toHaveValue(slug);
   });
 });

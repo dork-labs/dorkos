@@ -74,6 +74,10 @@ mockups/running-figure-v2.html
 mockups/running-figure-v3.html
 .dork/visual-companion/
 .dork/flow/
+# This checkout's own agent memory (DOR-632). `.dork/agent.json` at the repo
+# root makes every session here an agent, so the memory file gets written and
+# READ ALOUD in this repo — it is this machine's notes, never the project's.
+.dork/MEMORY.md
 # Marketplace-installed plugins + their ephemeral harness projections (DOR-173).
 # Kept in sync with EPHEMERAL_GITIGNORE_PATTERNS in @dorkos/harness.
 # (Generated command wrappers under .claude/commands/<pkg>/ are kept out of git

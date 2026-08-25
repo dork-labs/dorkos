@@ -24,7 +24,7 @@ import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
-import { RoomService, type RoomEntryIndexer } from '../room-service.js';
+import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import { RoomBroadcaster } from '../room-stream.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from '../limits/room-limits.js';
@@ -496,6 +496,17 @@ export function createRoomHarness(opts: {
    * implementation is the thing that promises never to throw.
    */
   indexEntry?: RoomEntryIndexer;
+  /**
+   * The message-index READER, for the tests that need to know whether it was
+   * asked at all.
+   *
+   * Defaults to the real one over this harness's own database — which is what
+   * every scope test wants, since a fake finder would make the scope rules a
+   * test of the fake. A test that asserts a query was SHORT-CIRCUITED passes a
+   * spy instead: "returns nothing" and "never asked" are different claims, and
+   * an empty result cannot tell them apart.
+   */
+  findMessages?: RoomMessageFinder;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -569,21 +580,23 @@ export function createRoomHarness(opts: {
     // `search_room_history` test a test of the fake — including the scope rules,
     // which are the half worth proving. `indexMessages()` below is what puts rows
     // in front of it.
-    findMessages: ({ rooms: scoped, query, limit }) =>
-      searchMessages(db, {
-        scopes: [
-          {
-            sourceId: roomsSource.id,
-            visibility: 'containers',
-            containers: scoped.map((room) => ({
-              originKey: room.roomId,
-              afterOrdinal: room.afterSeq,
-            })),
-          },
-        ],
-        query,
-        limit,
-      }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
+    findMessages:
+      opts.findMessages ??
+      (({ rooms: scoped, query, limit }) =>
+        searchMessages(db, {
+          scopes: [
+            {
+              sourceId: roomsSource.id,
+              visibility: 'containers',
+              containers: scoped.map((room) => ({
+                originKey: room.roomId,
+                afterOrdinal: room.afterSeq,
+              })),
+            },
+          ],
+          query,
+          limit,
+        }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal }))),
     // The REAL write-through too, for the same reason: it is what puts a posted
     // entry in front of the finder above without anybody sweeping, and a no-op
     // here would make every `search_history` test silently depend on the

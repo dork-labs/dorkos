@@ -109,8 +109,8 @@ export interface PaletteSessionItem {
  * wire is deliberately absent here, even though adding it would be one line. A
  * palette that quietly matched on the last thing an agent said would be a
  * content search nobody chose and nobody can switch off — which is why the
- * field's very NAME is banned from this feature's source, guarded by
- * `__tests__/no-message-search.test.ts`.
+ * field's very NAME is banned from this feature's navigation half, guarded by
+ * `__tests__/palette-ranks-names-not-content.test.ts`.
  *
  * @param item - The row to describe.
  */

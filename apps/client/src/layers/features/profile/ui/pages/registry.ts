@@ -90,6 +90,10 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     title: 'Boundaries',
     component: lazy(() => import('./ConventionPage').then((m) => ({ default: m.BoundariesPage }))),
   },
+  memory: {
+    title: 'Memory',
+    component: lazy(() => import('./ConventionPage').then((m) => ({ default: m.MemoryPage }))),
+  },
 };
 
 /**

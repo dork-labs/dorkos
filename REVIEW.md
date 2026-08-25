@@ -40,10 +40,12 @@ secrets, or violate a non-negotiable architectural rule:
     `@anthropic-ai/claude-agent-sdk` → `claude-code/`, `@openai/codex-sdk` →
     `codex/`, `@opencode-ai/sdk` → `opencode/`.
   - **`os.homedir()` ban** — server code resolves the data dir via
-    `lib/dork-home.ts`, never `os.homedir()`. Three carve-outs are declared and
+    `lib/dork-home.ts`, never `os.homedir()`. Five carve-outs are declared and
     are NOT findings: `lib/dork-home.ts`, `lib/boundary.ts` (two inline-disabled
-    call sites), and `claude-code/claude-config-dir.ts`. The full list, with
-    reasons, is `.claude/rules/dork-home.md`.
+    call sites), `claude-code/claude-config-dir.ts`, `codex/codex-home.ts`, and
+    `opencode/opencode-data-dir.ts` — the last three mirror another program's own
+    path resolution rather than DorkOS's. The full list, with reasons, is
+    `.claude/rules/dork-home.md`.
   - **Marketplace rollback safety**: install failures roll back via a file-scoped
     target backup/restore, not git. A test on an install failure path should assert
     the target is restored (overwrite) or removed (fresh install), never that a git

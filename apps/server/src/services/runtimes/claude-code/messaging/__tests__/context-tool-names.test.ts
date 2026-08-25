@@ -257,7 +257,7 @@ function tagsIn(text: string): string[] {
  * @returns The blocks, and the tags they were confirmed to contain.
  */
 async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
-  const agentContext = await buildAgentContextAppend(CWD);
+  const agentContext = (await buildAgentContextAppend(CWD)).text;
   const blocks = [GEN_UI_CONTEXT, agentContext];
   return { blocks, tags: blocks.flatMap(tagsIn) };
 }
@@ -269,7 +269,7 @@ async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
  * @returns The prose, and the shared blocks that were subtracted out of it.
  */
 async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
-  const assembled = await buildSystemPromptAppend(CWD);
+  const assembled = (await buildSystemPromptAppend(CWD)).text;
   const { blocks: shared } = await sharedBlocks();
   let prose = assembled;
   for (const block of shared) prose = prose.split(block).join('');
@@ -299,7 +299,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // through by having nothing to compare against.
     // The exact surface, so a tool added or lost is a line to look at here rather
     // than a change a bound absorbs. Same number as `tool-exposure.test.ts` sees.
-    expect(advertised.size).toBe(83);
+    expect(advertised.size).toBe(86);
     expect(advertised.has('react_to_room_entry')).toBe(true);
 
     const { prose } = await claudeCodeProse();
@@ -351,7 +351,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // never renders needs the same guard, or a name could rot in the half of the
     // prose only agents read.
     const advertised = await advertisedToolNames();
-    const prompt = await buildSystemPromptAppend(CWD, undefined, { agentSession: true });
+    const prompt = (await buildSystemPromptAppend(CWD, undefined, { agentSession: true })).text;
 
     const unknown = [
       ...new Set(
@@ -383,7 +383,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // and searching the wrong string. The five always-loaded tools are the other
     // half — the prompt has to say they need no lookup, or a room turn spends one
     // anyway out of caution.
-    const prompt = await buildSystemPromptAppend(CWD);
+    const prompt = (await buildSystemPromptAppend(CWD)).text;
     expect(prompt).toContain('<dorkos_tools>');
     expect(prompt).toContain('already in your tool list');
     expect(prompt).toContain('deferred, not missing');
@@ -416,7 +416,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // no stored profile. They carry no tool names — they are the person's own
     // prose — so their absence costs this check nothing, while `<dorkos_context>`
     // being present is the whole point.
-    expect(tags).toEqual(['gen_ui', 'agent_identity', 'dorkos_context', 'env']);
+    // `<session_model>` joins the set here because it renders unconditionally
+    // inside `buildAgentBlock` — and it is precisely the kind of block this case
+    // is for: it tells the agent to save what it learns, which is one word away
+    // from naming a tool that only claude-code exposes under that spelling.
+    // `<agent_memory>` is absent by construction, like the three below: this
+    // fixture's directory holds no `MEMORY.md`.
+    expect(tags).toEqual(['gen_ui', 'agent_identity', 'session_model', 'dorkos_context', 'env']);
 
     for (const block of shared) {
       expect(
@@ -504,6 +510,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'seed-context-block.ts',
       'staged-context-block.ts',
       'ui-tool-contract.ts',
+      'untrusted-fence.ts',
     ]);
 
     const offenders: string[] = [];

@@ -139,8 +139,22 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * rooms structural cases gate on `--suite rooms --tier test-mode` instead, and
  * the credentialed rooms cases carry `experimental` beside it like every other
  * not-yet-gating case.
+ *
+ * `memory` is the agent-memory suite (DOR-632): the cross-surface probes X-09,
+ * X-12 and X-11b. It is separate from `rooms` even though its cases open a
+ * channel, because what they measure is a fact crossing BETWEEN surfaces rather
+ * than anything about a room, and because `--suite rooms` names the set
+ * `suite/__tests__/rooms.test.ts` enumerates. Every case in it is credentialed
+ * and quarantined, so the tag spends only when somebody selects it.
  */
-export const EvalTagSchema = z.enum(['smoke', 'core', 'connector', 'experimental', 'rooms']);
+export const EvalTagSchema = z.enum([
+  'smoke',
+  'core',
+  'connector',
+  'experimental',
+  'rooms',
+  'memory',
+]);
 
 /** Inferred type for {@link EvalTagSchema}. */
 export type EvalTag = z.infer<typeof EvalTagSchema>;

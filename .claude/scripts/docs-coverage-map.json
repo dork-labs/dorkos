@@ -516,6 +516,11 @@
       ]
     },
     {
+      "doc": "docs/guides/agent-memory.mdx",
+      "description": "Agent memory: the notes file, the cap, provenance, the visibility rule",
+      "patterns": ["packages/memory/", "services/memory/", "agent-context", "convention-files"]
+    },
+    {
       "doc": "docs/guides/action-approvals.mdx",
       "description": "Approvals for actions that can't be undone: the card, single use, expiry, attribution",
       "patterns": [

@@ -104,7 +104,7 @@ describe('the rooms capability domain', () => {
   });
 
   describe('what it declares', () => {
-    it('advertises the four tools on both MCP servers, with the tiers it means', () => {
+    it('advertises the six tools on both MCP servers, with the tiers it means', () => {
       const declared = roomsDomain.capabilities.map((capability) => ({
         id: capability.id,
         tool: capability.surfaces.mcp?.toolName,
@@ -146,6 +146,27 @@ describe('the rooms capability domain', () => {
           // Deliberately NOT in the tokenless carve-out: these return other
           // people's messages, and every other way to read a room's log on this
           // machine asks for something first.
+          readOnly: false,
+        },
+        {
+          id: 'rooms.list_member_rooms',
+          tool: 'list_member_rooms',
+          tier: 'observe',
+          servers: ['in-session', 'external'],
+          // Out of the carve-out for a reason of its own: the LIST is not
+          // machine state either. A room's name and the fact that somebody is
+          // in it is a statement about the operator's rooms, and this is the
+          // one room verb that needs no id to answer.
+          readOnly: false,
+        },
+        {
+          id: 'rooms.search_member_rooms',
+          tool: 'search_member_rooms',
+          tier: 'observe',
+          servers: ['in-session', 'external'],
+          // The widest read in the domain — other people's messages across
+          // every room at once — so the carve-out is the last thing it should
+          // have.
           readOnly: false,
         },
       ]);
