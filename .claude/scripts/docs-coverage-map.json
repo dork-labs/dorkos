@@ -12,6 +12,11 @@
       "patterns": ["dev:dogfood", "cli:dev", "packages/cli/dist/bin/cli.js"]
     },
     {
+      "guide": "dependency-overrides.md",
+      "description": "pnpm.overrides policy: deliberate pins vs transient security pins, auto-installed peers",
+      "patterns": ["pnpm.overrides"]
+    },
+    {
       "guide": "architecture.md",
       "description": "Hexagonal architecture, Transport interface, Electron compatibility",
       "patterns": [
@@ -326,7 +331,7 @@
     },
     {
       "doc": "docs/concepts/sidebar.mdx",
-      "description": "Sidebar concepts: Heads up, Today, Library, and the phone tabs",
+      "description": "Sidebar concepts: Heads up, Today, sections, one door, and the phone tabs",
       "patterns": [
         "apps/client/src/layers/features/dashboard-sidebar/",
         "apps/client/src/layers/widgets/mobile-tabs/"
@@ -515,7 +520,7 @@
     },
     {
       "doc": "docs/guides/sidebar-settings.mdx",
-      "description": "Sidebar display filters, inactive reveal, and mute guide",
+      "description": "Sidebar display filters, sections (incl. smart), sorting, and mute guide",
       "patterns": [
         "features/dashboard-sidebar/",
         "entities/session/model/agent-attention",
