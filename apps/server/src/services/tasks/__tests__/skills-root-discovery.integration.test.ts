@@ -824,9 +824,10 @@ describe('schedules discovered in skills roots', () => {
       //
       // The boot migration is what stops this being a trap: it rewrites every
       // such file it can find before any watcher starts. What this pins is what
-      // happens to one that arrives AFTERWARDS — it is ignored for good, because
-      // the migration is a one-shot over pre-upgrade state and not a standing
-      // import path.
+      // happens to one that arrives AFTERWARDS — nothing, for as long as this
+      // process runs. (The next start's migration does move it: detection is by
+      // location and unconditional. Not a live import path, but not a black hole
+      // either — `skills-roots.ts` states the whole rule.)
       await mkdir(path.join(skillsDir, 'old-timer'), { recursive: true });
       const filePath = path.join(skillsDir, 'old-timer', 'SKILL.md');
       await writeFile(filePath, legacyTaskFile('old-timer', '0 2 * * *'), 'utf-8');

@@ -108,7 +108,7 @@ describe('shapes router', () => {
     await installShapeOnDisk(dorkHome, 'linear-ops');
 
     const setActiveShape = vi.fn();
-    const createSchedule = vi.fn(async () => undefined);
+    const createSchedule = vi.fn(async () => true);
     const applyDeps: ApplyShapeDeps = {
       manifestResolver: createFsShapeManifestResolver(dorkHome),
       extensionManager: {

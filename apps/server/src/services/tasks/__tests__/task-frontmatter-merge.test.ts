@@ -4,7 +4,7 @@
  * The case that matters is `null`. A task write says "clear this field" by
  * sending `null`, and the update route used to copy that straight into the
  * frontmatter object — producing `max-runtime: null` in the file, which
- * `TaskFrontmatterSchema` rejects. Once written, the watcher logs the file as
+ * the frontmatter schema rejects. Once written, the watcher logs the file as
  * invalid and stops syncing it, and every later write skips the file entirely
  * because the route only rewrites a file that parsed. So a single cleared field
  * desynced the file from its row permanently.

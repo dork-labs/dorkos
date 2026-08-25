@@ -122,6 +122,9 @@ function makeDeps(opts: {
     const existing = schedules.find((s) => s.name === name && s.agentId === agentId);
     if (existing) Object.assign(existing, entry);
     else schedules.push(entry);
+    // The real service answers `false` when the target name on disk belongs to
+    // somebody else's skill; this fake has no disk, so it always succeeds.
+    return true;
   });
   const rebindSchedule = vi.fn(
     async (name: string, rebind: { agentId: string; enabled: boolean }) => {

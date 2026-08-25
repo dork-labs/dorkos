@@ -11,10 +11,15 @@
  * more: `legacy-migration.ts` rewrites and moves what is in them on the boot it
  * finds them, and nothing scans them afterwards. `<dorkHome>/tasks/` still
  * exists, holding the two SYSTEM files that were always there and were never
- * schedules — `scheduler.lock` and `presets.json`. A SKILL.md that appears in
- * either directory after the migration has run is ignored for good; the
- * migration is a one-shot over state that predates the upgrade, not a standing
- * import path.
+ * schedules — `scheduler.lock` and `presets.json`.
+ *
+ * A SKILL.md that appears in one of those directories WHILE the server is
+ * running is therefore not discovered at all — no row, no warning, nothing on a
+ * clock. It is not lost, either: the migration is location-based and
+ * unconditional, so the next start moves it like any other legacy file. That
+ * remains true until the migration reaches its sunset, at which point dropping a
+ * file there stops meaning anything at all. Either way it is not a live import
+ * path, and nothing should be written there on purpose.
  *
  * @module services/tasks/skills-roots
  */

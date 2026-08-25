@@ -72,6 +72,10 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
   let unregisterTask: Mock<SchedulerRegistrationTarget['unregisterTask']>;
   let scheduler: SchedulerRegistrationTarget;
   let service: ShapeScheduleService;
+  // Hoisted so the refusal cases can assert the warning: a Shape that declines
+  // to write over somebody's skill has to SAY so, or the schedule is simply
+  // missing and nobody knows why.
+  let logger: Logger;
 
   beforeEach(async () => {
     db = createTestDb();
@@ -88,7 +92,7 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
     } as unknown as MeshCore;
 
-    const logger = {
+    logger = {
       info: vi.fn(),
       warn: vi.fn(),
       debug: vi.fn(),
@@ -219,6 +223,113 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       false
     );
     expect(registerTask).not.toHaveBeenCalled();
+  });
+
+  it("refuses to write over a person's own skill of the same name, and says so", async () => {
+    // The critical one. A skills root is where a PERSON's skills live, and most
+    // of them have no schedule and therefore no row — so the apply flow's
+    // by-name check over the task table cannot see them. Before the disk guard,
+    // applying a Shape wrote its schedule straight over a hand-written skill,
+    // with no warning anywhere, and the teardown that followed removed the
+    // directory it was in.
+    const skillDir = path.join(agentDir, '.agents', 'skills', 'inbox-tick');
+    await fs.mkdir(skillDir, { recursive: true });
+    const mine = '---\nname: inbox-tick\ndescription: my own tuned skill\n---\nMy words.';
+    await fs.writeFile(path.join(skillDir, 'SKILL.md'), mine, 'utf-8');
+    await fs.writeFile(path.join(skillDir, 'reference.md'), 'notes I wrote', 'utf-8');
+
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toBe(false);
+    // Untouched, both files.
+    expect(await fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8')).toBe(mine);
+    expect(await fs.readFile(path.join(skillDir, 'reference.md'), 'utf-8')).toBe('notes I wrote');
+    // No row either — a schedule that was never written must not appear to exist.
+    expect(store.getTasks()).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('inbox-tick'));
+  });
+
+  it('refuses a target that is a symlink, whatever the file behind it says', async () => {
+    // A `pkg__name` link is how Harness Sync projects an installed package's
+    // skill. Writing through it edits the package's own checkout: shared by
+    // every agent that installed it, invisible in the cockpit, gone at the next
+    // update. Refused before the marker is even read.
+    //
+    // The link's target deliberately carries THIS Shape's own marker, which is
+    // the only version of this case the marker check cannot answer: by
+    // provenance the file is "ours" to overwrite, and it still must not be
+    // written, because where it physically lives is a package's checkout. A
+    // fixture without the marker would pass with the symlink branch deleted.
+    const packageSkill = path.join(dorkHome, 'plugins', 'flow', 'skills', 'drain');
+    await fs.mkdir(packageSkill, { recursive: true });
+    const shipped = [
+      '---',
+      'name: drain',
+      'description: shipped by a package',
+      'schedule:',
+      "  cron: '*/10 * * * *'",
+      '  origin: shape',
+      '  shape: linear-ops',
+      '---',
+      'Package words.',
+    ].join('\n');
+    await fs.writeFile(path.join(packageSkill, 'SKILL.md'), shipped, 'utf-8');
+    await fs.mkdir(path.join(agentDir, '.agents', 'skills'), { recursive: true });
+    await fs.symlink(packageSkill, path.join(agentDir, '.agents', 'skills', 'inbox-tick'));
+
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toBe(false);
+    expect(await fs.readFile(path.join(packageSkill, 'SKILL.md'), 'utf-8')).toBe(shipped);
+    expect(store.getTasks()).toHaveLength(0);
+  });
+
+  it('still writes over its OWN schedule, which is what a re-apply is', async () => {
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'linear-ops' });
+
+    const again = await service.createSchedule(
+      { ...tick('inbox-tick', 'agent-tender'), prompt: 'run one tick, differently' },
+      { shape: 'linear-ops' }
+    );
+
+    expect(again).toBe(true);
+    expect(store.getTasks()).toHaveLength(1);
+    expect(store.getTasks()[0].prompt).toBe('run one tick, differently');
+  });
+
+  it('refuses a schedule another Shape already owns by that name', async () => {
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'other-shape' });
+
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toBe(false);
+    expect(store.getTasks()).toHaveLength(1);
+  });
+
+  it('does not delete the global copy when the re-bind had nowhere to land', async () => {
+    // The compound failure: a refused create followed by an unconditional
+    // teardown deletes the only copy of the schedule there is.
+    await service.createSchedule(globalDisabledTick(), { shape: 'linear-ops' });
+    const skillDir = path.join(agentDir, '.agents', 'skills', 'inbox-tick');
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: inbox-tick\ndescription: my own\n---\nMine.',
+      'utf-8'
+    );
+
+    await service.rebindSchedule('inbox-tick', { agentId: 'agent-tender', enabled: true });
+
+    // The global copy is still there, still the Shape's, still the only one.
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
+    expect(store.getTasks()).toHaveLength(1);
+    expect(store.getTasks()[0].agentId).toBeNull();
   });
 
   it('leaves the schedule global when the agent has no resolvable project path', async () => {

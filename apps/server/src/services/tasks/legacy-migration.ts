@@ -187,18 +187,29 @@ const LEGACY_TOP_LEVEL_FIELDS = [
 ] as const;
 
 /**
- * The keys whose presence in a SKILLS root means "this file was written in the
- * old shape".
+ * The one key whose presence in a SKILLS root means "this file was written in
+ * the old shape".
  *
- * A narrower set than {@link LEGACY_TOP_LEVEL_FIELDS}, and narrower on purpose.
- * In a legacy root, location alone says the file is a schedule, so every field
- * comes along. In a skills root there is no location to go on and a false
- * positive is expensive — it turns an ordinary skill into a schedule that parks
- * and asks a person about itself. `enabled:` and `timezone:` are words an
- * unrelated skill can plausibly carry; `cron`, `max-runtime` and `permissions`
- * together with nothing else to explain them are not.
+ * `cron:` alone, and the narrowness is the point. In a legacy root, location
+ * says the file is a schedule and every legacy field comes along with it. In a
+ * skills root there is no location to go on, and a false positive is expensive
+ * in two directions at once: it turns somebody's ordinary skill into a schedule
+ * that parks and asks them about itself, and it REWRITES a file DorkOS was never
+ * asked to own.
+ *
+ * An earlier version of this took `max-runtime` or `permissions` as evidence
+ * too. Neither is: `permissions: plan` on a plain skill is a perfectly ordinary
+ * thing for an author to write, and it meant a skill that had never had anything
+ * to do with scheduling grew a `schedule:` block and a parked row (review, I3).
+ * A cron line, on a file that has no block to put it in, has no other reading.
+ *
+ * The cost is the other kind of miss: a legacy on-demand task (no cron) sitting
+ * in a skills root stays a plain skill. That file was already not running —
+ * on-demand means nothing fires it — so what it loses is a row it can be run
+ * from by hand, and it gets that back the moment its author adds a `schedule:`
+ * block. That is the cheaper mistake by a wide margin.
  */
-const LEGACY_SIGNAL_FIELDS = ['cron', 'max-runtime', 'permissions'] as const;
+const LEGACY_SIGNAL_FIELD = 'cron';
 
 /** The legacy global tasks root: `~/.dork/tasks/`. Gone with this module. */
 function legacyGlobalTasksRoot(dorkHome: string): string {
@@ -335,11 +346,17 @@ export async function migrateLegacySchedules(
     logger.error('[Tasks] Legacy schedule migration stopped early', err);
   }
 
-  if (report.moved + report.foldedInPlace + report.templates + report.unreadable > 0) {
+  // Only when something actually MOVED. An unreadable file is a standing
+  // condition — it stays where it is, so it is found again on every boot — and
+  // counting it here printed a banner announcing a migration that had done
+  // nothing, every start, forever. The file itself is still named once per boot
+  // by `parkUnreadable`, and permanently by the parked row, which is the surface
+  // a person can actually act on.
+  if (report.moved + report.foldedInPlace + report.templates > 0) {
     logger.info(
       `[Tasks] Moved ${report.moved} schedule(s) and ${report.templates} template(s) to their new home ` +
         `(${report.keptApproved} stayed approved, ${report.parked} need a look, ` +
-        `${report.unreadable} could not be read, ${report.foldedInPlace} tidied in place)`
+        `${report.foldedInPlace} tidied in place)`
     );
   }
   return report;
@@ -355,6 +372,14 @@ export async function migrateLegacySchedules(
  * the destination is left alone: the templates are starting points, and
  * overwriting one a person edited to install one they did not ask for is the
  * wrong trade.
+ *
+ * **Each template is rewritten as well as moved**, which a first pass at this
+ * missed. A template is a SKILL.md like any other, and the gallery reads its
+ * cron out of the `schedule:` block — so a template carried across in the legacy
+ * shape arrives at its new home with its cron in a key nothing reads, and every
+ * template on every upgraded installation quietly offers "no schedule" as its
+ * starting point. Every seeded template on every install written before this
+ * wave is in exactly that shape, so it is the common case rather than an edge.
  *
  * @param dorkHome - The resolved data directory.
  * @returns How many template directories moved.
@@ -381,6 +406,7 @@ async function migrateTemplateGallery(dorkHome: string): Promise<number> {
       // emptied is still a template they made.
       if (await exists(path.join(to, entry.name))) continue;
       await fs.rename(path.join(from, entry.name), path.join(to, entry.name));
+      await rewriteTemplate(to, entry.name);
       moved++;
     } catch (err) {
       logger.warn(`[Tasks] Could not move the template ${entry.name} to ${to}`, err);
@@ -391,6 +417,33 @@ async function migrateTemplateGallery(dorkHome: string): Promise<number> {
   // this pass could not move, and deleting it would be deleting a person's work.
   await fs.rmdir(from).catch(() => {});
   return moved;
+}
+
+/**
+ * Fold a moved template's legacy fields into a `schedule:` block, in place.
+ *
+ * Nothing here re-keys or parks: a template is not a schedule and has no row —
+ * it is a starting point a person picks from a gallery. The only thing that
+ * matters is that the gallery can still read its cron.
+ *
+ * Failure is swallowed per template, and deliberately: the file has already
+ * MOVED at this point, and a template that reads a little worse is a much better
+ * outcome than a migration that stops halfway through the gallery.
+ *
+ * @param dir - The destination gallery.
+ * @param name - The template's directory name.
+ */
+async function rewriteTemplate(dir: string, name: string): Promise<void> {
+  const filePath = path.join(dir, name, SKILL_FILENAME);
+  try {
+    const raw = readRawFrontmatter(await fs.readFile(filePath, 'utf-8'));
+    if (raw === null) return;
+    const rewrite = buildRewrite(raw.data);
+    if (rewrite === null) return;
+    await writeSkillFile(dir, name, rewrite.frontmatter, raw.body);
+  } catch (err) {
+    logger.warn(`[Tasks] Moved the template ${name} but could not rewrite it`, err);
+  }
 }
 
 /**
@@ -518,6 +571,16 @@ async function migrateOneSchedule(
   }
 
   report.moved++;
+  if (destination.name !== dirName) {
+    // Said out loud, because a schedule quietly changing its name is the kind of
+    // thing a person discovers weeks later while looking for something else. The
+    // row carries the same news (`collisionReason`); this is for whoever is
+    // reading the boot log.
+    logger.info(
+      `[Tasks] Moved the schedule '${dirName}' to '${destination.name}' — ` +
+        `${path.join(pair.to, dirName)} was already taken`
+    );
+  }
   if (outcome === 'rekeyed') report.keptApproved++;
   // A collision parks whatever row there is, so it counts once — but only when
   // there IS one. A legacy file that never synced has no row to need a look at,
@@ -535,6 +598,10 @@ async function migrateOneSchedule(
  * `260823-200724` calls this design's worst case. Nothing moves, and no row is
  * touched: the path does not change, and neither do the prompt and cron a grant
  * is keyed on.
+ *
+ * A top-level `cron:` is the ONLY thing that qualifies a file here — see
+ * {@link LEGACY_SIGNAL_FIELD} for why the other legacy fields are not evidence
+ * of anything on their own.
  *
  * @param dir - The skills root to sweep.
  * @param scope - Whether it is the global root (which reserves `templates/`).
@@ -565,7 +632,7 @@ async function foldStrayLegacyFields(
       const content = await fs.readFile(filePath, 'utf-8');
       const raw = readRawFrontmatter(content);
       if (raw === null) continue; // Unreadable here is discovery's story to tell.
-      if (!LEGACY_SIGNAL_FIELDS.some((field) => raw.data[field] !== undefined)) continue;
+      if (raw.data[LEGACY_SIGNAL_FIELD] === undefined) continue;
 
       const rewrite = buildRewrite(raw.data);
       if (rewrite === null) continue;
@@ -606,17 +673,23 @@ interface Rewrite {
  * @returns The rewrite, or `null` when the legacy fields do not parse.
  */
 function buildRewrite(data: Record<string, unknown>): Rewrite | null {
-  const hasBlock = data.schedule !== undefined && data.schedule !== null;
+  // Asked FIRST, and of every file, block or no block. A file the base skill
+  // schema rejects — no `description`, a name that is not a slug — is one that
+  // discovery will reject too the moment it lands in a skills root: no row, no
+  // warning, and a legacy root that nothing scans any more, so the schedule
+  // simply disappears. Refusing it here is what routes it to `parkUnreadable`,
+  // which is what this function's caller promises (review, I4).
+  if (!readsAsSkill(data)) return null;
 
   const stripped: Record<string, unknown> = { ...data };
   for (const field of LEGACY_TOP_LEVEL_FIELDS) delete stripped[field];
 
+  const hasBlock = data.schedule !== undefined && data.schedule !== null;
   if (hasBlock) {
     const parsed = ScheduleBlockSchema.safeParse(data.schedule);
     return { frontmatter: stripped, block: parsed.success ? parsed.data : null };
   }
 
-  if (!readsAsSkill(data)) return null;
   const parsed = LegacyScheduleFieldsSchema.safeParse(data);
   if (!parsed.success) return null;
   const block = legacyTaskToSchedule(parsed.data);

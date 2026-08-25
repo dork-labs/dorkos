@@ -4133,7 +4133,7 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
  * ## Why this is a security boundary and not tidiness
  *
  * `POST /api/tasks` writes the request into a SKILL.md and immediately reads it
- * back with `TaskFrontmatterSchema`. Whether that re-parse SUCCEEDS decides
+ * back with `SkillFrontmatterSchema`. Whether that re-parse SUCCEEDS decides
  * which of two code paths creates the row, and only one of them ran the
  * permission clamp. So any field this schema accepts and the frontmatter
  * rejects is a switch a caller can flip to choose its own write path — which is

@@ -262,8 +262,11 @@ export interface ShapeScheduleServiceLike {
    * @param req - The task-creation request built from a Shape schedule.
    * @param origin - Provenance to stamp into the schedule file (`origin: shape`
    *   + `shape: <name>`) — the marker the re-bind flow later gates on.
+   * @returns Whether the schedule exists afterwards. `false` means the target
+   *   name on disk belongs to somebody else's skill and nothing was written; a
+   *   caller must not delete anything on the strength of a create that refused.
    */
-  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<void>;
+  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<boolean>;
   /**
    * Re-target a global (unbound) schedule to a now-present agent and set its
    * enabled state — the second half of the global → agent flip. A no-op when

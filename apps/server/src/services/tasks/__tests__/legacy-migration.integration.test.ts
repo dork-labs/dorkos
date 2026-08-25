@@ -431,6 +431,28 @@ describe('the boot migration off the legacy task directories', () => {
   });
 
   describe('a file DorkOS cannot read', () => {
+    it('parks a block-format file the base skill schema rejects, rather than losing it', async () => {
+      // Halfway between the two obvious cases: the `schedule:` block is fine, so
+      // an earlier version migrated it happily — and then discovery threw it out
+      // for having no `description`, leaving no row, no warning, and a legacy
+      // root nothing scans. The schedule was simply gone (review, I4).
+      const dir = path.join(dorkHome, 'tasks', 'blockish');
+      await fs.mkdir(dir, { recursive: true });
+      const filePath = path.join(dir, SKILL_FILENAME);
+      await fs.writeFile(
+        filePath,
+        ['---', 'name: blockish', 'schedule:', "  cron: '0 3 * * *'", '---', 'Body'].join('\n'),
+        'utf-8'
+      );
+
+      const report = await migrate();
+
+      expect(report.unreadable).toBe(1);
+      expect(report.moved).toBe(0);
+      await expect(fs.access(filePath)).resolves.toBeUndefined();
+      expect(store.getTasks()[0]?.reason).toContain(filePath);
+    });
+
     it('leaves it where it is and parks a row that names it', async () => {
       const dir = path.join(dorkHome, 'tasks', 'broken');
       await fs.mkdir(dir, { recursive: true });
@@ -496,8 +518,17 @@ describe('the boot migration off the legacy task directories', () => {
       expect(report.templates).toBe(2);
       const names = (await fs.readdir(resolveTemplatesDir(dorkHome))).sort();
       expect(names).toEqual(['daily-health-check', 'my-own-template']);
-      // The gallery reads them from their new home.
-      expect((await loadTemplates(dorkHome)).map((t) => t.name).sort()).toEqual(names);
+
+      // ...and they still have their crons. The gallery reads a cron out of the
+      // `schedule:` block, so a template MOVED but not REWRITTEN arrives with
+      // its cron in a key nothing reads — and every seeded template on every
+      // installation older than this wave is in that shape, so asserting only
+      // the names would have passed while the whole gallery lost its schedules.
+      const loaded = await loadTemplates(dorkHome);
+      expect(loaded.map((t) => [t.name, t.cron]).sort()).toEqual([
+        ['daily-health-check', '0 9 * * 1-5'],
+        ['my-own-template', '0 8 * * *'],
+      ]);
     });
 
     it('does not turn a template into a schedule on the way past', async () => {
@@ -614,6 +645,29 @@ describe('the boot migration off the legacy task directories', () => {
 
       expect(report.foldedInPlace).toBe(1);
       expect(await scheduleIn(globalDestination('hand-written'))).toEqual({ cron: '0 2 * * *' });
+    });
+
+    it('leaves a plain skill that merely mentions permissions alone', async () => {
+      // `permissions: plan` on a skill with no cron is an ordinary thing to
+      // write and says nothing about scheduling. Taking it as evidence gave the
+      // person a phantom parked schedule AND rewrote a file DorkOS was never
+      // asked to own (review, I3).
+      const plain = [
+        '---',
+        'name: careful',
+        'description: a plain skill with an opinion about permissions',
+        "permissions: 'plan'",
+        "max-runtime: '30m'",
+        '---',
+        'Help.',
+      ].join('\n');
+      await fs.mkdir(path.join(dorkHome, 'skills', 'careful'), { recursive: true });
+      await fs.writeFile(globalDestination('careful'), plain, 'utf-8');
+
+      const report = await migrate();
+
+      expect(report.foldedInPlace).toBe(0);
+      expect(await fs.readFile(globalDestination('careful'), 'utf-8')).toBe(plain);
     });
 
     it('leaves an ordinary skill entirely alone', async () => {
@@ -790,6 +844,49 @@ describe('the boot migration off the legacy task directories', () => {
     });
   });
 
+  describe('an agent that registers after boot', () => {
+    it('migrates its legacy schedules and discovers them without a restart', async () => {
+      // The composition the agent-created seam performs (`index.ts`): migrate
+      // this one project, then attach its roots. Before the seam did the first
+      // half, a project registering after boot had its legacy schedules neither
+      // migrated (the boot pass had already run) nor watched (the legacy root is
+      // no longer a root) — so they silently stopped until the next restart,
+      // which is a regression against the build before this wave (review, I5).
+      const latePath = path.join(dorkHome, 'late-project');
+      await fs.mkdir(path.join(latePath, '.dork', 'tasks', 'late-tick'), { recursive: true });
+      await fs.writeFile(
+        path.join(latePath, '.dork', 'tasks', 'late-tick', SKILL_FILENAME),
+        legacyFile('late-tick', { cron: '0 6 * * *' }),
+        'utf-8'
+      );
+
+      // Boot happened before this project existed.
+      await migrate();
+      expect(store.getTasks()).toHaveLength(0);
+
+      // ...and now it registers.
+      await migrateLegacySchedules({
+        dorkHome,
+        store,
+        agents: [{ agentId: 'late-agent', projectPath: latePath }],
+      });
+      const reconciler = new TaskReconciler(
+        store,
+        new TaskRegistrar({ store, scheduler: new FakeScheduler() }),
+        new ScheduleIdentityRegistry()
+      );
+      for (const root of agentTaskRoots(latePath, 'late-agent')) reconciler.addRoot(root);
+      await reconciler.reconcile();
+
+      // Moved, rewritten, and discovered — in this process, with no restart.
+      const moved = path.join(latePath, '.agents', 'skills', 'late-tick', SKILL_FILENAME);
+      expect(await scheduleIn(moved)).toEqual({ cron: '0 6 * * *' });
+      const row = store.getTasks()[0];
+      expect(row.name).toBe('late-tick');
+      expect(row.agentId).toBe('late-agent');
+    });
+  });
+
   describe('after the migration, the legacy directory is inert', () => {
     it('ignores a schedule written into it once the roots are the skills roots', async () => {
       await migrate();
@@ -808,9 +905,10 @@ describe('the boot migration off the legacy task directories', () => {
       for (const root of agentTaskRoots(projectPath, AGENT_ID)) reconciler.addRoot(root);
       await reconciler.reconcile();
 
-      // Nothing. Not a row, not a warning — the directory is not a root, and the
-      // migration is a one-shot over pre-upgrade state rather than a standing
-      // import path. Documented in `skills-roots.ts`.
+      // Nothing. Not a row, not a warning — the directory is not a root, so
+      // nothing discovers a file there while the server runs. (The next start's
+      // migration would move it, which is a different sentence from "it is
+      // gone"; `skills-roots.ts` states both halves.)
       expect(store.getTasks()).toHaveLength(0);
     });
   });

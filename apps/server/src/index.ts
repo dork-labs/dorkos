@@ -405,7 +405,7 @@ let taskRegistrar: TaskRegistrar | undefined;
  * function. `undefined` when the tasks subsystem is switched off, which is why
  * the caller uses `?.`.
  */
-let attachAgentTaskRoots: ((projectPath: string, agentId: string) => void) | undefined;
+let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -2277,7 +2277,22 @@ async function start() {
       // the one seam every arrival funnels through (create, register,
       // marketplace install, discovery adoption) and it carries the project
       // path, so nothing has to be looked up.
-      attachAgentTaskRoots = (projectPath: string, agentId: string): void => {
+      attachAgentTaskRoots = async (projectPath: string, agentId: string): Promise<void> => {
+        // Migrate BEFORE watching, for the same reason boot does. An agent that
+        // registers after boot brings its own project with it, legacy
+        // `.dork/tasks/` and all — and that directory is no longer watched, so
+        // without this pass its schedules would be neither migrated nor
+        // discovered until the next restart. That is a REGRESSION against the
+        // build before this wave, where the legacy root was attached here and
+        // its schedules started working immediately.
+        //
+        // Safe to call from a hook: it is idempotent, it never throws, and
+        // scoping it to one agent means it reads two directories.
+        await migrateLegacySchedules({
+          dorkHome,
+          store: taskStore,
+          agents: [{ agentId, projectPath }],
+        });
         attachAgentRoots(discovery, projectPath, agentId);
         logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
       };
@@ -2519,7 +2534,7 @@ async function start() {
         })
       : {
           listSchedules: () => [],
-          createSchedule: async () => undefined,
+          createSchedule: async () => false,
           rebindSchedule: async () => undefined,
           deleteSchedulesForShape: async () => [],
         };
@@ -2545,11 +2560,13 @@ async function start() {
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
-    // Watch this agent's `.agents/skills/` (and, until DOR-1486, its legacy
-    // `.dork/tasks/`) NOW rather than at the next restart. Boot used to be the
-    // only place roots were attached, so a schedule shipped with a
-    // just-installed agent was invisible for the rest of the process's life.
-    attachAgentTaskRoots?.(agent.path, agent.id);
+    // Migrate anything this agent's project still keeps in the old shape, then
+    // watch its `.agents/skills/` — NOW rather than at the next restart. Boot
+    // used to be the only place roots were attached, so a schedule shipped with
+    // a just-installed agent was invisible for the rest of the process's life.
+    // Awaited so the roots are live before the Shape re-bind below writes into
+    // them.
+    await attachAgentTaskRoots?.(agent.path, agent.id);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,
