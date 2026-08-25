@@ -315,6 +315,35 @@ describe('SqliteTaskStore', () => {
       expect(seen).toEqual(['task-000', 'task-001', 'task-002']);
     });
 
+    it('pages through rows that share a timestamp without repeating or losing one', async () => {
+      // Every row is written in the same millisecond, so `updated_at` cannot
+      // tell them apart. Paging happens in SQL, and SQL may order equal rows
+      // differently on each query — which across two pages is how one task
+      // gets served twice and another never appears at all.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-01T00:00:00.000Z'));
+      for (let i = 0; i < 5; i++) {
+        await store.save(makeTask({ id: `task-tie-${i}` }), ctx);
+      }
+      vi.useRealTimers();
+
+      const seen: string[] = [];
+      let pageToken = '';
+      do {
+        const page = await store.list(makeListRequest({ pageSize: 2, pageToken }), ctx);
+        seen.push(...page.tasks.map((t) => t.id));
+        pageToken = page.nextPageToken;
+      } while (pageToken !== '');
+
+      expect(seen.sort()).toEqual([
+        'task-tie-0',
+        'task-tie-1',
+        'task-tie-2',
+        'task-tie-3',
+        'task-tie-4',
+      ]);
+    });
+
     it('clamps an out-of-range page size into the range the spec allows', async () => {
       await store.save(makeTask(), ctx);
 

@@ -19,7 +19,7 @@
 import { TaskState, type Task } from '@a2a-js/sdk';
 import type { ListTasksRequest, ListTasksResponse } from '@a2a-js/sdk';
 import type { ServerCallContext, TaskStore } from '@a2a-js/sdk/server';
-import { and, eq, gte, a2aTasks, type Db } from '@dorkos/db';
+import { and, count, desc, eq, gte, a2aTasks, type Db } from '@dorkos/db';
 
 /** The status values accepted by the a2a_tasks Drizzle column. */
 type DbStatus = typeof a2aTasks.$inferInsert.status;
@@ -174,15 +174,27 @@ export class SqliteTaskStore implements TaskStore {
     ].filter((f) => f !== undefined);
     const where = filters.length > 0 ? and(...filters) : undefined;
 
-    const rows = this.db
+    // Counted and paged in SQL, never in JS: this store holds every task the
+    // gateway has ever run, and reading all of them to hand back fifty makes
+    // each listing cost the whole table — in rows read, in JSON parsed, and in
+    // memory held.
+    const totalSize =
+      this.db.select({ value: count() }).from(a2aTasks).where(where).get()?.value ?? 0;
+
+    const page = this.db
       .select()
       .from(a2aTasks)
       .where(where)
-      .orderBy(a2aTasks.updatedAt)
-      .all()
-      .reverse();
+      // Newest first, with the id breaking ties. The tiebreaker is not
+      // decoration: `updated_at` has millisecond resolution, so tasks touched
+      // in the same millisecond compare equal, and SQL is free to order equal
+      // rows differently on each query — which between one page and the next
+      // is how a row gets served twice or skipped entirely.
+      .orderBy(desc(a2aTasks.updatedAt), desc(a2aTasks.id))
+      .limit(pageSize)
+      .offset(offset)
+      .all();
 
-    const page = rows.slice(offset, offset + pageSize);
     const nextOffset = offset + page.length;
 
     return {
@@ -190,9 +202,9 @@ export class SqliteTaskStore implements TaskStore {
       // survey, and shipping every task's full output by default is how a
       // page of results becomes megabytes.
       tasks: page.map((row) => rowToTask(row, params.includeArtifacts === true)),
-      nextPageToken: nextOffset < rows.length ? String(nextOffset) : '',
+      nextPageToken: nextOffset < totalSize ? String(nextOffset) : '',
       pageSize,
-      totalSize: rows.length,
+      totalSize,
     };
   }
 }
