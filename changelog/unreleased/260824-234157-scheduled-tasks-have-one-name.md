@@ -5,6 +5,7 @@ covers:
   - 'docs: the scheduled-tasks guide follows the schedule: block (DOR-1490)'
   - 'fix(client,server,docs,e2e): one noun per object, on every renderer (DOR-1490)'
   - 'fix(docs,server,e2e): review follow-ups — the retired word, and two stale assertions (DOR-1490)'
+  - 'docs(server): the migration section says what the merged migration does (DOR-1490)'
 ---
 
 ### Changed
