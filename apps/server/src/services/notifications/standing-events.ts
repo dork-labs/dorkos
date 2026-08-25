@@ -66,10 +66,15 @@ import { armEscalation, standingDeepLink } from './escalation-service.js';
  *
  * @param kind - Which standing kind.
  * @param payload - That kind's payload, which is what the banner will say.
+ * @param options - `expiresAt` for a kind that expires with NObody acting — the
+ *   one ending the server never announces by itself (see
+ *   {@link StandingPendingEvent.expiresAt}). A surface draws its own retirement
+ *   timer from it. A parked schedule has no expiry and omits it.
  */
 export function raiseStanding<K extends StandingNotificationKind>(
   kind: K,
-  payload: NotificationPayload<K>
+  payload: NotificationPayload<K>,
+  options: { expiresAt?: string } = {}
 ): void {
   try {
     const entry = notificationEntry(kind);
@@ -82,6 +87,7 @@ export function raiseStanding<K extends StandingNotificationKind>(
       ...(body ? { body } : {}),
       deepLink: standingDeepLink(kind, payload),
       since: new Date().toISOString(),
+      ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
     };
     eventFanOut.broadcast('standing_pending', event, operatorAudience);
   } catch (err) {

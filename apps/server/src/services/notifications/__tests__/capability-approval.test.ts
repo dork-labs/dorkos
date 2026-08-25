@@ -223,6 +223,11 @@ describe('the arrival signal the periphery reads', () => {
         body: 'Delete a scheduled task cannot be undone, so it will not run until you decide.',
         deepLink: '/',
         since: expect.any(String),
+        // The decision window rides along so a surface can retire its own
+        // banner when the approval expires unanswered — the one ending nothing
+        // on the server announces (DOR-1570 review). It is the approval's own
+        // deadline, not a fresh one.
+        expiresAt: ticket.expiresAt,
       },
     ]);
   });

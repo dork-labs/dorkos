@@ -115,7 +115,16 @@ export function capabilityApprovalKey(approvalId: string): string {
  * @param requestedByPath - The asking agent's project path, when known.
  */
 export function raiseCapabilityApproval(approval: PendingApproval, requestedByPath?: string): void {
-  raiseStanding('approval.pending', capabilityApprovalPayload(approval, requestedByPath));
+  // `expiresAt` rides along so a surface that drew a banner can retire it on the
+  // deadline itself. Expiry is the one ending nothing on the server announces —
+  // it is enforced only when a token is presented, so an approval that runs out
+  // of time with no agent retry and no operator click produces no
+  // `standing_resolved` at all (DOR-1570 review). Without this, a desktop banner
+  // for such an approval would linger forever, deep-linking to a bell with
+  // nothing behind it.
+  raiseStanding('approval.pending', capabilityApprovalPayload(approval, requestedByPath), {
+    expiresAt: approval.expiresAt,
+  });
 }
 
 /**

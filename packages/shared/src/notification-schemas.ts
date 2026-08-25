@@ -452,6 +452,21 @@ export const StandingPendingEventSchema = z
     deepLink: z.string().min(1),
     /** When it started standing. ISO 8601 UTC. */
     since: z.string(),
+    /**
+     * When this condition stops being answerable on its own, ISO 8601 UTC —
+     * present only for a kind that expires WITHOUT anybody acting.
+     *
+     * A capability approval carries one (its two-hour decision window). This is
+     * the one ending the server never announces by itself: expiry is enforced
+     * lazily, when a token is presented, so an approval nobody answered and no
+     * agent retried produces no `standing_resolved` at all (DOR-1570 review).
+     * A surface that drew a banner from the arrival therefore has to retire it
+     * on this deadline itself, exactly as the React app's `usePendingApprovals`
+     * does — otherwise the banner lingers with nothing behind it. A parked
+     * schedule has no expiry and omits this; it resolves only by a decision or
+     * a removal, both of which DO announce.
+     */
+    expiresAt: z.string().optional(),
   })
   .openapi('StandingPendingEvent');
 

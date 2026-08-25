@@ -249,6 +249,60 @@ describe('watchNotifications — standing conditions', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(0);
   });
+
+  // Expiry is the one ending the server never announces (DOR-1570 review): an
+  // approval that runs out of time with no agent retry and no operator click
+  // produces no `standing_resolved`. Without a local timer the banner would
+  // linger forever, deep-linking to a bell with nothing behind it.
+  it('retires an approval banner at its own expiry, with no standing_resolved', async () => {
+    await start();
+    sendStandingPending({
+      kind: 'approval.pending',
+      subjectKey: 'approval:01JEXPIRE',
+      title: 'Nightly Bot needs your approval',
+      deepLink: '/',
+      // Just ahead of now; the bridge adds ~500ms slack, so the banner closes
+      // shortly after without anything else being sent.
+      expiresAt: new Date(Date.now() + 40).toISOString(),
+    });
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    // No standing_resolved is ever sent — the banner has to close on its own.
+    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+  });
+
+  it('does not self-retire a schedule banner, which carries no expiry', async () => {
+    await start();
+    // A parked schedule has no `expiresAt`; it must wait for standing_resolved.
+    sendStandingPending();
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(host.shown[0]?.closed).toBe(false);
+  });
+
+  it('does not double-handle when standing_resolved beats the expiry timer', async () => {
+    await start();
+    sendStandingPending({
+      kind: 'approval.pending',
+      subjectKey: 'approval:01JRACE',
+      deepLink: '/',
+      // Far enough out that the resolution below lands first.
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    stream.sendEvent('standing_resolved', {
+      kind: 'approval.pending',
+      subjectKey: 'approval:01JRACE',
+      resolvedAt: new Date().toISOString(),
+    });
+
+    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+    // The banner closed exactly once; nothing re-opened or re-closed it when the
+    // (now-cleared) expiry deadline would have passed.
+    expect(host.shown).toHaveLength(1);
+  });
 });
 
 describe('watchNotifications — Asks', () => {

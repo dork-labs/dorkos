@@ -648,6 +648,16 @@ export class ApprovalService {
    * the one somebody forgets, and a forgotten disarm is a phone buzzing about
    * an approval that was answered ten minutes ago.
    *
+   * **The normal grant flow calls this TWICE for one subject, and that is
+   * fine.** An operator grants (`decide('granted')` → `settle`) and then the
+   * agent retries (`consume` on a `granted` row → `settle` again), so both
+   * `standing_resolved` and `approval_resolved` go out twice for the same id.
+   * Every consumer of both is idempotent by construction: `cancelEscalationByKey`
+   * is a no-op once the timer is gone, the desktop's `retireStanding` no-ops a
+   * banner already closed, and the React app re-reads the authoritative list
+   * rather than replaying a transition. De-duping here would buy nothing and add
+   * a "was this already settled?" read to the hot path.
+   *
    * @param approvalId - ULID of the approval that ended.
    * @param outcome - How it ended.
    */

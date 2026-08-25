@@ -63,6 +63,24 @@ import {
 /** How many shown notifications to remember for de-dupe and close-on-resolve, before the oldest is forgotten. */
 const MAX_TRACKED_NOTIFICATIONS = 200;
 
+/**
+ * Grace added to a standing condition's expiry timer so it fires strictly AFTER
+ * the deadline the server enforces (`now > expiresAt`). Mirrors the same slack
+ * `usePendingApprovals` uses in the React app.
+ */
+const EXPIRY_SLACK_MS = 500;
+
+/**
+ * Longest delay `setTimeout` honors: 2^31 - 1 ms (~24.8 days). A larger value is
+ * silently clamped to 1ms by the platform and would fire immediately, so a
+ * deadline further out than this is left un-timed rather than mis-timed — the
+ * banner then relies on `standing_resolved` alone, which is the pre-fix
+ * behaviour and no worse than it. Nothing a correct server writes gets near this
+ * (the approval window is two hours), but `expiresAt` is an unbounded wire
+ * string and a machine with a badly wrong clock could land here.
+ */
+const MAX_EXPIRY_TIMEOUT_MS = 2_147_483_647;
+
 /** Options for {@link watchNotifications}. */
 export interface NotificationsOptions {
   /** Point-in-time accessor for the server's port; `null` while no server is running. */
@@ -106,6 +124,15 @@ export function watchNotifications(options: NotificationsOptions): Notifications
    * an arrival and its resolution cannot name one condition two ways.
    */
   const shownStanding = new Map<string, NativeNotificationHandle>();
+  /**
+   * Self-retirement timers for standing conditions that expire without anybody
+   * acting, by subject key. Expiry is the one ending the server never announces
+   * (see `StandingPendingEvent.expiresAt`), so an approval that runs out of time
+   * with no agent retry and no operator click would otherwise leave its banner
+   * up forever. Cleared when `standing_resolved` arrives first, or when the
+   * timer itself retires the banner.
+   */
+  const standingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /**
    * Activity banners, by notification id. `null` means the id was seen and
    * deliberately not shown (already read, or its tier didn't earn one) — kept
@@ -188,13 +215,54 @@ export function watchNotifications(options: NotificationsOptions): Notifications
       onClick: () => options.focusAndNavigate(event.deepLink),
     });
     trackWithCap(shownStanding, event.subjectKey, handle);
+    armStandingExpiry(event.subjectKey, event.expiresAt);
+  }
+
+  /**
+   * Retire a standing banner, from whichever ending reaches it first — a
+   * `standing_resolved` event or its own expiry deadline. Idempotent: a timer
+   * that fired and a resolution that arrived after it both land here, and the
+   * second is a no-op.
+   */
+  function retireStanding(subjectKey: string): void {
+    shownStanding.get(subjectKey)?.close();
+    shownStanding.delete(subjectKey);
+    const timer = standingExpiryTimers.get(subjectKey);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      standingExpiryTimers.delete(subjectKey);
+    }
+  }
+
+  /**
+   * Arm the self-retirement timer for a condition that expires with nobody
+   * acting. Only `approval.pending` carries an `expiresAt`; a parked schedule
+   * has none and relies on `standing_resolved` alone, which it always sends.
+   *
+   * A deadline already past retires immediately; one further out than the
+   * platform's timer ceiling is left to `standing_resolved` rather than mis-armed
+   * to fire at once.
+   */
+  function armStandingExpiry(subjectKey: string, expiresAt: string | undefined): void {
+    if (!expiresAt) return;
+    const deadline = Date.parse(expiresAt);
+    if (Number.isNaN(deadline)) return;
+    const delay = deadline + EXPIRY_SLACK_MS - Date.now();
+    if (delay <= 0) {
+      retireStanding(subjectKey);
+      return;
+    }
+    if (delay > MAX_EXPIRY_TIMEOUT_MS) return;
+    const timer = setTimeout(() => retireStanding(subjectKey), delay);
+    // Never let a pending banner timer keep the process alive.
+    timer.unref?.();
+    standingExpiryTimers.set(subjectKey, timer);
   }
 
   function handleStandingResolved(data: string): void {
     const subjectKey = parseStandingResolvedKey(data);
     if (!subjectKey) return;
-    shownStanding.get(subjectKey)?.close();
-    shownStanding.delete(subjectKey);
+    retireStanding(subjectKey);
   }
 
   function handleNotificationUpsert(data: string): void {
@@ -284,6 +352,8 @@ export function watchNotifications(options: NotificationsOptions): Notifications
       subscription.unsubscribe();
       shownAsks.clear();
       shownStanding.clear();
+      for (const timer of standingExpiryTimers.values()) clearTimeout(timer);
+      standingExpiryTimers.clear();
       shownDtos.clear();
     },
   };
@@ -349,7 +419,7 @@ function parseInteractionResolvedId(data: string): string | null {
 function parseStandingPending(data: string): StandingPendingEvent | null {
   const payload = parseEventPayload(data);
   if (!payload) return null;
-  const { kind, subjectKey, tier, title, body, deepLink, since } = payload;
+  const { kind, subjectKey, tier, title, body, deepLink, since, expiresAt } = payload;
   if (typeof kind !== 'string' || typeof subjectKey !== 'string' || subjectKey.length === 0) {
     return null;
   }
@@ -365,6 +435,11 @@ function parseStandingPending(data: string): StandingPendingEvent | null {
     ...(body ? { body } : {}),
     deepLink,
     since: typeof since === 'string' ? since : '',
+    // Carried through so the bridge can arm its own retirement timer for a
+    // condition that expires without anybody acting. A non-string is dropped
+    // rather than passed on — `armStandingExpiry` would `Date.parse` it to
+    // `NaN` and skip it anyway, but failing closed here keeps the shape honest.
+    ...(typeof expiresAt === 'string' ? { expiresAt } : {}),
   } as StandingPendingEvent;
 }
 

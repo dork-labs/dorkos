@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(desktop,server): schedule and capability approvals reach the desktop banner and your phone (DOR-1570)'
+  - 'fix(desktop,shared): retire an expired approval banner on the desktop, even when nobody acts (DOR-1570 review)'
 ---
 
 ### Added
