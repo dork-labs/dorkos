@@ -241,6 +241,35 @@ describe('shapes router', () => {
     expect(res.body.error).toMatch(/kebab-case slug/);
   });
 
+  // The route's LAST catch arm: `forkShape` re-validates the manifest it built
+  // through the marketplace union, and a `ZodError` escaping that is a bad
+  // request, not a 500. Reaching it needs a name the two kebab-case gates in
+  // front of it accept and the manifest's own `SkillNameSchema` does not — the
+  // gap the belt exists for. `SHAPE_NAME_RE` (route) and `SLUG_RE` (fork
+  // service) are both `/^[a-z][a-z0-9-]*$/`, which caps nothing and allows a
+  // doubled hyphen; `SkillNameSchema` caps at 64 and refuses `--`.
+  describe('a forked manifest the union refuses (400, not 500)', () => {
+    it.each([
+      ['a doubled hyphen', 'my--ops'],
+      ['a name past the 64-character cap', 'a'.repeat(65)],
+    ])('answers 400 for %s', async (_label, as) => {
+      const { app } = await buildApp();
+      const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/^Forked manifest failed validation:/);
+    });
+
+    it('leaves nothing behind on disk when it refuses', async () => {
+      // The re-validate runs BEFORE the install transaction stages anything, so
+      // a refused fork is zero-residue — `linear-ops` is still the only Shape.
+      const { app, dorkHome } = await buildApp();
+      await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'my--ops' });
+
+      expect(await readdir(path.join(dorkHome, 'shapes'))).toEqual(['linear-ops']);
+    });
+  });
+
   describe('path traversal via :name (security)', () => {
     // Express URL-decodes route params, so `..%2F..%2Fsecret` reaches the
     // handler as `../../secret` — which, joined into `{dorkHome}/shapes/<name>`,

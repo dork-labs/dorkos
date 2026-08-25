@@ -22,9 +22,9 @@ import { DurationSchema } from '../duration.js';
 import { slugify, validateSlug } from '../slug.js';
 
 describe('task name drift — UpdateTaskRequest.name (@dorkos/shared) vs the SKILL.md name rule', () => {
-  // `UpdateTaskRequest.name` is an inlined mirror of `SkillNameSchema` (the zod
-  // v3/v4 boundary forbids composing the schema itself, and shared cannot import
-  // skills without a cycle). A task write must never accept a `name` the frontmatter
+  // `UpdateTaskRequest.name` is an inlined mirror of `SkillNameSchema`, because
+  // `@dorkos/skills` depends on `@dorkos/shared` and shared cannot import it
+  // back without a cycle. A task write must never accept a `name` the frontmatter
   // would reject: the row's name is written straight into the SKILL.md AND read back
   // to an unattended run's system prompt (`Job: ${task.name}`), so a name the file
   // rejects both wedges file-sync and, before this rule, smuggled a multiline
@@ -74,8 +74,8 @@ describe('request-vs-frontmatter drift — the fields POST /api/tasks writes int
   // stage-2 review).
   //
   // Both paths clamp now, so this is the second layer. It lives HERE, in the
-  // package that owns the frontmatter, because shared cannot import this one —
-  // skills depends on shared, and the two are on different major zod versions.
+  // package that owns the frontmatter, because shared cannot import this one:
+  // skills depends on shared, so the arrow only points one way.
   // Derived from both sides rather than restating today's values, so it still
   // fires the day either side moves.
   //

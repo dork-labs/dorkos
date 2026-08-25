@@ -59,7 +59,7 @@
   },
   "dependencies": {
     "@dorkos/skills": "workspace:*",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

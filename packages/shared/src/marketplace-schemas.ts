@@ -752,7 +752,7 @@ export interface InstalledShapeSummary {
 /**
  * Response body for `POST /api/shapes/:name/fork` — the browser-safe view of the
  * server's `ForkShapeResult`. The forked `manifest` rides along opaquely: no
- * client surface reads it, and typing it here would drag the Zod-3
+ * client surface reads it, and typing it here would drag the
  * `@dorkos/marketplace` manifest union into the browser bundle.
  */
 export interface ForkShapeResult {

@@ -39,11 +39,10 @@ import { firstVar, jsonResourceContents, resourceNotFound } from './resource-hel
 /**
  * `dorkos://skills` list-entry shape — frontmatter summary only, no body text.
  *
- * `@dorkos/skills` is pinned to zod 3.x while this server is on zod 4.x
- * (two majors coexist in the workspace); `SkillFrontmatterSchema` itself
- * cannot be composed into a v4 `z.object()` field. This wrapper schema only
- * covers plain primitives derived from an already-validated
- * {@link SkillFrontmatter}, so it stays v4-native and reuse-safe.
+ * Deliberately a summary, not `SkillFrontmatterSchema`: a list entry carries
+ * the three fields a caller needs to pick a skill, and nothing else. The full
+ * frontmatter is what `dorkos://skills/{name}` is for. These are plain
+ * primitives derived from an already-validated {@link SkillFrontmatter}.
  */
 const SkillSummarySchema = z.object({
   name: z.string(),
