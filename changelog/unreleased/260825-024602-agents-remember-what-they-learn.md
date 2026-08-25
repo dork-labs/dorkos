@@ -9,6 +9,7 @@ covers:
   - 'feat(server): ship memory_write, with provenance the model cannot forge (DOR-632)'
   - 'feat(server): measure what each context block costs, at the shared builder (DOR-632)'
   - 'fix(server,memory,shared): wave-2 review fixes (DOR-632)'
+  - 'fix(evals): the memory probes cannot lie about what they tested (DOR-632)'
 ---
 
 ### Added
