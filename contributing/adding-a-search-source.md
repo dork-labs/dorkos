@@ -57,7 +57,7 @@ A source is a plain record, never a class. Every mechanism's row carries the sam
 | M2 only     | `listContainers(db)`, `readSince(db, …)` | Discovery and change detection fold into one query — the container list carries each container's current high-water ordinal.                                                                                                    |
 | M3 only     | `open()`                                 | Copies the store, opens the copy read-only, hands back a `ContainerReader` the sweep must `close()`.                                                                                                                            |
 
-**Build the row from a factory that takes its roots as a parameter.** Every shipped source does (`createClaudeCodeSource`, `createCodexSource`, `createOpenCodeSource`), for one reason: a test must be able to point the source at a fixture tree instead of at the operator's real history. The exported constant then binds the real resolver.
+**Build the row from a factory that takes its roots as a parameter.** Every shipped source that reads a root does (`createClaudeCodeSource`, `createCodexSource`, `createOpenCodeSource`), for one reason: a test must be able to point the source at a fixture tree instead of at the operator's real history. The exported constant then binds the real resolver.
 
 **Resolve roots at the start of every sweep, never at module load.** An operator who registers an account or changes `$CODEX_HOME` mid-session must be indexed on the next tick rather than after a restart.
 
@@ -114,7 +114,7 @@ If you are reading a store you do not own, copy this pattern rather than writing
 
 ## The Access Model
 
-**A new source is owner-only session history until somebody decides otherwise, and that decision lives in one function**: `buildScopes()` in `search-service.ts`. It knows exactly one source by name — `rooms`, which is member-scoped at or after each member's `joinedSeq` — and every other registered source is reached only when `scope.sessions` is true, which is the operator alone.
+**A new source is owner-only session history until somebody decides otherwise, and that decision lives in one function**: `buildScopes()` in `search-service.ts`. It knows exactly one source by name — `rooms`, which is member-scoped above each member's `joinedSeq` — and every other registered source is reached only when `scope.sessions` is true, which is the operator alone.
 
 So a new registry row is invisible to agents on the day it lands rather than on the day somebody remembers. That is the direction a default has to fail in, and it is the reason `buildScopes` iterates `SEARCH_SOURCES` instead of listing sources.
 
@@ -229,26 +229,36 @@ export function projectJournalLines(
  * lossy and cannot be inverted, so a source that has no head record answers
  * `null` rather than guessing — and `null` is a supported answer.
  *
+ * **The `open` is INSIDE the try.** A file can vanish between `readdir` and this
+ * call — log rotation, a runtime's own cleanup — and an `open` outside the guard
+ * rejects `discover()` for the whole source, which the sweep turns into zero
+ * rows, no prune and no `last_error` for that tick.
+ *
  * @param filePath - The journal file to peek at.
  * @returns The recorded working directory, or `null`.
  */
 async function readJournalCwd(filePath: string): Promise<string | null> {
-  const handle = await fs.open(filePath, 'r');
   try {
-    // The head, not the file. A discovery pass that read whole transcripts to
-    // classify them would cost megabytes every five minutes.
-    const buffer = Buffer.alloc(4096);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    const head = buffer.subarray(0, bytesRead).toString('utf8').split('\n')[0] ?? '';
-    const parsed: unknown = JSON.parse(head);
-    if (parsed === null || typeof parsed !== 'object') return null;
-    const cwd = (parsed as { cwd?: unknown }).cwd;
-    return typeof cwd === 'string' ? cwd : null;
+    const handle = await fs.open(filePath, 'r');
+    try {
+      // The head, not the file. A discovery pass that read whole transcripts to
+      // classify them would cost megabytes every five minutes.
+      const buffer = Buffer.alloc(4096);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const head = buffer.subarray(0, bytesRead).toString('utf8').split('\n')[0] ?? '';
+      const parsed: unknown = JSON.parse(head);
+      if (parsed === null || typeof parsed !== 'object') return null;
+      const cwd = (parsed as { cwd?: unknown }).cwd;
+      // Non-empty, matching the shipped readers: an empty string is not a
+      // directory, and storing one would make a hit claim to open somewhere.
+      return typeof cwd === 'string' && cwd !== '' ? cwd : null;
+    } finally {
+      await handle.close();
+    }
   } catch {
-    // A file with no readable head still indexes; it just opens nowhere.
+    // A file that vanished, or one with no readable head, still costs the sweep
+    // nothing: it simply opens nowhere.
     return null;
-  } finally {
-    await handle.close();
   }
 }
 ```
@@ -297,7 +307,18 @@ export async function discoverJournalFiles(
       if (!entry.endsWith('.jsonl')) continue;
       const filePath = path.join(root, entry);
       const originKey = entry.slice(0, -'.jsonl'.length);
-      const stat = await fs.stat(filePath);
+
+      // **A file can vanish between the readdir and this stat**, and letting
+      // that throw would abandon every remaining file in every remaining root.
+      // A vanished file is neither indexed nor reported: it is not a decision
+      // this source made, so it earns no `SkipReason` and no failure — the
+      // prune drops its rows because it is simply not in `files`.
+      let stat;
+      try {
+        stat = await fs.stat(filePath);
+      } catch {
+        continue;
+      }
 
       // This is the whole reason `known` is handed in: an unchanged file costs
       // one readdir entry and one stat, and no head read at all.
@@ -398,7 +419,7 @@ For a real source, add on top of that: a table-driven projection test (well-form
 
 The design named the arrival of a **third mechanism** as the trigger that would promote `SEARCH_SOURCES` from an array of records to a `SearchAdapter` port (spec §3, D12). That day came with OpenCode and M3.
 
-**The promotion was refused, on evidence rather than taste** — ADR `260825-110420`. The prediction behind the trigger was that a third mechanism would need a third copy of the frontier logic. It did not: M3 reuses M2's entire watermark implementation through a four-line `ContainerReader` seam and contributes one function of its own (`snapshot-frontier.ts`, about 40 lines). The resume rule, the shrink rebuild, the frontier write and the prune are shared, not duplicated. A port introduced there would abstract three mechanisms that already share their implementation, which is a class hierarchy standing where a record does.
+**The promotion was refused, on evidence rather than taste** — ADR `260825-110420`. The prediction behind the trigger was that a third mechanism would need a third copy of the frontier logic. It did not: M3 reuses M2's entire watermark implementation through a four-line `ContainerReader` seam and contributes one function of its own (`snapshot-frontier.ts` — one exported sweep function, ~50 lines of code). The resume rule, the shrink rebuild, the frontier write and the prune are shared, not duplicated. A port introduced there would abstract three mechanisms that already share their implementation, which is a class hierarchy standing where a record does.
 
 **The re-trigger is written down rather than left to taste. The promotion fires on either of:**
 
