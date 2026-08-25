@@ -30,6 +30,16 @@ const DEFAULT_PAGE_SIZE = 50;
 /** Maximum page size for {@link SqliteTaskStore.list}, per the A2A spec. */
 const MAX_PAGE_SIZE = 100;
 
+/**
+ * The `ServerCallContext.state` key naming the agent a request is bound to.
+ *
+ * Set by the per-agent Express endpoint (`/a2a/agents/:id`) and read by
+ * {@link SqliteTaskStore.list}. It is the only way the store can tell the two
+ * endpoints apart: the SDK hands it one `ListTasksRequest`, and that request
+ * has no field for "which agent did the caller address this to".
+ */
+export const BOUND_AGENT_STATE_KEY = 'dorkos.boundAgentId';
+
 /** Every A2A task state, paired with the string the `status` column stores. */
 const DB_STATUS_BY_STATE: ReadonlyMap<TaskState, DbStatus> = new Map([
   [TaskState.TASK_STATE_SUBMITTED, 'submitted'],
@@ -133,12 +143,21 @@ export class SqliteTaskStore implements TaskStore {
    * `contextId`, `status` and `statusTimestampAfter` are applied in SQL;
    * `pageToken` is the offset of the next row, as a decimal string.
    *
+   * One filter comes from the endpoint rather than the request: a call to
+   * `/a2a/agents/:id` is bound to that agent, and the listing is scoped to its
+   * tasks (see {@link BOUND_AGENT_STATE_KEY}). Everything else on that endpoint
+   * is about the one agent named in the URL, and a caller who asked about it
+   * has no business being handed every other agent's message history. The
+   * fleet endpoint carries no binding and still surveys the whole fleet.
+   *
    * @param params - Filtering and pagination parameters.
-   * @param _context - The call context; unused, see {@link SqliteTaskStore.load}.
+   * @param context - The call context. Read for the bound agent only; this
+   *   store is otherwise single-tenant, see {@link SqliteTaskStore.load}.
    */
-  async list(params: ListTasksRequest, _context: ServerCallContext): Promise<ListTasksResponse> {
+  async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
     const pageSize = clampPageSize(params.pageSize);
     const offset = parseOffset(params.pageToken);
+    const boundAgentId = readBoundAgentId(context);
 
     // `updatedAt` IS the status timestamp — `rowToTask` reads the task's
     // `status.timestamp` from this same column, so filtering on it answers the
@@ -146,6 +165,7 @@ export class SqliteTaskStore implements TaskStore {
     const after = normalizeTimestamp(params.statusTimestampAfter);
 
     const filters = [
+      boundAgentId !== undefined ? eq(a2aTasks.agentId, boundAgentId) : undefined,
       params.contextId.length > 0 ? eq(a2aTasks.contextId, params.contextId) : undefined,
       params.status !== undefined && params.status !== TaskState.TASK_STATE_UNSPECIFIED
         ? eq(a2aTasks.status, taskStateToDbStatus(params.status))
@@ -206,6 +226,18 @@ function normalizeTimestamp(value: string | undefined): string | undefined {
   if (value === undefined || value.length === 0) return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+/**
+ * Read the agent a request is bound to out of the call context.
+ *
+ * Absent on the fleet endpoint, which is what makes that listing fleet-wide.
+ *
+ * @param context - The call context the SDK built for this request.
+ */
+function readBoundAgentId(context: ServerCallContext): string | undefined {
+  const value = context.state.get(BOUND_AGENT_STATE_KEY);
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 /**

@@ -149,9 +149,9 @@ class ScriptedRelay {
 // Harness
 // ---------------------------------------------------------------------------
 
-function makeManifest(): AgentManifest {
+function makeManifest(id = 'agent-backend'): AgentManifest {
   return {
-    id: 'agent-backend',
+    id,
     name: 'backend-bot',
     description: 'Backend engineering agent',
     runtime: 'claude-code',
@@ -369,6 +369,132 @@ describe('A2A gateway over the v1.0 wire', () => {
       $case: 'text',
       value: 'Hello real client.',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ListTasks, on a fleet of two
+// ---------------------------------------------------------------------------
+
+/**
+ * `ListTasks` answers a different question at each endpoint.
+ *
+ * On `/a2a` it is a fleet-wide survey. On `/a2a/agents/:id` the agent is bound
+ * from the URL — everything else on that endpoint is about that one agent, and
+ * a listing that ignored the binding would hand a caller who asked about one
+ * agent every other agent's tasks, full message history included.
+ */
+describe('ListTasks scoping', () => {
+  let scopedServer: Server;
+  let scopedUrl: string;
+
+  /** A `ListTasks` response, as JSON. */
+  interface V1ListTasks {
+    tasks: V1Task[];
+    totalSize: number;
+  }
+
+  async function postTo(
+    path: string,
+    method: string,
+    params: unknown
+  ): Promise<Record<string, unknown>> {
+    const response = await fetch(`${scopedUrl}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
+    });
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  /** List tasks at `path`, failing loudly rather than asserting on an error body. */
+  async function listTasksAt(path: string): Promise<V1ListTasks> {
+    const body = await postTo(path, 'ListTasks', { tenant: '', contextId: '', pageToken: '' });
+    expect(body.error).toBeUndefined();
+    return body.result as unknown as V1ListTasks;
+  }
+
+  beforeEach(async () => {
+    const scopedRelay = new ScriptedRelay();
+    scopedRelay.chunks = ['Done.'];
+
+    const app = express();
+    await new Promise<void>((resolve) => {
+      scopedServer = app.listen(0, '127.0.0.1', () => resolve());
+    });
+    scopedUrl = `http://127.0.0.1:${(scopedServer.address() as AddressInfo).port}`;
+
+    const handlers = createA2aHandlers({
+      agentRegistry: makeRegistry([makeManifest('agent-backend'), makeManifest('agent-frontend')]),
+      relay: scopedRelay as unknown as RelayCore,
+      db: createTestDb(),
+      config: { baseUrl: scopedUrl, version: '0.0.0-test', authRequired: false },
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    });
+    app.post('/a2a/agents/:id', handlers.agentJsonRpc);
+    app.use('/a2a', handlers.jsonRpc);
+
+    // One finished task per agent, each on its own endpoint.
+    for (const agentId of ['agent-backend', 'agent-frontend']) {
+      const sent = await postTo(`/a2a/agents/${agentId}`, 'SendMessage', sendParams('Do a thing.'));
+      expect(sent.error).toBeUndefined();
+    }
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      scopedServer.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  it('returns only the bound agent’s tasks on the per-agent endpoint', async () => {
+    const listed = await listTasksAt('/a2a/agents/agent-backend');
+
+    expect(listed.tasks).toHaveLength(1);
+    expect(listed.tasks[0]!.metadata).toEqual(
+      expect.objectContaining({ agentId: 'agent-backend' })
+    );
+    // The count is scoped too — a total that counted the whole fleet would
+    // page a caller through tasks it is never shown.
+    expect(listed.totalSize).toBe(1);
+  });
+
+  it('scopes to whichever agent the URL names', async () => {
+    const listed = await listTasksAt('/a2a/agents/agent-frontend');
+
+    expect(listed.tasks).toHaveLength(1);
+    expect(listed.tasks[0]!.metadata).toEqual(
+      expect.objectContaining({ agentId: 'agent-frontend' })
+    );
+  });
+
+  it('returns every agent’s tasks on the fleet endpoint', async () => {
+    const listed = await listTasksAt('/a2a');
+
+    expect(listed.totalSize).toBe(2);
+    expect(listed.tasks.map((t) => t.metadata?.agentId).sort()).toEqual([
+      'agent-backend',
+      'agent-frontend',
+    ]);
+  });
+
+  it('ignores a bound-agent header a client sends itself', async () => {
+    // The binding travels on a header the handlers set, so the fleet endpoint
+    // has to strip whatever the caller sent — otherwise a scoping mechanism
+    // becomes a way to ask the fleet endpoint questions in someone's name.
+    const response = await fetch(`${scopedUrl}/a2a`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-dorkos-a2a-agent': 'agent-backend' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: ++rpcId,
+        method: 'ListTasks',
+        params: { tenant: '', contextId: '', pageToken: '' },
+      }),
+    });
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect((body.result as unknown as V1ListTasks).totalSize).toBe(2);
   });
 });
 
