@@ -93,18 +93,6 @@ describe('features catalog data integrity', () => {
     }
   });
 
-  it('featured features count is ≤6', () => {
-    const featuredCount = features.filter((f) => f.featured).length;
-    expect(featuredCount).toBeLessThanOrEqual(6);
-  });
-
-  it('features the intended six: DorkOS on Your Phone is in, Tool Approval is out', () => {
-    const featured = features.filter((f) => f.featured).map((f) => f.slug);
-    expect(featured).toHaveLength(6);
-    expect(featured).toContain('mobile');
-    expect(featured).not.toContain('tool-approval');
-  });
-
   it('covers every product tab', () => {
     const products = new Set(features.map((f) => f.product));
     const allProducts = Object.keys(PRODUCT_LABELS) as FeatureProduct[];

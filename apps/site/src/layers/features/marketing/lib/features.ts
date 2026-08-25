@@ -220,11 +220,6 @@ export interface Feature {
   /** Lifecycle stage — drives badge rendering and catalog filtering. */
   status: FeatureStatus;
   /**
-   * If true, this feature appears in the homepage FeatureCatalogSection.
-   * Maximum 6 featured features at any time.
-   */
-  featured?: boolean;
-  /**
    * 3-5 concrete capability statements, ≤12 words each.
    * Used in benefits bullets on feature pages and in JSON-LD featureList.
    */
@@ -266,7 +261,6 @@ export const features: Feature[] = [
     description:
       'Claude Code, Codex, and OpenCode are three different AI coding tools. DorkOS puts all three in one place, so you pick the right one for each job.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Run Claude Code, Codex, and OpenCode side by side',
       'Pick a different tool for each job, not just at setup',
@@ -371,7 +365,6 @@ export const features: Feature[] = [
     description:
       'Most tools give your phone a read-only view. DorkOS runs real sessions in any phone browser, so you can watch live and answer your agents on the go.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Watch sessions stream live from your phone',
       'Approve or say no to an agent action on the go',
@@ -398,7 +391,6 @@ export const features: Feature[] = [
     description:
       'Refresh the tab, swap to your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives the interruption.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Every message replays in the order it happened',
       'Refresh or reconnect with nothing lost',
@@ -744,7 +736,6 @@ export const features: Feature[] = [
     description:
       'Stop manually starting every agent run. Tasks lets you schedule any agent on any timetable, with a visual builder, ready-made presets, and a full history.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Build a schedule by picking days and times, no code needed',
       'Every schedule says which agent asked for it, and why',
@@ -796,7 +787,6 @@ export const features: Feature[] = [
     description:
       'Relay connects your agents to you and to each other. It routes messages to Telegram, Slack, and more, so no agent is working in silence.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Agents can message you, or message each other',
       'If an agent is offline, the message waits and delivers later',
@@ -906,7 +896,6 @@ export const features: Feature[] = [
     description:
       'Browse agents, plugins, and skills, then install them in one click or one command. What you find over coffee becomes something that actually runs.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Browse agents, plugins, skills, and connectors',
       'Install from the screen or straight from the command line',
@@ -1206,7 +1195,7 @@ export function deriveFeatureSpan(feature: Feature): FeatureSpanKind {
  * height (`items-stretch`), and each card keeps its capture in a fixed-aspect
  * `shrink-0` block so only the text column grows — a stretched tile packs flush
  * with its row-mates without ever zoom-cropping its media. Applied to the
- * grid-item wrapper so the same rules drive the catalog and the homepage section.
+ * grid-item wrapper so the same rules drive every catalog grid.
  */
 export const BENTO_SPAN_CLASS: Record<FeatureSpanKind, string> = {
   wide: 'sm:col-span-2 lg:col-span-2 lg:row-span-2',

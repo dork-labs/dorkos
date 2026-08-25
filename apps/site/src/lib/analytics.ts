@@ -183,11 +183,6 @@ export function trackClientError(
   });
 }
 
-/** Fires when a visitor reveals the plain-text contact email (IdentityClose). */
-export function trackContactEmailRevealed(): void {
-  capture('contact_email_revealed');
-}
-
 /** Whether PostHog currently has capture opted out. Defaults to `true` (opted out) when disabled. */
 export function hasOptedOutCapturing(): boolean {
   if (!analyticsEnabled) return true;

@@ -774,7 +774,7 @@ html[data-presentation-mode] header {
   transition: width 0.4s ease;
 }
 
-/* Cursor blink for terminal art (used in VillainSection -- included here for reuse) */
+/* Cursor blink for terminal art, shared by 404 and the hero test route */
 @keyframes tab-pulse-urgent {
   0%,
   100% {
