@@ -211,6 +211,17 @@ let logger: Logger;
 let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
 
 /**
+ * Let every pending microtask run.
+ *
+ * The executor defers a reply that races a cancel until the cancel's outcome
+ * is known, and that hand-off is promise work — no timer fires, so advancing
+ * the fake clock would not run it.
+ */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
+
+/**
  * Start a turn and let it get as far as having published and subscribed.
  *
  * `execute()` deliberately stays pending until the turn settles: A2A v1.0
@@ -934,6 +945,63 @@ describe('DorkOSAgentExecutor', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('1 of 2 turns did not acknowledge')
       );
+    });
+
+    it('keeps the answer that lands while a stop nobody takes is still in flight', async () => {
+      // The race, in order: the turn finishes and publishes its answer while
+      // the stop is still on the wire, and the stop then turns out to reach
+      // nobody. The cancel is withdrawn — so the answer is the only thing left
+      // that can settle this task, and dropping it strands the task on
+      // `working` with the reply discarded and no way to ask for it again.
+      const execBus = makeEventBus();
+      await startTurn(makeRequestContext({ taskId: 'task-race' }), execBus);
+
+      relay.publish.mockImplementation(async (subject: string) => {
+        if (!subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)) {
+          return { messageId: 'm', deliveredTo: 1 };
+        }
+        // Mid-stop: the agent was already finishing when the cancel went out.
+        subscribeHandler!(makeReplyEnvelope(textDelta('The answer.'), 'task-race'));
+        subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-race'));
+        return { messageId: 'm', deliveredTo: 0 };
+      });
+
+      await expect(executor.cancelTask('task-race', eventBus)).rejects.toThrow(/not cancelable/i);
+      await flushMicrotasks();
+
+      const completed = statusEvents(execBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
+      expect(completed).toHaveLength(1);
+      expect(statusText(completed[0]!)).toBe('The answer.');
+      expect(execBus.finished).toHaveBeenCalled();
+    });
+
+    it('drops a reply that lands while a stop a runner DID take is in flight', async () => {
+      // The mirror image of the test above: same race, opposite outcome. A
+      // runner took the stop, so the task really is cancelled and the
+      // half-finished reply must not resurrect it as `completed`.
+      const execBus = makeEventBus();
+      await startTurn(makeRequestContext({ taskId: 'task-race-stopped' }), execBus);
+
+      relay.publish.mockImplementation(async (subject: string) => {
+        if (!subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)) {
+          return { messageId: 'm', deliveredTo: 1 };
+        }
+        subscribeHandler!(makeReplyEnvelope(textDelta('Too late.'), 'task-race-stopped'));
+        subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-race-stopped'));
+        return { messageId: 'm', deliveredTo: 1 };
+      });
+
+      await executor.cancelTask('task-race-stopped', eventBus);
+      await flushMicrotasks();
+
+      expect(
+        statusEvents(execBus).filter((e) => e.status?.state === TaskState.TASK_STATE_COMPLETED)
+      ).toHaveLength(0);
+      expect(
+        statusEvents(eventBus).filter((e) => e.status?.state === TaskState.TASK_STATE_CANCELED)
+      ).toHaveLength(1);
     });
 
     it('refuses a cancel for a task it holds no turn for', async () => {

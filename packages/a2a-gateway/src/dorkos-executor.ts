@@ -216,6 +216,21 @@ export class DorkOSAgentExecutor implements AgentExecutor {
   private readonly canceledTasks = new Set<string>();
 
   /**
+   * Cancels that have gone out but whose outcome nobody knows yet.
+   *
+   * A stop is only a cancel once a runner takes it, and that answer arrives one
+   * round-trip later — so between the marker going up and the outcome coming
+   * back, a reply landing on the bus cannot be judged. It resolves `true` when
+   * a runner took the stop (the task really is cancelled and a late reply is
+   * discarded) and `false` when nothing did (the cancel is withdrawn, the turn
+   * was never stopped, and its reply is the only thing that can still settle
+   * the task). {@link DorkOSAgentExecutor.execute} waits on this rather than
+   * guessing, which is what stops a completed answer being thrown away by a
+   * cancel that turned out to be a no-op.
+   */
+  private readonly pendingCancels = new Map<string, Promise<boolean>>();
+
+  /**
    * The turns this gateway has in flight, per task.
    *
    * Keyed by task, then by reply subject, because a follow-up turn on a
@@ -354,14 +369,8 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       eventBus.finished();
     };
 
-    const unsubscribe = this.relay.subscribe(replySubject, (envelope: RelayEnvelope) => {
+    const handleReplyEvent = (envelope: RelayEnvelope) => {
       if (settled) return;
-
-      // Check for cancellation before processing response events
-      if (this.canceledTasks.has(taskId)) {
-        settle();
-        return;
-      }
 
       // Intermediate `working` progress updates are deliberately not emitted
       // per delta: the SDK persists the task on every status-update, which
@@ -388,6 +397,34 @@ export class DorkOSAgentExecutor implements AgentExecutor {
         case 'ignored':
           return;
       }
+    };
+
+    const unsubscribe = this.relay.subscribe(replySubject, (envelope: RelayEnvelope) => {
+      if (settled) return;
+
+      if (this.canceledTasks.has(taskId)) {
+        const cancelOutcome = this.pendingCancels.get(taskId);
+        if (!cancelOutcome) {
+          // The cancel is settled and took: this task is terminal, and a reply
+          // arriving after it cannot move it anywhere.
+          settle();
+          return;
+        }
+        // The stop is still on the wire. Hold this event until the cancel says
+        // whether it reached anyone — a stop nothing takes leaves the turn
+        // running, and this may be its answer. Deferred events replay in
+        // arrival order, because `then` callbacks queue in registration order.
+        void cancelOutcome.then((stopWasTaken) => {
+          if (stopWasTaken) {
+            settle();
+            return;
+          }
+          handleReplyEvent(envelope);
+        });
+        return;
+      }
+
+      handleReplyEvent(envelope);
     });
     cleanups.push(unsubscribe);
 
@@ -498,15 +535,47 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     // a turn that is ending publishes its own terminal error, and without the
     // marker that error would race this method and fail a task the caller
     // successfully cancelled.
+    //
+    // The marker alone is not enough, though, because it says "a cancel is
+    // happening" and not yet "the cancel took". A reply landing while the stop
+    // is on the wire used to be dropped on the marker alone, and when the stop
+    // then reached nobody the answer was gone and the task sat on `working`
+    // forever. So the outcome is published too, and a racing reply waits for
+    // it (see {@link DorkOSAgentExecutor.pendingCancels}).
     this.canceledTasks.add(taskId);
+    let settleCancel!: (stopWasTaken: boolean) => void;
+    const cancelOutcome = new Promise<boolean>((resolve) => {
+      settleCancel = resolve;
+    });
+    this.pendingCancels.set(taskId, cancelOutcome);
+    // Every exit from here on has to answer the waiting replies — including
+    // the throw below and any unexpected error — or a deferred answer is held
+    // forever and `execute()` never resolves.
+    const finishCancel = (stopWasTaken: boolean) => {
+      if (this.pendingCancels.get(taskId) === cancelOutcome) {
+        this.pendingCancels.delete(taskId);
+      }
+      settleCancel(stopWasTaken);
+    };
 
-    const outcomes = await Promise.all(
-      turns.map((turn) => this.stopTurn(taskId, turn.replySubject, 'caller_canceled'))
-    );
+    let outcomes: StopOutcome[];
+    try {
+      outcomes = await Promise.all(
+        turns.map((turn) => this.stopTurn(taskId, turn.replySubject, 'caller_canceled'))
+      );
+    } catch (error: unknown) {
+      // `stopTurn` never throws, so this is a defensive path — but an
+      // unanswered cancel would hang the turn it raced, so it still answers.
+      this.canceledTasks.delete(taskId);
+      finishCancel(false);
+      throw error;
+    }
     const stopped = outcomes.filter((o) => o.deliveredTo > 0).length;
 
     if (stopped === 0) {
-      // The turn is still going, so it must still be able to finish the task.
+      // The turn is still going, so it must still be able to finish the task —
+      // including a reply that landed while this stop was in flight, which is
+      // released by `finishCancel(false)` below.
       this.canceledTasks.delete(taskId);
       // Every turn's reason, not just the first: an N-turn task that failed to
       // stop for N different reasons must not be described by whichever one
@@ -522,6 +591,10 @@ export class DorkOSAgentExecutor implements AgentExecutor {
         `[a2a] task ${taskId}: nothing acknowledged the stop for ${turns.length} turn(s) ` +
           `— they may still be running. ${why}`
       );
+      // Releases any reply that landed mid-stop: nothing was cancelled, so the
+      // turn's own answer still settles the task, exactly as it would have if
+      // this cancel had never been asked for.
+      finishCancel(false);
       throw new TaskNotCancelableError({ message: `Task not cancelable: ${taskId}` });
     }
 
@@ -534,6 +607,11 @@ export class DorkOSAgentExecutor implements AgentExecutor {
           'acknowledge the stop and may still be running'
       );
     }
+
+    // A runner took the stop, so the cancel stands: a reply that landed while
+    // it was in flight belongs to a turn being interrupted, and it is dropped
+    // rather than allowed to complete a task the caller cancelled.
+    finishCancel(true);
 
     // EVERY turn is settled, including a survivor nothing stopped — deliberately.
     // The task is terminal from this line on, so the survivor could never move
