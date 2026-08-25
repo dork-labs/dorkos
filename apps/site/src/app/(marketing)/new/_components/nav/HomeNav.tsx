@@ -16,6 +16,17 @@ const YIELD_AFTER_PX = 240;
 const BOTTOM_ZONE_PX = 200;
 
 /**
+ * How long a jump this pill started counts as the pill's own doing.
+ *
+ * A smooth scroll the length of this page takes about a second in Chrome and
+ * has no completion event to wait on, so the hold is a duration rather than a
+ * promise. Generous enough to cover the longest jump, short enough that the
+ * pill is back under the reader's control before they have finished looking at
+ * where it took them.
+ */
+const STEER_HOLD_MS = 1400;
+
+/**
  * The floating pill, forked from the shared `MarketingNav` for this page only.
  *
  * WHY A FORK. `MarketingNav` is a signpost to other pages, and every marketing
@@ -53,6 +64,21 @@ export function HomeNav() {
     menuOpenRef.current = menuOpen;
   }, [menuOpen]);
 
+  // The pill must survive its own steering.
+  //
+  // The shared nav's yield rule was written for a signpost on a page you read
+  // downward: scroll down, it gets out of the way. This pill is the page's
+  // steering wheel, and a jump it performs itself is a fast downward scroll,
+  // so the unmodified rule made the pill vanish the instant a visitor pressed
+  // anything on it — press "tutorials", arrive at the tutorials, and the thing
+  // you pressed is gone until you scroll back up. Measured in the browser, not
+  // reasoned about.
+  //
+  // So a press pins the pill for as long as the jump it started can still be
+  // running. The scroll events the jump emits are ignored; the first scroll
+  // the visitor makes with their own hand after it lands decides again.
+  const holdUntilRef = useRef(0);
+
   useEffect(() => {
     let lastScrollY = window.scrollY;
 
@@ -72,8 +98,11 @@ export function HomeNav() {
       // inside the pill blurs to <body>, which drops them back at the start of
       // the tab order. The next scroll after focus leaves settles it.
       const holdsFocus = navRef.current?.contains(document.activeElement) ?? false;
+      const steering = Date.now() < holdUntilRef.current;
 
-      setVisible(menuOpenRef.current || holdsFocus || nearTop || nearBottom || scrollingUp);
+      setVisible(
+        steering || menuOpenRef.current || holdsFocus || nearTop || nearBottom || scrollingUp
+      );
     }, 150);
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -88,6 +117,7 @@ export function HomeNav() {
   const scrollBehavior: ScrollBehavior = reduced ? 'auto' : 'smooth';
 
   const scrollToTop = () => {
+    holdUntilRef.current = Date.now() + STEER_HOLD_MS;
     window.scrollTo({ top: 0, behavior: scrollBehavior });
   };
 
@@ -95,6 +125,7 @@ export function HomeNav() {
     (id: string) => {
       const target = document.getElementById(id);
       if (!target) return;
+      holdUntilRef.current = Date.now() + STEER_HOLD_MS;
       target.scrollIntoView({ behavior: scrollBehavior, block: 'start' });
       // The page moves, so the reader's place has to move with it. Every
       // section carries tabIndex={-1} for exactly this: without it a keyboard

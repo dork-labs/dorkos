@@ -4,8 +4,10 @@ import { motion } from 'motion/react';
 import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
 import { Eyebrow } from '../Eyebrow';
 import { PANEL } from '../film-tokens';
+import { RailArrows } from './RailArrows';
 import { TutorialRail } from './TutorialRail';
 import type { TutorialRailConfig } from './tutorials';
+import { useRail } from './use-rail';
 
 /**
  * The band the rail sits in.
@@ -45,6 +47,10 @@ const BAND = {
  * @param config - The section's words, tiles and end card. See `tutorials.ts`.
  */
 export function TutorialsSection({ config }: { config: TutorialRailConfig }) {
+  // The row and the arrows that drive it are siblings in different places, so
+  // the shelf's state lives above both.
+  const shelf = useRail();
+
   return (
     <section
       id="tutorials"
@@ -66,28 +72,40 @@ export function TutorialsSection({ config }: { config: TutorialRailConfig }) {
         viewport={VIEWPORT}
         className="relative mx-auto max-w-6xl pt-20 pb-24 sm:pt-24 sm:pb-28"
       >
-        <div className="px-6">
-          <motion.div variants={REVEAL}>
-            <Eyebrow>{config.eyebrow}</Eyebrow>
+        <div className="flex items-end justify-between gap-8 px-6">
+          <div>
+            <motion.div variants={REVEAL}>
+              <Eyebrow>{config.eyebrow}</Eyebrow>
+            </motion.div>
+            <motion.h2
+              variants={REVEAL}
+              className="mt-3 text-[clamp(2rem,5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance"
+              style={{ color: BAND.text }}
+            >
+              {config.title}
+            </motion.h2>
+            <motion.p
+              variants={REVEAL}
+              className="mt-4 max-w-md text-base text-pretty sm:text-lg"
+              style={{ color: BAND.muted }}
+            >
+              {config.lede}
+            </motion.p>
+          </div>
+          <motion.div variants={REVEAL} className="shrink-0 pb-1">
+            <RailArrows atStart={shelf.atStart} atEnd={shelf.atEnd} onNudge={shelf.nudge} />
           </motion.div>
-          <motion.h2
-            variants={REVEAL}
-            className="mt-3 text-[clamp(2rem,5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance"
-            style={{ color: BAND.text }}
-          >
-            {config.title}
-          </motion.h2>
-          <motion.p
-            variants={REVEAL}
-            className="mt-4 max-w-md text-base text-pretty sm:text-lg"
-            style={{ color: BAND.muted }}
-          >
-            {config.lede}
-          </motion.p>
         </div>
 
         <motion.div variants={REVEAL} className="mt-10 sm:mt-12">
-          <TutorialRail config={config} />
+          <TutorialRail
+            config={config}
+            attachRail={shelf.attachRail}
+            handlers={shelf.railHandlers}
+            atStart={shelf.atStart}
+            atEnd={shelf.atEnd}
+            dragging={shelf.dragging}
+          />
         </motion.div>
       </motion.div>
 
