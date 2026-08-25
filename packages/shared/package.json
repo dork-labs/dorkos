@@ -101,6 +101,10 @@
       "types": "./src/community-adapter.ts",
       "default": "./dist/community-adapter.js"
     },
+    "./memory-provider": {
+      "types": "./src/memory-provider.ts",
+      "default": "./dist/memory-provider.js"
+    },
     "./permission-semantics": {
       "types": "./src/permission-semantics.ts",
       "default": "./dist/permission-semantics.js"

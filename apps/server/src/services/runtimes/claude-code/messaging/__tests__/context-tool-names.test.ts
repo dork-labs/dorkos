@@ -504,6 +504,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'seed-context-block.ts',
       'staged-context-block.ts',
       'ui-tool-contract.ts',
+      'untrusted-fence.ts',
     ]);
 
     const offenders: string[] = [];
