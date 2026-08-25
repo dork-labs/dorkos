@@ -25,7 +25,7 @@ import { withFileLock } from '@dorkos/shared/atomic-write';
 import { z } from 'zod';
 
 import { createPackage } from '@dorkos/marketplace/scaffolder';
-import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from '@dorkos/marketplace';
+import { MarketplaceCategorySchema, type MarketplaceCategory } from '@dorkos/marketplace';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
@@ -52,12 +52,10 @@ export const CreatePackageInputSchema = {
     .max(1024)
     .describe('Human-readable description written into the manifest'),
   author: z.string().optional().describe('Optional author name written into the manifest'),
-  // Built from the plain `MARKETPLACE_CATEGORIES` slug list (not
-  // `MarketplaceCategorySchema`) — `@dorkos/marketplace` pins Zod 3 while this
-  // server pins Zod 4, and wrapping a Zod-3 schema instance inside a Zod-4
-  // `z.array(...)` crashes at parse time (different internal `_zod` shapes).
+  // `MarketplaceCategorySchema` itself, so this tool and the manifest schema
+  // that ultimately validates the package can never accept different slugs.
   categories: z
-    .array(z.enum(MARKETPLACE_CATEGORIES))
+    .array(MarketplaceCategorySchema)
     .optional()
     .describe(
       'Controlled marketplace category slugs (e.g. ["dev-tools"]) — the first entry becomes the primary category. Omit to leave the package uncategorized for now.'

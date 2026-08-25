@@ -4147,9 +4147,8 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
  *
  * ## Mirrored by VALUE, on purpose
  *
- * `@dorkos/skills` holds the frontmatter schema, depends on this package, and is
- * still on zod v3 while this one is on v4 — so importing it here would be a
- * cycle AND a cross-version composition, the same boundary
+ * `@dorkos/skills` holds the frontmatter schema and depends on this package —
+ * so importing it here would be a dependency cycle, the same boundary
  * `TASK_PERMISSION_MODES` documents from the other side. The values are
  * therefore restated, and `packages/skills/src/__tests__/task-schema.test.ts`
  * asserts the two sides agree, so they cannot drift apart in silence.

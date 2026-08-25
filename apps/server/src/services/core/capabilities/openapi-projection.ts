@@ -7,10 +7,9 @@
  * `/api/docs` and the exported `docs/api/openapi.json`. The path is tagged by
  * the capability's domain, its request schema comes from the capability's Zod
  * `input` (query params for read methods, a JSON body for write methods), and
- * its response schema from the Zod `output`. Nothing is hand-mirrored: the
- * capability schemas are native Zod v4, which the repo's zod-to-openapi v8
- * consumes directly — the Zod-3 mirror caveats in `openapi-registry.ts` apply
- * only to the Zod-3 `@dorkos/marketplace` schemas, never to these.
+ * its response schema from the Zod `output`. Nothing is hand-mirrored: a
+ * capability's own schemas go straight onto the registry, so the `Local*Schema`
+ * documentation shapes in `openapi-registry.ts` have no counterpart here.
  *
  * ## No duplicate paths
  *

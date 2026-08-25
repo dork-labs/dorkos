@@ -7,9 +7,9 @@
  * in `@dorkos/shared`, `ScheduleBlockSchema` in `@dorkos/skills`. A cron cannot
  * join them, because the only honest judge of "can this be scheduled?" is the
  * library that will schedule it, and `croner` is a SERVER dependency. Neither
- * package may take it on: `@dorkos/shared` is bundled into the browser client and
- * keeps its dependency list to three, and `@dorkos/skills` is on zod v3 across a
- * version boundary that already forbids composing the two packages' schemas.
+ * package may take it on: both `@dorkos/shared` and `@dorkos/skills` reach the
+ * browser client through the barrel, and both keep their dependency lists
+ * deliberately short.
  *
  * Writing our own cron grammar instead would be worse than either: a second
  * acceptance set that agrees with croner today and drifts the first time croner
