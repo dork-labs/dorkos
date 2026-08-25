@@ -36,7 +36,12 @@ const TUTORIAL_COPY: string[] = [
   TUTORIALS.title,
   TUTORIALS.lede,
   TUTORIALS.pendingChip,
-  ...Object.values(TUTORIALS.endCard).filter((value) => !value.startsWith('/')),
+  // Every string the end card carries except its href. Swept by shape rather
+  // than named one at a time, so a word added to that tile cannot skip the
+  // voice and honesty gates below. Its picture is an object, not prose.
+  ...Object.values(TUTORIALS.endCard).filter(
+    (value): value is string => typeof value === 'string' && !value.startsWith('/')
+  ),
   ...TUTORIALS.cards.map((card) => card.title),
 ];
 
@@ -313,6 +318,31 @@ describe('the clips rail', () => {
     for (const still of stills) {
       expect(existsSync(join(PUBLIC_DIR ?? '', still)), still).toBe(true);
     }
+  });
+
+  it('closes the row on a picture, cut for the frame it sits in', () => {
+    // The last tile is a photograph now, not bare type. It is a 9:16 frame
+    // like every tile beside it, so a plate cut to some other shape would be
+    // cropped to nothing at one edge and nobody would see the crop in review.
+    const { plate } = TUTORIALS.endCard;
+    expect(existsSync(join(PUBLIC_DIR ?? '', plate.src)), plate.src).toBe(true);
+    const bytes = statSync(join(PUBLIC_DIR ?? '', plate.src)).size;
+    expect(bytes, `${plate.src} is ${Math.round(bytes / 1024)}KB`).toBeLessThan(300 * 1024);
+    expect(Math.abs(plate.width / plate.height - 9 / 16)).toBeLessThan(0.02);
+  });
+
+  it('says more is coming without saying when', () => {
+    // The tile promises footage that does not exist. A date on that promise is
+    // a date this page cannot keep, and the whole rail's honesty rests on the
+    // difference between "there will be more" and "there will be more in
+    // September".
+    const words = [TUTORIALS.endCard.title, TUTORIALS.endCard.lede, TUTORIALS.endCard.label].join(
+      ' '
+    );
+    expect(words).not.toMatch(/\b(20\d\d|q[1-4]|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\w*\b/i);
+    expect(words).not.toMatch(/\b(next|this)\s+(week|month|quarter|year)\b/i);
+    // And it sends anyone who wanted the rest to the thing that is written.
+    expect(TUTORIALS.endCard.href).toBe('/docs');
   });
 
   it('keeps the generated stills small enough to be background texture', () => {

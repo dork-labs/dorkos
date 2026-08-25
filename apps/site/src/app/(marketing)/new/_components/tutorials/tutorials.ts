@@ -52,8 +52,21 @@ export interface TutorialRailConfig {
   lede: string;
   /** What a card says in place of a run time when its clip is not shot yet. */
   pendingChip: string;
-  /** The tile that closes the rail. */
-  endCard: { title: string; lede: string; label: string; href: string };
+  /**
+   * The tile that closes the rail: its words, its destination, and the
+   * photograph it stands on.
+   *
+   * The picture is not optional. A rail whose last tile is bare type reads as
+   * a rail that ran out, and the whole job of this tile is to look like the
+   * next thing rather than the absence of one.
+   */
+  endCard: {
+    title: string;
+    lede: string;
+    label: string;
+    href: string;
+    plate: TutorialPlate;
+  };
   cards: readonly TutorialCardSpec[];
 }
 
@@ -82,10 +95,21 @@ export const TUTORIALS: TutorialRailConfig = {
   lede: 'One film is up. Short walkthroughs of each part are being made.',
   pendingChip: 'clip coming',
   endCard: {
-    title: 'More on the way.',
-    lede: 'The docs already cover all of it.',
-    label: 'read the docs',
+    // The tapes and the manual are the sibling retro page's words, brought
+    // over whole by the operator's call. They earn the period vocabulary the
+    // rest of this rail does not use, because the tile is a photograph of a
+    // shelf of VHS cassettes: the picture is what licenses the word, and a
+    // caption that called them clips would be arguing with its own frame.
+    title: 'More tapes coming.',
+    lede: 'The manual already covers all of it.',
+    label: 'read the manual',
     href: '/docs',
+    plate: {
+      src: '/retro/tape-shelf.jpg',
+      alt: 'A row of blank video cassettes standing on a shelf, one lying flat with an unwritten label.',
+      width: 511,
+      height: 916,
+    },
   },
   cards: [
     {
