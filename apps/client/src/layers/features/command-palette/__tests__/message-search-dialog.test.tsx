@@ -259,17 +259,20 @@ describe('what the box shows', () => {
   });
 
   it('says what went wrong when the search itself fails', async () => {
-    // The Obsidian embed's shape: its adapter rejects rather than answering
-    // emptily, because an empty list would say "your history holds no mention
-    // of this" about a word somebody knows they wrote.
+    // A failed search is drawn, never swallowed. Both transports reject rather
+    // than answering emptily when they cannot search at all — an empty list
+    // would say "your history holds no mention of this" about a word somebody
+    // knows they wrote, which is the one answer neither may give.
     vi.mocked(mockTransport.search).mockRejectedValue(
-      new Error('Searching your messages needs a DorkOS server')
+      new Error('Search needs a word of at least 2 letters to look for.')
     );
     open('port');
     await pastDebounce();
 
     await waitFor(() =>
-      expect(screen.getByText('Searching your messages needs a DorkOS server')).toBeInTheDocument()
+      expect(
+        screen.getByText('Search needs a word of at least 2 letters to look for.')
+      ).toBeInTheDocument()
     );
   });
 });

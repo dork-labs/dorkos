@@ -25,8 +25,12 @@
  * {@link searchForCaller}, which is what `GET /api/search` answers with. There is
  * exactly one search path over these rows, and neither caller is trusted with an
  * access rule: both are handed a scope somebody else resolved. Session rows are
- * owner-only and reachable by no agent (spec §7). The palette entry point is a
- * later task and calls the same route.
+ * owner-only and reachable by no agent (spec §7).
+ *
+ * {@link answerSearch} is everything the route decides ONCE THE CALLER IS KNOWN,
+ * so the two surfaces that answer a search share one decision: `GET /api/search`
+ * over HTTP, and {@link createEmbeddedSearch} in-process for the Obsidian embed,
+ * which has no server to ask (DOR-691).
  *
  * @module server/services/search
  */
@@ -37,7 +41,9 @@ export {
   type SweepResult,
 } from './indexer.js';
 export { searchMessages } from './query.js';
-export { searchForCaller } from './search-service.js';
+export { answerSearch } from './answer-search.js';
+export { searchForCaller, type SearchScope } from './search-service.js';
+export { createEmbeddedSearch, type EmbeddedSearch } from './embedded-search.js';
 export {
   SEARCH_SOURCES,
   claudeCodeSource,

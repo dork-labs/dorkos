@@ -27,7 +27,6 @@ import {
   mcpManagementStubs,
   teamStubs,
   profileStubs,
-  searchStubs,
 } from '../embedded-mode-stubs';
 import { createLocalReadCursorMethods } from './read-cursor-methods';
 
@@ -55,6 +54,5 @@ export function createEmbeddedStubMethods() {
     ...mcpManagementStubs,
     ...teamStubs,
     ...profileStubs,
-    ...searchStubs,
   };
 }

@@ -562,5 +562,6 @@ export function getRoomAuthors(): AuthorRegistry {
 export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export { toAuthorRef, type AuthorRecord } from './author-registry.js';
+export { resolveOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './limits/turn-budget.js';

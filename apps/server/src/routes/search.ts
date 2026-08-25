@@ -4,9 +4,22 @@
  *
  * One route, one envelope, no writes. It is thin by the route rule: it resolves
  * WHO is asking, asks the rooms domain what that caller may see, and hands both
- * to {@link searchForCaller}. Every access rule it enforces is one that already
+ * to {@link answerSearch}. Every access rule it enforces is one that already
  * exists somewhere else — this router owns none of them, which is what keeps the
  * answer here and the answer in a room identical.
+ *
+ * **What is left here is the caller, and only the caller.** Everything that
+ * happens once WHO is known — the schema refusal, the unknown-source refusal,
+ * the default limit, the ranked read — moved to {@link answerSearch} when the
+ * search service grew a second, HTTP-less caller (DOR-691). Two surfaces, one
+ * decision.
+ *
+ * **Identity is resolved BEFORE the query is read, and the order is deliberate.**
+ * It used to be the other way round, so a caller presenting an agent token this
+ * machine could not verify was told their query was malformed: a 400 describing
+ * the request of somebody who was never going to be answered either way. Now they
+ * get the 401, and nothing about what they asked for is echoed back. A caller
+ * this machine CAN identify still gets the 400 their query earned.
  *
  * ## Who gets what
  *
@@ -38,16 +51,11 @@
  */
 import { Router, type Request, type Response } from 'express';
 import type { Db } from '@dorkos/db';
-import {
-  SEARCH_DEFAULT_LIMIT,
-  SEARCH_MIN_QUERY_LENGTH,
-  SearchQuerySchema,
-} from '@dorkos/shared/search-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isOwnerRecord } from '../services/rooms/author-registry.js';
 import { getRoomService } from '../services/rooms/index.js';
-import { searchForCaller, SEARCH_SOURCES } from '../services/search/index.js';
+import { answerSearch } from '../services/search/index.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 
@@ -67,24 +75,6 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
   const router = Router();
 
   router.get('/', (req: Request, res: Response) => {
-    const parsed = SearchQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: refusalFor(parsed.error.issues[0]?.path[0]),
-        code: 'INVALID_SEARCH_QUERY',
-      });
-      return;
-    }
-
-    const { q, limit, source } = parsed.data;
-    if (source !== undefined && !SEARCH_SOURCES.some((registered) => registered.id === source)) {
-      res.status(400).json({
-        error: `There is nothing here called '${source}'. Searchable sources are: ${SEARCH_SOURCES.map((registered) => registered.id).join(', ')}.`,
-        code: 'UNKNOWN_SEARCH_SOURCE',
-      });
-      return;
-    }
-
     try {
       const rooms = getRoomService();
       const caller = resolveCaller(req, res);
@@ -104,50 +94,20 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
       const sessions =
         isOwnerRecord(caller, readOwnerAccount()?.id ?? null) && !presentsAgentIdentity(req, res);
 
-      res.json(
-        searchForCaller(
-          deps.db,
-          { rooms: rooms.searchScope(caller.id), sessions },
-          {
-            query: q,
-            limit: limit ?? SEARCH_DEFAULT_LIMIT,
-            ...(source !== undefined && { source }),
-          }
-        )
+      const answer = answerSearch(
+        deps.db,
+        { rooms: rooms.searchScope(caller.id), sessions },
+        req.query
       );
+      if (!answer.ok) {
+        res.status(answer.status).json({ error: answer.error, code: answer.code });
+        return;
+      }
+      res.json(answer.response);
     } catch (err) {
       sendRoomError(res, err, 'GET /api/search');
     }
   });
 
   return router;
-}
-
-/**
- * The sentence that says what was actually wrong with the request.
- *
- * Three fields can fail and they fail for unrelated reasons, so one message for
- * all of them tells two callers out of three something untrue — a `limit=0` is
- * not a query that was too short. The FIELD is read from Zod's own issue path
- * rather than re-derived by re-checking the input here, which would be a second
- * copy of the schema's rules.
- *
- * **It fails closed**: a path this function does not recognise — a field added to
- * the schema without a sentence added here — falls to the general answer rather
- * than to no answer, so the request is still refused.
- *
- * @param field - The first failing key, from `issues[0].path`.
- * @returns One plain sentence, for the 400 body.
- */
-function refusalFor(field: PropertyKey | undefined): string {
-  switch (field) {
-    case 'q':
-      return `Search needs a word of at least ${SEARCH_MIN_QUERY_LENGTH} letters to look for.`;
-    case 'limit':
-      return 'How many results you want has to be a whole number above zero.';
-    case 'source':
-      return 'The source to search has to be a name, not an empty value.';
-    default:
-      return 'That search request could not be read.';
-  }
 }

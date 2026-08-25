@@ -84,6 +84,7 @@ import {
 import { readOwnerAccount } from '../core/auth/index.js';
 import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
+import { resolveOperatorAuthor } from './operator-author.js';
 import { RoomError } from './room-errors.js';
 import { HISTORY_PAGE_MAX, type RoomService } from './room-service.js';
 
@@ -197,7 +198,7 @@ function callerAuthor(rooms: RoomService, context: CapabilityHandlerContext): Au
       'This DorkOS requires a login, and this call named nobody. Present an agent token or sign in.'
     );
   }
-  return owner ? registry.bindOwner(owner.id) : registry.localHuman();
+  return resolveOperatorAuthor(registry);
 }
 
 /**
