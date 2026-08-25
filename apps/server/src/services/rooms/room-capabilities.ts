@@ -569,6 +569,10 @@ export const roomsDomain: CapabilityDomain = {
         'and read that room back for the rest of it. ' +
         'You can only find messages from after you joined each room, and only rooms you belong ' +
         'to: a room you are not in has nothing to find. ' +
+        'It also searches rooms that have been archived, which the room list leaves out — ' +
+        'archiving a room ends the work, not your memory of it. ' +
+        'Matches are ranked across all your rooms together, so one busy room can fill a page; ' +
+        'ask for more, or search that room on its own, if the answer looks lopsided. ' +
         'Something said in the last few minutes may not be findable yet; read the room back ' +
         'instead for the recent end of a conversation. ' +
         'It does not search your own past sessions — only rooms.',

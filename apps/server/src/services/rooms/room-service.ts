@@ -2732,9 +2732,20 @@ export class RoomService {
    *
    * The scope is every membership, ARCHIVED ROOMS INCLUDED, because archiving a
    * room does not un-say what was said in it and does not revoke a member's
-   * history — it is exactly {@link RoomService.searchScope}'s non-owner branch,
-   * which is the shipped access model for `GET /api/search`. Listing is about
-   * where an agent can act now; searching is about what it may recall.
+   * history — it is the same rule {@link RoomService.searchScope} applies to a
+   * non-owner, which is the shipped access model for `GET /api/search`. Listing
+   * is about where an agent can act now; searching is about what it may recall.
+   *
+   * **It is NOT `searchScope`, and must never be refactored into it.** That
+   * method has an OWNER branch which answers `'all'`, and this one deliberately
+   * has none: a caller with no agent identity resolves to the person who owns
+   * the install (`callerAuthor`, the login-off default), so an owner branch here
+   * would turn one no-argument call from an ordinary coding session into a
+   * search of every room on the machine — the operator's own DMs and rooms their
+   * agents opened between themselves included. The two methods answer different
+   * questions and only look alike. `__tests__/member-rooms.test.ts` pins it on
+   * both verbs, because a defect seeded here is invisible to every case that
+   * drives an identified agent.
    *
    * ## What it does NOT reach
    *

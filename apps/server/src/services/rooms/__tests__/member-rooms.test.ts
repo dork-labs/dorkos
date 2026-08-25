@@ -53,6 +53,27 @@
  * What it guards is a row the index should never have returned; nothing in the
  * shipped code can produce one while the first floor is correct, which is the
  * point of it.
+ *
+ * ## The third seeded defect: the operator branch neither verb has
+ *
+ * `RoomService.searchScope` answers `'all'` for whoever owns the install, and
+ * both lookups here deliberately do NOT — a caller with no agent identity
+ * resolves to the owner on a login-off install, so an owner branch would make
+ * one no-argument call reach every room on the machine. Review found that
+ * invariant pinned for the LIST and not for the SEARCH: seeding
+ * `seesEveryRoom → a floor for every room` into `searchMemberRooms` left 1,491
+ * tests green, while the same seed on `listMemberRooms` reddened exactly one.
+ * The missing case is now here, and re-seeding it reds it verbatim:
+ *
+ * ```
+ * × SEARCHES the operator's memberships too, not every room on the machine
+ * AssertionError: expected [ { … "room": "#agents-only", "text": "a buzzard,
+ *   discussed by agents with nobody watching" } ] to deeply equal []
+ * ```
+ *
+ * Both operator cases drive the tool with NO identity on purpose. Every other
+ * case in this file presents one, and an identified agent cannot reach the
+ * branch at all — which is precisely why the gap survived.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { messages, rooms as roomsTable, searchSources, eq } from '@dorkos/db';
@@ -568,7 +589,11 @@ describe('search_member_rooms — the ordinary contracts', () => {
   it('matches word stems and not parts of words', async () => {
     // The honest limit, stated in the tool's own description and asserted here
     // so it stays true: `deploys` finds `deploy`, and `eploy` finds nothing.
-    expect((await searchAs(ANA_IDENTITY, 'deploys')).length).toBeGreaterThan(0);
+    //
+    // The count is the fixture's exact eight, not `> 0`. A stemmer that matched
+    // one note out of eight would satisfy a bound and be broken, and the two
+    // halves of this case would then disagree about how well it works.
+    expect(await searchAs(ANA_IDENTITY, 'deploys')).toHaveLength(8);
     expect(await searchAs(ANA_IDENTITY, 'eploy')).toEqual([]);
   });
 
@@ -587,7 +612,50 @@ describe('search_member_rooms — the ordinary contracts', () => {
   });
 
   it('answers an agent in no rooms with nothing, and asks the index nothing', async () => {
-    expect(await searchAs(BO_IDENTITY, 'deploy')).toEqual([]);
+    // "Returns nothing" and "never asked" are different claims, and an empty
+    // result cannot tell them apart — the title promised the second, so the
+    // index reader is spied rather than inferred. It matters beyond tidiness:
+    // an empty CONTAINER list is not the same predicate as no query at all, and
+    // a scope built from zero memberships that still reached the index would be
+    // one refactor away from `visibility: 'all'`.
+    const asked = vi.fn();
+    const spied = createRoomHarness({
+      agents,
+      runner: scriptedRunner(() => null),
+      findMessages: (query) => {
+        asked(query);
+        return [];
+      },
+    });
+    const spiedRegistry = composeRegistry([roomsDomain], {
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      roomDeps: { rooms: spied.service },
+    });
+    const search = (identity: AgentIdentity) =>
+      spiedRegistry.invoke(
+        'rooms.search_member_rooms',
+        { query: 'deploy', limit: 20 },
+        { identity, retryChannel: 'mcp-argument' }
+      ) as Promise<{ matches: ToolMatch[] }>;
+
+    spied.authors.resolveAgent('/agents/bo', 'Bo');
+    expect((await search(BO_IDENTITY)).matches).toEqual([]);
+    expect(asked, 'a caller in no rooms still reached the index').not.toHaveBeenCalled();
+
+    // The control that makes the assertion above mean something: the spy IS
+    // wired, and an agent that is in a room does reach it.
+    const room = spied.service.createRoom(
+      { kind: 'channel', title: 'anywhere', slug: 'anywhere', members: [], agentPaths: [] },
+      spied.human
+    );
+    spied.store.addMember({
+      roomId: room.id,
+      authorId: spied.authors.resolveAgent('/agents/ana', 'Ana').id,
+      responseMode: 'mention-only',
+      joinedAt: '2026-08-25T09:00:00.000Z',
+    });
+    await search(ANA_IDENTITY);
+    expect(asked).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -637,5 +705,39 @@ describe('who the two lookups act as', () => {
     // The control: that room exists, is not archived, and the owner CAN see it —
     // `listRooms` is the surface that hands it over, and it is a different verb.
     expect(service.listRooms(owner).map((room) => room.id)).toContain(theirs.id);
+  });
+
+  it('SEARCHES the operator’s memberships too, not every room on the machine', async () => {
+    // The same invariant as the case above, on the other verb — and it needed
+    // its own case. `searchMemberRooms` builds its scope from memberships with
+    // no owner branch at all, so an edit that "aligned" it with
+    // `RoomService.searchScope` (whose non-owner branch it otherwise mirrors,
+    // and whose OWNER branch is `'all'`) would widen an unidentified caller's
+    // search to every room on the machine, agent-to-agent DMs included. Every
+    // other case in this file drives an identified agent, so none of them would
+    // notice: the reviewer seeded exactly that defect and 1,491 tests stayed
+    // green.
+    installState.loginEnabled = false;
+    installState.ownerId = 'owner-account';
+    const owner = harness.setOwner('owner-account');
+    const theirs = channel('agents-only');
+    seat(theirs.id, ana);
+    seat(theirs.id, bo);
+    say(theirs.id, 'a buzzard, discussed by agents with nobody watching');
+    harness.store.removeMember(theirs.id, owner);
+    expect(harness.store.getMember(theirs.id, owner)).toBeNull();
+    await harness.indexMessages();
+
+    const found = (await registry.invoke(
+      'rooms.search_member_rooms',
+      { query: 'buzzard', limit: 20 },
+      { retryChannel: 'http-header' }
+    )) as { matches: ToolMatch[] };
+
+    expect(found.matches).toEqual([]);
+    // The positive control, over the same row and through a different code
+    // path: the message is indexed and the operator CAN find it — through
+    // `GET /api/search`, which is the surface that grants them every room.
+    expect(ownerFinds('buzzard').some((hit) => hit.startsWith(`rooms:${theirs.id}:`))).toBe(true);
   });
 });

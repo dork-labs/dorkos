@@ -155,12 +155,14 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     ...marketplaceDomain.capabilities,
     ...connectorDomain.capabilities,
     ...mcpDomain.capabilities,
-    // The rooms domain contributes NOTHING today, and is listed anyway. Its two
-    // reads are `observe` and deliberately withhold `readOnlyCarveOut`, because
-    // what they return is other people's messages; naming the domain here is what
-    // puts them under the drift guard, so a later edit that adds the flag has to
-    // move this set — and be argued for — rather than widening the tokenless
-    // surface in silence. A domain nobody lists is a domain nobody checks.
+    // The rooms domain contributes NOTHING today, and is listed anyway. All
+    // FOUR of its reads are `observe` and deliberately withhold
+    // `readOnlyCarveOut`, because what they return is other people's messages —
+    // or, for `list_member_rooms`, the shape of somebody's install; naming the
+    // domain here is what puts them under the drift guard, so a later edit that
+    // adds the flag has to move this set — and be argued for — rather than
+    // widening the tokenless surface in silence. A domain nobody lists is a
+    // domain nobody checks.
     ...roomsDomain.capabilities,
     ...capabilitiesDomain.capabilities,
   ]),
