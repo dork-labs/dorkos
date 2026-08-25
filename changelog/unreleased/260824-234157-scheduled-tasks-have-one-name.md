@@ -4,6 +4,7 @@ covers:
   - 'feat(server,shared,cli): the tasks MCP tools describe scheduled tasks (DOR-1490)'
   - 'docs: the scheduled-tasks guide follows the schedule: block (DOR-1490)'
   - 'fix(client,server,docs,e2e): one noun per object, on every renderer (DOR-1490)'
+  - 'fix(docs,server,e2e): review follow-ups — the retired word, and two stale assertions (DOR-1490)'
 ---
 
 ### Changed
