@@ -109,10 +109,11 @@ Rules inject context when Claude edits matching files (`paths:` frontmatter — 
 | `desktop.md`             | `apps/desktop/**`                                | Electron shell facts, packaging + native-module rebuilds       |
 | `dork-home.md`           | server + packages src                            | dorkHome parameter convention, no `os.homedir()`               |
 | `fsd-layers.md`          | `apps/client/src/layers/**`                      | FSD layer dependency rules, barrel imports                     |
+| `room-conduct.md`        | rooms services/UI, relay adapters, room schemas  | Agent etiquette in shared rooms; spec over ideation            |
 | `safe-defaults.md`       | config + manifest/task schemas, config-manager   | Absence is not consent; verdict + carryover registries         |
 | `server-structure.md`    | `apps/server/src/{services,routes}/**`           | Domain placement for new services, thin routes                 |
 | `site-marketing-copy.md` | marketing layer + `(marketing)` routes           | "one place" voice, DorkOS-is certainty, /compare conventions   |
-| `testing.md`             | `**/__tests__/**, **/*.test.ts(x)`               | Vitest patterns, mock Transport, FakeAgentRuntime              |
+| `testing.md`             | `**/__tests__/**, **/*.test.{ts,tsx}`            | Vitest patterns, mock Transport, FakeAgentRuntime              |
 | `user-facing-writing.md` | changelog, docs MDX, READMEs, marketing features | Plain-language pointer to `writing-for-humans` + 5 self-checks |
 
 ## Hooks (Event-Triggered)
@@ -204,7 +205,8 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
    paths: apps/server/src/**/*.ts, packages/*/src/**/*.ts
    ---
    ```
-2. Verify the globs match real files. Document in this README under Rules.
+2. Globs are picomatch: a bare `(…)` parses as an extglob group and silently never matches — `**/*.test.ts(x)` matches `.tsx` but not `.ts` (DOR-1559), and Next.js route groups like `(marketing)` need escaping: `\(marketing\)`. Spell alternates as `{ts,tsx}` or separate comma-entries.
+3. Verify the globs match real files. Document in this README under Rules.
 
 ### Adding a New Claude Hook
 
