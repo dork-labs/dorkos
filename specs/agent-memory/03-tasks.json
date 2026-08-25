@@ -29,9 +29,7 @@
       "size": "large",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": [
-        "1.2"
-      ],
+      "parallelWith": ["1.2"],
       "issue": null,
       "parentIssue": null
     },
@@ -45,9 +43,7 @@
       "size": "medium",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": [
-        "1.1"
-      ],
+      "parallelWith": ["1.1"],
       "issue": null,
       "parentIssue": null
     },
@@ -60,12 +56,8 @@
       "activeForm": "Registering MEMORY.md as a convention file",
       "size": "medium",
       "priority": "high",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": [
-        "1.2"
-      ],
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2"],
       "issue": null,
       "parentIssue": null
     },
@@ -78,10 +70,7 @@
       "activeForm": "Injecting the fenced agent_memory block and excluding it from the relaunch digest",
       "size": "large",
       "priority": "high",
-      "dependencies": [
-        "1.1",
-        "1.2"
-      ],
+      "dependencies": ["1.1", "1.2"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -95,10 +84,7 @@
       "activeForm": "Shipping the memory_write tool with handler-written provenance",
       "size": "medium",
       "priority": "high",
-      "dependencies": [
-        "1.1",
-        "1.3"
-      ],
+      "dependencies": ["1.1", "1.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -112,12 +98,8 @@
       "activeForm": "Measuring each context block at the shared builder",
       "size": "small",
       "priority": "medium",
-      "dependencies": [
-        "1.4"
-      ],
-      "parallelWith": [
-        "1.7"
-      ],
+      "dependencies": ["1.4"],
+      "parallelWith": ["1.7"],
       "issue": null,
       "parentIssue": null
     },
@@ -130,13 +112,8 @@
       "activeForm": "Pinning the prompt boundary with tests that can fail",
       "size": "medium",
       "priority": "high",
-      "dependencies": [
-        "1.4",
-        "1.5"
-      ],
-      "parallelWith": [
-        "1.6"
-      ],
+      "dependencies": ["1.4", "1.5"],
+      "parallelWith": ["1.6"],
       "issue": null,
       "parentIssue": null
     },
@@ -149,13 +126,8 @@
       "activeForm": "Making the profile surfaces honest about memory",
       "size": "medium",
       "priority": "medium",
-      "dependencies": [
-        "1.4"
-      ],
-      "parallelWith": [
-        "1.9",
-        "1.10"
-      ],
+      "dependencies": ["1.4"],
+      "parallelWith": ["1.9", "1.10"],
       "issue": null,
       "parentIssue": null
     },
@@ -168,13 +140,8 @@
       "activeForm": "Writing the Agent memory guide and the changelog fragment",
       "size": "small",
       "priority": "medium",
-      "dependencies": [
-        "1.5"
-      ],
-      "parallelWith": [
-        "1.8",
-        "1.10"
-      ],
+      "dependencies": ["1.5"],
+      "parallelWith": ["1.8", "1.10"],
       "issue": null,
       "parentIssue": null
     },
@@ -187,14 +154,8 @@
       "activeForm": "Landing the X-09, X-12 and X-11b memory evals",
       "size": "large",
       "priority": "medium",
-      "dependencies": [
-        "1.5",
-        "1.7"
-      ],
-      "parallelWith": [
-        "1.8",
-        "1.9"
-      ],
+      "dependencies": ["1.5", "1.7"],
+      "parallelWith": ["1.8", "1.9"],
       "issue": null,
       "parentIssue": null
     },
@@ -207,13 +168,8 @@
       "activeForm": "Building list_member_rooms and search_member_rooms with per-room floors",
       "size": "xl",
       "priority": "medium",
-      "dependencies": [
-        "1.5",
-        "DOR-684"
-      ],
-      "parallelWith": [
-        "3.1"
-      ],
+      "dependencies": ["1.5", "DOR-684"],
+      "parallelWith": ["3.1"],
       "issue": "DOR-1532",
       "parentIssue": "DOR-632"
     },
@@ -226,13 +182,8 @@
       "activeForm": "Making memory swappable behind a conformance-gated port",
       "size": "xl",
       "priority": "low",
-      "dependencies": [
-        "1.1",
-        "1.4"
-      ],
-      "parallelWith": [
-        "2.1"
-      ],
+      "dependencies": ["1.1", "1.4"],
+      "parallelWith": ["2.1"],
       "issue": "DOR-1533",
       "parentIssue": "DOR-632"
     }
