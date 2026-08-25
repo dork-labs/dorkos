@@ -83,6 +83,16 @@ DORK_HOME=$(mktemp -d) node packages/cli/dist/bin/cli.js auth enable --email you
 
 `auth enable` must exit 0 and the integration test's sign-up → sign-in → `get-session` chain must pass; that chain is what 1.7.1 broke.
 
+### `@a2a-js/sdk` — pinned exact at 1.0.1 (DOR-1549)
+
+`packages/a2a-gateway` declares `@a2a-js/sdk` exactly — `"1.0.1"`, no caret. Protocol SDK, and 1.0 is a ground-up rewrite: a pinned version here is a verified claim about what goes on the wire, not a range (DOR-1549, PR #1293).
+
+The A2A gateway does not merely call this SDK — it **is** the SDK's wire behavior: the protobuf-derived types the cards serialize through, the v0.3 compat layer that keeps older peers working, and the request handler every external agent talks to. All of it moved wholesale in 1.0, so a caret would take an unreviewed patch of a brand-new implementation directly into the protocol DorkOS speaks to other people's agents, and the first sign of trouble would be a peer that stopped understanding us.
+
+Runtime SDKs are pinned for the same reason and bumped by the same discipline — `contributing/adding-a-runtime.md`, "Bumping a pinned SDK": confirm the target is a stable release, diff the types the adapter imports, recompile, run the suites.
+
+**Drop condition:** none. This is not a workaround waiting on an upstream fix. Revisit it at the next deliberate SDK bump, which re-verifies the claim and moves the pin.
+
 ## Before you add one
 
 1. **Bump the direct dependency first.** An override is what you reach for when no reachable direct bump clears the finding.

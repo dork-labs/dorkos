@@ -19,7 +19,7 @@
 import { TaskState, type Task } from '@a2a-js/sdk';
 import type { ListTasksRequest, ListTasksResponse } from '@a2a-js/sdk';
 import type { ServerCallContext, TaskStore } from '@a2a-js/sdk/server';
-import { and, eq, gte, a2aTasks, type Db } from '@dorkos/db';
+import { and, count, desc, eq, gte, a2aTasks, type Db } from '@dorkos/db';
 
 /** The status values accepted by the a2a_tasks Drizzle column. */
 type DbStatus = typeof a2aTasks.$inferInsert.status;
@@ -29,6 +29,16 @@ const DEFAULT_PAGE_SIZE = 50;
 
 /** Maximum page size for {@link SqliteTaskStore.list}, per the A2A spec. */
 const MAX_PAGE_SIZE = 100;
+
+/**
+ * The `ServerCallContext.state` key naming the agent a request is bound to.
+ *
+ * Set by the per-agent Express endpoint (`/a2a/agents/:id`) and read by
+ * {@link SqliteTaskStore.list}. It is the only way the store can tell the two
+ * endpoints apart: the SDK hands it one `ListTasksRequest`, and that request
+ * has no field for "which agent did the caller address this to".
+ */
+export const BOUND_AGENT_STATE_KEY = 'dorkos.boundAgentId';
 
 /** Every A2A task state, paired with the string the `status` column stores. */
 const DB_STATUS_BY_STATE: ReadonlyMap<TaskState, DbStatus> = new Map([
@@ -75,13 +85,33 @@ export class SqliteTaskStore implements TaskStore {
   /**
    * Load a task by ID, returning `undefined` if not found.
    *
+   * A call to `/a2a/agents/:id` is bound to that agent, and a task belonging to
+   * a different one reads as not found — the same scope {@link SqliteTaskStore.list}
+   * applies, for the same reason. A boundary that holds for a listing and not
+   * for a lookup by id is not a boundary at all: the listing would only be
+   * hiding ids a caller could ask for directly. The SDK turns the miss into the
+   * protocol's own `TaskNotFound`, so `GetTask` and `CancelTask` both answer it
+   * correctly, and a follow-up message naming another agent's task is refused
+   * rather than appended to that task while running on this one.
+   *
+   * The store is otherwise single-tenant: one operator's own SQLite file, no
+   * owner to scope by, and the fleet endpoint carries no binding at all.
+   *
    * @param taskId - The task to load.
-   * @param _context - The call context. Unused: this store is single-tenant,
-   *   backed by one operator's own SQLite file, so there is no tenant or owner
-   *   to scope by — every caller of this gateway sees the same tasks.
+   * @param context - The call context, read for the bound agent (see
+   *   {@link BOUND_AGENT_STATE_KEY}).
    */
-  async load(taskId: string, _context: ServerCallContext): Promise<Task | undefined> {
-    const row = this.db.select().from(a2aTasks).where(eq(a2aTasks.id, taskId)).get();
+  async load(taskId: string, context: ServerCallContext): Promise<Task | undefined> {
+    const boundAgentId = readBoundAgentId(context);
+    const filters = [
+      eq(a2aTasks.id, taskId),
+      ...(boundAgentId !== undefined ? [eq(a2aTasks.agentId, boundAgentId)] : []),
+    ];
+    const row = this.db
+      .select()
+      .from(a2aTasks)
+      .where(and(...filters))
+      .get();
     return row ? rowToTask(row) : undefined;
   }
 
@@ -133,12 +163,21 @@ export class SqliteTaskStore implements TaskStore {
    * `contextId`, `status` and `statusTimestampAfter` are applied in SQL;
    * `pageToken` is the offset of the next row, as a decimal string.
    *
+   * One filter comes from the endpoint rather than the request: a call to
+   * `/a2a/agents/:id` is bound to that agent, and the listing is scoped to its
+   * tasks (see {@link BOUND_AGENT_STATE_KEY}). Everything else on that endpoint
+   * is about the one agent named in the URL, and a caller who asked about it
+   * has no business being handed every other agent's message history. The
+   * fleet endpoint carries no binding and still surveys the whole fleet.
+   *
    * @param params - Filtering and pagination parameters.
-   * @param _context - The call context; unused, see {@link SqliteTaskStore.load}.
+   * @param context - The call context. Read for the bound agent only; this
+   *   store is otherwise single-tenant, see {@link SqliteTaskStore.load}.
    */
-  async list(params: ListTasksRequest, _context: ServerCallContext): Promise<ListTasksResponse> {
+  async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
     const pageSize = clampPageSize(params.pageSize);
     const offset = parseOffset(params.pageToken);
+    const boundAgentId = readBoundAgentId(context);
 
     // `updatedAt` IS the status timestamp — `rowToTask` reads the task's
     // `status.timestamp` from this same column, so filtering on it answers the
@@ -146,6 +185,7 @@ export class SqliteTaskStore implements TaskStore {
     const after = normalizeTimestamp(params.statusTimestampAfter);
 
     const filters = [
+      boundAgentId !== undefined ? eq(a2aTasks.agentId, boundAgentId) : undefined,
       params.contextId.length > 0 ? eq(a2aTasks.contextId, params.contextId) : undefined,
       params.status !== undefined && params.status !== TaskState.TASK_STATE_UNSPECIFIED
         ? eq(a2aTasks.status, taskStateToDbStatus(params.status))
@@ -154,15 +194,35 @@ export class SqliteTaskStore implements TaskStore {
     ].filter((f) => f !== undefined);
     const where = filters.length > 0 ? and(...filters) : undefined;
 
-    const rows = this.db
+    // Counted and paged in SQL, never in JS: this store holds every task the
+    // gateway has ever run, and reading all of them to hand back fifty makes
+    // each listing cost the whole table — in rows read, in JSON parsed, and in
+    // memory held.
+    //
+    // Two statements rather than one windowed query, and they agree because
+    // better-sqlite3 is synchronous: there is no `await` between them, so no
+    // other write can land in the gap and no transaction is needed to say so.
+    // Introducing an async driver here would need one.
+    const totalSize =
+      this.db.select({ value: count() }).from(a2aTasks).where(where).get()?.value ?? 0;
+
+    const page = this.db
       .select()
       .from(a2aTasks)
       .where(where)
-      .orderBy(a2aTasks.updatedAt)
-      .all()
-      .reverse();
+      // Newest first, with the id giving equal rows a deterministic total
+      // order — NOT a second recency key: the id is a UUIDv4 and says nothing
+      // about when a task was made. Sorting by it is arbitrary on purpose, and
+      // arbitrary-but-fixed is the whole requirement. `updated_at` has
+      // millisecond resolution, so tasks touched in the same millisecond
+      // compare equal, and SQL may order equal rows differently on each query
+      // — which between one page and the next is how a row gets served twice
+      // or skipped entirely.
+      .orderBy(desc(a2aTasks.updatedAt), desc(a2aTasks.id))
+      .limit(pageSize)
+      .offset(offset)
+      .all();
 
-    const page = rows.slice(offset, offset + pageSize);
     const nextOffset = offset + page.length;
 
     return {
@@ -170,9 +230,9 @@ export class SqliteTaskStore implements TaskStore {
       // survey, and shipping every task's full output by default is how a
       // page of results becomes megabytes.
       tasks: page.map((row) => rowToTask(row, params.includeArtifacts === true)),
-      nextPageToken: nextOffset < rows.length ? String(nextOffset) : '',
+      nextPageToken: nextOffset < totalSize ? String(nextOffset) : '',
       pageSize,
-      totalSize: rows.length,
+      totalSize,
     };
   }
 }
@@ -206,6 +266,18 @@ function normalizeTimestamp(value: string | undefined): string | undefined {
   if (value === undefined || value.length === 0) return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+/**
+ * Read the agent a request is bound to out of the call context.
+ *
+ * Absent on the fleet endpoint, which is what makes that listing fleet-wide.
+ *
+ * @param context - The call context the SDK built for this request.
+ */
+function readBoundAgentId(context: ServerCallContext): string | undefined {
+  const value = context.state.get(BOUND_AGENT_STATE_KEY);
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 /**

@@ -5,7 +5,10 @@ import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * Tracks inter-agent task lifecycle following the A2A protocol.
  */
 export const a2aTasks = sqliteTable('a2a_tasks', {
-  id: text('id').primaryKey(), // ULID
+  // The A2A task id, minted by the SDK as a UUIDv4 — not a ULID, and not
+  // sortable. Anything ordering these rows by recency has to read a timestamp
+  // column; the id is only ever a stable tiebreaker.
+  id: text('id').primaryKey(),
   contextId: text('context_id').notNull(),
   agentId: text('agent_id').notNull(),
   // The A2A v0.3 spelling of each task state, which is the readable one and

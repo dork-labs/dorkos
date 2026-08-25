@@ -17,13 +17,17 @@
  */
 import express, { type RequestHandler, type Response } from 'express';
 import { AgentCard } from '@a2a-js/sdk';
-import { DefaultRequestHandler } from '@a2a-js/sdk/server';
+import {
+  DefaultRequestHandler,
+  defaultServerCallContextBuilder,
+  type ServerCallContextBuilder,
+} from '@a2a-js/sdk/server';
 import { jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 import type { RelayCore } from '@dorkos/relay';
 import type { Logger } from '@dorkos/shared/logger';
 import type { Db } from '@dorkos/db';
 import { generateAgentCard, generateFleetCard } from './agent-card-generator.js';
-import { SqliteTaskStore } from './task-store.js';
+import { SqliteTaskStore, BOUND_AGENT_STATE_KEY } from './task-store.js';
 import { DorkOSAgentExecutor } from './dorkos-executor.js';
 import type { AgentRegistryLike, CardGeneratorConfig } from './types.js';
 
@@ -70,6 +74,17 @@ export interface A2aHandlers {
 
 /** JSON-RPC 2.0 "invalid params" error code, used for routing rejections. */
 const JSONRPC_INVALID_PARAMS = -32602;
+
+/**
+ * Request header carrying the agent the per-agent endpoint bound from the URL.
+ *
+ * Internal, and **never trusted from a client**: `agentJsonRpc` overwrites it
+ * and `jsonRpc` deletes it, so whatever a caller sent is gone before the SDK
+ * sees the request. A header rather than an async-local: the SDK builds its
+ * call context from the request's own headers, and body parsing crosses a
+ * stream boundary an `AsyncLocalStorage` scope does not survive.
+ */
+const BOUND_AGENT_HEADER = 'x-dorkos-a2a-agent';
 
 /**
  * The JSON-RPC methods that carry a message needing a target agent.
@@ -127,6 +142,22 @@ function hasTarget(message: RoutableMessage): boolean {
   if (typeof agentId === 'string' && agentId.length > 0) return true;
   return typeof message.taskId === 'string' && message.taskId.length > 0;
 }
+
+/**
+ * Build the SDK's call context, carrying through the agent the URL bound.
+ *
+ * The `ListTasks` request has no field for the endpoint it arrived on, so the
+ * binding rides in the context's state bag — which is what that bag is for —
+ * and {@link SqliteTaskStore.list} reads it there.
+ */
+const contextBuilder: ServerCallContextBuilder = (options) => {
+  const context = defaultServerCallContextBuilder(options);
+  const boundAgentId = options.headers[BOUND_AGENT_HEADER];
+  if (typeof boundAgentId === 'string' && boundAgentId.length > 0) {
+    context.state.set(BOUND_AGENT_STATE_KEY, boundAgentId);
+  }
+  return context;
+};
 
 /** Respond with a JSON-RPC error object (routing-layer rejections). */
 function sendRpcError(res: Response, status: number, id: JsonRpcId, message: string): void {
@@ -201,6 +232,7 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
     // interface to match (see `agent-card-generator.ts`); the SDK refuses a
     // protocol version its card does not declare, so the two go together.
     legacyCompat: { enabled: true },
+    contextBuilder,
   });
   const parseJson = express.json();
 
@@ -211,6 +243,9 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
     '/.well-known/agent-card.json (each skill id is an agent id).';
 
   const jsonRpc: RequestHandler = (req, res, next) => {
+    // Nothing is bound here — this endpoint answers for the whole fleet — and
+    // a client does not get to claim a binding by sending the header itself.
+    delete req.headers[BOUND_AGENT_HEADER];
     parseJson(req, res, (err?: unknown) => {
       if (err) {
         next(err);
@@ -237,6 +272,10 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
       );
       return;
     }
+    // The URL is the binding, so it overwrites anything the caller sent. Every
+    // method on this endpoint is about this agent — messages are routed to it
+    // (below), and `ListTasks` is scoped to it (in the task store).
+    req.headers[BOUND_AGENT_HEADER] = agent.id;
     parseJson(req, res, (err?: unknown) => {
       if (err) {
         next(err);
