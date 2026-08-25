@@ -28,21 +28,12 @@
  * `text-2xs` instead of scaled all the way down. Those floors are marked where
  * they happen.
  */
-export const FILM_SCALE = 0.34;
+const FILM_SCALE = 0.34;
 
 /** Convert an authored 1080p pixel value to its web size. */
 export function filmPx(authored: number): number {
   return Math.round(authored * FILM_SCALE);
 }
-
-/**
- * The completion green, brighter than the brand's `agent-green` `#228b22`.
- *
- * The film's comment explains why: `#228b22` is a foliage green that reads
- * grey-ish against a dark panel. Use this one wherever the dark chat panel
- * shows a finished state.
- */
-export const DONE_GREEN = '#2fd07a';
 
 /**
  * The chat panel's dark surface, straight from `ChatPanel`.

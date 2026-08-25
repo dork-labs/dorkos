@@ -3,7 +3,17 @@
 import { ChatHeader } from './ChatHeader';
 import { ChatMessage } from './ChatMessage';
 import type { ChatLine } from './chat-script';
-import { PANEL } from './film-tokens';
+import { filmPx, PANEL } from './film-tokens';
+
+/** The brand hairline across the top of the panel, 5px on the film's canvas. */
+const HAIRLINE_PX = filmPx(5);
+
+/**
+ * The fade that eats the departing message instead of guillotining it, 70px on
+ * the film's canvas. Its own file's comments disagree about the length; the
+ * code says 70 and the code is what shipped.
+ */
+const FADE = `linear-gradient(to bottom, transparent 0, #000 ${filmPx(70)}px, #000 100%)`;
 
 interface ChatWindowProps {
   /** Whether the agents have joined the room. */
@@ -42,13 +52,13 @@ export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
       style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}` }}
     >
       {/* The brand signature, and the panel's only ornament. */}
-      <div className="h-[2px] w-full" style={{ background: PANEL.hairline }} />
+      <div style={{ height: HAIRLINE_PX, background: PANEL.hairline }} />
       <ChatHeader joined={joined} />
       <div
         className="flex h-[42vh] max-h-[420px] min-h-[300px] flex-col justify-end gap-2 overflow-hidden px-4 pt-4 pb-5"
         style={{
-          maskImage: 'linear-gradient(to bottom, transparent 0, #000 24px, #000 100%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, #000 24px, #000 100%)',
+          maskImage: FADE,
+          WebkitMaskImage: FADE,
         }}
         aria-hidden="true"
       >

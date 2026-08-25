@@ -29,16 +29,7 @@ export { Dock } from './Dock';
 export { Avatar } from './Avatar';
 
 // The data and timing the storyboard reads, so its numbers are the live ones
-export {
-  CAST,
-  DAVE,
-  RUNTIMES,
-  SPEAKERS,
-  type CastKey,
-  type CastMember,
-  type SpeakerKey,
-} from './cast';
-export { DONE_GREEN, FILM_SCALE, PANEL, filmPx } from './film-tokens';
+export { CAST, DAVE, RUNTIMES } from './cast';
 export { DOCK } from './dock-apps';
 export { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
 export { nextBeat, type Beat } from './beats';

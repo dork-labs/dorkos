@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Avatar } from './Avatar';
 import { senderColor, senderName, type ChatLine } from './chat-script';
 import { DockBadge } from './DockBadge';
-import { PANEL } from './film-tokens';
+import { filmPx, PANEL } from './film-tokens';
 import { SystemMessage } from './SystemMessage';
 import { TypingDots } from './TypingDots';
 
@@ -14,12 +14,18 @@ interface ChatMessageProps {
   revealed: boolean;
 }
 
+/** The film's bubble radius, on the film's 1080px canvas. */
+const BUBBLE_RADIUS = 26;
+
+/** And the tight corner it pulls in on whichever side its avatar sits. */
+const TAIL_RADIUS = 8;
+
 /**
- * `usePop` from the film, as a motion keyframe.
+ * The film's bubble arrival, as a motion keyframe.
  *
- * The film's entrances are multi-stop linear interpolations, never springs, so
- * they port with exact fidelity rather than approximately: 0.86 -> 1.04 -> 1
- * over 11 frames at 30fps, which is 367ms with the overshoot at 200ms.
+ * Its entrances are multi-stop linear interpolations, never springs, so they
+ * port with exact fidelity rather than approximately: 0.86 -> 1.04 -> 1 over
+ * 11 frames at 30fps, which is 367ms with the overshoot at 200ms.
  */
 const POP_IN = {
   initial: { opacity: 0, scale: 0.86 },
@@ -79,8 +85,8 @@ export function ChatMessage({ line, revealed }: ChatMessageProps) {
             background: own ? PANEL.own : PANEL.bubble,
             color: PANEL.text,
             border: own ? 'none' : `1px solid ${PANEL.bubbleBorder}`,
-            borderRadius: 9,
-            [own ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: 3,
+            borderRadius: filmPx(BUBBLE_RADIUS),
+            [own ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: filmPx(TAIL_RADIUS),
             boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
           }}
         >
