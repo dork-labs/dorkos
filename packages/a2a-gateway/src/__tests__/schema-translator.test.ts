@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { Message } from '@a2a-js/sdk';
+import { Role, type Message, type Part } from '@a2a-js/sdk';
 import { a2aMessageToRelayPayload } from '../schema-translator.js';
+import { buildMessage, textPart } from '../a2a-model.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -8,11 +9,28 @@ import { a2aMessageToRelayPayload } from '../schema-translator.js';
 
 function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
-    kind: 'message',
-    role: 'user',
-    messageId: 'msg-001',
-    parts: [{ kind: 'text', text: 'Hello, agent!' }],
+    ...buildMessage({ role: Role.ROLE_USER, text: 'Hello, agent!', messageId: 'msg-001' }),
     ...overrides,
+  };
+}
+
+/** A file part carrying a url — one of the shapes that has no text to extract. */
+function filePart(uri: string, mediaType: string): Part {
+  return {
+    content: { $case: 'url', value: uri },
+    metadata: undefined,
+    filename: '',
+    mediaType,
+  };
+}
+
+/** A structured-data part — the other shape with no text to extract. */
+function dataPart(data: unknown): Part {
+  return {
+    content: { $case: 'data', value: data },
+    metadata: undefined,
+    filename: '',
+    mediaType: 'application/json',
   };
 }
 
@@ -23,7 +41,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 describe('a2aMessageToRelayPayload', () => {
   it('maps a single text part to StandardPayload content', () => {
     const message = makeMessage({
-      parts: [{ kind: 'text', text: 'Run the build.' }],
+      parts: [textPart('Run the build.')],
     });
 
     const payload = a2aMessageToRelayPayload(message);
@@ -33,11 +51,7 @@ describe('a2aMessageToRelayPayload', () => {
 
   it('concatenates multiple text parts with newlines', () => {
     const message = makeMessage({
-      parts: [
-        { kind: 'text', text: 'First line.' },
-        { kind: 'text', text: 'Second line.' },
-        { kind: 'text', text: 'Third line.' },
-      ],
+      parts: [textPart('First line.'), textPart('Second line.'), textPart('Third line.')],
     });
 
     const payload = a2aMessageToRelayPayload(message);
@@ -56,13 +70,10 @@ describe('a2aMessageToRelayPayload', () => {
   it('ignores non-text parts (file, data) and only extracts text', () => {
     const message = makeMessage({
       parts: [
-        { kind: 'text', text: 'Intro text.' },
-        {
-          kind: 'file',
-          file: { uri: 'https://example.com/report.pdf', mimeType: 'application/pdf' },
-        },
-        { kind: 'data', data: { key: 'value' } },
-        { kind: 'text', text: 'Closing text.' },
+        textPart('Intro text.'),
+        filePart('https://example.com/report.pdf', 'application/pdf'),
+        dataPart({ key: 'value' }),
+        textPart('Closing text.'),
       ],
     });
 
@@ -106,7 +117,10 @@ describe('a2aMessageToRelayPayload', () => {
   });
 
   it('leaves conversationId and correlationId undefined when absent', () => {
-    const message = makeMessage({ contextId: undefined, taskId: undefined });
+    // A2A v1.0 is protobuf-shaped and has no null: an unset id arrives as the
+    // empty string, which must NOT become an empty-string correlationId on the
+    // Relay side — absent and empty are different things there.
+    const message = makeMessage({ contextId: '', taskId: '' });
 
     const payload = a2aMessageToRelayPayload(message);
 
