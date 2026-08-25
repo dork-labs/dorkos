@@ -16,6 +16,7 @@
  * @module a2a-gateway/express-handlers
  */
 import express, { type RequestHandler, type Response } from 'express';
+import { AgentCard } from '@a2a-js/sdk';
 import { DefaultRequestHandler } from '@a2a-js/sdk/server';
 import { jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 import type { RelayCore } from '@dorkos/relay';
@@ -70,6 +71,25 @@ export interface A2aHandlers {
 /** JSON-RPC 2.0 "invalid params" error code, used for routing rejections. */
 const JSONRPC_INVALID_PARAMS = -32602;
 
+/**
+ * The JSON-RPC methods that carry a message needing a target agent.
+ *
+ * Both spellings, deliberately: A2A v1.0 renamed these methods, and the
+ * gateway accepts the v0.3 names too (see {@link createA2aHandlers}). The
+ * routing check below runs before the SDK's own dispatch, so it has to
+ * recognize every name the SDK will go on to accept — miss one and a
+ * v0.3 client's untargeted message sails past the check that exists to
+ * give it an actionable error.
+ */
+const MESSAGE_METHODS = new Set([
+  // v1.0
+  'SendMessage',
+  'SendStreamingMessage',
+  // v0.3
+  'message/send',
+  'message/stream',
+]);
+
 /** JSON-RPC request id extracted for error responses. */
 type JsonRpcId = string | number | null;
 
@@ -87,14 +107,14 @@ function extractRpcId(body: unknown): JsonRpcId {
 }
 
 /**
- * Extract the A2A message from a `message/send` / `message/stream` request
- * body, or `undefined` for any other method (or a malformed body — the SDK
- * produces its own invalid-params error for those).
+ * Extract the A2A message from a message-sending request body, or `undefined`
+ * for any other method (or a malformed body — the SDK produces its own
+ * invalid-params error for those).
  */
 function extractRoutableMessage(body: unknown): RoutableMessage | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const { method, params } = body as { method?: unknown; params?: unknown };
-  if (method !== 'message/send' && method !== 'message/stream') return undefined;
+  if (typeof method !== 'string' || !MESSAGE_METHODS.has(method)) return undefined;
   if (typeof params !== 'object' || params === null) return undefined;
   const message = (params as { message?: unknown }).message;
   if (typeof message !== 'object' || message === null) return undefined;
@@ -130,6 +150,12 @@ function sendRpcError(res: Response, status: number, id: JsonRpcId, message: str
 export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
   const { agentRegistry, relay, db, config, logger } = deps;
 
+  // Cards go out through `AgentCard.toJSON`, never as the raw object. A2A
+  // v1.0's types are protobuf-derived, so the in-memory shape is not the wire
+  // shape: a security scheme is a `{ $case, value }` union in memory and a
+  // `{ httpAuthSecurityScheme: … }` key on the wire, and unset fields are
+  // dropped rather than serialized as empty. Handing the object straight to
+  // `res.json` would publish a card no A2A client can read.
   const taskStore = new SqliteTaskStore(db);
   const executor = new DorkOSAgentExecutor({
     relay,
@@ -144,8 +170,7 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
 
   const fleetCard: RequestHandler = (_req, res) => {
     const manifests = agentRegistry.list();
-    const card = generateFleetCard(manifests, config);
-    res.json(card);
+    res.json(AgentCard.toJSON(generateFleetCard(manifests, config)));
   };
 
   const agentCard: RequestHandler = (req, res) => {
@@ -159,8 +184,7 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
       res.status(404).json({ error: 'Agent not found' });
       return;
     }
-    const card = generateAgentCard(agent, config);
-    res.json(card);
+    res.json(AgentCard.toJSON(generateAgentCard(agent, config)));
   };
 
   // The SDK's handler is an Express router serving POST '/' with its own
@@ -170,6 +194,13 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
   const sdkJsonRpc = jsonRpcHandler({
     requestHandler,
     userBuilder: UserBuilder.noAuthentication,
+    // Agents built against A2A v0.3 keep working. The SDK routes the older
+    // method names and message shapes through its compat layer and answers in
+    // the shape the caller asked in — so an external peer that has not moved
+    // to v1.0 is not cut off by our upgrading. The cards advertise the v0.3
+    // interface to match (see `agent-card-generator.ts`); the SDK refuses a
+    // protocol version its card does not declare, so the two go together.
+    legacyCompat: { enabled: true },
   });
   const parseJson = express.json();
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Message, Task, TaskStatusUpdateEvent } from '@a2a-js/sdk';
-import type { ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
+import { Role, TaskState, type Message, type Task, type TaskStatusUpdateEvent } from '@a2a-js/sdk';
+import type { AgentExecutionEvent, ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
+import { buildMessage, partText } from '../a2a-model.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AgentRegistryEntry } from '@dorkos/mesh';
 import type { Logger } from '@dorkos/shared/logger';
@@ -35,10 +36,7 @@ function makeAgent(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
 /** Create a minimal A2A Message for testing. */
 function makeUserMessage(overrides: Partial<Message> = {}): Message {
   return {
-    kind: 'message',
-    role: 'user',
-    messageId: 'msg-001',
-    parts: [{ kind: 'text', text: 'Run the tests.' }],
+    ...buildMessage({ role: Role.ROLE_USER, text: 'Run the tests.', messageId: 'msg-001' }),
     ...overrides,
   };
 }
@@ -161,24 +159,85 @@ function agentResult(text: string) {
   return { type: 'agent_result', text, done: true };
 }
 
-/** Extract published events from a mock event bus. */
-function publishedEvents(bus: ExecutionEventBus): unknown[] {
+/**
+ * Extract published events from a mock event bus.
+ *
+ * A2A v1.0 publishes each event inside an {@link AgentExecutionEvent} wrapper
+ * — `{ kind, data }` — rather than as a bare Task or status update, so the
+ * `kind` these helpers read now lives on the wrapper, not on the payload.
+ */
+function publishedEvents(bus: ExecutionEventBus): AgentExecutionEvent[] {
   return vi.mocked(bus.publish).mock.calls.map(([event]) => event);
 }
 
 function statusEvents(bus: ExecutionEventBus): TaskStatusUpdateEvent[] {
-  return publishedEvents(bus).filter(
-    (e): e is TaskStatusUpdateEvent => (e as TaskStatusUpdateEvent).kind === 'status-update'
-  );
+  return publishedEvents(bus)
+    .filter((e) => e.kind === 'statusUpdate')
+    .map((e) => e.data as TaskStatusUpdateEvent);
 }
 
 function taskEvents(bus: ExecutionEventBus): Task[] {
-  return publishedEvents(bus).filter((e): e is Task => (e as Task).kind === 'task');
+  return publishedEvents(bus)
+    .filter((e) => e.kind === 'task')
+    .map((e) => e.data as Task);
+}
+
+/**
+ * Whether a task state ends the stream.
+ *
+ * A2A v1.0 removed the `final` flag from status-update events: a terminal
+ * state IS the terminal event now, so this is what the old `.final` assertions
+ * became.
+ */
+function isTerminal(state: TaskState | undefined): boolean {
+  return (
+    state === TaskState.TASK_STATE_COMPLETED ||
+    state === TaskState.TASK_STATE_FAILED ||
+    state === TaskState.TASK_STATE_CANCELED ||
+    state === TaskState.TASK_STATE_REJECTED
+  );
 }
 
 function statusText(event: TaskStatusUpdateEvent): string | undefined {
-  const part = event.status.message?.parts[0];
-  return part?.kind === 'text' ? part.text : undefined;
+  const part = event.status?.message?.parts[0];
+  return part ? partText(part) : undefined;
+}
+
+let relay: ReturnType<typeof makeRelay>;
+let registry: ReturnType<typeof makeRegistry>;
+let executor: DorkOSAgentExecutor;
+let eventBus: ExecutionEventBus;
+let logger: Logger;
+let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
+
+/**
+ * Start a turn and let it get as far as having published and subscribed.
+ *
+ * `execute()` deliberately stays pending until the turn settles: A2A v1.0
+ * ties the event bus's lifetime to that promise, closing the bus the moment
+ * it resolves. So a test can no longer `await` the call and then drive the
+ * reply — the bus would already be gone. It starts the turn, waits for the
+ * publish and the `working` status to land (the point the old `await` used to
+ * return at), drives the reply, and reads the bus.
+ *
+ * The returned promise is the turn's own completion, for the tests that care;
+ * most assert on what reached the bus and can ignore it.
+ */
+async function startTurn(
+  ctx: RequestContext,
+  bus: ExecutionEventBus
+): Promise<{ finished: Promise<void> }> {
+  const finished = executor.execute(ctx, bus);
+  // A turn that ends in a rejection is something a test asserts on, not an
+  // unhandled rejection that fails the run.
+  void finished.catch(() => undefined);
+  // Drain the microtask queue — the relay publish and the `working` status it
+  // gates are promise work, not timer work, so this runs under fake timers.
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  // Wrapped, not returned bare: `await` adopts a returned promise, so handing
+  // back `finished` directly would make every caller wait for the whole turn —
+  // exactly the thing this helper exists to avoid.
+  return { finished };
 }
 
 // ---------------------------------------------------------------------------
@@ -186,13 +245,6 @@ function statusText(event: TaskStatusUpdateEvent): string | undefined {
 // ---------------------------------------------------------------------------
 
 describe('DorkOSAgentExecutor', () => {
-  let relay: ReturnType<typeof makeRelay>;
-  let registry: ReturnType<typeof makeRegistry>;
-  let executor: DorkOSAgentExecutor;
-  let eventBus: ExecutionEventBus;
-  let logger: Logger;
-  let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
-
   function buildExecutor() {
     executor = new DorkOSAgentExecutor({
       relay: relay as never,
@@ -229,20 +281,20 @@ describe('DorkOSAgentExecutor', () => {
     it('publishes a Task event before any status-update', async () => {
       const ctx = makeRequestContext({ metadata: { agentId: 'agent-01' } });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const events = publishedEvents(eventBus);
-      const first = events[0] as Task;
-      expect(first.kind).toBe('task');
+      expect(events[0]!.kind).toBe('task');
+      const first = events[0]!.data as Task;
       expect(first.id).toBe('task-123');
       expect(first.contextId).toBe('ctx-456');
-      expect(first.status.state).toBe('submitted');
+      expect(first.status?.state).toBe(TaskState.TASK_STATE_SUBMITTED);
     });
 
     it('includes the user message in the initial task history', async () => {
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [task] = taskEvents(eventBus);
       expect(task!.history).toEqual([ctx.userMessage]);
@@ -251,7 +303,7 @@ describe('DorkOSAgentExecutor', () => {
     it('carries the resolved agentId in task metadata', async () => {
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [task] = taskEvents(eventBus);
       expect(task!.metadata).toEqual(expect.objectContaining({ agentId: 'agent-01' }));
@@ -259,30 +311,30 @@ describe('DorkOSAgentExecutor', () => {
 
     it('re-emits the stored task snapshot (not a fresh submitted task) for follow-up turns', async () => {
       const existingTask: Task = {
-        kind: 'task',
         id: 'task-123',
         contextId: 'ctx-456',
-        status: { state: 'working' },
+        status: { state: TaskState.TASK_STATE_WORKING, message: undefined, timestamp: undefined },
         history: [makeUserMessage(), makeUserMessage({ messageId: 'msg-002' })],
+        artifacts: [],
         metadata: { agentId: 'agent-01' },
       };
       const ctx = makeRequestContext({ task: existingTask });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       // The snapshot refresh keeps concurrent processing loops' in-memory
       // copies current so the follow-up user message survives in history
       const tasks = taskEvents(eventBus);
       expect(tasks).toHaveLength(1);
       expect(tasks[0]).toBe(existingTask);
-      expect(tasks[0]!.status.state).toBe('working');
+      expect(tasks[0]!.status?.state).toBe(TaskState.TASK_STATE_WORKING);
     });
 
     it('publishes a Task even when the agent is not found, so the failure persists', async () => {
       registry.get.mockReturnValue(undefined);
       const ctx = makeRequestContext({ metadata: { agentId: 'nonexistent' } });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [task] = taskEvents(eventBus);
       expect(task).toBeDefined();
@@ -298,7 +350,7 @@ describe('DorkOSAgentExecutor', () => {
     it('resolves agent from userMessage metadata.agentId', async () => {
       const ctx = makeRequestContext({ metadata: { agentId: 'agent-01' } });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       expect(registry.get).toHaveBeenCalledWith('agent-01');
     });
@@ -307,15 +359,14 @@ describe('DorkOSAgentExecutor', () => {
       const ctx = makeRequestContext({
         agentId: null,
         task: {
-          kind: 'task',
           id: 'task-123',
           contextId: 'ctx-456',
-          status: { state: 'working' },
+          status: { state: TaskState.TASK_STATE_WORKING, message: undefined, timestamp: undefined },
           metadata: { agentId: 'agent-01' },
         },
       });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       expect(registry.get).toHaveBeenCalledWith('agent-01');
     });
@@ -323,11 +374,11 @@ describe('DorkOSAgentExecutor', () => {
     it('fails with a missing-target diagnostic when no agentId is provided (never guesses)', async () => {
       const ctx = makeRequestContext({ agentId: null });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
-      expect(failed!.final).toBe(true);
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(isTerminal(failed!.status?.state)).toBe(true);
       expect(statusText(failed!)).toContain('No target agent specified');
       // Routing is never guessed — nothing is published to a relay subject.
       expect(relay.publish).not.toHaveBeenCalled();
@@ -337,11 +388,11 @@ describe('DorkOSAgentExecutor', () => {
       registry.get.mockReturnValue(undefined);
       const ctx = makeRequestContext({ metadata: { agentId: 'nonexistent' } });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
-      expect(failed!.final).toBe(true);
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(isTerminal(failed!.status?.state)).toBe(true);
       expect(statusText(failed!)).toContain("Agent 'nonexistent' not found");
       expect(eventBus.finished).toHaveBeenCalled();
     });
@@ -351,10 +402,10 @@ describe('DorkOSAgentExecutor', () => {
       buildExecutor();
       const ctx = makeRequestContext({ agentId: null });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
       expect(statusText(failed!)).toContain('No agents registered');
       expect(eventBus.finished).toHaveBeenCalled();
     });
@@ -370,7 +421,7 @@ describe('DorkOSAgentExecutor', () => {
       buildExecutor();
       const ctx = makeRequestContext({ metadata: { agentId: 'agent-42' } });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       expect(relay.publish).toHaveBeenCalledWith(
         'relay.agent.production.agent-42',
@@ -384,7 +435,7 @@ describe('DorkOSAgentExecutor', () => {
       buildExecutor();
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       expect(relay.publish).toHaveBeenCalledWith(
         'relay.agent.default.agent-01',
@@ -396,7 +447,7 @@ describe('DorkOSAgentExecutor', () => {
     it('translates the A2A message to a Relay StandardPayload', async () => {
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [, publishedPayload] = relay.publish.mock.calls[0]!;
       expect(publishedPayload).toEqual(
@@ -411,7 +462,7 @@ describe('DorkOSAgentExecutor', () => {
     it('sets replyTo in publish options and subscribes before publishing', async () => {
       const ctx = makeRequestContext({ taskId: 'task-abc' });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [subscribedSubject] = relay.subscribe.mock.calls[0]!;
       expect(subscribedSubject).toMatch(/^relay\.a2a\.reply\.task-abc\.[a-zA-Z0-9-]+$/);
@@ -423,7 +474,7 @@ describe('DorkOSAgentExecutor', () => {
 
     it('uses a distinct reply subject per execution so concurrent turns cannot cross-talk', async () => {
       const ctx1 = makeRequestContext();
-      await executor.execute(ctx1, eventBus);
+      await startTurn(ctx1, eventBus);
       const [firstSubject] = relay.subscribe.mock.calls[0]!;
       const firstHandler = subscribeHandler!;
 
@@ -431,14 +482,13 @@ describe('DorkOSAgentExecutor', () => {
       const secondBus = makeEventBus();
       const ctx2 = makeRequestContext({
         task: {
-          kind: 'task',
           id: 'task-123',
           contextId: 'ctx-456',
-          status: { state: 'working' },
+          status: { state: TaskState.TASK_STATE_WORKING, message: undefined, timestamp: undefined },
           metadata: { agentId: 'agent-01' },
         },
       });
-      await executor.execute(ctx2, secondBus);
+      await startTurn(ctx2, secondBus);
       const [secondSubject] = relay.subscribe.mock.calls[1]!;
 
       expect(secondSubject).not.toBe(firstSubject);
@@ -447,14 +497,20 @@ describe('DorkOSAgentExecutor', () => {
       subscribeHandler!(makeReplyEnvelope(textDelta('Second answer.')));
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
-      expect(statusEvents(secondBus).some((e) => e.status.state === 'completed')).toBe(true);
-      expect(statusEvents(eventBus).some((e) => e.status.state === 'completed')).toBe(false);
+      expect(
+        statusEvents(secondBus).some((e) => e.status?.state === TaskState.TASK_STATE_COMPLETED)
+      ).toBe(true);
+      expect(
+        statusEvents(eventBus).some((e) => e.status?.state === TaskState.TASK_STATE_COMPLETED)
+      ).toBe(false);
 
       // Turn 1's stream still completes turn 1 with its own text
       firstHandler(makeReplyEnvelope(textDelta('First answer.')));
       firstHandler(makeReplyEnvelope(doneEvent()));
 
-      const firstCompleted = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      const firstCompleted = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(firstCompleted).toHaveLength(1);
       expect(statusText(firstCompleted[0]!)).toBe('First answer.');
     });
@@ -468,16 +524,18 @@ describe('DorkOSAgentExecutor', () => {
     it('emits working status after successful publish', async () => {
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
-      const working = statusEvents(eventBus).find((e) => e.status.state === 'working');
+      const working = statusEvents(eventBus).find(
+        (e) => e.status?.state === TaskState.TASK_STATE_WORKING
+      );
       expect(working).toBeDefined();
-      expect(working!.final).toBe(false);
+      expect(isTerminal(working!.status?.state)).toBe(false);
     });
 
     it('accumulates text_delta events and completes once on done with the full text', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(textDelta('Build ')));
       subscribeHandler!(makeReplyEnvelope(toolCallStart()));
@@ -485,54 +543,64 @@ describe('DorkOSAgentExecutor', () => {
       subscribeHandler!(makeReplyEnvelope(textDelta('successfully.')));
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
-      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(1);
-      expect(completed[0]!.final).toBe(true);
+      expect(isTerminal(completed[0]!.status?.state)).toBe(true);
       expect(statusText(completed[0]!)).toBe('Build passed successfully.');
       expect(eventBus.finished).toHaveBeenCalledTimes(1);
     });
 
     it('does not complete on the first text_delta', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(textDelta('partial')));
 
-      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(0);
       expect(eventBus.finished).not.toHaveBeenCalled();
     });
 
     it('completes with an aggregated agent_result payload', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(agentResult('Full aggregated answer.')));
 
-      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(1);
       expect(statusText(completed[0]!)).toBe('Full aggregated answer.');
     });
 
     it('fails the task when the stream reports an error before done', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(textDelta('partial ')));
       subscribeHandler!(makeReplyEnvelope(errorEvent('SDK session crashed')));
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
-      const failed = statusEvents(eventBus).filter((e) => e.status.state === 'failed');
+      const failed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_FAILED
+      );
       expect(failed).toHaveLength(1);
-      expect(failed[0]!.final).toBe(true);
+      expect(isTerminal(failed[0]!.status?.state)).toBe(true);
       expect(statusText(failed[0]!)).toContain('SDK session crashed');
-      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(0);
     });
 
     it('ignores events after the task has settled', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(textDelta('Answer.')));
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
@@ -555,7 +623,7 @@ describe('DorkOSAgentExecutor', () => {
       );
 
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
       expect(unsubFn).toHaveBeenCalled();
@@ -587,10 +655,10 @@ describe('DorkOSAgentExecutor', () => {
       await executePromise;
 
       const statuses = statusEvents(eventBus);
-      const finalIndex = statuses.findIndex((e) => e.final);
+      const finalIndex = statuses.findIndex((e) => isTerminal(e.status?.state));
       expect(finalIndex).toBeGreaterThanOrEqual(0);
       expect(statuses.slice(finalIndex + 1)).toHaveLength(0);
-      expect(statuses.some((e) => e.status.state === 'working')).toBe(false);
+      expect(statuses.some((e) => e.status?.state === TaskState.TASK_STATE_WORKING)).toBe(false);
     });
   });
 
@@ -603,11 +671,11 @@ describe('DorkOSAgentExecutor', () => {
       relay.publish.mockRejectedValue(new Error('Connection refused'));
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
-      expect(failed!.final).toBe(true);
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(isTerminal(failed!.status?.state)).toBe(true);
       expect(statusText(failed!)).toContain('Connection refused');
       expect(eventBus.finished).toHaveBeenCalled();
     });
@@ -616,10 +684,10 @@ describe('DorkOSAgentExecutor', () => {
       relay.publish.mockRejectedValue('string error');
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
       expect(statusText(failed!)).toContain('Unknown publish error');
     });
 
@@ -627,10 +695,10 @@ describe('DorkOSAgentExecutor', () => {
       relay.publish.mockResolvedValue({ messageId: 'msg-x', deliveredTo: 0 });
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
       expect(statusText(failed!)).toContain('no subscribers');
       expect(eventBus.finished).toHaveBeenCalled();
     });
@@ -644,20 +712,22 @@ describe('DorkOSAgentExecutor', () => {
     it('emits failed status after 2-minute timeout', async () => {
       const ctx = makeRequestContext();
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       vi.advanceTimersByTime(120_001);
 
-      const failed = statusEvents(eventBus).filter((e) => e.status.state === 'failed');
+      const failed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_FAILED
+      );
       expect(failed).toHaveLength(1);
-      expect(failed[0]!.final).toBe(true);
+      expect(isTerminal(failed[0]!.status?.state)).toBe(true);
       expect(statusText(failed[0]!)).toContain('timeout');
       expect(eventBus.finished).toHaveBeenCalled();
     });
 
     it('does not emit timeout after a successful response', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(textDelta('Quick response.')));
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
@@ -670,7 +740,7 @@ describe('DorkOSAgentExecutor', () => {
 
     it('asks the runner to end the turn when the caller stops waiting', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       await vi.advanceTimersByTimeAsync(120_001);
 
@@ -688,7 +758,7 @@ describe('DorkOSAgentExecutor', () => {
 
     it('says so in the log when a timed-out turn could not be stopped', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
       relay.publish.mockResolvedValue({ messageId: 'msg-stop', deliveredTo: 0 });
 
       await vi.advanceTimersByTimeAsync(120_001);
@@ -708,7 +778,7 @@ describe('DorkOSAgentExecutor', () => {
       );
 
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       vi.advanceTimersByTime(120_001);
 
@@ -731,7 +801,7 @@ describe('DorkOSAgentExecutor', () => {
     it('asks the runner to end the turn and only then reports canceled', async () => {
       const execBus = makeEventBus();
       const ctx = makeRequestContext({ taskId: 'task-abort' });
-      await executor.execute(ctx, execBus);
+      await startTurn(ctx, execBus);
       const replySubject = relay.publish.mock.calls[0]![2].replyTo;
 
       await executor.cancelTask('task-abort', eventBus);
@@ -748,10 +818,11 @@ describe('DorkOSAgentExecutor', () => {
       expect(options.from).toBe(A2A_GATEWAY_PRINCIPAL);
       expect(eventBus.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: 'status-update',
-          taskId: 'task-abort',
-          status: expect.objectContaining({ state: 'canceled' }),
-          final: true,
+          kind: 'statusUpdate',
+          data: expect.objectContaining({
+            taskId: 'task-abort',
+            status: expect.objectContaining({ state: TaskState.TASK_STATE_CANCELED }),
+          }),
         })
       );
       expect(eventBus.finished).toHaveBeenCalledTimes(1);
@@ -760,7 +831,7 @@ describe('DorkOSAgentExecutor', () => {
     it('refuses to claim canceled when nothing acknowledges the stop', async () => {
       const execBus = makeEventBus();
       const ctx = makeRequestContext({ taskId: 'task-unstoppable' });
-      await executor.execute(ctx, execBus);
+      await startTurn(ctx, execBus);
       // Nobody is executing this turn any more (an adapter restart, say).
       relay.publish.mockResolvedValue({ messageId: 'msg-stop', deliveredTo: 0 });
 
@@ -777,31 +848,36 @@ describe('DorkOSAgentExecutor', () => {
     it('leaves a turn it could not stop able to finish the task', async () => {
       const execBus = makeEventBus();
       const ctx = makeRequestContext({ taskId: 'task-unstoppable' });
-      await executor.execute(ctx, execBus);
+      await startTurn(ctx, execBus);
       relay.publish.mockResolvedValue({ messageId: 'msg-stop', deliveredTo: 0 });
 
       await expect(executor.cancelTask('task-unstoppable', eventBus)).rejects.toThrow();
       subscribeHandler!(makeReplyEnvelope(textDelta('Done anyway.'), 'task-unstoppable'));
       subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-unstoppable'));
 
-      const completed = statusEvents(execBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(execBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(1);
       expect(statusText(completed[0]!)).toBe('Done anyway.');
     });
 
     it('stops both turns of a task that has two in flight', async () => {
       const ctx = makeRequestContext({ taskId: 'task-two' });
-      await executor.execute(ctx, makeEventBus());
+      await startTurn(ctx, makeEventBus());
       // A follow-up turn on a non-terminal task runs alongside the first, with
       // its own reply subject.
-      await executor.execute(
+      await startTurn(
         makeRequestContext({
           taskId: 'task-two',
           task: {
-            kind: 'task',
             id: 'task-two',
             contextId: 'ctx-456',
-            status: { state: 'working' },
+            status: {
+              state: TaskState.TASK_STATE_WORKING,
+              message: undefined,
+              timestamp: undefined,
+            },
             metadata: { agentId: 'agent-01' },
           },
         }),
@@ -819,15 +895,18 @@ describe('DorkOSAgentExecutor', () => {
     });
 
     it('cancels the task when only one of two turns is stopped, and says which was not', async () => {
-      await executor.execute(makeRequestContext({ taskId: 'task-two' }), makeEventBus());
-      await executor.execute(
+      await startTurn(makeRequestContext({ taskId: 'task-two' }), makeEventBus());
+      await startTurn(
         makeRequestContext({
           taskId: 'task-two',
           task: {
-            kind: 'task',
             id: 'task-two',
             contextId: 'ctx-456',
-            status: { state: 'working' },
+            status: {
+              state: TaskState.TASK_STATE_WORKING,
+              message: undefined,
+              timestamp: undefined,
+            },
             metadata: { agentId: 'agent-01' },
           },
         }),
@@ -848,7 +927,9 @@ describe('DorkOSAgentExecutor', () => {
       // The task IS being cancelled — something took a stop — so `canceled` is
       // honest. The turn nobody took keeps running, and the log is the only
       // place that says so.
-      const canceled = statusEvents(eventBus).filter((e) => e.status.state === 'canceled');
+      const canceled = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_CANCELED
+      );
       expect(canceled).toHaveLength(1);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('1 of 2 turns did not acknowledge')
@@ -874,7 +955,7 @@ describe('DorkOSAgentExecutor', () => {
         }
       );
       const execBus = makeEventBus();
-      await executor.execute(makeRequestContext({ taskId: 'task-abort' }), execBus);
+      await startTurn(makeRequestContext({ taskId: 'task-abort' }), execBus);
 
       await executor.cancelTask('task-abort', eventBus);
 
@@ -882,13 +963,15 @@ describe('DorkOSAgentExecutor', () => {
       // The response deadline is gone with it — a canceled task must not be
       // failed for timing out two minutes later.
       vi.advanceTimersByTime(120_001);
-      expect(statusEvents(execBus).filter((e) => e.status.state === 'failed')).toHaveLength(0);
+      expect(
+        statusEvents(execBus).filter((e) => e.status?.state === TaskState.TASK_STATE_FAILED)
+      ).toHaveLength(0);
     });
 
     it('suppresses response processing for canceled tasks', async () => {
       const execBus = makeEventBus();
       const ctx = makeRequestContext({ taskId: 'task-cancel-test' });
-      await executor.execute(ctx, execBus);
+      await startTurn(ctx, execBus);
 
       const cancelBus = makeEventBus();
       await executor.cancelTask('task-cancel-test', cancelBus);
@@ -897,7 +980,9 @@ describe('DorkOSAgentExecutor', () => {
       subscribeHandler!(makeReplyEnvelope(textDelta('Late response.'), 'task-cancel-test'));
       subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-cancel-test'));
 
-      const completed = statusEvents(execBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(execBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(0);
     });
   });
@@ -910,21 +995,23 @@ describe('DorkOSAgentExecutor', () => {
     it('treats an empty-string agentId as no target (never guesses)', async () => {
       const ctx = makeRequestContext({ metadata: { agentId: '' } });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       const [failed] = statusEvents(eventBus);
-      expect(failed!.status.state).toBe('failed');
+      expect(failed!.status?.state).toBe(TaskState.TASK_STATE_FAILED);
       expect(statusText(failed!)).toContain('No target agent specified');
       expect(relay.publish).not.toHaveBeenCalled();
     });
 
     it('completes with empty text when the stream produced no deltas', async () => {
       const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
-      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      const completed = statusEvents(eventBus).filter(
+        (e) => e.status?.state === TaskState.TASK_STATE_COMPLETED
+      );
       expect(completed).toHaveLength(1);
       expect(statusText(completed[0]!)).toBe('');
     });
@@ -939,15 +1026,14 @@ describe('DorkOSAgentExecutor', () => {
       const ctx = makeRequestContext({
         metadata: { agentId: 'msg-agent' },
         task: {
-          kind: 'task',
           id: 'task-123',
           contextId: 'ctx-456',
-          status: { state: 'working' },
+          status: { state: TaskState.TASK_STATE_WORKING, message: undefined, timestamp: undefined },
           metadata: { agentId: 'task-agent' },
         },
       });
 
-      await executor.execute(ctx, eventBus);
+      await startTurn(ctx, eventBus);
 
       expect(registry.get).toHaveBeenCalledWith('msg-agent');
     });

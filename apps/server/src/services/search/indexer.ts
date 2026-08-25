@@ -149,7 +149,15 @@ export class SearchIndexer {
     this.sweep()
       .then((result) => {
         for (const failure of result.failures) {
-          logger.warn('[Search] a source produced nothing and recorded why', failure);
+          // Deliberately not "a source produced nothing", and deliberately not
+          // pointing at `last_error`. This one line covers four shapes: a
+          // container whose projection threw (which DID write `last_error`), a
+          // discovery that failed outright, several files claiming one container
+          // id, and one root of several that would not open — and in that last
+          // case the source contributed plenty from the roots that did open.
+          // What is true of all four is that something identifiable is missing
+          // from the index, and the entry says which.
+          logger.warn('[Search] a source could not index part of what it covers', failure);
         }
         if (result.skipped > 0) {
           // The quiet failure. Nothing is broken enough to stop a container, and

@@ -31,7 +31,7 @@ beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-search-frontier-'));
   projects = path.join(root, 'projects');
   await fs.mkdir(projects, { recursive: true });
-  source = createClaudeCodeSource(() => projects);
+  source = createClaudeCodeSource(() => [projects]);
 });
 
 afterEach(async () => {

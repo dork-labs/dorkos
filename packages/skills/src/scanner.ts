@@ -125,7 +125,7 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  */
 export async function scanSkillDirectory<T>(
   dir: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T, unknown>,
   options?: {
     includeMissing?: boolean;
     withUiTemplates?: boolean;

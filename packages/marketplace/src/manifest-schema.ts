@@ -159,9 +159,9 @@ const BasePackageManifestSchema = z.object({
  * `schedule.permissions` frontmatter carries this value, so the two sets have to
  * be the same set: when the manifest allowed a mode the frontmatter did not,
  * apply-time wrote a file its own parser rejected, and disk and DB disagreed
- * from then on (DOR-607). Both packages are on zod v3, so this is a plain
- * re-export; the zod-version mirror of `@dorkos/shared`'s `PermissionModeSchema`
- * now lives in one place, with the drift test beside it in `@dorkos/skills`.
+ * from then on (DOR-607). This is a plain re-export; the mirror of
+ * `@dorkos/shared`'s `PermissionModeSchema` lives in one place, with the drift
+ * test beside it in `@dorkos/skills`.
  *
  * Declaring a mode here is not the same as getting it. `bypassPermissions` is
  * clamped when the schedule is materialized — a package cannot decide that its
@@ -458,7 +458,7 @@ const AdapterManifestSchema = BasePackageManifestSchema.extend({
    */
   schedules: z
     .never({
-      invalid_type_error:
+      error:
         'Adapters cannot declare schedules: an adapter is a transport with no agent to run a ' +
         'turn and no skills directory to keep one in. Ship the schedule in a plugin that ' +
         'requires this adapter.',
@@ -622,10 +622,10 @@ const ShapeLineageSchema = z.object({
 
 /**
  * Shape-specific manifest fields (DOR-355). A plain `ZodObject` member of
- * {@link MarketplacePackageManifestSchema}: `packages/marketplace` pins Zod 3,
- * where a `z.discriminatedUnion` member MUST be a plain object — `.superRefine()`
- * returns a `ZodEffects` with no `.shape`, which cannot be a union member (the
- * codebase documents this same constraint at `packages/shared/src/schemas.ts` on
+ * {@link MarketplacePackageManifestSchema}: a `z.discriminatedUnion` member MUST
+ * be a plain object — `.superRefine()` wraps the schema in one that no longer
+ * exposes `.shape`, which cannot be a union member (the codebase documents this
+ * same constraint at `packages/shared/src/schemas.ts` on
  * `OperationProgressEventShapeSchema`). The four cross-field rules therefore live
  * in {@link shapeCrossFieldChecks}, attached as a TOP-LEVEL `.superRefine` on the
  * union.
@@ -640,8 +640,16 @@ const ShapeManifestSchema = BasePackageManifestSchema.extend({
   activates: z.array(z.string()).default([]),
   /** Extensions embedded inline in this Shape's package dir (like `PluginManifestSchema.extensions`). */
   extensions: z.array(z.string()).default([]),
-  /** The workspace chrome restored on arrival. */
-  layout: ShapeLayoutSchema.default({}),
+  /**
+   * The workspace chrome restored on arrival.
+   *
+   * `.prefault({})`, not `.default({})`: a Zod 4 default must already be the
+   * OUTPUT type, and every field of {@link ShapeLayoutSchema} carries its own
+   * default, so `{}` is only valid as an INPUT. `.prefault` feeds `{}` through
+   * the schema, which then fills each field — the behavior a manifest with no
+   * `layout` key has always had.
+   */
+  layout: ShapeLayoutSchema.prefault({}),
   /** Suggested agents with soft affinity. At most one `default` is used for the arrival offer. */
   agents: z.array(ShapeAgentSchema).default([]),
   /** Schedules the Shape stands up, each bound to a Shape agent by `agentRef`. */
@@ -767,7 +775,7 @@ export const MarketplacePackageManifestSchema = z
     AgentManifestSchema,
     SkillPackManifestSchema,
     AdapterManifestSchema,
-    ShapeManifestSchema, // plain ZodObject — Zod 3 union-member constraint
+    ShapeManifestSchema, // plain ZodObject — discriminated-union member constraint
   ])
   .refine((m) => !(m.category && m.categories?.length) || m.category === m.categories[0], {
     message: 'category must equal categories[0] when both are present',

@@ -113,16 +113,12 @@ import { logger } from '../../lib/logger.js';
  * this file may parse it, and when this file goes the shape goes with it.
  *
  * **It covers the scheduling fields only, and the base skill fields are checked
- * separately** ({@link readsAsSkill}). Not a shortcut: `@dorkos/skills` is on
- * zod v3 and this app is on v4, and nesting a v3 `ZodType` inside a v4
- * `z.object()` misbehaves silently rather than erroring (the boundary
- * `schedule-schema.ts` documents). Extending the v3 base schema here would be
- * exactly that mistake, so the two halves are asked one at a time — a runtime
- * `safeParse` call across the versions is fine; composing the schemas is not.
- *
- * Loose where the old shape was loose, deliberately. `cron: ''` was accepted
- * then, so it is accepted here; {@link legacyTaskToSchedule} is what turns it
- * into the absent cron the block schema requires.
+ * separately** ({@link readsAsSkill}). Not a shortcut: this shape has to be
+ * LOOSE where the old one was loose, and `@dorkos/skills`' current schemas are
+ * not. `cron: ''` was accepted then, so it is accepted here;
+ * {@link legacyTaskToSchedule} is what turns it into the absent cron the block
+ * schema requires. Extending a current schema would refuse files this migration
+ * exists to rescue, so the two halves are asked one at a time.
  */
 const LegacyScheduleFieldsSchema = z.object({
   /** Cron expression for scheduling. Absent means on-demand only. */
@@ -134,9 +130,9 @@ const LegacyScheduleFieldsSchema = z.object({
   /**
    * Maximum execution time, as `30s` / `10m` / `2h30m`.
    *
-   * Delegated to `@dorkos/skills`' own `DurationSchema` by CALLING it, for the
-   * version reason above — one rule, asked across the boundary rather than
-   * copied over it.
+   * Delegated to `@dorkos/skills`' own `DurationSchema` by CALLING it inside a
+   * `.refine()` rather than composing it, so the surrounding field stays
+   * optional and loose — one rule, asked rather than copied.
    */
   'max-runtime': z
     .string()
