@@ -26,6 +26,17 @@ import { test, expect } from '../../fixtures';
 /** The playground page carrying the switcher showcase. */
 const SHOWCASE_PATH = '/dev/features';
 
+/**
+ * Where the bottom sheet's exit animation is parked for the test to read.
+ *
+ * The listener that fills it runs inside the page, so the only way back out is
+ * a property on `window` — named on the type so neither side has to reach for
+ * `any`.
+ */
+type DrawerExitWindow = Window & {
+  __drawerExit?: { animationName: string; connected: boolean };
+};
+
 /** Every session row the switcher draws, whichever group it landed in. */
 const ROW = '[data-slot="session-switcher-row"]';
 
@@ -206,6 +217,61 @@ test.describe('session switcher @smoke', () => {
     await expect(page.getByRole('button', { name: 'New session' })).toBeVisible();
     // Still the same three groups underneath.
     expect(await groupOrder(page)).toEqual(['Live now', 'Recent', 'Automated']);
+  });
+
+  test('the bottom sheet slides out on dismiss rather than vanishing', async ({ page }) => {
+    // **The exit animation is only true in a browser.** vaul injects its own
+    // `@keyframes slideToBottom` and Radix's `Presence` holds the content
+    // mounted until that animation ends; jsdom computes no animation at all, so
+    // the same close there is an instant unmount and a jsdom guard for this
+    // could only ever assert the opposite. That asymmetry is what let a Radix
+    // bump (DOR-1539) look like a broken drawer when the drawer was fine.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openShowcaseSwitcher(page);
+    const sheet = page.locator('[data-vaul-drawer]');
+    await expect(sheet).toBeVisible();
+
+    // Recorded from the element's OWN `animationstart`, not sampled on a timer:
+    // the exit lasts half a second, and a snapshot taken "right after Escape"
+    // is a race that a slow CI machine loses for reasons that have nothing to
+    // do with the drawer.
+    await sheet.evaluate((element) => {
+      const store = window as DrawerExitWindow;
+      delete store.__drawerExit;
+      element.addEventListener('animationstart', (event) => {
+        if (element.getAttribute('data-state') !== 'closed' || store.__drawerExit) return;
+        store.__drawerExit = {
+          animationName: (event as AnimationEvent).animationName,
+          connected: element.isConnected,
+        };
+      });
+    });
+
+    await page.keyboard.press('Escape');
+
+    // Seconds rather than the 30s default: the exit starts within a frame of
+    // the dismiss, so the only thing a long wait buys is a slow red. Measured —
+    // with Radix's `Presence` forced to see no animation, this is the assertion
+    // that goes red, and it should say so quickly.
+    await page.waitForFunction(
+      () => (window as DrawerExitWindow).__drawerExit !== undefined,
+      null,
+      {
+        timeout: 5_000,
+      }
+    );
+    const exit = await page.evaluate(() => {
+      const recorded = (window as DrawerExitWindow).__drawerExit;
+      if (recorded === undefined) throw new Error('no exit animation was recorded');
+      return recorded;
+    });
+    // A named exit animation, on an element still in the document — which is
+    // precisely what an instant unmount would have made impossible.
+    expect(exit.connected).toBe(true);
+    expect(exit.animationName).not.toBe('none');
+
+    // …and then it leaves.
+    await expect(sheet).toHaveCount(0);
   });
 
   test('each footer key does what the footer says it does', async ({ page }) => {
