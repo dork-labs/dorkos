@@ -5200,6 +5200,10 @@
             "type": "boolean",
             "default": true
           },
+          "memory": {
+            "type": "boolean",
+            "default": true
+          },
           "dorkosKnowledge": {
             "type": "boolean",
             "default": true

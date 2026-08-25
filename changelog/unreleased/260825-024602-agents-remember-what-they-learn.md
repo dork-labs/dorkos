@@ -11,6 +11,7 @@ covers:
   - 'feat(server): measure what each context block costs, at the shared builder (DOR-632)'
   - 'fix(server,memory,shared): wave-2 review fixes (DOR-632)'
   - 'fix(evals): the memory probes cannot lie about what they tested (DOR-632)'
+  - 'fix(deps): the lockfile catches up with the memory package (DOR-632)'
 ---
 
 ### Added
