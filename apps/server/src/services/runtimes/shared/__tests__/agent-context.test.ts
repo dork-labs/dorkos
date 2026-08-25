@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
+  _MEMORY_FENCE_PREAMBLE as MEMORY_FENCE_PREAMBLE,
+  _MEMORY_STALENESS_LINE as MEMORY_STALENESS_LINE,
+  _MEMORY_TRUST_FRAMING as MEMORY_TRUST_FRAMING,
   _buildAgentBlock as buildAgentBlock,
   _buildUserProfileBlock as buildUserProfileBlock,
   buildAgentContextAppend,
@@ -50,6 +53,7 @@ import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
 import { getMemoryProvider } from '../../../memory/index.js';
 import { logger } from '../../../../lib/logger.js';
+import { NONCE_CHARS } from '../untrusted-fence.js';
 
 /** Create a minimal valid AgentManifest for testing. */
 function createTestManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
@@ -921,5 +925,106 @@ describe('<agent_memory>', () => {
     // `text` at the memory boundary.
     expect(append.text).toContain('<env>');
     expect(append.stable).toContain('<env>');
+  });
+});
+
+describe('what each block costs', () => {
+  /** Make the memory provider answer with `snapshot` for every ref. */
+  function memoryReads(snapshot: MemorySnapshot): void {
+    vi.mocked(getMemoryProvider).mockReturnValue({
+      info: { id: 'test', capabilities: { search: false, consolidate: false } },
+      getSnapshot: vi.fn().mockResolvedValue(snapshot),
+      write: vi.fn(),
+      query: vi.fn(),
+      forget: vi.fn(),
+      consolidate: vi.fn(),
+    });
+  }
+
+  /** The sizes object the debug line reported, or undefined if it did not. */
+  function reportedSizes(): Record<string, number> | undefined {
+    const call = vi
+      .mocked(logger.debug)
+      .mock.calls.find((args) => String(args[0]).includes('append block sizes'));
+    return call?.[1] as Record<string, number> | undefined;
+  }
+
+  beforeEach(() => {
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+    vi.mocked(configManager.getAll).mockReturnValue({} as ReturnType<typeof configManager.getAll>);
+  });
+
+  // Red when: the measurement reports one aggregate, or names nothing. A test
+  // asserting only "something was logged" passes for a line that says
+  // "the prompt is 9,412 characters" to somebody who wants to know WHICH block
+  // grew.
+  it('names every block with its own character count, plus a total', async () => {
+    const notes = '## Notes\n\n- the operator ships on Fridays\n';
+    memoryReads({ status: 'present', content: notes, bytes: notes.length, truncated: false });
+
+    const append = await buildAgentContextAppend('/test');
+    const sizes = reportedSizes();
+
+    expect(sizes).toBeDefined();
+    expect(Object.keys(sizes!).sort()).toEqual(
+      ['agent_identity', 'agent_memory', 'dorkos_context', 'env', 'session_model'].sort()
+    );
+    // A real count per block, not a placeholder — and `agent_memory` is the one
+    // this measurement exists for.
+    expect(sizes!.agent_memory).toBeGreaterThan(notes.length);
+    expect(sizes!.session_model).toBeGreaterThan(100);
+
+    const call = vi
+      .mocked(logger.debug)
+      .mock.calls.find((args) => String(args[0]).includes('append block sizes'));
+    expect(call?.[2]).toBe(append.text.length);
+  });
+
+  it('reports only the blocks that rendered, for a directory hosting no agent', async () => {
+    // A bare folder gets `<env>` and nothing else, and the report says so —
+    // rather than listing every block it knows about with a zero beside it,
+    // which would read as "the memory block is here and empty".
+    vi.mocked(readManifest).mockResolvedValue(null);
+    vi.mocked(configManager.getAll).mockReturnValue({} as ReturnType<typeof configManager.getAll>);
+
+    await buildAgentContextAppend('/test');
+
+    expect(Object.keys(reportedSizes() ?? {})).toEqual(['env']);
+  });
+
+  // Red when: the memory block's envelope grows without anyone noticing — a
+  // longer preamble, a second fence, an added note. The bound is COMPUTED from
+  // the constants rather than hard-coded, so a deliberately longer preamble
+  // moves the bound instead of breaking the test, while an accidental second
+  // copy of the content blows straight through it.
+  it('keeps <agent_memory> within the cap plus its own fixed envelope', async () => {
+    const atCap = 'x'.repeat(MEMORY_MAX_CHARS);
+    memoryReads({
+      status: 'present',
+      content: atCap,
+      bytes: MEMORY_MAX_CHARS,
+      truncated: false,
+    });
+
+    const { memory } = await buildAgentBlock('/test');
+
+    // The envelope, from the parts that make it: the tag pair, the two framing
+    // lines DorkOS writes outside the fence, the two marker lines with their
+    // nonce, and the fence's own preamble. Newlines between them are counted
+    // generously at one per element.
+    const envelope =
+      '<agent_memory>'.length +
+      '</agent_memory>'.length +
+      MEMORY_TRUST_FRAMING.length +
+      MEMORY_STALENESS_LINE.length +
+      MEMORY_FENCE_PREAMBLE.length +
+      2 * `--- BEGIN AGENT MEMORY FILE ${'0'.repeat(NONCE_CHARS)} ---`.length +
+      16;
+
+    expect(memory.length).toBeLessThanOrEqual(MEMORY_MAX_CHARS + envelope);
+    // And it really did carry the whole capped file, so the bound is not passing
+    // by rendering less than it should.
+    expect(memory).toContain(atCap);
   });
 });

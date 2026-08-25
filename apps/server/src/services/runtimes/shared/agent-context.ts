@@ -505,11 +505,52 @@ export async function buildAgentContextAppend(cwd: string): Promise<AgentContext
 
   // Assembled twice from the same parts — see `buildAgentBlock` for why the
   // memory segment is left OUT of `stable` rather than cut out of `text`.
-  return {
+  const append = {
     text: [agent.text, profile, envBlock].filter(Boolean).join('\n\n'),
     stable: [agent.stable, profile, envBlock].filter(Boolean).join('\n\n'),
     memory: agent.memory,
   };
+
+  logBlockSizes(append.text);
+  return append;
+}
+
+/**
+ * Report what each block in the append cost, at debug level.
+ *
+ * **Measured HERE, at the shared builder, and not at the claude-code launch
+ * resolver** (spec D8, review M5). This function is the one seam all three
+ * runtimes pass through, and it is the runtimes that are NOT claude-code that
+ * pay the larger price: they have no cacheable system-prompt channel in use, so
+ * this whole append is re-sent verbatim on every turn. A measurement taken in
+ * `claude-code/messaging/launch-resolver.ts` would report on the runtime where
+ * the cost is amortised and stay silent about the two where it is not.
+ *
+ * Debug level, so a normal run pays nothing for it. Per BLOCK and not one
+ * aggregate, because the question it exists to answer is which block grew — and
+ * an aggregate answers "the prompt is bigger" to somebody who already knew that.
+ *
+ * A fleet gauge, a UI surface and a metric export are all deliberately NOT here.
+ * This is the measurement; deciding what to do about it is a later decision that
+ * should be made with numbers already in hand.
+ *
+ * @param text - The assembled append, as a runtime will send it.
+ */
+function logBlockSizes(text: string): void {
+  if (text === '') return;
+  // Split on the top-level tags rather than on the join separator: a block's own
+  // body may contain blank lines (a persona routinely does), so counting by
+  // separator would report a persona as several blocks of the wrong size.
+  const sizes: Record<string, number> = {};
+  for (const match of text.matchAll(/^<([a-z_]+)>$/gm)) {
+    const tag = match[1]!;
+    const close = text.indexOf(`</${tag}>`, match.index);
+    // A tag with no closing partner is a rendering bug, not a measurement one;
+    // report what there is rather than dropping the block from the total.
+    const end = close === -1 ? text.length : close + `</${tag}>`.length;
+    sizes[tag] = end - match.index;
+  }
+  logger.debug('[AgentContext] append block sizes (chars): %o total=%d', sizes, text.length);
 }
 
 /**
@@ -537,6 +578,9 @@ export {
   buildAgentBlock as _buildAgentBlock,
   buildEnvBlock as _buildEnvBlock,
   buildSessionModelBlock as _buildSessionModelBlock,
+  MEMORY_FENCE_PREAMBLE as _MEMORY_FENCE_PREAMBLE,
+  MEMORY_STALENESS_LINE as _MEMORY_STALENESS_LINE,
+  MEMORY_TRUST_FRAMING as _MEMORY_TRUST_FRAMING,
   buildDorkosContextBlock as _buildDorkosContextBlock,
   buildUserProfileBlock as _buildUserProfileBlock,
 };
