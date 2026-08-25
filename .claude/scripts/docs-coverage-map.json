@@ -242,6 +242,17 @@
       ]
     },
     {
+      "guide": "adding-a-search-source.md",
+      "description": "Message-search source authoring: the registry row, the pure projection contract, picking M1/M2/M3 by resumption primitive, opaque `origin_key`, the column rule, never traverse generically, port refusal",
+      "patterns": [
+        "apps/server/src/services/search/",
+        "packages/db/src/schema/search",
+        "search_sources",
+        "messages_fts",
+        "search-schemas"
+      ]
+    },
+    {
       "guide": "agent-operator-surface.md",
       "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb",
       "patterns": [
