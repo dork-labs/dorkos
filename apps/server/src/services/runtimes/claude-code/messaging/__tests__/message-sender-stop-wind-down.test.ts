@@ -28,7 +28,9 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   forkSession: vi.fn(),
 }));
 vi.mock('../context-builder.js', () => ({
-  buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>mock</env>'),
+  buildSystemPromptAppend: vi
+    .fn()
+    .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../../tooling/tool-filter.js', () => ({

@@ -257,7 +257,7 @@ function tagsIn(text: string): string[] {
  * @returns The blocks, and the tags they were confirmed to contain.
  */
 async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
-  const agentContext = await buildAgentContextAppend(CWD);
+  const agentContext = (await buildAgentContextAppend(CWD)).text;
   const blocks = [GEN_UI_CONTEXT, agentContext];
   return { blocks, tags: blocks.flatMap(tagsIn) };
 }
@@ -269,7 +269,7 @@ async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
  * @returns The prose, and the shared blocks that were subtracted out of it.
  */
 async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
-  const assembled = await buildSystemPromptAppend(CWD);
+  const assembled = (await buildSystemPromptAppend(CWD)).text;
   const { blocks: shared } = await sharedBlocks();
   let prose = assembled;
   for (const block of shared) prose = prose.split(block).join('');
@@ -351,7 +351,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // never renders needs the same guard, or a name could rot in the half of the
     // prose only agents read.
     const advertised = await advertisedToolNames();
-    const prompt = await buildSystemPromptAppend(CWD, undefined, { agentSession: true });
+    const prompt = (await buildSystemPromptAppend(CWD, undefined, { agentSession: true })).text;
 
     const unknown = [
       ...new Set(
@@ -383,7 +383,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // and searching the wrong string. The five always-loaded tools are the other
     // half — the prompt has to say they need no lookup, or a room turn spends one
     // anyway out of caution.
-    const prompt = await buildSystemPromptAppend(CWD);
+    const prompt = (await buildSystemPromptAppend(CWD)).text;
     expect(prompt).toContain('<dorkos_tools>');
     expect(prompt).toContain('already in your tool list');
     expect(prompt).toContain('deferred, not missing');

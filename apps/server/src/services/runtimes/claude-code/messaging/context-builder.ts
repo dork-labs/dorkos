@@ -631,6 +631,22 @@ async function buildPeerAgentsBlock(
 }
 
 /**
+ * The claude-code system-prompt append, in the two forms the adapter needs.
+ *
+ * `text` is what goes on the prompt. `stable` is what the relaunch fingerprint
+ * digests — the same append with the agent's own `<agent_memory>` block left
+ * out, assembled without it rather than cut out of `text`. Without the split, a
+ * `memory_write` would move `pins.systemPromptAppend` and tear down the warm
+ * process on nearly every turn that saved a note.
+ */
+export interface SystemPromptAppend {
+  /** The whole append, in order. Hand this to `systemPrompt.append`. */
+  readonly text: string;
+  /** The append minus `<agent_memory>`. Digest this for a relaunch pin. */
+  readonly stable: string;
+}
+
+/**
  * Build a system prompt append string containing runtime context.
  *
  * Structured for optimal Claude prompt caching — static tool documentation blocks
@@ -667,7 +683,7 @@ export async function buildSystemPromptAppend(
   cwd: string,
   toolConfig?: ResolvedToolConfig,
   options: { agentSession?: boolean } = {}
-): Promise<string> {
+): Promise<SystemPromptAppend> {
   const agentSession = options.agentSession ?? false;
 
   // Static tool context blocks (synchronous — config checks only, content never changes)
@@ -684,10 +700,10 @@ export async function buildSystemPromptAppend(
   // between agent config changes)
   const agentContext = await buildAgentContextAppend(cwd);
 
-  return [
-    // 1. Static tool documentation — fully cacheable, never changes.
-    //    The naming rule comes first, because every block after it is written in
-    //    the long form it explains (DOR-1292).
+  // 1. Static tool documentation — fully cacheable, never changes.
+  //    The naming rule comes first, because every block after it is written in
+  //    the long form it explains (DOR-1292).
+  const toolDocs = [
     dorkosToolsContext(agentSession),
     relayBlock,
     meshBlock,
@@ -697,11 +713,18 @@ export async function buildSystemPromptAppend(
     roomBlock,
     uiBlock,
     genUiBlock,
-    // 2. Semi-static identity + env — changes only on agent config or server restart
-    agentContext,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  ];
+
+  // 2. Semi-static identity + env — changes only on agent config or server
+  //    restart — in its two forms. `stable` is assembled from the same tool docs
+  //    and the memory-free half of the agent context, so the agent's own notes
+  //    are absent from it by construction rather than by removal. See
+  //    `agent-context.ts`'s `buildAgentBlock` for why that distinction is a
+  //    security property and not a nicety.
+  return {
+    text: [...toolDocs, agentContext.text].filter(Boolean).join('\n\n'),
+    stable: [...toolDocs, agentContext.stable].filter(Boolean).join('\n\n'),
+  };
 }
 
 /**

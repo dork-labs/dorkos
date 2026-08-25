@@ -84,7 +84,10 @@ vi.mock('../../../../lib/logger.js', () => ({
 vi.mock('../messaging/context-builder.js', () => ({
   buildSystemPromptAppend: vi
     .fn()
-    .mockResolvedValue('<env>\nWorking directory: /projects/conformance\n</env>'),
+    .mockResolvedValue({
+      text: '<env>\nWorking directory: /projects/conformance\n</env>',
+      stable: '<env>\nWorking directory: /projects/conformance\n</env>',
+    }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../tooling/tool-filter.js', () => ({

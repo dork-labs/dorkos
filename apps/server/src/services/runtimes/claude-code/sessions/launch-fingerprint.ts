@@ -119,7 +119,31 @@ export const PIN_DISPOSITIONS = {
   credentialEnv: 'relaunch',
   /** Who `resolveAgentTokenEnv()` minted for — the identity, not the token. */
   agentIdentity: 'relaunch',
-  /** The system-prompt append built from tool groups plus the caller's. */
+  /**
+   * The system-prompt append built from tool groups plus the caller's — **minus
+   * the agent's own `<agent_memory>` block**, which is the one part of the
+   * prompt deliberately outside this pin.
+   *
+   * `relaunch` is still the right verdict for everything else in the append: a
+   * persona edit, a boundary edit, a tool group toggled, a caller's per-run
+   * instructions. All of those describe how the process should have been
+   * started, so a warm process that missed them is running the wrong agent.
+   *
+   * Memory is the exception because it is written DURING turns, by the agent
+   * itself. Digesting it would relaunch the process nearly every time an agent
+   * saved a note, which is the opposite of what a warm process is for. The
+   * accepted cost is stated rather than hidden: a warm process keeps the
+   * memory snapshot it launched with, so an agent may not see its own new note
+   * in that session until it relaunches for another reason or its slot is
+   * reclaimed — bounded in practice by LRU reclaim under `MAX_WARM_SESSIONS`
+   * and the 4 h interaction park, NOT by the 5-minute idle reap, which only
+   * bounds idle sessions. The block says so in its own text, and the resume
+   * path re-reads per message.
+   *
+   * The exclusion is STRUCTURAL: the digest is taken over
+   * {@link LaunchParams.systemPromptAppendStable}, which is assembled without
+   * the memory block. See that field for why a textual marker is forbidden.
+   */
   systemPromptAppend: 'relaunch',
   /** Which settings layers the CLI reads. */
   settingSources: 'relaunch',
@@ -251,6 +275,26 @@ export interface LaunchParams {
   readonly accountRoot: string;
   /** Exactly the options handed to `query()`. */
   readonly options: Options;
+  /**
+   * The system-prompt append **with the `<agent_memory>` block left out**, as
+   * the resolver assembled it — never as a slice of what went on the prompt.
+   *
+   * This is the field `pins.systemPromptAppend` digests, and the reason it
+   * exists is structural rather than cosmetic. The agent's memory file is
+   * written during turns and, per the agent-memory spec's D2 §C1, a bridged
+   * third party's words can reach it through one hop of ordinary quoting. If
+   * the exclusion were textual — a sentinel, a comment, a delimiter, a regex
+   * slice — content that could emit the marker could shrink the digested region
+   * and exempt everything after it, INCLUDING the caller's own per-run append,
+   * from relaunch comparison. **Agent-written bytes must never be able to move
+   * the digest boundary**, so the two halves are assembled separately from the
+   * same blocks and the digest never touches the half that carries memory.
+   *
+   * A caller that passed the full append here would not create a hole; it would
+   * relaunch the warm process on nearly every saved note, which is the cost
+   * this field exists to avoid.
+   */
+  readonly systemPromptAppendStable: string;
   /** `resolveClaudeCredentialEnv()`'s answer for this launch. */
   readonly credentialEnv: Readonly<Record<string, string>>;
   /** Who `resolveAgentTokenEnv()` was asked to mint for, or nobody. */
@@ -406,13 +450,6 @@ function describeAgentIdentity(identity: AgentIdentityPin | undefined): string {
   return [state, identity.agentPath, identity.displayName ?? ''].join(FIELD_SEP);
 }
 
-/** The system-prompt append, whichever shape the preset config took. */
-function readSystemPromptAppend(prompt: Options['systemPrompt']): string {
-  if (typeof prompt === 'string') return prompt;
-  if (prompt && typeof prompt === 'object' && 'append' in prompt) return prompt.append ?? '';
-  return '';
-}
-
 /**
  * Record what a launch is pinned to, at the moment the launcher hands its
  * options to `query()`.
@@ -447,7 +484,7 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
       accountRoot: [path.resolve(accountRoot), configDirEnv ?? '<unset>'].join(FIELD_SEP),
       credentialEnv: digest(serializeEnv(credentialEnv, new Set())),
       agentIdentity: describeAgentIdentity(agentIdentity),
-      systemPromptAppend: digest(readSystemPromptAppend(options.systemPrompt)),
+      systemPromptAppend: digest(launch.systemPromptAppendStable),
       settingSources: (options.settingSources ?? []).join(','),
       env: digest(serializeEnv(env, owned)),
       // `effort` and `thinking` are one decision resolved together against the

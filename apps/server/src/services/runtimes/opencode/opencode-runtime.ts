@@ -330,7 +330,11 @@ export class OpenCodeRuntime implements AgentRuntime {
     // OpenCode agent knows who it is and how to reach its capabilities. It rides
     // the `synthetic` part with the rest of the injected prefix, so it never
     // renders as user-authored text.
-    const agentContext = await buildAgentContextAppend(cwd);
+    // `.text` — the whole append, memory block included. The `stable` half of
+    // this result exists only for claude-code's relaunch fingerprint; opencode
+    // has no warm process to keep, so it sends everything, every turn (see
+    // `buildMemoryBlock` for what that costs).
+    const agentContext = (await buildAgentContextAppend(cwd)).text;
 
     yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
       const model = parseModelSelection(settings.model);
