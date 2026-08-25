@@ -61,7 +61,7 @@ describe('discovering Claude Code transcripts', () => {
       '/var/folders/t/dorkos-evals-abc123/repo'
     );
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     expect(found.files.map((file) => file.originKey)).toEqual(['session-1']);
     expect(found.files[0]?.filePath).toBe(main);
@@ -92,7 +92,7 @@ describe('discovering Claude Code transcripts', () => {
       '/var/folders/xyz/dorkos-evals-9f2/repo'
     );
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     expect(found.files.map((file) => file.filePath)).toEqual([lookalike]);
     expect(reasonFor(found.skipped, sandbox)).toBe('eval-sandbox');
@@ -101,7 +101,7 @@ describe('discovering Claude Code transcripts', () => {
   it('matches a whole path segment, so a repo merely NAMED after the sandbox prefix is indexed', async () => {
     await writeTranscript('slug-c/session-5.jsonl', '/Users/me/code/my-dorkos-evals-harness');
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     expect(found.files.map((file) => file.originKey)).toEqual(['session-5']);
     expect(found.skipped).toEqual([]);
@@ -112,7 +112,7 @@ describe('discovering Claude Code transcripts', () => {
     // under a session id invented from its filename.
     const unknown = await writeTranscript('slug-d/session-6/leftovers/z.jsonl', '/repo');
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     expect(found.files).toEqual([]);
     expect(reasonFor(found.skipped, unknown)).toBe('not-a-main-session');
@@ -122,7 +122,7 @@ describe('discovering Claude Code transcripts', () => {
     const main = await writeTranscript('slug-e/session-7.jsonl', '/repo');
     const stat = await fs.stat(main);
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     expect(found.files[0]?.sizeBytes).toBe(stat.size);
     expect(found.files[0]?.mtimeMs).toBe(stat.mtimeMs);
@@ -131,7 +131,7 @@ describe('discovering Claude Code transcripts', () => {
   it('indexes a transcript that names no working directory, with a null container path', async () => {
     await writeTranscript('slug-f/session-8.jsonl', null);
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     // Absence of a cwd is not evidence of a sandbox: excluding on it would drop
     // real conversations to catch a case that has its own positive test.
@@ -157,7 +157,7 @@ describe('discovering Claude Code transcripts', () => {
       ].join('\n')
     );
 
-    const found = await discoverClaudeCodeTranscripts(root);
+    const found = await discoverClaudeCodeTranscripts([root]);
 
     expect(found.files[0]?.containerPath).toBe('/repo/late');
   });
@@ -184,7 +184,7 @@ describe('discovering Claude Code transcripts', () => {
       const reader = countingReader();
 
       const found = await discoverClaudeCodeTranscripts(
-        root,
+        [root],
         new Map([
           [
             'session-1',
@@ -206,7 +206,7 @@ describe('discovering Claude Code transcripts', () => {
       const reader = countingReader('/repo/moved');
 
       const found = await discoverClaudeCodeTranscripts(
-        root,
+        [root],
         new Map([
           [
             'session-1',
@@ -226,7 +226,7 @@ describe('discovering Claude Code transcripts', () => {
       const file = await writeTranscript('slug-b/session-2.jsonl', '/tmp/dorkos-evals-abc/repo');
       const reader = countingReader('/tmp/dorkos-evals-abc/repo');
 
-      const found = await discoverClaudeCodeTranscripts(root, new Map(), reader.read);
+      const found = await discoverClaudeCodeTranscripts([root], new Map(), reader.read);
 
       expect(reader.calls).toEqual([file]);
       expect(found.files).toEqual([]);
@@ -235,8 +235,11 @@ describe('discovering Claude Code transcripts', () => {
   });
 
   it('is empty and silent on a root Claude Code never wrote', async () => {
-    const found = await discoverClaudeCodeTranscripts(path.join(root, 'nowhere', 'projects'));
+    const found = await discoverClaudeCodeTranscripts([path.join(root, 'nowhere', 'projects')]);
 
-    expect(found).toEqual({ files: [], skipped: [] });
+    // Silent specifically: an absent root is an account nobody has used, not a
+    // failure. Reporting it would light a warning on every machine with fewer
+    // accounts registered than directories that once existed.
+    expect(found).toEqual({ files: [], skipped: [], failures: [] });
   });
 });

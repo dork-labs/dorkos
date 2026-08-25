@@ -31,6 +31,7 @@
  * @module server/services/search/jsonl-frontier
  */
 import fs from 'fs/promises';
+import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { searchSources, eq, sql, type Db } from '@dorkos/db';
 import {
@@ -46,6 +47,7 @@ import type {
   FileSource,
   KnownContainer,
   ProjectedMessage,
+  SourceFailure,
   SourceSweep,
 } from './types.js';
 
@@ -90,14 +92,30 @@ class UnterminatedLineError extends Error {}
 
 /**
  * The `originKey` a failure carries when there is no container to blame —
- * discovery itself failed, so nothing was enumerated to attribute it to.
+ * discovery itself failed, so nothing was enumerated to attribute it to. Both
+ * shapes use it: a discovery that rejected outright, and one root of several
+ * that could not be read.
  *
  * It names no row and none is written: `search_sources` is keyed by container,
  * and inventing a container id to hold an error would put a row in the frontier
  * that discovery can never return, which the prune would then delete on the
- * first healthy sweep.
+ * first healthy sweep. That is a deliberate narrowing of spec Amendment 2's
+ * "one `search_sources.last_error` and zero rows" for the per-root case — the
+ * visibility it asks for is delivered through {@link SourceSweep.failures},
+ * which the reconciler logs, rather than through a row that would flap in and
+ * out of the frontier every five minutes.
  */
 export const DISCOVERY_FAILURE_KEY = '(discovery)';
+
+/**
+ * The `originKey` a failure carries when it is about MANY containers at once —
+ * a duplicated directory, where every session id inside it has a twin.
+ *
+ * A summary cannot borrow one of the ids it summarises: naming the first of 300
+ * would read as a fault in that one session, which is the opposite of what
+ * happened. A single collision keeps its own id and this key never appears.
+ */
+export const DUPLICATE_CONTAINERS_KEY = '(duplicate containers)';
 
 /** One file's resume state, read once per sweep rather than once per file. */
 interface JsonlFrontierRow {
@@ -192,6 +210,20 @@ export async function sweepFileSource(
   }
   sweep.containers = discovery.files.length;
 
+  // **A root that could not be read is reported, never absorbed.** Discovery
+  // spans several roots — one per Claude Code account — and it resolves rather
+  // than rejecting when one of them fails, so that the readable roots still
+  // index. What it must not do is let the unreadable one pass for an account
+  // with nothing in it, which is exactly the "a short list looks like a complete
+  // one" failure this feature exists to refuse (spec Amendment 2, G3).
+  for (const failure of discovery.failures) {
+    sweep.failures.push({
+      sourceId: source.id,
+      originKey: DISCOVERY_FAILURE_KEY,
+      message: `${failure.root}: ${failure.message}`,
+    });
+  }
+
   const indexedOrdinals = readIndexedOrdinals(db, source.id);
   const live = new Set(discovery.files.map((file) => file.originKey));
 
@@ -212,6 +244,21 @@ export async function sweepFileSource(
   // there being two. Both are still in `live`, so the prune leaves the existing
   // rows alone. Session ids are UUIDs and no collision exists on any corpus
   // measured, which is exactly why this is asserted rather than assumed.
+  //
+  // **Several roots is where this stops being hypothetical.** Within one Claude
+  // Code account a duplicate session id takes a copied transcript; across
+  // accounts it takes only a config directory that was copied, or one root
+  // symlinked into another. The failure message therefore names the FULL PATH of
+  // every claimant, which is what tells an operator which two accounts collided —
+  // a bare session id would leave them grepping for it.
+  //
+  // **And a whole DIRECTORY duplicated is one fault, so it is one failure.** The
+  // realistic multi-root shape is not one stray session id, it is every session
+  // id at once — a symlinked account produces a twin for all several hundred
+  // files. Reporting each of them separately buries the one fact an operator can
+  // act on ("these two directories are the same directory") under hundreds of
+  // identical lines, every five minutes, forever. Collisions sharing the same
+  // pair of locations are therefore summarised into a single failure.
   const claims = new Map<string, string[]>();
   for (const file of discovery.files) {
     const paths = claims.get(file.originKey);
@@ -219,20 +266,16 @@ export async function sweepFileSource(
     else claims.set(file.originKey, [file.filePath]);
   }
 
-  const reported = new Set<string>();
+  const contested = new Set<string>();
+  for (const [originKey, twins] of claims) {
+    if (twins.length > 1) contested.add(originKey);
+  }
+  for (const failure of describeContestedContainers(source.id, claims, contested)) {
+    sweep.failures.push(failure);
+  }
+
   for (const file of discovery.files) {
-    const twins = claims.get(file.originKey) ?? [];
-    if (twins.length > 1) {
-      if (!reported.has(file.originKey)) {
-        reported.add(file.originKey);
-        sweep.failures.push({
-          sourceId: source.id,
-          originKey: file.originKey,
-          message: `${twins.length} files claim this container id and none was indexed: ${twins.join(', ')}`,
-        });
-      }
-      continue;
-    }
+    if (contested.has(file.originKey)) continue;
 
     try {
       const outcome = await indexFile(db, source, file, frontier.get(file.originKey), {
@@ -256,12 +299,114 @@ export async function sweepFileSource(
 
   // A file that is GONE loses its rows; a file whose working directory is gone
   // keeps every one of them. See {@link pruneVanished}.
-  sweep.pruned = pruneVanished(db, source.id, live, [
-    ...frontier.keys(),
-    ...indexedOrdinals.keys(),
-  ]);
+  //
+  // **Only when discovery was COMPLETE.** A container absent because its root
+  // could not be listed is not a container that is gone, and pruning on a
+  // partial enumeration would delete an entire account's history the moment its
+  // volume hiccupped — then pay a full rebuild to get it back. It is the same
+  // rule the rejected-discovery path above already follows.
+  //
+  // **The cost, stated plainly rather than softened.** This is not "stale rows
+  // survive one extra sweep". A root that is PERMANENTLY unreadable — a
+  // registered account on a disk that never comes back, a permission nobody
+  // restores — freezes pruning for EVERY root, indefinitely: deleted transcripts
+  // from healthy accounts keep answering searches until the broken root is
+  // fixed or removed from the config. The failure is at least loud, which is why
+  // this is survivable and the alternative is not. The real fix is per-root
+  // pruning, which needs a `root` column on `search_sources` so a frontier row
+  // can say which account it came from; that is filed as follow-up work rather
+  // than smuggled into this ticket.
+  sweep.pruned =
+    discovery.failures.length > 0
+      ? 0
+      : pruneVanished(db, source.id, live, [...frontier.keys(), ...indexedOrdinals.keys()]);
   stampAttempt(db, source.id, at);
   return sweep;
+}
+
+/**
+ * The part of each path that is NOT shared with the others, reading from the
+ * right — for a set of files claiming one container id, the locations that
+ * distinguish them.
+ *
+ * Two accounts holding the same session id differ only in their root, so
+ * `/a/projects/slug/s.jsonl` and `/b/projects/slug/s.jsonl` reduce to `/a` and
+ * `/b`. Two slugs inside one root reduce to the two slug directories. Either way
+ * the answer is the thing an operator would go and look at, and it is derived
+ * from the paths themselves rather than from a root list this function would
+ * otherwise have to be handed.
+ *
+ * @param paths - Absolute paths, at least two, sharing at least a filename.
+ * @returns One distinguishing prefix per input, in the same order.
+ */
+function distinctPrefixes(paths: readonly string[]): string[] {
+  const split = paths.map((filePath) => filePath.split(path.sep));
+  const shortest = Math.min(...split.map((segments) => segments.length));
+
+  // Stop one short of consuming a whole path: something has to be left to name,
+  // and two paths where one is a suffix of the other still differ at the root.
+  let shared = 0;
+  while (shared < shortest - 1) {
+    const tail = split.map((segments) => segments[segments.length - 1 - shared]);
+    if (new Set(tail).size !== 1) break;
+    shared += 1;
+  }
+
+  return split.map(
+    (segments) => segments.slice(0, segments.length - shared).join(path.sep) || path.sep
+  );
+}
+
+/**
+ * Turn every contested container id into the fewest honest failures.
+ *
+ * One collision reports itself, naming both files in full. Collisions that share
+ * the same pair of locations — the shape a duplicated or symlinked account makes,
+ * where every session id inside it is a twin — collapse into one failure naming
+ * those locations and how many ids they cost. See the block comment at the call
+ * site for why that matters.
+ *
+ * @param sourceId - Which source.
+ * @param claims - Every container id and the files claiming it.
+ * @param contested - The ids claimed more than once.
+ * @returns One failure per distinct pair of colliding locations.
+ */
+function describeContestedContainers(
+  sourceId: string,
+  claims: ReadonlyMap<string, string[]>,
+  contested: ReadonlySet<string>
+): SourceFailure[] {
+  const groups = new Map<string, { locations: string[]; ids: string[] }>();
+  for (const originKey of contested) {
+    const twins = claims.get(originKey) ?? [];
+    const locations = distinctPrefixes(twins);
+    // ` ` cannot occur in a path, so it separates without ever joining two
+    // locations that only look adjacent.
+    const signature = locations.join(' ');
+    const group = groups.get(signature);
+    if (group) group.ids.push(originKey);
+    else groups.set(signature, { locations, ids: [originKey] });
+  }
+
+  return [...groups.values()].map(({ locations, ids }) => {
+    if (ids.length === 1) {
+      const originKey = ids[0] as string;
+      const twins = claims.get(originKey) ?? [];
+      return {
+        sourceId,
+        originKey,
+        message: `${twins.length} files claim this container id and none was indexed: ${twins.join(', ')}`,
+      };
+    }
+    return {
+      sourceId,
+      originKey: DUPLICATE_CONTAINERS_KEY,
+      message:
+        `${ids.length} container ids are claimed by more than one file and none was indexed. ` +
+        `The claimants differ only in these locations, which are probably the same directory ` +
+        `reached two ways: ${locations.join(', ')}`,
+    };
+  });
 }
 
 /**

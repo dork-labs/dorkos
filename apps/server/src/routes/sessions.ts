@@ -232,7 +232,8 @@ router.get('/', async (req, res) => {
 // MUST be registered before the `/:id` routes below, or Express 5 would capture
 // `recent` as an `:id` param. Resolves agent project paths server-side via the
 // mesh registry, then fans out via listRecentSessions (bounded concurrency,
-// exact-cwd membership per DOR-203, ADR-0310 per-runtime degradation).
+// subtree cwd membership per DOR-203 + DOR-674, ADR-0310 per-runtime
+// degradation).
 router.get('/recent', async (req, res) => {
   const parsed = RecentSessionsQuerySchema.safeParse(req.query);
   if (!parsed.success) {

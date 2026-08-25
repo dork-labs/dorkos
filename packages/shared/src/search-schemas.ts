@@ -107,13 +107,14 @@ export const SearchHitRoleSchema = z.enum(['user', 'assistant']).openapi('Search
 /** One message that matched, as a coordinate the owning store resolves. */
 export const SearchHitSchema = z
   .object({
-    /** Which source it came from — `'rooms'` or `'claude-code'` today. */
+    /** Which source it came from — `'rooms'`, `'claude-code'` or `'codex'` today. */
     source: z.string().min(1),
     /**
      * The container it lives in: **opaque, composed per source, never parsed by
      * a reader that did not compose it.** A room id for `rooms`, a session id
-     * for `claude-code` — and, once community scoping lands, a room id with a
-     * community in front of it, with no change to this field's meaning.
+     * for `claude-code` and `codex` — and, once community scoping lands, a room
+     * id with a community in front of it, with no change to this field's
+     * meaning.
      */
     container: z.string().min(1),
     /**
@@ -157,7 +158,7 @@ export type SearchHit = z.infer<typeof SearchHitSchema>;
  */
 export const SearchSourceWarningSchema = z
   .object({
-    /** The source that is behind — `'rooms'`, `'claude-code'`. */
+    /** The source that is behind — `'rooms'`, `'claude-code'`, `'codex'`. */
     source: z.string().min(1),
     message: z.string().min(1),
   })

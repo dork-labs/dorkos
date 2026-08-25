@@ -86,11 +86,23 @@ function join(roomId: string, authorId: string, joinedSeq: number): void {
     .run();
 }
 
-/** A session transcript row, as the claude-code projection would write it. */
-function transcribe(sessionId: string, ordinal: number, text: string): void {
+/**
+ * A session transcript row, as a runtime's projection would write it.
+ *
+ * The source id is a parameter because the access rule is about the CATEGORY,
+ * not about `claude-code`: every registered source except `rooms` is session
+ * history, and a caller that presented an agent identity reaches none of them.
+ * A helper hardcoding one runtime would let the next one arrive unguarded.
+ */
+function transcribe(
+  sessionId: string,
+  ordinal: number,
+  text: string,
+  sourceId = 'claude-code'
+): void {
   db.insert(messages)
     .values({
-      sourceId: 'claude-code',
+      sourceId,
       originKey: sessionId,
       ordinal,
       role: 'user',
@@ -100,7 +112,7 @@ function transcribe(sessionId: string, ordinal: number, text: string): void {
     .run();
   db.insert(searchSources)
     .values({
-      sourceId: 'claude-code',
+      sourceId,
       originKey: sessionId,
       lastOrdinal: ordinal,
       containerPath: '/Users/dork/code/dorkos',
@@ -162,6 +174,10 @@ beforeEach(async () => {
   // collision that a visibility clause scoped on `origin_key` alone would let
   // through — and the only way the session assertions below can catch it.
   transcribe('open', 9, 'kestrel, said in a session that shares a room’s id');
+  // A Codex rollout, which is session history under a source id `buildScopes`
+  // has never been told about. That is the point: it must be out of an agent's
+  // reach on the day it lands rather than on the day somebody remembers.
+  transcribe('codex-thread-1', 2, 'a kestrel I mentioned to Codex', 'codex');
 
   await new SearchIndexer(db, [roomsSource]).sweep();
 });
@@ -305,6 +321,27 @@ describe('session history over an MCP-shaped caller', () => {
       const hits = search(scopeFor(ownerId, true), term).results;
       expect(hits.filter((hit) => hit.source === 'claude-code').length).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('returns no CODEX row either — the default closes a source it was never told about', () => {
+    // `buildScopes` knows one source by name, `rooms`, and treats every other
+    // REGISTERED source as session history. This is the test that the claim
+    // survived a new runtime arriving: nothing in `search-service.ts` was
+    // edited for Codex, and the assertion would have to be edited to let a
+    // widening through.
+    expect(search(scopeFor(agentId, false), 'kestrel', 'codex')).toEqual({
+      results: [],
+      warnings: [],
+    });
+    const hits = search(scopeFor(agentId, false), 'kestrel').results;
+    expect(hits.filter((hit) => hit.source === 'codex')).toEqual([]);
+  });
+
+  it('returns the codex row to the owner — the positive control for it', () => {
+    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
+    expect(hits.filter((hit) => hit.source === 'codex').map((hit) => hit.container)).toEqual([
+      'codex-thread-1',
+    ]);
   });
 });
 

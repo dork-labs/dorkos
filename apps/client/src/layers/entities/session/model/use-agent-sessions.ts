@@ -28,9 +28,12 @@ import { selectAgentSessions } from '../lib/select-agent-sessions';
  * session resolver and the global stream bridge (`useGlobalSessionStream`) also
  * keep live — no second fetch shape, no new cache namespace.
  *
- * Membership is an exact `cwd` match, mirroring the server's per-project list
- * semantics — a session without a cwd belongs to no agent. `null` (no agent
- * selected) resolves to an empty list and fetches nothing.
+ * Membership is the agent's project directory OR any folder inside it, through
+ * the same `isWithinDirectory` predicate the server's per-project listing and
+ * per-agent fan-out use — the mirror has to be exact, or this filter silently
+ * re-drops sessions the server just included (DOR-674). A session without a cwd
+ * belongs to no agent. `null` (no agent selected) resolves to an empty list and
+ * fetches nothing.
  *
  * @param projectPath - The agent's project directory, or null when none is active
  */
