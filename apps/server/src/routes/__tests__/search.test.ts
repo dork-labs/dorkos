@@ -313,6 +313,26 @@ describe('who is asking', () => {
     expect(res.body).toEqual({ results: [], warnings: [] });
   });
 
+  it('answers WHO before it reads WHAT, so a stranger is refused before their typo is', async () => {
+    // The ordering moved when the query half of this route became `answerSearch`
+    // (DOR-691): the schema check used to run first, so a caller this machine
+    // could not identify was told their query was malformed — a 400 that
+    // describes the request of somebody who was never going to be answered.
+    // Both halves are asserted, because either alone is satisfied by the wrong
+    // order: the refusal is the identity one, AND the identical query from a
+    // caller who IS identified still gets the 400 it deserves.
+    const stranger = await request(buildApp(undefined, true)).get('/api/search').query({ q: 'a' });
+    const owner = await request(buildApp()).get('/api/search').query({ q: 'a' });
+
+    expect(stranger.status).toBe(401);
+    expect(stranger.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    // And nothing about the query is echoed back to them.
+    expect(stranger.body.error).not.toMatch(/word of at least/);
+
+    expect(owner.status).toBe(400);
+    expect(owner.body.code).toBe('INVALID_SEARCH_QUERY');
+  });
+
   it('refuses a caller whose agent token this machine could not verify', async () => {
     // The header is there and nothing resolved it — a revoked or expired agent.
     // It is refused rather than quietly treated as the person at the keyboard,

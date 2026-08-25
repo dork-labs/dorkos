@@ -216,3 +216,33 @@ export const SearchQuerySchema = z
 
 /** The `GET /api/search` query string (see {@link SearchQuerySchema}). */
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;
+
+/**
+ * A search request the contract refuses, in the shape the HTTP route sends it.
+ *
+ * Named here rather than in the route because search is answered on **two**
+ * transports (DOR-691): `GET /api/search` over HTTP, and the same service called
+ * in-process by the Obsidian embed, which has no server to ask. A refusal that
+ * only the route knew how to spell would leave the embed inventing its own
+ * wording for the same mistake, and a person would be told two different things
+ * about one typo depending on which window they were in.
+ */
+export interface SearchRefusal {
+  /** The status the HTTP route answers with — `400` for everything here today. */
+  status: number;
+  /** One plain sentence naming what was actually wrong with the request. */
+  error: string;
+  /** The machine-readable code: `INVALID_SEARCH_QUERY` or `UNKNOWN_SEARCH_SOURCE`. */
+  code: string;
+}
+
+/**
+ * What answering a search produces: the envelope, or the refusal.
+ *
+ * **The whole decision, as data.** Both surfaces that answer a search build one
+ * of these from the same function, so the route renders it as a status plus a
+ * body and the embed's transport raises it as the same error `fetchJSON` would
+ * have raised. Neither owns a rule the other does not, which is the property
+ * that keeps "search in Obsidian" from quietly becoming a second, laxer contract.
+ */
+export type SearchAnswer = { ok: true; response: SearchResponse } | ({ ok: false } & SearchRefusal);

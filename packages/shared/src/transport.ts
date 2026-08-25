@@ -2490,9 +2490,18 @@ export interface Transport extends RoomTransport {
    * **A port method rather than a `fetch`**, because a surface that reached the
    * route directly would work on the web and answer nothing in the Obsidian
    * embed — and an empty result list is indistinguishable from "no matches",
-   * which is the silent failure this feature refuses everywhere else. The embed
-   * has no message index in process, so its adapter REJECTS rather than
-   * answering `[]`.
+   * which is the silent failure this feature refuses everywhere else.
+   *
+   * **One contract, two adapters** (DOR-691). `HttpTransport` calls
+   * `GET /api/search`. `DirectTransport` reads an index a host wired into it, in
+   * that host's own process, under the same operator scope the route resolves —
+   * so where a host provides one, the two answer identically for the same query.
+   * No shipped host does yet, and the embed's search surfaces are gated off for
+   * exactly that reason.
+   *
+   * Neither adapter ever answers `[]` for a search it could not run: a request it
+   * cannot honour REJECTS, carrying the same `message`, `code` and `status` on
+   * either transport.
    *
    * The response is the route's envelope untouched, `warnings` included: a
    * source that could not be indexed contributes zero hits and one warning

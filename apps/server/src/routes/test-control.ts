@@ -13,8 +13,12 @@ import { heldProcesses } from '../services/runtimes/test-mode/held-process.js';
 import { interactionGate } from '../services/runtimes/test-mode/interaction-gate.js';
 import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import {
+  getRoomService,
+  getBridgeStore,
+  getRoomAuthors,
+  resolveOperatorAuthor,
+} from '../services/rooms/index.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
@@ -651,8 +655,7 @@ testControlRouter.post('/seed-bridge', async (req, res) => {
     // production bridge lifecycle uses, so `createBridgedRoom`'s owner check
     // passes on a real (onboarded) server the same way it does in prod.
     const authors = getRoomAuthors();
-    const owner = readOwnerAccount();
-    const operatorAuthorId = owner ? authors.bindOwner(owner.id).id : authors.localHuman().id;
+    const operatorAuthorId = resolveOperatorAuthor(authors).id;
     const adapterId = 'tg-e2e';
     const chatId = ulid();
 
