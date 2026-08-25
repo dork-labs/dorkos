@@ -16,6 +16,13 @@ export interface Block {
  * scattered through the components means the word budget is one thing you can
  * read end to end, and `__tests__/home-copy.test.ts` can hold the settled
  * lines still while the rest stays editable.
+ *
+ * One exception, and it is deliberate. The clips rail's words live with its
+ * cards in `tutorials/tutorials.ts`, because that section is built to be
+ * lifted whole into a sibling page that renames it: its copy and its card
+ * list are one config object, and splitting them across two files would mean
+ * re-theming the section in two places. The copy test sweeps that object into
+ * the same checks as everything here, so nothing escapes the gates.
  */
 export const HERO: Block = {
   eyebrow: 'claude code · codex · opencode',
@@ -49,15 +56,21 @@ export const LOCALHOST_CAPTION = 'home sweet localhost';
  * The film, which this page puts second and treats as the main event.
  *
  * Every word here is one of the four lines the film's own campaign settled on,
- * used in the film's order: "Meet Dave." / "Dave is not winning." above the
+ * used in the film's order: "Meet Dave." / "Dave wasn't winning..." above the
  * player, {@link FILM_TURN} under it, and {@link BRIDGE} carrying the last one
  * into the product. The page never invents a new sentence about Dave and never
  * explains what happens in the film. A page that narrates a joke has spent it.
+ *
+ * The second line was "Dave is not winning." until the operator edited it in
+ * the 2026-08-25 review. The past tense and the trailing dots do the work the
+ * present tense could not: they say the story is already over and its ending
+ * is one scroll away, which is the whole reason to press play. The apostrophe
+ * is the typographic one, to match "Dave isn’t" in {@link BRIDGE}.
  */
 export const FILM: Block = {
   eyebrow: '56 seconds · sound on',
   title: 'Meet Dave.',
-  lede: 'Dave is not winning.',
+  lede: 'Dave wasn’t winning...',
 };
 
 /** The turn, under the player: what the next 56 seconds are about. */
@@ -90,7 +103,17 @@ export const CLOSE = {
   cost: 'DorkOS is free. Your agents call whichever AI company powers them, and that is the only bill.',
   /** The one link out of the close, to every other way of installing. */
   otherWays: 'other ways to install',
-  /** The colophon, before the GitHub link. */
+  /**
+   * The Marketplace, in the footer rather than the pill.
+   *
+   * The floating pill now steers this page's own sections, and browsing
+   * packages is not one of them: it is somewhere you go once you already run
+   * DorkOS, which puts it at the end of the page next to the source, not in
+   * the reading path. It is still one click from every screen via the pill's
+   * overflow menu.
+   */
+  marketplace: 'marketplace',
+  /** The colophon, before the footer's two links. */
   colophon: 'dorkos · open source, mit ·',
 } as const;
 

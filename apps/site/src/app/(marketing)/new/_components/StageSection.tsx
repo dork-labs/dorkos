@@ -14,6 +14,7 @@ import { nextBeat, type Beat } from './beats';
 import { ChatWindow } from './ChatWindow';
 import { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
 import { LOCALHOST_CAPTION } from './copy';
+import { PANEL } from './film-tokens';
 import { LaptopFrame } from './LaptopFrame';
 import { captionOpacityAt, chatScaleAt, shellOpacityAt } from './stage-timing';
 import { useChatPlayback } from './use-chat-playback';
@@ -66,7 +67,14 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
   const used = new Set(lines.map((line) => line.dockApp).filter(Boolean) as string[]);
 
   return (
-    <section ref={sectionRef} className="relative" style={{ height: `${STAGE_VH}vh` }}>
+    <section
+      ref={sectionRef}
+      id="how-it-works"
+      tabIndex={-1}
+      aria-label="How it works"
+      className="relative focus:outline-none"
+      style={{ height: `${STAGE_VH}vh` }}
+    >
       <div
         ref={stickyRef}
         className="sticky top-0 flex h-screen flex-col items-center justify-center gap-5 overflow-hidden px-6"
@@ -83,8 +91,8 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
         <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
 
         <motion.p
-          style={{ opacity: captionOpacity }}
-          className="text-2xs absolute bottom-8 font-mono tracking-[0.2em] text-(--cream-dim) uppercase"
+          style={{ opacity: captionOpacity, color: PANEL.dim }}
+          className="text-2xs absolute bottom-8 font-mono tracking-[0.2em] uppercase"
         >
           {LOCALHOST_CAPTION}
         </motion.p>

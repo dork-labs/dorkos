@@ -30,7 +30,9 @@ import { ROOM_PLATE } from './promo-cuts';
 export function FilmSection() {
   return (
     <section
-      className="relative isolate overflow-hidden"
+      id="film"
+      tabIndex={-1}
+      className="relative isolate overflow-hidden focus:outline-none"
       style={{ backgroundColor: ROOM.base }}
       aria-label="The film"
     >

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { MarketingNav, NAV_LINKS } from '@/layers/features/marketing';
-import { ExtensionNoiseGuard, HomeExperience } from './_components';
+import { ExtensionNoiseGuard, HomeExperience, HomeNav } from './_components';
 
 const TITLE = 'All your agents. One place.';
 const DESCRIPTION = 'A work in progress: the next version of the DorkOS home page.';
@@ -35,9 +34,13 @@ export const metadata: Metadata = {
  * frame and into a pinned, scroll-driven chat that only ever shows things the
  * product ships. Watch him win, see it is real, get it.
  *
- * Navigation is the site's own floating pill, unchanged: it already yields
- * while you read downward and comes back when you scroll up, which is exactly
- * what a page built around one long scroll needs.
+ * Navigation is this page's own fork of the site's floating pill. It keeps the
+ * shared component's shape and its yield-while-you-read behaviour, and changes
+ * what the entries are for: on a page that is one long scroll, a signpost to
+ * eight other pages is the wrong instrument, so the pill steers this page's
+ * own sections and folds the rest of the site behind "⋯". See `nav/HomeNav`
+ * for the full divergence. The shared `MarketingNav` is untouched, and so is
+ * every page that renders it.
  *
  * `overflow-anchor: none` is load-bearing — without it Chrome's scroll
  * anchoring compensates for each message the pinned chat appends and walks
@@ -50,7 +53,7 @@ export default function NewHomePage() {
       <main>
         <HomeExperience />
       </main>
-      <MarketingNav links={NAV_LINKS} />
+      <HomeNav />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { features } from '@/layers/features/marketing/lib/features';
@@ -16,6 +16,7 @@ import {
   LOCALHOST_CAPTION,
 } from '../copy';
 import { DOCK, findDockApp, type DockAppId } from '../dock-apps';
+import { PAGE_SECTIONS } from '../sections';
 import {
   HANDOFF_STILL,
   PROMO_CAPTIONS,
@@ -24,9 +25,20 @@ import {
   ROOM_PLATE,
 } from '../promo-cuts';
 import { INSTALL_COMMAND } from '../theme';
+import { TUTORIALS } from '../tutorials';
 
 /** The page's own words about Dave, in the order a visitor meets them. */
 const FILM_COPY: string[] = [...Object.values(FILM), FILM_TURN, ...Object.values(BRIDGE)];
+
+/** The clips rail's words, which live with its cards rather than in `copy.ts`. */
+const TUTORIAL_COPY: string[] = [
+  TUTORIALS.eyebrow,
+  TUTORIALS.title,
+  TUTORIALS.lede,
+  TUTORIALS.pendingChip,
+  ...Object.values(TUTORIALS.endCard).filter((value) => !value.startsWith('/')),
+  ...TUTORIALS.cards.map((card) => card.title),
+];
 
 /** Every string `/new` renders, flattened, for the sweeps below. */
 const ALL_COPY: string[] = [
@@ -34,6 +46,7 @@ const ALL_COPY: string[] = [
   ...Object.values(BEATS).flatMap((beat) => Object.values(beat)),
   LOCALHOST_CAPTION,
   ...FILM_COPY,
+  ...TUTORIAL_COPY,
   ...Object.values(CLOSE),
   ...Object.values(DOWNLOAD),
   INSTALL_ASIDE,
@@ -41,6 +54,7 @@ const ALL_COPY: string[] = [
   PROMO_POSTER_ALT,
   HANDOFF_STILL.alt,
   ...DOCK.map((app) => app.label),
+  ...PAGE_SECTIONS.map((section) => section.label),
   ...CHAT_SCRIPT.map((line) => line.text),
 ];
 
@@ -52,6 +66,9 @@ function findPublicDir(from: string): string | null {
   }
   return null;
 }
+
+/** The page's own assembly, read as text, so the order it renders in can be pinned. */
+const HOME_EXPERIENCE = readFileSync(join(import.meta.dirname, '..', 'HomeExperience.tsx'), 'utf8');
 
 /** Every dock tile the conversation actually puts to work. */
 const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filter(
@@ -159,11 +176,20 @@ describe('the film leads', () => {
   it('puts the film above the story that proves it', () => {
     // Order is the argument here, so it is pinned rather than left to a
     // reviewer's memory. Moving the player below the stage, or the stage above
-    // the hand-off, turns this page back into a different one.
-    const source = readFileSync(join(import.meta.dirname, '..', 'HomeExperience.tsx'), 'utf8');
-    const order = ['<Hero', '<FilmSection', '<CastBridge', '<StageSection', '<CloseSection'].map(
-      (tag) => [tag, source.indexOf(tag)] as const
-    );
+    // the hand-off, turns this page back into a different one. Past the close
+    // of the argument the order is a different kind of promise: clips, then
+    // the catalogue, then the objections, then the ask — what an interested
+    // visitor goes looking for, in the order they go looking.
+    const order = [
+      '<Hero',
+      '<FilmSection',
+      '<CastBridge',
+      '<StageSection',
+      '<TutorialsSection',
+      '<FeatureCatalogSection',
+      '<FAQSection',
+      '<CloseSection',
+    ].map((tag) => [tag, HOME_EXPERIENCE.indexOf(tag)] as const);
 
     for (const [tag, at] of order) {
       expect(at, `${tag} is not on the page`).toBeGreaterThan(-1);
@@ -172,18 +198,44 @@ describe('the film leads', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 
+  it('renders the two catalogue sections rather than reimplementing them', () => {
+    // They are the published home page's, imported from the marketing barrel
+    // and rendered unmodified. A local copy of either would fork the feature
+    // list or the FAQ into two that drift, and editing the originals would
+    // change `/`, which is byte-frozen.
+    const shared = HOME_EXPERIENCE.match(
+      /import \{([^}]*)\} from '@\/layers\/features\/marketing'/
+    );
+    expect(shared, 'nothing is imported from the marketing barrel').not.toBeNull();
+    expect(shared?.[1]).toContain('FAQSection');
+    expect(shared?.[1]).toContain('FeatureCatalogSection');
+  });
+
   it('says nothing about Dave the film did not approve', () => {
     // The four lines below are the film campaign's own, approved word for word.
     // The page may arrange them; it may not write a fifth. Narrating a film in
     // the copy above it spends the film before it plays. Scoped to the page's
     // authored film copy: the poster and still descriptions are alt text, which
     // has to describe the picture rather than sell it.
+    // "Dave wasn't winning..." replaced "Dave is not winning." in the
+    // operator's 2026-08-25 review of this page. It is the same approved beat
+    // in the past tense: the story is over, and its ending is one press away.
     expect(FILM_COPY.filter((line) => /\bDave\b/.test(line))).toEqual([
       'Meet Dave.',
-      'Dave is not winning.',
+      'Dave wasn’t winning...',
       'Then Dave got DorkOS.',
       'Dave isn’t smarter than you.',
     ]);
+  });
+
+  it('lets no later section write a fifth line about him', () => {
+    // The clips rail is the one section below the hand-off that mentions Dave
+    // at all, and it does it by reusing "Meet Dave." from `copy.ts` rather
+    // than titling its tile itself. Anything else here would be the page
+    // narrating the film after the film has played. The chat script and the
+    // still's alt text are exempt: the script is the film's cast talking to
+    // each other, and alt text has to describe the picture.
+    expect(TUTORIAL_COPY.filter((line) => /\bDave\b/.test(line))).toEqual([FILM.title]);
   });
 
   it('finishes the approved line it breaks in half', () => {
@@ -205,6 +257,132 @@ describe('the film leads', () => {
   it('describes the hand-off frame for anyone who cannot see it', () => {
     expect(HANDOFF_STILL.alt.length).toBeGreaterThan(30);
     expect(HANDOFF_STILL.width / HANDOFF_STILL.height).toBeCloseTo(16 / 9, 2);
+  });
+});
+
+describe('the clips rail', () => {
+  const PUBLIC_DIR = findPublicDir(import.meta.dirname);
+
+  it('only names capabilities the feature catalog calls shipped', () => {
+    // Same law as the dock, applied to a section where most of the tiles are
+    // empty. A card that names a capability makes the promise whether or not
+    // there is footage behind it, so a placeholder is held to the finished
+    // card's standard: `feature` resolves, and it resolves to `ga`.
+    const bySlug = new Map(features.map((feature) => [feature.slug, feature]));
+
+    for (const card of TUTORIALS.cards) {
+      const backing = bySlug.get(card.feature);
+      expect(backing, `card "${card.id}" names no feature "${card.feature}"`).toBeDefined();
+      expect(backing?.status, `card "${card.id}" depicts a non-GA feature`).toBe('ga');
+    }
+  });
+
+  it('says out loud that most of the shelf is empty', () => {
+    // The honest state has to be readable, not inferred from a dashed border.
+    // Every card without a clip wears the pending chip, and the chip is about
+    // the clip rather than the feature, which is the distinction that keeps
+    // "Add a skill from the marketplace · clip coming" from reading as a
+    // marketplace that has not shipped.
+    const pending = TUTORIALS.cards.filter((card) => !card.clip);
+    expect(pending.length).toBeGreaterThan(0);
+    expect(TUTORIALS.pendingChip).toMatch(/clip|video|soon/i);
+    expect(TUTORIALS.lede).toMatch(/coming|on the way|being made|soon/i);
+  });
+
+  it('leads with the one clip that exists', () => {
+    // The rail's first tile is the film's vertical cut. A rail whose first
+    // frame is a placeholder is a rail nobody scrolls.
+    const [first, ...rest] = TUTORIALS.cards;
+    expect(first.clip).toBeDefined();
+    expect(first.clip?.src).toBe(PROMO_CUTS.tall.src);
+    expect(
+      rest.every((card) => !card.clip),
+      'a second clip appeared without a test'
+    ).toBe(true);
+  });
+
+  it('reuses the film’s own title rather than writing a fifth Dave line', () => {
+    expect(TUTORIALS.cards[0].title).toBe(FILM.title);
+  });
+
+  it('ships every still the rail points at', () => {
+    const stills = TUTORIALS.cards.flatMap((card) =>
+      [card.clip?.poster, card.plate?.src].filter((src): src is string => Boolean(src))
+    );
+    expect(stills).toHaveLength(TUTORIALS.cards.length);
+    for (const still of stills) {
+      expect(existsSync(join(PUBLIC_DIR ?? '', still)), still).toBe(true);
+    }
+  });
+
+  it('keeps the generated stills small enough to be background texture', () => {
+    // They sit at 42% opacity behind a scrim on a card 256px wide. Anything
+    // heavier is bandwidth spent on something nobody looks at directly.
+    for (const card of TUTORIALS.cards) {
+      if (!card.plate) continue;
+      const bytes = statSync(join(PUBLIC_DIR ?? '', card.plate.src)).size;
+      expect(bytes, `${card.plate.src} is ${Math.round(bytes / 1024)}KB`).toBeLessThan(300 * 1024);
+    }
+  });
+});
+
+describe('the pill and the page’s own stops', () => {
+  it('points every pill entry at a section the page renders', () => {
+    // The pill scrolls rather than navigates now, and an anchor pointing at an
+    // id nothing carries is a press that silently does nothing. Two of the
+    // five ids live on wrappers in `HomeExperience`; the other three are on
+    // the sections themselves.
+    const sources = [
+      HOME_EXPERIENCE,
+      readFileSync(join(import.meta.dirname, '..', 'FilmSection.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dirname, '..', 'StageSection.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dirname, '..', 'tutorials', 'TutorialsSection.tsx'), 'utf8'),
+    ].join('\n');
+
+    for (const section of PAGE_SECTIONS) {
+      expect(sources, `nothing renders id="${section.id}"`).toContain(`id="${section.id}"`);
+    }
+  });
+
+  it('gives every anchor target a focus stop, so the page moves the reader too', () => {
+    // Scrolling without moving focus leaves a keyboard visitor's next Tab
+    // resuming three screens behind what they are now looking at. Each target
+    // carries tabIndex={-1} for the nav to focus.
+    const anchored = [
+      HOME_EXPERIENCE,
+      readFileSync(join(import.meta.dirname, '..', 'FilmSection.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dirname, '..', 'StageSection.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dirname, '..', 'tutorials', 'TutorialsSection.tsx'), 'utf8'),
+    ].join('\n');
+
+    for (const section of PAGE_SECTIONS) {
+      const at = anchored.indexOf(`id="${section.id}"`);
+      // tabIndex sits within a few attributes of the id on the same element.
+      expect(anchored.slice(at, at + 200), `id="${section.id}" has no focus stop`).toContain(
+        'tabIndex={-1}'
+      );
+    }
+  });
+
+  it('keeps the Marketplace out of the pill and in the footer', () => {
+    // The operator moved it. The pill steers the page now, and browsing
+    // packages is somewhere you go once you already run DorkOS.
+    expect(PAGE_SECTIONS.map((section) => section.label)).not.toContain('marketplace');
+    expect(CLOSE.marketplace).toBe('marketplace');
+    const close = readFileSync(join(import.meta.dirname, '..', 'CloseSection.tsx'), 'utf8');
+    expect(close).toContain('href="/marketplace"');
+  });
+
+  it('leaves the shared nav alone, because `/` renders it', () => {
+    // The published home page is byte-frozen against origin/main. This page's
+    // pill is a fork under `nav/`; the moment it imports the shared component
+    // instead, a change here is a change to every marketing page.
+    const page = readFileSync(join(import.meta.dirname, '..', '..', 'page.tsx'), 'utf8');
+    expect(page).toContain('<HomeNav />');
+    // Naming the shared component in a comment is how the fork explains
+    // itself; rendering or importing it is the thing that must not happen.
+    expect(page).not.toContain('<MarketingNav');
+    expect(page).not.toMatch(/^import .*MarketingNav/m);
   });
 });
 

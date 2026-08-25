@@ -12,7 +12,12 @@ import { InstallCommand } from './InstallCommand';
  * The close: the tagline, the download, the bill, and a one-line colophon.
  *
  * It carries no list of site sections. The floating pill does that, on every
- * screen of the page, so a second copy down here would only repeat it.
+ * screen of the page, so a second copy down here would only repeat it. The one
+ * destination that does sit in this line is the Marketplace, which moved out
+ * of the pill: browsing packages is somewhere you go once you already run
+ * DorkOS, which puts it at the end of the page beside the source rather than
+ * in the reading path. It is still one press away from every screen, in the
+ * pill's overflow menu.
  */
 export function CloseSection() {
   return (
@@ -54,6 +59,10 @@ export function CloseSection() {
       </motion.div>
       <div className="text-2xs border-border-warm text-warm-gray mt-24 border-t pt-6 text-center font-mono tracking-[0.15em] uppercase">
         {CLOSE.colophon}{' '}
+        <Link href="/marketplace" className="hover:text-charcoal">
+          {CLOSE.marketplace}
+        </Link>{' '}
+        ·{' '}
         <a href={siteConfig.github} className="hover:text-charcoal">
           github
         </a>

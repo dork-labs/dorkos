@@ -53,6 +53,19 @@ export const PANEL = {
   divider: 'rgba(255, 255, 255, 0.08)',
   text: '#ffffff',
   textMuted: '#7a756a',
+  /**
+   * Small labels on the dark surfaces: the typing dots, the localhost caption.
+   *
+   * Was written as `--cream-dim`, a custom property this site has never
+   * defined — Tailwind emitted `color: var(--cream-dim)` with no fallback, the
+   * declaration was invalid at computed-value time, and the caption silently
+   * inherited charcoal while the typing dots lost their background entirely.
+   * The value is the one the storyboard's palette calls "Cream dim"; it lives
+   * here, with the rest of the film's transcribed values, rather than being
+   * added to the site's global tokens, because nothing outside this page uses
+   * it.
+   */
+  dim: '#a49c8e',
   /** Dave's bubble fills with the brand accent; everyone else gets the dark card. */
   own: '#e85d04',
 } as const;

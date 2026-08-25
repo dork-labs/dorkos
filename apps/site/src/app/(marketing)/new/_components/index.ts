@@ -17,6 +17,7 @@
 // The page
 export { HomeExperience } from './HomeExperience';
 export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
+export { HomeNav } from './nav';
 export { INSTALL_COMMAND, SHELL } from './theme';
 
 // Pieces the storyboard pins, one frame at a time
