@@ -215,8 +215,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     ourReasonHeading: 'Add DorkOS when',
     recommendationHeading: 'What each part does',
     groupLabel: 'Agent tools DorkOS runs',
-    groupBlurb:
-      'The agents DorkOS runs for you. Keep the tool you like, and gain one place to run it from.',
+    groupBlurb: 'Keep the agent you like. Run it from one place.',
   },
   adjacent: {
     headline: (name) => `DorkOS vs ${name}`,
@@ -224,7 +223,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     intro: (name) =>
       `${name} vs DorkOS: different kinds of tool, so this page sticks to the ground they share.`,
     scopeNote: (name) =>
-      `${name} and DorkOS are different kinds of tool. This page covers only the ground they share, not everything either one does.`,
+      `${name} and DorkOS are different kinds of tool. This page covers only the ground they share.`,
     outboundLabel: (name) => `See ${name} for yourself`,
     tableHeading: 'Where the two overlap',
     theirColumn: (name) => name,
@@ -241,7 +240,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     metaTitle: (name) => `${name} alternatives: what to use now`,
     intro: (name) => `${name} is gone: what happened, and where to go next.`,
     scopeNote: (name) =>
-      `${name} has shut down. This page covers what it did, where its users went next, and where DorkOS fits. Everything we checked is listed at the bottom.`,
+      `${name} has shut down. This page covers what it did, where its users went next, and where DorkOS fits. Our sources are listed at the bottom.`,
     // Its own address now leads to whatever the closure left behind: a stub page,
     // or a repository marked read-only. Worth a look, but not a look at the product.
     outboundLabel: (name) => `See what is left of ${name}`,
@@ -271,7 +270,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can you run more than one company’s coding agent from the same screen?',
     wantPhrase: 'every coding agent you run on one screen, not one company’s',
     dorkosDetail:
-      'Each chat picks its own agent tool, so you can start a job on Claude Code, run the next on Codex, and keep a third on OpenCode without leaving the tab or changing any setup. Sessions from all three land in one list, and they keep running for as long as DorkOS does.',
+      'Each chat picks its own agent tool. Start a job on Claude Code, run the next on Codex, keep a third on OpenCode, without leaving the tab or changing any setup. All three land in one list, and they keep running for as long as DorkOS does.',
   },
   {
     id: 'your-own-subscriptions',
@@ -290,7 +289,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can you hand over a job that runs at a set time without you sitting there?',
     wantPhrase: 'jobs that start at a set time without you pressing anything',
     dorkosDetail:
-      'You write the job once and say when it should run: every night, every Monday, every hour. DorkOS starts the agent at that time on your own machine and messages you when it finishes or needs a decision, so you are not the thing that has to remember.',
+      'You write the job once and say when it runs: every night, every Monday, every hour. DorkOS starts the agent at that time on your own machine, then messages you when it finishes or needs a decision. Remembering is not your job.',
   },
   {
     id: 'self-scheduling-trust',
@@ -299,7 +298,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can an agent set up a repeating job, with you approving it first?',
     wantPhrase: 'agents that can book repeating work, but only with your say-so',
     dorkosDetail:
-      'An agent can propose a repeating job, and it never starts one on its own. You get a card naming the agent, quoting the reason it gave, and showing the next three run times and the exact instructions. There is a button to run it once, supervised, before you agree to it forever.',
+      'An agent can propose a repeating job. It never starts one on its own. You get a card naming the agent, quoting its reason, and showing the next three run times and the exact instructions. One button runs it once, supervised, before you agree to it forever.',
   },
   {
     id: 'coordination',
@@ -308,7 +307,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can several agents find each other and pass work along?',
     wantPhrase: 'agents that can hand work to each other instead of working alone',
     dorkosDetail:
-      'Your agents share rooms the way people share a group chat. They can see each other, answer each other, and hand a job along. You set how often they may reply, per room, so a busy channel never turns into a runaway bill.',
+      'Your agents share rooms the way people share a group chat. They see each other, answer each other, and hand a job along. You set how often they may reply, per room, so a busy channel never turns into a runaway bill.',
   },
   {
     id: 'spend-guardrails',
@@ -317,7 +316,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'When your agents talk to each other, can you stop the bill running away?',
     wantPhrase: 'a limit that stops your agents answering each other all night',
     dorkosDetail:
-      'Four dials cap the replies your agents may trade: how many in a row, how much of one conversation a single agent may take, how many per room each hour, and how many across every room each hour. Set them once, or set them room by room. The dial covering everything is the one no room can skip.',
+      'Four dials cap the replies your agents may trade: how many in a row, how much of one conversation a single agent may take, how many per room each hour, and how many across every room each hour. Set them once, or room by room. No room can skip the dial that covers everything.',
   },
   {
     id: 'local-first',
@@ -360,7 +359,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Is there one place holding everything waiting on your answer?',
     wantPhrase: 'one list of everything waiting on you, instead of hunting through tabs',
     dorkosDetail:
-      'One bell holds every question, approval and finished run, with the things waiting on you above the things that merely happened. What you have read stays read on your other devices. If a question sits unanswered for the few minutes you chose, it rings your phone.',
+      'One bell holds every question, approval and finished run, with the things waiting on you above the things that merely happened. What you have read stays read on your other devices. A question left unanswered for the few minutes you chose rings your phone.',
   },
   {
     id: 'extensibility',
@@ -369,7 +368,7 @@ export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
     question: 'Can you add your own tools and share the setup with other people?',
     wantPhrase: 'to add your own tools and share the setup with other people',
     dorkosDetail:
-      'Nothing here replaces a marketplace of editor add-ons built up over years. What DorkOS adds is the other half, you can package up a working agent, with its instructions and its tools, and hand the whole thing to someone else in one command. Signing those tools in to outside services is the part still finding its feet.',
+      'DorkOS does not replace a marketplace of editor add-ons built up over years. It adds the other half: package a working agent, with its instructions and its tools, and hand the whole thing to someone else in one command. Signing those tools in to outside services is the part still finding its feet.',
   },
   {
     id: 'pricing',
@@ -476,7 +475,7 @@ export const comparisons: Competitor[] = [
       'Free Hobby plan. Pro is $20 a month, with higher paid tiers above it and teams at $40 per person. Every plan includes some model use, and going past it costs extra.',
     openSource: false,
     verdict:
-      'Cursor is a very good editor, and if you write code all day in one window, it is the better buy. DorkOS is not an editor. It is one place for every agent you already run: on your own machine, on a schedule, and on your phone when you are out. Those agents write code. They also send the email, plan the week, and book the call.',
+      'Cursor is an excellent editor, and if you write code all day in one window it is the better buy. DorkOS is not an editor. It is one place for every agent you already run: on your own machine, on a schedule, and on your phone when you are out. Those agents write code. They also send the email, plan the week and book the call.',
     theirStrengths: [
       'you want one polished window for writing code with an agent beside you',
       'you want several of its agents at once, each on its own copy of your project',
@@ -512,19 +511,19 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'Cursor runs its own agents inside Cursor. It does not drive Claude Code, Codex or OpenCode for you.',
         detail:
-          'Cursor picks the model for its own agents, and that is the whole choice on offer: the agent is part of the editor. If you already run Claude Code in one terminal and Codex in another, Cursor does not gather them up, those stay separate tools you switch between by hand.',
+          'Cursor picks the model for its own agents, and that is the whole choice on offer: the agent is part of the editor. If you already run Claude Code in one terminal and Codex in another, Cursor does not gather them up. They stay separate tools you switch between by hand.',
       },
       scheduling: {
         verdict: 'no',
         note: 'There is no built-in way to have a job start at a set time. You kick off every run yourself.',
         detail:
-          'Cursor’s cloud agents keep working after you hand them a job, which is not the same as starting one on their own. Nothing in Cursor says "run this every night at two", so a recurring job needs you, awake, to press the button.',
+          'Cursor’s cloud agents keep working after you hand them a job, which is not the same as starting one on their own. Nothing in Cursor says "run this every night at two".',
       },
       coordination: {
         verdict: 'partial',
         note: 'Up to eight agents can work side by side, each on its own copy of the project, but each one reports back to you rather than to the others.',
         detail:
-          'Cursor runs up to eight agents at once, keeping them apart with separate copies of your project so they do not tread on each other. That is parallel work rather than teamwork: each agent answers in its own context and hands the result back to your conversation, so none of them can ask another a question or pass it the next step.',
+          'Cursor runs up to eight agents at once, each on its own copy of your project so they do not tread on each other. That is parallel work, not teamwork: each hands its result back to your conversation, and none can ask another a question or pass it the next step.',
         source: 'https://cursor.com/changelog/2-0',
       },
       'local-first': {
@@ -536,14 +535,14 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. Besides the desktop app there is a web dashboard, an iPhone and iPad app, and a Slack integration for starting and checking on its cloud agents.',
         detail:
-          'You can start an agent from your phone, watch it work, and review and merge its pull request without opening a laptop. The iPhone and iPad app was still a public beta when we checked, with Android named as planned rather than shipped, and it is deliberately not an editor: it is for directing and reviewing agents, not writing code.',
+          'You can start an agent from your phone, watch it work, and review and merge its pull request without opening a laptop. The iPhone and iPad app was still a public beta when we checked, and Android is named as planned rather than shipped. It is deliberately not an editor: it directs and reviews agents rather than writing code.',
         source: 'https://cursor.com/docs/cloud-agent/web-and-mobile',
       },
       extensibility: {
         verdict: 'yes',
         note: 'It imports your VS Code setup and installs editor extensions, and its agent can reach your own tools through MCP, the common way to plug outside tools into an agent.',
         detail:
-          'Years of editor extensions carry over, with one caveat worth knowing: Cursor installs them from the Open VSX registry rather than the VS Code Marketplace, so a few will be missing. Its agent also connects to outside tools through MCP, so the things your team already runs are reachable from inside the editor.',
+          'Years of editor extensions carry over, with one catch: Cursor installs them from the Open VSX registry rather than the VS Code Marketplace, so a few will be missing. Its agent also reaches outside tools through MCP, so what your team already runs is reachable from inside the editor.',
         source: 'https://cursor.com/docs/configuration/migrations/vscode',
       },
       pricing: {
@@ -596,7 +595,7 @@ export const comparisons: Competitor[] = [
       'A free tier and a $10 Pro plan, neither of which includes the outside agents. Handing work to Claude or Codex starts at $39 a month. Business and enterprise plans are priced separately, and agent work is metered on top.',
     openSource: false,
     verdict:
-      'GitHub built something serious here. You can hand one issue to Copilot, to Claude and to Codex at once, then compare what three companies bring back, inside the repository your team already uses. The catch is where it happens: on GitHub’s computers, on code already pushed to GitHub, billed to your Copilot seat rather than the Claude or ChatGPT plan you already pay for. DorkOS drives the agents already signed in on your own machine, on any folder, and adds nothing to your bill.',
+      'GitHub built something serious here. Hand one issue to Copilot, Claude and Codex at once, and compare what three companies bring back, inside the repository your team already uses. The catch is where it happens: on GitHub’s computers, on code already pushed to GitHub, billed to your Copilot seat rather than the Claude or ChatGPT plan you pay for. DorkOS drives the agents already signed in on your own machine, on any folder, and adds nothing to your bill.',
     theirStrengths: [
       'your work already lives in GitHub, beside the issues and pull requests you use anyway',
       'you want one issue handed to Copilot, Claude and Codex at once, so you can compare',
@@ -637,7 +636,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. An issue can go to Copilot, to Anthropic’s Claude, to OpenAI’s Codex, or to all three at once. Both outside agents were still marked a preview when we checked.',
         detail:
-          'This is real, and it is why this page exists: GitHub will run a rival’s agent for you, which almost nobody else does. Two things are worth knowing. The line-up is shorter than the announcement suggested, Google’s and Cognition’s agents were promised for "the coming months" and are still not there, and these are GitHub’s own hosted versions of Claude and Codex, billed through your Copilot seat. They are not the Claude Code or Codex you already have installed and signed in. DorkOS drives that copy instead, which is why the plan you already pay for is the one doing the work.',
+          'GitHub will run a rival’s agent for you, which almost nobody else does. Two things are worth knowing. The line-up is shorter than the announcement suggested: Google’s and Cognition’s agents were promised for "the coming months" and are still not there. And these are GitHub’s own hosted versions of Claude and Codex, billed through your Copilot seat, not the Claude Code or Codex already installed and signed in on your machine. DorkOS drives that copy, which is why the plan you already pay for does the work.',
         source:
           'https://docs.github.com/en/copilot/concepts/agents/about-third-party-coding-agents',
       },
@@ -645,7 +644,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. A saved job can repeat every hour, day or week, or start when an issue or pull request is opened. It will not work in a public repository: yours has to be private or internal.',
         detail:
-          'The shape of it is a saved job on an hourly, daily or weekly repeat, which covers most of what people want it for. The catch is the one in the table: your repository has to be private or internal, so none of this works on open source. DorkOS takes the time in plain words and runs the job on your own machine, whoever owns the repository, and whether or not there is one.',
+          'A saved job repeats hourly, daily or weekly, which covers most of what people want it for. The catch is the one in the table: your repository has to be private or internal, so none of this works on open source. DorkOS takes the time in plain words and runs the job on your own machine, whoever owns the repository, and whether or not there is one.',
         source:
           'https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-automations',
       },
@@ -653,7 +652,7 @@ export const comparisons: Competitor[] = [
         verdict: 'partial',
         note: 'Several agents can take on the same issue at once, each opening its own pull request to compare. They do not talk to each other, and nothing passes a job from one to the next.',
         detail:
-          'Racing three agents at one problem and reading the three answers back is genuinely useful, and a pull request is a sensible place to compare them. It is competition rather than teamwork, though: no agent can ask another a question, or pick up where another one left off.',
+          'Racing three agents at one problem is genuinely useful, and a pull request is a sensible place to compare the answers. It is competition, not teamwork: no agent can ask another a question or pick up where another left off.',
         source:
           'https://github.blog/changelog/2026-02-26-claude-and-codex-now-available-for-copilot-business-pro-users/',
       },
@@ -661,7 +660,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'No. The work runs on GitHub’s computers, on code that is already on GitHub. GitHub does have a separate desktop app that works on local folders, but that is a different program from this one.',
         detail:
-          'This is the sharpest difference between the two, and it is not an oversight: living inside GitHub is the whole idea, and it is what makes the review, the permissions and the audit trail come free. The price is that the work has to be on GitHub before any of it can happen. DorkOS starts from a folder, any folder, on any host or none, and runs the agent next to it on the machine in front of you.',
+          'This is the sharpest difference, and not an oversight: living inside GitHub is the whole idea, and it is what makes the review, the permissions and the audit trail come free. The price is that the work has to be on GitHub first. DorkOS starts from a folder, any folder, on any host or none, and runs the agent beside it on the machine in front of you.',
       },
       surfaces: {
         verdict: 'yes',
@@ -724,7 +723,7 @@ export const comparisons: Competitor[] = [
       'A free tier, then $20 a month for Pro and $200 for Max. Teams start at $80 a month with $40 per full seat, and Enterprise is priced by agreement. Heavy use is metered on top.',
     openSource: false,
     verdict:
-      'Devin is the most independent thing on this list. You hand it a ticket and it works in its own cloud machine, with a terminal, an editor and a browser of its own, checking itself as it goes. That power is rented rather than owned: the work happens on Cognition’s computers, your code goes there, and the meter runs on what the agent does. DorkOS makes the opposite trade, with the agents on your own machine, on the plans you already pay for, and nothing for us to meter.',
+      'Devin is the most independent thing on this list. Hand it a ticket and it works in its own cloud machine, with a terminal, an editor and a browser of its own, checking itself as it goes. That independence is rented, not owned: the work happens on Cognition’s computers, your code goes there, and the meter runs on what the agent does. DorkOS makes the opposite trade. The agents run on your own machine, on the plans you already pay for, and there is nothing for us to meter.',
     theirStrengths: [
       'you want a job done rather than a tool to run, and you are happy for that to be someone else’s computer',
       'you have a backlog of repetitive, similar tickets: migrations, lint sweeps, clean-ups',
@@ -763,28 +762,28 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, in its desktop editor, which can run five other coding agents alongside its own: Claude, Codex, OpenCode, Gemini and JetBrains’ Junie. Devin’s cloud sessions still only ever run Devin.',
         detail:
-          'This surprised us, and it is worth being exact about. Devin Desktop, the editor Cognition used to sell as Windsurf, can host five other companies’ coding agents through a shared protocol. You install those agents yourself, and Cognition says plainly that its own privacy terms and billing do not cover them: that part is between you and the other company. The cloud Devin everyone means when they say "Devin" runs Devin.',
+          'Devin Desktop, the editor Cognition used to sell as Windsurf, hosts five other companies’ coding agents through a shared protocol. You install those agents yourself, and Cognition says plainly that its privacy terms and billing do not cover them: that part is between you and the other company. The cloud Devin everyone means when they say "Devin" runs Devin.',
         source: 'https://docs.devin.ai/desktop/acp',
       },
       scheduling: {
         verdict: 'yes',
         note: 'Yes, and thoroughly. Sessions can run on a repeating schedule, and its automations also start work from a message, a pull request or a webhook, with spending caps attached.',
         detail:
-          'This is a strong version of the idea: as well as a plain repeating schedule, work can begin because someone wrote in Slack, because a check failed, or because a ticket changed. Caps on how much a run may spend are part of the setup, which matters when the agent bills by what it does. All of it starts Devin, on Cognition’s machines.',
+          'This is a strong version of the idea: besides a plain repeating schedule, work can begin because someone wrote in Slack, a check failed, or a ticket changed. Caps on what a run may spend are part of the setup, which matters when the agent bills by what it does. All of it starts Devin, on Cognition’s machines.',
         source: 'https://docs.devin.ai/product-guides/automations',
       },
       coordination: {
         verdict: 'yes',
         note: 'Yes. One session can act as a manager: it splits the job up, hands pieces to other Devins, watches them, sorts out clashes and puts the results back together.',
         detail:
-          'This is genuine coordination rather than parallel lanes, and each worker gets a machine of its own. It is a chain of command rather than a conversation, though: the manager talks to its workers, the workers do not talk to each other, and every one of them is a Devin, one company’s agents, all the way down.',
+          'This is real teamwork rather than parallel lanes, and each worker gets a machine of its own. It is a chain of command rather than a conversation, though: the manager talks to its workers, the workers do not talk to each other, and every one of them is a Devin.',
         source: 'https://docs.devin.ai/work-with-devin/advanced-capabilities',
       },
       'local-first': {
         verdict: 'partial',
         note: 'Partly. There is now a command-line version and a desktop editor that work on your own files, but the Devin people mean by Devin runs in Cognition’s cloud, with your code copied there.',
         detail:
-          'Cognition has moved a good way toward your machine: a command-line agent and a desktop editor both work on the files in front of you, and larger customers can have sessions run on their own servers. Even then the thinking happens in Cognition’s cloud, and the local versions do without some of what the cloud one has. DorkOS starts from the other end: everything runs where you already are, and nothing has to leave for the product to work.',
+          'Cognition has moved a good way toward your machine: a command-line agent and a desktop editor both work on the files in front of you, and larger customers can run sessions on their own servers. Even then the thinking happens in Cognition’s cloud, and the local versions do without some of what the cloud one has. DorkOS starts from the other end. Everything runs where you already are, and nothing has to leave for the product to work.',
         source: 'https://docs.devin.ai/cli',
       },
       surfaces: {
@@ -849,7 +848,7 @@ export const comparisons: Competitor[] = [
       'Free for running agents locally on your Mac with your own accounts. Pro is $50 a month and adds their cloud, an API and shared work; Teams are $60 per person.',
     openSource: false,
     verdict:
-      'Conductor is a beautifully made Mac app for running Claude Code, Codex, Cursor and OpenCode side by side, each in its own copy of your project. Three of the four come built in, with nothing to install. It has the best review screen of anything here: a real diff viewer with comments, and one tab holding your build, your pull request and its comments. What it will not do is start work without you, or let you look in from anywhere except that Mac.',
+      'Conductor is a beautifully made Mac app for running Claude Code, Codex, Cursor and OpenCode side by side, each in its own copy of your project. Three of the four come built in, with nothing to install. It has the best review screen here: a real diff viewer with comments, and one tab holding your build, your pull request and its comments. What it will not do is start work without you, or let you look in from anywhere but that Mac.',
     theirStrengths: [
       'you only work on a Mac, and do not need something that runs anywhere else',
       'you want reviewing to be first class: a proper diff viewer, comments on the changes, and your build and pull request in one tab',
@@ -886,14 +885,14 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. Claude Code, Codex, Cursor and OpenCode all run in it, and the first three are built into the app rather than installed separately.',
         detail:
-          'This used to be a Claude Code app and is not one any more: Codex arrived in late 2025, Cursor and OpenCode in mid 2026. Bundling the agents is a real convenience and a real trade, you get whichever version they ship, rather than the one you have installed and signed in yourself. DorkOS goes the other way and drives the copies already on your machine, so your own accounts and settings are the ones in play.',
+          'This used to be a Claude Code app and is not one any more: Codex arrived in late 2025, Cursor and OpenCode in mid 2026. Bundling the agents is a real convenience and a real trade. You get whichever version they ship, not the one you installed and signed in yourself. DorkOS drives the copies already on your machine, so your own accounts and settings are the ones in play.',
         source: 'https://www.conductor.build/docs/reference/harnesses',
       },
       scheduling: {
         verdict: 'no',
         note: 'No. Nothing in it runs on a clock: its scripts fire when you make a workspace or press run, and its API has no way to book work for later.',
         detail:
-          'We looked for this carefully, because it is the kind of thing that hides in a changelog. Conductor has a "background tasks" feature, but that only shows you when an agent is waiting on something; and its dispatcher, despite the name, is a box for starting new work rather than anything that runs by itself. Work in Conductor starts when a person starts it.',
+          'Conductor has a "background tasks" feature, but that only shows you when an agent is waiting on something, and its dispatcher, despite the name, is a box for starting new work rather than anything that runs by itself. Work in Conductor starts when a person starts it.',
       },
       coordination: {
         verdict: 'no',
@@ -908,7 +907,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'A Mac app, and only that. Their paid cloud keeps agents working after you close the laptop, but the phone app is still listed as coming soon.',
         detail:
-          'The cloud tier answers half of this: your agents keep going with the laptop shut. What it does not yet answer is where you watch them from, since the way in is still the Mac app on your desk. A phone app is promised on their pricing page, and until it ships that is a plan rather than a feature.',
+          'The cloud tier answers half of this: your agents keep going with the laptop shut. It does not answer where you watch them from, because the way in is still the Mac app on your desk. A phone app is promised on their pricing page. Until it ships, that is a plan rather than a feature.',
       },
       extensibility: {
         verdict: 'yes',
@@ -968,7 +967,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'The desktop app is open under the Apache licence. Its cloud and enterprise versions are not published as open source.',
     verdict:
-      'Emdash is the closest thing to DorkOS that is also open source, and it is genuinely good: local, free, and built on the same belief that you should run any agent you like under your own accounts. Its documentation lists 34 of them, which is a wider list than DorkOS drives. The two part company after the agents start. Emdash gives each one a clean lane and leaves you as the place they meet. DorkOS puts them in shared rooms, caps how much they may say to each other, and puts the whole thing on a screen you can open from your phone.',
+      'Emdash is the closest open source thing to DorkOS, and it is genuinely good: local, free, and built on the same belief that you should run any agent you like under your own accounts. Its documentation lists 34 of them, a wider list than DorkOS drives. The two part company after the agents start. Emdash gives each one a clean lane and leaves you as the place they meet. DorkOS puts them in shared rooms, caps how much they may say to each other, and puts the whole thing on a screen you can open from your phone.',
     theirStrengths: [
       'you want the widest choice of agents, because its documentation lists 34 command-line tools',
       'you want to set an outside tool up once and have every agent you installed pick it up',
@@ -1006,21 +1005,21 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, and more widely than DorkOS: its documentation lists 34 command-line agents it can drive, each signed in on your own machine under your own account.',
         detail:
-          'Emdash finds the agent tools you already have installed and runs them through their own command-line programs, so the plan you already pay for is the one that does the work. That is the same bet DorkOS makes, made wider. DorkOS drives three agents closely and knows what each session is doing; Emdash drives many and treats them more alike. If the length of the list is what you are choosing on, this is the stronger one.',
+          'Emdash finds the agent tools you already installed and runs them through their own command-line programs, so the plan you pay for does the work. That is the same bet DorkOS makes, made wider. DorkOS drives three agents closely and knows what each session is doing; Emdash drives many and treats them more alike. If the length of the list is what you are choosing on, Emdash is the stronger one.',
         source: 'https://emdash.com/docs/providers',
       },
       scheduling: {
         verdict: 'yes',
         note: 'Yes. Automations start a job on a repeating schedule, and each run is kept with its status, timing and any error, so you can see what happened overnight.',
         detail:
-          'This is a real scheduler, not a checkbox: runs are recorded, can be started by hand, and turn into ordinary tasks you can open and review. What its documentation does not describe is what happens when a scheduled job needs a decision from you halfway through. That is the part DorkOS spends most of its care on, because a job that quietly stops at three in the morning is worse than one that never started.',
+          'This is a real scheduler, not a checkbox: runs are recorded, can be started by hand, and turn into ordinary tasks you can open and review. What its documentation does not describe is what happens when a scheduled job needs a decision halfway through. DorkOS spends most of its care there, because a job that quietly stops at three in the morning is worse than one that never started.',
         source: 'https://emdash.com/docs/automations',
       },
       coordination: {
         verdict: 'no',
         note: 'Each job gets its own branch and workspace and works alone. Nothing in its documentation lets one agent message another or hand work along.',
         detail:
-          'This is the one real gap between the two products, and it is narrower than it sounds: parallel lanes are what most people want most days, and Emdash keeps clean ones. If your work divides neatly into separate jobs, you are unlikely to miss what is not here.',
+          'This is the one real gap between the two, and it is narrower than it sounds: parallel lanes are what most people want most days, and Emdash keeps clean ones. If your work divides neatly into separate jobs, you will not miss what is not here.',
       },
       'local-first': {
         verdict: 'yes',
@@ -1031,13 +1030,13 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'Desktop only, on macOS, Windows and Linux. It can send the work to another machine over SSH, but there is no phone or browser screen to check in from.',
         detail:
-          'This is the clearest split between the two. The Emdash remote feature changes where the work runs; it does not change where you have to be to watch it. DorkOS goes the other way round: the work stays on your own machine and the screen travels, so you can read what an agent did and approve the next step from a phone.',
+          'The Emdash remote feature changes where the work runs, not where you have to be to watch it. DorkOS goes the other way: the work stays on your own machine and the screen travels, so you read what an agent did and approve the next step from a phone.',
       },
       extensibility: {
         verdict: 'yes',
         note: 'Yes. One place to set up outside tools for every agent you have installed, with a catalogue of 54 to pick from, plus reusable prompts and skills.',
         detail:
-          'Setting an outside tool up once and having every installed agent pick it up is genuinely better than doing it agent by agent, and it is the kind of thing only a tool that drives several agents can offer. What it does not have is a way to wrap an agent up with its instructions and its tools and hand the whole thing to someone else, which is what the DorkOS marketplace is for.',
+          'Setting an outside tool up once and having every installed agent pick it up beats doing it agent by agent, and only a tool that drives several agents can offer it. What it does not have is a way to wrap an agent up with its instructions and its tools and hand the whole thing to someone else. That is what the DorkOS marketplace is for.',
         source: 'https://emdash.com/docs/library/mcp',
       },
       pricing: {
@@ -1093,7 +1092,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'Open under the AGPL. You can read and change it freely, and building a paid service on top of it means publishing your changes too.',
     verdict:
-      'Claude Squad does one thing very well: every agent gets its own terminal session and its own copy of your project, so several can work at once without treading on each other. It costs nothing, needs no account, and will run whatever terminal agent you name. What it does not do is anything above that line. No schedule, no way to look in from a phone, no messages between the lanes, and joining the work back up is yours. That upper layer is the whole of what DorkOS is.',
+      'Claude Squad does one thing very well: every agent gets its own terminal session and its own copy of your project, so several can work at once without treading on each other. It costs nothing, needs no account, and will run whatever terminal agent you name. What it does not do is anything above that line: no schedule, no way to look in from a phone, no messages between the lanes, and joining the work back up is yours. That upper layer is what DorkOS is.',
     theirStrengths: [
       'you live in the terminal and want parallel agents without leaving it',
       'you want no account and no server: one small program and a short settings file',
@@ -1131,14 +1130,14 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. It starts whatever terminal command you name, so Claude Code, Codex, Gemini and Aider all work, and a brand new agent works the day it ships.',
         detail:
-          'There is no per-agent wiring here, and that is the point: you hand it a command and it runs it. The trade is that Claude Squad cannot know anything about the agent it started, so every lane looks the same to it and the useful details stay inside each session. DorkOS supports fewer agents on purpose and knows what each session is actually doing, which is what lets one list hold them all.',
+          'There is no per-agent wiring here, and that is the point: you hand it a command and it runs it. The trade is that Claude Squad knows nothing about the agent it started, so every lane looks the same to it and the useful details stay inside each session. DorkOS supports fewer agents on purpose and knows what each session is doing, which is what lets one list hold them all.',
         source: 'https://github.com/smtg-ai/claude-squad',
       },
       scheduling: {
         verdict: 'no',
         note: 'No. Its background mode answers prompts in sessions you started yourself; nothing here ever starts on a clock.',
         detail:
-          'The background mode is easy to mistake for scheduling. What it does is watch sessions you already opened and answer their questions for you, which the maintainers mark experimental and limit to two of the agents. Starting a job at three in the morning is still something you arrange yourself, with your computer’s own timer.',
+          'The background mode is easy to mistake for scheduling. It watches sessions you already opened and answers their questions for you, and the maintainers mark it experimental and limit it to two of the agents. Starting a job at three in the morning is still yours to arrange, with your computer’s own timer.',
       },
       coordination: {
         verdict: 'no',
@@ -1202,12 +1201,12 @@ export const comparisons: Competitor[] = [
     oneLiner:
       'Omnara keeps agents running as a service you reach by API or from your phone. DorkOS runs the agents already installed on your own machine.',
     pricing:
-      'Free and open source under the Apache licence if you run it yourself. They also sell a hosted version. Its price is not something we can quote: their pricing page came up blank for us, so ask them rather than trusting a number found elsewhere.',
+      'Free and open source under the Apache licence if you run it yourself. They also sell a hosted version, whose price we cannot quote: their pricing page came up blank for us.',
     openSource: true,
     openSourceNote:
-      'The platform is open under the Apache licence and you can run the whole thing yourself. The phone apps and the hosted service are not published.',
+      'The code is open under the Apache licence and you can run the whole thing yourself. The phone apps and the hosted version are not published.',
     verdict:
-      'Omnara has changed shape, and that matters more than any row below. It began as a phone command centre for Claude Code and Codex, and those apps still ship. What it leads with now is something else: a way to run agents as a lasting service, with an API, organisations, roles, and machines it can borrow or rent. The real difference is where an agent lives. In Omnara it lives in a control plane and picks up a machine when it needs one, which is why a closed laptop cannot hurt it. In DorkOS the agent is the Claude Code already signed in on your own computer, and it is the screen that travels instead.',
+      'Omnara has changed shape, and that matters more than any row below. It began as a phone command centre for Claude Code and Codex, and those apps still ship. What it leads with now is a way to run agents as a lasting service: an API, organisations, roles, and machines it can borrow or rent. The real difference is where an agent lives. In Omnara it lives in a control plane and picks up a machine when it needs one, which is why a closed laptop cannot hurt it. In DorkOS the agent is the Claude Code already signed in on your own computer, and the screen is what travels.',
     theirStrengths: [
       'you want an agent that survives a closed laptop or a restart, because its history lives in a database',
       'you are putting agents inside your own product, and want an API rather than a screen',
@@ -1217,7 +1216,7 @@ export const comparisons: Competitor[] = [
     cells: {
       'your-own-subscriptions': {
         verdict: 'partial',
-        note: 'Its phone app steers the Claude Code and Codex on your own laptop, on your own plans. The platform it leads with runs agents you build, on keys you supply.',
+        note: 'Its phone app steers the Claude Code and Codex on your own laptop, on your own plans. The service it leads with runs agents you build, on keys you supply.',
         source: 'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
       },
       'self-scheduling-trust': {
@@ -1245,9 +1244,9 @@ export const comparisons: Competitor[] = [
       },
       'multi-runtime': {
         verdict: 'partial',
-        note: 'Its phone app watches and steers Claude Code and Codex running on your own laptop. The platform they now lead with is about swapping models rather than agents, and its documentation mentions neither one.',
+        note: 'Its phone app watches and steers Claude Code and Codex running on your own laptop. The service they now lead with is about swapping models rather than agents, and its documentation mentions neither one.',
         detail:
-          'This is where Omnara overlaps DorkOS most, and it is also the part that has gone quiet. The app in the store is still called Claude & Codex Mobile and still does what the name says, but it was last updated in April, and the platform Omnara writes about today does not mention either agent. Read plainly: Omnara now runs agents you build, and DorkOS runs the agents you already installed.',
+          'This is where Omnara overlaps DorkOS most, and it is the part that has gone quiet. The app in the store is still called Claude & Codex Mobile and still does what the name says, but it was last updated in April, and the service Omnara writes about today does not mention either agent. Read plainly: Omnara runs agents you build, and DorkOS runs the agents you already installed.',
         source: 'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
       },
       scheduling: {
@@ -1264,14 +1263,14 @@ export const comparisons: Competitor[] = [
         verdict: 'partial',
         note: 'The work can run on your own laptop, through a small program that dials out so nothing has to be opened up to the internet. The agent itself lives in a control plane: theirs, or one you run.',
         detail:
-          'This is a genuinely good arrangement, and worth understanding before choosing between them. Your machine keeps no open door: the small program calls out, and an agent attaches to the machine and lets go of it again afterwards. The price is that the thinking and the history are not on your machine. Their own documentation puts it well, saying the machine does not own the agent, which is what makes a closed laptop harmless and also why DorkOS made the opposite choice.',
+          'This is a genuinely good arrangement, and worth understanding before you choose. Your machine keeps no open door: the small program calls out, an agent attaches to the machine, and it lets go again afterwards. The price is that the thinking and the history are not on your machine. Their own documentation puts it well: the machine does not own the agent. That is what makes a closed laptop harmless, and it is why DorkOS made the opposite choice.',
         source: 'https://docs.omnara.com/machines/overview',
       },
       surfaces: {
         verdict: 'yes',
         note: 'Yes, and it is their strongest side: an iPhone app with an Apple Watch app, an Android app, a web console, and Slack.',
         detail:
-          'DorkOS has no app in either store. What it has is a screen built to work properly on a phone. Omnara ships real apps, and a watch app on top of them, which is more. The caveat is age: the iPhone app was last updated in April, and mobile has dropped out of the writing about the platform, so the best thing about Omnara may be the part it is no longer building on.',
+          'DorkOS has no app in either store. It has a screen built to work properly on a phone. Omnara ships real apps, and a watch app on top of them, which is more. The catch is age: the iPhone app was last updated in April, and phones have dropped out of the writing about the service, so the best thing about Omnara may be the part it is no longer building on.',
         source: 'https://apps.apple.com/us/app/omnara-claude-codex-mobile/id6748426727',
       },
       extensibility: {
@@ -1281,14 +1280,14 @@ export const comparisons: Competitor[] = [
       },
       pricing: {
         verdict: 'yes',
-        note: 'The platform is free and open source under the Apache licence, and you can run all of it yourself. The hosted version has a price we could not read.',
+        note: 'The service is free and open source under the Apache licence, and you can run all of it yourself. The hosted version has a price we could not read.',
         source: 'https://github.com/omnara-ai/omnara',
       },
     },
     faq: [
       {
         q: 'Is Omnara free?',
-        a: 'The service is, under the Apache licence, and you can run all of it on your own machines. They also sell a hosted version. We cannot tell you what that costs: their pricing page came up blank when we checked, so ask them rather than trusting a number found elsewhere.',
+        a: 'The service is, under the Apache licence, and you can run all of it on your own machines. They also sell a hosted version. We cannot tell you what that costs: their pricing page came up blank when we checked. Ask them rather than trusting a number found elsewhere.',
       },
       {
         q: 'Does Omnara work with Claude Code?',
@@ -1331,7 +1330,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'Amp itself is closed. The pieces around it are open: its Neovim plugin, its Homebrew tap, and the shared collections of skills and tools published beside it.',
     verdict:
-      'Amp sells an unusual bargain: you stop choosing. It picks between the frontier models for you, decides how hard to think about a problem, and adds no mark-up to what those models cost. On privacy it is more careful than most, saying plainly that it does not train on your data unless you switch that on. Two things separate it from DorkOS. It runs its own agent only, so Claude Code and Codex stay outside it. And it is built around its own servers, where you sign in and your history lives.',
+      'Amp sells an unusual bargain: you stop choosing. It picks between the frontier models for you, decides how hard to think about a problem, and adds no mark-up to what those models cost. On privacy it is more careful than most, saying plainly that it does not train on your data unless you switch that on. Two things separate it from DorkOS. It runs its own agent only, so Claude Code and Codex stay outside. And it is built around its own servers, where you sign in and your history lives.',
     theirStrengths: [
       'you would rather not choose a model, because Amp picks between the frontier ones and adds no mark-up',
       'you care where your code goes: Amp says it does not train on your data unless you turn that on',
@@ -1369,7 +1368,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'Amp runs its own agent and picks between several companies’ models for you. It does not start Claude Code, Codex or OpenCode.',
         detail:
-          'The choice on offer is which model thinks, not whose agent works, and Amp would rather make that choice than hand it to you. You can point your own ChatGPT subscription at it for extra allowance, which is an arrangement about billing rather than one agent running another. If your week already mixes Claude Code and Codex, those stay separate programs with separate histories.',
+          'The choice on offer is which model thinks, not whose agent works, and Amp would rather make that choice than hand it to you. You can point your own ChatGPT subscription at it for extra allowance, which is about billing rather than one agent running another. If your week already mixes Claude Code and Codex, those stay separate programs with separate histories.',
       },
       scheduling: {
         verdict: 'yes',
@@ -1448,7 +1447,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'The agent, its command-line tool and its developer kit are open under the Apache licence. The account that sells model credits is a paid service, and its code is not published.',
     verdict:
-      'Cline is the strongest free answer on this page. The agent is open under the Apache licence, works with your own key and no account, and reaches more models than anything else here, including ones running offline on your own machine. It also does two things people assume only a control screen does: jobs that start on a cron line with no terminal open, and agent teams where a lead hands pieces to specialists. That last one is ahead of where DorkOS is, and we would rather say so. What differs is shape: Cline is one agent in your editor, and DorkOS is the place around the agents you already installed.',
+      'Cline is the strongest free answer on this page. The agent is open under the Apache licence, works with your own key and no account, and reaches more models than anything else here, including ones running offline on your machine. It also does two things people assume only a control screen does: jobs that start on a cron line with no terminal open, and agent teams where a lead hands pieces to specialists. That last one is ahead of DorkOS, and we say so. The difference is shape: Cline is one agent in your editor; DorkOS is the place around the agents you already installed.',
     theirStrengths: [
       'you want a free, open agent that works with your own key and no account at all',
       'you want the widest choice of models, down to one running offline on your own machine',
@@ -1497,7 +1496,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, and further than most. One agent leads and hands pieces to specialists, who share a task board and a mailbox they leave messages in, and the team survives being closed and reopened.',
         detail:
-          'Cline is ahead of us on paper here, and it would be silly to pretend otherwise. DorkOS builds a different arrangement: rooms that hold people and agents together, rather than a lead handing work to its workers. What we add on top is a set of dials capping how much your agents may say to each other, which we could not find in theirs. Cline’s teams carry the same limit as its scheduler: the command line and the kit have them, the editor add-ons do not.',
+          'Cline is ahead of us on paper here, and pretending otherwise would be silly. DorkOS builds a different arrangement: rooms that hold people and agents together, rather than a lead handing work to its workers. On top of that, DorkOS caps how much your agents may say to each other, which we could not find in theirs. Cline’s teams carry the same limit as its scheduler: the command line and the kit have them, the editor add-ons do not.',
         source: 'https://docs.cline.bot/cli/agent-teams',
       },
       'local-first': {
@@ -1569,7 +1568,7 @@ export const comparisons: Competitor[] = [
       'No free plan. Pro is $20 a month, Plus $100 and Max $200, each allowing more work than the last. Team and company plans are priced by agreement.',
     openSource: false,
     verdict:
-      'Droid is aimed squarely at companies, and it shows in the good sense: single sign-on, audit trails, data kept in your part of the world, even an install with no way out to the internet. It reaches models from four companies plus a set of open ones, starts work on a cron line or from a Slack message, and its missions plan a large job into milestones and hand the pieces to workers that check each other. It is also closed, starts at $20 a month with no free plan, and runs its own agent rather than yours. DorkOS is the opposite bet: free, open, on your own machine, driving the agents you already signed in to.',
+      'Droid is aimed squarely at companies, and it shows in the good sense: single sign-on, audit trails, data kept in your part of the world, even an install with no way out to the internet. It reaches models from four companies plus a set of open ones, starts work on a cron line or a Slack message, and its missions plan a large job into milestones and hand the pieces to workers that check each other. It is closed, starts at $20 a month with no free plan, and runs its own agent, not yours. DorkOS is the opposite bet: free, open, on your own machine, driving the agents you already signed in to.',
     theirStrengths: [
       'you work somewhere that needs the paperwork: single sign-on, audit trails, data kept in your region',
       'you want one subscription reaching models from four companies, switchable mid-job',
@@ -1618,7 +1617,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. A mission plans a large job, starts worker sessions for the parts, passes work between them through git, and checks each step before going on.',
         detail:
-          'This is a lead agent running a team, not just parallel lanes, and Factory is refreshingly honest about the limits. Their own writing says that doing things in order has beaten running everything at once, and lists whether working in parallel helps at all as a question they are still testing. Worth remembering whenever anyone, ourselves included, sells you a picture of ten agents working at once.',
+          'This is a lead agent running a team, not just parallel lanes, and Factory is refreshingly honest about the limits. Their own writing says doing things in order has beaten running everything at once, and lists whether parallel work helps at all as a question they are still testing. Worth remembering whenever anyone, us included, sells you a picture of ten agents working at once.',
         source: 'https://docs.factory.ai/docs/missions/overview',
       },
       'local-first': {
@@ -1688,7 +1687,7 @@ export const comparisons: Competitor[] = [
       'Free, and open source under the MIT licence. You pay only the model provider whose key you bring. It asks for a DeepSeek key first, and takes others instead.',
     openSource: true,
     verdict:
-      'This is the closest thing we have found to what DorkOS is trying to be. DeepSeek Harness sits above other coding agents and runs them: install a plugin and it starts a real Claude Code, or a real Codex, as workers inside its own session. Underneath, almost every part is a named piece you can swap out. Two honest things follow. It is very new and says so in capital letters, and every release so far is a release candidate. And it is a harness rather than a place to work from, with nothing that runs while the session is closed and nothing for a phone.',
+      'DeepSeek Harness is the closest thing on this list to what DorkOS is. It sits above other coding agents and runs them: install a plugin and it starts a real Claude Code, or a real Codex, as a worker inside its own session. Underneath, almost every part is a named piece you can swap out. Two honest things follow. It is very new and says so in capital letters, and every release so far is a release candidate. And it is a harness rather than a place to work from: nothing runs while the session is closed, and nothing is built for a phone.',
     theirStrengths: [
       'you want to read the design before you trust it, because nearly every part is a named, swappable piece',
       'you want to replace those parts yourself, down to the model adapter and the loop the agent runs in',
@@ -1727,7 +1726,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, and it is the point of the thing: plugins start a real Claude Code, through Anthropic’s own kit, or a real Codex, as workers inside a session. Both are optional, and off until you switch them on.',
         detail:
-          'The details matter here, because this is the row where someone else matches us. Claude Code and Codex are separate plugins you install and then switch on in a preset, and the list is those two, anything speaking the shared agent protocol, and a second harness of its own run as a child. Each run is one-shot: a fresh process, no carrying a session on, no way for the child to stop and ask you a question, and only its final text comes back, so the reasoning and the tool calls stay inside. DorkOS drives three agents as first-class citizens, with the whole session visible, steerable mid-turn and resumable. Different depth, same good instinct.',
+          'This is the row where someone else matches us. Claude Code and Codex are separate plugins you install and switch on in a preset, alongside anything speaking the shared agent protocol and a second harness run as a child. Each run is one-shot: a fresh process, no carrying a session on, no way for the child to stop and ask a question, and only its final text comes back, so the reasoning and tool calls stay inside. DorkOS drives three agents as first-class citizens, with the whole session visible, steerable mid-turn and resumable. Different depth, same good instinct.',
         source:
           'https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/subagent/README.md',
       },
@@ -1735,7 +1734,7 @@ export const comparisons: Competitor[] = [
         verdict: 'partial',
         note: 'Reminders inside a session that is still open: after so long, at a set time, or every so often with a five-minute floor. There are no cron lines, and nothing fires once the session is closed.',
         detail:
-          'Their documentation is admirably exact about this, and worth repeating in their own terms: a reminder never leaves the session that owns it, and a closed session does no work at all. Reopening one makes anything overdue arrive late. It is a way for an agent to check back on something it is already watching, not a way to have a job run at three in the morning while you sleep.',
+          'Their documentation is admirably exact, and worth repeating in their own terms: a reminder never leaves the session that owns it, and a closed session does no work at all. Reopening one makes anything overdue arrive late. It is a way for an agent to check back on something it is already watching, not a way to have a job start at three in the morning on its own.',
         source:
           'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/schedule.md',
       },
@@ -1758,7 +1757,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, and it is the whole idea: around sixty named parts you can replace, the model adapter and the session log and the agent loop among them, plus outside tools and skills.',
         detail:
-          'This is the most impressive thing about the project. The list of swappable parts is generated from the code itself, so it cannot quietly drift from what is really there, and each entry says which part owns it and which parts use it. If you are the sort of person who reads the architecture before installing anything, start there. One limit worth knowing: it connects out to other people’s tools, and does not offer itself to other programs as one.',
+          'This is the most impressive thing about the project. The list of swappable parts is generated from the code itself, so it cannot quietly drift from what is really there, and each entry says which part owns it and which parts use it. If you read the architecture before installing anything, start there. One limit: it connects out to other people’s tools, and does not offer itself to other programs as one.',
         source:
           'https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md',
       },
@@ -1815,7 +1814,7 @@ export const comparisons: Competitor[] = [
       'Comes with a paid Claude plan rather than being sold on its own. Pro is $20 a month, Max starts at $100, and team seats start at $20 per person. The free Claude tier does not include it.',
     openSource: false,
     verdict:
-      'Claude Code is an excellent agent, and DorkOS does not try to replace it. DorkOS is the place you run it from: every Claude Code session in one list beside your Codex and OpenCode work, on your own machine, on a screen you can open from your phone. It is worth knowing what people actually do with it. Anthropic studied about 400,000 sessions and found only half were writing or fixing code, while the rest ran software, sorted data and wrote documents.',
+      'Claude Code is an excellent agent, and DorkOS does not replace it. DorkOS is the place you run it from: every Claude Code session in one list beside your Codex and OpenCode work, on your own machine, on a screen you can open from your phone. Worth knowing what people do with it: Anthropic studied about 400,000 sessions and found only half were writing or fixing code. The rest ran software, sorted data and wrote documents.',
     theirStrengths: [
       'you want an agent that can already split a job across several of its own workers',
       'you want work to run with your laptop closed, which its cloud routines do today',
@@ -1844,7 +1843,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Its phone app reaches a running session, so you can answer one from anywhere.',
         detail:
-          'Worth knowing if you last looked a while ago: in August 2026 Anthropic made Auto mode the default on the Pro, Max and Team plans, so Claude Code stops to ask you less often than it used to. DorkOS shows you where each session stops, and lets you change that for every agent from one panel.',
+          'If you last looked a while ago: in August 2026 Anthropic made Auto mode the default on the Pro, Max and Team plans, so Claude Code stops to ask you less often than it used to. DorkOS shows you where each session stops, and changes that for every agent from one panel.',
         source: 'https://code.claude.com/docs/en/mobile',
       },
       'attention-management': {
@@ -1868,7 +1867,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. Helper agents inside one session, a screen for sessions running in the background, and teams whose members message each other and share one task list.',
         detail:
-          'This is a real strength, with the caveats Anthropic prints itself: the screen for background sessions is a research preview, and agent teams are experimental and switched off until you turn them on. Every worker is a Claude session, so it is one company’s agents talking to each other.',
+          'A real strength, with the caveats Anthropic prints itself: the screen for background sessions is a research preview, and agent teams are experimental and off until you turn them on. Every worker is a Claude session, so it is one company’s agents talking to each other.',
         source: 'https://code.claude.com/docs/en/agents',
       },
       'local-first': {
@@ -1904,7 +1903,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Is this only useful for writing code?',
-        a: 'No, and Anthropic’s own research says so. Across roughly 400,000 Claude Code sessions, only half were writing or fixing code. The rest ran software, analysed data and wrote documents. People run their inbox, their notes and their week through it, and many hand-build the scaffolding for that themselves: named agents, a schedule, and some way of being asked for approval. Those are the parts DorkOS already ships.',
+        a: 'No, and Anthropic’s own research says so. Across roughly 400,000 Claude Code sessions, only half were writing or fixing code. The rest ran software, analysed data and wrote documents. People run their inbox, their notes and their week through it, and most hand-build the scaffolding themselves: named agents, a schedule, and some way of being asked for approval. DorkOS ships those parts.',
       },
       {
         q: 'Claude Code can already schedule work. Why add DorkOS?',
@@ -2004,9 +2003,7 @@ export const comparisons: Competitor[] = [
       },
       extensibility: {
         verdict: 'yes',
-        note: 'Yes: skills, plugins, hooks, a project instructions file, and connections to outside tools that carry across its apps.',
-        detail:
-          'The setup follows you between surfaces: the same outside-tool connections work from the command line, the desktop app and the editor extension, so you write them down once.',
+        note: 'Yes: skills, plugins, hooks, a project instructions file, and outside-tool connections that work the same from the command line, the desktop app and the editor extension.',
         source: 'https://learn.chatgpt.com/docs/extend/mcp',
       },
       pricing: {
@@ -2102,7 +2099,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'There is no built-in scheduler. It can run as a background server, so you could wire it to your computer’s own timer, but that is a job you do rather than a feature it ships.',
         detail:
-          'The pieces are there if you want to build it: OpenCode runs headless as a server with an HTTP interface, so your computer’s own timer can start a job on a schedule. What you would be signing up for is the plumbing around it, deciding what runs where, keeping a record of what happened, and arranging to hear about it when something needs you.',
+          'The pieces are there if you want to build it: OpenCode runs headless as a server with an HTTP interface, so your computer’s own timer can start a job on a schedule. What you sign up for is the plumbing around it: deciding what runs where, keeping a record of what happened, and arranging to hear about it when something needs you.',
         source: 'https://opencode.ai/docs/server/',
       },
       coordination: {
@@ -2175,7 +2172,7 @@ export const comparisons: Competitor[] = [
       'Free and open source under the Apache licence, and you can run the whole thing yourself. Block also runs an early-access server of its own, with no price published.',
     openSource: true,
     verdict:
-      'Buzz is not trying to be what DorkOS is, so this page covers only the ground they share: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. It also hands an agent a new instruction while it is still working, where we make you wait for the turn to end. What Buzz is not is a place to run and watch coding agents.',
+      'Buzz and DorkOS are after different jobs, so this page covers only the ground they share: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. What Buzz is not is a place to run and watch coding agents.',
     theirStrengths: [
       'you want every person and every agent to hold their own identity, rather than an account on someone else’s service',
       'you want to redirect an agent while it is still working, rather than waiting for the turn to end',
@@ -2213,7 +2210,7 @@ export const comparisons: Competitor[] = [
         verdict: 'partial',
         note: 'Its agent bridge will drive Goose, Codex or Claude Code. It runs them out of sight, though: there is no screen for picking one or watching them side by side.',
         detail:
-          'The pluggable part is real, and it is the reason this row is not a plain no: Buzz talks to coding agents through a shared protocol, so the agent in a channel can be Claude Code today and Codex tomorrow. The difference is what you get to see. In Buzz the agent is a member that posts when it has something to say, and the work happens somewhere you do not watch. In DorkOS the run itself is the thing on screen, with the sessions from all three tools in one list.',
+          'The pluggable part is real, and it is why this row is not a plain no: Buzz talks to coding agents through a shared protocol, so the agent in a channel can be Claude Code today and Codex tomorrow. The difference is what you get to see. In Buzz the agent is a member that posts when it has something to say, and the work happens somewhere you do not watch. In DorkOS the run itself is on screen, with the sessions from all three tools in one list.',
         source: 'https://github.com/block/buzz/blob/main/docs/remote-agents.md',
       },
       scheduling: {
@@ -2225,7 +2222,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'This is the whole point of Buzz. Agents are ordinary members of a channel, and you set one working by mentioning it.',
         detail:
-          'Agents are members of a channel rather than guests in it: you address one by name, and Buzz lines those mentions up per channel so an agent works through what it was asked in turn. Being straight about the scoreboard, this is the row where Buzz is closest to us, and ahead in one way: it can redirect an agent mid-job, where we make you wait for the turn to finish. What we have that we could not find in Buzz is a set of dials capping how much your agents may say to each other.',
+          'Agents are members of a channel rather than guests in it: you address one by name, and Buzz lines those mentions up per channel so an agent works through what it was asked in turn. This is the row where Buzz is closest to us, and ahead in one way: it redirects an agent mid-job, where DorkOS makes you wait for the turn to finish. What DorkOS has, and we could not find in Buzz, is a set of dials capping how much your agents may say to each other.',
         source: 'https://github.com/block/buzz/blob/main/ARCHITECTURE.md',
       },
       'local-first': {
@@ -2237,7 +2234,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'Desk only, for now. There is a desktop app for Mac, Windows and Linux, and the phone apps are listed as still being wired up.',
         detail:
-          'Two halves of this question, and Buzz answers no to both today. There is no phone app yet: its own status table puts the iPhone and Android clients under the things still being wired up, and lists the desktop app as the one that works. Nor is there a place to approve an agent’s action before it happens, the way you might tap yes on your phone while queuing for coffee. Buzz has approval gates for its scheduled workflows, and its architecture notes, linked below, say that wiring is not finished, so a run reaching one is marked failed.',
+          'This question has two halves, and Buzz answers no to both today. Its own status table puts the iPhone and Android clients under the things still being wired up, and lists the desktop app as the one that works. Nor is there a place to approve an agent’s action before it happens. Buzz has approval gates for its scheduled workflows, and its architecture notes, linked below, say that wiring is not finished, so a run reaching one is marked failed.',
         source: 'https://github.com/block/buzz/blob/main/README.md',
       },
       extensibility: {
@@ -2265,7 +2262,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Whose rooms are further along, honestly?',
-        a: 'Buzz wins on one thing that matters: you can send an agent a new instruction while it is still working, and ours make you wait for the turn to finish. Ours answer back with dials that cap how much agents may say to each other, which we could not find in theirs.',
+        a: 'Buzz wins on one thing that matters: you can send an agent a new instruction while it is still working, and DorkOS makes you wait for the turn to finish. DorkOS answers back with dials that cap how much agents may say to each other, which we could not find in theirs.',
       },
     ],
     lastVerified: '2026-08-24',
@@ -2293,7 +2290,7 @@ export const comparisons: Competitor[] = [
       'Free, and open source under the MIT licence. You run it on your own machine and pay only for the model behind it, on a plan or a key you already have.',
     openSource: true,
     verdict:
-      'These are different products with one honest overlap. OpenClaw is a personal assistant that lives in your chat apps and runs your whole digital life: your messages, your files, your calendar, the machine itself. DorkOS is one place for the coding agents you run. Where they meet is that both are yours, both run on your own computer, and both get on with work while you are not watching. If you want one assistant you can reach from WhatsApp, that is OpenClaw, and DorkOS is not competing for the job.',
+      'These are different products with one honest overlap. OpenClaw is a personal assistant that lives in your chat apps and runs your whole digital life: your messages, your files, your calendar, the machine itself. DorkOS is one place for the coding agents you run. They meet in three ways: both are yours, both run on your own computer, and both get on with work while you are not watching. If you want one assistant you can reach from WhatsApp, that is OpenClaw. DorkOS is not competing for the job.',
     theirStrengths: [
       'you want one assistant for your whole digital life, not only the code part of it',
       'you would rather talk to it in WhatsApp or Telegram than open one more app',
@@ -2332,7 +2329,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'It chooses which model answers you, not which coding agent runs. Claude Code, Codex and OpenCode are not engines it swaps between.',
         detail:
-          'This is the clearest line between the two, and it is a difference of purpose rather than a gap someone forgot to fill. OpenClaw is model-agnostic, so you can point it at Anthropic, at OpenAI, or at something running on your own machine, and that choice is about which brain answers the assistant. DorkOS swaps the whole agent underneath a job: the same chat can run on Claude Code today and Codex tomorrow, using the tools already signed in on your computer.',
+          'This is a difference of purpose, not a gap someone forgot to fill. OpenClaw works with any model, so you can point it at Anthropic, at OpenAI, or at something running on your own machine. That choice is about which brain answers the assistant. DorkOS swaps the whole agent underneath a job: the same chat runs on Claude Code today and Codex tomorrow, using the tools already signed in on your computer.',
       },
       scheduling: {
         verdict: 'yes',
@@ -2353,7 +2350,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, and it is the strongest thing about it: 29 chat apps have their own setup page in its documentation, so it reaches you wherever you already type. There is a dashboard in the browser as well.',
         detail:
-          'Nothing on this site reaches more places than OpenClaw does. Because it arrives as a message in an app you already have, there is nothing new to install on your phone and nothing new to learn, which is a genuinely better answer than ours for an assistant you want with you all day. DorkOS goes the other way: one screen built for watching agents work, which happens to fit a phone. Different shapes, and each is right for its own job.',
+          'Nothing on this site reaches more places than OpenClaw does. It arrives as a message in an app you already have, so there is nothing new to install on your phone and nothing new to learn. For an assistant you want with you all day, that beats ours. DorkOS goes the other way: one screen built for watching agents work, which happens to fit a phone. Each is right for its own job.',
         source: 'https://github.com/openclaw/openclaw/tree/main/docs/channels',
       },
       extensibility: {
@@ -2412,7 +2409,7 @@ export const comparisons: Competitor[] = [
       'The agent itself is free and open source, whatever else you buy. Nous sells credits for models and tools on top: a free tier, then $20 a month for Plus, $100 for Super and $200 for Ultra.',
     openSource: true,
     verdict:
-      'Hermes Agent and DorkOS both put an agent somewhere you can actually reach it, and that is where the resemblance stops. Hermes lives in your chat apps: you talk to it in Telegram or Slack, it runs jobs on a schedule, and it is free and open under the MIT licence. It is not built around coding agents, so there is no list of sessions and no swapping between Claude Code, Codex and OpenCode. One thing deserves correcting, because older write-ups state it flatly. Hermes used to be the standing example of an agent that would not talk to another agent. Across its chat apps that is still deliberately true, but its desktop app now has a Bot Mode where a few bots pass work to each other, under firm limits.',
+      'Hermes Agent and DorkOS both put an agent somewhere you can reach it, and that is where the resemblance stops. Hermes lives in your chat apps: you talk to it in Telegram or Slack, it runs jobs on a schedule, and it is free and open under the MIT licence. It is not built around coding agents, so there is no list of sessions and no swapping between Claude Code, Codex and OpenCode. One correction, because older write-ups get it wrong: Hermes was the standing example of an agent that would not talk to another agent. In its chat apps that is still deliberately true, but its desktop app now has a Bot Mode where a few bots pass work to each other under firm limits.',
     theirStrengths: [
       'you want an assistant inside the chat app you already use, with nothing new to install on your phone',
       'you want to point it at any model you like, including one running on your own hardware',
@@ -2431,7 +2428,7 @@ export const comparisons: Competitor[] = [
       },
       'spend-guardrails': {
         verdict: 'partial',
-        note: 'Its Bot Mode caps a group of bots at ten messages a turn and three rounds, so a room cannot spin. That is in its desktop app, not its chat platforms.',
+        note: 'Its Bot Mode caps a group of bots at ten messages a turn and three rounds, so a room cannot spin. That is in its desktop app, not its chat apps.',
         source: 'https://github.com/NousResearch/Hermes-Bot-Mode',
       },
       'open-and-yours': {
@@ -2454,14 +2451,14 @@ export const comparisons: Competitor[] = [
       },
       scheduling: {
         verdict: 'yes',
-        note: 'Yes. A built-in scheduler runs jobs unattended and delivers what they produced into whichever chat platform you picked.',
+        note: 'Yes. A built-in scheduler runs jobs unattended and delivers what they produced into whichever chat app you picked.',
         source: 'https://hermes-agent.nousresearch.com/docs/user-guide/features/cron',
       },
       coordination: {
         verdict: 'partial',
         note: 'Two answers, depending where you look. In the chat apps, no: its own documentation calls wiring two Hermes bots to answer each other an unsupported setup. In its desktop app, a Bot Mode lets a small group of bots hand tasks to each other by name.',
         detail:
-          'Worth getting right, because the internet is still repeating the old version. The refusal is real and deliberate, and it is about the chat platforms: their documentation says plainly that setting several Hermes profiles to reply to one another in a shared channel is not a supported arrangement, and the safe default ignores other bots entirely. Then, separately, Bot Mode arrived as a plugin for its desktop app, where a group of two to six bots can pull each other in by name, under hard caps of ten messages a turn and three rounds so a room cannot spin. So the honest summary is not "it cannot" but "not in the places you would first try, and with a ceiling where it can". DorkOS puts agents in shared rooms instead, with a ceiling of your own choosing rather than a fixed one.',
+          'The internet is still repeating the old version, so this is worth getting right. The refusal is real, deliberate, and about the chat apps: their documentation says setting several Hermes profiles to reply to one another in a shared channel is not supported, and the safe default ignores other bots entirely. Bot Mode is separate, a plugin for its desktop app, where two to six bots pull each other in by name under hard caps of ten messages a turn and three rounds. So it is not "it cannot" but "not where you would first try, and with a fixed ceiling where it can". DorkOS puts agents in shared rooms, with a ceiling you choose.',
         source: 'https://github.com/NousResearch/Hermes-Bot-Mode',
       },
       'local-first': {
@@ -2488,7 +2485,7 @@ export const comparisons: Competitor[] = [
     faq: [
       {
         q: 'Can two Hermes agents talk to each other?',
-        a: 'In the chat apps, no, and that is on purpose: its documentation calls setting two Hermes bots to answer each other an unsupported arrangement. Inside its desktop app there is a Bot Mode where a small group of bots pass tasks to each other for a limited number of rounds. So the old line that Hermes flatly cannot do it is out of date, but the caution behind it is real.',
+        a: 'In the chat apps, no, and that is on purpose: its documentation calls setting two Hermes bots to answer each other an unsupported arrangement. Its desktop app has a Bot Mode where a small group of bots pass tasks to each other for a limited number of rounds. So the old line that Hermes flatly cannot do it is out of date, but the caution behind it is real.',
       },
       {
         q: 'Is Hermes Agent a coding agent?',
@@ -2500,7 +2497,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Does DorkOS work in Telegram and Slack too?',
-        a: 'Yes, for a narrower job: you talk to your agents and get told when something needs you. Hermes reaches more chat apps than we do, and we would rather say so.',
+        a: 'Yes, for a narrower job: you talk to your agents and get told when something needs you. Hermes reaches more chat apps than DorkOS does, and we say so.',
       },
     ],
     lastVerified: '2026-08-24',
@@ -2528,7 +2525,7 @@ export const comparisons: Competitor[] = [
       'It needs a paid plan, and not the cheapest one. The plans listed as eligible are SuperGrok Plus or SuperGrok Heavy, which the App Store prices at $100 and $300 a month, or on the Cursor side Pro+ at $60, Ultra at $200, or a Teams seat from $40. Plain SuperGrok at $30 and Cursor Pro at $20 are not on that list.',
     openSource: false,
     verdict:
-      'Grok Bot and DorkOS both take a job off your hands and carry on without you, and that is about where it stops. Grok Bot is a coworker SpaceXAI runs for you: each bot lives on a cloud computer with a browser, a terminal and files, signs into your tools with your accounts, and keeps working after you shut your laptop. The jobs put forward for it are office ones: sales outbound, recruiting, expenses, a chief of staff. Working on the code in your own repository is not among them. On one row it is plainly ahead of us, because several of its bots run at once and pass a job along today.',
+      'Grok Bot and DorkOS both take a job off your hands and carry on without you, and that is about where it stops. Grok Bot is a coworker SpaceXAI runs for you: each bot lives on a cloud computer with a browser, a terminal and files, signs into your tools with your accounts, and keeps working after you shut your laptop. The jobs put forward for it are office ones: sales outbound, recruiting, expenses, a chief of staff. Working on the code in your own repository is not among them. On one row it is ahead of us: several of its bots run at once and pass a job along today.',
     theirStrengths: [
       'you want a working computer in the cloud, with nothing to install and nothing to keep running yourself',
       'the work you want handed over is sales, recruiting, expenses or reporting rather than code',
@@ -2569,34 +2566,34 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes. You teach a bot a job once and it keeps that as a skill, and a routine then runs that skill on a schedule, on their computer rather than yours.',
         detail:
-          'Worth knowing before you switch one on: their own advice is to test a routine first, and its warning is that a test run performs real work. In its words, it can navigate websites, change files, and call connected tools, so a test is a real send rather than a rehearsal. The difference from ours is where the job runs. Theirs runs in SpaceXAI’s cloud whether or not your laptop is open; ours needs your own machine to be awake.',
+          'Worth knowing before you switch one on: their own advice is to test a routine first, and their warning is that a test run performs real work. In their words it can navigate websites, change files and call connected tools, so a test is a real send rather than a rehearsal. The difference from ours is where the job runs: theirs in SpaceXAI’s cloud whether or not your laptop is open, ours on your own machine, which has to be awake.',
         source: 'https://docs.x.ai/grok-bot/skills-routines-and-automations',
       },
       coordination: {
         verdict: 'yes',
         note: 'Yes, and this is the row where it beats us. Several bots run at once, message each other, share context in threads or group chats, and pass ownership of a job along.',
         detail:
-          'One thing to know about the shape of it, from their own security page. Every bot on your account uses the same cloud computer, so files and signed-in browser sessions are shared between them, and the page says plainly not to treat separate bots as a security boundary. So it is many bots on one machine rather than many machines. DorkOS puts agents in shared rooms on your own machine, and caps how much they may say to each other.',
+          'One thing to know about the shape of it, from their own security page. Every bot on your account uses the same cloud computer, so files and signed-in browser sessions are shared between them, and the page says plainly not to treat separate bots as a security boundary. It is many bots on one machine rather than many machines. DorkOS puts agents in shared rooms on your own machine, and caps how much they may say to each other.',
         source: 'https://docs.x.ai/grok-bot/overview',
       },
       'local-first': {
         verdict: 'no',
         note: 'No. The work happens on a computer SpaceXAI runs. It can reach your own machine, but only for commands you switch on and approve under a local-computer policy.',
         detail:
-          'This is the deepest difference between the two, and neither answer is wrong; they are answers to different questions. Grok Bot’s computer is the product: it is already set up, it holds your files and your signed-in browser sessions between jobs, and turning off what it may do on your laptop does not stop it working in the cloud. DorkOS has no cloud of ours for your work to sit in. Your projects, your sessions and your history stay on your own computer, under the accounts already signed in there.',
+          'This is the deepest difference, and neither answer is wrong: they answer different questions. Grok Bot’s computer is the product. It is already set up, it holds your files and your signed-in browser sessions between jobs, and turning off what it may do on your laptop does not stop it working in the cloud. DorkOS has no cloud for your work to sit in. Your projects, your sessions and your history stay on your own computer, under the accounts already signed in there.',
       },
       surfaces: {
         verdict: 'yes',
         note: 'Yes. A desktop app for Mac and Windows and an iPhone app, so you can pick a job up from your pocket. There is no Linux desktop app.',
         detail:
-          'The phone is a real one rather than a viewer: you can start work, answer a bot’s questions, approve steps and review results from the iPhone app. They are straight about where it stops, though. Some advanced desktop controls and teach-by-demonstration are not on iPhone, and editing a routine’s schedule, changing a bot’s instructions, reviewing run history or deleting a routine all send you back to a desktop. It is iPhone only, too, not iPad or Android. So this row is close rather than level: both let you approve work from your pocket, and theirs asks you to finish some of it at a desk.',
+          'The phone app is a real one rather than a viewer: you can start work, answer a bot’s questions, approve steps and review results from it. They are straight about where it stops. Some advanced desktop controls and teach-by-demonstration are missing, and editing a routine, changing a bot’s instructions, reviewing run history or deleting a routine all send you back to a desktop. It is iPhone only, not iPad or Android. So this row is close rather than level: both let you approve work from your pocket, and theirs asks you to finish some of it at a desk.',
         source: 'https://docs.x.ai/grok-bot/get-started',
       },
       extensibility: {
         verdict: 'partial',
         note: 'Partly. A Plugins screen installs supported connectors and packaged skills, and connectors are how a bot reaches an outside tool. What its documentation does not describe is a public marketplace, or a way to hand your setup to someone else.',
         detail:
-          'Skills are reusable instructions a bot can keep and reuse, which is the same idea we build on, and connectors are installed for the whole account. Its overview page adds that a bot can use connectors and MCP tools where they are available, so the common standard for reaching outside tools is in the picture. The half we could not find any account of is sharing: nothing in its documentation describes publishing a skill for other people, or installing one somebody else wrote. That may simply be early. It is why this row is "partly" rather than a yes, and we would rather say we could not find it than say it does not exist.',
+          'Skills are reusable instructions a bot keeps and reuses, the same idea DorkOS builds on, and connectors are installed for the whole account. Its overview page adds that a bot can use connectors and MCP tools where available, so the common standard for reaching outside tools is in the picture. The half we could not find is sharing: nothing in its documentation describes publishing a skill for other people, or installing one somebody else wrote. That may simply be early, which is why this row is "partly" rather than a yes.',
         source: 'https://docs.x.ai/grok-bot/skills-routines-and-automations',
       },
       pricing: {
@@ -2611,7 +2608,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Does Grok Bot work with my local code?',
-        a: 'Not in the way you probably mean. It works on its own computer in the cloud, and only touches your machine if you switch that on and approve each command. Even then, the jobs put forward for it are office work rather than software work.',
+        a: 'Not in the way most people mean. It works on its own computer in the cloud, and only touches your machine if you switch that on and approve each command. Even then, the jobs put forward for it are office work rather than software work.',
       },
       {
         q: 'Is Grok Bot a coding agent?',
@@ -2653,7 +2650,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'Open under the Apache licence. The team published a snapshot of the whole thing on the way out, so the code is still there to read, and to run yourself if you want to.',
     verdict:
-      'Terragon closed in February 2026, and if you liked it, that was a real loss. You handed it a task, it worked in its own cloud machine against your repository, and you reviewed a pull request at the end. Two things are worth knowing before you pick a replacement. Terragon did not tell anyone where to go next, so the pairing you may have seen suggested online came from a commenter rather than the company. And the code did not vanish: it was published as an open snapshot, so running it yourself is possible, with nobody maintaining it. DorkOS fits if you want agents getting on with work and you reviewing the result. It does not fit if what you liked was that none of it ran on your own computer.',
+      'Terragon closed in February 2026, and if you liked it, that was a real loss. You handed it a task, it worked in its own cloud machine against your repository, and you reviewed a pull request at the end. Two things before you pick a replacement. Terragon never said where to go next, so any suggested pairing you have seen online came from a commenter, not the company. And the code did not vanish: it was published as an open snapshot, so you can run it yourself, unmaintained. DorkOS fits if you want agents getting on with work and you reviewing the result. It does not fit if what you liked was that none of it ran on your own computer.',
     cells: {
       'your-own-subscriptions': {
         verdict: 'yes',
@@ -2685,7 +2682,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'It did, and this is the part DorkOS carries on. You could point it at Claude Code, OpenAI Codex, Amp or Gemini, bringing your own subscription or your own keys.',
         detail:
-          'Terragon got this right early, and it is why its users are worth talking to: it never asked you to give up the agent you already liked. That is the same bet DorkOS makes. The difference is only where the agent runs. Terragon started a fresh cloud machine and worked against your repository there; DorkOS starts the Claude Code or Codex already signed in on your own computer, on any folder, whether or not it has been pushed anywhere.',
+          'Terragon got this right early: it never asked you to give up the agent you already liked. That is the same bet DorkOS makes. The only difference is where the agent runs. Terragon started a fresh cloud machine and worked against your repository there; DorkOS starts the Claude Code or Codex already signed in on your own computer, on any folder, whether or not it has been pushed anywhere.',
         source: 'https://github.com/terragon-labs/terragon-oss',
       },
       scheduling: {
@@ -2702,7 +2699,7 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'No, and this is the part that mattered most in the end. The work happened on Terragon’s computers, so when the company stopped, the product stopped with it.',
         detail:
-          'We are not going to pretend this was a clever argument we made in advance. It is just what happened. A cloud service is someone else’s machine, and when the business behind it winds down, so does the thing you built your week around. The agents DorkOS drives are installed on your own computer, under your own accounts. The worst we can do to you is stop writing the screen around them.',
+          'We will not pretend this was a clever argument we made in advance. It is just what happened. A cloud service is someone else’s machine, and when the business behind it winds down, so does the thing you built your week around. The agents DorkOS drives are installed on your own computer, under your own accounts. The worst we can do to you is stop writing the screen around them.',
       },
       surfaces: {
         verdict: 'partial',
@@ -2761,7 +2758,7 @@ export const comparisons: Competitor[] = [
     openSourceNote:
       'Open under the Apache licence. The repository is archived and read-only now, but every line of it is still there to read or fork.',
     verdict:
-      'Roo Code was a good agent in the editor, and losing it stung. It shut down on 15 May 2026, and its old address now forwards to a different product. Start with what Roo Code itself said, because the internet has muddled this. Its own notice names exactly two alternatives: Cline, which it was originally forked from, and ZooCode, a fork its community started. Kilo Code is the name you will see most often in write-ups, and Roo Code never named it. Now the honest part about us: DorkOS is not an editor extension and will not put an agent back in your editor. It is the place around agents like that one.',
+      'Roo Code was a good agent in the editor, and losing it stung. It shut down on 15 May 2026, and its old address now forwards to a different product. Start with what Roo Code itself said, because the internet has muddled this. Its notice names exactly two alternatives: Cline, which it was forked from, and ZooCode, a fork its own community started. Kilo Code is the name you will see most often in write-ups, and Roo Code never named it. The honest part about us: DorkOS is not an editor extension and will not put an agent back in your editor. It is the place around agents like that one.',
     cells: {
       'your-own-subscriptions': {
         verdict: 'yes',
@@ -2837,7 +2834,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Does DorkOS replace Roo Code?',
-        a: 'No, and we would rather say that plainly than win a click. Roo Code was an agent inside your editor. DorkOS has no editor and no extension: it runs agents like Claude Code and Codex on your machine and gives you one place to watch and schedule them. Most people replacing Roo Code want the editor part back first, and that is Cline, ZooCode or Kilo Code, not us.',
+        a: 'No, and we would rather say so plainly than win a click. Roo Code was an agent inside your editor. DorkOS has no editor and no extension: it runs agents like Claude Code and Codex on your machine and gives you one place to watch and schedule them. Most people replacing Roo Code want the editor part back first, and that is Cline, ZooCode or Kilo Code, not us.',
       },
     ],
     lastVerified: '2026-08-24',
