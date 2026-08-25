@@ -8,9 +8,11 @@
  * a supported recovery.
  *
  * Today it indexes two sources: the room log, and every Claude Code transcript
- * under the active account's root — sessions run inside DorkOS and sessions run
- * from the bare `claude` CLI alike, because the index reads what the SDK wrote
- * rather than anything DorkOS recorded.
+ * under EVERY Claude account on the machine — sessions run inside DorkOS and
+ * sessions run from the bare `claude` CLI alike, because the index reads what
+ * the SDK wrote rather than anything DorkOS recorded. Every account, because
+ * reading only the active one covered 67% of the operator's own history and
+ * said nothing about the rest (spec Amendment 2).
  *
  * {@link searchMessages} is the one way to read it — the room history tool's
  * `search_room_history` calls it inside a scope the rooms domain resolved
@@ -34,7 +36,11 @@ export {
 } from './registry.js';
 export { sweepRowSource } from './row-frontier.js';
 export { indexRoomEntry } from './write-through.js';
-export { sweepFileSource, DISCOVERY_FAILURE_KEY } from './jsonl-frontier.js';
+export {
+  sweepFileSource,
+  DISCOVERY_FAILURE_KEY,
+  DUPLICATE_CONTAINERS_KEY,
+} from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
 export { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
 export {
@@ -42,6 +48,7 @@ export {
   type ClaudeCodeProjectionContext,
 } from './projections/claude-code.js';
 export type {
+  DiscoveryFailure,
   FileContainer,
   FileDiscovery,
   FileSource,

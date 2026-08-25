@@ -166,8 +166,30 @@ export interface SkippedFile {
 }
 
 /**
+ * One root a discovery pass could not enumerate.
+ *
+ * A file-backed source reads SEVERAL roots — Claude Code has one per account on
+ * this machine, Codex has one per day plus its archive — and the whole point of
+ * reading several is that a person's history is spread across them. So one
+ * unreadable root must be reported rather than either failing the source or
+ * quietly narrowing the corpus, which is the same "a short list looks exactly
+ * like a complete one" failure the feature exists to refuse (spec Amendment 2,
+ * G3).
+ *
+ * A root that simply is not there is NOT a failure and never appears here:
+ * Claude Code may never have run under that account.
+ */
+export interface DiscoveryFailure {
+  /** The root that could not be read, absolute, as an operator would recognise it. */
+  root: string;
+
+  /** Why it could not be read. */
+  message: string;
+}
+
+/**
  * What one discovery pass found — and, just as load-bearing, what it decided
- * against.
+ * against and what it could not reach.
  *
  * The skipped set is not diagnostics. Discovery **walks** the tree rather than
  * globbing one level down, so that subagent transcripts are excluded by a
@@ -175,13 +197,24 @@ export interface SkippedFile {
  * and the only way to tell those two implementations apart is that one of them
  * reports having visited the nested paths. A count-only assertion passes for
  * both.
+ *
+ * {@link FileDiscovery.failures} is the same argument applied to whole roots.
  */
 export interface FileDiscovery {
-  /** Files to index, in walk order. */
+  /** Files to index, across every root, in walk order. */
   files: FileContainer[];
 
   /** Files visited and deliberately not indexed. */
   skipped: SkippedFile[];
+
+  /**
+   * Roots that exist and could not be enumerated.
+   *
+   * Non-empty means `files` is INCOMPLETE, which is why the sweep stops pruning
+   * on it: a container missing because its root was unreadable is not a
+   * container that is gone.
+   */
+  failures: DiscoveryFailure[];
 }
 
 /**
@@ -233,7 +266,15 @@ export interface FileSource {
   readonly mechanism: 'jsonl';
 
   /**
-   * Every file that should be indexed right now, and every one that should not.
+   * Every file that should be indexed right now, across every root this source
+   * reads, and every one that should not.
+   *
+   * **Resolves rather than rejects when one root fails.** A source spanning
+   * several roots that threw on the first unreadable one would contribute zero
+   * rows from the roots that ARE readable — the opposite of the per-root
+   * degradation G3 asks for. Unreachable roots come back in
+   * {@link FileDiscovery.failures}; a rejection is reserved for a discovery that
+   * enumerated nothing at all.
    *
    * @param known - What the frontier already holds, keyed by container id. A
    *   file whose `(size, mtime)` match an entry here has not changed since the
@@ -309,13 +350,21 @@ export interface SourceSweep {
   rebuilt: number;
 
   /**
-   * Containers that contributed nothing and said why.
+   * Everything that should have been indexed and was not, and why.
    *
-   * Most of them also wrote `search_sources.last_error`, and two kinds cannot:
-   * a discovery that failed before any container was enumerated has no row to
-   * write to, and two files claiming one container id have no row that could
-   * honestly describe them. Those live here only, which is why this array is on
-   * the result rather than being left implicit in the table.
+   * Most entries also wrote `search_sources.last_error`. **Three kinds cannot**,
+   * and they live here only — which is why this array is on the result rather
+   * than being left implicit in the table:
+   *
+   * 1. A discovery that failed before any container was enumerated. There is no
+   *    row to write to.
+   * 2. Two or more files claiming one container id. No row could honestly
+   *    describe them: it would have to name one file's size, mtime and offset
+   *    while the fault is that there are two.
+   * 3. **One root of several that could not be read.** A root is not a
+   *    container, so it has no row either — and unlike the first two, the source
+   *    still CONTRIBUTED: the readable roots indexed normally. A failure here is
+   *    therefore not the same as "this source produced nothing".
    */
   failures: SourceFailure[];
 }
