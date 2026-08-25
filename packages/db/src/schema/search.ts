@@ -125,7 +125,16 @@ export const searchSources = sqliteTable(
     /** File-backed sources: mtime at last read — the cheap change signal. */
     mtimeMs: integer('mtime_ms'),
 
-    /** Log-backed sources: the highest `ordinal` already indexed. */
+    /**
+     * The highest `ordinal` this container has contributed, whichever mechanism
+     * owns it: the log watermark for a row-backed source, the last message index
+     * written out of a transcript for a file-backed one. Both write it, and both
+     * read it back to tell "this container has nothing to say" apart from "the
+     * rows this frontier claims are no longer in the index" — the second being
+     * the state that makes a resume position a lie. `NULL` means the container
+     * has produced no message yet, which for a transcript of nothing but tool
+     * results is a permanent and correct answer.
+     */
     lastOrdinal: integer('last_ordinal'),
 
     /** The cwd a hit opens in. NULL for sources with no directory. */
