@@ -5,22 +5,24 @@
  *
  * **This is a product commitment, so it gets assertions rather than a review
  * comment.** G4 says a person must be able to learn what search does not cover
- * without reading a spec, and there are three ways to be surprised by this
+ * without reading a spec, and there are two ways to be surprised by this
  * feature:
  *
- * 1. **Coverage is uneven across runtimes.** Rooms and Claude Code are indexed;
- *    Codex and OpenCode are not (§2.2, §2.3). Nothing about a search box
- *    suggests it reads half your runtimes.
- * 2. **Tool output is never indexed** — 71% of the corpus, and the thing people
+ * 1. **Tool output is never indexed** — 71% of the corpus, and the thing people
  *    ask for by name ("the error the agent showed me").
- * 3. **Matching is by word, not by fragment.** `ogs` does not find `dogs`.
+ * 2. **Matching is by word, not by fragment.** `ogs` does not find `dogs`.
+ *
+ * All four sources registered with the index — rooms, Claude Code, Codex
+ * (§2.2, DOR-683) and OpenCode (§2.3, Amendment 9, DOR-688), four entries over
+ * three mechanisms per `registry.ts:268` — are covered as of DOR-1556, so the
+ * runtime gap this file used to assert no longer exists.
  *
  * The strings are asserted LITERALLY, and that is deliberate rather than
- * brittle. Coverage moves — Codex is in flight, OpenCode is planned — and a
- * claim that quietly goes out of date is worse than no claim at all: it is the
- * product telling somebody their Codex history is unsearchable after it became
- * searchable, or the reverse. When a runtime lands, this file goes red and the
- * copy and the test move together in that commit.
+ * brittle. Coverage moves, and a claim that quietly goes out of date is worse
+ * than no claim at all: it is the product telling somebody their Codex history
+ * is unsearchable after it became searchable, or the reverse. When a runtime's
+ * coverage changes, this file goes red and the copy and the test move together
+ * in that commit.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -31,6 +33,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { SEARCH_DEBOUNCE_MS } from '@dorkos/shared/search-schemas';
 import type { SearchHit } from '@dorkos/shared/search-schemas';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { SEARCH_SCOPE_COVERED, SEARCH_SCOPE_GAPS } from '../model/message-search-scope';
 import { MessageSearchDialog } from '../ui/MessageSearchDialog';
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
@@ -105,23 +108,14 @@ describe('the box states its own scope, before anything is typed', () => {
       screen.getByText('Your DorkOS channels and direct messages, the moment they are posted.')
     ).toBeInTheDocument();
     // The five-minute lag on transcripts is stated rather than averaged away:
-    // DorkOS owns the room write and indexes it on the spot, and a Claude Code
-    // transcript is a file somebody else writes, picked up by a sweep.
+    // DorkOS owns the room write and indexes it on the spot, and a Claude Code,
+    // Codex or OpenCode conversation is written by somebody else, picked up by
+    // a sweep. All three runtimes are named together because all three share
+    // that sweep (DOR-683, DOR-688).
     expect(
       screen.getByText(
-        'Your Claude Code conversations, including the ones you ran from the terminal. A new message can take up to five minutes to show up here.'
+        'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
       )
-    ).toBeInTheDocument();
-  });
-
-  it('names the runtimes it does NOT cover, by name', () => {
-    // The decision this pins: OpenCode is deferred (§2.3, DOR-688) and Codex is
-    // not indexed yet (DOR-683). Both are named, because a gap nobody states is
-    // the failure G4 exists to prevent.
-    open();
-
-    expect(
-      screen.getByText('Codex and OpenCode conversations are not searchable yet.')
     ).toBeInTheDocument();
   });
 
@@ -152,6 +146,17 @@ describe('the box states its own scope, before anything is typed', () => {
     open();
     expect(screen.getByText('What search covers')).toBeInTheDocument();
   });
+
+  it('pins the LENGTH of both lists, not only their literal text', () => {
+    // Literal-text assertions above only catch a REVERT — a claim that quietly
+    // regresses back to "not covered". They stay green if a line is silently
+    // ADDED instead: an over-claim (a fifth source nobody verified, say) would
+    // render with nothing here going red. Pinning the count closes that gap in
+    // the other direction, so growing either list is a deliberate, reviewed
+    // edit to this file rather than a side effect nobody asserted against.
+    expect(SEARCH_SCOPE_COVERED).toHaveLength(2);
+    expect(SEARCH_SCOPE_GAPS).toHaveLength(2);
+  });
 });
 
 describe('the box keeps stating its scope wherever a person is asking why', () => {
@@ -170,7 +175,9 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
 
     expect(screen.getByText('What search covers')).toBeInTheDocument();
     expect(
-      screen.getByText('Codex and OpenCode conversations are not searchable yet.')
+      screen.getByText(
+        'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
+      )
     ).toBeInTheDocument();
   });
 
@@ -197,7 +204,9 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     expect(screen.queryAllByRole('option')).toHaveLength(0);
     expect(screen.getByText('What search covers')).toBeInTheDocument();
     expect(
-      screen.getByText('Codex and OpenCode conversations are not searchable yet.')
+      screen.getByText(
+        'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
+      )
     ).toBeInTheDocument();
   });
 
@@ -251,7 +260,7 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     expect(screen.queryByText('What search covers')).toBeNull();
     expect(
       screen.getByText(
-        'Searches what was said in channels, direct messages and Claude Code conversations. Not tool output, and not Codex or OpenCode yet.'
+        'Searches what was said in channels and direct messages, and in Claude Code, Codex and OpenCode conversations. Not tool output.'
       )
     ).toBeInTheDocument();
   });
