@@ -2,8 +2,10 @@
  * The source array — one row per indexed source (message-search spec §3, D12).
  *
  * Adding a source means adding a row here and a pure projection beside it.
- * Nothing else varies: discovery, change detection, the incremental read, the
- * upsert and the prune are written once per *mechanism*, in `row-frontier.ts`.
+ * Nothing else varies: discovery, change detection and the incremental read are
+ * written once per *mechanism* — `row-frontier.ts` for M2, `jsonl-frontier.ts`
+ * for M1 — and the writes both mechanisms make (the upsert, the prune, the
+ * attempt stamp) are written once for BOTH, in `frontier-store.ts`.
  *
  * This is deliberately a record and not a `SearchAdapter` port. A port
  * abstracting two mechanisms and three functions is a class hierarchy standing
@@ -15,9 +17,13 @@
  *
  * @module server/services/search/registry
  */
+import path from 'path';
 import { authors, roomEntries, rooms, and, asc, eq, gt, sql, type Db } from '@dorkos/db';
+import { resolveActiveClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
+import { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
+import { projectClaudeCodeLines } from './projections/claude-code.js';
 import { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
-import type { RowContainer, RowSource } from './types.js';
+import type { FileSource, RowContainer, RowSource, SearchSource } from './types.js';
 
 /**
  * The room log — **M2**, rows above a monotonic watermark.
@@ -32,6 +38,7 @@ import type { RowContainer, RowSource } from './types.js';
  */
 export const roomsSource: RowSource = {
   id: 'rooms',
+  mechanism: 'rows',
 
   listContainers(db: Db): RowContainer[] {
     // One GROUP BY answers discovery AND change detection. A LEFT JOIN so a room
@@ -86,10 +93,57 @@ export const roomsSource: RowSource = {
 };
 
 /**
+ * Build a Claude Code source over one projects root.
+ *
+ * The root is a parameter rather than a call so a test can point the source at a
+ * fixture tree instead of at the operator's real history.
+ *
+ * @param resolveProjectsRoot - Called at the start of every sweep, never cached:
+ *   an operator who switches Claude account mid-session must be indexed from the
+ *   new root on the next tick rather than after a restart.
+ * @returns The registry row.
+ */
+export function createClaudeCodeSource(resolveProjectsRoot: () => string): FileSource {
+  return {
+    id: 'claude-code',
+    mechanism: 'jsonl',
+    discover: (known) => discoverClaudeCodeTranscripts(resolveProjectsRoot(), known),
+    project: projectClaudeCodeLines,
+  };
+}
+
+/**
+ * Claude Code transcripts — **M1**, append-only JSONL tailed at a byte offset.
+ *
+ * This is where the corpus and the value are: sessions run inside DorkOS and
+ * sessions run from the bare `claude` CLI land in the same place and are indexed
+ * the same way, because the index reads what the SDK wrote rather than anything
+ * DorkOS recorded.
+ *
+ * **The root is resolved, never hardcoded.** A hardcoded `~/.claude` silently
+ * split-brains the moment anything sets `CLAUDE_CONFIG_DIR` (DOR-250), and
+ * `resolveActiveClaudeRoot()` is the one place that decides which account is
+ * active. `os.homedir()` is banned in this tree for the same reason: there is
+ * exactly one module allowed to know where a home directory is.
+ *
+ * **One root, deliberately, and it is not enough.** The operator's own machine
+ * holds three, and reading only the active one covers at most 67% of their
+ * Claude Code history — 3.5% when a server inherits a minor root from its shell.
+ * `resolveClaudeRootSet()` already returns the full set; DOR-682 is the ticket
+ * that reads from it, and it is a separate ticket because the frontier has to be
+ * proved correct on one root before it is asked to span several.
+ */
+export const claudeCodeSource: FileSource = createClaudeCodeSource(() =>
+  path.join(resolveActiveClaudeRoot(), 'projects')
+);
+
+/**
  * Every source the indexer sweeps.
  *
- * One entry today. Claude Code and Codex join it on the JSONL mechanism (M1);
- * OpenCode is deferred and its deferral is what keeps this an array of records
- * rather than a port.
+ * Two entries, one per mechanism. Codex joins Claude Code on M1 with one more
+ * row and one more projection; OpenCode is deferred, and its deferral — its SDK
+ * poll has no resumption primitive and needs a live child process, which would
+ * be a third mechanism — is what keeps this an array of records rather than a
+ * port.
  */
-export const SEARCH_SOURCES: readonly RowSource[] = [roomsSource];
+export const SEARCH_SOURCES: readonly SearchSource[] = [roomsSource, claudeCodeSource];

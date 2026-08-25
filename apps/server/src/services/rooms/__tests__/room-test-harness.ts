@@ -592,7 +592,7 @@ export function createRoomHarness(opts: {
       return authors.bindOwner(userId).id;
     },
     async indexMessages() {
-      await new SearchIndexer(db).sweep();
+      await new SearchIndexer(db, [roomsSource]).sweep();
     },
   };
 }

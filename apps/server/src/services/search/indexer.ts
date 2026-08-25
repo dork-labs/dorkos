@@ -10,9 +10,10 @@
  */
 import type { Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
+import { sweepFileSource } from './jsonl-frontier.js';
 import { SEARCH_SOURCES } from './registry.js';
 import { sweepRowSource } from './row-frontier.js';
-import type { RowSource, SourceFailure } from './types.js';
+import type { SearchSource, SourceFailure } from './types.js';
 
 /**
  * How often the index catches up, in milliseconds.
@@ -76,12 +77,15 @@ export class SearchIndexer {
    * @param db - The database, opened through `createDb` so `recursive_triggers`
    *   is on.
    * @param sources - Which sources to sweep. Defaults to the whole registry.
+   *   A test that cares about one source passes just that one: the default set
+   *   reaches the filesystem, and a room test has no business reading the
+   *   operator's transcripts.
    * @param intervalMs - Sweep cadence. Defaults to
    *   {@link SEARCH_RECONCILE_INTERVAL_MS}.
    */
   constructor(
     private readonly db: Db,
-    private readonly sources: readonly RowSource[] = SEARCH_SOURCES,
+    private readonly sources: readonly SearchSource[] = SEARCH_SOURCES,
     private readonly intervalMs: number = SEARCH_RECONCILE_INTERVAL_MS
   ) {}
 
@@ -123,7 +127,12 @@ export class SearchIndexer {
     };
 
     for (const source of this.sources) {
-      const swept = sweepRowSource(this.db, source, at);
+      // The registry row names its mechanism, so nothing here infers one from
+      // the shape of the record (spec §3).
+      const swept =
+        source.mechanism === 'jsonl'
+          ? await sweepFileSource(this.db, source, at)
+          : sweepRowSource(this.db, source, at);
       result.containers += swept.containers;
       result.indexed += swept.indexed;
       result.skipped += swept.skipped;
