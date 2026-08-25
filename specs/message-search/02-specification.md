@@ -793,3 +793,72 @@ This document states in three places that `search_room_history` becomes a caller
 **Two refinements to what that benchmark fits, both learned by running it.** The linearity fit is taken on `ORDER BY bm25()` **without** `snippet()`: ranking is charged per row that MATCHES and is the term that scales, while `snippet()` is charged per row RETURNED — twenty of them, always — so folding them together measures a constant as if it were slope (R² 0.886 combined, 1.000 split). And the flatness claim is asserted **comparatively** as well as absolutely: the unordered spread must be at least ten times smaller than the ranked spread over the same terms, which is scale-free and survives any load, where a bare ratio ceiling over 8–24 µs measurements is mostly measuring the scheduler.
 
 **One run, 2026-08-24, on a workstation running several agents — illustration, not a budget, per Amendment 1's own instruction:** 9,182 messages indexed; `the` 7,656 hits; unordered p50 0.012–0.013 ms across 3.3 decades of hit count (spread 1.12×); ranked p50 0.032 → 3.476 ms across the same range (spread 109×); ranked slope 0.452 µs/row, inside the 0.375–1.03 µs/row range the three earlier runs bracketed; linearity R² 1.000. **The shape reproduced; no absolute was inherited.**
+
+## Amendment 8 — OpenCode is indexed, and the port promotion is refused (DOR-688)
+
+**Amends §2.3 in full, the `opencode` row of §2's source table, §1's opening paragraph ("**OpenCode is not in that list**"), and §3's port trigger.**
+
+§2.3 deferred OpenCode on four counts. Three of them still hold, and the design here is what
+each of them forced.
+
+**Count 1 — ADR-0308's ban — is narrowed, not dismissed.** The reason for it is real:
+`opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value`
+in the same file as its messages. What changed is that the danger turned out to be
+answerable structurally. Each sweep copies the store and its `-wal`/`-shm` siblings into a
+temp directory, opens the COPY `readonly` + `PRAGMA query_only`, reads through a frozen
+allowlist of three tables and eight columns, and deletes the copy in a `finally`. **The live
+file is never opened**, so DorkOS is not a participant in the WAL concurrency §2.3 worried
+about — a stronger position than the SDK path offers, since the sidecar holds a live
+connection and this does not. §9.1's rule ("every projection selects explicit fields") is
+not weakened; it is enforced by construction, because `SELECT *` is not expressible when the
+column list IS the allowlist. ADR `260825-110420` carries the decision and the amendment to 0308.
+
+**Count 2 — the SDK path — is UNCHANGED and now explicitly forbidden for indexing.** It was
+re-evaluated and still fails on its own merits: nothing boots the sidecar at startup, a cold
+probe spawns a server as a side effect, and a `peekClient()`-gated indexer makes coverage
+nondeterministic. A reconciler on a timer must never spawn somebody else's agent server.
+**Every other source in this design reads bytes already at rest, and this one now does too**
+— which also discharges the whole "SDK-surface decision blocks everything else" paragraph:
+`before`, `start` and `scope: 'project'` are irrelevant to a source that does not use the
+SDK, and neither DOR-673's 100-session cap nor DOR-674's exact-directory filter can be
+inherited by a read that goes to the file.
+
+**Count 3 — the corpus — is unchanged and was never the argument.** Re-measured 2026-08-25:
+**50 messages across 63 top-level sessions**, against 19,124 from Claude Code. The July
+figures (`session` 6, `message` 24, `part` 73) were not re-derived at the time because the
+store was deliberately not opened, which was the rule working as intended. G4 is why size
+does not decide this: a box that silently covers less for one runtime than another is the
+failure this document exists to refuse.
+
+**Count 4 — the port trigger — FIRED, and the promotion is REFUSED.** §3 named the arrival
+of a third mechanism as the trigger, on the prediction that a third mechanism would need
+frontier logic of its own. **It did not.** M3 reuses M2's entire watermark implementation
+through a four-function `ContainerReader` seam and contributes ~40 lines
+(`snapshot-frontier.ts`): the resume rule, the shrink rebuild, the frontier write and the
+prune are shared. A port here would abstract three mechanisms that already share their
+implementation. The re-trigger is written down in the ADR rather than left to taste — **a
+fourth mechanism whose change detection is neither a byte offset nor a monotonic ordinal, or
+a source that lives outside `apps/server`** — the second because the registry is a private
+constant in one file, and the day a source must register from somewhere that cannot edit
+that file, the registration surface IS the port.
+
+**The `Session.time.updated` caveat is discharged rather than handled.** §2.3 insisted the
+watermark be `>=` plus a forced re-read of any session last seen non-idle, because OpenCode
+stamps that column at turn start and a `updated > lastSeen` poll misses the assistant half
+of an in-flight turn. The shipped source does not read that column at all: a session's
+ordinals are its messages' positions in `(time_created, id)` order, so the high-water mark is
+a row count, and a count cannot miss a row that exists. A revert that deletes messages lowers
+the count below what the index holds, which is §5's shrink-means-rebuild rule arriving
+unchanged.
+
+**Two behaviours worth stating because they are the ones a careless version gets wrong.** A
+session with a `parent_id` is a subagent's own transcript and is not a container, for the
+same reason §2.1 walks past `subagents/**`. And **an absent `opencode.db` is not an empty
+one**: it indexes nothing, prunes nothing, and reports no failure, because reading absence as
+"every session is gone" would delete an entire indexed corpus the first time the runtime was
+uninstalled.
+
+**§1's product statement is now false and the client copy is the follow-up.** The scope copy
+task 5.2 shipped names OpenCode as not covered. That copy is deliberately NOT changed in this
+ticket — the file is in flight on another branch — and flipping it is the one piece of
+DOR-688 that lands separately.

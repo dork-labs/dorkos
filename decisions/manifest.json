@@ -4904,6 +4904,23 @@
         "apps/site/src/layers/features/marketing/lib/comparisons.ts",
         "apps/site/src/layers/features/marketing/lib/features.ts"
       ]
+    },
+    {
+      "id": "260825-110420",
+      "slug": "opencode-search-reads-a-snapshot-not-the-live-store",
+      "title": "OpenCode search reads a throwaway snapshot, never the live store or the sidecar",
+      "status": "accepted",
+      "created": "2026-08-25",
+      "specSlug": "message-search",
+      "amends": ["0308"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/search/opencode-store.ts",
+        "apps/server/src/services/search/snapshot-frontier.ts",
+        "apps/server/src/services/search/projections/opencode.ts",
+        "apps/server/src/services/search/registry.ts",
+        "apps/server/src/services/runtimes/opencode/opencode-data-dir.ts"
+      ]
     }
   ]
 }
