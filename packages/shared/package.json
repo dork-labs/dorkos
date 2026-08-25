@@ -244,6 +244,10 @@
     "./handle": {
       "types": "./src/handle.ts",
       "default": "./dist/handle.js"
+    },
+    "./search-schemas": {
+      "types": "./src/search-schemas.ts",
+      "default": "./dist/search-schemas.js"
     }
   },
   "scripts": {

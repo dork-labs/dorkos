@@ -557,13 +557,20 @@ export function createRoomHarness(opts: {
     // `search_room_history` test a test of the fake — including the scope rules,
     // which are the half worth proving. `indexMessages()` below is what puts rows
     // in front of it.
-    findMessages: ({ roomIds, query, limit, afterSeq }) =>
+    findMessages: ({ rooms: scoped, query, limit }) =>
       searchMessages(db, {
-        sourceId: roomsSource.id,
-        originKeys: roomIds,
+        scopes: [
+          {
+            sourceId: roomsSource.id,
+            visibility: 'containers',
+            containers: scoped.map((room) => ({
+              originKey: room.roomId,
+              afterOrdinal: room.afterSeq,
+            })),
+          },
+        ],
         query,
         limit,
-        afterOrdinal: afterSeq,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     limitsFor,
     engagedWindow: () => engagedWindow,

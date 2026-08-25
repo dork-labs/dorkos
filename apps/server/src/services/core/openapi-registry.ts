@@ -136,6 +136,13 @@ import {
   ProfileUpdateResponseSchema,
   TeamRosterResponseSchema,
 } from '@dorkos/shared/team-schemas';
+import {
+  SearchQuerySchema,
+  SearchResponseSchema,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_MAX_LIMIT,
+  SEARCH_MIN_QUERY_LENGTH,
+} from '@dorkos/shared/search-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
@@ -4146,6 +4153,53 @@ registry.registerPath({
     },
     500: {
       description: 'The membership read failed (`MEMBER_ROOMS_FAILED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Message search (spec `message-search` §6.1, §7, ADR 260728-214214) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/search',
+  tags: ['Search'],
+  summary: 'Find messages by what was said in them',
+  description:
+    'One ranked read over the derived message index — rooms and Claude Code transcripts alike, ' +
+    'in a single relevance order, because "where did we talk about X" does not know which one X ' +
+    'was said in. A hit is a COORDINATE plus a marked excerpt (source, container, ordinal, role, ' +
+    'timestamp), never the message itself: the index holds a copy of the text and none of the ' +
+    "access rules, so resolving a hit back to a message stays the owning store's job. " +
+    'Matching is by word STEM, not substring: `dogs` finds "dog", "dogs" and "DOGGED", and `ogs` ' +
+    'finds nothing. The index is as fresh as the last five-minute sweep. ' +
+    '**Who sees what**: the operator gets every room and every session; anybody else gets only ' +
+    'the rooms they are on the roster of, each above the point they joined it, and NO sessions at ' +
+    'all — a caller presenting an agent identity, resolved or not, never reaches a transcript. ' +
+    'A search scoped to something the caller may not see returns exactly what a search for words ' +
+    'nobody ever said returns, so neither a room id nor a query string is a capability. ' +
+    `**The calling contract**: at least ${SEARCH_MIN_QUERY_LENGTH} characters, and wait ` +
+    `${SEARCH_DEBOUNCE_MS} ms after the last keystroke. Ranking cost grows with how many rows ` +
+    'MATCH rather than with `limit`, so a one-letter search is the most expensive one there is ' +
+    `and the least useful. \`limit\` is clamped to ${SEARCH_MAX_LIMIT} rather than refused. ` +
+    'Degradation follows ADR-0310: a source that could not be fully indexed contributes zero hits ' +
+    'and one `warnings[]` entry naming it — never a failed request. `warnings` is always present, ' +
+    '`[]` included, and names no container, since a container id is a room or a session id.',
+  request: { query: SearchQuerySchema },
+  responses: {
+    200: {
+      description: 'Hits, best first, across every source this caller may read',
+      content: { 'application/json': { schema: SearchResponseSchema } },
+    },
+    400: {
+      description:
+        'The query was shorter than the minimum (`INVALID_SEARCH_QUERY`), or named a source that ' +
+        'does not exist (`UNKNOWN_SEARCH_SOURCE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description:
+        'The caller presented an agent token this machine could not verify (`AGENT_IDENTITY_UNVERIFIED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

@@ -1,0 +1,300 @@
+/**
+ * The ranked query, and the scope clause that is the whole access model
+ * (message-search spec §6.1).
+ *
+ * These run against a real FTS5 index built by the real migrator, with rows
+ * inserted the way the indexer inserts them, because every claim here is about
+ * SQL: which rows a predicate lets through, and in what order. A fake would only
+ * prove the fake agrees with itself.
+ *
+ * The per-container floor is tested in BOTH directions on purpose. A floor test
+ * that only asserts absence passes for a working floor, for an empty index, and
+ * for a broken query — so every "must not surface" here is paired with a "must
+ * still surface" over the same seeded rows.
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { messages, type Db } from '@dorkos/db';
+import { searchMessages } from '../query.js';
+
+let db: Db;
+
+beforeEach(() => {
+  db = createTestDb();
+});
+
+/** Put one message in the index, the way a projection would. */
+function say(
+  sourceId: string,
+  originKey: string,
+  ordinal: number,
+  body: string,
+  opts: { role?: 'user' | 'assistant'; createdAt?: string } = {}
+): void {
+  db.insert(messages)
+    .values({
+      sourceId,
+      originKey,
+      ordinal,
+      role: opts.role ?? 'user',
+      createdAt: opts.createdAt ?? '2026-07-29T10:00:00.000Z',
+      body,
+    })
+    .run();
+}
+
+/** Just the coordinates, for assertions that are about which rows came back. */
+function coordinates(hits: ReturnType<typeof searchMessages>): string[] {
+  return hits.map((hit) => `${hit.sourceId}:${hit.originKey}:${hit.ordinal}`);
+}
+
+describe('searchMessages — the per-container floor', () => {
+  beforeEach(() => {
+    // `early` is a room this caller was in from the start; `late` is one they
+    // joined at seq 2. Both say the same word, so the only thing that can
+    // separate them is the floor.
+    say('rooms', 'early', 1, 'the migration plan we agreed');
+    say('rooms', 'early', 2, 'migration notes from later');
+    say('rooms', 'late', 1, 'migration talk before they arrived');
+    say('rooms', 'late', 2, 'more migration before they arrived');
+    say('rooms', 'late', 3, 'migration after they arrived');
+  });
+
+  it('hides what a late-joined room said before the caller arrived', () => {
+    const hits = searchMessages(db, {
+      scopes: [
+        {
+          sourceId: 'rooms',
+          visibility: 'containers',
+          containers: [
+            { originKey: 'early', afterOrdinal: 0 },
+            { originKey: 'late', afterOrdinal: 2 },
+          ],
+        },
+      ],
+      query: 'migration',
+      limit: 10,
+    });
+
+    expect(coordinates(hits).sort()).toEqual(['rooms:early:1', 'rooms:early:2', 'rooms:late:3']);
+  });
+
+  it('still returns the early-joined room’s oldest messages', () => {
+    // The positive half of the pair above, stated as its own case: a single
+    // global floor of 2 — the highest of the two — would swallow `early:1`, and
+    // that row is the one this asserts is still there.
+    const hits = searchMessages(db, {
+      scopes: [
+        {
+          sourceId: 'rooms',
+          visibility: 'containers',
+          containers: [
+            { originKey: 'early', afterOrdinal: 0 },
+            { originKey: 'late', afterOrdinal: 2 },
+          ],
+        },
+      ],
+      query: 'migration',
+      limit: 10,
+    });
+
+    expect(coordinates(hits)).toContain('rooms:early:1');
+  });
+
+  it('treats a missing floor as no floor', () => {
+    const hits = searchMessages(db, {
+      scopes: [
+        { sourceId: 'rooms', visibility: 'containers', containers: [{ originKey: 'late' }] },
+      ],
+      query: 'migration',
+      limit: 10,
+    });
+
+    expect(coordinates(hits).sort()).toEqual(['rooms:late:1', 'rooms:late:2', 'rooms:late:3']);
+  });
+
+  it('groups containers that share a floor without losing any of them', () => {
+    // Three containers, two floors. The predicate collapses same-floor keys into
+    // one `IN (...)`, and this is what says the collapse keeps every key.
+    say('rooms', 'third', 1, 'migration in a third room');
+    const hits = searchMessages(db, {
+      scopes: [
+        {
+          sourceId: 'rooms',
+          visibility: 'containers',
+          containers: [
+            { originKey: 'early', afterOrdinal: 0 },
+            { originKey: 'third', afterOrdinal: 0 },
+            { originKey: 'late', afterOrdinal: 2 },
+          ],
+        },
+      ],
+      query: 'migration',
+      limit: 10,
+    });
+
+    expect(coordinates(hits).sort()).toEqual([
+      'rooms:early:1',
+      'rooms:early:2',
+      'rooms:late:3',
+      'rooms:third:1',
+    ]);
+  });
+});
+
+describe('searchMessages — the scope clause', () => {
+  beforeEach(() => {
+    // The collision the source-scoping rule exists for: a room and a session
+    // that happen to carry the SAME opaque container id.
+    say('rooms', 'shared-key', 1, 'said in a room about pelicans');
+    say('claude-code', 'shared-key', 1, 'said in a session about pelicans');
+  });
+
+  it('never lets a container key match across sources', () => {
+    const hits = searchMessages(db, {
+      scopes: [
+        {
+          sourceId: 'rooms',
+          visibility: 'containers',
+          containers: [{ originKey: 'shared-key' }],
+        },
+      ],
+      query: 'pelicans',
+      limit: 10,
+    });
+
+    expect(coordinates(hits)).toEqual(['rooms:shared-key:1']);
+  });
+
+  it('reaches everything in a source scoped `all`, with no container list', () => {
+    say('claude-code', 'another-session', 7, 'more about pelicans');
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'claude-code', visibility: 'all' }],
+      query: 'pelicans',
+      limit: 10,
+    });
+
+    expect(coordinates(hits).sort()).toEqual([
+      'claude-code:another-session:7',
+      'claude-code:shared-key:1',
+    ]);
+  });
+
+  it('ranks across several sources in one list', () => {
+    const hits = searchMessages(db, {
+      scopes: [
+        { sourceId: 'rooms', visibility: 'containers', containers: [{ originKey: 'shared-key' }] },
+        { sourceId: 'claude-code', visibility: 'all' },
+      ],
+      query: 'pelicans',
+      limit: 10,
+    });
+
+    expect(coordinates(hits).sort()).toEqual(['claude-code:shared-key:1', 'rooms:shared-key:1']);
+  });
+
+  it('matches nothing when the caller is in no containers', () => {
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'rooms', visibility: 'containers', containers: [] }],
+      query: 'pelicans',
+      limit: 10,
+    });
+
+    expect(hits).toEqual([]);
+  });
+
+  it('matches nothing when there is no scope at all', () => {
+    expect(searchMessages(db, { scopes: [], query: 'pelicans', limit: 10 })).toEqual([]);
+  });
+});
+
+describe('searchMessages — what a hit carries', () => {
+  beforeEach(() => {
+    say('rooms', 'general', 4, 'we should rewrite the scheduler this quarter', {
+      role: 'assistant',
+      createdAt: '2026-07-29T11:30:00.000Z',
+    });
+  });
+
+  it('carries the row’s own facts', () => {
+    const [hit] = searchMessages(db, {
+      scopes: [{ sourceId: 'rooms', visibility: 'all' }],
+      query: 'scheduler',
+      limit: 10,
+    });
+
+    expect(hit).toEqual({
+      sourceId: 'rooms',
+      originKey: 'general',
+      ordinal: 4,
+      role: 'assistant',
+      createdAt: '2026-07-29T11:30:00.000Z',
+      excerpt: null,
+    });
+  });
+
+  it('marks the match when an excerpt is asked for', () => {
+    // This is also the column-name trap from spec §4: with `content='messages'`,
+    // FTS5 re-reads the text BY COLUMN NAME, so a mismatch fails here — and only
+    // here — while MATCH and bm25() keep working. A MATCH-only test passes it.
+    const [hit] = searchMessages(db, {
+      scopes: [{ sourceId: 'rooms', visibility: 'all' }],
+      query: 'scheduler',
+      limit: 10,
+      excerpts: true,
+    });
+
+    expect(hit?.excerpt).toContain('<mark>scheduler</mark>');
+  });
+});
+
+describe('searchMessages — matching and ranking', () => {
+  it('matches word stems rather than substrings', () => {
+    say('rooms', 'general', 1, 'one dog');
+    say('rooms', 'general', 2, 'two dogs');
+    say('rooms', 'general', 3, 'utterly DOGGED about it');
+    say('rooms', 'general', 4, 'nothing relevant here');
+
+    const scopes = [{ sourceId: 'rooms', visibility: 'all' as const }];
+    expect(searchMessages(db, { scopes, query: 'dogs', limit: 10 })).toHaveLength(3);
+    // The honest cost of stemming, asserted rather than left to be discovered.
+    expect(searchMessages(db, { scopes, query: 'ogs', limit: 10 })).toEqual([]);
+  });
+
+  it('returns nothing for a query with no word in it', () => {
+    say('rooms', 'general', 1, 'something searchable');
+    expect(
+      searchMessages(db, {
+        scopes: [{ sourceId: 'rooms', visibility: 'all' }],
+        query: '!!! ???',
+        limit: 10,
+      })
+    ).toEqual([]);
+  });
+
+  it('honours the limit', () => {
+    for (let seq = 1; seq <= 5; seq += 1) say('rooms', 'general', seq, 'repeated word');
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'rooms', visibility: 'all' }],
+      query: 'repeated',
+      limit: 2,
+    });
+    expect(hits).toHaveLength(2);
+  });
+
+  it('puts the better match first', () => {
+    // bm25 rewards the shorter document for the same term, so the terse row
+    // outranks the padded one. The assertion is about ORDER, which a query
+    // missing its `ORDER BY` answers by rowid — the order these were inserted
+    // in, which is deliberately the opposite.
+    say('rooms', 'general', 1, `padding ${'filler '.repeat(60)} kestrel more padding`);
+    say('rooms', 'general', 2, 'kestrel');
+
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'rooms', visibility: 'all' }],
+      query: 'kestrel',
+      limit: 10,
+    });
+    expect(coordinates(hits)).toEqual(['rooms:general:2', 'rooms:general:1']);
+  });
+});

@@ -14,16 +14,19 @@
  *
  * {@link searchMessages} is the one way to read it — the room history tool's
  * `search_room_history` calls it inside a scope the rooms domain resolved
- * (room-participation spec §10.3, as amended by DOR-672). The person-facing
- * search route and the palette entry point are still later tasks, and when they
- * land they call the same function: there is exactly one search path over these
- * rows. Session rows are owner-only and reachable by no agent (spec §7), which
- * is why nothing here takes a caller.
+ * (room-participation spec §10.3, as amended by DOR-672), and so does
+ * {@link searchForCaller}, which is what `GET /api/search` answers with. There is
+ * exactly one search path over these rows, and neither caller is trusted with an
+ * access rule: both are handed a scope somebody else resolved. Session rows are
+ * owner-only and reachable by no agent (spec §7). The palette entry point is a
+ * later task and calls the same route.
  *
  * @module server/services/search
  */
 export { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, type SweepResult } from './indexer.js';
 export { searchMessages } from './query.js';
+export type { ContainerScope, MessageHit, MessageQuery, SourceScope } from './query.js';
+export { searchForCaller, type SearchRequest, type SearchScope } from './search-service.js';
 export {
   SEARCH_SOURCES,
   claudeCodeSource,

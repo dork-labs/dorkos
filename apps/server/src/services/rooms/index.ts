@@ -357,13 +357,20 @@ export function createRoomSubsystem(opts: {
     // The message index, behind its port. Composed here rather than imported by
     // the service so the rooms domain neither knows the index is FTS5 nor which
     // `sourceId` its own rows carry.
-    findMessages: ({ roomIds, query, limit, afterSeq }) =>
+    findMessages: ({ rooms: scoped, query, limit }) =>
       searchMessages(opts.db, {
-        sourceId: roomsSource.id,
-        originKeys: roomIds,
+        scopes: [
+          {
+            sourceId: roomsSource.id,
+            visibility: 'containers',
+            containers: scoped.map((room) => ({
+              originKey: room.roomId,
+              afterOrdinal: room.afterSeq,
+            })),
+          },
+        ],
         query,
         limit,
-        afterOrdinal: afterSeq,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     // Resolved per write, not captured once: changing a ceiling in Settings —
     // or on the room — has to bound the very next cascade, not the next server

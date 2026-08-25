@@ -31,6 +31,7 @@
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
     "search:bench": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-corpus-bench.ts",
+    "search:latency": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-latency-bench.ts",
     "test:browser": "dotenv -- turbo run e2e --filter=@dorkos/e2e --only",
     "test:browser:ui": "dotenv -- turbo run e2e:ui --filter=@dorkos/e2e --only",
     "prepare": "lefthook install",

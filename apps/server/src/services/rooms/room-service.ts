@@ -155,16 +155,36 @@ import type { RoomTurnBudget } from './limits/turn-budget.js';
  */
 export interface RoomMessageFinder {
   (input: {
-    /** The rooms to search — already resolved to what this caller may read. */
-    roomIds: readonly string[];
+    /**
+     * The rooms to search, each with the `seq` it may be read above — already
+     * resolved to what this caller may see.
+     *
+     * **A floor per room, never one for the request.** A member joins different
+     * rooms at different points, so a single floor across several rooms is
+     * wrong in both directions at once: it leaks what was said before they
+     * arrived in a room they joined late, and hides what is theirs in a room
+     * they joined early. One room per entry keeps the pair that decides
+     * visibility together.
+     */
+    rooms: ReadonlyArray<{ roomId: string; afterSeq: number }>;
     /** What the caller typed. */
     query: string;
     /** The most hits to bring back, best first. */
     limit: number;
-    /** Ignore entries at or below this `seq`. */
-    afterSeq: number;
   }): Array<{ roomId: string; seq: number }>;
 }
+
+/**
+ * What one caller may search of the room log, across every room at once
+ * (message-search spec §7).
+ *
+ * `'all'` is the operator, whose clause is OMITTED rather than filled with every
+ * room on the machine — a filter that has to enumerate everything silently
+ * starts excluding things the day enumeration misses one. Everybody else gets a
+ * map of room id to the `seq` they joined at, which is the floor their search
+ * runs above.
+ */
+export type RoomSearchScope = 'all' | ReadonlyMap<string, number>;
 
 export interface RoomServiceDeps {
   store: RoomStore;
@@ -2407,12 +2427,11 @@ export class RoomService {
     const { floor } = this.requireHistoryFloor(roomId, viewerAuthorId);
     const wanted = clampHistoryLimit(opts.limit);
     const hits = this.findMessages({
-      roomIds: [roomId],
+      rooms: [{ roomId, afterSeq: floor }],
       query: opts.query,
       // Over-fetch only when something will be filtered out afterwards, so the
       // ordinary search costs exactly what it asked for.
       limit: opts.threadRootEntryId === undefined ? wanted : HISTORY_PAGE_MAX,
-      afterSeq: floor,
     });
     if (hits.length === 0) return [];
 
@@ -2428,6 +2447,39 @@ export class RoomService {
       .sort((a, b) => (ranked.get(a.seq) ?? 0) - (ranked.get(b.seq) ?? 0))
       .slice(0, wanted);
     return this.withRollups(roomId, found);
+  }
+
+  /**
+   * How much of the room log one caller may search across EVERY room at once —
+   * the whole-install read `GET /api/search` needs (message-search spec §7).
+   *
+   * The same two rules {@link RoomService.requireVisibleRoom} and
+   * {@link RoomService.readHistory} keep, expressed for a query that names no
+   * room: the owner may see every room, everybody else exactly the rooms they
+   * are on the roster of, each from their own `joinedSeq` up.
+   *
+   * **The floors are per room and cannot be collapsed into one.** A member joins
+   * different rooms at different points, so a single lowest floor would leak what
+   * was said before they arrived in the rooms they joined late, and a single
+   * highest one would hide what is theirs in the rooms they joined early. This is
+   * the reason the shape is a map rather than a list plus a number.
+   *
+   * It returns a scope rather than results, and the difference is the access
+   * model: the index is handed what this domain resolved and is never asked to
+   * work out who anybody is.
+   *
+   * @param viewerAuthorId - The caller's author id.
+   * @returns `'all'` for the operator, or every room they are in keyed to the
+   *   `seq` they may read above. An empty map is a real answer — somebody in no
+   *   rooms — and matches nothing.
+   */
+  searchScope(viewerAuthorId: string): RoomSearchScope {
+    if (this.seesEveryRoom(viewerAuthorId)) return 'all';
+    const floors = new Map<string, number>();
+    for (const membership of this.store.listMembershipsFor(viewerAuthorId)) {
+      floors.set(membership.roomId, membership.joinedSeq);
+    }
+    return floors;
   }
 
   /**
