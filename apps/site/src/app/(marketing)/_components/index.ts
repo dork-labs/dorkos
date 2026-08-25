@@ -60,7 +60,17 @@ export {
   type ChatLine,
   type Sender,
 } from './chat-script';
-export { BEAT_COPY, nextBeat, type Beat, type BeatCopy } from './beats';
+export { nextBeat, type Beat } from './beats';
+export {
+  HERO,
+  BEATS,
+  LOCALHOST_CAPTION,
+  PROMO,
+  CLOSE,
+  DOWNLOAD,
+  INSTALL_ASIDE,
+  type Block,
+} from './copy';
 export { NIGHT_VARS, INSTALL_COMMAND, SHELL } from './theme';
 export {
   PROMO_CUTS,

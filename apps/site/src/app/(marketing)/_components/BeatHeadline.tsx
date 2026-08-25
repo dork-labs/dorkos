@@ -1,12 +1,13 @@
 'use client';
 
 import { AnimatePresence, motion } from 'motion/react';
-import { BEAT_COPY, type Beat } from './beats';
+import type { Beat } from './beats';
+import { BEATS } from './copy';
 import { Eyebrow } from './Eyebrow';
 
 /** The stage's headline, crossfading as the scroll moves between beats. */
 export function BeatHeadline({ beat }: { beat: Beat }) {
-  const copy = BEAT_COPY[beat];
+  const copy = BEATS[beat];
   return (
     <div className="relative h-44 w-full">
       <AnimatePresence mode="wait">

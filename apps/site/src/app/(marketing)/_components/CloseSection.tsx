@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { motion } from 'motion/react';
 import { siteConfig } from '@/config/site';
 import { AWAY_FROM_HOME_LINKS, REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
+import { CLOSE, INSTALL_ASIDE } from './copy';
 import { DownloadMacButton } from './DownloadMacButton';
 import { InstallCommand } from './InstallCommand';
 
@@ -28,15 +29,15 @@ export function CloseSection() {
           variants={REVEAL}
           className="text-[clamp(3rem,10vw,7.5rem)] leading-[0.95] font-semibold tracking-[-0.04em] text-balance text-(--cream)"
         >
-          You, multiplied.
+          {CLOSE.title}
         </motion.h2>
         <motion.p variants={REVEAL} className="mt-6 text-lg text-(--cream-dim) sm:text-xl">
-          We built it for ourselves. Now it&rsquo;s yours.
+          {CLOSE.lede}
         </motion.p>
         <motion.div variants={REVEAL} className="mt-10 flex flex-col items-center gap-3">
           <DownloadMacButton placement="home_close" />
           <p className="flex flex-wrap items-center justify-center gap-1 text-sm text-(--cream-dim)">
-            or run <InstallCommand variant="quiet" />
+            {INSTALL_ASIDE} <InstallCommand variant="quiet" />
           </p>
         </motion.div>
         <motion.p
@@ -44,7 +45,7 @@ export function CloseSection() {
           className="text-2xs mt-5 font-mono tracking-[0.15em] text-(--cream-dim) uppercase"
         >
           <Link href="/install" className="hover:text-(--cream)">
-            other ways to install
+            {CLOSE.otherWays}
           </Link>
         </motion.p>
       </motion.div>
@@ -59,7 +60,7 @@ export function CloseSection() {
         ))}
       </nav>
       <div className="text-2xs mt-8 border-t border-(--line) pt-6 text-center font-mono tracking-[0.15em] text-(--cream-dim) uppercase">
-        dorkos · open source, mit ·{' '}
+        {CLOSE.colophon}{' '}
         <a href={siteConfig.github} className="hover:text-(--cream)">
           github
         </a>

@@ -2,6 +2,7 @@
 
 import { trackHeroDownload, type DownloadPlacement } from '@/lib/analytics';
 import { AppleLogo } from './AppleLogo';
+import { DOWNLOAD } from './copy';
 
 /**
  * The page's primary call to action: get the Mac app. Downloading the signed
@@ -23,7 +24,7 @@ export function DownloadMacButton({ placement }: { placement: DownloadPlacement 
       className="inline-flex items-center gap-2.5 rounded-full bg-(--ember) px-7 py-3.5 text-base font-semibold text-[#131110] transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-(--cream) focus-visible:ring-offset-2 focus-visible:ring-offset-(--pitch) focus-visible:outline-none active:scale-100 sm:text-lg"
     >
       <AppleLogo size={20} />
-      Download for Mac
+      {DOWNLOAD.label}
     </a>
   );
 }

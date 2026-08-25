@@ -2,9 +2,9 @@
 
 import { motion } from 'motion/react';
 import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing';
+import { PROMO } from './copy';
 import { Eyebrow } from './Eyebrow';
 import { PromoPlayer } from './PromoPlayer';
-import { PROMO_SECONDS } from './promo-cuts';
 
 /**
  * The promo, sitting between the animation and the close.
@@ -23,16 +23,16 @@ export function PromoSection() {
         className="flex flex-col items-center text-center"
       >
         <motion.div variants={REVEAL}>
-          <Eyebrow>{PROMO_SECONDS} seconds</Eyebrow>
+          <Eyebrow>{PROMO.eyebrow}</Eyebrow>
         </motion.div>
         <motion.h2
           variants={REVEAL}
           className="mt-3 text-[clamp(2rem,4.5vw,3.25rem)] leading-none font-semibold tracking-[-0.03em] text-balance text-(--cream)"
         >
-          Dave isn&rsquo;t smarter than you.
+          {PROMO.title}
         </motion.h2>
         <motion.p variants={REVEAL} className="mt-3 text-base text-(--cream-dim) sm:text-lg">
-          He just has help.
+          {PROMO.lede}
         </motion.p>
         <motion.div variants={REVEAL} className="mt-10 w-full">
           <PromoPlayer />

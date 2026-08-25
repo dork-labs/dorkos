@@ -13,6 +13,7 @@ import { BeatHeadline } from './BeatHeadline';
 import { nextBeat, type Beat } from './beats';
 import { ChatWindow } from './ChatWindow';
 import { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
+import { LOCALHOST_CAPTION } from './copy';
 import { LaptopFrame } from './LaptopFrame';
 import { captionOpacityAt, chatScaleAt, shellOpacityAt } from './stage-timing';
 import { useChatPlayback } from './use-chat-playback';
@@ -77,7 +78,7 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
           style={{ opacity: captionOpacity }}
           className="text-2xs absolute bottom-8 font-mono tracking-[0.2em] text-(--cream-dim) uppercase"
         >
-          home sweet localhost
+          {LOCALHOST_CAPTION}
         </motion.p>
       </div>
     </section>
