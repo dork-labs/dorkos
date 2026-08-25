@@ -159,6 +159,7 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
   const conventions: Conventions = agent.conventions ?? {
     soul: true,
     nope: true,
+    memory: true,
     dorkosKnowledge: true,
   };
 

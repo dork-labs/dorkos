@@ -226,6 +226,7 @@ const MOCK_AGENT_MANIFEST: AgentManifest = {
   conventions: {
     soul: true,
     nope: true,
+    memory: true,
     dorkosKnowledge: true,
   },
   color: '#3b82f6',

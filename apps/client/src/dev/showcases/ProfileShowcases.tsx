@@ -71,7 +71,7 @@ const FIXTURE_MANIFEST = {
   capabilities: ['review', 'triage'],
   runtime: 'claude-code',
   traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
-  conventions: { soul: true, nope: true, dorkosKnowledge: true },
+  conventions: { soul: true, nope: true, memory: true, dorkosKnowledge: true },
   behavior: { responseMode: 'always' },
   enabledToolGroups: {},
   mcpServers: [],

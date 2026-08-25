@@ -3,8 +3,7 @@
  *
  * @module memory/constants
  */
-import { CONVENTION_FILES } from '@dorkos/shared/convention-files';
-import { MANIFEST_DIR } from '@dorkos/shared/manifest';
+import { CONVENTION_DIR, CONVENTION_FILES } from '@dorkos/shared/convention-files';
 
 /**
  * How much memory one agent may keep, in characters (~2K tokens).
@@ -24,9 +23,11 @@ export { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
  *
  * The same `.dork` every other convention file lives in, taken from the module
  * that owns it rather than spelled again — a second literal is a second place
- * to change on the day it moves.
+ * to change on the day it moves. Taken from `convention-files` rather than from
+ * `manifest`, which many server suites mock: an engine constant must not depend
+ * on a module a test can replace.
  */
-export const MEMORY_DIR_NAME = MANIFEST_DIR;
+export const MEMORY_DIR_NAME = CONVENTION_DIR;
 
 /** The memory file itself, beside `agent.json`, `SOUL.md` and `NOPE.md`. */
 export const MEMORY_FILE_NAME = CONVENTION_FILES.memory;

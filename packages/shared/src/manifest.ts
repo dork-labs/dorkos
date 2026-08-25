@@ -10,10 +10,15 @@ import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { AgentManifestSchema } from './mesh-schemas.js';
+import { CONVENTION_DIR } from './convention-files.js';
 import type { AgentManifest } from './mesh-schemas.js';
 import type { Logger } from './logger.js';
 
-export const MANIFEST_DIR = '.dork';
+/**
+ * The agent directory, re-exported under the name most of the codebase uses.
+ * The value is owned by `./convention-files.js`, which is browser-safe.
+ */
+export const MANIFEST_DIR = CONVENTION_DIR;
 export const MANIFEST_FILE = 'agent.json';
 
 /**

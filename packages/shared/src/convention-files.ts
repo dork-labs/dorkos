@@ -7,6 +7,17 @@
  * @module shared/convention-files
  */
 
+/**
+ * The directory inside an agent's own folder that holds its DorkOS files.
+ *
+ * The single source for `.dork`. `@dorkos/shared/manifest` re-exports it as
+ * `MANIFEST_DIR`, which is the name most of the codebase already uses; this
+ * module owns the value because it is browser-safe and imports nothing, so
+ * anyone who needs the name can take it without dragging `node:fs` — or a
+ * module that half the server suite mocks — along with it.
+ */
+export const CONVENTION_DIR = '.dork';
+
 export const CONVENTION_FILES = {
   soul: 'SOUL.md',
   nope: 'NOPE.md',

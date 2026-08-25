@@ -1,10 +1,15 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { ulid } from 'ulidx';
-import { readManifest, writeManifest } from '@dorkos/shared/manifest';
+import { readManifest, writeManifest, MANIFEST_DIR } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { defaultSoulTemplate, defaultNopeTemplate } from '@dorkos/shared/convention-files';
+import {
+  defaultSoulTemplate,
+  defaultNopeTemplate,
+  CONVENTION_FILES,
+} from '@dorkos/shared/convention-files';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
@@ -36,6 +41,34 @@ async function provisionDorkbotSkills(dorkbotDir: string): Promise<void> {
     logger.warn('[Mesh] Failed to seed DorkBot Operating DorkOS skill pack: %s', String(err));
   }
   projectAgentWorkspace(dorkbotDir);
+}
+
+/**
+ * Give an existing DorkBot the memory file it was created before.
+ *
+ * **Write-if-absent, and the "if absent" is the whole contract.** This runs on
+ * every boot, and by the second boot the file holds notes DorkBot saved and
+ * possibly lines the operator edited by hand. Overwriting it with the scaffold
+ * would erase both, quietly, once per restart.
+ *
+ * Best-effort, like every other step in this tail: an install that cannot write
+ * here still boots, and DorkBot acquires the file on its first `memory_write`
+ * instead.
+ *
+ * @param dorkbotDir - DorkBot's workspace root.
+ */
+async function backfillDorkbotMemory(dorkbotDir: string): Promise<void> {
+  const memoryFile = path.join(dorkbotDir, MANIFEST_DIR, CONVENTION_FILES.memory);
+  try {
+    await fs.access(memoryFile);
+  } catch {
+    try {
+      await writeConventionFile(dorkbotDir, CONVENTION_FILES.memory, defaultMemoryTemplate());
+      logger.info('[Mesh] Backfilled DorkBot memory file');
+    } catch (err) {
+      logger.warn('[Mesh] Failed to backfill DorkBot memory file: %s', String(err));
+    }
+  }
 }
 
 /** DorkBot's branded display name — the label every roster surface renders. */
@@ -102,6 +135,13 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     // up newer pack versions on boot) then sync. registerAgent re-asserts default
     // access rules on every boot, so existing installs pick up newly-introduced
     // rules (e.g. the system-agent cross-namespace allow) without a manifest change.
+    //
+    // The memory backfill belongs HERE and not beside the fresh-install scaffold
+    // below: Paths 2, 3 and 4 all `return` at the end of this tail, so an install
+    // that already has a DorkBot never reaches Path 1 at all. A backfill written
+    // down there would ship a memory file to NEW installs only — every existing
+    // one, which is every install an upgrade is for, would get nothing.
+    await backfillDorkbotMemory(dorkbotDir);
     await provisionDorkbotSkills(dorkbotDir);
     await meshCore.syncFromDisk(dorkbotDir);
     return;
@@ -121,7 +161,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     namespace: 'system',
     behavior: { responseMode: 'always' },
     traits: { ...DEFAULT_TRAITS },
-    conventions: { soul: true, nope: true, dorkosKnowledge: true },
+    conventions: { soul: true, nope: true, memory: true, dorkosKnowledge: true },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-system',
     personaEnabled: true,
@@ -135,6 +175,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   const traitBlock = renderTraits(DEFAULT_TRAITS);
   await writeConventionFile(dorkbotDir, 'SOUL.md', defaultSoulTemplate('DorkBot', traitBlock));
   await writeConventionFile(dorkbotDir, 'NOPE.md', defaultNopeTemplate());
+  await writeConventionFile(dorkbotDir, 'MEMORY.md', defaultMemoryTemplate());
 
   // Scaffold cross-harness instruction files: a canonical root AGENTS.md (DorkBot's
   // orientation template) plus per-harness pointers. Replaces the old

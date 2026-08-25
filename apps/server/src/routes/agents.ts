@@ -23,6 +23,7 @@ import {
   defaultNopeTemplate,
 } from '@dorkos/shared/convention-files';
 import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
@@ -147,6 +148,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
       await writeConventionFile(agentPath, 'SOUL.md', soulContent);
       await writeConventionFile(agentPath, 'NOPE.md', nopeContent);
+      await writeConventionFile(agentPath, 'MEMORY.md', defaultMemoryTemplate());
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
       try {
