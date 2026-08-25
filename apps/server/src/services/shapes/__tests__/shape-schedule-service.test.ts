@@ -23,6 +23,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskStore } from '../../tasks/task-store.js';
 import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/task-registrar.js';
+import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
 
 /** A global, disabled inbox-tick request (agent missing at apply time). */
@@ -151,6 +152,31 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     // above is the author's intent, which is not the same as permission.
     expect(registerTask).not.toHaveBeenCalled();
     expect(store.getTasks()[0].status).toBe('pending_approval');
+  });
+
+  it('writes the new format into the agent’s skills root, and it parks there', async () => {
+    // The whole DOR-1486 shape of this service in one test: a Shape's schedule
+    // is an ordinary skill file with a `schedule:` block, in the same root every
+    // other skill lives in, discovered by the same watcher — and therefore
+    // subject to the same never-auto-arm gate.
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'linear-ops' });
+
+    const filePath = path.join(agentDir, '.agents', 'skills', 'inbox-tick', 'SKILL.md');
+    const raw = readRawFrontmatter(await fs.readFile(filePath, 'utf-8'));
+    // A block, not top-level fields — and only what a person would have typed:
+    // `enabled: true` and `permissions: acceptEdits` are the defaults, so they
+    // are not written out.
+    expect(raw?.data.schedule).toEqual({
+      cron: '*/15 * * * *',
+      origin: 'shape',
+      shape: 'linear-ops',
+    });
+    expect(raw?.data.cron).toBeUndefined();
+
+    // And it waits for a person before anything runs on a clock.
+    const row = store.getTasks()[0];
+    expect(row.status).toBe('pending_approval');
+    expect(row.filePath).toBe(await fs.realpath(filePath));
   });
 
   it('is a no-op on a schedule that is already agent-bound (respects a user disable)', async () => {

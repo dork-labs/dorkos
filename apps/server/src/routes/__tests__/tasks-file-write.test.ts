@@ -145,6 +145,39 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
+  describe('the file a create writes', () => {
+    it('puts the schedule in a block, in the skills root, and nothing else', async () => {
+      // The create path used to build its frontmatter with a bare merge over
+      // `{name, description}`, which put `cron:` and friends at the top level —
+      // the retired shape, written fresh by the newest code in the system, into
+      // a directory nothing scans any more (DOR-1486). Both halves are pinned
+      // here: the place and the shape.
+      await createTask({ displayName: 'Nightly Sweep', maxRuntime: '30m' });
+
+      const raw = readRawFrontmatter(await fs.readFile(skillPath('nightly-sweep'), 'utf-8'));
+      expect(raw?.data.schedule).toEqual({ cron: '0 3 * * *', 'max-runtime': '30m' });
+      // `display-name` and `description` describe the SKILL, so they stay at the
+      // top level where every other skill keeps them.
+      expect(raw?.data['display-name']).toBe('Nightly Sweep');
+      // And no scheduling field is left at the top level to disagree with the
+      // block on the next sync.
+      for (const key of ['cron', 'timezone', 'enabled', 'max-runtime', 'permissions']) {
+        expect(key in (raw?.data ?? {}), `${key} should not be at the top level`).toBe(false);
+      }
+    });
+
+    it('writes no line for a value that is already the default', async () => {
+      // A file that spells out `timezone: UTC`, `enabled: true` and
+      // `permissions: acceptEdits` says nothing a reader did not already know,
+      // and every one of those lines is one more thing for a person to wonder
+      // about when they open their own schedule.
+      await createTask({});
+
+      const raw = readRawFrontmatter(await fs.readFile(skillPath('nightly-sweep'), 'utf-8'));
+      expect(raw?.data.schedule).toEqual({ cron: '0 3 * * *' });
+    });
+  });
+
   describe('clearing a field', () => {
     it('leaves a file that still parses, and a frontmatter key that is simply gone', async () => {
       const id = await createTask({ maxRuntime: '30m' });

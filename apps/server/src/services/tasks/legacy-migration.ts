@@ -41,6 +41,17 @@
  * writes a grant for every already-live row from the row's own content, so it
  * has to see the final state of the migration, not the middle of it.
  *
+ * ## The one thing it does not cover
+ *
+ * It sweeps the projects of the agents registered AT BOOT. An agent that
+ * registers later brings its own `.dork/tasks/` with it, and this pass has
+ * already run — so that project migrates on the NEXT start instead. Left as it
+ * is rather than hooked into the agent-created seam: the schedules in a
+ * just-registered project were not running a moment ago either, the outcome is
+ * a delay rather than a loss, and a migration that can fire at arbitrary moments
+ * during a process's life is a much larger thing to reason about than one that
+ * runs before anything else does.
+ *
  * ## Crash safety
  *
  * Per file, in this order: rewrite the SKILL.md in place, re-key the row, move
@@ -364,10 +375,14 @@ async function migrateTemplateGallery(dorkHome: string): Promise<number> {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     try {
       await fs.mkdir(to, { recursive: true });
+      // Asked outright rather than left to `rename`'s errno. POSIX `rename` only
+      // refuses a destination directory that has something IN it: an empty one
+      // at the same name is silently replaced, and a template a person had
+      // emptied is still a template they made.
+      if (await exists(path.join(to, entry.name))) continue;
       await fs.rename(path.join(from, entry.name), path.join(to, entry.name));
       moved++;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOTEMPTY') continue; // Already there.
       logger.warn(`[Tasks] Could not move the template ${entry.name} to ${to}`, err);
     }
   }
@@ -504,7 +519,11 @@ async function migrateOneSchedule(
 
   report.moved++;
   if (outcome === 'rekeyed') report.keptApproved++;
-  if (outcome === 'reparked' || collision !== null) report.parked++;
+  // A collision parks whatever row there is, so it counts once — but only when
+  // there IS one. A legacy file that never synced has no row to need a look at,
+  // and counting it would put a number in the boot log that the Schedules page
+  // cannot account for.
+  if (outcome === 'reparked' || (collision !== null && outcome !== 'no-row')) report.parked++;
 }
 
 /**

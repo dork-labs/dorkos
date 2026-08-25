@@ -1322,6 +1322,14 @@ When both Mesh and Relay are enabled, `RelayBridge` publishes lifecycle events (
 
 The Tasks subsystem provides cron-based agent scheduling. It lives entirely in `apps/server/src/services/tasks/` with state persisted to SQLite (`~/.dork/dork.db`) and JSON (`~/.dork/schedules.json`).
 
+### Where a schedule lives
+
+Being scheduled is a property of a FILE, not of a directory (ADR `260823-200724`): any `SKILL.md` carrying a `schedule:` block is a scheduled task. Discovery therefore watches the **skills roots** — `~/.dork/skills/` plus every registered agent's `<projectPath>/.agents/skills/` — and ignores every file in them that has no block. `.claude/skills/` is never watched: it is a projection Harness Sync writes FROM `.agents/skills/`, so watching it would discover every schedule twice.
+
+The old task directories (`~/.dork/tasks/`, `<projectPath>/.dork/tasks/`) are **not scanned or watched** as of DOR-1486. `services/tasks/legacy-migration.ts` rewrites and moves what is in them on the first boot that finds them, re-keying each row (and its approval) in one transaction; after that, a `SKILL.md` appearing in either directory is ignored for good. `~/.dork/tasks/` itself stays, holding the two system files that were never schedules: `scheduler.lock` and `presets.json`. The template gallery moved to `~/.dork/skills/templates/`, which is the one reserved directory name in the global root.
+
+That module carries its own removal date (2027-02 or v1.0, whichever comes first; DOR-1491) and is the only place in the codebase that still knows the pre-block frontmatter shape.
+
 ### Key Components
 
 | Module                      | Purpose                                                                 |
