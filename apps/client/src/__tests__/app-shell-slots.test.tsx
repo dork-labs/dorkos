@@ -309,6 +309,7 @@ vi.mock('@/layers/features/approvals', () => ({
 
 vi.mock('@/layers/features/command-palette', () => ({
   CommandPaletteDialog: () => null,
+  MessageSearchDialog: () => null,
 }));
 
 vi.mock('@/layers/features/shortcuts', () => ({

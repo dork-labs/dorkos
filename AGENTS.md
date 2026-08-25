@@ -89,7 +89,7 @@ Gotchas: under a running `pnpm dev`/`pnpm dev:dogfood`, `@dorkos/shared` rebuild
 
 Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 semantics (`req.body` undefined on empty POSTs; changed wildcard routing). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
 
-**Service domains** under `services/`: activity, communities, core, core-extensions, extensions, harness, marketplace, marketplace-mcp, mesh, relay, runtimes, session, tasks, workspace. Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
+**Service domains** under `services/`: activity, communities, core, core-extensions, extensions, harness, marketplace, marketplace-mcp, mesh, relay, runtimes, search, session, tasks, workspace. Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
 `CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the **fourth swappable seam** beside `AgentRuntime`, `Transport` and `ConnectorProvider` — one port for rooms in more than one place, gated by `communityConformance`. This machine's own SQLite rooms are the first backend behind it (`services/communities/local/`), registered as `LOCAL_COMMUNITY` at startup; it wraps `RoomService` rather than replacing it. `GET /api/rooms` is its production consumer (`services/communities/list-rooms-across-communities.ts`): it aggregates every OTHER configured community with per-community degradation, while this machine's own rooms stay off the port — it is single-identity and that list is per-caller. Telegram/Slack bridged rooms are **projections into local rooms, not community backends** (ADR `260814-024525`); the port is reserved for communities whose truth is remote.
 
@@ -109,6 +109,10 @@ Session storage is runtime-owned (ADR-0310): claude-code derives from SDK JSONL 
 ### Agent Storage (ADR-0043)
 
 `.dork/agent.json` on disk (source of truth) + SQLite `agents` table (derived cache); **file-first write-through**, reconciler syncs every 5 min. **DorkBot** is the system agent, auto-created at `~/.dork/agents/dorkbot/` by `ensureDorkBot()`; system agents (`isSystem: true`) cannot be renamed, deleted, or unregistered — enforced at routes, MCP tools, and client UI.
+
+### Message search
+
+One derived, rebuildable FTS5 index over everything that was said, read by `GET /api/search` and by ⌘⇧F in the app (`apps/server/src/services/search/`, `features/command-palette/ui/MessageSearchDialog.tsx`, spec `specs/message-search/`). It indexes **rooms and Claude Code transcripts, bare-CLI sessions included** — never tool output, and **not Codex or OpenCode yet**; the surface states that gap itself, and the copy is pinned by a test so a coverage claim cannot drift out of date silently. Sessions are owner-only and reachable by no agent (spec §7). Deleting the index is a supported recovery.
 
 ### Client (`apps/client/src/`)
 

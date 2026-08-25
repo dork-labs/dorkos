@@ -1067,6 +1067,18 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "message-search": {
+      "specFile": "tests/search/message-search.spec.ts",
+      "feature": "search",
+      "description": "finds what was said, and opens the channel it was said in, says what it cannot see before anything is typed",
+      "lastRun": "2026-08-25T08:42:47.184Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
