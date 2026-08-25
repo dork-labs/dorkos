@@ -112,6 +112,36 @@ describe('an empty tile is a press, not a dead frame', () => {
     expect(document.activeElement).toBe(tile);
   });
 
+  it('still closes on Escape after focus has been dropped on the floor', () => {
+    // The regression a browser pass caught. The signup button disables itself
+    // while the request is in flight, a disabled element cannot hold focus, so
+    // focus lands on `<body>` — and a handler on the panel never sees another
+    // key. Escape stopped working right after the one interaction the panel
+    // exists for. `blur()` reproduces the state that leaves the page in.
+    render(<TutorialsSection config={TUTORIALS} />);
+    const tile = pendingTile();
+    fireEvent.click(tile);
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(tile);
+  });
+
+  it('pulls Tab back inside after focus has been dropped', () => {
+    render(<TutorialsSection config={TUTORIALS} />);
+    fireEvent.click(pendingTile());
+    const dialog = screen.getByRole('dialog');
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    fireEvent.keyDown(document.body, { key: 'Tab' });
+
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(stopsIn(dialog)[0]);
+  });
+
   it('closes on the button in its corner', () => {
     render(<TutorialsSection config={TUTORIALS} />);
     fireEvent.click(pendingTile());

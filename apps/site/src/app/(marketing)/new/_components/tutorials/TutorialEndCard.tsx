@@ -10,10 +10,18 @@ import type { TutorialRailConfig } from './tutorials';
  * bottom of it.
  */
 const SCRIM =
-  'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.66) 48%, rgba(0,0,0,0.34) 100%)';
+  'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.55) 42%, rgba(0,0,0,0.12) 100%)';
 
-/** How far back the photograph sits, so type wins and the shelf stays legible. */
-const PLATE_OPACITY = 0.62;
+/**
+ * How far back the photograph sits.
+ *
+ * Much higher than the 0.42 the placeholder tiles use, and for a reason a
+ * shared constant would have got wrong: those are photographs of a bright
+ * cream desk and this is a photograph of black plastic in a dark room. At 0.62
+ * behind the first scrim the tapes read as one dark mass and the whole picture
+ * was wasted, which a browser pass caught and a code review would not have.
+ */
+const PLATE_OPACITY = 0.9;
 
 /**
  * The tile that closes the rail.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import { X } from 'lucide-react';
@@ -66,6 +66,63 @@ function useDialogFocus(
 }
 
 /**
+ * Escape and Tab, listened for on the document rather than on the panel.
+ *
+ * The panel would be the tidier place to listen, and it was, until a browser
+ * pass caught what is wrong with it: the signup button disables itself while
+ * the request is in flight, a disabled element cannot hold focus, and focus
+ * falls to `<body>`. A key pressed there never reaches a handler on the panel,
+ * so Escape stopped closing the dialog for the rest of its life — after the
+ * one interaction the dialog exists for. Listening on the document means the
+ * way out works from wherever focus has ended up.
+ *
+ * The same listener puts Tab back inside. At the two ends of the panel it
+ * wraps, and from anywhere outside it returns to the first stop, which is what
+ * makes the trap hold even after focus has been dropped on the floor.
+ */
+function useDialogKeys(
+  panelRef: React.RefObject<HTMLDivElement | null>,
+  onClose: () => void
+): void {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+      const stops = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      if (stops.length === 0) return;
+
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && panel.contains(active);
+
+      if (!inside) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && (active === first || active === panel)) {
+        // Only the two ends need catching. Everything between them is the
+        // browser's own tab order, which is already correct.
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [panelRef, onClose]);
+}
+
+/**
  * The email capture behind a tile that has no footage yet.
  *
  * WHAT IT IS ALLOWED TO SAY. The tile it came from is a promise the page has
@@ -100,41 +157,16 @@ export function ClipAlertDialog({
 
   useDialogFocus(panelRef, restoreFocusTo);
 
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      const panel = panelRef.current;
-      if (!panel) return;
-      const stops = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
-      if (stops.length === 0) return;
-
-      const first = stops[0];
-      const last = stops[stops.length - 1];
-      const active = document.activeElement;
-      // Only the two ends need catching. Everything between them is the
-      // browser's own tab order, which is already correct.
-      if (event.shiftKey && (active === first || active === panel)) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    },
-    [onClose]
-  );
+  useDialogKeys(panelRef, onClose);
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center overscroll-contain p-4 sm:items-center"
+      // z-[120] clears the two things this site floats over everything else:
+      // the pill nav at z-100 and the cookie banner at z-110. Measured in a
+      // browser at z-70, where both sat on top of the dimmed overlay and the
+      // banner overlapped the panel on a phone, which puts it bottom-aligned.
+      className="fixed inset-0 z-[120] flex items-end justify-center overscroll-contain p-4 sm:items-center"
       style={{ background: 'rgba(11,10,9,0.72)' }}
-      onKeyDown={onKeyDown}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
