@@ -56,29 +56,18 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { hasSchedule, scheduleProblem } from '@dorkos/skills';
+import { hasSchedule, scheduleProblem, ScheduleBlockSchema } from '@dorkos/skills';
 import type { ScheduleBlock, SkillFrontmatter, TaskDefinition } from '@dorkos/skills';
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
-import type { TaskFrontmatter } from '@dorkos/skills/task-schema';
 import { describeScheduleProblem } from './cron-validation.js';
-import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 
 /** A SKILL.md that carries a `schedule:` block, ready for the store. */
 export interface DiscoveredSchedule {
-  /**
-   * The file, shaped the way `TaskStore.upsertFromFile` reads it.
-   *
-   * The store still takes the LEGACY frontmatter shape, with the scheduling
-   * fields at the top level, because the legacy roots are still live and one
-   * store path is better than two. This mapping is the inverse of
-   * `legacyTaskToSchedule` and disappears with it in DOR-1486, when the block
-   * becomes the only shape there is.
-   */
+  /** The file, shaped the way `TaskStore.upsertFromFile` reads it. */
   def: TaskDefinition;
   /**
    * What stops this schedule being usable as written, or `null` when nothing
@@ -114,7 +103,7 @@ export interface ScheduleLocation {
 const FALLBACK_PERMISSIONS = 'acceptEdits' as const;
 
 /**
- * Build the legacy-shaped definition the store reads from a readable block.
+ * Build the definition the store reads from a readable block.
  *
  * `prompt` is the one field that is not a rename: a schedule may override what
  * gets sent when it fires, and the body is the default. That is what lets one
@@ -132,18 +121,14 @@ function definitionFromBlock(
     dirPath: skill.dirPath,
     scope: location.scope,
     projectPath: location.projectPath,
-    meta: {
-      ...skill.meta,
-      cron: block.cron,
-      timezone: block.timezone,
-      enabled: block.enabled,
-      'max-runtime': block['max-runtime'],
-      permissions: block.permissions,
-    },
-    // `block.origin` / `block.shape` are deliberately not carried across: the
-    // store reads neither, and the schedule row has no column for package
-    // provenance yet. That arrives with the marketplace phase (spec §6), which
-    // is also the first thing that will need it.
+    // The block travels whole. Until DOR-1486 it was flattened onto the
+    // frontmatter's top level here, because the store read the legacy shape and
+    // one store path was better than two; there is one shape now.
+    //
+    // `block.origin` / `block.shape` ride along unread: the schedule row has no
+    // column for package provenance yet, and the marketplace phase (spec §6) is
+    // the first thing that will need one.
+    meta: { ...skill.meta, schedule: block },
   };
 }
 
@@ -170,10 +155,14 @@ function definitionFromUnreadableBlock(
     projectPath: location.projectPath,
     meta: {
       ...skill.meta,
-      cron: undefined,
-      timezone: 'UTC',
-      enabled: false,
-      permissions: FALLBACK_PERMISSIONS,
+      // Parsed from an empty mapping rather than written out by hand, so the
+      // three defaults stay the block schema's to define; only `enabled` is
+      // overridden, and only downwards.
+      schedule: {
+        ...ScheduleBlockSchema.parse({}),
+        enabled: false,
+        permissions: FALLBACK_PERMISSIONS,
+      },
     },
   };
 }
@@ -206,25 +195,6 @@ export function readScheduleFromSkill(
   };
 }
 
-/**
- * A legacy task file is a schedule because of WHERE it is, so there is nothing
- * to decide — only its cron to check, at the same door the new files use.
- *
- * Deleted with the legacy roots in DOR-1486.
- */
-function readLegacySchedule(
-  task: ParsedSkill<TaskFrontmatter>,
-  root: TaskRoot
-): DiscoveredSchedule {
-  return {
-    def: { ...task, scope: root.scope, projectPath: root.projectPath },
-    // A bad cron here could never fire anyway — the scheduler catches croner's
-    // throw — so the only change is that a person now gets told which file to
-    // fix instead of the failure living in a log line.
-    problem: describeScheduleProblem(task.meta.cron, task.meta.timezone),
-  };
-}
-
 /** What one file in a watched root turned out to be. */
 export type ReadOutcome =
   /** On disk but unusable — unreadable, or frontmatter that does not parse. */
@@ -253,11 +223,11 @@ export type ReadOutcome =
 /**
  * Read one SKILL.md the way its root says to read it.
  *
- * The single place the two root kinds diverge. Both the watcher (one file, on
- * a change event) and the reconciler (every file, on a timer) come through
- * here, so a rule added for one is automatically true of the other — which is
- * what the arm gate depends on, since a rule the reconciler enforced and the
- * watcher did not would arm a schedule for five minutes at a time.
+ * Both the watcher (one file, on a change event) and the reconciler (every
+ * file, on a timer) come through here, so a rule added for one is automatically
+ * true of the other — which is what the arm gate depends on, since a rule the
+ * reconciler enforced and the watcher did not would arm a schedule for five
+ * minutes at a time.
  *
  * @param filePath - The path the file was found at, before symlinks.
  * @param content - Its bytes.
@@ -268,13 +238,6 @@ export async function readTaskRootFile(
   content: string,
   root: TaskRoot
 ): Promise<ReadOutcome> {
-  if (root.kind === 'legacy-tasks') {
-    const result = parseSkillFile(filePath, content, TaskFrontmatterSchema);
-    return result.ok
-      ? { kind: 'schedule', filePath, discovered: readLegacySchedule(result.definition, root) }
-      : { kind: 'invalid', filePath, error: result.error, fileMissing: false };
-  }
-
   const result = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
     requireNameMatch: false,
   });
@@ -284,12 +247,10 @@ export async function readTaskRootFile(
 
   // Identity is the REAL path: an installed plugin skill appears in
   // `.agents/skills/` as a symlink into `.dork/plugins/`, and two roots
-  // reaching one file must be one schedule, not two.
-  //
-  // Legacy roots are deliberately NOT resolved. Their rows already exist, keyed
-  // on the unresolved path, and resolving them now would key the same file
-  // differently on the first sync after an upgrade — creating a duplicate row
-  // for every schedule of anyone whose home or checkout sits under a symlink.
+  // reaching one file must be one schedule, not two. The legacy migration
+  // re-keys every row it moves onto the resolved path of the file's new home,
+  // so a row that predates the skills roots arrives here already keyed the way
+  // this pass will look it up.
   const resolvedPath = await fs.realpath(filePath);
   const discovered = readScheduleFromSkill(result.definition, {
     scope: root.scope,
@@ -321,9 +282,10 @@ export async function readTaskRootFile(
  * uninstall, not a schedule to complain about.
  */
 async function scanSymlinkedSkills<T>(
-  dir: string,
+  root: TaskRoot,
   schema: Parameters<typeof parseSkillFile<T>>[2]
 ): Promise<{ filePath: string; result: ReturnType<typeof parseSkillFile<T>> }[]> {
+  const dir = root.dir;
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -336,7 +298,7 @@ async function scanSymlinkedSkills<T>(
   const found: { filePath: string; result: ReturnType<typeof parseSkillFile<T>> }[] = [];
   for (const entry of entries) {
     if (!entry.isSymbolicLink()) continue;
-    if (entry.name.startsWith('.') || RESERVED_TASK_DIRNAMES.includes(entry.name)) continue;
+    if (entry.name.startsWith('.') || reservedDirsFor(root).includes(entry.name)) continue;
     const filePath = path.join(dir, entry.name, SKILL_FILENAME);
     try {
       const content = await fs.readFile(filePath, 'utf-8');
@@ -367,22 +329,14 @@ async function scanSymlinkedSkills<T>(
  * @param root - The root to scan.
  */
 export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
-  // A skills root is read with the UNIFIED schema. Reading it with the task
-  // schema would report every ordinary skill in it as an invalid task, every
-  // five minutes, forever.
-  const results =
-    root.kind === 'skills'
-      ? [
-          ...(await scanSkillDirectory(root.dir, SkillFrontmatterSchema, {
-            ignoreDirs: reservedDirsFor(root.kind),
-            requireNameMatch: false,
-          })),
-          // Installed plugin skills are symlinks, which the shared scan skips.
-          ...(await scanSymlinkedSkills(root.dir, SkillFrontmatterSchema)).map((f) => f.result),
-        ]
-      : await scanSkillDirectory(root.dir, TaskFrontmatterSchema, {
-          ignoreDirs: reservedDirsFor(root.kind),
-        });
+  const results = [
+    ...(await scanSkillDirectory(root.dir, SkillFrontmatterSchema, {
+      ignoreDirs: reservedDirsFor(root),
+      requireNameMatch: false,
+    })),
+    // Installed plugin skills are symlinks, which the shared scan skips.
+    ...(await scanSymlinkedSkills(root, SkillFrontmatterSchema)).map((f) => f.result),
+  ];
 
   const outcomes: ReadOutcome[] = [];
   for (const result of results) {
@@ -395,16 +349,7 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
       });
       continue;
     }
-    if (root.kind === 'legacy-tasks') {
-      const task = result.definition as ParsedSkill<TaskFrontmatter>;
-      outcomes.push({
-        kind: 'schedule',
-        filePath: task.filePath,
-        discovered: readLegacySchedule(task, root),
-      });
-      continue;
-    }
-    const skill = result.definition as ParsedSkill<SkillFrontmatter>;
+    const skill = result.definition;
     let resolvedPath: string;
     try {
       resolvedPath = await fs.realpath(skill.filePath);
@@ -445,10 +390,11 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
  * situation an uninstall creates. Looking through the link IS looking in that
  * directory, so reporting it is honest testimony and not a widening of the gate.
  *
- * @param dir - The skills root to inspect.
+ * @param root - The skills root to inspect.
  * @returns Absolute directories, possibly no longer present.
  */
-export async function linkedSkillDirs(dir: string): Promise<string[]> {
+export async function linkedSkillDirs(root: TaskRoot): Promise<string[]> {
+  const dir = root.dir;
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -458,7 +404,7 @@ export async function linkedSkillDirs(dir: string): Promise<string[]> {
   const dirs: string[] = [];
   for (const entry of entries) {
     if (!entry.isSymbolicLink()) continue;
-    if (entry.name.startsWith('.') || RESERVED_TASK_DIRNAMES.includes(entry.name)) continue;
+    if (entry.name.startsWith('.') || reservedDirsFor(root).includes(entry.name)) continue;
     try {
       const target = path.resolve(dir, await fs.readlink(path.join(dir, entry.name)));
       dirs.push(await resolveThroughAncestors(target));

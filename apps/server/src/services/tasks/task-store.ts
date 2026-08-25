@@ -8,7 +8,6 @@ import {
 } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type {
-  PermissionMode,
   Task,
   TaskRun,
   TaskRunStatus,
@@ -19,7 +18,7 @@ import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
-import { scheduleContentKey } from './schedule-permission-clamp.js';
+import { scheduleContentKey, type IncomingTaskContent } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
@@ -126,6 +125,25 @@ function fileProvenance(
   if (existing.reason === null) return { reason: arm.reason, reasonSource: source };
   return {};
 }
+
+/**
+ * What {@link TaskStore.rekeyMigratedFile} did with one migrated row.
+ *
+ * `no-row` is not an error — a legacy file that never synced has no row, and a
+ * re-run over an already-migrated file finds none at the old path either.
+ */
+export type RekeyOutcome = 'rekeyed' | 'reparked' | 'moved' | 'no-row';
+
+/**
+ * Why a migrated schedule is waiting for a person again: its file no longer says
+ * what the row it was approved as says.
+ *
+ * Only reachable when the file was edited while DorkOS was not running, since
+ * the migration itself never changes a schedule's prompt or cron.
+ */
+const DRIFTED_DURING_MIGRATION_REASON =
+  'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
+  'Read what it does now, then approve it or delete it.';
 
 /** Fields that can be updated on a run. */
 interface RunUpdate {
@@ -364,6 +382,97 @@ export class TaskStore {
       .set({ approvedContentKey: null })
       .where(eq(pulseSchedules.id, id))
       .run();
+  }
+
+  /**
+   * Move a row onto its file's new home, keeping any approval it holds — the DB
+   * half of the legacy migration (DOR-1486).
+   *
+   * One transaction, because the two writes are one fact: a row whose path moved
+   * without its grant re-keying is a schedule an operator approved that quietly
+   * asks to be approved again, and a grant re-keyed without the path moving is a
+   * grant for a file nothing reads. Either half alone is worse than neither.
+   *
+   * ## Why the key is compared against the ROW, not just taken from the file
+   *
+   * The migration rewrites frontmatter and never touches the body or the cron
+   * line, so the content key it produces is the key the row already had. That is
+   * the ordinary case, and it is why an approved schedule survives the upgrade
+   * without anyone re-approving it.
+   *
+   * The case worth writing code for is the other one: the file was edited while
+   * the server was down. Then the row's `(prompt, cron)` and the file's are
+   * DIFFERENT pieces of work, and stamping the file's key onto an active row
+   * would hand a person's approval to content nobody has read — grant without
+   * review, the one outcome this whole gate exists to prevent. So the two keys
+   * are compared, and a mismatch parks the row instead of re-keying it. That is
+   * the same answer the first sync after boot would reach on its own; reaching it
+   * here just means the schedule never fires the unread content in between.
+   *
+   * A row that is not `active` migrates exactly as it is — parked stays parked,
+   * paused stays paused, and whatever grant it holds is left alone, because
+   * moving a file is not a decision about it. Provenance follows the same rules
+   * every discovery write follows ({@link fileProvenance}): DorkOS never
+   * overwrites an agent's proposal reason with its own prose.
+   *
+   * @param from - The path the row is keyed on now.
+   * @param to - The path its file lives at after the move, symlinks resolved.
+   * @param rewritten - The migrated file's material content.
+   * @param park - A reason to park the row regardless (the name-collision case),
+   *   or `null` to let the comparison above decide.
+   * @returns What happened, for the caller's log and counters.
+   */
+  rekeyMigratedFile(
+    from: string,
+    to: string,
+    rewritten: IncomingTaskContent,
+    park: string | null = null
+  ): RekeyOutcome {
+    return this.db.transaction((tx) => {
+      const existing = tx
+        .select()
+        .from(pulseSchedules)
+        .where(eq(pulseSchedules.filePath, from))
+        .get();
+      // No row is an ordinary outcome, not a failure: a legacy file DorkOS never
+      // managed to sync has none, and a re-run after a crash finds the row
+      // already moved.
+      if (!existing) return 'no-row';
+
+      const now = new Date().toISOString();
+      const fileKey = scheduleContentKey(rewritten);
+      const agrees =
+        scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) === fileKey;
+
+      if (existing.status === 'active' && park === null && agrees) {
+        tx.update(pulseSchedules)
+          .set({ filePath: to, approvedContentKey: fileKey, updatedAt: now })
+          .where(eq(pulseSchedules.id, existing.id))
+          .run();
+        return 'rekeyed';
+      }
+
+      if (existing.status === 'active') {
+        const reason = park ?? DRIFTED_DURING_MIGRATION_REASON;
+        tx.update(pulseSchedules)
+          .set({
+            filePath: to,
+            status: 'pending_approval',
+            approvedContentKey: null,
+            ...fileProvenance(existing, { reason }),
+            updatedAt: now,
+          })
+          .where(eq(pulseSchedules.id, existing.id))
+          .run();
+        return 'reparked';
+      }
+
+      tx.update(pulseSchedules)
+        .set({ filePath: to, updatedAt: now })
+        .where(eq(pulseSchedules.id, existing.id))
+        .run();
+      return 'moved';
+    });
   }
 
   /**
@@ -932,7 +1041,12 @@ export class TaskStore {
    */
   upsertFromFile(def: TaskDefinition, agentId?: string, options?: UpsertFromFileOptions): Task {
     const now = new Date().toISOString();
-    const maxRuntimeMs = def.meta['max-runtime'] ? parseDuration(def.meta['max-runtime']) : null;
+    // The schedule block is the only place scheduling lives since DOR-1486.
+    // Until then this read went through a flattened copy of it that discovery
+    // built for the legacy roots' benefit; those roots are gone and so is the
+    // copy.
+    const schedule = def.meta.schedule;
+    const maxRuntimeMs = schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null;
 
     const existing = this.db
       .select()
@@ -940,7 +1054,7 @@ export class TaskStore {
       .where(eq(pulseSchedules.filePath, def.filePath))
       .get();
 
-    const incomingCron = def.meta.cron ?? '';
+    const incomingCron = schedule.cron ?? '';
     // What a file on disk may do to this row, decided in one place so the
     // permission clamp and the arm gate cannot disagree — see
     // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
@@ -955,9 +1069,9 @@ export class TaskStore {
           description: def.meta.description ?? null,
           prompt: def.body,
           cron: incomingCron,
-          timezone: def.meta.timezone,
+          timezone: schedule.timezone,
           agentId: agentId ?? null,
-          enabled: def.meta.enabled,
+          enabled: schedule.enabled,
           maxRuntime: maxRuntimeMs,
           permissionMode,
           // A `paused` row whose file is back is un-paused here, because
@@ -1021,9 +1135,9 @@ export class TaskStore {
         description: def.meta.description ?? null,
         prompt: def.body,
         cron: incomingCron,
-        timezone: def.meta.timezone,
+        timezone: schedule.timezone,
         agentId: agentId ?? null,
-        enabled: def.meta.enabled,
+        enabled: schedule.enabled,
         maxRuntime: maxRuntimeMs,
         permissionMode,
         status: arm?.status ?? 'active',

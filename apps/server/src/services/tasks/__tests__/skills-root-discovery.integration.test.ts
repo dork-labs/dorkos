@@ -26,7 +26,7 @@ import { TaskSchedulerService, type SchedulerAgentManager } from '../task-schedu
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { attachAgentRoots } from '../attach-task-roots.js';
 import { agentSkillsRoot, agentTaskRoots, globalTaskRoots } from '../skills-roots.js';
-import { legacyRoot, skillsRoot } from './task-root-fixtures.js';
+import { skillsRoot } from './task-root-fixtures.js';
 import {
   describeArmBlocker,
   isPackageOwned,
@@ -426,21 +426,32 @@ describe('schedules discovered in skills roots', () => {
   // (DOR-1485 review, B2). The legacy roots are full of rows discovery did not
   // create: agent proposals, and the operator's own schedules.
   describe('provenance discovery did not create', () => {
-    let legacyDir: string;
+    /** The schedule's file, and the path a row for it is keyed on. */
+    let filePath: string;
 
     beforeEach(async () => {
-      legacyDir = path.join(projectPath, '.dork', 'tasks');
-      await mkdir(path.join(legacyDir, 'proposed'), { recursive: true });
-      await writeFile(
-        path.join(legacyDir, 'proposed', 'SKILL.md'),
-        legacyTaskFile('proposed', '0 4 * * *'),
-        'utf-8'
+      // A REAL schedule in a watched root, and the row below is keyed on the
+      // path discovery produces — both halves are load-bearing, and both were
+      // wrong when this suite was mechanically converted off the legacy roots
+      // (DOR-1486). The fixture used to write a legacy top-level-cron file into
+      // `.dork/tasks` and register that as a skills root, which under the new
+      // rules is not a schedule at all: discovery reads it as a plain skill and
+      // RETIRES the row, which is correct behavior and tests none of the
+      // provenance rules below.
+      //
+      // It passed anyway on macOS, and only there: the row was keyed on an
+      // unresolved `/var/...` temp path while the retirement looks up the
+      // resolved `/private/var/...` one, so the pause silently matched nothing
+      // and every assertion held for the wrong reason. On Linux, where the
+      // temp directory is not a symlink, the same pass paused the row and both
+      // tests failed. A fixture that only works on one platform is not the
+      // point — a fixture that exercises the thing it names is.
+      filePath = await realPath(
+        await writeSkill('proposed', scheduledSkill('proposed', { cron: '0 4 * * *' }))
       );
-      reconciler.addRoot(legacyRoot(legacyDir, 'project', projectPath, AGENT_ID));
     });
 
     it('leaves an agent’s parked proposal exactly as the agent left it', async () => {
-      const filePath = path.join(legacyDir, 'proposed', 'SKILL.md');
       const seeded = store.createTask({
         name: 'proposed',
         description: 'A task named proposed',
@@ -469,7 +480,6 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('never stamps origin file on a schedule the operator made', async () => {
-      const filePath = path.join(legacyDir, 'proposed', 'SKILL.md');
       const seeded = store.createTask({
         name: 'proposed',
         description: 'A task named proposed',
@@ -635,10 +645,12 @@ describe('schedules discovered in skills roots', () => {
           meta: {
             name: 'shaped',
             description: 'A skill named shaped',
-            cron: '0 6 * * *',
-            timezone: 'UTC',
-            enabled: true,
-            permissions: 'acceptEdits',
+            schedule: {
+              cron: '0 6 * * *',
+              timezone: 'UTC',
+              enabled: true,
+              permissions: 'acceptEdits',
+            },
           },
         },
         AGENT_ID
@@ -813,44 +825,61 @@ describe('schedules discovered in skills roots', () => {
     });
   });
 
-  describe('legacy task directories keep working', () => {
-    it('still discovers a schedule under .dork/tasks/, unchanged', async () => {
-      const legacyDir = path.join(projectPath, '.dork', 'tasks');
-      await mkdir(path.join(legacyDir, 'old-timer'), { recursive: true });
-      const filePath = path.join(legacyDir, 'old-timer', 'SKILL.md');
+  describe('the retired legacy shape', () => {
+    it('ignores a file still written in the old top-level shape', async () => {
+      // The clean break, stated as a test (DOR-1486, ADR `260823-200729`). The
+      // unified schema drops keys it does not know, so a file with `cron:` at
+      // the top level is a perfectly valid PLAIN SKILL — and a plain skill is
+      // not a schedule. Nothing warns, nothing parks, no row appears.
+      //
+      // The boot migration is what stops this being a trap: it rewrites every
+      // such file it can find before any watcher starts. What this pins is what
+      // happens to one that arrives AFTERWARDS — nothing, for as long as this
+      // process runs. (The next start's migration does move it: detection is by
+      // location and unconditional. Not a live import path, but not a black hole
+      // either — `skills-roots.ts` states the whole rule.)
+      await mkdir(path.join(skillsDir, 'old-timer'), { recursive: true });
+      const filePath = path.join(skillsDir, 'old-timer', 'SKILL.md');
       await writeFile(filePath, legacyTaskFile('old-timer', '0 2 * * *'), 'utf-8');
-      reconciler.addRoot(legacyRoot(legacyDir, 'project', projectPath, AGENT_ID));
+
+      await expect(reconciler.reconcile()).resolves.toMatchObject({ upserted: 0 });
+
+      expect(store.getTasks()).toHaveLength(0);
+    });
+
+    it('never scans the legacy tasks directory at all', async () => {
+      // Not merely "finds nothing in it" — it is not a root, so a schedule
+      // written there in the NEW shape is invisible too. The person's cue is the
+      // migration, which moved everything out of it on the boot it found it.
+      const legacyDir = path.join(projectPath, '.dork', 'tasks');
+      await mkdir(path.join(legacyDir, 'left-behind'), { recursive: true });
+      await writeFile(
+        path.join(legacyDir, 'left-behind', 'SKILL.md'),
+        scheduledSkill('left-behind', { cron: '0 2 * * *' }),
+        'utf-8'
+      );
 
       await reconciler.reconcile();
 
-      const row = rowFor('old-timer');
-      expect(row.cron).toBe('0 2 * * *');
-      // Legacy paths are NOT realpath-resolved: their rows already exist keyed
-      // on the unresolved path, and resolving now would duplicate every
-      // schedule belonging to anyone whose home sits under a symlink.
-      expect(row.filePath).toBe(filePath);
-
-      approve(row.id);
-      expect(scheduler.getNextRun(row.id)?.getUTCHours()).toBe(2);
+      expect(store.getTasks()).toHaveLength(0);
     });
 
     // The upgrade case. Every alpha user has active rows already; they must not
     // all re-park the first time this build reads their files.
     it('leaves an already-active row alone when its file has not changed', async () => {
-      const legacyDir = path.join(projectPath, '.dork', 'tasks');
-      await mkdir(path.join(legacyDir, 'grandfathered'), { recursive: true });
-      const filePath = path.join(legacyDir, 'grandfathered', 'SKILL.md');
-      await writeFile(filePath, legacyTaskFile('grandfathered', '0 1 * * *'), 'utf-8');
-      reconciler.addRoot(legacyRoot(legacyDir, 'project', projectPath, AGENT_ID));
+      await mkdir(path.join(skillsDir, 'grandfathered'), { recursive: true });
+      const filePath = path.join(skillsDir, 'grandfathered', 'SKILL.md');
+      await writeFile(filePath, scheduledSkill('grandfathered', { cron: '0 1 * * *' }), 'utf-8');
 
-      // Stand in for the row an older build wrote: active, matching the file.
+      // Stand in for the row an older build wrote: active, matching the file,
+      // and keyed the way discovery keys one.
       const seeded = store.createTask({
         name: 'grandfathered',
-        description: 'A task named grandfathered',
+        description: 'A skill named grandfathered',
         prompt: 'Do the thing.',
         cron: '0 1 * * *',
         timezone: 'UTC',
-        filePath,
+        filePath: await realPath(filePath),
       });
       expect(seeded.status).toBe('active');
       registrar.syncTask(seeded.id);

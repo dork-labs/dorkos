@@ -77,7 +77,7 @@ export class FileSyncGates {
     existing: typeof pulseSchedules.$inferSelect | undefined,
     options?: FileSyncSource
   ): FileSyncVerdict {
-    const incoming = { prompt: def.body, cron: def.meta.cron ?? '' };
+    const incoming = { prompt: def.body, cron: def.meta.schedule.cron ?? '' };
     const approved = existing && {
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
@@ -87,7 +87,7 @@ export class FileSyncGates {
     };
 
     const { mode: permissionMode, clamped } = resolveFilePermissionMode(
-      def.meta.permissions,
+      def.meta.schedule.permissions,
       approved,
       incoming
     );
@@ -120,7 +120,7 @@ export class FileSyncGates {
       this.refusedFileGrants.delete(def.filePath);
       return;
     }
-    const refusal = JSON.stringify([def.meta.permissions, def.body, cron]);
+    const refusal = JSON.stringify([def.meta.schedule.permissions, def.body, cron]);
     if (this.refusedFileGrants.get(def.filePath) === refusal) return;
     this.refusedFileGrants.set(def.filePath, refusal);
     logger.warn(

@@ -13,7 +13,6 @@ import {
   scheduleToFrontmatter,
 } from '../schedule-schema.js';
 import { SkillFrontmatterSchema } from '../schema.js';
-import { TaskFrontmatterSchema, legacyTaskToSchedule } from '../task-schema.js';
 import { parseSkillFile } from '../parser.js';
 import { writeSkillFile } from '../writer.js';
 import { SKILL_FILENAME } from '../constants.js';
@@ -116,10 +115,10 @@ describe('TASK_PERMISSION_MODES', () => {
   // The v3/v4 zod boundary means the two lists are inlined copies, not one
   // composed schema. Read the options as strings so the versions never meet.
   //
-  // `task-schema.test.ts` asserts the same thing through the re-export. That
-  // duplicate is deliberate and temporary: it guards the legacy import path
-  // that `@dorkos/marketplace` still uses, and dies with `task-schema.ts` in
-  // DOR-1486.
+  // This is now the ONLY copy of this assertion. `task-schema.test.ts` carried a
+  // duplicate of it while `@dorkos/marketplace` imported the modes through the
+  // legacy re-export; both the re-export and the duplicate went with
+  // `task-schema.ts` in DOR-1486.
   it('matches the session permission modes in @dorkos/shared', () => {
     expect([...TASK_PERMISSION_MODES].sort()).toEqual([...PermissionModeSchema.options].sort());
   });
@@ -246,80 +245,10 @@ describe('scheduleToFrontmatter', () => {
   });
 });
 
-describe('legacyTaskToSchedule', () => {
-  const base = { name: 'daily-check', description: 'Runs a daily health check' };
-
-  it('maps every legacy top-level field into the block', () => {
-    const meta = TaskFrontmatterSchema.parse({
-      ...base,
-      'display-name': 'Daily Health Check',
-      cron: '0 9 * * *',
-      timezone: 'America/New_York',
-      enabled: false,
-      'max-runtime': '30m',
-      permissions: 'plan',
-      origin: 'shape',
-      shape: 'ops-shape',
-    });
-
-    expect(legacyTaskToSchedule(meta)).toEqual({
-      cron: '0 9 * * *',
-      timezone: 'America/New_York',
-      enabled: false,
-      'max-runtime': '30m',
-      permissions: 'plan',
-      origin: 'shape',
-      shape: 'ops-shape',
-    });
-  });
-
-  it('carries the legacy defaults through unchanged', () => {
-    expect(legacyTaskToSchedule(TaskFrontmatterSchema.parse(base))).toEqual({
-      timezone: 'UTC',
-      enabled: true,
-      permissions: 'acceptEdits',
-    });
-  });
-
-  it('produces a block the new schema accepts', () => {
-    const meta = TaskFrontmatterSchema.parse({ ...base, cron: '*/5 * * * *' });
-    expect(ScheduleBlockSchema.safeParse(legacyTaskToSchedule(meta)).success).toBe(true);
-  });
-
-  it('turns an empty legacy cron into an absent one', () => {
-    // The legacy schema accepted `cron: ''`; the block does not, and both mean
-    // on-demand. Mapping it through unchanged would fail the rewritten file.
-    const meta = TaskFrontmatterSchema.parse({ ...base, cron: '' });
-    expect(meta.cron).toBe('');
-    const block = legacyTaskToSchedule(meta);
-    expect(block.cron).toBeUndefined();
-    expect(ScheduleBlockSchema.safeParse(block).success).toBe(true);
-  });
-
-  it('leaves display-name behind — it belongs to the skill, not the schedule', () => {
-    const meta = TaskFrontmatterSchema.parse({ ...base, 'display-name': 'Daily Health Check' });
-    expect(legacyTaskToSchedule(meta)).not.toHaveProperty('display-name');
-  });
-
-  it('never invents a prompt — the body still fires', () => {
-    const meta = TaskFrontmatterSchema.parse({ ...base, cron: '0 9 * * *' });
-    expect(legacyTaskToSchedule(meta).prompt).toBeUndefined();
-  });
-
-  it.each([
-    ['origin without shape', { origin: 'shape' as const }, { origin: 'shape' }],
-    ['shape without origin', { shape: 'orphan-pkg' }, { shape: 'orphan-pkg' }],
-  ])('carries %s through as written', (_label, extra, expected) => {
-    const block = legacyTaskToSchedule(TaskFrontmatterSchema.parse({ ...base, ...extra }));
-    expect(block).toEqual({
-      timezone: 'UTC',
-      enabled: true,
-      permissions: 'acceptEdits',
-      ...expected,
-    });
-  });
-});
-
+// `legacyTaskToSchedule` used to live beside these helpers. It moved into
+// `apps/server/src/services/tasks/legacy-migration.ts` with the rest of the
+// legacy shape, and its tests moved with it — see
+// `legacy-migration-mapping.test.ts` there.
 describe('schedule block round trip through disk', () => {
   let tmpDir: string;
 

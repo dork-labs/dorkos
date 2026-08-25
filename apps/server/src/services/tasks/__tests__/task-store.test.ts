@@ -876,9 +876,7 @@ describe('TaskStore', () => {
         meta: {
           name,
           description: 'd',
-          timezone: 'UTC',
-          enabled: true,
-          permissions: 'acceptEdits',
+          schedule: { timezone: 'UTC', enabled: true, permissions: 'acceptEdits' },
         },
         body: 'do it',
         filePath,
@@ -918,7 +916,7 @@ describe('TaskStore', () => {
       store.markRemovedByFilePath(filePath);
 
       const def = definition('off', filePath);
-      def.meta.enabled = false;
+      def.meta.schedule.enabled = false;
       store.upsertFromFile(def);
 
       // A person pausing a task writes `enabled: false` in the file; the

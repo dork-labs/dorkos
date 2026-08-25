@@ -40,8 +40,8 @@ export function attachTaskRoot(into: TaskRootAttachment, root: TaskRoot): void {
 }
 
 /**
- * Start watching every root that belongs to one agent — its skills root and,
- * until DOR-1486, its legacy tasks root.
+ * Start watching every root that belongs to one agent — its `.agents/skills/`,
+ * and nothing else since DOR-1486 retired the legacy `.dork/tasks/` root.
  *
  * Called at boot for each registered agent, and from the agent-created hook for
  * every agent that arrives afterwards. Before DOR-1485 only the boot half

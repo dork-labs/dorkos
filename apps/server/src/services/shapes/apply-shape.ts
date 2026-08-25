@@ -262,8 +262,11 @@ export interface ShapeScheduleServiceLike {
    * @param req - The task-creation request built from a Shape schedule.
    * @param origin - Provenance to stamp into the schedule file (`origin: shape`
    *   + `shape: <name>`) — the marker the re-bind flow later gates on.
+   * @returns Whether the schedule exists afterwards. `false` means the target
+   *   name on disk belongs to somebody else's skill and nothing was written; a
+   *   caller must not delete anything on the strength of a create that refused.
    */
-  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<void>;
+  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<boolean>;
   /**
    * Re-target a global (unbound) schedule to a now-present agent and set its
    * enabled state — the second half of the global → agent flip. A no-op when
@@ -515,7 +518,26 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       enabled,
       permissionMode,
     };
-    await deps.scheduleService.createSchedule(request, { shape: name });
+    // The answer is load-bearing, not a courtesy. `createSchedule` refuses a
+    // target whose name on disk belongs to somebody else's skill — that is the
+    // guard standing between a Shape and a person's own file — and an apply that
+    // dropped the answer on the floor reported `ok` with no warnings for a
+    // schedule that was never written. The operator was told they had a job on a
+    // clock that did not exist, which is the one outcome worse than not having
+    // it (review, PROBE-C).
+    const created = await deps.scheduleService.createSchedule(request, { shape: name });
+    if (!created) {
+      warnings.push(
+        `Schedule '${schedule.name}' was not created: something else in that project already ` +
+          `has a skill called '${storedName}'. DorkOS left your file alone. Rename the skill, or ` +
+          `remove it, and apply this Shape again.`
+      );
+      // Kept out of BOTH ledgers deliberately. `schedulesCreated` is what the
+      // API reports back, and `existingByName` is what the rest of this apply
+      // believes about the world — a phantom entry there would make a later
+      // declaration of the same name look already-handled.
+      continue;
+    }
     existingByName.set(storedName, {
       name: storedName,
       agentId: match ? match.id : null,

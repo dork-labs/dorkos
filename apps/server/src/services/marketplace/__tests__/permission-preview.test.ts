@@ -18,7 +18,7 @@ import type {
   ShapePackageManifest,
   SkillPackPackageManifest,
 } from '@dorkos/marketplace';
-import { TASK_PERMISSION_MODES } from '@dorkos/skills/task-schema';
+import { TASK_PERMISSION_MODES } from '@dorkos/skills/schedule-schema';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { ConflictDetector } from '../conflict-detector.js';
 import { AgentInstallFlow, type AgentCreatorLike } from '../flows/install-agent.js';
@@ -183,10 +183,19 @@ async function createFixturePackage(
   for (const task of options.tasks ?? []) {
     const taskDir = join(pkgPath, '.dork', 'tasks', task.name);
     await mkdir(taskDir, { recursive: true });
-    const fmLines: string[] = [`name: ${task.name}`, `description: ${task.description}`];
-    if (task.cron) fmLines.push(`cron: '${task.cron}'`);
-    if (task.permissions) fmLines.push(`permissions: ${task.permissions}`);
-    if (task.enabled !== undefined) fmLines.push(`enabled: ${task.enabled}`);
+    // The `schedule:` block, because that is what makes a shipped skill a
+    // schedule since DOR-1486 — a package still writing these at the top level
+    // declares nothing the preview could disclose.
+    const fmLines: string[] = [
+      `name: ${task.name}`,
+      `description: ${task.description}`,
+      'schedule:',
+    ];
+    if (task.cron) fmLines.push(`  cron: '${task.cron}'`);
+    if (task.permissions) fmLines.push(`  permissions: ${task.permissions}`);
+    if (task.enabled !== undefined) fmLines.push(`  enabled: ${task.enabled}`);
+    // An all-default block still has to be a MAPPING, not an empty key.
+    if (fmLines.length === 3) fmLines[2] = 'schedule: {}';
     const skillContent = `---\n${fmLines.join('\n')}\n---\n\nTask body for ${task.name}.\n`;
     await writeFile(join(taskDir, 'SKILL.md'), skillContent);
   }

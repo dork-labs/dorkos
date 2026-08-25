@@ -4,7 +4,7 @@
  * ## Why this is not a Zod refinement
  *
  * Every other shape rule for a task lives in a schema — `CreateTaskRequestSchema`
- * in `@dorkos/shared`, `TaskFrontmatterSchema` in `@dorkos/skills`. A cron cannot
+ * in `@dorkos/shared`, `ScheduleBlockSchema` in `@dorkos/skills`. A cron cannot
  * join them, because the only honest judge of "can this be scheduled?" is the
  * library that will schedule it, and `croner` is a SERVER dependency. Neither
  * package may take it on: `@dorkos/shared` is bundled into the browser client and

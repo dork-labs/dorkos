@@ -86,11 +86,12 @@ A Shape holds agents by _affinity, not ownership_. Each `agents[]` entry is reso
 
 This is the safety-critical part of Shapes. Read it before touching schedule code.
 
-A Shape schedule is an ordinary scheduled task (`services/tasks/`), created file-first by `ShapeScheduleService` (`shape-schedule-service.ts`) exactly like the tasks router does. It is stored under `slugify(name)` in the global `{dorkHome}/tasks/<slug>/` dir or, once bound, the agent's `{projectPath}/.dork/tasks/<slug>/`. The one thing that makes it a _Shape_ schedule is a **provenance marker** stamped into its frontmatter at creation:
+A Shape schedule is an ordinary scheduled task (`services/tasks/`), created file-first by `ShapeScheduleService` (`shape-schedule-service.ts`) exactly like the tasks router does. It is stored under `slugify(name)` in the global skills root `{dorkHome}/skills/<slug>/` or, once bound, the agent's `{projectPath}/.agents/skills/<slug>/` — an ordinary skill file with a `schedule:` block, discovered by the same watcher as every other schedule (DOR-1486). Because it arrives through discovery, it **parks for approval** rather than arming itself: applying a Shape is a person's decision to install an arrangement, not their decision to start an unattended job on a clock. The one thing that makes it a _Shape_ schedule is a **provenance marker** stamped into its `schedule:` block at creation:
 
 ```yaml
-origin: shape
-shape: <shape-name>
+schedule:
+  origin: shape
+  shape: <shape-name>
 ```
 
 `readShapeOrigin` reads that marker and **fails closed**: any read failure, parse failure, or missing marker returns `null`, which every caller treats as "not a Shape schedule — do not touch."
@@ -113,7 +114,7 @@ A Shape schedule bound to an agent that does not exist yet is created **global +
 
 Existence is checked by schedule **name (the slug) across every scope — never by name + target.** A Shape schedule's target legitimately flips `global → agentId` between applies, so a per-target check would miss the earlier global copy and create a duplicate. `createSchedule`/`listSchedules` speak slugs, so apply matches on `slugify(schedule.name)`; a non-kebab manifest name ("Inbox Tick" → "inbox-tick") that keyed off the raw name would miss its stored copy and the flip would silently never fire (fixed in #372).
 
-`rebindSchedule` physically **moves** the file from the global `tasks/` dir into the agent's `.dork/tasks/` (on-disk location is what makes a schedule agent-owned): write the agent-scoped copy first, then tear down the global one. The move is deliberately not atomic — if the process dies between the two writes, both copies exist under one name, but the stale one is global + disabled (never fires), the reconciler re-syncs both as-is, and the next apply/agent-create sees the agent-bound copy first and no-ops. Worst case is a leftover disabled global schedule the user can delete.
+`rebindSchedule` physically **moves** the file from the global skills root into the agent's `.agents/skills/` (on-disk location is what makes a schedule agent-owned): write the agent-scoped copy first, then tear down the global one. The move is deliberately not atomic — if the process dies between the two writes, both copies exist under one name, but the stale one is global + disabled (never fires), the reconciler re-syncs both as-is, and the next apply/agent-create sees the agent-bound copy first and no-ops. Worst case is a leftover disabled global schedule the user can delete.
 
 ## Extension swap semantics and the manual-enable caveat
 

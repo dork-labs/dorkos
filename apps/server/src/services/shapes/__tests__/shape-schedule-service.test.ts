@@ -17,11 +17,13 @@ import type { Logger } from '@dorkos/shared/logger';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
 import { SCHEDULE_PERMISSION_MODES } from '@dorkos/marketplace/manifest-schema';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { hasSchedule } from '@dorkos/skills';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskStore } from '../../tasks/task-store.js';
 import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/task-registrar.js';
+import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
 
 /** A global, disabled inbox-tick request (agent missing at apply time). */
@@ -70,6 +72,10 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
   let unregisterTask: Mock<SchedulerRegistrationTarget['unregisterTask']>;
   let scheduler: SchedulerRegistrationTarget;
   let service: ShapeScheduleService;
+  // Hoisted so the refusal cases can assert the warning: a Shape that declines
+  // to write over somebody's skill has to SAY so, or the schedule is simply
+  // missing and nobody knows why.
+  let logger: Logger;
 
   beforeEach(async () => {
     db = createTestDb();
@@ -86,7 +92,7 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
     } as unknown as MeshCore;
 
-    const logger = {
+    logger = {
       info: vi.fn(),
       warn: vi.fn(),
       debug: vi.fn(),
@@ -114,7 +120,7 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     expect(await service.listSchedules()).toEqual([
       { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
-    const globalFile = path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md');
+    const globalFile = path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md');
     expect(await exists(globalFile)).toBe(true);
     const globalContent = await fs.readFile(globalFile, 'utf-8');
     expect(globalContent).toContain('origin: shape');
@@ -134,26 +140,47 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     expect(store.getTasks()).toHaveLength(1);
 
     // The file physically moved into the agent's workspace; the global copy is gone.
-    const agentFile = path.join(agentDir, '.dork', 'tasks', 'inbox-tick', 'SKILL.md');
+    const agentFile = path.join(agentDir, '.agents', 'skills', 'inbox-tick', 'SKILL.md');
     expect(await exists(agentFile)).toBe(true);
     expect(await exists(globalFile)).toBe(false);
     const movedContent = await fs.readFile(agentFile, 'utf-8');
     expect(movedContent).toContain('origin: shape');
     expect(movedContent).toContain('shape: linear-ops');
 
-    // The newly-enabled schedule was registered; the old copy was unregistered.
-    expect(registerTask).toHaveBeenCalledTimes(1);
-    expect(registerTask.mock.calls[0][0]).toMatchObject({
-      name: 'inbox-tick',
-      agentId: 'agent-tender',
-      enabled: true,
+    // NOTHING was registered, and that is the DOR-1486 change worth stating: a
+    // re-bound Shape schedule lands as a file in the agent's skills root and is
+    // synced as a discovery write, so it parks for approval like any other
+    // schedule DorkOS finds on disk (ADR `260823-200726`). Applying a Shape is a
+    // person's decision to install an arrangement; it is not their decision to
+    // let a particular unattended job start running on a clock. `enabled: true`
+    // above is the author's intent, which is not the same as permission.
+    expect(registerTask).not.toHaveBeenCalled();
+    expect(store.getTasks()[0].status).toBe('pending_approval');
+  });
+
+  it('writes the new format into the agent’s skills root, and it parks there', async () => {
+    // The whole DOR-1486 shape of this service in one test: a Shape's schedule
+    // is an ordinary skill file with a `schedule:` block, in the same root every
+    // other skill lives in, discovered by the same watcher — and therefore
+    // subject to the same never-auto-arm gate.
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'linear-ops' });
+
+    const filePath = path.join(agentDir, '.agents', 'skills', 'inbox-tick', 'SKILL.md');
+    const raw = readRawFrontmatter(await fs.readFile(filePath, 'utf-8'));
+    // A block, not top-level fields — and only what a person would have typed:
+    // `enabled: true` and `permissions: acceptEdits` are the defaults, so they
+    // are not written out.
+    expect(raw?.data.schedule).toEqual({
+      cron: '*/15 * * * *',
+      origin: 'shape',
+      shape: 'linear-ops',
     });
-    // Twice, and both name the old global row: creating it disabled asks the
-    // registrar to make sure it has no job, and the teardown asks again once the
-    // row is gone. Unregistering a task that has no job is a no-op — the seam
-    // states the intended end state rather than tracking what it did before.
-    expect(unregisterTask).toHaveBeenCalledTimes(2);
-    expect(new Set(unregisterTask.mock.calls.map(([id]) => id)).size).toBe(1);
+    expect(raw?.data.cron).toBeUndefined();
+
+    // And it waits for a person before anything runs on a clock.
+    const row = store.getTasks()[0];
+    expect(row.status).toBe('pending_approval');
+    expect(row.filePath).toBe(await fs.realpath(filePath));
   });
 
   it('is a no-op on a schedule that is already agent-bound (respects a user disable)', async () => {
@@ -191,11 +218,118 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: null },
     ]);
     expect(store.getTasks()).toHaveLength(1);
-    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
-    expect(await exists(path.join(agentDir, '.dork', 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(agentDir, '.agents', 'skills', 'inbox-tick', 'SKILL.md'))).toBe(
       false
     );
     expect(registerTask).not.toHaveBeenCalled();
+  });
+
+  it("refuses to write over a person's own skill of the same name, and says so", async () => {
+    // The critical one. A skills root is where a PERSON's skills live, and most
+    // of them have no schedule and therefore no row — so the apply flow's
+    // by-name check over the task table cannot see them. Before the disk guard,
+    // applying a Shape wrote its schedule straight over a hand-written skill,
+    // with no warning anywhere, and the teardown that followed removed the
+    // directory it was in.
+    const skillDir = path.join(agentDir, '.agents', 'skills', 'inbox-tick');
+    await fs.mkdir(skillDir, { recursive: true });
+    const mine = '---\nname: inbox-tick\ndescription: my own tuned skill\n---\nMy words.';
+    await fs.writeFile(path.join(skillDir, 'SKILL.md'), mine, 'utf-8');
+    await fs.writeFile(path.join(skillDir, 'reference.md'), 'notes I wrote', 'utf-8');
+
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toBe(false);
+    // Untouched, both files.
+    expect(await fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8')).toBe(mine);
+    expect(await fs.readFile(path.join(skillDir, 'reference.md'), 'utf-8')).toBe('notes I wrote');
+    // No row either — a schedule that was never written must not appear to exist.
+    expect(store.getTasks()).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('inbox-tick'));
+  });
+
+  it('refuses a target that is a symlink, whatever the file behind it says', async () => {
+    // A `pkg__name` link is how Harness Sync projects an installed package's
+    // skill. Writing through it edits the package's own checkout: shared by
+    // every agent that installed it, invisible in the cockpit, gone at the next
+    // update. Refused before the marker is even read.
+    //
+    // The link's target deliberately carries THIS Shape's own marker, which is
+    // the only version of this case the marker check cannot answer: by
+    // provenance the file is "ours" to overwrite, and it still must not be
+    // written, because where it physically lives is a package's checkout. A
+    // fixture without the marker would pass with the symlink branch deleted.
+    const packageSkill = path.join(dorkHome, 'plugins', 'flow', 'skills', 'drain');
+    await fs.mkdir(packageSkill, { recursive: true });
+    const shipped = [
+      '---',
+      'name: drain',
+      'description: shipped by a package',
+      'schedule:',
+      "  cron: '*/10 * * * *'",
+      '  origin: shape',
+      '  shape: linear-ops',
+      '---',
+      'Package words.',
+    ].join('\n');
+    await fs.writeFile(path.join(packageSkill, 'SKILL.md'), shipped, 'utf-8');
+    await fs.mkdir(path.join(agentDir, '.agents', 'skills'), { recursive: true });
+    await fs.symlink(packageSkill, path.join(agentDir, '.agents', 'skills', 'inbox-tick'));
+
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toBe(false);
+    expect(await fs.readFile(path.join(packageSkill, 'SKILL.md'), 'utf-8')).toBe(shipped);
+    expect(store.getTasks()).toHaveLength(0);
+  });
+
+  it('still writes over its OWN schedule, which is what a re-apply is', async () => {
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'linear-ops' });
+
+    const again = await service.createSchedule(
+      { ...tick('inbox-tick', 'agent-tender'), prompt: 'run one tick, differently' },
+      { shape: 'linear-ops' }
+    );
+
+    expect(again).toBe(true);
+    expect(store.getTasks()).toHaveLength(1);
+    expect(store.getTasks()[0].prompt).toBe('run one tick, differently');
+  });
+
+  it('refuses a schedule another Shape already owns by that name', async () => {
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'other-shape' });
+
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toBe(false);
+    expect(store.getTasks()).toHaveLength(1);
+  });
+
+  it('does not delete the global copy when the re-bind had nowhere to land', async () => {
+    // The compound failure: a refused create followed by an unconditional
+    // teardown deletes the only copy of the schedule there is.
+    await service.createSchedule(globalDisabledTick(), { shape: 'linear-ops' });
+    const skillDir = path.join(agentDir, '.agents', 'skills', 'inbox-tick');
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: inbox-tick\ndescription: my own\n---\nMine.',
+      'utf-8'
+    );
+
+    await service.rebindSchedule('inbox-tick', { agentId: 'agent-tender', enabled: true });
+
+    // The global copy is still there, still the Shape's, still the only one.
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
+    expect(store.getTasks()).toHaveLength(1);
+    expect(store.getTasks()[0].agentId).toBeNull();
   });
 
   it('leaves the schedule global when the agent has no resolvable project path', async () => {
@@ -209,7 +343,7 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
     expect(store.getTasks()).toHaveLength(1);
-    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
   });
 });
 
@@ -245,9 +379,9 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
   });
 
   // THE DRIFT CASE. `createSchedule` writes the requested mode into the
-  // SKILL.md `permissions:` frontmatter and immediately parses the file back
-  // with `TaskFrontmatterSchema` — the same schema the task file watcher and
-  // the reconciler use. If the frontmatter schema accepts fewer modes than a
+  // SKILL.md's `schedule.permissions` and immediately parses the file back with
+  // `SkillFrontmatterSchema` — the same schema the file watcher and the
+  // reconciler use. If the frontmatter schema accepts fewer modes than a
   // Shape manifest may declare, the file it just wrote is unreadable: the parse
   // fails, `createSchedule` silently falls through to the `createTask` branch,
   // and disk and DB disagree forever while the watcher re-rejects the file on
@@ -268,13 +402,17 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
       };
       await service.createSchedule(request, { shape: 'linear-ops' });
 
-      const filePath = path.join(dorkHome, 'tasks', request.name, 'SKILL.md');
+      const filePath = path.join(dorkHome, 'skills', request.name, 'SKILL.md');
       const parsed = parseSkillFile(
         filePath,
         await fs.readFile(filePath, 'utf-8'),
-        TaskFrontmatterSchema
+        SkillFrontmatterSchema
       );
       expect(parsed.ok, parsed.ok ? '' : parsed.error).toBe(true);
+      // Readable is not enough: an unreadable block parses to a complaint
+      // object rather than failing the file, so a schedule that quietly became
+      // on-demand would pass a bare `ok` assertion.
+      expect(parsed.ok && hasSchedule(parsed.definition.meta)).toBe(true);
 
       // The row matches the file for every mode a package may declare, EXCEPT
       // the one the store refuses to take from a file: `upsertFromFile` clamps
@@ -350,13 +488,30 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
     await service.createSchedule(tick('other-tick', 'global'), { shape: 'other-shape' });
 
     expect(store.getTasks()).toHaveLength(4);
+    // Captured BEFORE the delete: the rows are gone afterwards, and the ids are
+    // what proves the right two registrations were torn down.
+    const removedIds = new Map(
+      store
+        .getTasks()
+        .filter((t) => (t.name === 'inbox-tick' && !t.agentId) || t.name === 'bound-tick')
+        .map((t) => [t.name, t.id])
+    );
 
     const removed = await service.deleteSchedulesForShape('linear-ops');
 
     // Exactly this Shape's two schedules were removed (order is discovery order).
     expect([...removed].sort()).toEqual(['bound-tick', 'inbox-tick']);
-    // Their scheduler registrations were torn down (never left firing).
-    expect(unregisterTask).toHaveBeenCalledTimes(2);
+    // Their scheduler registrations were torn down (never left firing). Asserted
+    // by the ids named rather than by a call count: every create asks the
+    // registrar for the end state too — and since DOR-1486 a Shape's schedule
+    // parks on create, so that ask is an unregister as well.
+    const torn = new Set(unregisterTask.mock.calls.map(([id]) => id));
+    for (const name of ['inbox-tick', 'bound-tick']) {
+      expect(
+        [...torn].some((id) => removedIds.get(name) === id),
+        `${name} should have been unregistered`
+      ).toBe(true);
+    }
 
     // Only the unmarked collision + the other Shape's schedule remain.
     const survivors = store.getTasks();
@@ -366,14 +521,14 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
     expect(survivors.find((t) => t.name === 'other-tick')?.agentId).toBeNull();
 
     // Files: the two marked ones are gone; the two survivors stay on disk.
-    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(false);
-    expect(await exists(path.join(agentDir, '.dork', 'tasks', 'bound-tick', 'SKILL.md'))).toBe(
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(false);
+    expect(await exists(path.join(agentDir, '.agents', 'skills', 'bound-tick', 'SKILL.md'))).toBe(
       false
     );
-    expect(await exists(path.join(agentDir, '.dork', 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(
+    expect(await exists(path.join(agentDir, '.agents', 'skills', 'inbox-tick', 'SKILL.md'))).toBe(
       true
     );
-    expect(await exists(path.join(dorkHome, 'tasks', 'other-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(dorkHome, 'skills', 'other-tick', 'SKILL.md'))).toBe(true);
   });
 
   it('spares names in keepNames — the apply reconciliation drops only renamed/removed schedules', async () => {
@@ -384,8 +539,8 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
 
     expect(removed).toEqual(['drop-tick']);
     expect(store.getTasks().map((t) => t.name)).toEqual(['keep-tick']);
-    expect(await exists(path.join(dorkHome, 'tasks', 'keep-tick', 'SKILL.md'))).toBe(true);
-    expect(await exists(path.join(dorkHome, 'tasks', 'drop-tick', 'SKILL.md'))).toBe(false);
+    expect(await exists(path.join(dorkHome, 'skills', 'keep-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(dorkHome, 'skills', 'drop-tick', 'SKILL.md'))).toBe(false);
   });
 
   it('matches keepNames against the stored slug, not the raw manifest name', async () => {
@@ -400,6 +555,6 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
 
     expect(removed).toEqual([]);
     expect(store.getTasks().map((t) => t.name)).toEqual(['inbox-tick']);
-    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
   });
 });

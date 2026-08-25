@@ -139,17 +139,31 @@ function mockParsedFile(permissions: string | undefined): void {
       meta: {
         name: 'nightly',
         description: 'sweep the repo',
-        cron: '0 3 * * *',
-        timezone: 'UTC',
-        enabled: true,
-        ...(permissions !== undefined ? { permissions } : {}),
+        schedule: {
+          cron: '0 3 * * *',
+          timezone: 'UTC',
+          enabled: true,
+          permissions: permissions ?? 'acceptEdits',
+        },
       },
       body: 'sweep it',
-      filePath: `${DORK_HOME}/tasks/nightly/SKILL.md`,
-      dirPath: `${DORK_HOME}/tasks/nightly`,
+      filePath: `${DORK_HOME}/skills/nightly/SKILL.md`,
+      dirPath: `${DORK_HOME}/skills/nightly`,
       scope: 'global',
     },
   } as unknown as ReturnType<typeof parseSkillFile>);
+}
+
+/**
+ * The `schedule:` mapping the route just wrote.
+ *
+ * Scheduling fields live inside the block since DOR-1486, so a test that read
+ * the top level would report `undefined` for every one of them and pass by
+ * accident wherever it expected an absence.
+ */
+function writtenSchedule(): Record<string, unknown> {
+  const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+  return (frontmatter.schedule ?? {}) as Record<string, unknown>;
 }
 
 /** The body a person's task form sends, minus whatever a case overrides. */
@@ -208,7 +222,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
     // format leaves unsaid, so the default must not start writing it out.
     await request(app).post('/api/tasks').send(createBody());
 
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
   });
 
@@ -219,7 +233,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
 
     expect(res.status).toBe(201);
     expect(store.getTasks()[0]!.permissionMode).toBe('bypassPermissions');
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBe('bypassPermissions');
   });
 
@@ -327,7 +341,7 @@ describe('the guards that stand between an agent and a raised task', () => {
 
     // The file agrees: `acceptEdits` is the level the format leaves unsaid, so
     // the clamped write means no `permissions:` line at all.
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
   });
 });
@@ -375,7 +389,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     const res = await request(app).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBe('bypassPermissions');
     // The store clamped the file-declared mode down to `acceptEdits`; the
     // route's un-clamp put it back, because a trusted caller's own configured
@@ -396,7 +410,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     const res = await request(app).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
     expect(store.getTasks()[0]!.permissionMode).toBe('acceptEdits');
   });

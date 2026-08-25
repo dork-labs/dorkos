@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TaskStore } from '../task-store.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
-import { legacyRoot } from './task-root-fixtures.js';
+import { skillsRoot } from './task-root-fixtures.js';
 import type { Task } from '@dorkos/shared/types';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -88,7 +88,7 @@ describe('TaskFileWatcher', () => {
   describe('watcher error handling', () => {
     it('logs a watcher error naming the tasks dir and scope (global)', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       const err = errnoError('EMFILE', 'EMFILE: too many open files');
       handlerFor('error')(err);
@@ -108,7 +108,7 @@ describe('TaskFileWatcher', () => {
 
     it('logs a watcher error naming the tasks dir and scope (project)', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/work/project/.dork/tasks', 'project', '/work/project', 'agent-1'));
+      watcher.watch(skillsRoot('/work/project/.dork/tasks', 'project', '/work/project', 'agent-1'));
 
       handlerFor('error')(errnoError('EMFILE', 'EMFILE: too many open files'));
 
@@ -122,14 +122,14 @@ describe('TaskFileWatcher', () => {
 
     it('does not throw when the watcher errors', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       expect(() => handlerFor('error')(new Error('EMFILE'))).not.toThrow();
     });
 
     it('stringifies a non-Error thrown as the watcher error, with no stack and code "unknown"', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       handlerFor('error')('disk went away');
 
@@ -148,7 +148,7 @@ describe('TaskFileWatcher', () => {
     // handler must latch: log the first, drop repeats of the same code.
     it('logs only the first of many errors carrying the same code', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
       const onError = handlerFor('error');
 
       onError(errnoError('EMFILE', 'EMFILE 1'));
@@ -167,7 +167,7 @@ describe('TaskFileWatcher', () => {
     // `code` means a NEW code always gets its own line.
     it('logs a separate line for each distinct error code', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
       const onError = handlerFor('error');
 
       onError(errnoError('EACCES', 'permission denied'));
@@ -186,7 +186,7 @@ describe('TaskFileWatcher', () => {
 
     it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       handlerFor('error')(errnoError('EMFILE', 'EMFILE'));
 
@@ -203,8 +203,8 @@ describe('TaskFileWatcher', () => {
     // masking would be routine, not hypothetical.
     it('scopes the latch per watcher — two directories each log their own first error', () => {
       const { watcher } = makeWatcher();
-      watcher.watch(legacyRoot('/dork-home/tasks-a', 'global'));
-      watcher.watch(legacyRoot('/dork-home/tasks-b', 'project', '/work/b', 'agent-b'));
+      watcher.watch(skillsRoot('/dork-home/tasks-a', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks-b', 'project', '/work/b', 'agent-b'));
       const [onErrorA, onErrorB] = handlersFor('error');
       expect(onErrorA).toBeDefined();
       expect(onErrorB).toBeDefined();
@@ -232,7 +232,7 @@ describe('TaskFileWatcher', () => {
         status: 'paused',
       } as Task);
       const { watcher, scheduler } = makeWatcher(store);
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       handlerFor('unlink')(FILE);
 
@@ -245,7 +245,7 @@ describe('TaskFileWatcher', () => {
     it('acts on the row at that exact path, never on a same-named task', () => {
       const store = makeStore();
       const { watcher } = makeWatcher(store);
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       handlerFor('unlink')(FILE);
 
@@ -258,7 +258,7 @@ describe('TaskFileWatcher', () => {
         throw new Error('database is locked');
       });
       const { watcher } = makeWatcher(store);
-      watcher.watch(legacyRoot('/dork-home/tasks', 'global'));
+      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
 
       expect(() => handlerFor('unlink')(FILE)).not.toThrow();
       expect(logger.error).toHaveBeenCalledWith(

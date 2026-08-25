@@ -23,12 +23,17 @@ import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { slugify, validateSlug } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { loadTemplates, RESERVED_TASK_DIRNAMES } from '../services/tasks/task-templates.js';
+import {
+  agentSkillsRoot,
+  globalSkillsRoot,
+  resolveRootPath,
+} from '../services/tasks/skills-roots.js';
+import { readScheduleFromSkill } from '../services/tasks/skills-root-discovery.js';
 import { parseBody, toErrorMessage } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
@@ -48,10 +53,10 @@ import {
   OPERATOR_ONLY_TASK_ERROR,
   OPERATOR_ONLY_TRIGGER_REFUSAL,
 } from '../services/tasks/task-write-policy.js';
-import { mergeTaskFrontmatter } from '../services/tasks/task-frontmatter-merge.js';
 import {
   describeArmBlocker,
   isPackageOwned,
+  planTaskFileCreate,
   planTaskFileUpdate,
   pluginRoots,
   touchesFile,
@@ -401,24 +406,30 @@ export function createTasksRouter(
       });
     }
 
-    let tasksDir: string;
+    // A schedule is a skill, so it lands in a SKILLS root — `~/.dork/skills/`
+    // or the agent's `.agents/skills/`. The `tasks/` directories these used to
+    // be are not watched any more (DOR-1486), so writing there would have
+    // created a file nothing ever reads.
+    let skillsDir: string;
     let agentId: string | null = null;
+    let projectPath: string | undefined;
 
     if (data.target === 'global') {
-      tasksDir = path.join(dorkHome, 'tasks');
+      skillsDir = globalSkillsRoot(dorkHome);
     } else if (meshCore) {
-      const projectPath = meshCore.getProjectPath(data.target);
-      if (!projectPath) {
+      const resolved = meshCore.getProjectPath(data.target);
+      if (!resolved) {
         return res.status(400).json({ error: `Agent ${data.target} not found in registry` });
       }
-      tasksDir = path.join(projectPath, '.dork', 'tasks');
+      skillsDir = agentSkillsRoot(resolved);
+      projectPath = resolved;
       agentId = data.target;
     } else {
       return res.status(400).json({ error: 'Cannot resolve agent — mesh not available' });
     }
 
     // Check for duplicate slug
-    const existingPath = path.join(tasksDir, slug, SKILL_FILENAME);
+    const existingPath = path.join(skillsDir, slug, SKILL_FILENAME);
     try {
       await fs.access(existingPath);
       return res.status(409).json({ error: `Task "${slug}" already exists in target directory` });
@@ -426,18 +437,19 @@ export function createTasksRouter(
       // File doesn't exist — good
     }
 
-    // Build frontmatter (only file-safe fields), through the same merge the
-    // update path below uses. An omitted field is left out of the file rather
-    // than written as an empty value, which is what the run of `if`s here used
-    // to say one field at a time.
-    const frontmatter = mergeTaskFrontmatter(
+    // Build the frontmatter through the same planner the update path uses, so
+    // create and update cannot disagree about the shape of a schedule file. The
+    // scheduling fields land inside the `schedule:` block, and anything already
+    // at its default is left out rather than written as a line the person never
+    // typed — which is what the raw spread here used to do.
+    const plan = planTaskFileCreate(
       { name: slug, description: data.description },
       {
         displayName: data.displayName || undefined,
         cron: data.cron || undefined,
         timezone: data.timezone || undefined,
         // Only a schedule the caller turned OFF says so in the file — the
-        // frontmatter's own default is `enabled: true`.
+        // block's own default is `enabled: true`.
         enabled: data.enabled === false ? false : undefined,
         maxRuntime: data.maxRuntime || undefined,
         // The CLAMPED mode, so the file and the row agree. This is a file-first
@@ -450,25 +462,35 @@ export function createTasksRouter(
         // a lie in the source of truth, and the next reader should not have to
         // rediscover why it is harmless.
         //
-        // `acceptEdits` is the frontmatter default too, so naming it would add a
-        // line that says nothing.
-        permissionMode:
-          effectivePermissionMode && effectivePermissionMode !== 'acceptEdits'
-            ? effectivePermissionMode
-            : undefined,
+        // `acceptEdits` is the block default too, so naming it would add a line
+        // that says nothing — `scheduleToFrontmatter` drops it either way.
+        permissionMode: effectivePermissionMode || undefined,
       }
     );
+    if (plan.kind === 'refuse') {
+      return res.status(400).json({ error: plan.message });
+    }
 
     // Write file first (source of truth)
-    const filePath = await writeSkillFile(tasksDir, slug, frontmatter, data.prompt);
+    const filePath = await writeSkillFile(skillsDir, slug, plan.frontmatter, data.prompt);
 
-    // Sync to DB for immediate consistency
+    // Sync to DB for immediate consistency, through the SAME reader discovery
+    // uses. The row's identity is the file's REAL path: the watcher that reads
+    // this file seconds from now resolves symlinks before keying its row, and a
+    // create that stored the unresolved path would leave two rows for one file
+    // on any machine whose data directory or checkout sits under a symlink.
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema);
+    const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
+    const discovered = parsed.ok
+      ? readScheduleFromSkill(parsed.definition, {
+          scope: data.target === 'global' ? 'global' : 'project',
+          projectPath,
+          resolvedPath: path.join(await resolveRootPath(skillsDir), slug, SKILL_FILENAME),
+        })
+      : null;
     let schedule: Task;
-    if (parsed.ok) {
-      const def = { ...parsed.definition, scope: 'global' as const, projectPath: undefined };
-      schedule = store.upsertFromFile(def, agentId ?? undefined);
+    if (discovered) {
+      schedule = store.upsertFromFile(discovered.def, agentId ?? undefined);
     } else {
       // Fallback: create directly in DB. NOT a file path, so it gets none of
       // `upsertFromFile`'s clamping — which is why the mode it is handed was
@@ -700,13 +722,12 @@ export function createTasksRouter(
       }
 
       if (content !== null && changesFile) {
-        const parsed = parseSkillFile(existing.filePath, content, TaskFrontmatterSchema);
-        const asSkill = parseSkillFile(existing.filePath, content, SkillFrontmatterSchema);
-        // Either shape is fine to EDIT — a block-backed skill is not a legacy
-        // task file and must not be judged by the legacy schema — but a file
-        // neither schema can read is the silent-success defect DOR-1481 closed,
-        // and it still refuses.
-        if (!parsed.ok && !asSkill.ok) {
+        // A file the skill schema cannot read is the silent-success defect
+        // DOR-1481 closed: the route used to skip the write, update the row, and
+        // answer 200. It refuses. (There was a second parse here, against the
+        // legacy task schema, while both shapes were live; DOR-1486 left one.)
+        const parsed = parseSkillFile(existing.filePath, content, SkillFrontmatterSchema);
+        if (!parsed.ok) {
           return res.status(500).json({
             error: describeTaskFileFailure('parse', existing.filePath, parsed.error),
           });
