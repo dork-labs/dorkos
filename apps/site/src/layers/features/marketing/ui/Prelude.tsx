@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const FULL_TEXT = 'DorkOS is starting.';
@@ -13,6 +13,16 @@ const FADE_S = 0.3;
 /** Session flag — set the first time the prelude runs so it never replays. */
 const SESSION_KEY = 'dorkos-prelude-seen';
 
+/** Nothing external ever notifies this decision — it's fixed once for the life of the mounted component. */
+function subscribeToNothing() {
+  return () => {};
+}
+
+/** SSR (and the client's hydration pass) always assumes the prelude should not play, matching the pre-hydration DOM. */
+function getShouldPlayServerSnapshot() {
+  return false;
+}
+
 /**
  * Boot-sequence prelude — types "DorkOS is starting." then fades to reveal the page.
  *
@@ -20,23 +30,39 @@ const SESSION_KEY = 'dorkos-prelude-seen';
  * and is bypassed entirely when the visitor prefers reduced motion.
  */
 export function Prelude() {
-  // Starts hidden: the play/skip decision needs client-only APIs, so it is
-  // made in the mount effect. This guarantees reduced-motion and repeat
-  // visitors never see a flash of the boot overlay.
-  const [visible, setVisible] = useState(false);
-  const [text, setText] = useState('');
+  // The play/skip decision needs client-only APIs (matchMedia, sessionStorage)
+  // that don't exist during SSR, so useSyncExternalStore supplies `false` for
+  // the server and the hydration pass, then swaps in the real client-only
+  // read right after — the mechanism that guarantees reduced-motion and
+  // repeat visitors never see a flash of the boot overlay. The ref caches the
+  // decision after its first real read so a later render (e.g. while the
+  // effect below marks the session as seen) can't flip it mid-animation.
+  const decidedRef = useRef<boolean | null>(null);
+  const getShouldPlaySnapshot = useCallback(() => {
+    if (decidedRef.current === null) {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const alreadySeen = sessionStorage.getItem(SESSION_KEY) === 'true';
+      decidedRef.current = !prefersReducedMotion && !alreadySeen;
+    }
+    return decidedRef.current;
+  }, []);
+  const shouldPlay = useSyncExternalStore(
+    subscribeToNothing,
+    getShouldPlaySnapshot,
+    getShouldPlayServerSnapshot
+  );
 
-  const dismiss = useCallback(() => setVisible(false), []);
+  const [dismissed, setDismissed] = useState(false);
+  const [text, setText] = useState('');
+  const visible = shouldPlay && !dismissed;
+
+  const dismiss = useCallback(() => setDismissed(true), []);
 
   useEffect(() => {
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const alreadySeen = sessionStorage.getItem(SESSION_KEY) === 'true';
     // Mark as seen up front so it never replays within the session.
     sessionStorage.setItem(SESSION_KEY, 'true');
 
-    if (prefersReducedMotion || alreadySeen) return;
-
-    setVisible(true);
+    if (!shouldPlay) return;
 
     let holdTimeout: ReturnType<typeof setTimeout> | undefined;
     let index = 0;
@@ -61,7 +87,7 @@ export function Prelude() {
       clearTimeout(holdTimeout);
       for (const event of events) window.removeEventListener(event, skip);
     };
-  }, [dismiss]);
+  }, [shouldPlay, dismiss]);
 
   return (
     <AnimatePresence>
