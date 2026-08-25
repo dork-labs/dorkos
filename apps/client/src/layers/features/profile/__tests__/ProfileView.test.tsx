@@ -368,6 +368,7 @@ describe('the rows', () => {
       'connections',
       'instructions',
       'boundaries',
+      'memory',
     ]);
   });
 

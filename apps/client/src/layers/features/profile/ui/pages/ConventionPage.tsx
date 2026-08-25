@@ -1,12 +1,18 @@
 /**
- * Instructions (SOUL.md) and Boundaries (NOPE.md) — the two files an operator
- * writes an agent's behaviour into (spec `profile-unification` §1.5).
+ * Instructions (SOUL.md), Boundaries (NOPE.md) and Memory (MEMORY.md) — the
+ * markdown files an agent's behaviour is written into (spec
+ * `profile-unification` §1.5, spec `agent-memory` §User Experience).
  *
- * One component, two pages, because they differ only in which file they are
- * about. Both take the whole height and both save on a button rather than on a
+ * One component, three pages, because they differ only in which file they are
+ * about. All take the whole height and all save on a button rather than on a
  * timer: these are the files a person writes prose into, and prose is edited in
  * passes — a debounce that fires mid-thought writes half a sentence to disk and
  * gives no moment where you can see that your work is safe.
+ *
+ * Memory is the one the AGENT also writes. That changes nothing here — the same
+ * editor, the same Save, the same refusal when the file is over budget — which
+ * is the point: an operator should be able to read and correct what their agent
+ * believes with the tools they already know.
  *
  * @module features/profile/ui/pages/ConventionPage
  */
@@ -14,6 +20,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import type { Conventions } from '@dorkos/shared/mesh-schemas';
 import {
+  MEMORY_MAX_CHARS,
   NOPE_MAX_CHARS,
   SOUL_MAX_CHARS,
   extractCustomProse,
@@ -30,6 +37,18 @@ import type { ProfilePageContentProps } from './types';
 const NOPE_DISCLAIMER =
   'These boundaries guide agent behavior but are not enforced at the tool level. They serve as strong instructions, not hard blocks.';
 
+/**
+ * Advisory that has to stay wherever MEMORY.md is edited.
+ *
+ * Two facts an operator cannot get from looking at the editor, and both change
+ * what they would type into it: the agent writes here itself, and everything
+ * here can surface in a room with other people in it. The visibility rule is
+ * the same sentence the file's own header carries, so a person reads it whether
+ * they arrive through this page or through the file.
+ */
+const MEMORY_DISCLAIMER =
+  'Your agent writes notes here as it works, and every note says where it was written. Anything in this file can come up in any conversation the agent joins, including rooms shared with other people — so never keep secrets, passwords or keys here. Deleting a line is forgetting it.';
+
 /** Which file a page is about, and everything that differs because of it. */
 interface ConventionFile {
   /** The card's heading. */
@@ -37,7 +56,7 @@ interface ConventionFile {
   /** What a failed save is called, before the server's own sentence. */
   errorLabel: string;
   /** Which injection toggle it owns. */
-  key: 'soul' | 'nope';
+  key: 'soul' | 'nope' | 'memory';
   /** The character budget the server enforces. */
   maxChars: number;
   /** The advisory under the heading, when the file needs one. */
@@ -48,7 +67,7 @@ interface ConventionFile {
   write: (
     agent: ProfileAgentManifest,
     draft: string
-  ) => { soulContent?: string; nopeContent?: string };
+  ) => { soulContent?: string; nopeContent?: string; memoryContent?: string };
   /** What the character counter should say, which is not always the draft's length. */
   count: (agent: ProfileAgentManifest, draft: string) => number;
 }
@@ -65,7 +84,7 @@ function soulProse(agent: ProfileAgentManifest, draft: string): string {
   return soulFile(agent.traits, draft);
 }
 
-const FILES: Record<'instructions' | 'boundaries', ConventionFile> = {
+const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = {
   instructions: {
     title: 'Custom Instructions (SOUL.md)',
     errorLabel: 'Couldn’t save your instructions',
@@ -85,6 +104,16 @@ const FILES: Record<'instructions' | 'boundaries', ConventionFile> = {
     disclaimer: NOPE_DISCLAIMER,
     read: (agent) => agent.nopeContent ?? '',
     write: (_agent, draft) => ({ nopeContent: draft }),
+    count: (_agent, draft) => draft.length,
+  },
+  memory: {
+    title: 'Agent memory (MEMORY.md)',
+    errorLabel: 'Couldn’t save your agent’s memory',
+    key: 'memory',
+    maxChars: MEMORY_MAX_CHARS,
+    disclaimer: MEMORY_DISCLAIMER,
+    read: (agent) => agent.memoryContent ?? '',
+    write: (_agent, draft) => ({ memoryContent: draft }),
     count: (_agent, draft) => draft.length,
   },
 };
@@ -216,10 +245,10 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
           Save
         </Button>
       </div>
-      {/* Both files, assembled — on BOTH pages, because the agent reads them
-          together and neither editor can show you the other half. Fed the draft
-          rather than what is on disk: `file.write` is the same function Save
-          sends, so the preview is what saving right now would produce. */}
+      {/* Every file, assembled — on EVERY one of these pages, because the agent
+          reads them together and no one editor can show you the rest. Fed the
+          draft rather than what is on disk: `file.write` is the same function
+          Save sends, so the preview is what saving right now would produce. */}
       <div className="shrink-0">
         <InjectionPreview
           name={agent.name}
@@ -231,6 +260,7 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
           conventions={conventions}
           soulContent={agent.soulContent ?? ''}
           nopeContent={agent.nopeContent ?? ''}
+          memoryContent={agent.memoryContent ?? ''}
           {...file.write(agent, draft)}
         />
       </div>
@@ -246,4 +276,15 @@ export function InstructionsPage(props: ProfilePageContentProps) {
 /** NOPE.md — what this agent should never do. */
 export function BoundariesPage(props: ProfilePageContentProps) {
   return <ConventionPage {...props} file={FILES.boundaries} />;
+}
+
+/**
+ * MEMORY.md — what this agent has learned and wants to keep.
+ *
+ * The one convention file the agent writes as well as reads, which is why it is
+ * an editor and not a viewer: reading it is how you find out what your agent
+ * believes, and deleting a line is how you make it forget.
+ */
+export function MemoryPage(props: ProfilePageContentProps) {
+  return <ConventionPage {...props} file={FILES.memory} />;
 }

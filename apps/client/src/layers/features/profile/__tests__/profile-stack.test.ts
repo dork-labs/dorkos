@@ -18,6 +18,9 @@ describe('reading a page id off a link', () => {
   it('accepts the pages that exist', () => {
     expect(asProfilePageId('manages')).toBe('manages');
     expect(asProfilePageId('sessions')).toBe('sessions');
+    // The id is declared twice — the union and the list this parses against —
+    // and a page added to only one of them is a row that never draws.
+    expect(asProfilePageId('memory')).toBe('memory');
   });
 
   it('lands on the root rather than nothing when a link names no page', () => {

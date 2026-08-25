@@ -54,13 +54,14 @@ const STATES: { id: string; label: string; page?: ProfilePageId }[] = [
   { id: 'person-dorian', label: 'Pushed page: Manages', page: 'manages' },
   { id: 'agent-warden', label: 'Pushed page: Sessions', page: 'sessions' },
   { id: 'agent-warden', label: 'Pushed page: Instructions', page: 'instructions' },
+  { id: 'agent-warden', label: 'Pushed page: Memory', page: 'memory' },
 ];
 
 /**
  * The manifest the pushed pages read.
  *
  * The playground has no agent on disk, so without this the pages that open a
- * manifest — About, Instructions, Boundaries, Appearance — draw their "couldn't
+ * manifest — About, Instructions, Boundaries, Memory, Appearance — draw their "couldn't
  * read this" branch, which is a state worth having but a poor demo of a page.
  */
 const FIXTURE_MANIFEST = {
@@ -78,6 +79,8 @@ const FIXTURE_MANIFEST = {
   soulContent:
     '<!-- TRAITS:START -->\ntraits\n<!-- TRAITS:END -->\nSay what broke before you say how to fix it.',
   nopeContent: 'Never force-push to a shared branch.',
+  memoryContent:
+    '- The build is deployed on Tuesdays. (noted in #product, 2026-08-24)\n- Dorian prefers the failure before the fix. (noted in a direct chat, 2026-08-24)',
 } as unknown as AgentManifest;
 
 /**
@@ -120,9 +123,9 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile"
-      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Nothing else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions page carries the injected-prompt preview: open it to read what the agent is actually handed — identity, personality and both convention files, assembled the way the server assembles them, and following the draft rather than the file on disk."
+      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Nothing else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages carry the injected-prompt preview: open it to read what the agent is actually handed — identity, personality, both convention files, and the agent's own saved notes inside the fence a turn puts them in, assembled the way the server assembles them and following the draft rather than the file on disk."
     >
-      <ShowcaseLabel>The six relationships, and three pushed pages</ShowcaseLabel>
+      <ShowcaseLabel>The six relationships, and four pushed pages</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-2">
           {STATES.map((state) => (
