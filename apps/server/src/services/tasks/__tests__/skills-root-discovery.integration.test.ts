@@ -426,21 +426,32 @@ describe('schedules discovered in skills roots', () => {
   // (DOR-1485 review, B2). The legacy roots are full of rows discovery did not
   // create: agent proposals, and the operator's own schedules.
   describe('provenance discovery did not create', () => {
-    let legacyDir: string;
+    /** The schedule's file, and the path a row for it is keyed on. */
+    let filePath: string;
 
     beforeEach(async () => {
-      legacyDir = path.join(projectPath, '.dork', 'tasks');
-      await mkdir(path.join(legacyDir, 'proposed'), { recursive: true });
-      await writeFile(
-        path.join(legacyDir, 'proposed', 'SKILL.md'),
-        legacyTaskFile('proposed', '0 4 * * *'),
-        'utf-8'
+      // A REAL schedule in a watched root, and the row below is keyed on the
+      // path discovery produces — both halves are load-bearing, and both were
+      // wrong when this suite was mechanically converted off the legacy roots
+      // (DOR-1486). The fixture used to write a legacy top-level-cron file into
+      // `.dork/tasks` and register that as a skills root, which under the new
+      // rules is not a schedule at all: discovery reads it as a plain skill and
+      // RETIRES the row, which is correct behavior and tests none of the
+      // provenance rules below.
+      //
+      // It passed anyway on macOS, and only there: the row was keyed on an
+      // unresolved `/var/...` temp path while the retirement looks up the
+      // resolved `/private/var/...` one, so the pause silently matched nothing
+      // and every assertion held for the wrong reason. On Linux, where the
+      // temp directory is not a symlink, the same pass paused the row and both
+      // tests failed. A fixture that only works on one platform is not the
+      // point — a fixture that exercises the thing it names is.
+      filePath = await realPath(
+        await writeSkill('proposed', scheduledSkill('proposed', { cron: '0 4 * * *' }))
       );
-      reconciler.addRoot(skillsRoot(legacyDir, 'project', projectPath, AGENT_ID));
     });
 
     it('leaves an agent’s parked proposal exactly as the agent left it', async () => {
-      const filePath = path.join(legacyDir, 'proposed', 'SKILL.md');
       const seeded = store.createTask({
         name: 'proposed',
         description: 'A task named proposed',
@@ -469,7 +480,6 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('never stamps origin file on a schedule the operator made', async () => {
-      const filePath = path.join(legacyDir, 'proposed', 'SKILL.md');
       const seeded = store.createTask({
         name: 'proposed',
         description: 'A task named proposed',
