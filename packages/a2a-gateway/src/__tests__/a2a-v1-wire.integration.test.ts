@@ -478,6 +478,54 @@ describe('ListTasks scoping', () => {
     ]);
   });
 
+  it('refuses to fetch another agent’s task from a per-agent endpoint', async () => {
+    // The endpoint's promise is one agent, and `GetTask` has to keep it too —
+    // a listing scoped to one agent while a lookup hands over any task by id
+    // is not a boundary, it is a speed bump.
+    const fleetList = await listTasksAt('/a2a');
+    const frontendTask = fleetList.tasks.find((t) => t.metadata?.agentId === 'agent-frontend')!;
+
+    const wrongEndpoint = await postTo('/a2a/agents/agent-backend', 'GetTask', {
+      id: frontendTask.id,
+    });
+    expect(wrongEndpoint.error).toBeDefined();
+    expect((wrongEndpoint.error as { message: string }).message).toMatch(/not found/i);
+
+    // Its own endpoint still answers, and so does the fleet endpoint — the
+    // scoping must not have simply broken lookups.
+    const ownEndpoint = await postTo('/a2a/agents/agent-frontend', 'GetTask', {
+      id: frontendTask.id,
+    });
+    expect(ownEndpoint.error).toBeUndefined();
+    expect((ownEndpoint.result as V1Task).id).toBe(frontendTask.id);
+
+    const fleetEndpoint = await postTo('/a2a', 'GetTask', { id: frontendTask.id });
+    expect(fleetEndpoint.error).toBeUndefined();
+  });
+
+  it('overrules a bound-agent header that disagrees with the URL', async () => {
+    // The other half of the header's safety: the fleet endpoint deletes it
+    // (below), and the per-agent endpoint OVERWRITES it. Without the
+    // overwrite, a caller could stand on one agent's endpoint and read
+    // another's tasks by naming it in the header.
+    const response = await fetch(`${scopedUrl}/a2a/agents/agent-backend`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-dorkos-a2a-agent': 'agent-frontend' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: ++rpcId,
+        method: 'ListTasks',
+        params: { tenant: '', contextId: '', pageToken: '' },
+      }),
+    });
+    const listed = (await response.json()).result as V1ListTasks;
+
+    expect(listed.tasks).toHaveLength(1);
+    expect(listed.tasks[0]!.metadata).toEqual(
+      expect.objectContaining({ agentId: 'agent-backend' })
+    );
+  });
+
   it('ignores a bound-agent header a client sends itself', async () => {
     // The binding travels on a header the handlers set, so the fleet endpoint
     // has to strip whatever the caller sent — otherwise a scoping mechanism

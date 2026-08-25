@@ -97,6 +97,11 @@ endpoint `/a2a` you get every agent's tasks. Filter either one by `contextId`, b
 by `statusTimestampAfter`; artifacts are left out unless you ask for them with
 `includeArtifacts`.
 
+Looking a task up follows the same boundary. On an agent's own endpoint, `GetTask` and
+`CancelTask` answer for that agent's tasks and report anything else as not found — so knowing
+another task's id gets you nothing there. Use the fleet endpoint `/a2a` to reach a task
+whichever agent ran it.
+
 <Callout type="warn">
   **Waiting for the answer works differently in each version.** In v1.0, a send **waits** for the
   task to finish unless you set `configuration.returnImmediately: true`. In v0.3 it's the other way

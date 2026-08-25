@@ -978,16 +978,42 @@ describe('DorkOSAgentExecutor', () => {
     });
 
     it('drops a reply that lands while a stop a runner DID take is in flight', async () => {
-      // The mirror image of the test above: same race, opposite outcome. A
-      // runner took the stop, so the task really is cancelled and the
-      // half-finished reply must not resurrect it as `completed`.
-      const execBus = makeEventBus();
-      await startTurn(makeRequestContext({ taskId: 'task-race-stopped' }), execBus);
+      // The mirror image of the test above: same race, opposite outcome — the
+      // stop IS taken, so the reply must not resurrect the cancelled task.
+      //
+      // The turn that reply belongs to is deliberately one started DURING the
+      // cancel window. A turn already in `cancelTask`'s snapshot is settled by
+      // the method itself, so `settled` would drop its reply no matter what the
+      // cancel decided — the drop would be pinned by the wrong mechanism, and
+      // the branch this test exists for would never run. A follow-up turn is
+      // not in that snapshot and is never settled, so the only thing that can
+      // discard its answer is the cancel outcome itself.
+      const followUpBus = makeEventBus();
+      await startTurn(makeRequestContext({ taskId: 'task-race-stopped' }), makeEventBus());
 
       relay.publish.mockImplementation(async (subject: string) => {
         if (!subject.startsWith(AGENT_CANCEL_SUBJECT_PREFIX)) {
           return { messageId: 'm', deliveredTo: 1 };
         }
+        // Mid-stop: a follow-up turn starts on the still-running task and
+        // finishes before the stop's outcome is known.
+        await startTurn(
+          makeRequestContext({
+            taskId: 'task-race-stopped',
+            task: {
+              id: 'task-race-stopped',
+              contextId: 'ctx-456',
+              status: {
+                state: TaskState.TASK_STATE_WORKING,
+                message: undefined,
+                timestamp: undefined,
+              },
+              metadata: { agentId: 'agent-01' },
+            },
+          }),
+          followUpBus
+        );
+        // `subscribeHandler` is now the follow-up turn's own subscription.
         subscribeHandler!(makeReplyEnvelope(textDelta('Too late.'), 'task-race-stopped'));
         subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-race-stopped'));
         return { messageId: 'm', deliveredTo: 1 };
@@ -997,7 +1023,7 @@ describe('DorkOSAgentExecutor', () => {
       await flushMicrotasks();
 
       expect(
-        statusEvents(execBus).filter((e) => e.status?.state === TaskState.TASK_STATE_COMPLETED)
+        statusEvents(followUpBus).filter((e) => e.status?.state === TaskState.TASK_STATE_COMPLETED)
       ).toHaveLength(0);
       expect(
         statusEvents(eventBus).filter((e) => e.status?.state === TaskState.TASK_STATE_CANCELED)

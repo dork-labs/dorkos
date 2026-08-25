@@ -85,13 +85,33 @@ export class SqliteTaskStore implements TaskStore {
   /**
    * Load a task by ID, returning `undefined` if not found.
    *
+   * A call to `/a2a/agents/:id` is bound to that agent, and a task belonging to
+   * a different one reads as not found — the same scope {@link SqliteTaskStore.list}
+   * applies, for the same reason. A boundary that holds for a listing and not
+   * for a lookup by id is not a boundary at all: the listing would only be
+   * hiding ids a caller could ask for directly. The SDK turns the miss into the
+   * protocol's own `TaskNotFound`, so `GetTask` and `CancelTask` both answer it
+   * correctly, and a follow-up message naming another agent's task is refused
+   * rather than appended to that task while running on this one.
+   *
+   * The store is otherwise single-tenant: one operator's own SQLite file, no
+   * owner to scope by, and the fleet endpoint carries no binding at all.
+   *
    * @param taskId - The task to load.
-   * @param _context - The call context. Unused: this store is single-tenant,
-   *   backed by one operator's own SQLite file, so there is no tenant or owner
-   *   to scope by — every caller of this gateway sees the same tasks.
+   * @param context - The call context, read for the bound agent (see
+   *   {@link BOUND_AGENT_STATE_KEY}).
    */
-  async load(taskId: string, _context: ServerCallContext): Promise<Task | undefined> {
-    const row = this.db.select().from(a2aTasks).where(eq(a2aTasks.id, taskId)).get();
+  async load(taskId: string, context: ServerCallContext): Promise<Task | undefined> {
+    const boundAgentId = readBoundAgentId(context);
+    const filters = [
+      eq(a2aTasks.id, taskId),
+      ...(boundAgentId !== undefined ? [eq(a2aTasks.agentId, boundAgentId)] : []),
+    ];
+    const row = this.db
+      .select()
+      .from(a2aTasks)
+      .where(and(...filters))
+      .get();
     return row ? rowToTask(row) : undefined;
   }
 
@@ -178,6 +198,11 @@ export class SqliteTaskStore implements TaskStore {
     // gateway has ever run, and reading all of them to hand back fifty makes
     // each listing cost the whole table — in rows read, in JSON parsed, and in
     // memory held.
+    //
+    // Two statements rather than one windowed query, and they agree because
+    // better-sqlite3 is synchronous: there is no `await` between them, so no
+    // other write can land in the gap and no transaction is needed to say so.
+    // Introducing an async driver here would need one.
     const totalSize =
       this.db.select({ value: count() }).from(a2aTasks).where(where).get()?.value ?? 0;
 
@@ -185,11 +210,14 @@ export class SqliteTaskStore implements TaskStore {
       .select()
       .from(a2aTasks)
       .where(where)
-      // Newest first, with the id breaking ties. The tiebreaker is not
-      // decoration: `updated_at` has millisecond resolution, so tasks touched
-      // in the same millisecond compare equal, and SQL is free to order equal
-      // rows differently on each query — which between one page and the next
-      // is how a row gets served twice or skipped entirely.
+      // Newest first, with the id giving equal rows a deterministic total
+      // order — NOT a second recency key: the id is a UUIDv4 and says nothing
+      // about when a task was made. Sorting by it is arbitrary on purpose, and
+      // arbitrary-but-fixed is the whole requirement. `updated_at` has
+      // millisecond resolution, so tasks touched in the same millisecond
+      // compare equal, and SQL may order equal rows differently on each query
+      // — which between one page and the next is how a row gets served twice
+      // or skipped entirely.
       .orderBy(desc(a2aTasks.updatedAt), desc(a2aTasks.id))
       .limit(pageSize)
       .offset(offset)

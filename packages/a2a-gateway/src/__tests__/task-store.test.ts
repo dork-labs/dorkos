@@ -335,13 +335,11 @@ describe('SqliteTaskStore', () => {
         pageToken = page.nextPageToken;
       } while (pageToken !== '');
 
-      expect(seen.sort()).toEqual([
-        'task-tie-0',
-        'task-tie-1',
-        'task-tie-2',
-        'task-tie-3',
-        'task-tie-4',
-      ]);
+      // The exact sequence, deliberately not a sorted set: a set is what the
+      // rows happen to be, and it stays true whether or not the query has a
+      // tiebreaker at all. The order is the thing the tiebreaker decides, and
+      // it is the only assertion that can tell the two apart.
+      expect(seen).toEqual(['task-tie-4', 'task-tie-3', 'task-tie-2', 'task-tie-1', 'task-tie-0']);
     });
 
     it('clamps an out-of-range page size into the range the spec allows', async () => {

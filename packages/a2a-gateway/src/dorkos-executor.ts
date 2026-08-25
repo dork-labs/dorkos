@@ -414,13 +414,25 @@ export class DorkOSAgentExecutor implements AgentExecutor {
         // whether it reached anyone — a stop nothing takes leaves the turn
         // running, and this may be its answer. Deferred events replay in
         // arrival order, because `then` callbacks queue in registration order.
-        void cancelOutcome.then((stopWasTaken) => {
-          if (stopWasTaken) {
-            settle();
-            return;
-          }
-          handleReplyEvent(envelope);
-        });
+        void cancelOutcome
+          .then((stopWasTaken) => {
+            if (stopWasTaken) {
+              settle();
+              return;
+            }
+            handleReplyEvent(envelope);
+          })
+          .catch((error: unknown) => {
+            // The replay runs on its own, outside the relay's dispatch — which
+            // is where a throw from this handler would normally be caught and
+            // logged. Unhandled here, it would be an unhandled rejection that
+            // takes the process down, so it is reported and the turn is left to
+            // its own deadline rather than settled on a guess.
+            this.logger.error(
+              `[a2a] task ${taskId}: a reply held during a cancel could not be replayed: ` +
+                `${error instanceof Error ? error.message : String(error)}`
+            );
+          });
         return;
       }
 
