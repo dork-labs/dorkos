@@ -7,7 +7,7 @@
  *
  * @module relay/adapters/slack-adapter
  */
-import { App, LogLevel } from '@slack/bolt';
+import { App, LogLevel, SocketModeReceiver } from '@slack/bolt';
 import { WebAPIPlatformError, WebClient } from '@slack/web-api';
 import type { RelayEnvelope, SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
@@ -34,6 +34,7 @@ import type { SlackPresenceState } from './presence.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
 import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
+import { createSlackProxyTransport } from './proxy.js';
 
 // Re-export for consumers that import from this module
 export { SLACK_MANIFEST };
@@ -199,7 +200,13 @@ export class SlackAdapter extends BaseRelayAdapter {
   async testConnection(): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
     try {
       // A bare WebClient, so validating credentials never starts a Bolt app.
-      const tempClient = new WebClient(this.config.botToken);
+      // Routed through the same corporate-proxy transport as `_start()` — see
+      // its comment for why this needs an explicit `fetch` at all.
+      const proxyTransport = createSlackProxyTransport();
+      const tempClient = new WebClient(
+        this.config.botToken,
+        proxyTransport ? { fetch: proxyTransport.fetch } : undefined
+      );
       const result = await SlackAdapter.withInitTimeout(tempClient.auth.test());
       return { ok: true, botUsername: result.user as string | undefined };
     } catch (err) {
@@ -209,12 +216,38 @@ export class SlackAdapter extends BaseRelayAdapter {
 
   /** Connect to Slack via Socket Mode and register event listeners. */
   protected async _start(relay: RelayPublisher): Promise<void> {
+    // @slack/web-api 8 and @slack/socket-mode moved from axios to native
+    // fetch, which does not read HTTP_PROXY/HTTPS_PROXY/NO_PROXY the way
+    // axios did — so an install behind a corporate proxy silently lost
+    // connectivity on that upgrade (DOR-1542). When one of those vars is set,
+    // route both the REST client and the Socket Mode transport through the
+    // same undici dispatcher; when none is set, pass nothing and behave
+    // exactly as before this existed.
+    const proxyTransport = createSlackProxyTransport();
     const app = new App({
       token: this.config.botToken,
       appToken: this.config.appToken,
       signingSecret: this.config.signingSecret,
       socketMode: true,
       logLevel: LogLevel.WARN,
+      ...(proxyTransport ? { clientOptions: { fetch: proxyTransport.fetch } } : {}),
+      // `App` only forwards `clientOptions`/a dispatcher to `app.client`
+      // (used for every REST call bolt makes on our behalf); its
+      // `socketMode: true` convenience path builds its own SocketModeReceiver
+      // internally and does NOT forward either one to it. Supplying the
+      // receiver ourselves is the only way to proxy the Socket Mode
+      // connection itself (the `apps.connections.open` handshake and the
+      // WSS socket) — Bolt explicitly allows a custom receiver alongside
+      // `socketMode: true` as long as it's a SocketModeReceiver.
+      ...(proxyTransport
+        ? {
+            receiver: new SocketModeReceiver({
+              appToken: this.config.appToken,
+              dispatcher: proxyTransport.dispatcher,
+              logLevel: LogLevel.WARN,
+            }),
+          }
+        : {}),
     });
 
     // Cache bot's own user ID for echo prevention

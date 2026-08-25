@@ -36,6 +36,11 @@ const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
 const mockSetStatus = vi.fn().mockResolvedValue({ ok: true });
 let capturedAssistantHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
 
+/** Options the adapter passed to the most recent `new App(...)` (DOR-1542: proxy wiring). */
+let capturedAppOptions: Record<string, unknown> | null = null;
+/** Options the adapter passed to the most recent `new SocketModeReceiver(...)`, or `null` if none was constructed. */
+let capturedSocketModeReceiverOptions: Record<string, unknown> | null = null;
+
 vi.mock('@slack/bolt', () => {
   class MockApp {
     client = {
@@ -48,6 +53,10 @@ vi.mock('@slack/bolt', () => {
       reactions: { add: mockReactionsAdd, remove: mockReactionsRemove },
       assistant: { threads: { setStatus: mockSetStatus } },
     };
+
+    constructor(options: Record<string, unknown>) {
+      capturedAppOptions = options;
+    }
 
     message(handler: (args: Record<string, unknown>) => Promise<void>) {
       capturedMessageHandler = handler;
@@ -73,12 +82,25 @@ vi.mock('@slack/bolt', () => {
       return mockAppStop();
     }
   }
-  return { App: MockApp, LogLevel: { WARN: 'warn' } };
+
+  class MockSocketModeReceiver {
+    constructor(options: Record<string, unknown>) {
+      capturedSocketModeReceiverOptions = options;
+    }
+  }
+
+  return { App: MockApp, SocketModeReceiver: MockSocketModeReceiver, LogLevel: { WARN: 'warn' } };
 });
+
+/** Options the adapter passed to the most recent `new WebClient(...)` (DOR-1542: proxy wiring). */
+let capturedWebClientOptions: Record<string, unknown> | undefined;
 
 vi.mock('@slack/web-api', () => {
   class MockWebClient {
     auth = { test: mockAuthTest };
+    constructor(_token: string, options?: Record<string, unknown>) {
+      capturedWebClientOptions = options;
+    }
   }
   // Mirrors the real @slack/web-api 8 class closely enough for `instanceof`:
   // a platform error carries the Slack error string in `data.error` while its
@@ -103,6 +125,9 @@ describe('SlackAdapter', () => {
     capturedAssistantHandler = null;
     capturedErrorHandler = null;
     capturedActionHandlers.clear();
+    capturedAppOptions = null;
+    capturedSocketModeReceiverOptions = null;
+    capturedWebClientOptions = undefined;
     adapter = new SlackAdapter(
       'slack-1',
       slackConfig({
@@ -206,6 +231,67 @@ describe('SlackAdapter', () => {
   it('testConnection() does not alter adapter state', async () => {
     await adapter.testConnection();
     expect(adapter.getStatus().state).toBe('disconnected');
+  });
+
+  // Corporate-proxy support (DOR-1542): @slack/web-api 8 and @slack/socket-mode moved from
+  // axios (which honored HTTP_PROXY/HTTPS_PROXY/NO_PROXY automatically) to native fetch,
+  // which does not. These assert the adapter restores that behavior explicitly, and only
+  // when a proxy env var is actually set — an install with none configured must see no
+  // change in what gets passed to the SDKs.
+  describe('proxy support (DOR-1542)', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('passes no fetch/receiver override to App or WebClient when no proxy env var is set', async () => {
+      await adapter.start(mockRelay);
+      expect(capturedAppOptions?.clientOptions).toBeUndefined();
+      expect(capturedAppOptions?.receiver).toBeUndefined();
+      expect(capturedSocketModeReceiverOptions).toBeNull();
+
+      await adapter.testConnection();
+      expect(capturedWebClientOptions).toBeUndefined();
+    });
+
+    it('wires a fetch and a SocketModeReceiver dispatcher when HTTPS_PROXY is set', async () => {
+      vi.stubEnv('HTTPS_PROXY', 'http://proxy.example.com:8080');
+
+      await adapter.start(mockRelay);
+
+      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
+      expect(typeof clientOptions?.fetch).toBe('function');
+      expect(capturedSocketModeReceiverOptions).not.toBeNull();
+      expect(capturedSocketModeReceiverOptions?.appToken).toBe('xapp-test-token');
+      expect(capturedSocketModeReceiverOptions?.dispatcher).toBeDefined();
+      // Both the WebClient fetch and the Socket Mode transport share the exact same
+      // dispatcher instance — one proxy configuration, one connection pool.
+      expect(clientOptions?.fetch).toBeDefined();
+
+      await adapter.testConnection();
+      const webClientOptions = capturedWebClientOptions as { fetch?: unknown } | undefined;
+      expect(typeof webClientOptions?.fetch).toBe('function');
+    });
+
+    it('wires the proxy transport when HTTP_PROXY is set', async () => {
+      vi.stubEnv('HTTP_PROXY', 'http://proxy.example.com:8080');
+      await adapter.start(mockRelay);
+      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
+      expect(typeof clientOptions?.fetch).toBe('function');
+    });
+
+    it('wires the proxy transport when NO_PROXY is set', async () => {
+      vi.stubEnv('NO_PROXY', 'internal.example.com');
+      await adapter.start(mockRelay);
+      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
+      expect(typeof clientOptions?.fetch).toBe('function');
+    });
+
+    it('wires the proxy transport when the lowercase https_proxy is set', async () => {
+      vi.stubEnv('https_proxy', 'http://proxy.example.com:8080');
+      await adapter.start(mockRelay);
+      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
+      expect(typeof clientOptions?.fetch).toBe('function');
+    });
   });
 
   // Timeout on auth.test()
