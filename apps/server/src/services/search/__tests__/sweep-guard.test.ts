@@ -19,6 +19,12 @@ import { SearchIndexer, type SweepResult } from '../indexer.js';
  * without reaching through the mechanism layer. `runSweep` is invoked through
  * the cast below rather than through `start()` + a timer, so the guard is
  * exercised on demand instead of at the mercy of fake-timer microtask timing.
+ *
+ * That cast is not the only thing standing between this guard and the real
+ * timer. `search-indexer.test.ts`'s "keeps sweeping on the interval, and stops
+ * when it is told to" drives `start()` over a fake clock and counts three passes
+ * in 2.5 seconds, so a guard that never released would fail there as
+ * `expected 1 to be 3` — verified by deleting the release (DOR-1578 review).
  */
 
 /** A promise this test controls the settlement of. */
@@ -51,6 +57,14 @@ function tick(indexer: SearchIndexer): void {
   (indexer as unknown as { runSweep: () => void }).runSweep();
 }
 
+/**
+ * The exact line a skip streak logs.
+ *
+ * Named rather than counted alone, so a debug log from anywhere else in the pass
+ * cannot satisfy an assertion about this one.
+ */
+const SKIP_LOG = '[Search] sweep tick skipped: the previous pass is still running';
+
 let db: Db;
 
 beforeEach(() => {
@@ -74,6 +88,7 @@ describe('SearchIndexer sweep in-flight guard', () => {
     tick(indexer); // fires while the first pass is still in flight
     expect(sweepSpy).toHaveBeenCalledTimes(1); // the underlying sweep ran exactly once
     expect(debugSpy).toHaveBeenCalledTimes(1);
+    expect(debugSpy).toHaveBeenCalledWith(SKIP_LOG);
 
     tick(indexer); // a stuck pass fires many ticks — only the first skip logs
     expect(sweepSpy).toHaveBeenCalledTimes(1);
@@ -99,6 +114,36 @@ describe('SearchIndexer sweep in-flight guard', () => {
 
     tick(indexer); // the guard was released, so this tick runs the sweep again
     expect(sweepSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs the next skip streak too, so a second overlap is not silent', async () => {
+    // The streak flag exists to collapse one stuck pass's many skips into one
+    // line — not to silence every overlap after the first for the life of the
+    // process. Without the reset in `runSweep`, this is exactly what happens,
+    // and nothing else in the repo notices: the whole search suite stayed green
+    // with the reset deleted, which is why this test exists (DOR-1578 review).
+    const indexer = new SearchIndexer(db, [], 1_000);
+    const first = deferred<SweepResult>();
+    const second = deferred<SweepResult>();
+    vi.spyOn(indexer, 'sweep')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    tick(indexer); // pass one starts
+    tick(indexer); // skipped — the first streak logs
+    expect(debugSpy).toHaveBeenCalledTimes(1);
+
+    first.resolve(emptyResult());
+    await flushMicrotasks();
+
+    tick(indexer); // pass two starts, and the streak flag resets with it
+    tick(indexer); // skipped — this is a NEW streak, so it must log again
+    expect(debugSpy).toHaveBeenCalledTimes(2);
+    expect(debugSpy).toHaveBeenNthCalledWith(2, SKIP_LOG);
+
+    second.resolve(emptyResult());
+    await flushMicrotasks();
   });
 
   it('releases the guard when a sweep pass throws, so the next tick still runs', async () => {
