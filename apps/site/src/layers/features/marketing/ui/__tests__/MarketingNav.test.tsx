@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { MarketingNav } from '../MarketingNav';
-import { NAV_LINKS, HOME_NAV_LINKS } from '../../lib/nav-links';
+import { NAV_LINKS } from '../../lib/nav-links';
 
 const mockPathname = vi.hoisted(() => ({ value: '/' }));
 
@@ -50,14 +50,6 @@ describe('MarketingNav destinations', () => {
     const compare = screen.getByRole('link', { name: 'compare' });
     expect(compare.getAttribute('href')).toBe('/compare');
     expect(screen.getAllByRole('link')).toHaveLength(NAV_LINKS.length);
-  });
-
-  it('renders the homepage variant with Compare and the About anchor', () => {
-    render(<MarketingNav links={HOME_NAV_LINKS} />);
-
-    expect(screen.getByRole('link', { name: 'compare' }).getAttribute('href')).toBe('/compare');
-    expect(screen.getByRole('link', { name: 'about' }).getAttribute('href')).toBe('#about');
-    expect(screen.queryByRole('link', { name: 'home' })).toBeNull();
   });
 });
 

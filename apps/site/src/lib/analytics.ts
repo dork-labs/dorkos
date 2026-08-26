@@ -110,15 +110,18 @@ export function trackHeroInstallCopy(method: InstallMethod): void {
 }
 
 /**
- * Where a desktop-download link was clicked. The `windows_*` placements
- * mirror their macOS counterparts (`hero`, `install_page`);
- * `windows_other_ways` is the Windows link inside the "Other ways to
- * install" disclosure shown to non-Windows visitors. The former `nav` /
- * `windows_nav` placements retired when the header CTA became a "Get
- * started" link to `/install` (see {@link trackGetStartedNav}).
+ * Where a desktop-download link was clicked. `hero` and `close` are the home
+ * page's two download buttons, top and bottom; `install_page` and
+ * `terminal_hero_link` are `/install`'s. The `windows_*` placements mirror
+ * their macOS counterparts, and `windows_other_ways` is the Windows link
+ * inside the "Other ways to install" disclosure shown to non-Windows
+ * visitors. The former `nav` / `windows_nav` placements retired when the
+ * header CTA became a "Get started" link to `/install` (see
+ * {@link trackGetStartedNav}).
  */
 export type DownloadPlacement =
   | 'hero'
+  | 'close'
   | 'terminal_hero_link'
   | 'install_page'
   | 'windows_hero'
@@ -181,11 +184,6 @@ export function trackClientError(
     error_message: error.message,
     error_digest: error.digest,
   });
-}
-
-/** Fires when a visitor reveals the plain-text contact email (IdentityClose). */
-export function trackContactEmailRevealed(): void {
-  capture('contact_email_revealed');
 }
 
 /** Whether PostHog currently has capture opted out. Defaults to `true` (opted out) when disabled. */

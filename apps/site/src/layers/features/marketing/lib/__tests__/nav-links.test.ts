@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_LINKS, HOME_NAV_LINKS, isNavLinkActive } from '../nav-links';
+import { NAV_LINKS, isNavLinkActive } from '../nav-links';
 
 describe('NAV_LINKS', () => {
   it('offers Compare, directly after Features', () => {
@@ -14,35 +14,9 @@ describe('NAV_LINKS', () => {
       expect(link.href.startsWith('/')).toBe(true);
     }
   });
-});
-
-describe('HOME_NAV_LINKS', () => {
-  // The homepage used to keep its own copy of this list, which is how Compare
-  // shipped everywhere except dorkos.ai itself. These pin the derivation.
-  it('offers Compare on the homepage too', () => {
-    expect(HOME_NAV_LINKS.map((link) => link.label)).toContain('compare');
-    expect(HOME_NAV_LINKS.find((link) => link.label === 'compare')?.href).toBe('/compare');
-  });
-
-  it('carries every shared destination, in the same order', () => {
-    expect(HOME_NAV_LINKS).toHaveLength(NAV_LINKS.length);
-    expect(HOME_NAV_LINKS.slice(1)).toEqual(NAV_LINKS.slice(1));
-  });
-
-  it('swaps only the Home entry, because home is where you already are', () => {
-    expect(HOME_NAV_LINKS.map((link) => link.href)).not.toContain('/');
-    expect(HOME_NAV_LINKS[0]).toEqual({
-      label: 'about',
-      href: '#about',
-      yieldsOnMobile: true,
-    });
-  });
 
   it('keeps the pill to five words on a phone', () => {
-    const onPhone = (links: typeof NAV_LINKS) => links.filter((link) => !link.yieldsOnMobile);
-
-    expect(onPhone(NAV_LINKS)).toHaveLength(5);
-    expect(onPhone(HOME_NAV_LINKS)).toHaveLength(5);
+    expect(NAV_LINKS.filter((link) => !link.yieldsOnMobile)).toHaveLength(5);
   });
 });
 

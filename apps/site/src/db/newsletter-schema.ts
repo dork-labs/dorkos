@@ -31,8 +31,23 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
  */
 export type NewsletterStatus = 'pending' | 'confirmed' | 'unsubscribed';
 
-/** Where the subscription was captured (analytics + copy tuning only). */
-export type NewsletterSource = 'footer' | 'newsletter-page' | 'blog' | 'unknown';
+/**
+ * Where the subscription was captured (analytics + copy tuning only).
+ *
+ * The column is plain `text` with no database-level check constraint, so a new
+ * value here needs no migration — only this union and the matching zod enum in
+ * `app/api/newsletter/subscribe/route.ts`, which is what actually rejects an
+ * unknown source.
+ *
+ * `tutorials-modal` is the panel behind a home-page clip tile that has no
+ * footage yet.
+ */
+export type NewsletterSource =
+  | 'footer'
+  | 'newsletter-page'
+  | 'blog'
+  | 'tutorials-modal'
+  | 'unknown';
 
 export const newsletterSubscriber = pgTable(
   'newsletter_subscriber',
