@@ -5,6 +5,6 @@ covers:
   - 'feat(client): a conversation hit opens on the message it matched (DOR-1579)'
 ---
 
-### Improved
+### Added
 
-- Search results from your Claude Code and OpenCode sessions now jump to the exact message, the way channel results already do. The message is centred on screen, with what was said around it still visible. If DorkOS can't place a result — an older link, or a conversation that has since been rewritten — it opens the conversation as before (DOR-1579)
+- Search results from your Claude Code and OpenCode chats now open on the exact message you searched for, the way channel results already do. The message sits in the middle of the screen, so you can read what was said around it. When DorkOS can't find the message, from an old link or a chat that has changed since, it opens the chat as before (DOR-1579)

@@ -148,6 +148,10 @@ export function projectClaudeCodeLines(
 
     const uuid = typeof line.uuid === 'string' && line.uuid !== '' ? line.uuid : null;
 
+    // Transparent in both senses — not indexed, and not a candidate to close a
+    // run. See `isResumeBootstrapReply`.
+    if (isResumeBootstrapReply(line)) continue;
+
     // An assistant record continues the open run (or opens one) and its uuid
     // becomes the newest candidate to close it. A tool RESULT is transparent:
     // it rides the `user` role but the parser emits nothing for it, so it does
@@ -206,14 +210,24 @@ export function projectClaudeCodeLines(
  * indexed messages, 2026-08-26: **14% of assistant messages matched a rendered
  * id that way, and 92% match with the turn folded here.**
  *
- * **Guessing the run wrong can only cost a landing, never misplace one**, which
+ * **Guessing the run wrong costs a landing rather than misplacing one**, which
  * is what makes this safe to do at all. Every rendered id is the uuid of the
- * record that CLOSED some run; the uuid of any other record is an id no rendered
- * message has. So a run this function ends too early, or extends across records
- * the parser folded differently, yields an id that simply matches nothing and
- * the hit opens its conversation exactly as it does today. It can never name a
- * DIFFERENT message, because a non-assistant record ends the run here and a
- * non-assistant record is also what ends it there.
+ * record that closed some run; the uuid of any other record is an id no rendered
+ * message has. So a run this function ends too EARLY yields an id that matches
+ * nothing, and the hit opens its conversation exactly as it does today.
+ *
+ * **That holds on one precondition, and it is worth stating because it is the
+ * only way this can misplace a hit: every record indexed here must be one the
+ * parser also renders.** A run ending too LATE spans a record the parser
+ * emitted a message for, and the id it hands back is then a real rendered
+ * message — the right one whenever the indexed text is inside it, which is what
+ * makes the precondition load-bearing rather than the boundary itself.
+ * `endsAssistantTurn` mirrors the parser's emit/skip decision branch by branch
+ * for exactly that reason, and `isResumeBootstrapReply` closes the one record
+ * that was indexed here and drawn nowhere there. Measured over 186 real
+ * transcripts and 9,470 indexed messages (2026-08-26): 0 messages carrying an id
+ * that names a different rendered message, against 1 before those two guards,
+ * and 91% carrying one that names their own; the rest match nothing.
  *
  * The same follows for a run split across two sweeps: an incremental read sees
  * the batch's last record as the closer, which is either right or unmatched.
@@ -234,6 +248,36 @@ function closeAssistantRun(
     for (const index of openRun) messages[index]!.messageId = runId;
   }
   openRun.length = 0;
+}
+
+/**
+ * The CLI's resume-bootstrap reply — the zero-token synthetic assistant record
+ * it pairs with the `isMeta` "Continue from where you left off." prompt DorkOS
+ * writes on every `query({resume})` turn.
+ *
+ * `parseTranscript` skips it outright, so the session view never draws it, and
+ * it is skipped here for the same reason and in both senses: nobody said it, so
+ * it is not indexed; and it cannot close an assistant run, so its uuid never
+ * becomes the id another message lands on.
+ *
+ * **Indexing it was the one measured way a hit could reach a DIFFERENT rendered
+ * message.** Its text is in the index and nowhere on screen, so the run's
+ * closing uuid names a real turn that does not contain it — see
+ * `closeAssistantRun` for why every OTHER shape degrades to a miss instead. Over
+ * the 186 transcripts measured (2026-08-26) the corpus held 29 of these records
+ * and exactly one produced such a landing.
+ *
+ * Other `<synthetic>` records are ordinary assistant records here, because they
+ * are ordinary ones there: an API error notice carries real failure information
+ * and the parser keeps it visible.
+ *
+ * @param line - The record to classify.
+ */
+function isResumeBootstrapReply(line: TranscriptLine): boolean {
+  if (line.type !== 'assistant' || line.message?.model !== '<synthetic>') return false;
+  const content = line.message.content;
+  if (!Array.isArray(content)) return false;
+  return extractTextContent(content).trim() === 'No response requested.';
 }
 
 /**
@@ -285,10 +329,21 @@ const SKIPPED_USER_PREFIXES = [
 function endsAssistantTurn(line: TranscriptLine): boolean {
   if (line.type === 'system') return line.subtype === 'local_command';
   if (line.type !== 'user') return false;
-  const content = line.message?.content;
-  if (Array.isArray(content)) return !content.some((block) => block.type === 'tool_result');
-  if (typeof content !== 'string') return true;
+  // BEFORE the content shape, because `parseTranscript` checks it before it
+  // looks at the content at all — and its `isMeta` branch can flush a pending
+  // slash command, which emits a bubble and splits the turn. Reading the shape
+  // first left an `isMeta` record carrying a `tool_result` continuing the run
+  // here while it ended one there.
   if (line.isMeta === true) return true;
+  const content = line.message?.content;
+  // `tool_use_id` and not merely the block type, mirroring the parser's own
+  // `hasToolResult` exactly: a `tool_result` block missing one does not suppress
+  // the record's sibling text blocks there, so the record IS emitted and the
+  // turn splits.
+  if (Array.isArray(content)) {
+    return !content.some((block) => block.type === 'tool_result' && Boolean(block.tool_use_id));
+  }
+  if (typeof content !== 'string') return true;
   return !SKIPPED_USER_PREFIXES.some((prefix) => content.startsWith(prefix));
 }
 

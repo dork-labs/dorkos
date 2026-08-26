@@ -17,10 +17,18 @@ ALTER TABLE `messages` ADD `message_id` text;--> statement-breakpoint
 -- (seconds on a normal corpus) and search is short of older results until that
 -- pass finishes.
 --
--- `search_sources` goes with it, and it MUST: it is the frontier — the record of
--- what has already been read. Left behind, every container would claim to be
--- caught up while holding no rows, and the sweep would write nothing at all.
--- The two are one decision, not two statements that happen to be adjacent.
+-- `search_sources` goes with it. It is the frontier — the record of what has
+-- already been read — so clearing it is what makes the next sweep start from
+-- byte zero rather than from where it left off.
+--
+-- It is belt-and-braces rather than the load-bearing half, which is worth
+-- stating so nobody later "fixes" the emptied index by restoring the frontier
+-- alone. Emptying `messages` is on its own enough: both frontiers already treat
+-- a container whose rows have vanished as one to re-read, precisely because
+-- `DELETE FROM messages` is a supported recovery
+-- (`services/search/jsonl-frontier.ts` `lost`/`rebuilt`, and the
+-- `indexedTo >= watermark` skip in `services/search/row-frontier.ts`). The two
+-- statements are still one decision, and neither is worth leaving to the other.
 --
 -- DELETE, never DROP or TRUNCATE. `messages_fts` is an external-content FTS5
 -- index with no copy of the text, and `messages_fts_ad` is what retracts a row's

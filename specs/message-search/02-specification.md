@@ -1053,11 +1053,27 @@ matched a rendered one** — 80% of what a person typed, 14% of what an agent sa
 
 So `projections/claude-code.ts` folds the turn as it goes and gives every message in it the id of the
 record that closes it, which took the same corpus to **90% overall and 92% for assistant messages**.
-The fold reads against `parseTranscript` branch by branch, and it is safe to approximate because
-**getting it wrong can only cost a landing, never move one**: every rendered id is the uuid of a
-record that closed some turn, so a turn folded too short or too long yields an id that matches
-nothing. The remaining 10% is mostly CLI-internal (`isMeta`) records, which are treated as turn
-enders whether or not the parser emits for them — the conservative direction on purpose.
+The fold reads against `parseTranscript` branch by branch, and **getting it wrong costs a landing
+rather than moving one** — but only in one direction, and the review of this change is what pinned
+down which. A turn folded too SHORT yields an id that matches nothing, because every rendered id is
+the uuid of a record that closed some turn. A turn folded too LONG spans a record the parser drew a
+message for, and the id it hands back is then a real rendered message. So the property rests on a
+precondition worth naming: **every record the index carries must be one the session view also
+draws.** Three ways to break it were found and closed:
+
+- `endsAssistantTurn` read the content shape before `isMeta`, while `parseTranscript` reads `isMeta`
+  first and can flush a slash-command bubble there. It now checks `isMeta` first.
+- It treated any `tool_result` block as transparent, while the parser keys that off `tool_use_id`
+  and emits the record's sibling text when it is missing. It now requires the same field.
+- The projection indexed the CLI's resume-bootstrap reply (`<synthetic>` / "No response
+  requested."), which the parser skips outright, so its text was in the index and nowhere on screen.
+  `isResumeBootstrapReply` now makes it transparent in both senses.
+
+Running both functions over 186 real transcripts and 9,470 indexed messages (2026-08-26) then found
+**0 messages carrying an id that names a different rendered message**, against 1 before those fixes.
+`services/search/__tests__/claude-code-landing-safety.test.ts` pins each one. The remaining misses
+are mostly CLI-internal (`isMeta`) records, treated as turn enders whether or not the parser emits
+for them — the conservative direction on purpose.
 
 **Not done, deliberately.** A conversation says nothing when the id names no row, where a room says
 one quiet line: a room's limit is real and nameable (it holds one trailing page), while a
