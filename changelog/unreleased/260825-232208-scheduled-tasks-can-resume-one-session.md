@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,client,shared): scheduled tasks can resume one session across runs (sticky) (DOR-1571)'
+  - 'fix(server,relay): sticky resumes the REAL SDK session, captured from the prior run (DOR-1571 review)'
 ---
 
 ### Added
