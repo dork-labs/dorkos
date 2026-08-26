@@ -57,6 +57,7 @@ describe('projecting Codex rollouts', () => {
         {
           originKey: 'session-1',
           ordinal: 0,
+          messageId: null,
           role: 'user',
           createdAt: '2026-08-08T10:00:00.000Z',
           body: 'what did we decide about dogs',
@@ -64,6 +65,7 @@ describe('projecting Codex rollouts', () => {
         {
           originKey: 'session-1',
           ordinal: 1,
+          messageId: null,
           role: 'assistant',
           createdAt: '2026-08-08T10:00:01.000Z',
           body: 'We decided to walk them.',
@@ -274,6 +276,30 @@ describe('projecting Codex rollouts', () => {
     ]);
 
     expect(projection.messages[0]?.createdAt).toBeNull();
+  });
+
+  it('carries the response_item’s own id, and null when the record has none', () => {
+    // Carried because it is the id Codex itself uses for the item — the SDK's
+    // live event stream keys per-item state off the same field. Nothing lands on
+    // it yet: the session view rebuilds a Codex conversation from DorkOS's own
+    // event log, so `message-search-target.ts` keeps `codex` off its allowlist.
+    // Red if the field is dropped, or if a missing one is filled in from
+    // anywhere.
+    const projection = project([
+      line({
+        timestamp: '2026-08-08T10:00:00.000Z',
+        type: 'response_item',
+        payload: {
+          id: 'item_42',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'identified' }],
+        },
+      }),
+      item('assistant', 'unidentified'),
+    ]);
+
+    expect(projection.messages.map((message) => message.messageId)).toEqual(['item_42', null]);
   });
 
   it('returns nothing at all for a rollout that holds only its header', () => {

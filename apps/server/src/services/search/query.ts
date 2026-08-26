@@ -86,6 +86,15 @@ export interface MessageHit {
   originKey: string;
   /** Position within that container. `room_entries.seq` for a room. */
   ordinal: number;
+  /**
+   * The message's own id in the store that owns it, or `null` when it has none
+   * — a room, or a transcript record that carried no id (DOR-1579).
+   *
+   * A second coordinate, and a finer one: `ordinal` addresses the container's
+   * position, this addresses the message. `null` is the honest answer and never
+   * an error — it means a hit opens its conversation rather than its message.
+   */
+  messageId: string | null;
   /** Who said it. */
   role: 'user' | 'assistant';
   /** ISO-8601, or `null` for a source that records none. */
@@ -199,12 +208,14 @@ export function searchMessages(db: Db, query: MessageQuery): MessageHit[] {
     source_id: string;
     origin_key: string;
     ordinal: number;
+    message_id: string | null;
     role: string;
     created_at: string | null;
     excerpt: string | null;
   }>(sql`
     SELECT m.source_id AS source_id, m.origin_key AS origin_key, m.ordinal AS ordinal,
-           m.role AS role, m.created_at AS created_at, ${excerpt} AS excerpt
+           m.message_id AS message_id, m.role AS role, m.created_at AS created_at,
+           ${excerpt} AS excerpt
     FROM messages_fts f
     -- CROSS JOIN is a join-order DIRECTIVE, not a different join. See the
     -- module doc: without it a narrow scope runs 1,700x slower.
@@ -218,6 +229,7 @@ export function searchMessages(db: Db, query: MessageQuery): MessageHit[] {
     sourceId: row.source_id,
     originKey: row.origin_key,
     ordinal: row.ordinal,
+    messageId: row.message_id,
     role: row.role === 'assistant' ? 'assistant' : 'user',
     createdAt: row.created_at,
     excerpt: row.excerpt,

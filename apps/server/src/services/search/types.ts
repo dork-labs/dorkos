@@ -31,6 +31,21 @@ export interface ProjectedMessage {
   /** Monotonic position within the container. `room_entries.seq` for a room. */
   ordinal: number;
 
+  /**
+   * The message's own id in the store that owns it, or `null` when that store
+   * gives it none (DOR-1579).
+   *
+   * **Read, never invented.** A projection copies whatever id the record on
+   * disk carries — a JSONL `uuid`, a Codex `response_item`'s `item.id`, an
+   * OpenCode `message.id` — and answers `null` for a record with none. Minting
+   * one here would produce a different id on every read of the same message, so
+   * it would address nothing while looking exactly like an id that works.
+   *
+   * It is for LANDING and nothing else: the row's identity stays
+   * `(source, container, ordinal)`.
+   */
+  messageId: string | null;
+
   /** Who said it. */
   role: 'user' | 'assistant';
 

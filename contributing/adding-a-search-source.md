@@ -69,11 +69,12 @@ project(lines, { originKey, firstOrdinal }): { messages: ProjectedMessage[]; ski
 
 **A projection is a pure function. No filesystem, no database, no clock, no SDK import.** That purity is not aesthetic — it is what makes projections table-testable, and it is what keeps "adding a source" honest at one function. If your projection needs to open something, that work belongs in `discover()` (M1) or in the reader (M2/M3).
 
-Three details that are easy to get wrong:
+Four details that are easy to get wrong:
 
 - **Ordinals are handed in, not started from zero.** A container is read incrementally, so a batch continues the container's numbering. `firstOrdinal` is where it resumes.
 - **`skipped` is not an error count; it is the drift signal.** A projection that _throws_ is loud: the sweep records it, writes `search_sources.last_error`, and stops that container. A projection handed a record whose shape drifted underneath it does not throw — it returns fewer rows, and fewer rows is exactly what a source with nothing to say returns. `skipped` is the only thing that tells the two apart. Count a record you **recognise as yours and cannot read**; drop everything that was never a message silently.
 - **A missing timestamp is `null`, never invented.** A fabricated `createdAt` sorts results into an order nobody can explain.
+- **`messageId` is READ, never minted.** Carry whatever id the store that owns the record gives it, and `null` when it gives none. It is what takes a hit to the message rather than to the top of its container, so an id invented at index time is worse than no id at all: it differs on the next read and addresses nothing while looking exactly like one that works. Carrying an id is also not the same as landing on one — see below.
 
 ## Rules That Are Not Style
 
@@ -87,6 +88,12 @@ The index never parses it, never splits it, never makes it a foreign key. This i
 | `claude-code` | the session id (the filename stem) | the message's index within the file                  |
 | `codex`       | the session id from `session_meta` | the `response_item`'s index within the file          |
 | `opencode`    | the session id                     | the message's position in `(time_created, id)` order |
+
+### Landing on a message is a per-runtime FACT, not a shape
+
+`message_id` only does something when the id your projection stores is the SAME id the runtime's session view renders that message under. That is a claim about two code paths, so the client keeps an allowlist of the sources it has been PROVED for (`features/command-palette/model/message-search-target.ts`) and a source not on it opens its conversation instead — today's behaviour, and the right thing to degrade to.
+
+Prove it before adding yourself to that list: follow the id from your projection to `ChatMessage.id` in the client, and cite the files. `codex` is the cautionary case — it carries a perfectly good `response_item` id and stays off the list, because a Codex conversation is redrawn from DorkOS's own event log under ids of an entirely different shape.
 
 `origin_key` is unique **within** a source and carries no guarantee across sources — which is why every visibility clause and every path lookup keeps `source_id` beside it.
 
@@ -121,7 +128,7 @@ Writes that record a failure are themselves best-effort (`tryWrite`): five write
 
 ### No column ships without a consumer
 
-`messages` is rebuildable in seconds, so there is no reason to carry a column speculatively. Every column present today is consumed: `role` is rendered and filtered, `created_at` orders and displays, `source_id` labels a result and scopes the frontier, `origin_key` + `ordinal` are the navigation coordinates. **Widening later is one projection change and a rebuild — measured at 2.69 s over the v1 corpus — not a migration.** If you want a column, ship the consumer in the same change or do not ship the column.
+`messages` is rebuildable in seconds, so there is no reason to carry a column speculatively. Every column present today is consumed: `role` is rendered and filtered, `created_at` orders and displays, `source_id` labels a result and scopes the frontier, `origin_key` + `ordinal` are the navigation coordinates, and `message_id` is what opens a hit ON its message. **Widening later is one projection change and a rebuild — measured at 2.69 s over the v1 corpus — not a migration.** If you want a column, ship the consumer in the same change or do not ship the column.
 
 ### Never traverse generically
 
@@ -226,6 +233,10 @@ export function projectJournalLines(
       // The projection COMPOSES the container id; the index never parses it.
       originKey: context.originKey,
       ordinal: ordinal++,
+      // This toy source's records carry no id of their own, so the guide's
+      // example is also the shape a source without one takes: `null`, never an
+      // id invented here.
+      messageId: null,
       role: record.who,
       // Whatever the record stamped, or null. A fabricated timestamp would sort
       // results into an order nobody can explain.

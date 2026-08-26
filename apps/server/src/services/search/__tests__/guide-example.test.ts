@@ -107,6 +107,10 @@ export function projectJournalLines(
       // The projection COMPOSES the container id; the index never parses it.
       originKey: context.originKey,
       ordinal: ordinal++,
+      // This toy source's records carry no id of their own, so the guide's
+      // example is also the shape a source without one takes: `null`, never an
+      // id invented here.
+      messageId: null,
       role: record.who,
       // Whatever the record stamped, or null. A fabricated timestamp would sort
       // results into an order nobody can explain.
@@ -344,6 +348,7 @@ describe('the guide is pinned to code that actually runs', () => {
         {
           originKey: 'conv-pure',
           ordinal: 7,
+          messageId: null,
           role: 'user',
           createdAt: '2026-08-25T10:00:00.000Z',
           body: 'a question',

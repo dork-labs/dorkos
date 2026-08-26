@@ -29,6 +29,10 @@ describe('projectRoomEntries', () => {
         {
           originKey: 'room-9',
           ordinal: 42,
+          // A room lands by `seq` and needs no id of its own (DOR-1579). Red if
+          // one is ever invented here — a second address for the same row, kept
+          // in step by nothing.
+          messageId: null,
           role: 'user',
           createdAt: '2026-07-28T10:00:00.000Z',
           body: 'we talked about a dog',
