@@ -85,6 +85,18 @@ export interface SweepResult {
 export class SearchIndexer {
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  /** Set for the duration of one {@link SearchIndexer.sweep} pass; see {@link runSweep}. */
+  private sweepInFlight = false;
+
+  /**
+   * Whether the current skip streak has already logged.
+   *
+   * A pass stuck well past the interval fires many ticks while it runs; without
+   * this, each one would log, and the log line meant to say "overlap was
+   * avoided" would instead read as "the sweep is on fire".
+   */
+  private skippedTickLogged = false;
+
   /**
    * Build an indexer over a database and a set of sources.
    *
@@ -215,18 +227,34 @@ export class SearchIndexer {
   /**
    * Run a sweep in the background, logging whatever it reports.
    *
-   * **Nothing stops two sweeps overlapping**, and since a sweep yields between
-   * containers that is now easier to reach: a pass slower than the interval is
-   * still running when the next tick fires. Left unguarded deliberately, because
-   * overlap is currently harmless rather than merely unlikely — every write is
-   * its own transaction, the message insert is an idempotent upsert keyed
+   * **An in-flight guard is what keeps two sweeps from overlapping.** A tick
+   * that fires while the previous pass is still running is skipped rather than
+   * started — the guard is set before {@link SearchIndexer.sweep} is called and
+   * cleared in a `finally`, so a pass that throws still releases it for the
+   * next tick (DOR-1578).
+   *
+   * Overlap was left unguarded once, safe by argument rather than by
+   * construction: since a sweep yields between containers, a pass slower than
+   * the interval could still be running when the next tick fired, and nothing
+   * stopped the two running concurrently. That argument is kept here as
+   * history, not as the reason overlap can't happen today — every write is its
+   * own transaction, the message insert is an idempotent upsert keyed
    * `(source, container, ordinal)`, the frontier write is an upsert of the same
    * shape, and each pass computes its prune set from the container list IT
-   * discovered, so neither can delete on the other's view. The first write that
-   * is not idempotent breaks that argument; a guard is filed as DOR-1578 for
-   * when one arrives.
+   * discovered, so neither could delete on the other's view. The first write
+   * that is not idempotent would have broken that argument; the guard makes it
+   * moot instead.
    */
   private runSweep(): void {
+    if (this.sweepInFlight) {
+      if (!this.skippedTickLogged) {
+        this.skippedTickLogged = true;
+        logger.debug('[Search] sweep tick skipped: the previous pass is still running');
+      }
+      return;
+    }
+    this.sweepInFlight = true;
+    this.skippedTickLogged = false;
     this.sweep()
       .then((result) => {
         for (const failure of result.failures) {
@@ -255,6 +283,9 @@ export class SearchIndexer {
           });
         }
       })
-      .catch((err: unknown) => logger.error('[Search] sweep failed', err));
+      .catch((err: unknown) => logger.error('[Search] sweep failed', err))
+      .finally(() => {
+        this.sweepInFlight = false;
+      });
   }
 }
