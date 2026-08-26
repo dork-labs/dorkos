@@ -996,15 +996,22 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
   }
 
   const history = [post(1, 'first'), post(2, 'the port question'), post(3, 'last')];
+  /** A reply hanging off `entry-2`, which the room's own flow never draws. */
+  const reply = {
+    ...post(4, 'answering the port question'),
+    parentEntryId: 'entry-2',
+    threadRootEntryId: 'entry-2',
+  } as unknown as RoomEntry;
 
-  function openRoomWithHistory() {
-    render(
+  /** The tree the page renders in, kept so a test can re-render it in place. */
+  function pageTree(entries: RoomEntry[] = history) {
+    return (
       <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
         <EventStreamProvider>
           <TransportProvider
             transport={createMockTransport({
               getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
-              listRoomEntries: vi.fn(() => Promise.resolve(history)),
+              listRoomEntries: vi.fn(() => Promise.resolve(entries)),
               subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
                 staysOpen(signal)
               ),
@@ -1017,6 +1024,14 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
         </EventStreamProvider>
       </QueryClientProvider>
     );
+  }
+
+  /** Answer a second search without remounting — the defect's exact shape. */
+  let rerenderPage: () => void = () => {};
+
+  function openRoomWithHistory(entries: RoomEntry[] = history) {
+    const { rerender } = render(pageTree(entries));
+    rerenderPage = () => rerender(pageTree(entries));
   }
 
   /** What the timeline decided, which only its own wrapper publishes. */
@@ -1047,14 +1062,17 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
   });
 
   it('opens at the newest message when the history no longer reaches that far', async () => {
-    // A hit older than the room's trailing page. The link must not swallow the
+    // A hit outside the room's trailing page. The link must not swallow the
     // landing, and the reader is told rather than left to wonder why the room
     // opened at the bottom.
     openEntrySeq = 4200;
 
     expect(await landedOn()).toBe('end');
     await waitFor(() =>
-      expect(toastInfo).toHaveBeenCalledWith('That message is further back', expect.anything())
+      expect(toastInfo).toHaveBeenCalledWith(
+        "DorkOS can't find that message in what's open here",
+        expect.anything()
+      )
     );
   });
 
@@ -1064,5 +1082,59 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
     await landedOn();
 
     expect(toastInfo).not.toHaveBeenCalled();
+  });
+
+  it('moves again when a second search names another message in the SAME room', async () => {
+    // **The defect that made this feature a no-op for its commonest case.**
+    // Clicking a hit in the room you are already reading is an in-place
+    // search-param navigation: the room does not change, so the timeline's arm
+    // guard never lifted. The URL said one thing and the room sat where it was.
+    //
+    // Asserted at the page, because only the page can do the thing that broke —
+    // change `?entry=` without changing the room — and asserted on the MARK,
+    // because `data-landed-on` reads `requested` both times and cannot tell two
+    // landings apart.
+    openEntrySeq = 1;
+    openRoomWithHistory();
+    await screen.findByText('the port question');
+    await waitFor(() =>
+      expect(document.getElementById('room-entry-entry-1')).toHaveAttribute('data-landed', 'true')
+    );
+
+    openEntrySeq = 3;
+    rerenderPage();
+
+    await waitFor(() =>
+      expect(document.getElementById('room-entry-entry-3')).toHaveAttribute('data-landed', 'true')
+    );
+    // And the first one has stopped claiming to be the answer.
+    expect(document.getElementById('room-entry-entry-1')).not.toHaveAttribute('data-landed');
+  });
+
+  it('opens the thread a reply lives in, so the message is actually on screen', async () => {
+    // A reply is not drawn in the room's flow — the flow draws the "↳ N
+    // replies" row of its thread — so landing the room and stopping there puts
+    // a reader on a collapsed count with the message they searched for nowhere
+    // in the document. The panel is where the reply IS.
+    openEntrySeq = 4;
+    openRoomWithHistory([...history, reply]);
+
+    await waitFor(() => expect(screen.getByTestId('room-thread-feed')).toBeInTheDocument());
+    // Drawn under the PANEL's own row id, which is the proof it is on screen
+    // rather than merely loaded.
+    await waitFor(() =>
+      expect(document.getElementById('thread-panel-entry-entry-4')).not.toBeNull()
+    );
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId).toBe('entry-2');
+  });
+
+  it('opens no thread panel for a top-level hit', async () => {
+    // The positive control: a room that opened a thread for every hit would
+    // put a panel over itself on the commonest case of all.
+    openEntrySeq = 2;
+    openRoomWithHistory([...history, reply]);
+    await screen.findByText('the port question');
+
+    expect(screen.queryByTestId('room-thread-feed')).not.toBeInTheDocument();
   });
 });

@@ -327,7 +327,7 @@ export interface FlowRowRef {
  * **Quotable is not the same as rendered**, and this function is that
  * distinction written down once. A room's flow draws top-level entries only
  * ({@link groupByThread} keeps replies out of it), so an entry the caller can
- * name may have no row of its own anywhere in the room column. Three cases:
+ * name may have no row of its own anywhere in the room column. Four cases:
  *
  * - **A top-level entry** is its own row — {@link entryRowId}.
  * - **A reply the flow hangs under a thread** is drawn in the panel rather than

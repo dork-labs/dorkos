@@ -76,6 +76,16 @@ interface RoomThreadPanelProps {
    * and announcing a wait that will never end.
    */
   historyFailed?: boolean;
+  /**
+   * The reply this panel was ASKED to open on — a search hit's message,
+   * asked for at landing time (DOR-687).
+   *
+   * A reply is not drawn in the room's flow, so a hit on one opens this panel
+   * and lands here; the room behind lands on the thread's own row. Passed
+   * straight through to `Conversation.Timeline`, which outranks every other
+   * landing with it. Absent for every other way a thread is opened.
+   */
+  landOnRow?: () => string | undefined;
   /** True when this is the mobile full-screen push rather than the side panel. */
   pushed: boolean;
   /** Close the panel. */
@@ -127,6 +137,7 @@ export function RoomThreadPanel({
   onRetryStream,
   historyLoaded,
   historyFailed = false,
+  landOnRow,
   pushed,
   onClose,
 }: RoomThreadPanelProps) {
@@ -457,6 +468,7 @@ export function RoomThreadPanel({
             rows={panelRows}
             renderRow={renderRow}
             domIdOf={domIdOf}
+            {...(landOnRow === undefined ? {} : { landOnRow })}
             // Replies of this reader's own that the thread has not echoed back.
             // Scoped to THIS thread: a reply typed here waits here, not at the
             // bottom of the room behind the panel.

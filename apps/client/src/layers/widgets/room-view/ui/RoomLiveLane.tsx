@@ -289,7 +289,7 @@ export function RoomLiveLane({
    *
    * - **The thread panel's lane** aims inside the panel, where its own claims
    *   are by construction (its scope is the open thread's replies).
-   * - **The room's lane** asks `flowRowIdForEntry`, which reads the flow's own
+   * - **The room's lane** asks `flowRowForEntry`, which reads the flow's own
    *   placement rule back out. It is shared with the search-hit landing rather
    *   than restated here, because "which row draws this entry" has to have one
    *   answer or one of the two callers links into an element nothing drew.

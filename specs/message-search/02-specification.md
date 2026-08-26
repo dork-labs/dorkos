@@ -949,12 +949,30 @@ transcripts**, and the split is a property of the coordinate rather than a matte
 **Rooms.** `ordinal` for the `rooms` source IS `room_entries.seq` (`projections/rooms.ts:94`), which
 is the number the room's own timeline is built on. So the hit already carries an address, and the
 client half is a `?entry=<seq>` on `/channels` (and on `/`, which is #team; the one-door redirect
-carries it across). The room resolves the `seq` to a ROW — a reply is drawn in its thread panel, not
-in the flow, so the row is the thread's rather than the reply's — and the shared timeline gained one
-landing precedence for it: an asked-for row outranks a remembered position, an unread rule and the
-newest message, because it is the only one of the four somebody requested. The mark is focus, which
-is the doctrine `scrollToRow` already stated. **No field was added to the wire and no column to the
-index**: D11 holds.
+carries it across). The room resolves the `seq` to a ROW, and the shared timeline gained one landing
+precedence for it: an asked-for row outranks a remembered position, an unread rule and the newest
+message, because it is the only one of the four somebody requested. **No field was added to the wire
+and no column to the index**: D11 holds.
+
+Three things that decision dragged in, each of which is a defect if left out:
+
+- **A request is CONSUMED, not held.** The landing is armed once per conversation, and an in-place
+  search-param navigation does not change the conversation — so without consumption, clicking a hit
+  in the room you are already reading changes the URL and moves nothing. And a request that never
+  expired would re-win every REMOUNT, so on a phone, closing a thread panel would throw a reader at
+  message 300 back to the message they searched for — the exact thing `resumeRow` exists to prevent.
+  The marker is keyed on room + `seq`; a new `seq` re-arms the landing exactly once, and an answered
+  one stands down for good. A re-armed landing that cannot be honoured leaves the reader where they
+  are rather than restarting the ordinary landing under them.
+- **A reply opens its thread.** The room's flow draws the "↳ N replies" row rather than the reply,
+  so landing the room and stopping there puts somebody on a collapsed count with the message they
+  searched for nowhere in the document. The panel is opened and lands on the reply; the room behind
+  lands on the thread's row. One request, two consumers, one consumed-marker each.
+- **Focus is not the whole mark.** `scrollToRow`'s "focus IS the flash" holds for a keyboard reader,
+  but a row focused PROGRAMMATICALLY after a MOUSE click does not match `:focus-visible` — and
+  clicking a search result is the mouse path. So the row also wears a transient `data-landed`,
+  styled unconditionally and faded out after ~2s, with a still version under
+  `prefers-reduced-motion`. The caret is the durable mark; this is the one that paints.
 
 **Transcripts.** `ordinal` for `claude-code`, `codex` and `opencode` is a running count of the
 messages the projection KEPT — person-authored user records and non-sidechain assistant text, with

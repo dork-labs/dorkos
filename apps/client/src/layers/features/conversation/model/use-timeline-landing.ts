@@ -2,8 +2,9 @@
  * Where a conversation lands when you open it, and what it remembers.
  *
  * Split out of `Conversation.Timeline` because it is a self-contained decision
- * with its own traps: it runs once per conversation, it has to wait for the
- * virtualizer to have geometry, and it answers in ROWS rather than pixels.
+ * with its own traps: it runs once per conversation (plus once per request
+ * somebody makes of it), it has to wait for the virtualizer to have geometry,
+ * and it answers in ROWS rather than pixels.
  * The timeline keeps the scroller, the rows and the virtualizer; this owns the
  * one moment those three first agree on where the reader belongs.
  *
@@ -45,9 +46,25 @@ export interface TimelineLandingInput {
    *
    * A getter for the same reason {@link TimelineLandingInput.resumeRow} is one,
    * and read at the same moment — which is what keeps it out of a race with the
-   * end-landing rather than merely usually ahead of it. Answering `undefined`
-   * (no request, or a message this page of history does not hold) simply leaves
-   * the other three to decide, so the room opens where it always did.
+   * end-landing rather than merely usually ahead of it.
+   *
+   * **Reading it CONSUMES the request, and that is the contract**, not an
+   * implementation detail — a request is a one-time instruction, and both ways
+   * of getting it wrong are real defects rather than theory:
+   *
+   * - **Never consumed** and the landing is armed once per conversation, so
+   *   clicking a hit in the room you are ALREADY reading changes the URL and
+   *   moves nothing. An in-place search-param navigation does not change
+   *   `conversationId`, so the arm guard below never re-opens.
+   * - **Never consumed** and the request also survives a REMOUNT, where it
+   *   outranks `resumeRow` for the rest of the room's life: on a phone the
+   *   thread panel unmounts the timeline, so closing one would throw a reader
+   *   at message 300 back to the message they searched for — the exact defect
+   *   `resumeRow` exists to prevent.
+   *
+   * So an unanswered request re-arms the landing exactly once, and an answered
+   * one answers `undefined` forever after, leaving the other three to decide.
+   * `useEntryLanding` is the shipped implementation of that contract.
    */
   landOnRow?: () => string | undefined;
   /**
@@ -76,16 +93,26 @@ export interface TimelineLanding {
    * needs something to read. `null` until the landing has run.
    */
   landedOn: string | null;
+  /**
+   * The row a `'requested'` landing acted on, and `null` for every other kind.
+   *
+   * Published so the caller can MARK it without asking `landOnRow` a second
+   * time — which would consume a fresh request and mark the wrong row. It is
+   * also what makes a second request in the same conversation re-mark: the mark
+   * keys on this rather than on the conversation.
+   */
+  landedRow: string | null;
   /** Call from the scroll handler: tells the host which row is at the top. */
   reportTopRow: (scroller: HTMLElement | null, atBottom: boolean) => void;
 }
 
 /**
- * Decide where a conversation opens, ONCE per conversation, on the first render
- * that has rows.
+ * Decide where a conversation opens: once on arrival, on the first render that
+ * has rows, and again for each request somebody makes of it.
  *
- * **A row somebody ASKED for outranks all of it** — a search hit addressed in
- * the URL is a request rather than a guess (see `landOnRow`). Below that, a
+ * **A row somebody ASKED for outranks all of it, and re-opens this decision
+ * once** — a search hit addressed in the URL is a request rather than a guess,
+ * and reading it consumes it (see `landOnRow`). Below that, a
  * reader coming back from a thread panel — which UNMOUNTS the whole timeline
  * on a phone — belongs where they were standing, so a restored position wins
  * over the rest. With `landOn: 'unread'` and a rule
@@ -126,6 +153,7 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
   const anchoredRef = useRef<string | null>(null);
   const [landed, setLanded] = useState(false);
   const [landedOn, setLandedOn] = useState<string | null>(null);
+  const [landedRow, setLandedRow] = useState<string | null>(null);
 
   // The last row handed to `onTopRow`, so a repeated report of the same resting
   // position is a no-op — the settle path (below) can fire many times for one
@@ -133,14 +161,24 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
   const lastReportedRef = useRef<string | undefined>(undefined);
 
   useLayoutEffect(() => {
-    if (!measured || !landingReady || anchoredRef.current === conversationId) return;
+    if (!measured || !landingReady) return;
     if (rows.length === 0) return;
+    // **Read before the arm guard, and reading CONSUMES it** — see `landOnRow`.
+    // An unanswered request re-opens a landing this timeline has already made,
+    // which is the only thing that makes "search for something in the room you
+    // are already reading" move anything at all: an in-place search-param
+    // navigation leaves `conversationId` alone, so the guard below never lifts
+    // on its own.
+    const requested = landOnRow?.();
+    const arriving = anchoredRef.current !== conversationId;
+    if (!arriving && requested === undefined) return;
     anchoredRef.current = conversationId;
     // A new conversation has its own rows and its own resume memory; forget the
     // last row reported for the previous one so the first genuine report here is
-    // never mistaken for a repeat.
-    lastReportedRef.current = undefined;
-    /* eslint-disable react-hooks/set-state-in-effect -- landing is a one-shot event guarded by `anchoredRef`, and what it decided has to be readable from the DOM (`data-landed-on`); it cannot be derived during render because it depends on the virtualizer having geometry */
+    // never mistaken for a repeat. Not on a re-landing: the reader's own row is
+    // still this room's, and the move below writes a fresh one anyway.
+    if (arriving) lastReportedRef.current = undefined;
+    /* eslint-disable react-hooks/set-state-in-effect -- landing is a one-shot event per arrival (guarded by `anchoredRef`) plus one per consumed request, and what it decided has to be readable from the DOM (`data-landed-on`); it cannot be derived during render because it depends on the virtualizer having geometry */
     // A reader coming back belongs on the row they were reading. Asked for by
     // INDEX rather than by offset, because the virtualizer's total height is an
     // estimate on the first commit and settles over the next few frames — a
@@ -152,15 +190,22 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // the top, because a message somebody searched for should be read WITH what
     // was said around it — a hit flush against the viewport edge reads as the
     // start of the conversation rather than a place in it.
-    const requested = landOnRow?.();
     if (requested !== undefined) {
       const index = rows.findIndex((row) => row.id === requested);
       if (index !== -1) {
         setLandedOn('requested');
+        setLandedRow(requested);
         virtualizer.scrollToIndex(index, { align: 'center' });
         return;
       }
     }
+    // **A request that could not be honoured must not restart the ordinary
+    // landing in a room already open.** The reader is somewhere in this history
+    // by their own hand; yanking them to its newest message because a message
+    // they asked for is NOT here would take away their place and give nothing
+    // back. Arriving is different — there is no place yet to take away.
+    if (!arriving) return;
+    setLandedRow(null);
     const remembered = resumeRow?.();
     if (remembered !== undefined) {
       const index = rows.findIndex((row) => row.id === remembered);
@@ -211,5 +256,5 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     [virtualizer, rows, onTopRow]
   );
 
-  return { landed, landedOn, reportTopRow };
+  return { landed, landedOn, landedRow, reportTopRow };
 }

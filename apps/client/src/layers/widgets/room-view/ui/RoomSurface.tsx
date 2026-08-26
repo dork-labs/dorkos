@@ -235,10 +235,11 @@ export function RoomSurface({
     timelineRef.current?.scrollToRow(domId);
   }, []);
 
-  // Where a search hit asks this room to open, answered as a getter the
-  // timeline's own landing reads — see `useEntryLanding` for why it is asked
-  // rather than fired.
-  const landOnRow = useEntryLanding({
+  // Where a search hit asks this room to open, answered as getters the two
+  // timelines' own landings read — see `useEntryLanding` for why they are asked
+  // rather than fired, and why a hit on a reply opens the thread panel as well
+  // as moving the room behind it.
+  const entryLanding = useEntryLanding({
     roomId,
     entrySeq,
     entries,
@@ -296,6 +297,7 @@ export function RoomSurface({
       onRetryStream={stream.retry}
       historyLoaded={entriesQuery.isSuccess}
       historyFailed={entriesQuery.isError}
+      {...(entryLanding.threadRow === undefined ? {} : { landOnRow: entryLanding.threadRow })}
       pushed={isMobile}
       onClose={closeThread}
     />
@@ -327,7 +329,7 @@ export function RoomSurface({
         openThreadId={openThreadId}
         onOpenThread={onOpenThread}
         resumeRow={resumeRow}
-        {...(landOnRow === undefined ? {} : { landOnRow })}
+        {...(entryLanding.roomRow === undefined ? {} : { landOnRow: entryLanding.roomRow })}
         onTopRow={noteTopRow}
       />
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}

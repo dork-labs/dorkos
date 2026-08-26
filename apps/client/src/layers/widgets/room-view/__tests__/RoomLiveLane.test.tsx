@@ -513,7 +513,7 @@ describe('RoomLiveLane', () => {
     //
     // This is the correction DOR-687 forced. `rowIdFor` and the search-hit
     // landing now share one answer to "which row draws this entry"
-    // (`flowRowIdForEntry`), and this case is where the two used to disagree:
+    // (`flowRowForEntry`), and this case is where the two used to disagree:
     // the lane offered no link at all while the flow was drawing the row.
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai', 'working', STARTED, 'reply-with-no-root');
