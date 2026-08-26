@@ -47,6 +47,15 @@ export const LID_HEIGHT = SCREEN_RATIO + BEZEL.top + BEZEL.bottom;
 /** Corner radius of the enclosure, 10mm on a 312.6mm case, as a fraction of the lid. */
 export const LID_RADIUS = 10 / 312.6;
 
+/**
+ * Corner radius of the deck's hinge edge, as a fraction of the lid.
+ *
+ * The real machine's deck is not square where it meets the hinge — the top
+ * corners carry a small ease, visibly tighter than the 10mm front corners.
+ * Operator-directed (2026-08-26): rounded, with a smaller radius.
+ */
+export const DECK_TOP_RADIUS = 4 / 312.6;
+
 /** The dark band where lid meets deck. */
 export const HINGE = 3 / 302.4;
 

@@ -4,6 +4,7 @@ import {
   DECK_DEPTH,
   DECK_PROJECTED,
   DECK_TILT,
+  DECK_TOP_RADIUS,
   KEY_GAP,
   KEY_ROWS,
   LID_RADIUS,
@@ -133,7 +134,7 @@ export function MacbookDeck() {
           transform: `rotateX(${DECK_TILT}deg)`,
           transformOrigin: 'top center',
           background: `linear-gradient(${MACBOOK.deckBack}, ${MACBOOK.deckFront})`,
-          borderRadius: `0 0 ${w(LID_RADIUS * LID_WIDTH)} ${w(LID_RADIUS * LID_WIDTH)}`,
+          borderRadius: `${w(DECK_TOP_RADIUS * LID_WIDTH)} ${w(DECK_TOP_RADIUS * LID_WIDTH)} ${w(LID_RADIUS * LID_WIDTH)} ${w(LID_RADIUS * LID_WIDTH)}`,
         }}
       >
         {/* The recess along the back edge. Without it the keyboard well runs
