@@ -53,6 +53,18 @@ describe('NewsletterSignupForm', () => {
     expect(captureMock).not.toHaveBeenCalled();
   });
 
+  it('marks the field invalid only when the address itself was rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+    render(<NewsletterSignupForm source="blog" />);
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: 'kai@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText(/email address/i).getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('tells the visitor to wait when the route throttles the request (429)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429 }));
     render(<NewsletterSignupForm source="tutorials-modal" />);
@@ -63,7 +75,22 @@ describe('NewsletterSignupForm', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('Too many tries. Please wait a few minutes and try again.');
+    // The address was fine, so nothing should announce it as invalid entry.
+    expect(screen.getByLabelText(/email address/i).getAttribute('aria-invalid')).not.toBe('true');
     expect(captureMock).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a good address invalid when the request itself fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    render(<NewsletterSignupForm source="footer" />);
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: 'kai@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Something went wrong. Please try again.');
+    expect(screen.getByLabelText(/email address/i).getAttribute('aria-invalid')).not.toBe('true');
   });
 
   it('silently succeeds without posting when the honeypot is filled (bot)', async () => {

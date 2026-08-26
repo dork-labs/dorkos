@@ -12,6 +12,11 @@
  * The route throttles per IP, so a `429` is a normal answer here, not a bug —
  * it gets its own wait-and-retry sentence instead of the generic error.
  *
+ * **{@link ERROR_COPY} is the only newsletter error copy a visitor ever sees.**
+ * The route's JSON error bodies are for whoever calls the endpoint directly;
+ * this hook never reads them, so the two are free to differ and neither is a
+ * stale copy of the other.
+ *
  * @module shared/ui/newsletter-signup/use-newsletter-form
  */
 import { useState } from 'react';
@@ -22,29 +27,45 @@ import type { NewsletterSource } from '@/db/newsletter-schema';
 /** Form lifecycle state. */
 export type NewsletterFormState = 'idle' | 'submitting' | 'success' | 'error';
 
+/**
+ * Why a submit failed. Only `invalid-email` says anything about the address the
+ * visitor typed — the other two are about the request, and a field marked
+ * invalid for either would be telling the visitor something untrue.
+ */
+export type NewsletterErrorKind = 'invalid-email' | 'rate-limited' | 'unknown';
+
 /** What {@link useNewsletterForm} returns to the view. */
 export interface UseNewsletterForm {
   /** Current lifecycle state. */
   state: NewsletterFormState;
   /** Human-readable error message when `state === 'error'`. */
   error: string | null;
+  /** Why the last submit failed, or `null` when nothing has failed. */
+  errorKind: NewsletterErrorKind | null;
   /** Submit an email. `honeypot` is the bot-trap field value (should be empty). */
   submit: (email: string, honeypot: string) => Promise<void>;
   /** Reset back to `idle` (e.g. to let a user add another address). */
   reset: () => void;
 }
 
+/** The one sentence a visitor sees for each way a submit can fail. */
+const ERROR_COPY: Record<NewsletterErrorKind, string> = {
+  'invalid-email': 'Please enter a valid email address.',
+  // The route throttles per IP (DOR-1581); say what to do about it.
+  'rate-limited': 'Too many tries. Please wait a few minutes and try again.',
+  unknown: 'Something went wrong. Please try again.',
+};
+
 /** Extract the domain from an email for non-PII analytics, or `'unknown'`. */
 function emailDomain(email: string): string {
   return email.split('@')[1]?.toLowerCase() ?? 'unknown';
 }
 
-/** Turn a failed response status into one honest sentence for the visitor. */
-function submitErrorMessage(status: number): string {
-  if (status === 400) return 'Please enter a valid email address.';
-  // The route throttles per IP (DOR-1581); say what to do about it.
-  if (status === 429) return 'Too many tries. Please wait a few minutes and try again.';
-  return 'Something went wrong. Please try again.';
+/** Classify a failed response status. */
+function errorKindFor(status: number): NewsletterErrorKind {
+  if (status === 400) return 'invalid-email';
+  if (status === 429) return 'rate-limited';
+  return 'unknown';
 }
 
 /**
@@ -55,7 +76,7 @@ function submitErrorMessage(status: number): string {
  */
 export function useNewsletterForm(source: NewsletterSource): UseNewsletterForm {
   const [state, setState] = useState<NewsletterFormState>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<NewsletterErrorKind | null>(null);
 
   async function submit(email: string, honeypot: string): Promise<void> {
     // Bot filled the hidden field: pretend it worked, do nothing.
@@ -64,7 +85,7 @@ export function useNewsletterForm(source: NewsletterSource): UseNewsletterForm {
       return;
     }
     setState('submitting');
-    setError(null);
+    setErrorKind(null);
     try {
       const res = await fetch('/api/newsletter/subscribe', {
         method: 'POST',
@@ -73,21 +94,21 @@ export function useNewsletterForm(source: NewsletterSource): UseNewsletterForm {
       });
       if (!res.ok) {
         setState('error');
-        setError(submitErrorMessage(res.status));
+        setErrorKind(errorKindFor(res.status));
         return;
       }
       trackNewsletterSignup(source, emailDomain(email));
       setState('success');
     } catch {
       setState('error');
-      setError('Something went wrong. Please try again.');
+      setErrorKind('unknown');
     }
   }
 
   function reset(): void {
     setState('idle');
-    setError(null);
+    setErrorKind(null);
   }
 
-  return { state, error, submit, reset };
+  return { state, error: errorKind && ERROR_COPY[errorKind], errorKind, submit, reset };
 }

@@ -82,19 +82,21 @@ describe('POST /api/newsletter/subscribe rate limiting', () => {
     const blocked = await POST(post({ email: 'kai+over@example.com' }, ip));
     expect(blocked.status).toBe(429);
     await expect(blocked.json()).resolves.toEqual({
-      error: 'Too many requests. Please wait a few minutes and try again.',
+      error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
     });
     // The throttled request never reaches the mailing list.
     expect(subscribeMock).toHaveBeenCalledTimes(SUBSCRIBE_RATE_LIMIT);
   });
 
-  it('sends a positive Retry-After on the 429', async () => {
+  it('sends the whole window as Retry-After on the 429', async () => {
     const ip = freshIp();
-    for (let i = 0; i <= SUBSCRIBE_RATE_LIMIT; i += 1) await POST(post({ email: 'k@e.com' }, ip));
+    for (let i = 0; i < SUBSCRIBE_RATE_LIMIT; i += 1) await POST(post({ email: 'k@e.com' }, ip));
 
     const blocked = await POST(post({ email: 'k@e.com' }, ip));
     expect(blocked.status).toBe(429);
-    expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+    // Every request in this test lands in the same millisecond-scale instant,
+    // so the window has effectively its full ten minutes left to run.
+    expect(blocked.headers.get('retry-after')).toBe('600');
   });
 
   it("does not charge one IP for another IP's attempts", async () => {
@@ -107,12 +109,29 @@ describe('POST /api/newsletter/subscribe rate limiting', () => {
     expect(bystander.status).toBe(200);
   });
 
-  it('reads x-real-ip when x-forwarded-for is absent', async () => {
+  it('meters by x-real-ip, the header Vercel sets', async () => {
     const ip = { 'x-real-ip': '198.51.100.9' };
     for (let i = 0; i < SUBSCRIBE_RATE_LIMIT; i += 1) {
       expect((await POST(post({ email: 'k@e.com' }, ip))).status).toBe(200);
     }
     expect((await POST(post({ email: 'k@e.com' }, ip))).status).toBe(429);
+  });
+
+  it('does not let a rotating forged hop list mint fresh allowances', async () => {
+    // Off-platform an abuser controls this header outright. Every forged hop
+    // list lands in the one shared unknown bucket, so rotating the leading hop
+    // buys nothing: the allowance runs out and stays out.
+    const forged = (hop: number): Record<string, string> => ({
+      'x-forwarded-for': `9.9.9.${hop}, 203.0.113.99`,
+    });
+    for (let i = 0; i < SUBSCRIBE_RATE_LIMIT; i += 1) {
+      expect((await POST(post({ email: 'k@e.com' }, forged(i)))).status).toBe(200);
+    }
+    expect((await POST(post({ email: 'k@e.com' }, forged(99)))).status).toBe(429);
+    expect((await POST(post({ email: 'k@e.com' }, forged(100)))).status).toBe(429);
+
+    // An honest single-value header is still metered on its own.
+    expect((await POST(post({ email: 'k@e.com' }, freshIp()))).status).toBe(200);
   });
 
   it('meters header-less requests together in one shared bucket', async () => {

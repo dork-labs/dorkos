@@ -1,10 +1,11 @@
 /**
  * Per-IP throttle for `POST /api/newsletter/subscribe` (DOR-1581).
  *
- * The subscribe endpoint is public, unauthenticated, and reachable from the
- * two busiest boxes on the site (the footer and the tutorials modal), so a
- * `curl` loop could otherwise pump the pending list. The honeypot only catches
- * bots that fill hidden fields; this catches the plain flood.
+ * The subscribe endpoint is public, unauthenticated, and reachable from all
+ * four signup boxes on the site (the footer, the `/newsletter` page, the
+ * end-of-blog CTA, and the tutorials modal), so a `curl` loop could otherwise
+ * pump the pending list. The honeypot only catches bots that fill hidden
+ * fields; this catches the plain flood.
  *
  * Instance-local by design — see `lib/rate-limit/fixed-window` for what that
  * does and does not buy.

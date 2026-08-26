@@ -87,10 +87,21 @@ export function createFixedWindowLimiter({
     for (const [key, window] of windows) {
       if (now - window.start >= windowMs) windows.delete(key);
     }
-    if (windows.size < maxKeys) return;
-    const oldestFirst = [...windows.entries()].sort((a, b) => a[1].start - b[1].start);
-    const excess = windows.size - maxKeys + 1;
-    for (const [key] of oldestFirst.slice(0, excess)) windows.delete(key);
+    // Every survivor is still inside its window, so someone has to lose one.
+    // A scan for the single oldest beats sorting the whole map: it is O(n) with
+    // no allocation, and it normally runs once.
+    while (windows.size >= maxKeys) {
+      let oldestKey: string | undefined;
+      let oldestStart = Number.POSITIVE_INFINITY;
+      for (const [key, window] of windows) {
+        if (window.start < oldestStart) {
+          oldestStart = window.start;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey === undefined) return;
+      windows.delete(oldestKey);
+    }
   }
 
   return {

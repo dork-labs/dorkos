@@ -39,8 +39,11 @@ const SubscribeSchema = z.object({
 export async function POST(request: Request): Promise<Response> {
   const quota = consumeSubscribeQuota(request);
   if (!quota.allowed) {
+    // For whoever is calling the endpoint directly. The signup form never reads
+    // this body — it renders its own copy from `use-newsletter-form` — so the
+    // two sentences are independent, not a duplicate waiting to drift.
     return Response.json(
-      { error: 'Too many requests. Please wait a few minutes and try again.' },
+      { error: 'Too many requests. Retry after the number of seconds in the Retry-After header.' },
       { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
     );
   }
