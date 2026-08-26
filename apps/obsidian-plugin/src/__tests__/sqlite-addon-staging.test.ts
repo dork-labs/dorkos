@@ -30,6 +30,18 @@ import {
 
 const VERSION = '12.11.1';
 
+/**
+ * "This build may reach the network", stated rather than inherited.
+ *
+ * Every test below that exercises the fetch path says so explicitly, because the
+ * real default reads `process.env.CI` — and a test that injects the DOWNLOAD but
+ * not the PERMISSION passes on a laptop and fails on a runner. That is exactly
+ * what happened: three of these went red in CI and green here, which is the
+ * worst kind of test. The fix is to stop letting the environment decide what the
+ * subject under test does.
+ */
+const MAY_FETCH = { mayFetch: () => true };
+
 /** This machine, which is the only target `stageAddons` ever looks at. */
 const HERE = { platform: process.platform, arch: process.arch };
 
@@ -109,7 +121,7 @@ describe('staging what is already cached', () => {
     const at = cache(KEY, 'real');
     writeLock({ [KEY]: sha256(at) });
 
-    const staged = stageAddons({ root, version: VERSION }, { download: unreachable });
+    const staged = stageAddons({ root, version: VERSION }, { ...MAY_FETCH, download: unreachable });
 
     expect(staged).toBe(1);
     expect(fs.existsSync(path.join(root, 'dist', addonFileName({ ...HERE, abi: ABI })))).toBe(true);
@@ -129,7 +141,7 @@ describe('staging what is already cached', () => {
 
     const staged = stageAddons(
       { root, version: VERSION },
-      { download: (_url, into) => fs.copyFileSync(wanted, into) }
+      { ...MAY_FETCH, download: (_url, into) => fs.copyFileSync(wanted, into) }
     );
 
     expect(staged).toBe(1);
@@ -145,7 +157,7 @@ describe('staging what is already cached', () => {
     expect(() =>
       stageAddons(
         { root, version: VERSION },
-        { download: (_url, into) => makeTarball(into, 'tampered') }
+        { ...MAY_FETCH, download: (_url, into) => makeTarball(into, 'tampered') }
       )
     ).toThrow(ChecksumMismatchError);
 
@@ -165,7 +177,7 @@ describe('what a mismatch does to the build', () => {
     expect(() =>
       stageAddons(
         { root, version: VERSION },
-        { download: (_url, into) => makeTarball(into, 'substituted') }
+        { ...MAY_FETCH, download: (_url, into) => makeTarball(into, 'substituted') }
       )
     ).toThrow(ChecksumMismatchError);
   });
@@ -183,6 +195,7 @@ describe('what a mismatch does to the build', () => {
       stageAddons(
         { root, version: VERSION },
         {
+          ...MAY_FETCH,
           download: () => {
             throw new Error('curl: (6) Could not resolve host');
           },
@@ -197,6 +210,7 @@ describe('what a mismatch does to the build', () => {
     stageAddons(
       { root, version: VERSION },
       {
+        ...MAY_FETCH,
         download: (_url, into) => {
           fs.writeFileSync(into, 'half a file');
           throw new Error('connection reset');
@@ -215,9 +229,9 @@ describe('what the build refuses to do at all', () => {
     const at = cache(KEY, 'real');
     writeLock({ [KEY]: sha256(at) }, '12.10.0');
 
-    expect(() => stageAddons({ root, version: VERSION }, { download: unreachable })).toThrow(
-      /pins hashes for better-sqlite3 12\.10\.0/
-    );
+    expect(() =>
+      stageAddons({ root, version: VERSION }, { ...MAY_FETCH, download: unreachable })
+    ).toThrow(/pins hashes for better-sqlite3 12\.10\.0/);
   });
 
   it('never fetches a target it has no pin for', () => {
@@ -228,7 +242,9 @@ describe('what the build refuses to do at all', () => {
     writeLock({});
     const download = vi.fn();
 
-    const staged = stageAddons({ root, version: VERSION }, { download });
+    // `mayFetch` is deliberately TRUE here: the skip has to be attributable to
+    // the missing pin, not to the environment the test happens to run in.
+    const staged = stageAddons({ root, version: VERSION }, { ...MAY_FETCH, download });
 
     expect(staged).toBe(0);
     expect(download).not.toHaveBeenCalled();

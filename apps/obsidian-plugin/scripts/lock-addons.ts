@@ -89,7 +89,11 @@ async function main(): Promise<void> {
 
   const lock: AddonLock = {
     version,
-    entries: Object.fromEntries(Object.keys(entries).sort().map((k) => [k, entries[k]!])),
+    entries: Object.fromEntries(
+      Object.keys(entries)
+        .sort()
+        .map((k) => [k, entries[k]!])
+    ),
   };
   fs.writeFileSync(path.join(ROOT, ADDON_LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
 
