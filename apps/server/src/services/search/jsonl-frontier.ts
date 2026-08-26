@@ -380,9 +380,9 @@ function describeContestedContainers(
   for (const originKey of contested) {
     const twins = claims.get(originKey) ?? [];
     const locations = distinctPrefixes(twins);
-    // ` ` cannot occur in a path, so it separates without ever joining two
-    // locations that only look adjacent.
-    const signature = locations.join(' ');
+    // A NUL (`\u0000`) cannot occur in a path, so it separates without ever
+    // joining two locations that only look adjacent.
+    const signature = locations.join('\u0000');
     const group = groups.get(signature);
     if (group) group.ids.push(originKey);
     else groups.set(signature, { locations, ids: [originKey] });

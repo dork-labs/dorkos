@@ -235,6 +235,17 @@ jobs:
       - name: Dir-size guard fixtures
         run: bash scripts/test-check-dir-size.sh
 
+      # check-nul-bytes.sh (DOR-1561) is the guard neither round of the raw-NUL-
+      # byte mistake got: DOR-1450 fixed one file with no guard, and the same
+      # mistake reached six more files before this one landed. Hermetic
+      # (throwaway git repos in a temp dir, one per case), so it never reads
+      # this repo's real source — it asserts the guard finds the separator
+      # mistake, ignores genuine binary assets, and respects the
+      # `nul-byte-allow` escape hatch for content that is deliberately under
+      # test rather than a mistake.
+      - name: Raw-NUL-byte guard fixtures
+        run: bash scripts/test-check-nul-bytes.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work

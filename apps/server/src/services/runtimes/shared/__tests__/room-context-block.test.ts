@@ -519,7 +519,7 @@ const LINE_FORGERS: ReadonlyArray<readonly [name: string, char: string]> = [
   ['NEL', ''],
   ['line separator', ' '],
   ['paragraph separator', ' '],
-  ['NUL', ' '],
+  ['NUL', '\u0000'],
   ['vertical tab', ''],
   ['C1 string terminator', ''],
 ];

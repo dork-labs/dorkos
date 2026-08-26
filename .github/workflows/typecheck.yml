@@ -151,6 +151,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/check-banned-words.sh
 
+      # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
+      # the same reason the gate above it does: `typecheck` is already a
+      # required status check that reports on `merge_group`, and a gate on a
+      # non-required check is not a gate. Needs only `git` and `perl`, both on
+      # the runner already — no node_modules, and it runs in ~1-2s over the
+      # whole repo.
+      - name: Raw-NUL-byte gate — text files (DOR-1561)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-nul-bytes.sh
+
       # `!cancelled()` so a formatting failure still reports every type error in
       # the same run, for the same reason the step below passes `--continue`.
       - name: Typecheck every package that declares a typecheck script
