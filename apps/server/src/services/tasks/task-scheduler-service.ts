@@ -792,7 +792,6 @@ export class TaskSchedulerService {
                   store: this.store,
                   relay: this.relay!,
                   runs: this.runs,
-                  activityService: this.activityService,
                   resolveCwd: (t) => this.resolveEffectiveCwd(t),
                 },
                 task,
@@ -822,7 +821,9 @@ export class TaskSchedulerService {
         error: (err as Error).message,
       });
       logger.error(`run ${run.id} failed: ${(err as Error).message}`);
-      emitRunActivity(this.activityService, task, run, 'failed', 0, (err as Error).message);
+      // The activity-feed event for this failure rides the TaskStore run-terminal
+      // hook (DOR-1573), fired by the `updateRun('failed')` above — the one funnel
+      // both dispatch paths share. See `createRunTerminalListener`.
       return;
     }
 
@@ -931,11 +932,14 @@ export class TaskSchedulerService {
               : 'Run cancelled',
           sessionId: persistedSessionId(),
         });
-        // The cancel route emits its own `tasks.run_cancelled` the moment the
-        // operator asks, attributed to "You". Emitting again here would put the
-        // same cancel in the activity feed twice, the second time attributed to
-        // Tasks. A deadline or a shutdown abort has no such route emit, so it
-        // still needs this one.
+        // A cancel is the one terminal status that does NOT ride the run-terminal
+        // hook's activity emit (DOR-1573): the run row cannot say whether an
+        // operator or a deadline ended it, and the two carry different actors. So
+        // it is emitted here, where `operatorCancelled` is known. The cancel route
+        // emits its own `tasks.run_cancelled` the moment the operator asks,
+        // attributed to "You"; emitting again here would double it, the second
+        // time attributed to the Scheduler. A deadline or a shutdown abort has no
+        // such route emit, so it still needs this one.
         if (!operatorCancelled)
           emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
       } else {
@@ -946,7 +950,9 @@ export class TaskSchedulerService {
           outputSummary: outputSummary.slice(0, 500),
           sessionId: persistedSessionId(),
         });
-        emitRunActivity(this.activityService, task, run, 'completed', durationMs);
+        // The activity-feed event for a completed run rides the TaskStore
+        // run-terminal hook (DOR-1573), fired by the `updateRun('completed')`
+        // above — the one funnel both dispatch paths share.
       }
     } catch (err) {
       const durationMs = Date.now() - startTime;
@@ -960,7 +966,8 @@ export class TaskSchedulerService {
         sessionId: persistedSessionId(),
       });
       logger.error(`run ${run.id} failed:`, err);
-      emitRunActivity(this.activityService, task, run, 'failed', durationMs, errorMsg);
+      // The activity-feed event for this failure rides the TaskStore run-terminal
+      // hook (DOR-1573), fired by the `updateRun('failed')` above.
     } finally {
       this.runs.release(run.id);
     }

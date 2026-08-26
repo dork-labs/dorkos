@@ -75,13 +75,12 @@ import {
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
-import { notifyRunCompleted } from './services/notifications/emitters/run-completed.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
 import { watchShiftReport } from './services/notifications/emitters/shift-report.js';
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
-import { broadcastRunTerminal } from './services/tasks/run-terminal-broadcaster.js';
+import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
 import {
   TaskSchedulerService,
   type SchedulerAgentManager,
@@ -1687,20 +1686,17 @@ async function start() {
   // Store-level run-terminal hook (DOR-240): the single seam that fires exactly
   // once per non-terminal → terminal transition, for BOTH scheduler-side
   // failures and relay-delivered runs finalized by the receiver's
-  // updateRun('failed'). Two consumers ride it, composed into one listener
-  // because setOnRunTerminal holds a single listener:
-  //   1. Pulse attention broadcast (DOR-403) — always on when Tasks is enabled;
-  //      broadcastRunTerminal fans `task_run_failed` onto /api/events so the
-  //      badge ticks the instant a run fails, on every execution path.
-  //   2. The `run.completed` notification (DOR-240, folded into the pipeline by
-  //      DOR-1383) — always on, unlike the notifier it replaced: the inbox row
-  //      is written whether or not any chat integration can carry the news, and
-  //      the relay leg is what degrades when one cannot.
+  // updateRun(...). Three consumers ride it, composed into one listener (because
+  // setOnRunTerminal holds a single listener) in `createRunTerminalListener`:
+  //   1. Pulse attention broadcast (DOR-403) — the badge ticks the instant a run
+  //      fails, on every execution path.
+  //   2. The `run.completed` notification (DOR-240, DOR-1383) — the inbox row for
+  //      a finished run, plus the chat ping when an integration can carry it.
+  //   3. The activity-feed event (DOR-1573) — a completed or failed run now
+  //      broadcasts to the feed live on BOTH paths, where before the relay path
+  //      reached the feed only on the next poll.
   if (taskStore) {
-    taskStore.setOnRunTerminal((run, task) => {
-      broadcastRunTerminal(run);
-      void notifyRunCompleted(run, task);
-    });
+    taskStore.setOnRunTerminal(createRunTerminalListener(activityService));
   }
 
   // Catch up the escalation ladder on what was already waiting when this process
