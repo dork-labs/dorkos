@@ -12,15 +12,15 @@
  * Ready; on failure the partial tree is removed and the caller resolves back to
  * a single Connect action with an honest message.
  *
- * @module services/runtimes/opencode/provision
+ * @module services/runtimes/opencode/providers/provision
  */
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
-import { resolveDorkHome } from '../../../lib/dork-home.js';
-import { logger, logError } from '../../../lib/logger.js';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { logger, logError } from '../../../../lib/logger.js';
 
 /**
  * `opencode-ai` version to install — pinned to match the `@opencode-ai/sdk`

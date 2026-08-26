@@ -9,7 +9,7 @@ import {
   classifyModelFit,
   assessInstalledModels,
   assessOllamaModels,
-} from '../ollama-catalog.js';
+} from '../providers/ollama-catalog.js';
 
 const GB = 1024 ** 3;
 const MIB = 1024 * 1024;

@@ -46,7 +46,7 @@ const LIVE = vi.hoisted(() => process.env.DORKOS_OPENCODE_LIVE === '1');
 // checkDependencies() shells out to `opencode --version` / `opencode auth
 // list` for real — mock the probe so conformance never spawns (or requires)
 // the binary. The live smoke restores the real probe.
-vi.mock('../check-dependencies.js', async (importOriginal) => {
+vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
   if (LIVE) return importOriginal();
   return {
     checkOpenCodeDependencies: vi.fn(() => [

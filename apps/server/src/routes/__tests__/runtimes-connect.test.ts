@@ -10,7 +10,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-vi.mock('../../services/runtimes/opencode/provision.js', () => ({
+vi.mock('../../services/runtimes/opencode/providers/provision.js', () => ({
   provisionOpenCode: vi.fn(),
 }));
 
@@ -28,8 +28,9 @@ vi.mock('../../services/runtimes/connect/delegated-login.js', async (orig) => {
 
 // Preserve OpenRouterError, buildAuthorizeUrl, and the real flow store; mock the
 // network-touching actions.
-vi.mock('../../services/runtimes/opencode/openrouter.js', async (orig) => {
-  const actual = await orig<typeof import('../../services/runtimes/opencode/openrouter.js')>();
+vi.mock('../../services/runtimes/opencode/providers/openrouter.js', async (orig) => {
+  const actual =
+    await orig<typeof import('../../services/runtimes/opencode/providers/openrouter.js')>();
   return {
     ...actual,
     storeOpenRouterKeyReference: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock('../../services/runtimes/opencode/openrouter.js', async (orig) => {
   };
 });
 
-vi.mock('../../services/runtimes/opencode/ollama.js', () => ({
+vi.mock('../../services/runtimes/opencode/providers/ollama.js', () => ({
   detectOllama: vi.fn(),
   pullOllamaModel: vi.fn(),
 }));
@@ -59,8 +60,11 @@ import {
   storeOpenRouterKeyReference,
   handleOpenRouterCallback,
   OpenRouterError,
-} from '../../services/runtimes/opencode/openrouter.js';
-import { detectOllama, pullOllamaModel } from '../../services/runtimes/opencode/ollama.js';
+} from '../../services/runtimes/opencode/providers/openrouter.js';
+import {
+  detectOllama,
+  pullOllamaModel,
+} from '../../services/runtimes/opencode/providers/ollama.js';
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 
 const app = createApp();

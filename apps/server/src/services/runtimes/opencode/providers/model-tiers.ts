@@ -15,7 +15,7 @@
  * Everything here is pure and unit-tested. Tiering reads only a model's id/name;
  * the OpenCode SDK is never touched.
  *
- * @module services/runtimes/opencode/model-tiers
+ * @module services/runtimes/opencode/providers/model-tiers
  */
 import type { ModelOption, ModelTier } from '@dorkos/shared/types';
 

@@ -14,7 +14,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
-import { provisionOpenCode } from '../services/runtimes/opencode/provision.js';
+import { provisionOpenCode } from '../services/runtimes/opencode/providers/provision.js';
 import { provisionCodex } from '../services/runtimes/codex/provision.js';
 import { provisionClaudeCode } from '../services/runtimes/claude-code/tooling/provision.js';
 import {
@@ -32,18 +32,18 @@ import {
   openRouterOAuthStore,
   storeOpenRouterKeyReference,
   OpenRouterError,
-} from '../services/runtimes/opencode/openrouter.js';
+} from '../services/runtimes/opencode/providers/openrouter.js';
 import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
-import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/ollama.js';
+import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/providers/ollama.js';
 import {
   provisionOllama,
   detectOllamaInstallMethod,
-} from '../services/runtimes/opencode/ollama-provision.js';
+} from '../services/runtimes/opencode/providers/ollama-provision.js';
 import {
   assessInstalledModels,
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
-} from '../services/runtimes/opencode/ollama-catalog.js';
+} from '../services/runtimes/opencode/providers/ollama-catalog.js';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { isLocalRequest } from '../lib/trusted-origins.js';

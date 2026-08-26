@@ -15,5 +15,5 @@ export {
   type OpenCodeSessionMapStore,
 } from './session-mapper.js';
 export { OpenCodeSessionMap } from './session-map.js';
-export { checkOpenCodeDependencies } from './check-dependencies.js';
+export { checkOpenCodeDependencies } from './providers/check-dependencies.js';
 export { OPENCODE_CAPABILITIES } from './runtime-constants.js';

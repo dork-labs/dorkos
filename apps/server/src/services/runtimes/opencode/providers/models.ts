@@ -8,7 +8,7 @@
  * `provider/model` — OpenCode's own CLI convention — which
  * `parseModelSelection` splits back for `session.promptAsync`.
  *
- * @module services/runtimes/opencode/models
+ * @module services/runtimes/opencode/providers/models
  */
 import type { ProviderListResponse } from '@opencode-ai/sdk';
 import type { ModelOption } from '@dorkos/shared/types';

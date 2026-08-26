@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { OllamaPullProgress } from '@dorkos/shared/runtime-connect';
-import { detectOllama, pullOllamaModel, resetOllamaCache, type FetchFn } from '../ollama.js';
+import {
+  detectOllama,
+  pullOllamaModel,
+  resetOllamaCache,
+  type FetchFn,
+} from '../providers/ollama.js';
 
 /** A JSON Response double. */
 function jsonResp(status: number, body: unknown): Response {

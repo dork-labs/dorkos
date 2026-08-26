@@ -16,7 +16,7 @@
  * detects and triggers one pull. The curated catalog + hardware-fit heuristic live
  * in the sibling `ollama-catalog.ts`.
  *
- * @module services/runtimes/opencode/ollama
+ * @module services/runtimes/opencode/providers/ollama
  */
 import type {
   OllamaPullProgress,

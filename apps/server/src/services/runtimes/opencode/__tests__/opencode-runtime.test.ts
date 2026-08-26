@@ -15,8 +15,11 @@ import {
 } from '../../../session/session-state-projector.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
-import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from '../check-dependencies.js';
-import { detectOllama } from '../ollama.js';
+import {
+  checkOpenCodeDependencies,
+  getConnectedOpenCodeProvider,
+} from '../providers/check-dependencies.js';
+import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../global-event-hub.js';
 import {
   DIRECTORY,
@@ -49,7 +52,7 @@ import {
   messageUpdated,
 } from './opencode-sse-fixtures.js';
 
-vi.mock('../check-dependencies.js', () => ({
+vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(),
   resolveOpenCodeBinaryPath: vi.fn(() => null),
   getConnectedOpenCodeProvider: vi.fn(() => null),
@@ -59,7 +62,7 @@ vi.mock('../check-dependencies.js', () => ({
 // (spec §10). Mock it so the projection is deterministic and never hits a real
 // Ollama on the test machine; the default `running: false` degrades to the full
 // catalog (no filtering).
-vi.mock('../ollama.js', () => ({
+vi.mock('../providers/ollama.js', () => ({
   detectOllama: vi.fn(async () => ({ running: false, models: [] })),
 }));
 

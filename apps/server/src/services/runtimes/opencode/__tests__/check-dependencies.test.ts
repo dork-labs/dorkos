@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { checkOpenCodeDependencies } from '../check-dependencies.js';
-import { OPENCODE_PACKAGE_VERSION, resolveProvisionedOpenCodePath } from '../provision.js';
+import { checkOpenCodeDependencies } from '../providers/check-dependencies.js';
+import {
+  OPENCODE_PACKAGE_VERSION,
+  resolveProvisionedOpenCodePath,
+} from '../providers/provision.js';
 import { configManager } from '../../../core/config-manager.js';
 import { logger } from '../../../../lib/logger.js';
 

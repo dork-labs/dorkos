@@ -28,12 +28,12 @@ import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { TurnEventQueue } from '../global-event-hub.js';
 import { globalEvent, serverConnected, sessionIdle, sessionInfo } from './opencode-sse-fixtures.js';
 
-vi.mock('../check-dependencies.js', () => ({
+vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(() => []),
   resolveOpenCodeBinaryPath: vi.fn(() => null),
   getConnectedOpenCodeProvider: vi.fn(() => null),
 }));
-vi.mock('../ollama.js', () => ({
+vi.mock('../providers/ollama.js', () => ({
   detectOllama: vi.fn(async () => ({ running: false, models: [] })),
 }));
 

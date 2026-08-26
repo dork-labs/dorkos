@@ -1,6 +1,6 @@
 /**
  * In-memory registry of in-flight managed-MCP OAuth sign-in flows (DOR-942),
- * mirroring `OpenRouterOAuthStore` (`services/runtimes/opencode/openrouter.ts`).
+ * mirroring `OpenRouterOAuthStore` (`services/runtimes/opencode/providers/openrouter.ts`).
  *
  * A flow is minted by `mcp.signin` and consumed by the loopback callback, which
  * run on **separate requests**, so the PKCE verifier, the target
