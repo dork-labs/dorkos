@@ -14,6 +14,11 @@ packages/cli/core-extensions/
 # `pnpm --filter @dorkos/desktop build`.
 apps/desktop/core-extensions/
 
+# Prebuilt SQLite add-ons the Obsidian plugin build fetches once and reuses.
+# Binaries, per Electron ABI — downloaded from better-sqlite3's own releases,
+# never committed.
+apps/obsidian-plugin/.native/
+
 # Build outputs
 dist/
 dist-server/

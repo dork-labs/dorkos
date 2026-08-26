@@ -321,6 +321,15 @@ export function createRoomSubsystem(opts: {
   turns?: RoomTurnRunner;
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
+  /**
+   * Whether this subsystem sits on a database it may not write (DOR-1563).
+   *
+   * Skips the handle reservations below — the one thing construction WRITES.
+   * A reader cannot take them and does not need to: they are already in any
+   * database a DorkOS has booted, which is the only kind a reader is pointed at.
+   * Without this, every Obsidian panel open logs a failed write.
+   */
+  readOnly?: boolean;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
@@ -414,9 +423,14 @@ export function createRoomSubsystem(opts: {
   // first would otherwise take it and leave the room's own voice as `dorkos-2`.
   // Wiring it into the subsystem's own construction makes that structural: the
   // registry cannot exist without the reservations existing, on every install
-  // path there is, including the embedded one. The backfill rides along because
-  // it wants the same guarantee — the reservations are taken before it derives.
-  ensureHandles(opts.db, authors);
+  // path that can take them. The backfill rides along because it wants the same
+  // guarantee — the reservations are taken before it derives.
+  //
+  // A READ-ONLY subsystem is the one exception, and it does not weaken the
+  // invariant: it cannot mint a handle either, so there is no race for it to
+  // lose, and the reservations it would take are already in the database that
+  // whichever DorkOS wrote it took them in.
+  if (!opts.readOnly) ensureHandles(opts.db, authors);
   const welcomeBack = new WelcomeBackGreeter({
     settings: readWelcomeBack,
     // Resolved per return rather than captured: #team is seeded during boot and
@@ -562,6 +576,6 @@ export function getRoomAuthors(): AuthorRegistry {
 export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export { toAuthorRef, type AuthorRecord } from './author-registry.js';
-export { resolveOperatorAuthor } from './operator-author.js';
+export { resolveOperatorAuthor, peekOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './limits/turn-budget.js';

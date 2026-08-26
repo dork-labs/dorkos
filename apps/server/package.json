@@ -9,6 +9,9 @@
     "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts",
     "./services/runtimes/claude-code/auth-probe": "./src/services/runtimes/claude-code/tooling/claude-cli-auth.ts",
     "./services/session": "./src/services/session/index.ts",
+    "./services/rooms": "./src/services/rooms/index.ts",
+    "./services/search": "./src/services/search/index.ts",
+    "./services/core/auth": "./src/services/core/auth/index.ts",
     "./services/connectors": "./src/services/connectors/index.ts",
     "./services/core/capabilities": "./src/services/core/capabilities/index.ts"
   },

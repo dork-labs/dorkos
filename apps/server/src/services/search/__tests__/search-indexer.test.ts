@@ -728,3 +728,27 @@ describe('SearchIndexer scheduling', () => {
     expect(sweeps).toBe(3);
   });
 });
+
+describe('starting the sweep in a host whose timers are not Node timers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('does not throw when the interval handle has no unref()', () => {
+    // Obsidian's renderer runs with node integration but no context isolation,
+    // so `setInterval` is Blink's: it returns a plain NUMBER, and `.unref()` on
+    // it is a TypeError. Unguarded, that throw escaped `start()`, escaped the
+    // plugin's index-opening, escaped `CopilotView.onOpen`, and rendered the
+    // entire panel blank on every machine that had a database — for a call whose
+    // only job is to not hold a process open.
+    vi.stubGlobal('setInterval', () => 7 as unknown as ReturnType<typeof setInterval>);
+    const indexer = new SearchIndexer(db, []);
+
+    expect(() => indexer.start()).not.toThrow();
+
+    // And `stop()` has to survive the same handle, or the teardown throws in
+    // place of the startup.
+    vi.stubGlobal('clearInterval', () => {});
+    expect(() => indexer.stop()).not.toThrow();
+  });
+});

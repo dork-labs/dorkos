@@ -6,6 +6,6 @@
       "@/*": ["../client/src/*"]
     }
   },
-  "include": ["src/**/*", "build-plugins/**/*", "../client/src/**/*"],
+  "include": ["src/**/*", "build-plugins/**/*", "scripts/**/*", "../client/src/**/*"],
   "exclude": ["node_modules", "dist", "../client/src/main.tsx", "../client/src/**/__tests__/**"]
 }

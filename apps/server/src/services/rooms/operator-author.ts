@@ -37,3 +37,28 @@ export function resolveOperatorAuthor(registry: AuthorRegistry): AuthorRecord {
   const owner = readOwnerAccount();
   return owner ? registry.bindOwner(owner.id) : registry.localHuman();
 }
+
+/**
+ * The same answer, for a caller that may not write (DOR-1563).
+ *
+ * {@link resolveOperatorAuthor} mints. That is right for every caller that can
+ * write — it is what adopts the `'local'` sentinel onto a new account — and
+ * impossible for one that cannot: the Obsidian embed opens the database
+ * read-only so it can never be a second writer to DorkOS's own file, and a mint
+ * there raises "attempt to write a readonly database" on every search.
+ *
+ * So this asks the same question of the same two natural keys and answers `null`
+ * where the other would have created a row. **It resolves the owner branch and
+ * the unowned branch separately, exactly as its twin does**, so a reader cannot
+ * end up searching as somebody the writer would not have been.
+ *
+ * `null` is a database no DorkOS has ever booted against — it mints this row
+ * itself — and a caller that gets one should refuse rather than pick an
+ * identity.
+ *
+ * @param registry - The author registry to look in.
+ * @returns The operator's author record, or `null` when it does not exist yet.
+ */
+export function peekOperatorAuthor(registry: AuthorRegistry): AuthorRecord | null {
+  return registry.peekOperator(readOwnerAccount()?.id ?? null);
+}

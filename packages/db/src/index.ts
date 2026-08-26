@@ -11,7 +11,7 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema/index.js';
-import { MIGRATIONS_FOLDER } from './migrations-folder.js';
+import { migrationsFolder } from './migrations-folder.js';
 
 /**
  * Thrown when the database at a path exists but will not open.
@@ -83,6 +83,47 @@ export function createDb(dbPath: string) {
   }
 }
 
+/**
+ * Opens an EXISTING database for reading only, creating nothing and changing
+ * nothing.
+ *
+ * For a second program on the machine that wants to read DorkOS's data while
+ * DorkOS itself may be running — today that is the Obsidian plugin reading the
+ * message index (ADR 260825-194924). It differs from {@link createDb} in three
+ * ways, and each one is the point:
+ *
+ * - **`fileMustExist`.** A missing database is an error, not an invitation to
+ *   create an empty one. `createDb`'s create-on-open is how an install gets its
+ *   first database; a reader that did the same would leave a schemaless
+ *   `dork.db` behind and make the real DorkOS boot into it.
+ * - **No `journal_mode` and no `synchronous`.** Both are writes. Against a
+ *   database already in WAL, SQLite answers `journal_mode` from the header and
+ *   nothing happens; against one that is not, it raises "attempt to write a
+ *   readonly database". Measured both ways.
+ * - **`readonly`.** The connection cannot write even by mistake, which is what
+ *   makes it safe to point at a file another process is writing.
+ *
+ * **It still sees that writer's newest rows.** A readonly connection reads the
+ * `-wal` file too, so a row DorkOS committed a second ago and has not
+ * checkpointed is visible here — measured. A reader is not a stale snapshot.
+ *
+ * `busy_timeout` is kept: readers still wait on a checkpointing writer.
+ *
+ * @param dbPath - Absolute path to an existing database file.
+ * @returns The Drizzle instance, same type as {@link createDb}'s.
+ * @throws {DatabaseOpenError} When the file is absent, or will not open.
+ */
+export function openReadOnlyDb(dbPath: string) {
+  let sqlite: Database.Database;
+  try {
+    sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
+    sqlite.pragma('busy_timeout = 5000');
+  } catch (err) {
+    throw new DatabaseOpenError(dbPath, err);
+  }
+  return drizzle(sqlite, { schema });
+}
+
 /** Apply the house pragmas to an open connection and wrap it in Drizzle. */
 function configureAndWrap(sqlite: Database.Database) {
   sqlite.pragma('journal_mode = WAL');
@@ -139,7 +180,7 @@ function configureAndWrap(sqlite: Database.Database) {
  * @param db - Drizzle database instance from createDb()
  */
 export function runMigrations(db: ReturnType<typeof createDb>): void {
-  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+  migrate(db, { migrationsFolder: migrationsFolder() });
 }
 
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */

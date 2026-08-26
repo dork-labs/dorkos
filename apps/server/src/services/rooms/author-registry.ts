@@ -1005,6 +1005,49 @@ export class AuthorRegistry {
   }
 
   /**
+   * The operator's author row **if it already exists**, without creating one.
+   *
+   * The read-only twin of {@link AuthorRegistry.localHuman} and
+   * {@link AuthorRegistry.bindOwner}: same two natural keys, same active-row
+   * filter, no `INSERT` and no `UPDATE`.
+   *
+   * **It is NOT equivalent to them, and the difference is deliberate.**
+   * `bindOwner` ADOPTS the pre-login `'local'` sentinel onto the owner's key,
+   * which is how an install that gains a login keeps the rooms and memberships
+   * it already had. Adopting is a write, so this cannot do it — and must not
+   * imitate it by reading the sentinel and calling it the owner. That row is not
+   * the owner (`isOwnerRecord` says so), and handing back the owner's search
+   * scope for it is the widening this seam exists to refuse. On an owned install
+   * with only a sentinel row, the honest answer is `null`.
+   *
+   * **It exists because a reader is not allowed to mint** (DOR-1563). The
+   * Obsidian embed opens `dork.db` read-only — DorkOS may be writing it, and two
+   * writers on one index is the risk that shape avoids — and `localHuman()`
+   * writes: it upserts the author row when there is not one, which on a readonly
+   * connection raises "attempt to write a readonly database" on EVERY search.
+   * Measured, not predicted.
+   *
+   * `null` means nothing has ever acted as the operator on this database, which
+   * on any install DorkOS has actually booted cannot happen — it mints this row
+   * itself. A caller that gets `null` has a database no DorkOS has run against,
+   * and should refuse rather than invent an identity to search as.
+   *
+   * @param ownerUserId - The owning account's id, or `null` on an install with
+   *   no accounts — the same argument {@link isOwnerRecord} takes, so the two
+   *   cannot disagree about which key is the operator's.
+   * @returns The record, or `null` when the row is not there.
+   */
+  peekOperator(ownerUserId: string | null): AuthorRecord | null {
+    const naturalKey =
+      ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId);
+    const row = this.activeRow('human', naturalKey);
+    // The pre-login sentinel is deliberately NOT a fallback for a bound owner:
+    // reading it would hand the owner's scope to a row that is not the owner,
+    // which is the widening this whole seam is shaped to refuse.
+    return row ? toRecord(row) : null;
+  }
+
+  /**
    * The human author for a local account that is NOT this install's owner.
    *
    * Under ADR 260727-184933 D6 there is no such account: registration is closed

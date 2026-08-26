@@ -160,17 +160,13 @@ export interface DirectTransportServices {
    * route's decision as data — the envelope, or the refusal — and
    * `direct/search-methods.ts` raises the refusal the way an HTTP one arrives.
    *
-   * **Optional, because no shipped host can supply it yet, and the UI knows.**
-   * The Obsidian plugin cannot open the index from a vault: `better-sqlite3` is
-   * a native addon the plugin bundle does not carry there. So the embed's search
-   * surfaces stay gated (`MessageSearchDialog` and `CommandPaletteDialog` both
-   * ask `getPlatform().isEmbedded`) and this stays unwired. An absent seam makes
-   * `search` REJECT with a plain sentence — never `{ results: [], warnings: [] }`,
-   * which would tell somebody their history holds no mention of a word they know
-   * they wrote.
-   *
-   * When a host can open the index, wiring this and lifting those two gates is
-   * the whole change.
+   * **Optional, because a host can be running where there is no index to open.**
+   * The Obsidian plugin wires it whenever this machine has one (DOR-1563), and
+   * leaves it out when it does not — a DorkOS that has never run, a database
+   * older than message search, an Obsidian whose Electron the plugin carries no
+   * SQLite build for. An absent seam makes `search` REJECT with a plain sentence
+   * — never `{ results: [], warnings: [] }`, which would tell somebody their
+   * history holds no mention of a word they know they wrote.
    */
   search?: {
     search(query: SearchQuery): SearchAnswer | Promise<SearchAnswer>;
