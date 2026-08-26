@@ -25,6 +25,10 @@ import type {
 import type { RecentSessionsResponse, SessionDailyCountsResponse } from '@dorkos/shared/types';
 import type { MemberRoomsResponse, TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
+import {
+  BUILTIN_MEMORY_PROVIDER_ID,
+  type MemoryProviderStatus,
+} from '@dorkos/shared/memory-provider';
 import type {
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
@@ -594,6 +598,18 @@ export const serverOnlyStubs = {
     // here can be running unattended — the standing banner is correct to be
     // silent rather than merely unwired.
     return { drivers: [] };
+  },
+
+  async getMemoryProviderStatus(): Promise<MemoryProviderStatus> {
+    // The embed has no `memory.provider` config surface of its own and never
+    // registers a custom backend, so `builtin` is the honest, permanent answer
+    // rather than an unwired one.
+    return {
+      configuredId: BUILTIN_MEMORY_PROVIDER_ID,
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: false,
+      benchReason: null,
+    };
   },
 
   async startTunnel(): Promise<{ url: string }> {

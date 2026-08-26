@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import type { Session, StreamEvent, CommandEntry, Task, TaskRun } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
 import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
 import type {
   ObservedChat,
@@ -572,6 +573,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
     }),
     getUnattendedAutonomy: vi.fn().mockResolvedValue({ drivers: [] }),
+    getMemoryProviderStatus: vi.fn().mockResolvedValue({
+      configuredId: BUILTIN_MEMORY_PROVIDER_ID,
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: false,
+      benchReason: null,
+    }),
     provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),

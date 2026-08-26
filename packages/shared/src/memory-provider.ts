@@ -153,6 +153,34 @@ export const MemoryProviderInfoSchema = z.object({
 /** A provider's identity and capabilities. See {@link MemoryProviderInfoSchema}. */
 export type MemoryProviderInfo = z.infer<typeof MemoryProviderInfoSchema>;
 
+/**
+ * A live snapshot of which memory backend is configured, which one is actually
+ * serving calls right now, and why they differ.
+ *
+ * The operator-visible half of the server registry's quarantine-and-fallback
+ * design: a benched backend hands every call to `builtin` from the inside, with
+ * one warning in the server log — this is what lets `GET /api/system/memory`
+ * and the standing client banner say the same thing without reading the log.
+ * Plain fields rather than a Zod schema, matching {@link UnattendedAutonomyState}
+ * in `permission-semantics.ts` — this is a read-only status projection, not
+ * something ever parsed back off disk or off the wire into a decision.
+ */
+export interface MemoryProviderStatus {
+  /** The id `memory.provider` names. */
+  configuredId: string;
+  /** The id actually answering calls right now — `builtin` whenever `configuredId` cannot. */
+  activeId: string;
+  /** Whether the configured backend is benched for the rest of this run. */
+  benched: boolean;
+  /**
+   * A short, capped summary of what benched it (error name plus the first
+   * line of its message) — never the raw thrown value. `null` when `benched`
+   * is `false`. This crosses the wire with no auth check of its own beyond
+   * whatever guards the rest of `/api`, so it is never the full error text.
+   */
+  benchReason: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // 3. Reading
 // ---------------------------------------------------------------------------

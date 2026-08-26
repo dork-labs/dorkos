@@ -188,6 +188,30 @@ export const MEMORY_OVERSIZE_WARNING =
   `Only the first ${MEMORY_MAX_CHARS.toLocaleString('en-US')} characters of this file are ` +
   `shown here — it is longer than that. Tidy it up so nothing important is left out.`;
 
+/**
+ * The one line a reader sees when the configured memory backend is not the one
+ * that actually answered this read.
+ *
+ * Lives beside {@link MEMORY_OVERSIZE_WARNING} for the same reason: it is
+ * DorkOS-authored content about the fenced block, not part of it, so it rides
+ * the fence's `notes` alongside the oversize warning rather than being pasted
+ * into the note text. Only rendered when the block has content to show — see
+ * `buildMemoryBlock` in `agent-context.ts` for which case that is and which it
+ * is not yet.
+ *
+ * Deliberately says "a different local store", never "a copy": `builtin`
+ * starts from its own empty scaffold rather than mirroring the benched
+ * backend's notes (`registry.ts`'s own docblock, "the fallback swaps which
+ * memory an agent has, not just which code serves it"), so calling it a copy
+ * would be false — and the exact false claim that invites an agent to write
+ * over notes it simply cannot see right now, which is the failure this whole
+ * feature exists to avoid.
+ */
+export const MEMORY_PROVIDER_BENCHED_NOTICE =
+  'Your configured memory backend is not answering right now, so these notes come from a ' +
+  'different local store, not your usual memory. Do not assume anything missing here was ' +
+  'never saved.';
+
 /** Marker separating auto-generated traits from custom prose */
 export const TRAIT_SECTION_START = '<!-- TRAITS:START -->';
 export const TRAIT_SECTION_END = '<!-- TRAITS:END -->';

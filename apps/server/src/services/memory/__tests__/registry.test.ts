@@ -54,6 +54,7 @@ import {
   MEMORY_PROVIDER_UNAVAILABLE_INFO,
   getMemoryProvider,
   isMemoryProviderBenched,
+  memoryProviderStatus,
   registerMemoryProvider,
   resetMemoryProvider,
 } from '../registry.js';
@@ -282,6 +283,60 @@ describe('quarantine', () => {
     expect(warn.mock.calls[0]!.join(' ')).toContain(BUILTIN_MEMORY_PROVIDER_ID);
     await getMemoryProvider().write(ref, { action: 'add', text: 'still works' });
     expect((await getMemoryProvider().getSnapshot(ref)).content).toContain('still works');
+  });
+});
+
+describe('memoryProviderStatus — the health surface and in-band notice read this', () => {
+  it('reports builtin as both configured and active when nothing else is set up', () => {
+    expect(memoryProviderStatus()).toEqual({
+      configuredId: BUILTIN_MEMORY_PROVIDER_ID,
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: false,
+      benchReason: null,
+    });
+  });
+
+  it('reports a healthy custom provider as its own active id, unbenched', () => {
+    registerMemoryProvider(CUSTOM, () => new FakeMemoryProvider({ id: CUSTOM }));
+    configure(CUSTOM);
+
+    expect(memoryProviderStatus()).toEqual({
+      configuredId: CUSTOM,
+      activeId: CUSTOM,
+      benched: false,
+      benchReason: null,
+    });
+  });
+
+  it('reports the fallback as active and names why, once the configured backend is benched', async () => {
+    registerMemoryProvider(CUSTOM, () => throwingProvider(new TypeError('acme backend exploded')));
+    configure(CUSTOM);
+    const ref = await makeRef();
+
+    await getMemoryProvider().getSnapshot(ref);
+
+    expect(memoryProviderStatus()).toEqual({
+      configuredId: CUSTOM,
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: true,
+      benchReason: expect.stringContaining('acme backend exploded') as string,
+    });
+  });
+
+  it('reports the fallback as active for an id nothing registered, without claiming a bench', async () => {
+    configure('never-registered');
+    const ref = await makeRef();
+    await getMemoryProvider().getSnapshot(ref);
+
+    // Unregistered is a misconfiguration, not a fault this run detected — the
+    // `benched` flag names the quarantine state specifically, so it stays
+    // false even though `activeId` is honest that builtin is what answers.
+    expect(memoryProviderStatus()).toEqual({
+      configuredId: 'never-registered',
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: false,
+      benchReason: null,
+    });
   });
 });
 

@@ -15,7 +15,11 @@ vi.mock('@dorkos/shared/manifest', () => ({
 // integration tests control exactly what a "stored config" reports — including
 // a read that throws, which must drop the block rather than fail the turn.
 vi.mock('../../../core/config-manager.js', () => ({
-  configManager: { getAll: vi.fn() },
+  // `getDot` is the registry's own read of `memory.provider` (registry.ts,
+  // unmocked below) — every case that does not touch it gets `undefined`,
+  // which resolves to the `builtin` default the same way a real unconfigured
+  // install does.
+  configManager: { getAll: vi.fn(), getDot: vi.fn() },
 }));
 // Partial: the two pure helpers are stubbed so the trait-regeneration cases can
 // assert what they were called with, but everything else in this module is real
@@ -50,11 +54,24 @@ import { configManager } from '../../../core/config-manager.js';
 import {
   MEMORY_FENCE_PREAMBLE,
   MEMORY_MAX_CHARS,
+  MEMORY_PROVIDER_BENCHED_NOTICE,
   MEMORY_STALENESS_LINE,
   MEMORY_TRUST_FRAMING,
 } from '@dorkos/shared/convention-files';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
 import { getMemoryProvider } from '../../../memory/index.js';
+// The REAL registry, unmocked and imported separately from the module above —
+// `buildMemoryBlock`'s benched-notice check reads `memoryProviderStatus()`
+// straight from `registry.ts`, not through the `getMemoryProvider` mock that
+// drives the snapshot content in this file. Only the one test that exercises
+// the notice touches these; every other case never benches anything, so
+// `memoryProviderStatus().benched` stays `false` for them by construction.
+import {
+  getMemoryProvider as getRealMemoryProvider,
+  isMemoryProviderBenched,
+  registerMemoryProvider,
+  resetMemoryProvider,
+} from '../../../memory/registry.js';
 import { logger } from '../../../../lib/logger.js';
 import { NONCE_CHARS } from '../untrusted-fence.js';
 
@@ -91,6 +108,10 @@ beforeEach(() => {
     forget: vi.fn(),
     consolidate: vi.fn(),
   });
+  // The REAL registry, unaffected by `clearAllMocks` above — reset so a bench
+  // driven by one test (the benched-notice case) can never leak its state into
+  // the next one.
+  resetMemoryProvider();
 });
 
 afterEach(() => {
@@ -696,6 +717,56 @@ describe('<agent_memory>', () => {
     expect(begin).toBeGreaterThan(-1);
     expect(block.indexOf('the operator ships on Fridays')).toBeGreaterThan(begin);
     expect(block.indexOf('the operator ships on Fridays')).toBeLessThan(end);
+  });
+
+  // Red when: the notice stops appearing once a backend is benched, or appears
+  // when nothing is benched. Drives a REAL bench through the real registry
+  // (`registerMemoryProvider` / `configManager.getDot`), independent of the
+  // mocked `getMemoryProvider` that supplies this block's own content — the two
+  // are different call sites in `buildMemoryBlock` and the test has to move
+  // both, the same way the real benched-and-falling-back path does.
+  it('adds one line naming the fallback once the configured backend is benched', async () => {
+    vi.mocked(configManager.getDot).mockImplementation((key: string) =>
+      key === 'memory.provider' ? 'acme-memory' : undefined
+    );
+    registerMemoryProvider('acme-memory', () => ({
+      info: { id: 'acme-memory', capabilities: { search: false, consolidate: false } },
+      getSnapshot: () => {
+        throw new Error('acme is unreachable');
+      },
+      write: vi.fn(),
+      query: vi.fn(),
+      forget: vi.fn(),
+      consolidate: vi.fn(),
+    }));
+    // Trigger the fault the same way a real turn would — a read — so the
+    // registry's own bench happens for real rather than being asserted as a
+    // premise.
+    await getRealMemoryProvider().getSnapshot({ agentId: 'x', agentPath: '/tmp/x' });
+    expect(isMemoryProviderBenched('acme-memory')).toBe(true);
+
+    memoryReads({ status: 'present', content: NOTES, bytes: NOTES.length, truncated: false });
+
+    const block = (await buildAgentBlock('/test')).text;
+
+    expect(block).toContain(MEMORY_PROVIDER_BENCHED_NOTICE);
+    // Still inside the fenced block, beside the content — not a second block
+    // and not outside the markers where a note could not have written it.
+    expect(block.indexOf(MEMORY_PROVIDER_BENCHED_NOTICE)).toBeGreaterThan(
+      block.indexOf('<agent_memory>')
+    );
+    expect(block.indexOf(MEMORY_PROVIDER_BENCHED_NOTICE)).toBeLessThan(
+      block.indexOf('</agent_memory>')
+    );
+  });
+
+  it('says nothing extra when nothing is benched', async () => {
+    // The control on the case above: a healthy install never sees the notice.
+    memoryReads({ status: 'present', content: NOTES, bytes: NOTES.length, truncated: false });
+
+    const block = (await buildAgentBlock('/test')).text;
+
+    expect(block).not.toContain(MEMORY_PROVIDER_BENCHED_NOTICE);
   });
 
   // Red when: absence renders anything at all — a placeholder, an empty block,

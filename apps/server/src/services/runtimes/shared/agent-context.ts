@@ -37,11 +37,13 @@ import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
 import {
   MEMORY_FENCE_LABEL,
   MEMORY_FENCE_PREAMBLE,
+  MEMORY_PROVIDER_BENCHED_NOTICE,
   MEMORY_STALENESS_LINE,
   MEMORY_TRUST_FRAMING,
 } from '@dorkos/shared/convention-files';
 import { configManager } from '../../core/config-manager.js';
 import { getMemoryProvider } from '../../memory/index.js';
+import { memoryProviderStatus } from '../../memory/registry.js';
 import { logger } from '../../../lib/logger.js';
 import { fenceUntrustedBlock } from './untrusted-fence.js';
 import { env } from '../../../env.js';
@@ -200,6 +202,15 @@ You are one session of this agent. Other sessions of you exist in other rooms, D
  * tool and the wire refuse to cross it — renders exactly `MEMORY_MAX_CHARS`
  * characters plus one visible warning line. Loud, never silent.
  *
+ * A **benched** configured backend adds one more line to a block that renders:
+ * `MEMORY_PROVIDER_BENCHED_NOTICE`, telling the agent the content it is
+ * reading comes from `builtin` — a DIFFERENT store, never a copy of its usual
+ * backend's notes, since `builtin` starts from its own empty scaffold. Saying
+ * "copy" would be false and would invite the agent to assume nothing is
+ * missing, which is the opposite of the point. Deliberately narrow — see
+ * `memory/registry.ts`'s own docblock for the far more common case this does
+ * not cover (a fresh fallback, which renders nothing at all).
+ *
  * ## What this block costs, per runtime, measured
  *
  * On claude-code it rides the cacheable system prompt: at the cap it is about
@@ -245,13 +256,23 @@ async function buildMemoryBlock(agentId: string, agentPath: string): Promise<str
   }
   if (snapshot.status === 'absent') return '';
 
+  // When the configured backend is benched, this content came from `builtin`
+  // instead — same mechanism as the oversize warning: DorkOS-authored, about
+  // the fenced content rather than part of it, so it rides `notes` rather than
+  // being pasted into the note text. Deliberately narrow: this only fires when
+  // there IS content to show. The far more common first-bench shape — `builtin`
+  // starting from its own empty scaffold — is `'absent'` above, which still
+  // renders nothing; see the registry's own docblock for why that half stays
+  // unfixed here.
+  const notes = [
+    ...(snapshot.warning ? [snapshot.warning] : []),
+    ...(memoryProviderStatus().benched ? [MEMORY_PROVIDER_BENCHED_NOTICE] : []),
+  ];
+
   const fence = fenceUntrustedBlock(snapshot.content, {
     label: MEMORY_FENCE_LABEL,
     preamble: MEMORY_FENCE_PREAMBLE,
-    // The oversize warning is DorkOS-authored and describes the fenced content,
-    // so it belongs in the primitive's own region, beside the preamble — not
-    // pasted into the content, where it would be indistinguishable from a note.
-    ...(snapshot.warning ? { notes: [snapshot.warning] } : {}),
+    ...(notes.length > 0 ? { notes } : {}),
   });
 
   return [
