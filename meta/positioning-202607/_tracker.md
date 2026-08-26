@@ -6,7 +6,7 @@
 
 ## 0. Blocking decisions (before the clock starts)
 
-- [x] 2026-07-06 — Founder-hours decision: the Vault "VP" role is symbolic (no role, no paperwork, no comp; Vault is unfunded/pre-revenue); founder is effectively full-time on DorkOS. Gate removed (`11` §6.5/§7).
+- [x] 2026-07-06 — Founder-hours decision: the AI Lab role is honorary and takes minimal time; founder is effectively full-time on DorkOS. Gate removed (`11` §6.5/§7).
 - [ ] Confirm launch-week target on the calendar (Show HN aimed at week of Aug 17) — by Jul 8
 
 ## Phase 0: Stabilize + instrument (Weeks 1-3, Jul 6-26)
