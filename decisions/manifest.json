@@ -4216,7 +4216,7 @@
       "id": "260728-214214",
       "slug": "message-search-is-a-derived-rebuildable-index",
       "title": "Message search is a derived, rebuildable index, not a second transcript store",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-28",
       "specSlug": "message-search",
       "extractedFrom": "message-search",
