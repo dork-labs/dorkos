@@ -234,6 +234,14 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'tunnel.auth': null,
   // Nothing is scanned until a person names a root.
   'mesh.scanRoots': [],
+  // Which backend holds what an agent remembers (spec `agent-memory`, D7). A
+  // real axis rather than a preference: `'builtin'` is one markdown file beside
+  // the agent, on this machine, and every other value this key could name is a
+  // backend that holds the same notes somewhere else. The default lands on the
+  // one that keeps them here. No PROTECTIVE_CARRYOVERS rule: a wipe lands back
+  // on `'builtin'`, which IS the protective value, so there is nothing a
+  // carryover could restore that recovery does not already give.
+  'memory.provider': 'builtin',
   // Automatic replies are limited by default (DOR-1428). The three numbers
   // beneath this switch are permissive at the values they now ship — see
   // PERMISSIVE_DEFAULTS — but the switch itself is the protective side of a

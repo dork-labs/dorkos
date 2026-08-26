@@ -209,6 +209,12 @@ export const CONFIG_DISCLOSURE = {
 
   'mesh.scanRoots': 'expose',
 
+  // Which backend holds an agent's memory. A provider id, not a credential and
+  // not a path to one — a backend resolves its own secrets server-side, which is
+  // rule 3 of the port. An agent that knows its memory is the builtin file is an
+  // agent that can tell a person why `query` refuses.
+  'memory.provider': 'expose',
+
   'rooms.turnLimitsEnabled': 'expose',
   'rooms.maxAgentDepth': 'expose',
   'rooms.maxTurnsPerAgentPerCascade': 'expose',

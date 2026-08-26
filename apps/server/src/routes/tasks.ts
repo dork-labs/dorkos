@@ -26,11 +26,11 @@ import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody, toErrorMessage } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
-import { armEscalation } from '../services/notifications/escalation-service.js';
+import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
 import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
@@ -52,39 +52,58 @@ import {
 import fs from 'node:fs/promises';
 
 /**
- * Whether this caller clears the agent bar: it names no agent and holds no
- * approval token, in any login posture.
+ * Whether this caller is trusted to arm a scheduled task itself — that is, to
+ * skip the approval gate, un-clamp its power, and write the operator-only fields.
+ * It composes the SAME two bars the approval, config, and extension-approval
+ * routes do, and for the same reason: trust here must be POSITIVE, never the mere
+ * ABSENCE of an agent marker.
  *
- * ## This is the bar tasks have always run, spelled out rather than borrowed
+ * ## Two bars, checked together (DOR-1569)
  *
- * It used to read `trustedCaller(...) !== undefined`, which asked the same
- * question by delegation. DOR-474 changed what a trusted-caller MARKER means: it
- * now also demands a session cookie under login-on, because the marker stands in
- * for "could have granted itself the approval anyway" and answering an approval
- * now needs a cookie. Tasks must not inherit that, so they stop asking through the
- * marker and ask the resolver directly.
+ * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
+ *   When login is on, `sessionGate` accepts a per-user API key as the same
+ *   identity a browser cookie proves (DOR-474). An agent with shell access can
+ *   read the operator's key off `~/.dork` and present it while dropping its
+ *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
+ *   session cookie is. This bar refuses every credential but a cookie while login
+ *   is on, and — being the `...UnderLogin` half, not the full
+ *   `requireOperatorCookie` — it ALLOWS with login off, so the shipped default
+ *   posture is unchanged and the residual there stays the documented DOR-505 one.
+ * - **The agent bar, in every posture** ({@link resolveDecisionAuthority}). A
+ *   caller that names itself an agent, or holds an approval token, is refused.
  *
- * Inheriting it would have been a silent regression, not a hardening, and it was
- * caught on a live server rather than in review: `dorkos task create` presents a
- * per-user API key and no cookie, so `POST /api/tasks` would have parked every
- * task the operator scheduled at `pending_approval` while the CLI printed
- * `Created scheduled task <name>` and nothing else (`packages/cli/src/commands/task.ts`).
- * A cron job reported as created that never fires is worse than a refusal. And
- * `PATCH /api/tasks/:id` with `permissionMode` would have hard-403'd with no
- * approval path at all, which is a lockout by the same rule
- * `services/marketplace/source-write-policy.ts` applies to package sources.
+ * ## Why this replaced trust-by-absence, and what it costs
  *
- * Whether an agent holding the operator's key should be able to schedule
- * unattended work is a real question, and `services/tasks/task-write-policy.ts`
- * asks to be reconsidered deliberately if the cookie requirement is ever
- * generalized. It is DOR-553's, in flight elsewhere. A security fix must not
- * answer an adjacent subsystem's open question as a side effect.
+ * It used to read `resolveDecisionAuthority(...).allowed` alone. Under login-on
+ * that clears any valid credential, so an agent that read the operator's API key
+ * off disk and dropped its header was trusted to un-clamp `bypassPermissions` and
+ * arm a live cron with no approval — the DOR-1569 exploit, observed on a live
+ * server. The one signal a header-stripping caller on loopback cannot fake is a
+ * session cookie, so under login-on the cookie is now required, exactly as it is
+ * to DECIDE an approval (whoever may decide may act without one).
+ *
+ * The cost is borne by the operator's own login-on CLI: `dorkos task create`
+ * presents an API key and no cookie, so under login-on it now PROPOSES a task
+ * (parked at `pending_approval`, clamped) for the operator to approve in the
+ * cockpit, rather than arming it directly, and `dorkos task update` can no longer
+ * set an operator-only field. That is the deliberate, conservative trade of a
+ * security fix — an occasional extra approval, never a live full-power cron
+ * nobody looked at. This is the DOR-553 question ("should an agent holding the
+ * operator's key schedule unattended work?"), answered for tasks: no.
  *
  * @param req - The incoming request.
  * @param res - The response, for `sessionGate`'s resolved user.
- * @returns True when no machine principal presented itself.
+ * @returns True only when a person is positively established — a session cookie
+ *   under login-on, or the operator on the login-off local machine — with neither
+ *   an agent identity nor an approval token presented.
  */
 function clearsTheAgentBar(req: Request, res: Response): boolean {
+  // The cookie bar first, mirroring `routes/config.ts`. Under login-off this is a
+  // no-op (undefined); under login-on it refuses everything but a session cookie,
+  // so a stolen API key never reaches the agent bar as "trusted".
+  if (requireOperatorCookieUnderLogin(res, 'how a scheduled task runs') !== undefined) {
+    return false;
+  }
   return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
 }
 
@@ -98,14 +117,15 @@ function clearsTheAgentBar(req: Request, res: Response): boolean {
  * unconditionally, because an MCP tool call is by construction the agent surface.
  * This route is not: the cockpit's Approve button writes `status: 'active'`
  * through it (`TaskRow.tsx`), and its task form writes `permissionMode`. So the
- * policy is skipped for a caller that clears {@link clearsTheAgentBar} — no agent
- * identity and no approval token — and applied to everyone else. That is exactly the shape
- * `PATCH /api/config` uses for operator-only settings, and the long note there
- * states the divergence it creates: under the default `local-trust` posture a
- * caller with a shell can omit both headers and clear the check, so this stops
- * an agent that follows the protocol, not an adversary already running as you.
- * That is stated rather than papered over, and it is strictly tighter than the
- * nothing this route enforced before.
+ * policy is skipped for a caller that clears {@link clearsTheAgentBar} — a person
+ * positively established, with no agent identity and no approval token — and
+ * applied to everyone else. That is exactly the shape `PATCH /api/config` uses for
+ * operator-only settings. Under login-on that trust now requires a session cookie
+ * (DOR-1569), so a per-user API key is refused here just as a named agent is.
+ * Under the default `local-trust` posture, though, a caller with a shell can omit
+ * every header and be indistinguishable from the cockpit, so this stops an agent
+ * that follows the protocol, not an adversary already running as you — the
+ * documented DOR-505 residual, closed only by turning login on.
  *
  * ## Read the RAW body, and refuse it whole
  *
@@ -604,7 +624,7 @@ export function createTasksRouter(
       if (parkReason) {
         updated = store.recordProposal(req.params.id, { reason: parkReason }) ?? updated;
       }
-      armEscalation('schedule.parked', await resolveScheduleParkPayload(updated));
+      raiseStanding('schedule.parked', await resolveScheduleParkPayload(updated));
     }
 
     broadcastTasksChanged();

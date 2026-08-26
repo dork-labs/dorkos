@@ -54,6 +54,39 @@ export type TaskProvenanceResolver = () => {
 };
 
 /**
+ * What `tasks_create` tells an agent once the schedule is parked.
+ *
+ * The old wording said only that the status was `pending_approval`, which is
+ * true and useless: a model reads it, reports "created the schedule", and ends
+ * the turn — leaving a person who was never told anything to discover the
+ * approval on their own. That is the failure this text exists to fix
+ * (DOR-1570): the operator had to ASK an agent to open the Tasks panel before
+ * they found out something was waiting on them.
+ *
+ * So it asks for the one thing only the agent can do, which is say so out loud.
+ * DorkOS does the rest — the bell, the desktop banner, and the phone ping after
+ * the escalation delay all fire on their own.
+ */
+export const PARKED_SCHEDULE_NOTE =
+  'This schedule will NOT run until the person approves it. Tell them so in your reply — ' +
+  'name the scheduled task and say it is waiting on them. Do not end the turn as if the work ' +
+  'were done.';
+
+/**
+ * The extra sentence for an agent that is in a live DorkOS session, where it can
+ * put the approval in front of the person rather than only describing it.
+ *
+ * Only ever appended when a session actually resolved. `control_ui` needs an
+ * attached interactive session and does not exist on the sessionless external
+ * `/mcp` server, so telling an agent there to call it would be an instruction
+ * that can only fail. It is also not auto-allowed, so this is worded as
+ * something to offer, never as something that will happen.
+ */
+export const PARKED_SCHEDULE_SURFACE_HINT =
+  'If it helps them decide, you can open the Schedules panel for them with ' +
+  "control_ui({ action: 'open_panel', panel: 'tasks' }).";
+
+/**
  * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
  * accepts — the MCP twin of the same fix on `UpdateTaskRequestSchema` (DOR-1481).
  *
@@ -346,7 +379,12 @@ export function createCreateScheduleHandler(
 
     return jsonContent({
       schedule: task,
-      note: `Schedule created at ${task.filePath} with pending_approval status. User must approve before it runs.`,
+      // The panel hint rides along only where the tool that would open it
+      // exists. `resolveProvenance` is absent on the external `/mcp` server, so
+      // that surface gets the "tell them" half and nothing it cannot do.
+      note: provenance.sessionId
+        ? `${PARKED_SCHEDULE_NOTE} ${PARKED_SCHEDULE_SURFACE_HINT}`
+        : PARKED_SCHEDULE_NOTE,
     });
   };
 }

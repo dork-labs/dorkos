@@ -66,6 +66,7 @@ import {
   type StandingCondition,
 } from './services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
+import { capabilityApprovalPayload } from './services/notifications/emitters/capability-approval.js';
 import {
   NotificationService,
   notify,
@@ -1792,6 +1793,33 @@ async function start() {
     logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+  // Catch the escalation ladder up on approvals that were already waiting when
+  // this process started (DOR-1570) — the second standing condition that
+  // outlives a restart, and the more dangerous one: an approval is an agent
+  // asking to do something irreversible. Runs AFTER the purge, so nothing
+  // long-expired is re-armed, and the ladder's own ledger and four-hour
+  // catch-up window keep it idempotent and bounded exactly as they do for
+  // parked schedules.
+  //
+  // No agent path is resolved here, unlike the live edge: `listPending`
+  // returns the operator-facing card, which deliberately keeps
+  // `requestedByPath` off the wire. The consequence is bounded — the path only
+  // chooses WHICH agent's chat binding carries the message, and
+  // `pickRelayAgent` falls back to the newest binding that may initiate, which
+  // is the same person's phone either way.
+  try {
+    const stillPending: StandingCondition[] = approvalService
+      .listPending()
+      .map((approval) => ({
+        kind: 'approval.pending' as const,
+        payload: capabilityApprovalPayload(approval),
+        since: Date.parse(approval.requestedAt),
+      }))
+      .filter((condition) => Number.isFinite(condition.since));
+    getEscalationService()?.rearmFromStandingState(stillPending);
+  } catch (err) {
+    logger.warn('[Escalation] Could not re-arm from pending approvals', logError(err));
   }
   // Standing permissions: the operator's "stop asking about this agent doing
   // this thing", bounded by a clock. The store is injected into the approvals

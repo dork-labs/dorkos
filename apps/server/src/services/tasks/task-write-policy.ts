@@ -81,23 +81,25 @@
  *   operator, and a manifest can no longer declare that its schedule starts
  *   enabled by default either.
  *
- * ## Why not the cookie bar, given a cron task IS a standing grant
+ * ## The cookie bar, under login-on (DOR-1569)
  *
- * `routes/config.ts` puts a STRICTER bar on `approvals.standingGrants`: a real
- * session cookie, checked before the trust question and regardless of its
- * answer, reasoning that a standing permission keeps saying yes for hours. A
- * cron task carrying `bypassPermissions` has exactly that character, so the
- * divergence is worth naming rather than leaving as an omission.
+ * A cron task carrying `bypassPermissions` is a standing grant of the same
+ * character as `approvals.standingGrants`: it keeps saying yes, on its own, for
+ * as long as it is armed. So `clearsTheAgentBar` (in `routes/tasks.ts`) composes
+ * `requireOperatorCookieUnderLogin` — the SAME second bar the approval, config,
+ * and extension-approval routes run — before the agent bar. Under login-on that
+ * refuses every credential but a session cookie, so a per-user API key no longer
+ * clears the bar: an agent that reads the operator's key off disk and drops its
+ * `X-DorkOS-Agent` header can no longer un-clamp `bypassPermissions` or arm a
+ * live cron without approval.
  *
- * It is deliberate. `requireOperatorCookie` refuses OUTRIGHT when login is off,
- * which is the default posture, and the cockpit's own task form writes
- * `permissionMode` through this route. Adopting that bar would break creating a
- * task in the shipped default configuration, a much larger blast radius than the
- * one config subtree it was introduced for, where the cockpit had another path.
- * The honest summary: for tasks the guarantee is "an agent that names itself
- * cannot", not "only a proven person can". If DOR-505 generalizes the cookie
- * requirement for operator-only writes, tasks should be reconsidered along with
- * it rather than separately.
+ * It is the `...UnderLogin` half, NOT the full `requireOperatorCookie` (which
+ * refuses OUTRIGHT when login is off). With login off — the shipped default —
+ * this bar allows, the cockpit's own task form keeps working, and nothing
+ * changes: the residual there is the documented DOR-505 one, closed only by
+ * turning login on. The honest summary: for tasks the guarantee is now "a named
+ * agent cannot, and under login-on only a proven person can". This answers, for
+ * tasks, the DOR-553 question the earlier note deferred.
  *
  * @module services/tasks/task-write-policy
  */

@@ -370,7 +370,10 @@ describe('MCP Tool Handlers', () => {
       });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.schedule.status).toBe('pending_approval');
-      expect(parsed.note).toContain('pending_approval');
+      // The note asks the agent to SAY the schedule is waiting rather than
+      // restating a status field the model has already been handed (DOR-1570).
+      expect(parsed.note).toContain('will NOT run until the person approves it');
+      expect(parsed.note).toContain('Tell them so in your reply');
     });
 
     it('returns created schedule with approval note', async () => {

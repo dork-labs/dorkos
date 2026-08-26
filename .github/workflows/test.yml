@@ -101,6 +101,18 @@ jobs:
     # ceiling. If a healthy run ever crosses ~35 minutes, split the job
     # rather than raising this again.
     timeout-minutes: 45
+    # Raise the V8 old-space ceiling for every Node process this job spawns —
+    # pnpm, turbo, and each `vitest run` worker inherit NODE_OPTIONS. A PR that
+    # touches @dorkos/shared expands `turbo test --affected` to ~20 packages,
+    # and a single vitest process running that many suites exhausted the
+    # default ~2GB heap and died with "Ineffective mark-compacts near heap
+    # limit — JavaScript heap out of memory", failing the required `test`
+    # context nondeterministically and stalling the PR out of the merge queue
+    # (DOR-1576; measured repeatedly on shared-touching PRs). ubuntu-latest has
+    # 16GB, and `--concurrency=1` above means only one suite runs at a time, so
+    # 8GB for that one process is safe headroom, not oversubscription.
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       # fetch-depth: 0 for the tags, not the history. actions/checkout@v7
       # defaults to depth 1 and does NOT fetch tags at that depth, so

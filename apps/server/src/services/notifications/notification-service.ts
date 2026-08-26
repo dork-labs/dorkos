@@ -56,6 +56,7 @@ import {
 } from './notification-registry.js';
 import type { NotificationStore } from './notification-store.js';
 import { cancelEscalationByKey } from './escalation-service.js';
+import { broadcastStandingResolved } from './standing-events.js';
 import {
   deliverOverRelay,
   type RelayChannelDeps,
@@ -197,7 +198,24 @@ export class NotificationService {
     // produce one. Synchronous and before anything else here, because `raise()`
     // below awaits a chat network and a phone ping must not slip out in that
     // window about something a person just dealt with.
-    cancelEscalationByKey(notificationEntry(kind).dedupeKey(payload));
+    const subjectKey = notificationEntry(kind).dedupeKey(payload);
+    cancelEscalationByKey(subjectKey);
+    // And tell the periphery to retire what it drew when this began standing
+    // (DOR-1570). Same reasoning, same moment: a desktop banner about a
+    // schedule somebody just approved is the interruption the tiering exists to
+    // prevent.
+    //
+    // Fired for ALL four standing kinds this function serves, including the two
+    // that are never announced via `standing_pending`: `ask.pending` (its
+    // arrival rides `interaction_pending`, and its resolution rides
+    // `interaction_resolved`) and `session.error` (out of DOR-1570's scope, not
+    // announced at all). For those, this names a `subjectKey` no surface ever
+    // drew a standing banner from, so every listener — the desktop's
+    // `retireStanding`, any future one — treats it as a no-op. Emitting it
+    // unconditionally is deliberate: gating it on "was this kind announced?"
+    // would put that fact in two places, and a harmless resolve for an
+    // unheld subject is cheaper than a rule that can rot.
+    broadcastStandingResolved(kind, subjectKey);
 
     try {
       return await this.raise(kind, payload, opts, {

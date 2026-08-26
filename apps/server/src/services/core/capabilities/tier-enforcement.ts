@@ -452,6 +452,18 @@ export interface TierEnforcementRequest {
   approvalToken?: string;
   /** Which channel a retry should carry its token on, for the instructions. */
   retryChannel: ApprovalRetryChannel;
+  /**
+   * Whether the caller is attached to a live DorkOS session, and can therefore
+   * reach the UI tools to put the approval in front of the operator (DOR-1570).
+   *
+   * Only affects the WORDING of the retry instructions — never whether the gate
+   * asks, or what it binds to. Set by `mcp-tool-gate.ts`'s in-session entry
+   * point and by nothing else: the external `/mcp` server has no session, so
+   * `control_ui` is not registered there and naming it would be an instruction
+   * that can only fail. Defaults to false, which is the surface-agnostic
+   * wording.
+   */
+  interactive?: boolean;
 }
 
 /** What {@link initCapabilityTierGate} wires the gate to at boot. */
@@ -594,15 +606,52 @@ function requesterLabel(identity?: AgentIdentity): string | undefined {
   return renderRequesterLabel(identity.displayName || identity.agentPath);
 }
 
-/** Retry instructions for the surface the call arrived on. */
-function retryGuidance(channel: ApprovalRetryChannel): ApprovalRequiredPayload['retry'] {
+/**
+ * The sentence every gated caller gets, whatever surface it arrived on
+ * (DOR-1570).
+ *
+ * "An approval card is waiting for them" used to be the whole instruction, and
+ * a model reading it would dutifully stop — leaving a person who had been told
+ * nothing to find the card themselves. DorkOS raises the bell, the desktop
+ * banner and (after the escalation delay) the phone ping on its own; the one
+ * thing only the agent can do is say out loud that it is waiting.
+ */
+const SAY_SO_FIRST =
+  'Tell the person what you are asking to do and that it is waiting on their approval — say it in ' +
+  'your reply, do not just stop.';
+
+/**
+ * The extra sentence for an agent inside a live DorkOS session, where it can
+ * put the card in front of somebody instead of only describing it.
+ *
+ * Only ever added for an in-session caller. `control_ui` needs an attached
+ * interactive session and is not registered on the sessionless external `/mcp`
+ * server, so naming it there would be an instruction that can only fail. It is
+ * also not auto-allowed, which is why this offers rather than promises.
+ */
+const OPEN_THE_PANEL =
+  "If the approval is about a scheduled task, control_ui({ action: 'open_panel', panel: 'tasks' }) " +
+  'opens the Schedules panel for them.';
+
+/**
+ * Retry instructions for the surface the call arrived on.
+ *
+ * @param channel - Where a retry carries its token.
+ * @param interactive - Whether the caller is an in-session MCP server, and can
+ *   therefore reach the UI tools.
+ */
+function retryGuidance(
+  channel: ApprovalRetryChannel,
+  interactive: boolean
+): ApprovalRequiredPayload['retry'] {
+  const surface = interactive ? `${SAY_SO_FIRST} ${OPEN_THE_PANEL}` : SAY_SO_FIRST;
   if (channel === 'mcp-argument') {
     return {
       channel,
       field: APPROVAL_TOKEN_ARGUMENT,
       instructions:
-        `Ask the person to approve this in DorkOS (an approval card is waiting for them), then call this tool ` +
-        `again with exactly the same arguments plus "${APPROVAL_TOKEN_ARGUMENT}" set to the approvalToken above. ` +
+        `${surface} An approval card is waiting for them in DorkOS. Once they have approved it, call this ` +
+        `tool again with exactly the same arguments plus "${APPROVAL_TOKEN_ARGUMENT}" set to the approvalToken above. ` +
         `Changing any argument invalidates the approval, because an approval covers one exact action.`,
     };
   }
@@ -610,7 +659,7 @@ function retryGuidance(channel: ApprovalRetryChannel): ApprovalRequiredPayload['
     channel,
     field: APPROVAL_TOKEN_HEADER,
     instructions:
-      `Ask the person to approve this in DorkOS (an approval card is waiting for them), then send exactly the ` +
+      `${surface} An approval card is waiting for them in DorkOS. Once they have approved it, send exactly the ` +
       `same request again with the "${APPROVAL_TOKEN_HEADER}" header set to the approvalToken above ` +
       `(with the CLI: dorkos call <id> --approval <token>). Changing the input invalidates the approval, ` +
       `because an approval covers one exact action.`,
@@ -716,7 +765,7 @@ function denied(
  * @returns What the gate decided.
  */
 export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnforcementDecision {
-  const { action, identity, approvalToken, input, retryChannel } = request;
+  const { action, identity, approvalToken, input, retryChannel, interactive = false } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
   // itself. Anything else is a bypass an agent with shell access can reach by
@@ -879,7 +928,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       expiresAt: ticket.expiresAt,
       reason,
       message: approvalMessage(reason, action.title),
-      retry: retryGuidance(retryChannel),
+      retry: retryGuidance(retryChannel, interactive),
     };
     audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
     return { outcome: 'approval_required', payload };
@@ -911,7 +960,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         expiresAt: result.expiresAt,
         reason: 'awaiting_decision',
         message: approvalMessage('awaiting_decision', action.title),
-        retry: retryGuidance(retryChannel),
+        retry: retryGuidance(retryChannel, interactive),
       };
       audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
       return { outcome: 'approval_required', payload };

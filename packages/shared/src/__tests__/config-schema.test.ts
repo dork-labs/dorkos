@@ -103,6 +103,7 @@ describe('UserConfigSchema', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      memory: { provider: 'builtin' },
       extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,
@@ -460,6 +461,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      memory: { provider: 'builtin' },
       extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,

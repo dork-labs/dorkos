@@ -383,9 +383,9 @@ reportAgentHalted(
 with, beside the module's other key helpers:
 
 ```ts
-/** The damping key for a per-agent stop. Room ids are ULIDs, so ` ` cannot collide with one. */
+/** The damping key for a per-agent stop. Room ids are ULIDs, so `\u0000` cannot collide with one. */
 function haltKey(roomId: string, authorId: string): string {
-  return `${roomId} ${authorId}`;
+  return `${roomId}\u0000${authorId}`;
 }
 ```
 
