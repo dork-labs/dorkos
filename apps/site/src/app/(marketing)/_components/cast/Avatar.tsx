@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import Image from 'next/image';
 import { motion, useReducedMotion } from 'motion/react';
 import { SPEAKERS, type SpeakerKey } from './cast';
 import { POP } from '../motion-tokens';
@@ -37,8 +36,14 @@ interface AvatarProps {
  * Dave's is 2.83s and the agents' are 10.08s, and a hand-rolled player that
  * assumed one length cost the film project a day.
  *
- * Reduced motion gets the still, which is the same first frame the poster uses,
- * so nothing moves and nothing is missing.
+ * Reduced motion gets the still, and gets it from this same element: the
+ * `poster` IS the still, and a video that is never told to play never leaves
+ * it. Choosing between an `<img>` and a `<video>` on the preference would be a
+ * different element type on the server (which cannot know the preference) than
+ * on a reduced-motion client, which is a hydration mismatch — React throws
+ * #418 and re-renders the whole tree on the client for exactly the visitors
+ * who asked for less work. One element, and the preference decides only
+ * whether `play()` is ever called.
  */
 export function Avatar({ who, size, speaking = false, ringed = false, layoutId }: AvatarProps) {
   const member = SPEAKERS[who];
@@ -77,27 +82,17 @@ export function Avatar({ who, size, speaking = false, ringed = false, layoutId }
           : '0 2px 8px rgba(0,0,0,0.5)',
       }}
     >
-      {reduced ? (
-        <Image
-          src={member.still}
-          alt=""
-          width={diameter}
-          height={diameter}
-          className="size-full object-cover"
-        />
-      ) : (
-        <video
-          ref={videoRef}
-          src={member.loop}
-          poster={member.still}
-          muted
-          loop
-          playsInline
-          preload="none"
-          aria-hidden="true"
-          className="size-full object-cover"
-        />
-      )}
+      <video
+        ref={videoRef}
+        src={member.loop}
+        poster={member.still}
+        muted
+        loop
+        playsInline
+        preload="none"
+        aria-hidden="true"
+        className="size-full object-cover"
+      />
     </motion.span>
   );
 }
