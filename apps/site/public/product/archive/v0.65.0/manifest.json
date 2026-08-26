@@ -1,0 +1,51 @@
+{
+  "label": "v0.65.0",
+  "archivedAt": "2026-08-26T12:33:30.560Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-26T12:33:17.636Z",
+    "runId": "20260826-072647"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "tasks",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    }
+  ],
+  "count": 2,
+  "totalBytes": 184097,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 64850,
+      "runId": "20260826-072647",
+      "capturedAt": "2026-08-26T12:31:34.872Z"
+    },
+    {
+      "source": "auto",
+      "file": "tasks-light.png",
+      "surface": "tasks",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 119247,
+      "runId": "20260826-072647",
+      "capturedAt": "2026-08-26T12:31:34.872Z"
+    }
+  ]
+}

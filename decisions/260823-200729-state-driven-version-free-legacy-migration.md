@@ -1,7 +1,7 @@
 ---
 id: 260823-200729
 title: State-driven, version-free legacy migration with a sunset
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: universal-scheduled-tasks
 superseded-by: null

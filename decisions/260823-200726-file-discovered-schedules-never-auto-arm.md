@@ -1,7 +1,7 @@
 ---
 id: 260823-200726
 title: File-discovered schedules never auto-arm
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: universal-scheduled-tasks
 superseded-by: null

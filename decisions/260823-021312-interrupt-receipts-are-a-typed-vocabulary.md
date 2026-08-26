@@ -1,7 +1,7 @@
 ---
 id: 260823-021312
 title: Every stop-shaped verb answers with a typed interrupt receipt, and DorkOS never settles a turn it did not observe end
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: runtime-interrupt-receipts
 superseded-by: null

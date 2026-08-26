@@ -730,12 +730,17 @@ export const MARKETPLACE_FIXTURE_PACKAGES: readonly MarketplaceFixturePackage[] 
         '- Scores each changed file against a house style rubric\n' +
         '- Posts inline findings as PR review comments\n' +
         '- Schedules a nightly sweep of stale review threads\n',
+      // Since DOR-1486 scheduling lives in the `schedule:` block, and the
+      // permission preview reads ONLY that block — a fixture still shipping the
+      // retired top-level `kind: task` + `cron:` declares no schedule at all, so
+      // the sheet's "Jobs it will schedule" section is empty and this shot's
+      // money state disappears.
       '.dork/tasks/nightly-code-review/SKILL.md':
         '---\n' +
         'name: nightly-code-review\n' +
         'description: Nightly sweep of open review threads, flagging anything unresolved for more than a day.\n' +
-        'kind: task\n' +
-        'cron: "0 4 * * *"\n' +
+        'schedule:\n' +
+        '  cron: "0 4 * * *"\n' +
         '---\n\n' +
         '# Nightly code review sweep\n\n' +
         'Walk every open PR review thread and flag anything unresolved for more than a day.\n',

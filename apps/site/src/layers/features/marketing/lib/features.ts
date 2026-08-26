@@ -733,16 +733,37 @@ export const features: Feature[] = [
     relatedFeatures: ['agent-attribution', 'notification-inbox', 'team-room'],
     sortOrder: 14,
   },
+  {
+    slug: 'message-search',
+    name: 'Message Search',
+    product: 'console',
+    category: 'discovery',
+    tagline: 'Find any message by what was said in it, across every agent',
+    description:
+      'You remember the sentence, not where you said it. One search reads your channels, your DMs, and every Claude Code, Codex and OpenCode conversation.',
+    status: 'ga',
+    benefits: [
+      'Press Cmd-Shift-F and type what you remember somebody saying',
+      'Covers rooms, Claude Code, Codex and OpenCode at once',
+      'Reads chats you had outside DorkOS, in the plain CLI',
+      'Click a result and land on that exact message',
+      'Never indexes tool output or file contents, only what was said',
+    ],
+    moment:
+      'You half-remember deciding something about retries, weeks ago, in some chat. One search finds the sentence, and one click puts you on the line that said it.',
+    relatedFeatures: ['team-room', 'chat-interface', 'agent-memory', 'activity-feed'],
+    sortOrder: 15,
+  },
 
   // === TASKS ===
   {
     slug: 'task-scheduler',
-    name: 'Tasks Scheduler',
+    name: 'Scheduled Tasks',
     product: 'tasks',
     category: 'scheduling',
     tagline: "Schedule agents to run on their own, so they work while you don't",
     description:
-      'Stop manually starting every agent run. Tasks lets you schedule any agent on any timetable, with a visual builder, ready-made presets, and a full history.',
+      'Stop manually starting every agent run. A scheduled task puts any agent on any timetable, with a visual builder, ready-made presets, and a full history.',
     status: 'ga',
     featured: true,
     benefits: [
@@ -757,7 +778,7 @@ export const features: Feature[] = [
     docsUrl: '/docs/guides/task-scheduler',
     media: {
       surface: 'tasks',
-      alt: 'The Tasks list showing schedules with their next run time and history',
+      alt: 'The Scheduled tasks list showing each task with its next run time and history',
       crop: 'top',
     },
     relatedFeatures: ['relay-message-bus', 'mesh-agent-discovery'],
@@ -1154,6 +1175,28 @@ export const features: Feature[] = [
       'Your agent reaches for a tool that needs your permission and stops. A sign-in card appears in the chat, you sign in once, and it carries on.',
     relatedFeatures: ['mcp-server', 'connections', 'marketplace'],
     sortOrder: 6,
+  },
+  {
+    slug: 'agent-memory',
+    name: 'Agent Memory',
+    product: 'core',
+    category: 'agent-control',
+    tagline: 'Tell an agent something once, and it still knows next week',
+    description:
+      'An agent that forgets every conversation makes you repeat yourself forever. Each one now keeps a short notes file it reads before every turn.',
+    status: 'ga',
+    benefits: [
+      'Say it once in a DM, and a channel next week knows it',
+      'Plain markdown you can open, correct, or delete by hand',
+      'Every note records the conversation that taught it',
+      'Small on purpose, so the agent tidies rather than hoards',
+      'Lives on your machine, beside the agent it belongs to',
+    ],
+    moment:
+      'You tell your agent in a DM that you deploy on Tuesdays, never Fridays. Next week, in a team channel, it plans around Friday without being asked.',
+    docsUrl: '/docs/guides/agent-memory',
+    relatedFeatures: ['agent-identity', 'message-search', 'team-room'],
+    sortOrder: 7,
   },
 ];
 
