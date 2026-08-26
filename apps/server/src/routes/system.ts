@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { PermissionModeDescriptor, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
+import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
@@ -8,6 +9,7 @@ import {
   UNATTENDED_RUNTIME,
   type UnattendedAutonomyDeps,
 } from '../services/core/unattended-autonomy/unattended-autonomy.js';
+import { memoryProviderStatus } from '../services/memory/registry.js';
 
 const router = Router();
 
@@ -83,6 +85,25 @@ router.get('/unattended-autonomy', (req, res) => {
   });
 
   res.json(state satisfies UnattendedAutonomyState);
+});
+
+/**
+ * GET /api/system/memory — which memory backend is configured, which one is
+ * actually serving agent calls right now, and why they differ.
+ *
+ * The operator-visible half of the registry's quarantine-and-fallback design
+ * (`services/memory/registry.ts`): a backend that throws is benched for the
+ * rest of the process and `builtin` takes over silently from the agent's point
+ * of view, which is correct — a turn must never die over a notes file — but
+ * reads as amnesia to a person watching unless something says so. This is that
+ * something, and the standing client banner is its consumer.
+ *
+ * No deps bag: unlike `unattended-autonomy`, `registry.ts` is a self-contained
+ * module-level singleton every memory call already goes through directly, so
+ * there is nothing to hand over that the module does not already hold.
+ */
+router.get('/memory', (_req, res) => {
+  res.json(memoryProviderStatus() satisfies MemoryProviderStatus);
 });
 
 export default router;

@@ -48,23 +48,31 @@
  * A conversation is never lost over a notes file — that is the whole invariant,
  * and every branch here exists to keep it.
  *
- * ## What the AGENT is told, and why it is not told here (future work)
+ * ## What the AGENT is told, and how far that goes today
  *
- * Nothing. A degraded read renders as silence, exactly like an agent that has
- * never saved a note — so an agent whose backend is benched believes it knows
- * nothing rather than that it cannot see what it knows, and may write a fresh
- * note over the top. That is the same three-way-honesty failure this port
- * refuses everywhere else, displaced one layer up.
+ * `agent-context.ts` (`buildMemoryBlock`) adds one DorkOS-authored line to the
+ * fenced memory block when the configured backend is benched AND that block
+ * already renders — i.e. when `builtin`'s own file for this agent happens to
+ * have content, via {@link memoryProviderStatus}. That is deliberately narrow:
+ * the `'error'` snapshot's message is still never rendered into a prompt (a raw
+ * I/O message is neither useful to a model nor safe to hand it), and the block
+ * set an agent's append carries is pinned by the D9 prompt-content tests.
  *
- * It is not fixed here because the fix is not in this module and is not one
- * line. The `'error'` snapshot's message is deliberately never rendered into a
- * prompt (`agent-context.ts`: a raw I/O message is neither useful to a model nor
- * safe to hand it), and the block set an agent's append carries is pinned by the
- * D9 prompt-content tests — so telling the agent means minting a DorkOS-authored
- * sentence inside `<agent_memory>` and moving that pin, which is an injection-path
- * decision with its own spec question ("what does an agent do differently when
- * told its memory is unavailable?"). Filed as follow-up work rather than smuggled
- * in as a string.
+ * **The common case is still silent.** The first bench of a run almost always
+ * lands on a `builtin` file that has never been written — `'absent'`, not
+ * `'present'` — because the fallback starts from its own empty scaffold rather
+ * than the faulted backend's notes. `buildMemoryBlock` renders nothing for
+ * `'absent'` today, same as an agent that never saved anything, so THAT is the
+ * amnesia case this docblock used to describe as entirely unfixed. Making the
+ * block appear on an absent-but-benched read is not one line: it means deciding
+ * whether `<agent_memory>` may ever carry a notice with no underlying file, and
+ * moving the D9 pin to match — an injection-path decision with its own spec
+ * question ("what does an agent do differently when told its memory is
+ * unavailable?"). Filed as follow-up work rather than smuggled in here.
+ *
+ * The operator-visible half is not narrow: `memoryProviderStatus()` answers
+ * `GET /api/system/memory` in full (configured id, active id, benched, reason)
+ * regardless of which snapshot state the last read happened to hit.
  *
  * @module server/services/memory/registry
  */
@@ -85,6 +93,7 @@ import {
   type MemoryHits,
   type MemoryProvider,
   type MemoryProviderInfo,
+  type MemoryProviderStatus,
   type MemoryQuery,
   type MemorySelector,
   type MemorySnapshot,
@@ -119,6 +128,46 @@ const instances = new Map<string, MemoryProvider>();
 
 /** Providers benched for the rest of this process. Never contains `builtin`. */
 const benched = new Set<string>();
+
+/**
+ * What benched a provider, keyed by id — a short, safe SUMMARY, never the raw
+ * thrown value. Populated alongside `benched`, read by
+ * {@link memoryProviderStatus} for `GET /api/system/memory` and by
+ * `buildMemoryBlock`'s in-band notice. Never contains `builtin` — its faults
+ * degrade to no memory rather than to a bench, so there is nothing to explain.
+ */
+const benchReasons = new Map<string, string>();
+
+/** How much of a bench reason `GET /api/system/memory` answers with. */
+const BENCH_REASON_MAX_CHARS = 120;
+
+/**
+ * A short, safe description of what benched a provider — never the error a
+ * backend actually threw.
+ *
+ * `GET /api/system/memory` is loopback-only by default but reachable over the
+ * built-in tunnel, and it answers with no auth check of its own. A raw
+ * `String(err)` can carry whatever a backend's message happened to
+ * interpolate — a connection string, a file path, a credential — so this
+ * keeps only the error's own name (its class, e.g. `TypeError`, or a custom
+ * refusal-shaped name) plus the first line of its message, capped. Enough for
+ * an operator to recognize the SHAPE of a failure; not enough to leak one. The
+ * server log (`warnOnce` in {@link bench}) still gets the full `String(err)` —
+ * this cap applies only to what crosses the wire.
+ *
+ * @param err - Whatever the provider threw.
+ */
+function summarizeBenchReason(err: unknown): string {
+  const firstLine =
+    err instanceof Error
+      ? err.message.split('\n')[0]
+        ? `${err.name}: ${err.message.split('\n')[0]}`
+        : err.name
+      : (String(err).split('\n')[0] ?? String(err));
+  return firstLine.length > BENCH_REASON_MAX_CHARS
+    ? `${firstLine.slice(0, BENCH_REASON_MAX_CHARS)}…`
+    : firstLine;
+}
 
 /** Warnings already logged, so a repeat failure is silent rather than a flood. */
 const warned = new Set<string>();
@@ -231,6 +280,7 @@ function bench(id: string, err: unknown): void {
     return;
   }
   benched.add(id);
+  benchReasons.set(id, summarizeBenchReason(err));
   warnOnce(
     id,
     "[Memory] Memory provider '%s' failed (%s). It is benched for the rest of this run and " +
@@ -552,6 +602,7 @@ export function resetMemoryProvider(): void {
   chosenId = null;
   instances.clear();
   benched.clear();
+  benchReasons.clear();
   warned.clear();
   factories.clear();
   registerMemoryProvider(BUILTIN_MEMORY_PROVIDER_ID, createBuiltinMemoryProvider);
@@ -560,11 +611,40 @@ export function resetMemoryProvider(): void {
 /**
  * Whether a provider is currently benched.
  *
- * Exported for tests and for a future settings surface that wants to say
- * "this backend stopped answering, so DorkOS is using the builtin one".
+ * Exported for tests and for {@link memoryProviderStatus}, which is what
+ * `GET /api/system/memory` and the standing client banner actually read — this
+ * is the primitive underneath both, not a settings surface itself.
  *
  * @param id - The provider id to ask about.
  */
 export function isMemoryProviderBenched(id: string): boolean {
   return benched.has(id);
+}
+
+/**
+ * A live snapshot of which memory backend `memory.provider` names, which one is
+ * actually serving calls right now, and why they differ.
+ *
+ * This is the one exported read behind `GET /api/system/memory` and the
+ * one-line in-band notice {@link buildMemoryBlock} adds when the configured
+ * backend is benched — both want the same three facts (configured, active,
+ * reason), so there is one place that knows how to compute them rather than
+ * two call sites re-deriving the fallback rule.
+ *
+ * `activeId` also accounts for a configured id nothing registered (a
+ * misconfiguration, not a fault): `builtin` is what actually answers a call
+ * either way, so an honest "active" says so even though `benched` — which
+ * names the quarantine state specifically — stays `false` for that case.
+ */
+export function memoryProviderStatus(): MemoryProviderStatus {
+  const id = configuredId();
+  const isBenched = isMemoryProviderBenched(id);
+  const isRegistered = id === BUILTIN_MEMORY_PROVIDER_ID || factories.has(id);
+  const activeId = isRegistered && !isBenched ? id : BUILTIN_MEMORY_PROVIDER_ID;
+  return {
+    configuredId: id,
+    activeId,
+    benched: isBenched,
+    benchReason: isBenched ? (benchReasons.get(id) ?? null) : null,
+  };
 }

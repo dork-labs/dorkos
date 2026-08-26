@@ -49,6 +49,7 @@ import type {
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
@@ -413,6 +414,10 @@ export function createSystemMethods(baseUrl: string) {
 
     getUnattendedAutonomy(): Promise<UnattendedAutonomyState> {
       return fetchJSON<UnattendedAutonomyState>(baseUrl, '/system/unattended-autonomy');
+    },
+
+    getMemoryProviderStatus(): Promise<MemoryProviderStatus> {
+      return fetchJSON<MemoryProviderStatus>(baseUrl, '/system/memory');
     },
 
     provisionRuntime(

@@ -83,6 +83,7 @@ import type {
 } from './mesh-schemas.js';
 import type { CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
+import type { MemoryProviderStatus } from './memory-provider.js';
 import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
@@ -1408,6 +1409,15 @@ export interface Transport extends RoomTransport {
    * of the page instead of asking per route.
    */
   getUnattendedAutonomy(): Promise<UnattendedAutonomyState>;
+  /**
+   * Which memory backend is configured, which one is actually serving agent
+   * calls right now, and why they differ — the one read behind the standing
+   * memory-provider-benched banner.
+   *
+   * Cheap: the server answers straight from its in-process registry state, no
+   * disk or subsystem reads.
+   */
+  getMemoryProviderStatus(): Promise<MemoryProviderStatus>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
