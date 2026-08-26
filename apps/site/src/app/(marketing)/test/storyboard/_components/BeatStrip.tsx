@@ -20,12 +20,19 @@ const ALL_APPS: ReadonlySet<string> = new Set(DOCK.map((entry) => entry.id));
 const TALK_LINES = CHAT_SCRIPT.slice(0, PART_ONE_COUNT);
 const JOIN_LINES = CHAT_SCRIPT.slice(0, 1);
 
-/** A chat sized for a frame, with the stage's spacing around it. */
+/**
+ * A chat sized for a frame, with the stage's spacing around it.
+ *
+ * It goes through `LaptopFrame` with the shell turned off rather than sitting
+ * in a plain box, because that is literally what the stage does before the
+ * laptop appears: the frame owns the 16:10 screen from the first beat and only
+ * the bezel fades in. A plain box here would show a shape the page never has.
+ */
 function StageChat({ lines }: { lines: readonly (typeof CHAT_SCRIPT)[number][] }) {
   return (
-    <div className="w-full max-w-xl">
+    <LaptopFrame scale={1} shellOpacity={0}>
       <ChatWindow joined lines={lines} pending={null} />
-    </div>
+    </LaptopFrame>
   );
 }
 

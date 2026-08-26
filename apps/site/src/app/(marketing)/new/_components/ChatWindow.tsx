@@ -41,6 +41,11 @@ interface ChatWindowProps {
  * Said and pending lines render as one keyed list so the pending row keeps its
  * identity when it resolves: the same element flips from typing dots to text,
  * which is what makes the dots appear to morph into the message.
+ *
+ * The card has no height of its own. `LaptopFrame` owns the screen's shape —
+ * 16:10 — and the card fills it, so the message stack is whatever height is
+ * left after the header. It used to set `42vh` and the frame took its shape
+ * from that, which is how the laptop ended up with 2003 proportions.
  */
 export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
   const rows = pending ? [...lines, pending] : lines;
@@ -48,14 +53,14 @@ export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
 
   return (
     <div
-      className="w-full overflow-hidden rounded-xl shadow-[0_18px_60px_rgba(26,24,20,0.28)] backdrop-blur-md"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl shadow-[0_18px_60px_rgba(26,24,20,0.28)] backdrop-blur-md"
       style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}` }}
     >
       {/* The brand signature, and the panel's only ornament. */}
       <div style={{ height: HAIRLINE_PX, background: PANEL.hairline }} />
       <ChatHeader joined={joined} />
       <div
-        className="flex h-[42vh] max-h-[420px] min-h-[300px] flex-col justify-end gap-2 overflow-hidden px-4 pt-4 pb-5"
+        className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden px-2.5 pt-2 pb-3 sm:gap-2 sm:px-4 sm:pt-4 sm:pb-5"
         style={{
           maskImage: FADE,
           WebkitMaskImage: FADE,

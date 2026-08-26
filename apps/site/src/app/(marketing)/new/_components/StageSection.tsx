@@ -77,7 +77,7 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
     >
       <div
         ref={stickyRef}
-        className="sticky top-0 flex h-screen flex-col items-center justify-center gap-5 overflow-hidden px-6"
+        className="sticky top-0 flex h-screen flex-col items-center justify-center gap-5 overflow-hidden px-4 sm:px-6"
       >
         <BeatHeadline beat={beat} />
 

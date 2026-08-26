@@ -13,7 +13,7 @@ import { PANEL } from './film-tokens';
 export function ChatHeader({ joined }: { joined: boolean }) {
   return (
     <div
-      className="flex items-center justify-between px-4 py-2.5"
+      className="flex shrink-0 items-center justify-between px-3 py-1.5 sm:px-4 sm:py-2.5"
       style={{ borderBottom: `1px solid ${PANEL.divider}` }}
     >
       <span
@@ -22,7 +22,7 @@ export function ChatHeader({ joined }: { joined: boolean }) {
       >
         # launch-day
       </span>
-      <div className="flex h-8 items-center -space-x-1.5">
+      <div className="flex h-7 items-center -space-x-1.5 sm:h-8">
         <span className="relative z-10">
           <Avatar who="dave" size={26} ringed />
         </span>

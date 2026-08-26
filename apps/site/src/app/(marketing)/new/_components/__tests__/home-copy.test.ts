@@ -81,6 +81,9 @@ const END_CARD = readFileSync(
   'utf8'
 );
 
+/** The laptop and the card that fills it, likewise — their shape lives in class names. */
+const LAPTOP_FRAME = readFileSync(join(import.meta.dirname, '..', 'LaptopFrame.tsx'), 'utf8');
+const CHAT_WINDOW = readFileSync(join(import.meta.dirname, '..', 'ChatWindow.tsx'), 'utf8');
 
 /** Linearly interpolated alpha at `at` percent, from a sorted `[percent, alpha]` stop list. */
 function alphaAt(stops: readonly (readonly [number, number])[], at: number): number {
@@ -423,6 +426,43 @@ describe('the clips rail', () => {
       const bytes = statSync(join(PUBLIC_DIR ?? '', card.plate.src)).size;
       expect(bytes, `${card.plate.src} is ${Math.round(bytes / 1024)}KB`).toBeLessThan(300 * 1024);
     }
+  });
+});
+
+describe('the laptop the stage lands on', () => {
+  it('has a modern screen, not whatever shape the chat came out as', () => {
+    // The last beat says the thing you watched was running on your computer.
+    // The screen it says that on has to look like a computer sold this decade,
+    // so the frame declares 16:10 — every MacBook of the last ten years — and
+    // does not inherit a ratio from its contents. It was near 4:3 before,
+    // which is a 2003 ThinkPad arguing against the beat it appears in.
+    const ratio = LAPTOP_FRAME.match(/aspect-\[(\d+)\/(\d+)\]/);
+    expect(ratio, 'the frame declares no aspect ratio').not.toBeNull();
+    expect(Number(ratio?.[1]) / Number(ratio?.[2])).toBeCloseTo(16 / 10, 3);
+  });
+
+  it('holds the ratio when the chat fills up, which the ratio alone does not', () => {
+    // The screen is a flex item, and `min-height: auto` on a flex item is a
+    // content floor that outranks `aspect-ratio`. Drop the `min-h-0` and the
+    // box is 16:10 with two messages in it and 1:3 with eleven — the class is
+    // still in the file, so only this pairing catches it.
+    expect(LAPTOP_FRAME).toMatch(/SCREEN_FLOOR = 'min-h-0'/);
+    expect(LAPTOP_FRAME).toMatch(/\$\{SCREEN_ASPECT\} \$\{SCREEN_FLOOR\}/);
+  });
+
+  it('lets the chat fit the frame rather than the frame stretch to the chat', () => {
+    // The card sets no height of its own, so the 16:10 box above is the only
+    // thing deciding the shape. A `42vh` back in here and the ratio test above
+    // still passes while the rendered screen is some other shape entirely.
+    expect(CHAT_WINDOW).not.toMatch(/\bh-\[[^\]]*vh[^\]]*\]/);
+    expect(CHAT_WINDOW).toContain('h-full');
+    expect(CHAT_WINDOW).toMatch(/min-h-0 flex-1/);
+  });
+
+  it('never lets the screen outgrow the pinned stage on a short window', () => {
+    // A width-only clamp cannot see this: at 1440x700 the width is fine and
+    // the height 16:10 implies is not, and the stage clips rather than scrolls.
+    expect(LAPTOP_FRAME).toMatch(/const SCREEN_WIDTH = 'min\([^']*vh[^']*\)'/);
   });
 });
 
