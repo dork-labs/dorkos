@@ -379,7 +379,7 @@ importers:
         specifier: 0.3.224
         version: 0.3.224(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)
       '@asteasolutions/zod-to-openapi':
-        specifier: ^9.1.0
+        specifier: 9.1.0
         version: 9.1.0(zod@4.4.3)
       '@dorkos/db':
         specifier: workspace:*
@@ -640,7 +640,7 @@ importers:
         specifier: 0.120.0
         version: 0.120.0(zod@4.4.3)
       '@asteasolutions/zod-to-openapi':
-        specifier: ^9.1.0
+        specifier: 9.1.0
         version: 9.1.0(zod@4.4.3)
       '@better-auth/api-key':
         specifier: 1.6.23
@@ -1042,7 +1042,7 @@ importers:
         specifier: 0.120.0
         version: 0.120.0(zod@4.4.3)
       '@asteasolutions/zod-to-openapi':
-        specifier: ^9.1.0
+        specifier: 9.1.0
         version: 9.1.0(zod@4.4.3)
       '@inquirer/prompts':
         specifier: ^8.6.0
@@ -1464,7 +1464,7 @@ importers:
   packages/shared:
     dependencies:
       '@asteasolutions/zod-to-openapi':
-        specifier: ^9.1.0
+        specifier: 9.1.0
         version: 9.1.0(zod@4.4.3)
       ulidx:
         specifier: ^2.4.1
