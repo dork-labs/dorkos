@@ -186,6 +186,9 @@ describe('a task write tells the world it happened', () => {
     const deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
+      // The MCP create writes a real SKILL.md now (DOR-1568), and `fs` is mocked
+      // in this suite, so the path only has to be the one the mock recognises.
+      dorkHome: DORK_HOME,
       activityService,
     } as unknown as McpToolDeps;
     tools = Object.fromEntries(
@@ -260,6 +263,7 @@ describe('a task write tells the world it happened', () => {
         name: 'agent-proposed',
         prompt: 'do a thing',
         cron: '0 3 * * *',
+        target: 'global',
         reason: 'The nightly sweep keeps the backlog honest.',
       },
       undefined
@@ -275,6 +279,7 @@ describe('a task write tells the world it happened', () => {
         name: 'agent-proposed',
         prompt: 'do a thing',
         cron: '0 3 * * *',
+        target: 'global',
         reason: 'The nightly sweep keeps the backlog honest.',
       },
       undefined

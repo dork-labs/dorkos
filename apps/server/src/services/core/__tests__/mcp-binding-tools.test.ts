@@ -81,6 +81,7 @@ function makeMockDeps(
     notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
+    dorkHome: '/tmp/dorkos-test-home',
     bindingStore: bindingStore as unknown as McpToolDeps['bindingStore'],
   };
 }
@@ -264,6 +265,7 @@ describe('Binding MCP Tools', () => {
         notifyBudget: new NotifyBudget(),
         transcriptReader: {} as McpToolDeps['transcriptReader'],
         defaultCwd: '/test',
+        dorkHome: '/tmp/dorkos-test-home',
         bindingStore: opts.bindingStore as unknown as McpToolDeps['bindingStore'],
         bindingRouter: opts.bindingRouter as unknown as McpToolDeps['bindingRouter'],
         adapterManager: opts.adapterManager as unknown as McpToolDeps['adapterManager'],

@@ -13,6 +13,8 @@
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
     "./fake-connector-provider": "./src/fake-connector-provider.ts",
     "./fake-community-adapter": "./src/fake-community-adapter.ts",
+    "./fake-memory-provider": "./src/fake-memory-provider.ts",
+    "./memory-conformance": "./src/memory-conformance.ts",
     "./listening-server": "./src/listening-server.ts"
   },
   "scripts": {

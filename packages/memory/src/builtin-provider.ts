@@ -4,6 +4,7 @@
  * @module memory/builtin-provider
  */
 import {
+  BUILTIN_MEMORY_PROVIDER_ID,
   MemoryUnsupportedError,
   type AgentMemoryRef,
   type MemoryHits,
@@ -17,8 +18,15 @@ import {
 
 import { forgetMemory, readMemorySnapshot, writeMemory } from './store.js';
 
-/** The id the `memory.provider` config key names for this provider. */
-export const BUILTIN_MEMORY_PROVIDER_ID = 'builtin';
+/**
+ * The id the `memory.provider` config key names for this provider.
+ *
+ * Re-exported from the port rather than declared here: the config default and
+ * the server's registry fallback need the same string and neither may import
+ * this engine, so the one declaration lives in `@dorkos/shared/memory-provider`
+ * and this line keeps `@dorkos/memory`'s published surface unchanged.
+ */
+export { BUILTIN_MEMORY_PROVIDER_ID };
 
 /**
  * Build the provider that keeps each agent's memory in a markdown file the

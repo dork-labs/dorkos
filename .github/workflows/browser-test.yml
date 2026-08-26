@@ -344,11 +344,23 @@ jobs:
       # least one test (`--list` and empty runs no longer touch it). So this
       # step leaves the checkout dirty, and under sharding it leaves it dirty
       # with a THIRD of the suite — the reporter merges per file it saw, so each
-      # shard writes a different partial update. On three ephemeral runners that
-      # costs nothing, nothing later in this workflow reads the file, and it is
-      # never uploaded. But do not add a "the tree is clean" assertion to this
-      # job without dealing with that first: it would fail every time, for a
-      # reason unrelated to the code under test.
+      # shard writes a different partial update to run counts/`lastRun`/
+      # `specFile`/`feature` (all per-file facts, safe from any single shard).
+      # On three ephemeral runners that costs nothing, nothing later in this
+      # workflow reads the file, and it is never uploaded. But do not add a
+      # "the tree is clean" assertion to this job without dealing with that
+      # first: it would fail every time, for a reason unrelated to the code
+      # under test.
+      #
+      # `description` refresh is a separate, narrower thing (DOR-1555): the
+      # `pnpm --filter @dorkos/e2e run e2e` script this step calls sets
+      # `E2E_REFRESH_MANIFEST=1` for every invocation, including this sharded
+      # one — but the reporter ANDs that opt-in with `config.shard === null`,
+      # and `--shard` below is never absent here, so no shard ever refreshes a
+      # description. This job has no non-sharded full pass to set the opt-in
+      # on instead (`pull_request` skips the matrix entirely, `merge_group`
+      # always runs all three), so the shard check is what actually keeps
+      # descriptions out of CI's reach, not the absence of the env var.
       #
       # `timeout-minutes` here is the middle rung of the ladder described on the
       # job's own timeout (DOR-1110). It sits ABOVE playwright.config.ts's

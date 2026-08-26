@@ -36,6 +36,7 @@ function makeMockDeps(
     notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
+    dorkHome: '/tmp/dorkos-test-home',
     adapterManager: adapterManager as unknown as McpToolDeps['adapterManager'],
   };
 }

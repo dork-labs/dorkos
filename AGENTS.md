@@ -112,7 +112,7 @@ Session storage is runtime-owned (ADR-0310): claude-code derives from SDK JSONL 
 
 ### Message search
 
-One derived, rebuildable FTS5 index over everything that was said, read by `GET /api/search` and by ⌘⇧F in the app (`apps/server/src/services/search/`, `features/command-palette/ui/MessageSearchDialog.tsx`, spec `specs/message-search/`). It indexes **rooms and Claude Code transcripts, bare-CLI sessions included** — never tool output, and **not Codex or OpenCode yet**; the surface states that gap itself, and the copy is pinned by a test so a coverage claim cannot drift out of date silently. Sessions are owner-only and reachable by no agent (spec §7). Deleting the index is a supported recovery.
+One derived, rebuildable FTS5 index over everything that was said, read by `GET /api/search` and by ⌘⇧F in the app (`apps/server/src/services/search/`, `features/command-palette/ui/MessageSearchDialog.tsx`, spec `specs/message-search/`). It indexes **rooms, Claude Code, Codex and OpenCode transcripts** (bare-CLI sessions included) — never tool output; the copy is pinned by a test so a coverage claim cannot drift out of date silently. Sessions are owner-only and reachable by no agent (spec §7). Deleting the index is a supported recovery.
 
 ### Client (`apps/client/src/`)
 

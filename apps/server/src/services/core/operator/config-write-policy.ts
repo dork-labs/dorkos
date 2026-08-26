@@ -378,6 +378,17 @@ export const CONFIG_WRITE_POLICY = {
   // while it is inert is what stops it becoming load-bearing while agent-writable.
   'mesh.scanRoots': 'operator-only',
 
+  // Which backend holds what every agent on this machine remembers. Operator-only
+  // on the data-leaves-the-machine line: one write moves every agent's notes to
+  // whatever backend the new id names, and the notes are the one store an agent
+  // writes to itself. An agent that could set this could arrange for its own
+  // memory — and every other agent's — to be kept somewhere the operator never
+  // chose. There is no Settings switch for it, and saying otherwise would name a
+  // surface that does not exist: no second backend ships yet, so a person changes
+  // this with `dorkos config set memory.provider <id>` or by editing
+  // `~/.dork/config.json`, and it takes effect on the next restart.
+  'memory.provider': 'operator-only',
+
   // How far agents may reply to each other in a room before it stops them
   // (ADR 260726-170127). Operator-only for the same reason room rosters are: an
   // agent that can raise its own reply ceiling can spend the operator's model
@@ -859,6 +870,11 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'telemetry.usage',
       'telemetry.linkAnalyticsToAccount',
       'telemetry.aiMetadata',
+      // Which backend holds what every agent remembers. Filed here rather than
+      // under `code` because the stake is where the NOTES end up, not what runs:
+      // `'builtin'` keeps them in a file on this machine, and any other id keeps
+      // the same notes somewhere the operator did not choose.
+      'memory.provider',
     ],
   },
   {

@@ -49,6 +49,7 @@ function createDeps(extensionManager?: ExtensionManager): McpToolDeps {
     notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
+    dorkHome: '/tmp/dorkos-test-home',
     extensionManager,
   };
 }

@@ -103,6 +103,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `scheduler.maxConcurrentRuns`                    | integer (1--10)                                                          | `4`                | How many scheduled runs may be in flight at once. Raised from `1` in `0.67.0` (spec `full-power-defaults`, D1): one at a time meant a slow run held up every schedule behind it. A throttle, not a capability — the bounds are unchanged and every run still passes the same gates. `operator-only` to write: it carries a `PROTECTIVE_CARRYOVERS` rule, so the [wipe floor](#step-by-step-adding-a-new-config-field) applies |
 | `scheduler.retentionCount`                       | integer                                                                  | `100`              | Number of completed run records to retain in the database                                                                                                                                                                                                                                                                                                                                                                     |
 | `mesh.scanRoots`                                 | string[]                                                                 | `[]`               | Directories to scan for agent discovery                                                                                                                                                                                                                                                                                                                                                                                       |
+| `memory.provider`                                | string                                                                   | `'builtin'`        | Which backend holds what your agents remember. `'builtin'` is one small `MEMORY.md` beside each agent, on this machine. An id nothing registered falls back to `'builtin'` with one warning, and a registered backend that throws is benched for the rest of the run with `'builtin'` taking over — memory never takes down a turn. Read once at boot; a change takes effect on the next restart. `operator-only` to write    |
 | `connectors.rawMcpServers`                       | array of `{ slug, displayName, url, transport }`                         | `[]`               | Remote MCP servers the raw-MCP connector offers as connectable services (`transport`: `http` \| `sse`). Read at boot; edits take effect on the next server start                                                                                                                                                                                                                                                              |
 | `rooms.turnLimitsEnabled`                        | boolean                                                                  | `true`             | Whether automatic replies are limited at all. Off means no reply ceiling and no hourly cap — the Stop button is the only brake                                                                                                                                                                                                                                                                                                |
 | `rooms.maxAgentDepth`                            | integer (0--100)                                                         | `30`               | How many replies in a row agents may send each other in a room before it stops them. Your own messages reset the count; `0` turns automatic replies off                                                                                                                                                                                                                                                                       |
@@ -516,7 +517,18 @@ That table covers the `ui.*` bodies only. The `0.57.0` key is a composite and al
 
 `0.59.0` is a composite as well, and it is CLOSED — `v0.59.0` shipped on 2026-08-12. It carries `backfillWelcomeBackDefaults` and `backfillClaudeCodePersistentSession` (seeds `runtimes.claudeCode.persistentSession: false` on an existing `runtimes.claudeCode` block — one process per message, i.e. today's behavior) alongside `migrateSidebarSectionPrefs`, which sits there rather than under a key of its own because the schema that removes the eight sidebar keys shipped in that same release. Read that composite as a record: the bodies in it were amended after merging, which is the practice DOR-1222 ended.
 
-`0.60.0` carries a re-run of `backfillRoomsDefaults` for the two collect bounds. It was untagged when it merged and closed from that moment all the same, because merged is what closes a key. Six keys have landed above it since: `0.62.0` seeds `a2a: { enabled: false }` when that section is absent (`seedA2aDisabled`), `0.63.0` carries `backfillPromoDismissals` from the table above, `0.64.0` seeds the `notifications` section ([below](#shipped-migrations-notifications)), `0.65.0` renames `runtimes.claudeCode.activeAccount` to `defaultAccount` and gives every registered account a stable id (`migrateClaudeAccountRegistry`), `0.66.0` raises the room turn limits and adds the two leaves the new room model needs (`raiseRoomTurnLimits`, DOR-1428), and `0.67.0` carries the three safety-neutral bodies of spec `full-power-defaults`: `seedFullPowerDecision` reserves `ui.fullPowerDecidedAt` / `ui.fullPowerChoice` at `null`, `raiseSchedulerConcurrencyFloor` moves a stored `scheduler.maxConcurrentRuns` of exactly `1` to `4`, and `warmClaudeCodeSessionsByDefault` moves a stored `runtimes.claudeCode.persistentSession` of exactly `false` to `true`. `0.67.0` is INDEPENDENT of `0.66.0` and order-immaterial with it — that key touches `rooms.*`, this one `ui.*` / `scheduler.*` / `runtimes.claudeCode.*`, disjoint sections — and it is the newest key.
+`0.60.0` carries a re-run of `backfillRoomsDefaults` for the two collect bounds. It was untagged when it merged and closed from that moment all the same, because merged is what closes a key. Six keys have landed above it since: `0.62.0` seeds `a2a: { enabled: false }` when that section is absent (`seedA2aDisabled`), `0.63.0` carries `backfillPromoDismissals` from the table above, `0.64.0` seeds the `notifications` section ([below](#shipped-migrations-notifications)), `0.65.0` renames `runtimes.claudeCode.activeAccount` to `defaultAccount` and gives every registered account a stable id (`migrateClaudeAccountRegistry`), `0.66.0` raises the room turn limits and adds the two leaves the new room model needs (`raiseRoomTurnLimits`, DOR-1428), and `0.67.0` carries the three safety-neutral bodies of spec `full-power-defaults`: `seedFullPowerDecision` reserves `ui.fullPowerDecidedAt` / `ui.fullPowerChoice` at `null`, `raiseSchedulerConcurrencyFloor` moves a stored `scheduler.maxConcurrentRuns` of exactly `1` to `4`, and `warmClaudeCodeSessionsByDefault` moves a stored `runtimes.claudeCode.persistentSession` of exactly `false` to `true`. `0.67.0` is INDEPENDENT of `0.66.0` and order-immaterial with it — that key touches `rooms.*`, this one `ui.*` / `scheduler.*` / `runtimes.claudeCode.*`, disjoint sections. Two keys have landed above it: `0.68.0` is purely subtractive
+— it deletes `scheduler.timezone`, a documented setting that never did anything
+because every schedule already carries its own timezone (`dropSchedulerTimezone`,
+DOR-1482) — and `0.69.0` seeds the `memory` section
+(`seedMemoryProviderDefault`, spec `agent-memory` D7, DOR-1533), which is the
+newest key. Read that last one for what it is rather than what its position
+suggests: `memory` is a whole TOP-LEVEL section, so conf's own defaults pre-write
+lands it on disk whether the body runs or not, and the body is an
+**unreachable anchor** kept to make the release's intent reviewable in this
+table. It reads `USER_CONFIG_DEFAULTS` rather than a literal, so it cannot
+document an intent that differs from what ships. Its own docblock and the
+upgrade-boot test both say so instead of implying otherwise.
 
 Read the last two bodies with their caveat, which their own comments state: a stored `1` and a stored `false` are indistinguishable from an explicit choice of the old default, because both are what shipped. Nothing on disk separates "never touched it" from "set it back deliberately", so both are raised. The trade is made with open eyes — neither is a capability, both stay inside bounds the schema already enforced, and the changelog names the change in plain words. Both are revertible on a screen: `maxConcurrentRuns` in Settings -> Tools and in the Control Center, `persistentSession` as the Control Center's **Warm agents** switch, which is where the Experiments row went when the flag graduated (#1209). These two keys are also the **deliberate exception to the [wipe floor](#step-by-step-adding-a-new-config-field)** — both leaves are `PROTECTIVE_CARRYOVERS` values that nothing else may quietly reverse, and a versioned, reviewed, changelogged migration is the one thing allowed to redefine their default (DOR-1497). Both bodies carry the pointer. **No consent-gated value is touched by that key** (the program's A1 invariant): `runtimes.defaultTrustStop`, `ui.autonomyAcknowledgedAt`, `approvals.standingGrants`, the mesh access rules and `canInitiate` are written by the power door's accept, with a person looking at it, and never by a migration.
 
@@ -783,6 +795,49 @@ When `scanRoots` is empty (default), the reconciler scans from the server's defa
 ```bash
 dorkos config set mesh.scanRoots '["/home/user/projects", "/home/user/agents"]'
 ```
+
+### memory.provider
+
+Which backend holds what your agents remember (spec `agent-memory`, D7). One
+setting for the whole machine: memory is scoped to an agent's identity, never to
+a session or a room, so every agent here is served by the same backend.
+
+`'builtin'` is the only backend DorkOS ships: one small `MEMORY.md` beside each
+agent, which a person can open in any editor. `MemoryProvider`
+(`packages/shared/src/memory-provider.ts`) is the fifth swappable seam, so
+another one — a vector store, a hosted memory service — is a registration and a
+config value rather than a fork. Author's guide:
+[adding-a-memory-provider.md](adding-a-memory-provider.md).
+
+```bash
+dorkos config set memory.provider builtin
+```
+
+**Two failure modes are handled rather than reported**, because memory must
+never be able to take down a turn:
+
+- An id nothing registered falls back to `'builtin'`, with one warning naming
+  what is registered.
+- A registered backend that FAULTS — throws anything that is not one of the
+  port's own refusals — is **benched for the rest of the run**, `'builtin'`
+  takes over the call that faulted and every call after it, and one warning says
+  so. One, not one per turn. Refusals (a `replace` that names two notes, a write
+  past the cap, "this backend cannot search") are the backend working correctly
+  and bench nobody.
+
+While a backend is benched, agents read the BUILTIN file rather than the backend
+that stopped answering — so notes kept only in that backend are out of view until
+it is fixed and DorkOS restarts. That is the honest trade: an agent that
+temporarily knows less, rather than a turn that dies.
+
+The value is read once, at the first memory call that can reach the config (a
+read attempted before the config manager exists is not cached, so the operator's
+choice is honored as soon as it can be read). Changing it takes effect on the
+next restart — a swap mid-run would leave two backends holding half an agent's
+notes each. `operator-only` to write: one write moves every agent's notes to
+whatever the new id names, so it is a person's decision. There is no Settings
+switch for it, because no second backend ships yet — change it with
+`dorkos config set memory.provider <id>` or by editing `~/.dork/config.json`.
 
 ### rooms.turnLimitsEnabled
 

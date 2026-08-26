@@ -54,6 +54,7 @@ import {
   seedFullPowerDecision,
   raiseSchedulerConcurrencyFloor,
   warmClaudeCodeSessionsByDefault,
+  seedMemoryProviderDefault,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -248,6 +249,67 @@ describe('ConfigManager', () => {
       notifyOnTurnCompleteWhileAway: false,
       browserPermissionPrimerDismissed: true,
     });
+  });
+
+  it('lands memory.provider on disk for a config written before memory existed', () => {
+    // The upgrade path over a real file and the real conf/Ajv seam (spec
+    // `agent-memory`, D7; migration key 0.69.0).
+    //
+    // **What this proves, and what it deliberately does not.** `memory` is a
+    // whole TOP-LEVEL section, and conf merges `defaults` under the stored file
+    // and WRITES the result before it runs its first migration key. So the
+    // section lands on disk whether or not `seedMemoryProviderDefault` runs, and
+    // no assertion at this seam can attribute it to the body — the anchor is
+    // unreachable by construction and its docblock says so. Suppress the body
+    // and this test stays green, which is the honest outcome for this shape and
+    // is exactly what `.claude/rules/safe-defaults.md` says to write down rather
+    // than imply otherwise (DOR-1496).
+    //
+    // The claim that IS load-bearing here: an install that predates the section
+    // ends up with `memory.provider: 'builtin'` in `config.json` rather than a
+    // file Ajv condemns, and nothing the person had chosen is disturbed.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.68.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      memory?: { provider?: string };
+      ui?: { theme?: string };
+    };
+    expect(onDisk.memory?.provider).toBe('builtin');
+    expect(onDisk.ui?.theme).toBe('dark');
+    // …and a running DorkOS reads back the same thing, which is a different
+    // claim and not a substitute for the one above.
+    expect(configManager.getDot('memory.provider')).toBe('builtin');
+  });
+
+  it('keeps a memory provider a person already chose across a real load', () => {
+    // The case the anchor's absence guard exists for even though it never
+    // reaches it: an upgrade must never move somebody off a backend they picked.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        memory: { provider: 'acme-vectors' },
+        __internal__: { migrations: { version: '0.68.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.getDot('memory.provider')).toBe('acme-vectors');
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      memory?: { provider?: string };
+    };
+    expect(onDisk.memory?.provider).toBe('acme-vectors');
   });
 
   it('gets top-level config section', () => {
@@ -638,6 +700,30 @@ describe('backfillNotificationDefaults migration (notification-system, DOR-1385)
     const store = createMockStore({ notifications: chosen });
     backfillNotificationDefaults(store);
     expect(store.data.notifications).toBe(chosen);
+  });
+});
+
+describe('seedMemoryProviderDefault migration (agent-memory, DOR-1533)', () => {
+  it('seeds the whole section on a config that predates it', () => {
+    // Same shape as `backfillNotificationDefaults` above, and the same caveat:
+    // `memory` is a new TOP-LEVEL section, so conf's own defaults pre-write
+    // lands it on a real file whatever this body does. What is asserted here is
+    // the body's own behaviour in isolation — that it writes the schema's
+    // default rather than a literal of its own, so the table can never document
+    // an intent that differs from what ships.
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    seedMemoryProviderDefault(store);
+    expect(store.data.memory).toEqual({ provider: 'builtin' });
+  });
+
+  it('never overwrites a backend somebody chose (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // moving an operator off the memory backend they configured, which would
+    // point every agent at an empty file and read to them as amnesia.
+    const chosen = { provider: 'acme-vectors' };
+    const store = createMockStore({ memory: chosen });
+    seedMemoryProviderDefault(store);
+    expect(store.data.memory).toBe(chosen);
   });
 });
 

@@ -67,6 +67,7 @@ function createMinimalDeps(): McpToolDeps {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
+    dorkHome: '/tmp/dorkos-test-home',
   };
 }
 
