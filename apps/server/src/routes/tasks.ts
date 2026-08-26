@@ -633,6 +633,23 @@ export function createTasksRouter(
   });
 
   router.delete('/:id', async (req, res) => {
+    // Deleting a schedule is never a power-grant, so this is nuisance/DoS
+    // protection, not the operator bar the create/update path runs: under
+    // login-on a caller holding a per-user API key but no session cookie must
+    // not be able to remove a person's schedule on their behalf. Asked first,
+    // before the 404 below, so a barred caller cannot even probe which schedules
+    // exist. Under the default login-off posture this is a no-op — the accepted
+    // DOR-505 residual, where a credential-free loopback request is
+    // indistinguishable from the cockpit — exactly as it is everywhere
+    // `requireOperatorCookieUnderLogin` runs.
+    const cookieRefusal = requireOperatorCookieUnderLogin(res, 'delete a scheduled task');
+    if (cookieRefusal) {
+      return res.status(cookieRefusal.status).json({
+        error: 'Only a person signed in to DorkOS can delete a scheduled task',
+        code: cookieRefusal.code,
+      });
+    }
+
     const { id } = req.params;
     const schedule = store.getTask(id);
     if (!schedule) {
@@ -734,6 +751,19 @@ export function createTasksRouter(
   });
 
   router.post('/runs/:id/cancel', async (req, res) => {
+    // Cancelling a run is never a power-grant either, so — like DELETE above —
+    // this is nuisance/DoS protection: under login-on a caller with an API key
+    // but no session cookie must not be able to stop a person's run for them.
+    // Asked before the run is looked up. A no-op under login-off (the DOR-505
+    // residual), so the shipped default posture is unchanged.
+    const cookieRefusal = requireOperatorCookieUnderLogin(res, 'cancel a scheduled run');
+    if (cookieRefusal) {
+      return res.status(cookieRefusal.status).json({
+        error: 'Only a person signed in to DorkOS can cancel a scheduled run',
+        code: cookieRefusal.code,
+      });
+    }
+
     const run = store.getRun(req.params.id);
     const outcome = await scheduler.cancelRun(req.params.id);
 

@@ -192,6 +192,12 @@ Your agents hold one of your keys so they can run `dorkos` commands, and if a ke
 requests, an agent could approve its own work. So it cannot. If you run agents you don't fully
 trust, or you reach DorkOS from another device, turn login on.
 
+Turn it on too if you leave agents running on their own and those agents can use a shell. Without
+login on, one of those agents can approve its own scheduled task, and reach your other protected
+settings the same way. It does this by sending DorkOS a plain request that looks just like you
+clicking in the app, so there is nothing left to tell the two apart. With login on, that request
+needs a browser sign-in it does not have.
+
 That also means there is no way to say yes from a script or a terminal while login is on. That is
 the point of it, not a gap.
 
