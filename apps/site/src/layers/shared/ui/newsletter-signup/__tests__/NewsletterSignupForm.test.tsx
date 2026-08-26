@@ -49,6 +49,20 @@ describe('NewsletterSignupForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByRole('alert').textContent).toBe('Please enter a valid email address.');
+    expect(captureMock).not.toHaveBeenCalled();
+  });
+
+  it('tells the visitor to wait when the route throttles the request (429)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429 }));
+    render(<NewsletterSignupForm source="tutorials-modal" />);
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: 'kai@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Too many tries. Please wait a few minutes and try again.');
     expect(captureMock).not.toHaveBeenCalled();
   });
 

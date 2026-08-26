@@ -9,6 +9,9 @@
  * fake success so bots never learn they were caught. No PII leaves the browser:
  * the analytics event carries only the capture `source` and the email domain.
  *
+ * The route throttles per IP, so a `429` is a normal answer here, not a bug —
+ * it gets its own wait-and-retry sentence instead of the generic error.
+ *
  * @module shared/ui/newsletter-signup/use-newsletter-form
  */
 import { useState } from 'react';
@@ -34,6 +37,14 @@ export interface UseNewsletterForm {
 /** Extract the domain from an email for non-PII analytics, or `'unknown'`. */
 function emailDomain(email: string): string {
   return email.split('@')[1]?.toLowerCase() ?? 'unknown';
+}
+
+/** Turn a failed response status into one honest sentence for the visitor. */
+function submitErrorMessage(status: number): string {
+  if (status === 400) return 'Please enter a valid email address.';
+  // The route throttles per IP (DOR-1581); say what to do about it.
+  if (status === 429) return 'Too many tries. Please wait a few minutes and try again.';
+  return 'Something went wrong. Please try again.';
 }
 
 /**
@@ -62,11 +73,7 @@ export function useNewsletterForm(source: NewsletterSource): UseNewsletterForm {
       });
       if (!res.ok) {
         setState('error');
-        setError(
-          res.status === 400
-            ? 'Please enter a valid email address.'
-            : 'Something went wrong. Please try again.'
-        );
+        setError(submitErrorMessage(res.status));
         return;
       }
       trackNewsletterSignup(source, emailDomain(email));
