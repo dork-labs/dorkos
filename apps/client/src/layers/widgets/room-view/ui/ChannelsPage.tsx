@@ -7,9 +7,11 @@ import { RoomSurface } from './RoomSurface';
 /**
  * The `/channels` page — one room's history, addressed by search param.
  *
- * `?id=` addresses the room and `?thread=` the thread open beside it. Both are
- * read here and handed to {@link RoomSurface}, which IS the room: this component
- * is the address and nothing else. The home tab renders the same surface for
+ * `?id=` addresses the room, `?thread=` the thread open beside it, and
+ * `?entry=` the one message it should open on — the address a message-search
+ * hit navigates to (DOR-687). All three are read here and handed to
+ * {@link RoomSurface}, which IS the room: this component is the address and
+ * nothing else. The home tab renders the same surface for
  * #team without going through this route (team-room-home spec D3.2), which is
  * why the two halves are apart at all — one room widget, reached from two
  * addresses, never copied.
@@ -20,8 +22,8 @@ import { RoomSurface } from './RoomSurface';
  * (spec §3.5). Every other id is unaffected.
  */
 export function ChannelsPage() {
-  const { id, thread } = useSearch({ from: '/_shell/channels' });
-  const teamRoom = useTeamRoomRedirect(id, thread);
+  const { id, thread, entry } = useSearch({ from: '/_shell/channels' });
+  const teamRoom = useTeamRoomRedirect(id, thread, entry);
 
   // **Not yet sure whether this id is Home's room — so draw the room's own
   // loading state, not a blank pane.** This branch is taken by EVERY room on a
@@ -57,5 +59,5 @@ export function ChannelsPage() {
     );
   }
 
-  return <RoomSurface roomId={id} threadId={thread} threadRoute="/channels" />;
+  return <RoomSurface roomId={id} threadId={thread} entrySeq={entry} threadRoute="/channels" />;
 }

@@ -34,13 +34,18 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { ROOM_PANEL_ID, useRoomPanelFocusStore } from '@/layers/features/room-management';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
-const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
-vi.mock('sonner', () => ({ toast: { error: toastError } }));
+const { toastError, toastInfo } = vi.hoisted(() => ({ toastError: vi.fn(), toastInfo: vi.fn() }));
+vi.mock('sonner', () => ({ toast: { error: toastError, info: toastInfo } }));
 
 /** The `?id=` the page reads, swapped between renders to change rooms. */
 let openRoomId = 'room-1';
+/** The `?entry=` the page reads — a search hit's seq, or nothing. */
+let openEntrySeq: number | undefined;
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ id: openRoomId }),
+  useSearch: () => ({
+    id: openRoomId,
+    ...(openEntrySeq === undefined ? {} : { entry: openEntrySeq }),
+  }),
   useNavigate: () => () => {},
   // `useInPlaceNavigate` (the thread-URL sync) reads the current location.
   useRouter: () => ({ state: { location: { pathname: '/channels', search: { id: openRoomId } } } }),
@@ -86,11 +91,13 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   toastError.mockClear();
+  toastInfo.mockClear();
   // Module state shared by the whole graph: an unanswered request left here
   // would be read by whatever mounts a room panel next.
   useRoomPanelFocusStore.setState({ request: null });
   useAppStore.setState({ rightPanelOpen: false, activeRightPanelTab: null });
   openRoomId = 'room-1';
+  openEntrySeq = undefined;
   phoneViewport = false;
   // The open thread outlives an unmounted page on purpose — it is per-room
   // state, not per-render — so a test that opened one has to put it back, or
@@ -965,5 +972,169 @@ describe('ChannelsPage — switching between threads', () => {
     await user.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+  });
+});
+
+describe('ChannelsPage — landing on the message a search hit named (DOR-687)', () => {
+  /** One committed post, numbered the way a room numbers its own log. */
+  function post(seq: number, text: string): RoomEntry {
+    return {
+      seq,
+      id: `entry-${seq}`,
+      authorId: 'author-you',
+      kind: 'post',
+      body: { text },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: `entry-${seq}`,
+      cascadeDepth: 0,
+      parentEntryId: null,
+      threadRootEntryId: null,
+      signature: null,
+      createdAt: '2026-07-26T10:00:00.000Z',
+    } as unknown as RoomEntry;
+  }
+
+  const history = [post(1, 'first'), post(2, 'the port question'), post(3, 'last')];
+  /** A reply hanging off `entry-2`, which the room's own flow never draws. */
+  const reply = {
+    ...post(4, 'answering the port question'),
+    parentEntryId: 'entry-2',
+    threadRootEntryId: 'entry-2',
+  } as unknown as RoomEntry;
+
+  /** The tree the page renders in, kept so a test can re-render it in place. */
+  function pageTree(entries: RoomEntry[] = history) {
+    return (
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <EventStreamProvider>
+          <TransportProvider
+            transport={createMockTransport({
+              getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
+              listRoomEntries: vi.fn(() => Promise.resolve(entries)),
+              subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+                staysOpen(signal)
+              ),
+            })}
+          >
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  /** Answer a second search without remounting — the defect's exact shape. */
+  let rerenderPage: () => void = () => {};
+
+  function openRoomWithHistory(entries: RoomEntry[] = history) {
+    const { rerender } = render(pageTree(entries));
+    rerenderPage = () => rerender(pageTree(entries));
+  }
+
+  /** What the timeline decided, which only its own wrapper publishes. */
+  async function landedOn(): Promise<string | null> {
+    openRoomWithHistory();
+    await screen.findByText('the port question');
+    return (
+      document
+        .querySelector('[data-slot="conversation-timeline"]')
+        ?.getAttribute('data-landed-on') ?? null
+    );
+  }
+
+  it('opens on the message rather than at the newest one', async () => {
+    // The whole client half, end to end at the level that can see it: the
+    // address reaches the page, the page reaches the room, the room resolves a
+    // `seq` to a row, and the timeline lands on it instead of the bottom.
+    // Every unit below this passes with any one of those four links cut.
+    openEntrySeq = 2;
+
+    expect(await landedOn()).toBe('requested');
+  });
+
+  it('opens at the newest message when the address names none', async () => {
+    // The positive control. Without it a page that always reported `requested`
+    // would pass the test above.
+    expect(await landedOn()).toBe('end');
+  });
+
+  it('opens at the newest message when the history no longer reaches that far', async () => {
+    // A hit outside the room's trailing page. The link must not swallow the
+    // landing, and the reader is told rather than left to wonder why the room
+    // opened at the bottom.
+    openEntrySeq = 4200;
+
+    expect(await landedOn()).toBe('end');
+    await waitFor(() =>
+      expect(toastInfo).toHaveBeenCalledWith(
+        "DorkOS can't find that message in what's open here",
+        expect.anything()
+      )
+    );
+  });
+
+  it('says nothing about reach when the message is right there', async () => {
+    // The positive control for the sentence above.
+    openEntrySeq = 2;
+    await landedOn();
+
+    expect(toastInfo).not.toHaveBeenCalled();
+  });
+
+  it('moves again when a second search names another message in the SAME room', async () => {
+    // **The defect that made this feature a no-op for its commonest case.**
+    // Clicking a hit in the room you are already reading is an in-place
+    // search-param navigation: the room does not change, so the timeline's arm
+    // guard never lifted. The URL said one thing and the room sat where it was.
+    //
+    // Asserted at the page, because only the page can do the thing that broke —
+    // change `?entry=` without changing the room — and asserted on the MARK,
+    // because `data-landed-on` reads `requested` both times and cannot tell two
+    // landings apart.
+    openEntrySeq = 1;
+    openRoomWithHistory();
+    await screen.findByText('the port question');
+    await waitFor(() =>
+      expect(document.getElementById('room-entry-entry-1')).toHaveAttribute('data-landed', 'true')
+    );
+
+    openEntrySeq = 3;
+    rerenderPage();
+
+    await waitFor(() =>
+      expect(document.getElementById('room-entry-entry-3')).toHaveAttribute('data-landed', 'true')
+    );
+    // And the first one has stopped claiming to be the answer.
+    expect(document.getElementById('room-entry-entry-1')).not.toHaveAttribute('data-landed');
+  });
+
+  it('opens the thread a reply lives in, so the message is actually on screen', async () => {
+    // A reply is not drawn in the room's flow — the flow draws the "↳ N
+    // replies" row of its thread — so landing the room and stopping there puts
+    // a reader on a collapsed count with the message they searched for nowhere
+    // in the document. The panel is where the reply IS.
+    openEntrySeq = 4;
+    openRoomWithHistory([...history, reply]);
+
+    await waitFor(() => expect(screen.getByTestId('room-thread-feed')).toBeInTheDocument());
+    // Drawn under the PANEL's own row id, which is the proof it is on screen
+    // rather than merely loaded.
+    await waitFor(() =>
+      expect(document.getElementById('thread-panel-entry-entry-4')).not.toBeNull()
+    );
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId).toBe('entry-2');
+  });
+
+  it('opens no thread panel for a top-level hit', async () => {
+    // The positive control: a room that opened a thread for every hit would
+    // put a panel over itself on the commonest case of all.
+    openEntrySeq = 2;
+    openRoomWithHistory([...history, reply]);
+    await screen.findByText('the port question');
+
+    expect(screen.queryByTestId('room-thread-feed')).not.toBeInTheDocument();
   });
 });

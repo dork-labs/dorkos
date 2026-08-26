@@ -1622,6 +1622,48 @@ body {
   }
 }
 
+/* The row a search result took you to, marked for a moment and then not.
+   (DOR-687.)
+
+   **It exists because the caret alone does not reliably paint.** The landing
+   focuses the row, which is the durable mark and where the keyboard now is —
+   but a row focused PROGRAMMATICALLY after a mouse click does not match
+   `:focus-visible`, and clicking a search result is the mouse path. So the ring
+   a reader was promised could be drawn for a keyboard user and never for
+   anybody else. This is drawn unconditionally.
+
+   Calm rather than a flash: it arrives already lit and fades, it animates on
+   `box-shadow` and `background` only, and `Conversation.Timeline` takes the
+   attribute off after a couple of seconds so nothing on screen is still
+   insisting once the reader has found the message. An inset ring rather than an
+   outline, so a row at the edge of the scroller is not clipped. */
+@keyframes landing-mark {
+  from {
+    box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0.55);
+    background-color: hsl(var(--ring) / 0.08);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0);
+    background-color: hsl(var(--ring) / 0);
+  }
+}
+
+[data-landed='true'] {
+  border-radius: var(--radius);
+  animation: landing-mark 2.2s ease-out forwards;
+}
+
+/* Somebody who asked for less motion still gets told which row it is — they
+   asked for no movement, not for no information. The mark simply holds still
+   and is removed on the same timer. */
+@media (prefers-reduced-motion: reduce) {
+  [data-landed='true'] {
+    animation: none;
+    box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0.45);
+    background-color: hsl(var(--ring) / 0.06);
+  }
+}
+
 /* Assistant message typography */
 .msg-assistant p + p {
   margin-top: 1em;

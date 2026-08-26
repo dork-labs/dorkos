@@ -50,6 +50,31 @@ describe('useTeamRoomRedirect', () => {
     });
   });
 
+  it('carries the message a search hit picked across with it', () => {
+    // A hit in #team is addressed at `/channels?id=<team>&entry=<seq>` (DOR-687),
+    // and the redirect is the only thing between that link and Home. Dropping
+    // the coordinate here would land the reader at the bottom of Home with the
+    // message they clicked nowhere in sight — the failure looks like the room
+    // opening normally, which is why it needs pinning.
+    renderHook(() => useTeamRoomRedirect('team-room', undefined, 412));
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/',
+      search: { entry: 412 },
+      replace: true,
+    });
+  });
+
+  it('carries a thread and a message together', () => {
+    renderHook(() => useTeamRoomRedirect('team-room', 'entry-9', 412));
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/',
+      search: { thread: 'entry-9', entry: 412 },
+      replace: true,
+    });
+  });
+
   it('leaves every other channel exactly where it is', () => {
     const { result } = renderHook(() => useTeamRoomRedirect('room-other', 'entry-9'));
 

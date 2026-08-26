@@ -15,22 +15,35 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
-const { redirect } = vi.hoisted(() => ({
+const { redirect, params } = vi.hoisted(() => ({
   redirect: { state: 'show' as 'show' | 'pending' | 'redirecting' },
+  params: { current: { id: 'room-1' } as Record<string, unknown> },
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ id: 'room-1' }),
+  useSearch: () => params.current,
 }));
 
+const redirectArgs = vi.hoisted(() => vi.fn());
 vi.mock('../model/use-team-room-redirect', () => ({
-  useTeamRoomRedirect: () => redirect.state,
+  useTeamRoomRedirect: (...args: unknown[]) => {
+    redirectArgs(...args);
+    return redirect.state;
+  },
 }));
 
 // The room itself is proven in `ChannelsPage.test.tsx`; this file is about which
-// of the three shapes the page picks, so the surface is stubbed at its seam.
+// of the three shapes the page picks, so the surface is stubbed at its seam —
+// and about what the address hands it, so the stub publishes its props.
 vi.mock('../ui/RoomSurface', () => ({
-  RoomSurface: () => <div data-testid="room-surface" />,
+  RoomSurface: ({ roomId, threadId, entrySeq }: Record<string, unknown>) => (
+    <div
+      data-testid="room-surface"
+      data-room-id={String(roomId)}
+      data-thread-id={String(threadId)}
+      data-entry-seq={String(entrySeq)}
+    />
+  ),
 }));
 
 vi.mock('../ui/RoomFlow', () => ({
@@ -41,7 +54,9 @@ import { ChannelsPage } from '../ui/ChannelsPage';
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
   redirect.state = 'show';
+  params.current = { id: 'room-1' };
 });
 
 describe('ChannelsPage deep link', () => {
@@ -72,5 +87,31 @@ describe('ChannelsPage deep link', () => {
     render(<ChannelsPage />);
 
     expect(screen.getByTestId('room-surface')).toBeInTheDocument();
+  });
+
+  it('hands the room the message a search hit asked it to open on', () => {
+    // DOR-687. The page is the address and nothing else, so what it has to get
+    // right is that `?entry=` reaches the room at all — the landing itself is
+    // `useEntryLanding`'s and `Timeline`'s.
+    params.current = { id: 'room-1', entry: 412 };
+    render(<ChannelsPage />);
+
+    expect(screen.getByTestId('room-surface')).toHaveAttribute('data-entry-seq', '412');
+  });
+
+  it('hands the room nothing when the address names no message', () => {
+    // The positive control: without it, a page hard-coding any seq would pass.
+    render(<ChannelsPage />);
+
+    expect(screen.getByTestId('room-surface')).toHaveAttribute('data-entry-seq', 'undefined');
+  });
+
+  it('offers the message to the team-room redirect too, so #team keeps it', () => {
+    // The one room `/channels` does not draw. If the coordinate stopped here it
+    // would be dropped for exactly the room most people search in.
+    params.current = { id: 'room-1', thread: 'entry-9', entry: 412 };
+    render(<ChannelsPage />);
+
+    expect(redirectArgs).toHaveBeenCalledWith('room-1', 'entry-9', 412);
   });
 });

@@ -239,6 +239,20 @@ export function groupByThread(entries: readonly RoomEntry[]): ThreadedEntries {
 }
 
 /**
+ * The {@link ConversationRow} key of the "↳ N replies" row under one thread's
+ * head.
+ *
+ * Distinct from {@link threadRowId}, which is the same row's DOM id — see
+ * {@link FlowRowRef}. Named here so the flow that BUILDS the row and the
+ * landing that has to FIND it cannot spell it two ways.
+ *
+ * @param rootEntryId - The entry heading the thread the row counts.
+ */
+export function threadRowKey(rootEntryId: string): string {
+  return `thread-${rootEntryId}`;
+}
+
+/**
  * The DOM id of the reply row that opens one thread.
  *
  * A real id rather than a ref passed around, because the two ends are far
@@ -286,6 +300,67 @@ export function threadPanelRowId(entryId: string): string {
  */
 export function entryRowId(entryId: string): string {
   return `room-entry-${entryId}`;
+}
+
+/**
+ * The row of the ROOM's own flow that takes a reader to one entry — both names
+ * it answers to.
+ *
+ * **Two ids for one row, because the timeline is addressed both ways and they
+ * are not interchangeable.** `rowId` is the {@link ConversationRow} key, which
+ * is what the landing matches on; `domId` is the element's `id`, which is what
+ * `scrollToRow` and `getElementById` take. Handing one where the other is
+ * wanted fails silently — the room simply opens at its newest message — so they
+ * are returned together rather than derived twice, once correctly.
+ */
+export interface FlowRowRef {
+  /** The `ConversationRow.id` the flow draws this entry under. */
+  rowId: string;
+  /** The DOM `id` that row's element carries. */
+  domId: string;
+}
+
+/**
+ * Which row of the ROOM's own flow takes a reader to one entry, or `null` when
+ * the room draws no row for it at all.
+ *
+ * **Quotable is not the same as rendered**, and this function is that
+ * distinction written down once. A room's flow draws top-level entries only
+ * ({@link groupByThread} keeps replies out of it), so an entry the caller can
+ * name may have no row of its own anywhere in the room column. Four cases:
+ *
+ * - **A top-level entry** is its own row — {@link entryRowId}.
+ * - **A reply the flow hangs under a thread** is drawn in the panel rather than
+ *   the flow, so the truest place the room can take you is the "↳ N replies"
+ *   row of that thread — {@link threadRowId}.
+ * - **An orphaned reply** — one whose thread head is not in this page, or is
+ *   itself a reply — IS drawn in the flow: {@link groupByThread} pushes exactly
+ *   those into `topLevel` rather than dropping them, so it has a row of its own.
+ * - **An entry not in the loaded history** has no row anywhere, and gets `null`.
+ *
+ * The three branches are {@link groupByThread}'s own placement rule read back
+ * out, and they have to stay that: a row id derived from a different rule is a
+ * link into an element the feed never drew.
+ *
+ * Both callers must answer this identically: the live peek's "replying to …"
+ * link and a search hit's landing are the same question about the same feed,
+ * and two versions of it is exactly the drift that makes one of them a link
+ * into nowhere.
+ *
+ * @param entries - The room's loaded history, whole (replies included).
+ * @param entryId - The entry to reach.
+ */
+export function flowRowForEntry(entries: readonly RoomEntry[], entryId: string): FlowRowRef | null {
+  const entry = entries.find((candidate) => candidate.id === entryId);
+  if (entry === undefined) return null;
+  // `?? null` because `threadRootIdOf` reads two OPTIONAL fields and can answer
+  // `undefined` in spite of its `string | null` signature.
+  const rootId = threadRootIdOf(entry) ?? null;
+  const ownRow = { rowId: entryId, domId: entryRowId(entryId) };
+  if (rootId === null) return ownRow;
+  const root = entries.find((candidate) => candidate.id === rootId);
+  const rootLeadsAThread = root !== undefined && (threadRootIdOf(root) ?? null) === null;
+  return rootLeadsAThread ? { rowId: threadRowKey(rootId), domId: threadRowId(rootId) } : ownRow;
 }
 
 /**

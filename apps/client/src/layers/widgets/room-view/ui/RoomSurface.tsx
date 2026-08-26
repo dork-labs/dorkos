@@ -16,6 +16,7 @@ import { openRoomPanel } from '@/layers/features/room-management';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useRoomTarget } from '../model/room-target';
+import { useEntryLanding } from '../model/use-entry-landing';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
@@ -30,6 +31,14 @@ export interface RoomSurfaceProps {
   roomId: string;
   /** `?thread=` as it arrived on this route, when there is one. */
   threadId?: string;
+  /**
+   * `?entry=` as it arrived — the `seq` of the one message this room should
+   * open on, which is what a message-search hit carries (DOR-687).
+   *
+   * Absent for every other way into a room, and the room then opens at its
+   * newest message exactly as before.
+   */
+  entrySeq?: number;
   /** Which address the open thread is mirrored into. */
   threadRoute: ThreadRoute;
   /**
@@ -107,6 +116,7 @@ export interface RoomSurfaceProps {
 export function RoomSurface({
   roomId,
   threadId,
+  entrySeq,
   threadRoute,
   aboveTimeline,
   aboveComposer,
@@ -225,6 +235,17 @@ export function RoomSurface({
     timelineRef.current?.scrollToRow(domId);
   }, []);
 
+  // Where a search hit asks this room to open, answered as getters the two
+  // timelines' own landings read — see `useEntryLanding` for why they are asked
+  // rather than fired, and why a hit on a reply opens the thread panel as well
+  // as moving the room behind it.
+  const entryLanding = useEntryLanding({
+    roomId,
+    entrySeq,
+    entries,
+    historyLoaded: entriesQuery.isSuccess,
+  });
+
   // The open thread's replies, so the room's presence line can hand exactly
   // those claims to the panel and keep the rest. `undefined` — no thread open —
   // means the room's line speaks for everything, which is the usual case.
@@ -276,6 +297,7 @@ export function RoomSurface({
       onRetryStream={stream.retry}
       historyLoaded={entriesQuery.isSuccess}
       historyFailed={entriesQuery.isError}
+      {...(entryLanding.threadRow === undefined ? {} : { landOnRow: entryLanding.threadRow })}
       pushed={isMobile}
       onClose={closeThread}
     />
@@ -307,6 +329,7 @@ export function RoomSurface({
         openThreadId={openThreadId}
         onOpenThread={onOpenThread}
         resumeRow={resumeRow}
+        {...(entryLanding.roomRow === undefined ? {} : { landOnRow: entryLanding.roomRow })}
         onTopRow={noteTopRow}
       />
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}

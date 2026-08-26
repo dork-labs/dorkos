@@ -46,6 +46,18 @@ import { PendingRow } from './rows/PendingRow';
 import { ScrollThumb } from './ScrollThumb';
 import { TimelineAffordances } from './TimelineAffordances';
 
+/**
+ * How long the landing mark stays on the row it lands you on, in milliseconds.
+ *
+ * Long enough to be seen by somebody whose eyes were on the search box when the
+ * scroll happened, short enough that it is gone before it becomes furniture.
+ * The caret stays either way, so nothing is lost when it fades.
+ *
+ * Exported so the test that proves the mark is taken off again waits on the
+ * shipped number rather than a copy of it that can drift.
+ */
+export const LANDING_MARK_MS = 2200;
+
 /** What a caller can make the timeline do. */
 export interface ConversationTimelineHandle {
   /**
@@ -129,6 +141,20 @@ export interface ConversationTimelineProps {
    * own state would re-render the room under the reader's finger.
    */
   resumeRow?: () => string | undefined;
+  /**
+   * The one row this conversation was ASKED to open on — a message somebody
+   * searched for and clicked (DOR-687).
+   *
+   * A getter returning a row id, read at landing time, and it outranks every
+   * other landing: see `TimelineLandingInput.landOnRow`. The row is centred and
+   * the caret is put on it, so the reader can see WHICH message answered them —
+   * the same "focus IS the flash" mark {@link
+   * ConversationTimelineHandle.scrollToRow} leaves, for the same reason.
+   *
+   * Marking it needs {@link ConversationTimelineProps.domIdOf}; a host that
+   * addresses no rows still gets the scroll, just not the caret.
+   */
+  landOnRow?: () => string | undefined;
   /**
    * Told which row is at the top of the viewport, or `undefined` while the
    * reader is caught up at the bottom — which is the host's cue to forget.
@@ -221,6 +247,7 @@ export function ConversationTimeline({
   landOn = 'end',
   landingReady = true,
   resumeRow,
+  landOnRow,
   onTopRow,
   pending,
   viewerAuthorId,
@@ -278,13 +305,14 @@ export function ConversationTimeline({
   // Where this conversation opens, and what it remembers — its own hook,
   // because the decision has traps (wait for geometry, answer in rows not
   // pixels) that have nothing to do with drawing a list.
-  const { landed, landedOn, reportTopRow } = useTimelineLanding({
+  const { landed, landedOn, landedRow, reportTopRow } = useTimelineLanding({
     conversationId,
     rows,
     virtualizer,
     landOn,
     landingReady,
     ...(resumeRow === undefined ? {} : { resumeRow }),
+    ...(landOnRow === undefined ? {} : { landOnRow }),
     ...(onTopRow === undefined ? {} : { onTopRow }),
   });
 
@@ -333,6 +361,89 @@ export function ConversationTimeline({
     row.focus({ preventScroll: true });
     return true;
   }, []);
+
+  /**
+   * The row currently wearing the landing mark, so it can be taken off again.
+   *
+   * The element rather than its id: the row may be virtualized away before the
+   * mark expires, and an id lookup would then find nothing to clean.
+   */
+  const markedElementRef = useRef<HTMLElement | null>(null);
+  /**
+   * The mark's own expiry, held in a ref rather than in the effect's cleanup.
+   *
+   * A timer owned by the effect is cancelled every time the effect's deps move
+   * — and `rows` moves on every arriving message — so the mark would be applied
+   * and then never taken off again in exactly the busy rooms where it matters.
+   */
+  const markExpiryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearLandingMark = useCallback(() => {
+    if (markExpiryRef.current !== undefined) {
+      clearTimeout(markExpiryRef.current);
+      markExpiryRef.current = undefined;
+    }
+    markedElementRef.current?.removeAttribute('data-landed');
+    markedElementRef.current = null;
+  }, []);
+
+  /**
+   * Mark the row the landing was ASKED for, once it exists.
+   *
+   * The landing scrolls; this is what says *this one*. It cannot be part of the
+   * landing itself, which works in row ids and has no idea what element any of
+   * them is: only the host's {@link ConversationTimelineProps.domIdOf} knows
+   * that, and only a frame after `scrollToIndex` does the element exist.
+   *
+   * **Two marks, because one of them does not reliably paint.** The caret is
+   * the durable one and the reason the row is focused at all — it survives, it
+   * is where the keyboard now is, and it is what `scrollToRow` already
+   * documents. But a row focused PROGRAMMATICALLY after a mouse click does not
+   * match `:focus-visible`, so on the mouse path — which is how a search result
+   * is clicked — the ring a reader was promised may never be drawn. So the row
+   * also wears `data-landed` for a moment, which is styled unconditionally
+   * (`index.css`) and fades out on its own. Calm rather than a flash: it says
+   * *here* and then stops talking.
+   *
+   * Keyed on the ROW, not the conversation, so a second search inside the same
+   * room marks the new message. `landedRow` is read from the landing rather
+   * than by asking `landOnRow` again, which would consume a request that has
+   * not been made yet.
+   */
+  const markedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (landedOn !== 'requested' || landedRow === null) return;
+    if (markedRef.current === landedRow) return;
+    if (domIdOf === undefined) return;
+    const row = rows.find((r) => r.id === landedRow);
+    const domId = row === undefined ? undefined : domIdOf(row);
+    if (domId === undefined) return;
+    // A frame later, because virtualization is why the row was not in the
+    // document before the landing moved to it.
+    //
+    // **`markedRef` is written INSIDE the frame, not before it**, and that is
+    // the difference between a mark and no mark at all. Writing it up here
+    // meant a re-render arriving in the gap — a settling roster, one live
+    // message — cancelled the frame through this effect's cleanup and then
+    // refused to re-schedule, because the row already counted as marked. The
+    // room landed correctly and said nothing about it, which was measured at
+    // the page rather than reasoned about.
+    const frame = requestAnimationFrame(() => {
+      if (!focusRowElement(domId)) return;
+      const element = document.getElementById(domId);
+      if (element === null) return;
+      markedRef.current = landedRow;
+      clearLandingMark();
+      element.setAttribute('data-landed', 'true');
+      markedElementRef.current = element;
+      markExpiryRef.current = setTimeout(clearLandingMark, LANDING_MARK_MS);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [landedOn, landedRow, domIdOf, rows, focusRowElement, clearLandingMark]);
+
+  // The mark belongs to a moment, not to the room: a reader who scrolls has
+  // stopped needing to be told where they landed, and a timeline going away
+  // must not leave an attribute on a row a later render reuses.
+  useEffect(() => clearLandingMark, [clearLandingMark]);
 
   useImperativeHandle(
     ref,

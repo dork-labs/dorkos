@@ -17,7 +17,7 @@ export type TeamRoomRedirect =
   | 'pending';
 
 /**
- * Send `/channels?id=<team>` to `/`, carrying `?thread=` with it.
+ * Send `/channels?id=<team>` to `/`, carrying `?thread=` and `?entry=` with it.
  *
  * **Why a redirect and not a second copy of Home.** #team was reachable at two
  * addresses that drew the same room differently — Home with its triage header
@@ -40,12 +40,20 @@ export type TeamRoomRedirect =
  * Every other room is untouched — `'show'` is the answer for any id that is not
  * #team, and for no id at all.
  *
+ * **Every param that addresses a PLACE INSIDE the room travels with it**, or
+ * the move quietly discards what the link was for: a message-search hit in
+ * #team addresses `/channels?id=<team>&entry=<seq>`, and a redirect that kept
+ * only the room would land the reader at the bottom of Home with the message
+ * they clicked nowhere in sight.
+ *
  * @param roomId - The `?id=` on the route, if there is one.
  * @param threadId - The `?thread=` on the route, carried through the move.
+ * @param entrySeq - The `?entry=` on the route, carried through the move.
  */
 export function useTeamRoomRedirect(
   roomId: string | undefined,
-  threadId: string | undefined
+  threadId: string | undefined,
+  entrySeq?: number
 ): TeamRoomRedirect {
   const team = useTeamRoom();
   const navigate = useNavigate();
@@ -63,10 +71,13 @@ export function useTeamRoomRedirect(
     if (!isTeamRoom) return;
     void navigate({
       to: '/',
-      search: threadId === undefined ? {} : { thread: threadId },
+      search: {
+        ...(threadId === undefined ? {} : { thread: threadId }),
+        ...(entrySeq === undefined ? {} : { entry: entrySeq }),
+      },
       replace: true,
     });
-  }, [isTeamRoom, threadId, navigate]);
+  }, [isTeamRoom, threadId, entrySeq, navigate]);
 
   if (roomId === undefined) return 'show';
   if (isTeamRoom) return 'redirecting';

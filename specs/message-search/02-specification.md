@@ -939,3 +939,55 @@ runtime the product names.
 Amendment 8's "did NOT do" note above and §927–930's "deliberately NOT changed" are resolved:
 `message-search-scope.ts` now names Codex and OpenCode in `SEARCH_SCOPE_COVERED`, its pinned
 test moved with it, and §1's product statement is true of every source this index registers.
+
+## Amendment 11 — a channel hit lands on the message; a conversation hit does not (DOR-687, 2026-08-26)
+
+Task 6.2 asked whether §8's coordinates can carry the ideation's headline promise — _"You click one
+and land where it was said"_ — the rest of the way. The answer is **yes for rooms, no for
+transcripts**, and the split is a property of the coordinate rather than a matter of effort.
+
+**Rooms.** `ordinal` for the `rooms` source IS `room_entries.seq` (`projections/rooms.ts:94`), which
+is the number the room's own timeline is built on. So the hit already carries an address, and the
+client half is a `?entry=<seq>` on `/channels` (and on `/`, which is #team; the one-door redirect
+carries it across). The room resolves the `seq` to a ROW, and the shared timeline gained one landing
+precedence for it: an asked-for row outranks a remembered position, an unread rule and the newest
+message, because it is the only one of the four somebody requested. **No field was added to the wire
+and no column to the index**: D11 holds.
+
+Three things that decision dragged in, each of which is a defect if left out:
+
+- **A request is CONSUMED, not held.** The landing is armed once per conversation, and an in-place
+  search-param navigation does not change the conversation — so without consumption, clicking a hit
+  in the room you are already reading changes the URL and moves nothing. And a request that never
+  expired would re-win every REMOUNT, so on a phone, closing a thread panel would throw a reader at
+  message 300 back to the message they searched for — the exact thing `resumeRow` exists to prevent.
+  The marker is keyed on room + `seq`; a new `seq` re-arms the landing exactly once, and an answered
+  one stands down for good. A re-armed landing that cannot be honoured leaves the reader where they
+  are rather than restarting the ordinary landing under them.
+- **A reply opens its thread.** The room's flow draws the "↳ N replies" row rather than the reply,
+  so landing the room and stopping there puts somebody on a collapsed count with the message they
+  searched for nowhere in the document. The panel is opened and lands on the reply; the room behind
+  lands on the thread's row. One request, two consumers, one consumed-marker each.
+- **Focus is not the whole mark.** `scrollToRow`'s "focus IS the flash" holds for a keyboard reader,
+  but a row focused PROGRAMMATICALLY after a MOUSE click does not match `:focus-visible` — and
+  clicking a search result is the mouse path. So the row also wears a transient `data-landed`,
+  styled unconditionally and faded out after ~2s, with a still version under
+  `prefers-reduced-motion`. The caret is the durable mark; this is the one that paints.
+
+**Transcripts.** `ordinal` for `claude-code`, `codex` and `opencode` is a running count of the
+messages the projection KEPT — person-authored user records and non-sidechain assistant text, with
+tool calls, tool results, thinking blocks and command records all skipped
+(`projections/claude-code.ts:111-146`, `readSpeech`). The session view holds what `parseTranscript`
+returns, which is all of those, and then drops one more class again (`filterKickoffHistory`). The two
+numberings are unrelated, so `messages[ordinal]` there is reliably a **different message**. Landing
+on the wrong line is worse than landing in the right conversation, so a transcript hit still opens
+its conversation and nothing else. Closing that half means carrying a stable per-message id end to
+end — the JSONL record `uuid` for Claude Code, and its equivalents elsewhere — rather than
+re-deriving the projection's filter in the client; it is a schema change and its own ticket.
+
+**One limit is stated in the product rather than only here.** A room hydrates its trailing page and
+nothing pages backwards yet (`useRoomEntries`: _"Scrolling further back than that page is `?before=`,
+which the server serves and no client surface asks for yet"_). So a hit older than that page has no
+row to land on, and the room says so in one quiet line instead of opening at the bottom in silence —
+which looks identical to a link that worked. Back-paging a room is the change that would retire that
+sentence, and it is not this one.

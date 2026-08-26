@@ -891,4 +891,33 @@ export class RoomsPage {
       return box.top >= view.top + margin && box.bottom <= view.bottom - margin;
     });
   }
+
+  /**
+   * Whether one row is really inside the scroller's viewport right now.
+   *
+   * **The assertion a landing test cannot do without.** A virtualized row that
+   * is merely RENDERED proves nothing — the list draws a window of rows around
+   * wherever it happens to be, so a row can be in the document and a thousand
+   * pixels above the fold. Only its box against the scroller's box can say the
+   * reader is actually looking at it. Asserting the URL instead is the check
+   * that cannot fail: the address carries the coordinate whether or not
+   * anything moved.
+   *
+   * Whole-row rather than the tap-band {@link RoomsPage.replyRowComfortablyVisible}
+   * asks for: this is about reading a message, not pressing it, and a long
+   * message legitimately fills more of the viewport than that band allows.
+   *
+   * @param row - The row to measure, already located.
+   * @returns Whether it is fully within the scrolling viewport.
+   */
+  async rowInViewport(row: Locator): Promise<boolean> {
+    if ((await row.count()) === 0) return false;
+    return row.evaluate((el) => {
+      const scroller = el.closest('.chat-scroll-area');
+      if (scroller === null) return false;
+      const view = scroller.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return box.top >= view.top && box.bottom <= view.bottom;
+    });
+  }
 }
