@@ -1,7 +1,7 @@
 ---
 id: 260728-214214
 title: Message search is a derived, rebuildable index, not a second transcript store
-status: proposed
+status: accepted
 created: 2026-07-28
 spec: message-search
 amends: 0310
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. **Partially supersedes [ADR-0310](0310-runtime-owned-session-storage-aggregated-listing.md) — one clause of one Negative consequence, and nothing else.**
+Accepted (2026-08-26 — the full programme shipped on this design: rooms + three transcript mechanisms indexed, palette UI, the Obsidian embed reading the same index read-only, and the delete-the-index recovery intact; see specs/message-search/04-implementation.md). **Partially supersedes [ADR-0310](0310-runtime-owned-session-storage-aggregated-listing.md) — one clause of one Negative consequence, and nothing else.**
 
 **2026-08-25**: Amended by [260825-110420](260825-110420-opencode-search-reads-a-snapshot-not-the-live-store.md) (DOR-688) on the two claims below that time has overtaken. **The port trigger fired and the promotion was REFUSED**: OpenCode is now indexed, on a third mechanism (M3, a read-only snapshot of its SQLite store) — but that mechanism turned out to need none of the frontier logic rewritten, reusing M2's watermark implementation through a `ContainerReader` seam, so the registry array held. The re-trigger is recorded there: a FOURTH mechanism whose change detection is neither a byte offset nor a monotonic ordinal, or a source living outside `apps/server`. Consequently **there are now three mechanisms**, and the count of sources this record gives is a snapshot of 2026-07-28 rather than a rule.
 

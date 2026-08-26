@@ -404,7 +404,7 @@
       "slug": "message-search",
       "title": "Search every message you have ever sent or received",
       "created": "2026-07-28",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260727-231058",
