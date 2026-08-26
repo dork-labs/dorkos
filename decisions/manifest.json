@@ -710,8 +710,8 @@
       "specSlug": "effortless-runtime-switching",
       "lastVerified": "2026-08-06",
       "affects": [
-        "apps/server/src/services/runtimes/opencode/provision.ts",
-        "apps/server/src/services/runtimes/opencode/check-dependencies.ts"
+        "apps/server/src/services/runtimes/opencode/providers/provision.ts",
+        "apps/server/src/services/runtimes/opencode/providers/check-dependencies.ts"
       ]
     },
     {
@@ -3946,7 +3946,7 @@
       "extractedFrom": "opencode-connect-overhaul",
       "specSlug": "opencode-connect-overhaul",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/opencode/check-dependencies.ts"]
+      "affects": ["apps/server/src/services/runtimes/opencode/providers/check-dependencies.ts"]
     },
     {
       "id": "260723-013233",
