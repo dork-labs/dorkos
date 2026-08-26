@@ -21,9 +21,9 @@
  * @module shared/notification-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 /**
  * How loud a notification is allowed to be.

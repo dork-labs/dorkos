@@ -8,12 +8,12 @@
  * @module shared/mesh-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
 import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Enums ===
 

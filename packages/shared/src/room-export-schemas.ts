@@ -37,7 +37,7 @@
  * @module shared/room-export-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
 import {
   AuthorKindSchema,
@@ -49,7 +49,7 @@ import {
   RoomNoticeCodeSchema,
 } from './room-schemas.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 /**
  * What the file says it is, on its header line.
