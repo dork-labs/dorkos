@@ -1,7 +1,7 @@
 ---
 id: 260825-232207
 title: Sticky scheduled tasks resume one real SDK session across runs
-status: proposed
+status: accepted
 created: 2026-08-25
 spec: null
 superseded-by: null

@@ -1,7 +1,7 @@
 ---
 id: 260823-200728
 title: Skill frontmatter unifies on Claude Code's dialect
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: universal-scheduled-tasks
 superseded-by: null

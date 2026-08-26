@@ -1,7 +1,7 @@
 ---
 id: 260823-200724
 title: Schedulability is a frontmatter property, not a directory
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: universal-scheduled-tasks
 superseded-by: null
