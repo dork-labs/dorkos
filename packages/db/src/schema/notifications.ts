@@ -38,6 +38,12 @@ export const notifications = sqliteTable(
       enum: [
         'ask.pending',
         'schedule.parked',
+        // Declared for completeness with `NotificationKind`; nothing writes a
+        // row under it today, because a capability approval's history already
+        // lives in the `approvals` table (DOR-1570). Drizzle's `enum` is a
+        // type-level narrowing on a plain TEXT column, so adding a member here
+        // produces no DDL and needs no migration.
+        'approval.pending',
         'session.error',
         'turn.completed',
         'run.completed',

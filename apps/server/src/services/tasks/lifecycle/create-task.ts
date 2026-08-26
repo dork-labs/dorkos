@@ -42,7 +42,7 @@ import { planTaskFileCreate } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
 import type { TaskStore } from '../task-store.js';
 import type { TaskRegistrar } from '../task-registrar.js';
-import { armEscalation } from '../../notifications/escalation-service.js';
+import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import type { NotificationPayload } from '../../notifications/notification-registry.js';
 
@@ -357,10 +357,17 @@ export async function createScheduledTask(
       }),
     });
     schedule = deps.store.getTask(schedule.id)!;
-    // The escalation clock starts here (DOR-1387). Parked schedules have no
-    // observer seam, so the hook lands at the write that parks one.
+    // The arrival goes out and the escalation clock starts here (DOR-1387,
+    // DOR-1570). Parked schedules have no observer seam, so the hook lands at
+    // the write that parks one. `raiseStanding` both announces the arrival to
+    // the periphery (a desktop banner has no cockpit query to derive it from)
+    // and arms the ladder. Still nothing STORED at this edge: `schedule.parked`
+    // is a STANDING kind, which stores nothing while it stands (ADR
+    // 260819-234828), and its resolution is recorded where the operator decides
+    // it — which is also where the timer is disarmed and the banner retired,
+    // through `resolveStanding`.
     parkPayload = await resolveScheduleParkPayload(schedule);
-    armEscalation('schedule.parked', parkPayload);
+    raiseStanding('schedule.parked', parkPayload);
   }
 
   // Through the registrar, not the scheduler directly: the same seam the watcher

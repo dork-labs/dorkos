@@ -30,7 +30,7 @@ import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/cal
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
-import { armEscalation } from '../services/notifications/escalation-service.js';
+import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
 import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
@@ -624,7 +624,7 @@ export function createTasksRouter(
       if (parkReason) {
         updated = store.recordProposal(req.params.id, { reason: parkReason }) ?? updated;
       }
-      armEscalation('schedule.parked', await resolveScheduleParkPayload(updated));
+      raiseStanding('schedule.parked', await resolveScheduleParkPayload(updated));
     }
 
     broadcastTasksChanged();

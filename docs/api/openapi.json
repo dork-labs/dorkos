@@ -8832,6 +8832,7 @@
         "enum": [
           "ask.pending",
           "schedule.parked",
+          "approval.pending",
           "session.error",
           "turn.completed",
           "run.completed",

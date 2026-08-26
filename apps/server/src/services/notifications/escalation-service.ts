@@ -290,7 +290,7 @@ export class EscalationService {
       const pushLeg = this.deps.push.sendToAll({
         title,
         ...(body ? { body } : {}),
-        deepLink: escalationDeepLink(kind, payload),
+        deepLink: standingDeepLink(kind, payload),
         notificationId: subjectKey,
         tier: 'blocking',
       });
@@ -413,17 +413,26 @@ function pickRelayAgent(
 }
 
 /**
- * Where a push about a standing condition takes somebody who taps it.
+ * Where a standing condition takes somebody who taps its push — or clicks its
+ * desktop banner (`standing-events.ts` reads this same function, so a tap and a
+ * click cannot land in different rooms).
  *
- * The same three answers the desktop shell's `notificationDeepLink` gives for
- * these subject types, restated here because that one lives in the Electron main
+ * The same answers the desktop shell's `notificationDeepLink` gives for these
+ * subject types, restated here because that one lives in the Electron main
  * process and this payload is built on the server.
+ *
+ * @param kind - Which standing kind.
+ * @param payload - That kind's payload.
  */
-function escalationDeepLink<K extends StandingNotificationKind>(
+export function standingDeepLink<K extends StandingNotificationKind>(
   kind: K,
   payload: NotificationPayload<K>
 ): string {
   if (kind === 'schedule.parked') return '/tasks';
+  // Every destructive approval — a schedule deletion, a marketplace uninstall,
+  // an unregister — is decided on the same card in the bell, and the bell is on
+  // every route. Home is where it is unmissable.
+  if (kind === 'approval.pending') return '/';
   const sessionId = (payload as NotificationPayload<'ask.pending'>).sessionId;
   return `/session?session=${encodeURIComponent(sessionId)}`;
 }
