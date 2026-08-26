@@ -257,6 +257,7 @@ export {
   notInArray,
   isNull,
   isNotNull,
+  like,
   or,
 } from 'drizzle-orm';
 

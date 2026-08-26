@@ -55,6 +55,7 @@ export {
   roomsSource,
 } from './registry.js';
 export { sweepContainers, sweepRowSource, PRUNE_GUARD_KEY } from './row-frontier.js';
+export { DISCOVERY_FAILURE_KEY } from './frontier-store.js';
 export {
   sweepSnapshotSource,
   SNAPSHOT_FAILURE_KEY,
@@ -69,11 +70,7 @@ export {
   type OpenCodeSnapshot,
 } from './opencode-store.js';
 export { indexRoomEntry } from './write-through.js';
-export {
-  sweepFileSource,
-  DISCOVERY_FAILURE_KEY,
-  DUPLICATE_CONTAINERS_KEY,
-} from './jsonl-frontier.js';
+export { sweepFileSource, DUPLICATE_CONTAINERS_KEY } from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
 export { discoverCodexRollouts } from './codex-discovery.js';
 export { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';

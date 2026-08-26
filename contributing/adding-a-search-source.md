@@ -98,6 +98,27 @@ The working directory a hit opens in is a **per-container constant**. It goes on
 
 A container whose path no longer exists **keeps every one of its rows**. The result is still shown and says the directory is gone; it does not fail on a path.
 
+### A sweep shares the process it runs in
+
+`better-sqlite3` is synchronous and a projection is a pure function, so nothing about a sweep yields on its own — a row source's whole pass used to run in one unbroken block, measured at 36.6 ms for 4,000 rooms with zero turns of the event loop (DOR-702). Every mechanism therefore hands the loop a turn **between containers** (`yieldToEventLoop`, `frontier-store.ts`). That is what keeps the server answering requests while a first index runs, and what keeps the startup sweep off the boot path.
+
+**Between containers, never inside one.** Everything one container costs — `listContainers()`'s share of the work, `readSince()`, `project()`, the insert — runs in one uninterrupted block. Keep a single container's work bounded; a source that reads its whole corpus as one container blocks the loop for the whole corpus no matter what the loop around it does.
+
+The turn costs one event-loop iteration per container (~13 µs measured), so the price is set by how many containers a source has and not by how much they hold: +59 ms on a 4,000-container sweep with nothing new in it.
+
+### Discovery failing is a source failure, never a sweep failure
+
+Everything that enumerates containers — `discover()` for M1, `listContainers()` for M2, `open()` then `listContainers()` for M3 — is allowed to fail, and the mechanism that owns it answers for it (DOR-709):
+
+- the failure lands on `SourceSweep.failures` under `(discovery)` (or `(snapshot)`), which the reconciler logs;
+- `search_sources.last_error` is stamped on the containers that already exist, so somebody searching gets a warning rather than silence. **That stamp is the load-bearing half**: `sourceWarnings` reads that column and nothing else, so a failure recorded only on the sweep result raises no warning at all;
+- **nothing is pruned**, because an empty container list from a failed discovery is not "every container is gone";
+- every source after it in `SEARCH_SOURCES` sweeps normally.
+
+A whole-source stamp carries `SOURCE_ERROR_MARK`, and a healthy pass retires marked rows at the end. The mark is what keeps the retirement from erasing an error that belongs to a container rather than to the source — a stalled file records its failure and is then skipped on every later sweep, so it never reports itself again and a blanket clear would silence it on the next tick.
+
+Writes that record a failure are themselves best-effort (`tryWrite`): five writers share this database and `busy_timeout` is five seconds, so a `SQLITE_BUSY` while recording ONE container's error must degrade to a log line rather than escape the catch and end the sweep.
+
 ### No column ships without a consumer
 
 `messages` is rebuildable in seconds, so there is no reason to carry a column speculatively. Every column present today is consumed: `role` is rendered and filtered, `created_at` orders and displays, `source_id` labels a result and scopes the frontier, `origin_key` + `ordinal` are the navigation coordinates. **Widening later is one projection change and a rebuild — measured at 2.69 s over the v1 corpus — not a migration.** If you want a column, ship the consumer in the same change or do not ship the column.

@@ -355,12 +355,13 @@ function assertReadOnly(db: SqliteDatabase): string {
  * this source actually runs does not.)
  *
  * **What it exists for is WHERE that throw lands.** {@link OpenCodeSnapshot.listContainers}
- * is called at the top of `sweepContainers`, outside the per-container `try`, so
- * an error raised there escapes the source entirely. Without this check the tick
- * degrades from "one source recorded a failure" to "the whole sweep rejected",
- * taking rooms and Claude Code down with it. Checking at open converts a
- * process-wide abort into a clean per-source failure: recorded, nothing pruned,
- * retried against a fresh copy on the next sweep.
+ * is called at the top of `sweepContainers`, and a corrupt copy raises there
+ * rather than against any one container. Since DOR-709 that is caught and
+ * attributed — the sweep records a `(discovery)` failure for this source, prunes
+ * nothing, and carries on — so this check is no longer what stands between a bad
+ * copy and a process-wide abort. What it still buys is the honest attribution:
+ * a copy that will not open is `(snapshot)`, reported before a reader exists,
+ * rather than a schema complaint arriving one layer later.
  *
  * `quick_check` is the cheap half of `integrity_check` — page structure, no
  * index-vs-table cross-check — and costs single-digit milliseconds on a 1.4 MB

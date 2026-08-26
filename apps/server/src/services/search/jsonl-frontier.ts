@@ -35,11 +35,16 @@ import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { searchSources, eq, sql, type Db } from '@dorkos/db';
 import {
+  clearSourceError,
   deleteContainerMessages,
+  DISCOVERY_FAILURE_KEY,
   insertMessages,
   pruneVanished,
   readIndexedOrdinals,
   stampAttempt,
+  stampSourceError,
+  tryWrite,
+  yieldToEventLoop,
   type Writer,
 } from './frontier-store.js';
 import type {
@@ -89,23 +94,6 @@ const MAX_CARRY_BYTES = 64 * 1024 * 1024;
  * disk and cannot resolve until the file changes. See {@link recordFailure}.
  */
 class UnterminatedLineError extends Error {}
-
-/**
- * The `originKey` a failure carries when there is no container to blame —
- * discovery itself failed, so nothing was enumerated to attribute it to. Both
- * shapes use it: a discovery that rejected outright, and one root of several
- * that could not be read.
- *
- * It names no row and none is written: `search_sources` is keyed by container,
- * and inventing a container id to hold an error would put a row in the frontier
- * that discovery can never return, which the prune would then delete on the
- * first healthy sweep. That is a deliberate narrowing of spec Amendment 2's
- * "one `search_sources.last_error` and zero rows" for the per-root case — the
- * visibility it asks for is delivered through {@link SourceSweep.failures},
- * which the reconciler logs, rather than through a row that would flap in and
- * out of the frontier every five minutes.
- */
-export const DISCOVERY_FAILURE_KEY = '(discovery)';
 
 /**
  * The `originKey` a failure carries when it is about MANY containers at once —
@@ -201,10 +189,20 @@ export async function sweepFileSource(
   try {
     discovery = await source.discover(knownContainers(frontier));
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // **And somebody searching has to be told.** `sourceWarnings` reads
+    // `search_sources.last_error` and nothing else, so a failure recorded only
+    // on the sweep result is one only the server log knows about — which on this
+    // source is the largest corpus DorkOS indexes going quiet with no visible
+    // symptom at all. Stamped onto the containers that already exist, never onto
+    // an invented one.
+    tryWrite(`the ${source.id} discovery failure`, () => {
+      stampSourceError(db, source.id, message, at);
+    });
     sweep.failures.push({
       sourceId: source.id,
       originKey: DISCOVERY_FAILURE_KEY,
-      message: err instanceof Error ? err.message : String(err),
+      message,
     });
     return sweep;
   }
@@ -277,6 +275,13 @@ export async function sweepFileSource(
   for (const file of discovery.files) {
     if (contested.has(file.originKey)) continue;
 
+    // A file with something new yields on its own — it reads bytes. A file with
+    // nothing new does not, and that is the ordinary case at 19,000 transcripts:
+    // the loop over them is pure synchronous work, and an `await` on an
+    // already-resolved promise drains as a microtask without ever reaching a
+    // timer or a socket (DOR-702).
+    await yieldToEventLoop();
+
     try {
       const outcome = await indexFile(db, source, file, frontier.get(file.originKey), {
         indexedTo: indexedOrdinals.get(file.originKey) ?? null,
@@ -288,13 +293,49 @@ export async function sweepFileSource(
       if (outcome.rebuilt) sweep.rebuilt += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      recordFailure(db, source.id, file, frontier.get(file.originKey), {
-        at,
-        message,
-        stalled: err instanceof UnterminatedLineError,
+      // Recording WHY must not become a second failure that escapes this catch
+      // and takes every remaining file with it (DOR-709).
+      tryWrite(`why ${source.id}/${file.originKey} failed`, () => {
+        recordFailure(db, source.id, file, frontier.get(file.originKey), {
+          at,
+          message,
+          stalled: err instanceof UnterminatedLineError,
+        });
       });
       sweep.failures.push({ sourceId: source.id, originKey: file.originKey, message });
     }
+  }
+
+  // **An account missing from search has to be visible to somebody searching**,
+  // and `sourceWarnings` reads `search_sources.last_error` and nothing else — a
+  // per-root failure recorded only on the sweep result raises no warning at all.
+  // So one of two things happens here, and never neither.
+  //
+  // **The stamp goes AFTER the loop on purpose.** Every file that indexes writes
+  // `last_error = NULL` for itself, so a stamp made before the loop survives
+  // only on the containers that happened not to change — which makes whether a
+  // person is warned depend on who was talking. After the loop it is
+  // deterministic: a root failed, so every row of this source says the corpus is
+  // incomplete — every row that does not already carry a file's OWN error, which
+  // {@link stampSourceError} leaves alone as the more specific of the two.
+  //
+  // The other branch is the recovery. A file that indexes clears its own row,
+  // but an unchanged file writes nothing at all — so without it one quiet
+  // transcript would carry a healed root's warning forever. Never over a file
+  // that failed in THIS pass; see {@link clearSourceError}.
+  if (discovery.failures.length > 0) {
+    const roots = discovery.failures.map((failure) => failure.root).join(', ');
+    tryWrite(`the ${source.id} unreadable roots`, () => {
+      stampSourceError(db, source.id, `could not read ${roots}`, at);
+    });
+  } else {
+    tryWrite(`the ${source.id} recovery`, () => {
+      clearSourceError(
+        db,
+        source.id,
+        sweep.failures.map((failure) => failure.originKey)
+      );
+    });
   }
 
   // A file that is GONE loses its rows; a file whose working directory is gone
