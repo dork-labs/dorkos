@@ -15,7 +15,6 @@ import { ChatWindow } from './ChatWindow';
 import { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
 import { LOCALHOST_CAPTION } from './copy';
 import { PANEL } from './film-tokens';
-import { LaptopFrame } from './LaptopFrame';
 import { MacbookFrame } from './MacbookFrame';
 import { SEAT_LIFT } from './macbook-geometry';
 import {
@@ -25,10 +24,8 @@ import {
   machineArrivalAt,
   machineOpacityAt,
   seatAt,
-  shellOpacityAt,
   STAGE_TIMING,
 } from './stage-timing';
-import type { StageTreatment } from './stage-treatment';
 import { useChatPlayback } from './use-chat-playback';
 import { useSectionProgress } from './use-section-progress';
 
@@ -46,8 +43,6 @@ const STAGE_VH = 320;
 interface StageSectionProps {
   /** Reports whether the agents have joined, so the hero can empty its seats. */
   onJoinedChange: (joined: boolean) => void;
-  /** Which of the two endings the last beat plays. */
-  treatment: StageTreatment;
 }
 
 /**
@@ -55,10 +50,10 @@ interface StageSectionProps {
  *
  * Beat one — the robots fly from their hero cards into the chat and talk.
  * Beat two — app icons fly off the dock into the messages that use them.
- * Beat three — the laptop materializes around that same chat as it shrinks:
- * it was on your computer all along.
+ * Beat three — a MacBook rises from under the frame and takes that same chat
+ * into its screen: it was on your computer all along.
  */
-export function StageSection({ onJoinedChange, treatment }: StageSectionProps) {
+export function StageSection({ onJoinedChange }: StageSectionProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -73,12 +68,11 @@ export function StageSection({ onJoinedChange, treatment }: StageSectionProps) {
   }, [joined, onJoinedChange]);
 
   const chatScale = useTransform(progress, (v: number) => chatScaleAt(v));
-  const shellOpacity = useTransform(progress, (v: number) => shellOpacityAt(v));
   const captionOpacity = useTransform(progress, (v: number) => captionOpacityAt(v));
 
-  // The MacBook treatment's four: the assembly rides up to centre the finished
-  // machine, the machine rises to meet the chat, the chat falls the last of
-  // the way into the opening, and it tips onto the lid's plane on the way in.
+  // The finale's four: the assembly rides up to centre the finished machine,
+  // the machine rises to meet the chat, the chat falls the last of the way
+  // into the opening, and it tips onto the lid's plane on the way in.
   const lift = useTransform(progress, (v: number) => `${-SEAT_LIFT * seatAt(v)}%`);
   const rise = useTransform(
     progress,
@@ -106,7 +100,6 @@ export function StageSection({ onJoinedChange, treatment }: StageSectionProps) {
     drop: '0%',
     layBack: 0,
   };
-  const chat = <ChatWindow joined={joined} lines={lines} pending={pending} />;
 
   return (
     <section
@@ -123,25 +116,16 @@ export function StageSection({ onJoinedChange, treatment }: StageSectionProps) {
       >
         <BeatHeadline beat={beat} />
 
-        {treatment === 'macbook' ? (
-          <MacbookFrame
-            scale={reduced ? still.scale : chatScale}
-            lift={reduced ? still.lift : lift}
-            rise={reduced ? still.rise : rise}
-            presence={reduced ? still.presence : presence}
-            drop={reduced ? still.drop : drop}
-            layBack={reduced ? still.layBack : layBack}
-          >
-            {chat}
-          </MacbookFrame>
-        ) : (
-          <LaptopFrame
-            scale={reduced ? 1 : chatScale}
-            shellOpacity={reduced && seated ? 1 : shellOpacity}
-          >
-            {chat}
-          </LaptopFrame>
-        )}
+        <MacbookFrame
+          scale={reduced ? still.scale : chatScale}
+          lift={reduced ? still.lift : lift}
+          rise={reduced ? still.rise : rise}
+          presence={reduced ? still.presence : presence}
+          drop={reduced ? still.drop : drop}
+          layBack={reduced ? still.layBack : layBack}
+        >
+          <ChatWindow joined={joined} lines={lines} pending={pending} />
+        </MacbookFrame>
 
         <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
 

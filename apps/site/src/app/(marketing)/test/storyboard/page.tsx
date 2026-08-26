@@ -76,7 +76,7 @@ export default function StoryboardPage() {
 
       <StoryboardSection
         step="the vocabulary"
-        title="Seven colors, four sizes"
+        title="Eight colors, four sizes"
         description="The page's entire visual system. The palette is the brand's cream-on-charcoal identity inverted, with one accent."
       >
         <PaletteAndType />

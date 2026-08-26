@@ -15,23 +15,16 @@
 /** The one command the whole page asks the visitor to run. */
 export const INSTALL_COMMAND = 'npx dorkos@latest';
 
-/** Laptop shell colours, shared by the bezel and its base. */
-export const SHELL = {
-  bezel: '#d8d2c4',
-  baseTop: '#e5dcc8',
-  baseBottom: '#cdc5b4',
-  foot: '#b9b0a0',
-} as const;
-
 /**
  * The drawn MacBook's colours: dark anodised aluminium, not cream.
  *
- * The cream shell above is the page's own palette wearing a laptop shape. This
- * one is the machine as it actually looks, because the beat it appears in only
- * works if the visitor recognises their own computer, and nobody's computer is
- * the colour of this page's background. Dark also does the contrast work for
- * free: the chat panel is near-black glass, and a near-black enclosure around
- * it means the only bright thing in the frame is the conversation.
+ * The stage used to end in a cream shell — the page's own palette wearing a
+ * laptop shape — and it is gone. This is the machine as it actually looks,
+ * because the beat it appears in only works if the visitor recognises their
+ * own computer, and nobody's computer is the colour of this page's background.
+ * Dark also does the contrast work for free: the chat panel is near-black
+ * glass, and a near-black enclosure around it means the only bright thing in
+ * the frame is the conversation.
  *
  * Every value is sampled off a space-black enclosure under soft light: the lid
  * is the darkest face, the deck catches more of it, and the front edge catches

@@ -12,18 +12,14 @@ export const STAGE_TIMING = {
   shrinkTo: 0.92,
   /** How much of its size the chat gives up (1 → 0.54). */
   shrinkAmount: 0.46,
-  /** The laptop shell begins to appear. */
-  shellFrom: 0.78,
-  /** The laptop shell is fully solid. */
-  shellTo: 0.9,
   /** The closing caption begins to appear. */
   captionFrom: 0.9,
   /** The closing caption is fully legible. */
   captionTo: 0.98,
 
-  // The drawn MacBook treatment reads the same scroll. It shares the shrink
-  // window above — the chat reaches its seat exactly when it reaches its final
-  // size — and adds three numbers of its own.
+  // The machine reads the same scroll. It shares the shrink window above — the
+  // chat reaches its seat exactly when it reaches its final size — and adds
+  // these of its own.
 
   /** The machine starts rising into the stage from below. */
   machineFrom: 0.76,
@@ -84,11 +80,6 @@ export function machineOpacityAt(progress: number): number {
  */
 export function layBackAt(progress: number): number {
   return -Math.sin(Math.PI * seatAt(progress)) * STAGE_TIMING.layBack;
-}
-
-/** Opacity of the laptop bezel and base at a given point in the stage. */
-export function shellOpacityAt(progress: number): number {
-  return ramp(progress, STAGE_TIMING.shellFrom, STAGE_TIMING.shellTo);
 }
 
 /** Opacity of the "home sweet localhost" caption at a given point. */

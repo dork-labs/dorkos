@@ -9,10 +9,14 @@ import {
   CHAT_SCRIPT,
   ChatWindow,
   DOCK,
-  LaptopFrame,
+  layBackAt,
+  machineArrivalAt,
+  machineOpacityAt,
+  MacbookFrame,
   nextBeat,
   PART_ONE_COUNT,
-  shellOpacityAt,
+  seatAt,
+  SEAT_LIFT,
   STAGE_TIMING,
   type Beat,
 } from '../../../new/_components';
@@ -68,8 +72,12 @@ function Readout({ name, value }: { name: string; value: string }) {
 /**
  * Drives the real stage by hand. Drag the scroll position and the same
  * components the live page renders move through the same numbers — the fastest
- * way to judge where the laptop should appear or how far the chat should
+ * way to judge where the machine should appear or how far the chat should
  * shrink, without scrolling the page over and over.
+ *
+ * Every value below is the live page's own function of `progress`, so this is
+ * the whole finale under one finger: the machine rising, the chat falling into
+ * the screen and tipping onto the lid on the way in.
  */
 export function StageScrubber() {
   const [progress, setProgress] = useState(0.5);
@@ -78,7 +86,10 @@ export function StageScrubber() {
 
   const beat: Beat = nextBeat(progress, 'talk');
   const chatScale = chatScaleAt(progress);
-  const shellOpacity = shellOpacityAt(progress);
+  const seat = seatAt(progress);
+  const arrival = machineArrivalAt(progress);
+  const presence = machineOpacityAt(progress);
+  const layBack = layBackAt(progress);
   const captionOpacity = captionOpacityAt(progress);
   const lines = CHAT_SCRIPT.slice(0, messages);
   const used = new Set(lines.map((line) => line.dockApp).filter(Boolean) as string[]);
@@ -99,9 +110,16 @@ export function StageScrubber() {
           className="flex flex-col items-center justify-center gap-5 px-6"
         >
           <BeatHeadline beat={beat} />
-          <LaptopFrame scale={chatScale} shellOpacity={shellOpacity}>
+          <MacbookFrame
+            scale={chatScale}
+            lift={`${-SEAT_LIFT * seat}%`}
+            rise={`${STAGE_TIMING.machineRise * (1 - arrival)}%`}
+            presence={presence}
+            drop={`${-STAGE_TIMING.chatDrop * (1 - seat)}%`}
+            layBack={layBack}
+          >
             <ChatWindow joined={joined} lines={lines} pending={null} />
-          </LaptopFrame>
+          </MacbookFrame>
           <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
           <p
             style={{ opacity: captionOpacity }}
@@ -142,7 +160,10 @@ export function StageScrubber() {
         <div className="grid grid-cols-2 gap-2">
           <Readout name="beat" value={beat} />
           <Readout name="chat scale" value={chatScale.toFixed(3)} />
-          <Readout name="shell opacity" value={shellOpacity.toFixed(3)} />
+          <Readout name="machine risen" value={arrival.toFixed(3)} />
+          <Readout name="machine solid" value={presence.toFixed(3)} />
+          <Readout name="chat seated" value={seat.toFixed(3)} />
+          <Readout name="lay back" value={`${layBack.toFixed(2)}°`} />
           <Readout name="caption opacity" value={captionOpacity.toFixed(3)} />
         </div>
 
@@ -155,10 +176,11 @@ export function StageScrubber() {
           </p>
           <ul className="mt-2 list-none space-y-0.5 font-mono text-xs">
             <li>
-              shrink {STAGE_TIMING.shrinkFrom} → {STAGE_TIMING.shrinkTo}
+              shrink · seat {STAGE_TIMING.shrinkFrom} → {STAGE_TIMING.shrinkTo}
             </li>
             <li>
-              shell {STAGE_TIMING.shellFrom} → {STAGE_TIMING.shellTo}
+              machine {STAGE_TIMING.machineFrom} → {STAGE_TIMING.machineTo} (solid by{' '}
+              {STAGE_TIMING.machineFadeTo})
             </li>
             <li>
               caption {STAGE_TIMING.captionFrom} → {STAGE_TIMING.captionTo}

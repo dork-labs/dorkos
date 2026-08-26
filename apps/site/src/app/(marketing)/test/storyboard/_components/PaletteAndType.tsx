@@ -1,6 +1,6 @@
 'use client';
 
-import { INSTALL_COMMAND, SHELL } from '../../../new/_components';
+import { INSTALL_COMMAND, MACBOOK } from '../../../new/_components';
 
 const SWATCHES: { name: string; token: string; value: string; note: string }[] = [
   { name: 'Pitch', token: '--pitch', value: '#131110', note: 'page background' },
@@ -9,11 +9,12 @@ const SWATCHES: { name: string; token: string; value: string; note: string }[] =
   { name: 'Cream', token: '--cream', value: '#f5f0e6', note: 'headlines, message text' },
   { name: 'Cream dim', token: '--cream-dim', value: '#a49c8e', note: 'secondary copy, labels' },
   { name: 'Ember', token: '--ember', value: '#e85d04', note: 'the one accent' },
-  { name: 'Shell', token: 'SHELL.bezel', value: SHELL.bezel, note: 'laptop bezel' },
+  { name: 'Enclosure', token: 'MACBOOK.lid', value: MACBOOK.lid, note: 'the machine’s lid' },
+  { name: 'Deck', token: 'MACBOOK.deckFront', value: MACBOOK.deckFront, note: 'its front edge' },
 ];
 
 /**
- * The page's whole visual vocabulary in one place: seven colors and four type
+ * The page's whole visual vocabulary in one place: eight colors and four type
  * sizes. If a change here does not improve the page, it does not belong.
  */
 export function PaletteAndType() {

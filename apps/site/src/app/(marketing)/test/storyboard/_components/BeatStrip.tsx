@@ -4,14 +4,16 @@ import {
   Dock,
   BeatHeadline,
   CastBridge,
+  chatScaleAt,
   CHAT_SCRIPT,
   ChatWindow,
   CloseSection,
   FilmSection,
   Hero,
   DOCK,
-  LaptopFrame,
+  MacbookFrame,
   PART_ONE_COUNT,
+  SEAT_LIFT,
 } from '../../../new/_components';
 import { StoryFrame } from './StoryFrame';
 
@@ -23,16 +25,17 @@ const JOIN_LINES = CHAT_SCRIPT.slice(0, 1);
 /**
  * A chat sized for a frame, with the stage's spacing around it.
  *
- * It goes through `LaptopFrame` with the shell turned off rather than sitting
- * in a plain box, because that is literally what the stage does before the
- * laptop appears: the frame owns the 16:10 screen from the first beat and only
- * the bezel fades in. A plain box here would show a shape the page never has.
+ * It goes through `MacbookFrame` with the machine turned off rather than
+ * sitting in a plain box, because that is literally what the stage does before
+ * the machine rises: the frame owns the 16:10 screen from the first beat and
+ * the laptop arrives around it. A plain box here would show a shape the page
+ * never has.
  */
 function StageChat({ lines }: { lines: readonly (typeof CHAT_SCRIPT)[number][] }) {
   return (
-    <LaptopFrame scale={1} shellOpacity={0}>
+    <MacbookFrame presence={0}>
       <ChatWindow joined lines={lines} pending={null} />
-    </LaptopFrame>
+    </MacbookFrame>
   );
 }
 
@@ -103,12 +106,15 @@ export function BeatStrip() {
       <StoryFrame
         step={7}
         title="It was your computer"
-        note="The laptop forms around the same chat as it shrinks."
+        note="The machine has risen into its seat and taken the chat with it."
       >
         <BeatHeadline beat="computer" />
-        <LaptopFrame scale={0.62} shellOpacity={1}>
+        {/* The end of the stage, read off the stage's own numbers rather than
+            dialled in: the scale and the lift the live page holds at the last
+            frame of the scroll. */}
+        <MacbookFrame scale={chatScaleAt(1)} lift={`${-SEAT_LIFT}%`} presence={1}>
           <ChatWindow joined lines={CHAT_SCRIPT} pending={null} />
-        </LaptopFrame>
+        </MacbookFrame>
         <Dock present visible={false} used={ALL_APPS} />
       </StoryFrame>
 

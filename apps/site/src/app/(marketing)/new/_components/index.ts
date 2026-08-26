@@ -19,7 +19,7 @@ export { HomeExperience } from './HomeExperience';
 export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
 export { HomeNav } from './nav';
 export { FOOTER_SOCIAL_LINKS } from './footer-social-links';
-export { INSTALL_COMMAND, SHELL } from './theme';
+export { INSTALL_COMMAND, MACBOOK } from './theme';
 
 // Pieces the storyboard pins, one frame at a time
 export { Hero } from './Hero';
@@ -28,7 +28,7 @@ export { CastBridge } from './CastBridge';
 export { CloseSection } from './CloseSection';
 export { BeatHeadline } from './BeatHeadline';
 export { ChatWindow } from './ChatWindow';
-export { LaptopFrame } from './LaptopFrame';
+export { MacbookFrame } from './MacbookFrame';
 export { Dock } from './Dock';
 export { Avatar } from './Avatar';
 
@@ -37,4 +37,13 @@ export { CAST, DAVE, RUNTIMES } from './cast';
 export { DOCK } from './dock-apps';
 export { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
 export { nextBeat, type Beat } from './beats';
-export { STAGE_TIMING, chatScaleAt, shellOpacityAt, captionOpacityAt } from './stage-timing';
+export { SEAT_LIFT } from './macbook-geometry';
+export {
+  STAGE_TIMING,
+  captionOpacityAt,
+  chatScaleAt,
+  layBackAt,
+  machineArrivalAt,
+  machineOpacityAt,
+  seatAt,
+} from './stage-timing';

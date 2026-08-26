@@ -23,67 +23,68 @@ import {
   machineArrivalAt,
   machineOpacityAt,
   seatAt,
-  shellOpacityAt,
   STAGE_TIMING,
 } from '../stage-timing';
-import { DEFAULT_TREATMENT, parseTreatment, STAGE_TREATMENTS } from '../stage-treatment';
 
-/** The two frames' shapes live in their class names, so their shape is source. */
+/** The frames' shapes live in their class names, so their shape is source. */
 const source = (name: string) => readFileSync(join(import.meta.dirname, '..', name), 'utf8');
 const MACBOOK_FRAME = source('MacbookFrame.tsx');
 const MACBOOK_DECK = source('MacbookDeck.tsx');
 const STAGE = source('StageSection.tsx');
-const TOGGLE = source('TreatmentToggle.tsx');
-const HOME_EXPERIENCE = source('HomeExperience.tsx');
+const CHAT_WINDOW = source('ChatWindow.tsx');
 
-describe('the stage has two endings and the page can switch between them', () => {
-  it('offers exactly the bezel and the MacBook', () => {
-    expect([...STAGE_TREATMENTS].sort()).toEqual(['bezel', 'macbook']);
-  });
+/** The design surface that pins moments of this animation, both of its halves. */
+const storyboard = (name: string) =>
+  readFileSync(
+    join(import.meta.dirname, '..', '..', '..', 'test', 'storyboard', '_components', name),
+    'utf8'
+  );
+const STORYBOARD = [storyboard('BeatStrip.tsx'), storyboard('StageScrubber.tsx')].join('\n');
 
-  it('shows the one being evaluated to anyone who has not chosen', () => {
-    expect(DEFAULT_TREATMENT).toBe('macbook');
-  });
-
-  it('ignores a treatment name it does not recognise', () => {
-    // The choice arrives from a query string and from localStorage, both of
-    // which a stranger can put anything into. Anything but a known name has to
-    // fall through to the default rather than render a stage with no ending.
-    expect(parseTreatment('macbook')).toBe('macbook');
-    expect(parseTreatment('bezel')).toBe('bezel');
-    for (const junk of ['MacBook', 'laptop', '', null, undefined]) {
-      expect(parseTreatment(junk), `"${junk}" was accepted`).toBeNull();
-    }
-  });
-
-  it('renders both frames from the same live chat, not two copies of it', () => {
-    // The whole claim of the comparison is that only the chrome differs. Two
-    // `<ChatWindow>` elements would let the two endings drift into two
-    // different demos, and the one being judged would not be the one shipping.
-    expect(STAGE.match(/<ChatWindow/g)).toHaveLength(1);
+describe('the stage has exactly one ending', () => {
+  it('draws the machine and nothing else', () => {
+    // A cream bezel used to fade up around the chat here, and it is gone
+    // rather than parked behind a flag. Two endings in the tree means two
+    // things to keep working and one of them never seen.
     expect(STAGE).toContain('<MacbookFrame');
-    expect(STAGE).toContain('<LaptopFrame');
+    expect(STAGE).not.toContain('LaptopFrame');
+    expect(STAGE).not.toContain('shellOpacity');
   });
 
-  it('keeps the switch reachable without a mouse', () => {
-    // Real buttons and a pressed state, rather than a styled div with an
-    // onClick, which is the shape this kind of furniture usually ships in.
-    expect(TOGGLE).toContain('type="button"');
-    expect(TOGGLE).toContain('aria-pressed={active}');
-    expect(TOGGLE).toContain('focus-visible:ring-2');
+  it('renders one live chat, not a copy of it per state', () => {
+    // The illusion is that the machine forms around a conversation that is
+    // still going. A second `<ChatWindow>` anywhere in the stage would mean
+    // one of the beats is showing a picture of the chat rather than the chat.
+    expect(STAGE.match(/<ChatWindow/g)).toHaveLength(1);
   });
 
-  it('puts the switch on the page rather than leaving it unreachable', () => {
-    expect(HOME_EXPERIENCE).toContain('<TreatmentToggle');
-    expect(HOME_EXPERIENCE).toContain('useStageTreatment()');
+  it('lets the chat fit the frame rather than the frame stretch to the chat', () => {
+    // The card sets no height of its own, so the 16:10 box below is the only
+    // thing deciding the shape. A `42vh` back in here and the ratio test still
+    // passes while the rendered screen is some other shape entirely.
+    expect(CHAT_WINDOW).not.toMatch(/\bh-\[[^\]]*vh[^\]]*\]/);
+    expect(CHAT_WINDOW).toContain('h-full');
+    expect(CHAT_WINDOW).toMatch(/min-h-0 flex-1/);
+  });
+
+  it('is the frame the storyboard drives, so the design surface cannot drift', () => {
+    // `/test/storyboard` pins single moments of this animation and scrubs it by
+    // hand. Both halves have to drive the component that ships; a frame of
+    // their own would be a picture of a page that does not exist.
+    expect(STORYBOARD.match(/<MacbookFrame/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(STORYBOARD).not.toContain('LaptopFrame');
+    // And the scrubber reads the live functions rather than its own curve.
+    expect(STORYBOARD).toContain('machineArrivalAt(progress)');
+    expect(STORYBOARD).toContain('layBackAt(progress)');
   });
 });
 
 describe('the MacBook the chat falls into', () => {
-  it('has a modern screen, like the bezel it is compared against', () => {
-    // Same law as `LaptopFrame`: the beat says the visitor is looking at their
-    // own computer, and a 4:3 box argues the opposite. Both endings declare
-    // 16:10 rather than inheriting a shape from the chat.
+  it('has a modern screen, not whatever shape the chat came out as', () => {
+    // The beat says the visitor is looking at their own computer, and a 4:3
+    // box argues the opposite before a pixel of chrome is drawn. The frame
+    // declares 16:10 rather than inheriting a shape from the chat. It was near
+    // 4:3 once, which is a 2003 ThinkPad arguing against the beat it is in.
     const ratio = MACBOOK_FRAME.match(/aspect-\[(\d+)\/(\d+)\]/);
     expect(ratio, 'the frame declares no aspect ratio').not.toBeNull();
     expect(Number(ratio?.[1]) / Number(ratio?.[2])).toBeCloseTo(16 / 10, 3);
@@ -93,7 +94,9 @@ describe('the MacBook the chat falls into', () => {
   it('holds the ratio when the chat fills up, which the ratio alone does not', () => {
     // `min-height: auto` on a flex item is a content floor that outranks
     // `aspect-ratio`, so the screen grows taller as messages arrive without
-    // this. The bezel treatment learned it the hard way; this one inherits it.
+    // this — measured at 390px wide, an eleven-message stack stretched a
+    // 318x199 screen to 318x943. The class is still in the file either way, so
+    // only this pairing catches its removal.
     expect(MACBOOK_FRAME).toMatch(/SCREEN_FLOOR = 'min-h-0'/);
     expect(MACBOOK_FRAME).toMatch(/\$\{SCREEN_ASPECT\} \$\{SCREEN_FLOOR\}/);
   });
@@ -257,13 +260,14 @@ describe('the finale reverses, because the whole page does', () => {
     expect(STAGE).toContain('`${-SEAT_LIFT * seatAt(v)}%`');
   });
 
-  it('leaves the bezel treatment’s own timing untouched', () => {
-    // The comparison is only worth anything if the thing being compared
-    // against is the thing that shipped.
+  it('keeps the shrink the stage was tuned on', () => {
+    // The chat giving up 46% of itself between 0.68 and 0.92 was dialled in
+    // against this scroll length long before there was a machine to fall into,
+    // and the machine was fitted around it rather than the other way round.
+    // Moving these moves the seat, the lift and the lay-back with them.
     expect(STAGE_TIMING.shrinkFrom).toBe(0.68);
     expect(STAGE_TIMING.shrinkTo).toBe(0.92);
     expect(STAGE_TIMING.shrinkAmount).toBe(0.46);
-    expect(shellOpacityAt(0.78)).toBe(0);
-    expect(shellOpacityAt(0.9)).toBe(1);
+    expect(chatScaleAt(1)).toBeCloseTo(0.54, 6);
   });
 });

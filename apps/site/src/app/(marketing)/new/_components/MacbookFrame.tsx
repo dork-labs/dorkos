@@ -16,9 +16,14 @@ import { MACBOOK } from './theme';
 
 /**
  * The screen's shape, and it is not negotiable: 16:10, the proportion every
- * MacBook has shipped in for a decade. Same law as `LaptopFrame`, for the same
- * reason — the beat says the visitor is looking at their own computer, and a
- * 4:3 box argues the opposite before a single pixel of chrome is drawn.
+ * MacBook has shipped in for a decade.
+ *
+ * This used to be whatever shape the chat card happened to be — roughly 4:3,
+ * which is a 2003 ThinkPad. The whole point of the beat is that the thing the
+ * visitor has been watching turns out to be running on their own computer, and
+ * a screen with 2003 proportions quietly argues the opposite. So the frame
+ * declares the ratio and the chat fits itself into it, rather than the frame
+ * stretching to whatever the chat wants to be.
  */
 const SCREEN_ASPECT = 'aspect-[16/10]';
 
@@ -30,9 +35,15 @@ const SCREEN_ASPECT = 'aspect-[16/10]';
 const SCREEN_FLOOR = 'min-h-0';
 
 /**
- * How wide the screen is allowed to get — the same three limits the bezel
- * treatment uses, deliberately, so the two endings are compared at the same
- * size rather than at whichever size each one happened to pick.
+ * How wide the screen is allowed to get, in one expression, because three
+ * different limits bind on three different screens.
+ *
+ * `42rem` is the size it wants to be. `calc(100vw - 4rem)` keeps the machine
+ * inside the stage's padding on a phone, where the viewport is what binds.
+ * `calc(52vh * 1.6)` is the one that stops a 16:10 box from growing taller
+ * than the pinned stage can hold on a short, wide window — the failure a
+ * width-only clamp cannot see, because at 1440x700 the width is fine and the
+ * height it implies is not.
  *
  * The machine does not need a limit of its own. It paints
  * {@link MACHINE_HEIGHT} times its screen's width from the top of the lid to
@@ -55,19 +66,26 @@ const SCREEN_WIDTH = 'min(42rem, calc(100vw - 4rem), calc(52vh * 1.6))';
 /** A value the stage animates, or a fixed one when the visitor asked for stillness. */
 type Animatable<T> = MotionValue<T> | T;
 
+/**
+ * Everything but `presence` defaults to the assembly at rest — full size, in
+ * its seat, square to the reader. The storyboard pins single moments of the
+ * arrival and would otherwise spell out five zeroes to say "nothing is moving";
+ * `presence` stays required, because whether the machine is on screen at all is
+ * the one thing no caller should be able to leave to a default.
+ */
 interface MacbookFrameProps {
   /** Scale of the whole assembly as the chat shrinks into the machine. */
-  scale: Animatable<number>;
+  scale?: Animatable<number>;
   /** How far the assembly has ridden up to centre the finished machine, as a CSS length. */
-  lift: Animatable<string>;
+  lift?: Animatable<string>;
   /** How far the machine still is below its seat, as a CSS length. */
-  rise: Animatable<string>;
+  rise?: Animatable<string>;
   /** How solid the machine is: 0 before it arrives, 1 once it has. */
   presence: Animatable<number>;
   /** How far the chat still has to fall into the screen opening, as a CSS length. */
-  drop: Animatable<string>;
+  drop?: Animatable<string>;
   /** Degrees the chat is laid back onto the plane of the lid. */
-  layBack: Animatable<number>;
+  layBack?: Animatable<number>;
   /** The screen content — the live chat, unchanged from every other beat. */
   children: ReactNode;
 }
@@ -128,12 +146,12 @@ function Lid() {
  * be read.
  */
 export function MacbookFrame({
-  scale,
-  lift,
-  rise,
+  scale = 1,
+  lift = '0%',
+  rise = '0%',
   presence,
-  drop,
-  layBack,
+  drop = '0%',
+  layBack = 0,
   children,
 }: MacbookFrameProps) {
   return (
