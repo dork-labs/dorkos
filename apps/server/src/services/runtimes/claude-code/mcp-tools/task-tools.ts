@@ -140,6 +140,18 @@ export const REFUSED_UPDATE_TARGET_DESCRIPTION =
   'created and stays there. Send this and DorkOS refuses the whole call and changes nothing — ' +
   'to move a scheduled task, delete it and create it again with the target you want.';
 
+/**
+ * The description both tools give the `sticky` argument (DOR-1571).
+ *
+ * Agent-writable: it chooses a run's behavior, not its power. Off (the default)
+ * is the isolated-per-run behavior; on makes every run resume one lasting session
+ * so the agent keeps context across runs.
+ */
+export const STICKY_DESCRIPTION =
+  'Whether every run picks up the SAME session instead of starting fresh. Off by default: each ' +
+  'run is its own conversation and remembers nothing from last time. Turn it on for a task that ' +
+  'should build on the run before it — "since I last ran, here is what changed".';
+
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =
   'Why this schedule should exist, in your own words — the operator reads this to decide.';
@@ -276,6 +288,8 @@ export function createCreateScheduleHandler(
     description?: string;
     timezone?: string;
     maxRuntime?: string;
+    /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
+    sticky?: boolean;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -329,6 +343,7 @@ export function createCreateScheduleHandler(
           ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
           target: args.target,
           reason: args.reason,
+          ...(args.sticky !== undefined && { sticky: args.sticky }),
         },
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
@@ -399,6 +414,8 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     enabled?: boolean;
     timezone?: string;
     maxRuntime?: string;
+    /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
+    sticky?: boolean;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -442,6 +459,7 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
       ...(args.enabled !== undefined && { enabled: args.enabled }),
       ...(args.timezone !== undefined && { timezone: args.timezone }),
       ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
+      ...(args.sticky !== undefined && { sticky: args.sticky }),
     };
 
     // A non-trusted caller cannot KEEP an approved task's `bypassPermissions` by
@@ -567,6 +585,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         description: z.string().optional().describe('Description of what this scheduled task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
+        sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
@@ -592,6 +611,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         enabled: z.boolean().optional().describe('Enable or disable the schedule'),
         timezone: z.string().optional().describe('New timezone'),
         maxRuntime: DURATION_ARG.describe('New max runtime (e.g., "5m", "1h")'),
+        sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),

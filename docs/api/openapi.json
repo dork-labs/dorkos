@@ -4421,6 +4421,10 @@
           "enabled": {
             "type": "boolean"
           },
+          "sticky": {
+            "type": "boolean",
+            "default": false
+          },
           "maxRuntime": {
             "type": [
               "integer",
@@ -4589,6 +4593,9 @@
             "minLength": 1,
             "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
+          "sticky": {
+            "type": "boolean"
+          },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
@@ -4650,6 +4657,9 @@
             ],
             "minLength": 1,
             "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
+          },
+          "sticky": {
+            "type": "boolean"
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"

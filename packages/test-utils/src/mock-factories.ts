@@ -84,6 +84,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     prompt: 'Review open PRs',
     cron: '0 9 * * 1-5',
     enabled: true,
+    sticky: false,
     status: 'active',
     agentId: null,
     timezone: null,

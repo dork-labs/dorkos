@@ -252,6 +252,9 @@ export function legacyTaskToSchedule(meta: LegacyScheduleFields): ScheduleBlock 
     ...(meta.cron ? { cron: meta.cron } : {}),
     timezone: meta.timezone,
     enabled: meta.enabled,
+    // Legacy tasks predate session-resume, so a migrated one is isolated-per-run
+    // (DOR-1571). `scheduleToFrontmatter` drops this `false` from the file.
+    sticky: false,
     ...(meta['max-runtime'] !== undefined ? { 'max-runtime': meta['max-runtime'] } : {}),
     permissions: meta.permissions,
     ...(meta.origin !== undefined ? { origin: meta.origin } : {}),

@@ -649,6 +649,7 @@ describe('schedules discovered in skills roots', () => {
               cron: '0 6 * * *',
               timezone: 'UTC',
               enabled: true,
+              sticky: false,
               permissions: 'acceptEdits',
             },
           },

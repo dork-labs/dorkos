@@ -273,6 +273,9 @@ export async function createScheduledTask(
       // Only a schedule the caller turned OFF says so in the file — the block's
       // own default is `enabled: true`.
       enabled: data.enabled === false ? false : undefined,
+      // Only a sticky schedule says so in the file — the block defaults to off,
+      // and `scheduleToFrontmatter` drops a `false` back out anyway (DOR-1571).
+      sticky: data.sticky === true ? true : undefined,
       maxRuntime: data.maxRuntime || undefined,
       // The CLAMPED mode, so the file and the row agree. A SKILL.md declaring more
       // power than its row holds is a standing request from disk that nobody made
@@ -326,6 +329,7 @@ export async function createScheduledTask(
       ...(data.timezone !== undefined && { timezone: data.timezone }),
       agentId: home.agentId,
       enabled: data.enabled,
+      ...(data.sticky !== undefined && { sticky: data.sticky }),
       maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
       permissionMode: effectivePermissionMode,
       filePath,

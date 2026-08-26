@@ -246,6 +246,23 @@ describe('scheduleToFrontmatter', () => {
     const block = ScheduleBlockSchema.parse({ cron: '0 9 * * *', enabled: true });
     expect(scheduleToFrontmatter(block)).toEqual({ cron: '0 9 * * *' });
   });
+
+  it('writes sticky: true and omits the default false (DOR-1571)', () => {
+    expect(
+      scheduleToFrontmatter(ScheduleBlockSchema.parse({ cron: '0 9 * * *', sticky: true }))
+    ).toEqual({ cron: '0 9 * * *', sticky: true });
+    expect(
+      scheduleToFrontmatter(ScheduleBlockSchema.parse({ cron: '0 9 * * *', sticky: false }))
+    ).toEqual({ cron: '0 9 * * *' });
+  });
+
+  it('reads YAML 1.1 boolean words for sticky, defaulting off (DOR-1571)', () => {
+    expect(ScheduleBlockSchema.parse({ sticky: 'yes' }).sticky).toBe(true);
+    expect(ScheduleBlockSchema.parse({ sticky: 'off' }).sticky).toBe(false);
+    // Unreadable falls back to off, the same as leaving it out.
+    expect(ScheduleBlockSchema.parse({ sticky: 'maybe' }).sticky).toBe(false);
+    expect(ScheduleBlockSchema.parse({}).sticky).toBe(false);
+  });
 });
 
 // `legacyTaskToSchedule` used to live beside these helpers. It moved into
@@ -302,6 +319,7 @@ describe('schedule block round trip through disk', () => {
       cron: '0 9 * * 1-5',
       timezone: 'Europe/Berlin',
       enabled: false,
+      sticky: false,
       'max-runtime': '45m',
       permissions: 'plan',
       prompt: 'Check every service.',
@@ -396,6 +414,7 @@ describe('schedule block round trip through disk', () => {
       cron: '0 9 * * 1-5',
       timezone: 'UTC',
       enabled: false,
+      sticky: false,
       permissions: 'acceptEdits',
     });
   });
@@ -462,6 +481,7 @@ describe('schedule block round trip through disk', () => {
     expect(definition.meta.schedule).toEqual({
       timezone: 'UTC',
       enabled: true,
+      sticky: false,
       permissions: 'acceptEdits',
     });
   });

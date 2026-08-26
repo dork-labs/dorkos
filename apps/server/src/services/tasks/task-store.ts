@@ -1,4 +1,4 @@
-import { eq, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
+import { eq, desc, and, count, inArray, notInArray, lt, isNull, isNotNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -39,6 +39,8 @@ export interface CreateTaskStoreInput {
   timezone?: string | null;
   agentId?: string | null;
   enabled?: boolean;
+  /** Whether every run resumes one persistent session (DOR-1571). Defaults off. */
+  sticky?: boolean;
   maxRuntime?: number | null;
   permissionMode?: string;
   filePath: string;
@@ -271,6 +273,7 @@ export class TaskStore {
         timezone: input.timezone ?? 'UTC',
         agentId: input.agentId ?? null,
         enabled: input.enabled ?? true,
+        sticky: input.sticky ?? false,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
@@ -319,6 +322,7 @@ export class TaskStore {
     if (input.cron !== undefined) updates.cron = input.cron ?? '';
     if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
     if (input.enabled !== undefined) updates.enabled = input.enabled;
+    if (input.sticky !== undefined) updates.sticky = input.sticky;
     if (input.maxRuntime !== undefined) {
       updates.maxRuntime =
         typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
@@ -724,6 +728,68 @@ export class TaskStore {
     return rows.map(mapRunRow);
   }
 
+  /**
+   * Whether this task already has a run in flight (DOR-1571).
+   *
+   * The single-session serialization a STICKY task needs: it runs everything on
+   * one session, so a fire that arrives while the previous run is still going
+   * must NOT start a second turn on it. The scheduler asks this before claiming
+   * a tick and writes a `skipped` run instead, exactly as it does at the
+   * concurrency cap — the session is left to finish the turn it is on rather
+   * than corrupted with two at once.
+   *
+   * A `running` row is the only non-terminal status a run can hold (every other
+   * status is in {@link TERMINAL_RUN_STATUSES}), so this is the whole test.
+   *
+   * @param taskId - The task to check.
+   * @returns True when a run of this task is currently `running`.
+   */
+  hasRunningRunForTask(taskId: string): boolean {
+    const row = this.db
+      .select({ id: pulseRuns.id })
+      .from(pulseRuns)
+      .where(and(eq(pulseRuns.scheduleId, taskId), eq(pulseRuns.status, 'running')))
+      .limit(1)
+      .get();
+    return row !== undefined;
+  }
+
+  /**
+   * The REAL SDK session id of this task's most recent run that actually ran a
+   * turn — the resume target for the next sticky fire (DOR-1571).
+   *
+   * A run row carries `sessionId` only once it reaches a terminal status, and a
+   * sticky run writes the runtime's OWN session id there (the UUID the SDK minted
+   * or kept), not a synthetic one — because the SDK writes its transcript on disk
+   * under that id, and resume finds `{sessionId}.jsonl` only when the id is the
+   * real one (`launch-resolver.ts` sets `resume = session.sdkSessionId`). So the
+   * most recent run's stored id is exactly the session the next fire must resume
+   * to pick the conversation back up, cold across eviction and restart. The very
+   * first fire finds none and starts fresh; every later fire resumes.
+   *
+   * A `skipped` run never ran and never wrote a `sessionId`, so it is correctly
+   * absent; the current (still-running) run has a NULL `sessionId` too, so it can
+   * never be its own resume target.
+   *
+   * @param taskId - The task whose latest session to resume.
+   * @returns The real SDK session id to resume, or null when none has run yet.
+   */
+  latestStickySessionId(taskId: string): string | null {
+    const row = this.db
+      .select({ sessionId: pulseRuns.sessionId })
+      .from(pulseRuns)
+      .where(and(eq(pulseRuns.scheduleId, taskId), isNotNull(pulseRuns.sessionId)))
+      // `created_at` is an ISO string at millisecond resolution with no
+      // tiebreaker, so two runs written in the same millisecond order
+      // arbitrarily (the same hazard `pruneRuns` documents). Here the tie would
+      // resume the WRONG session, so `rowid` — strict insertion order — breaks
+      // it deterministically toward the run written last.
+      .orderBy(desc(pulseRuns.createdAt), sql`rowid DESC`)
+      .limit(1)
+      .get();
+    return row?.sessionId ?? null;
+  }
+
   /** Count total runs, optionally filtered by task. */
   countRuns(taskId?: string): number {
     if (taskId) {
@@ -1072,6 +1138,7 @@ export class TaskStore {
           timezone: schedule.timezone,
           agentId: agentId ?? null,
           enabled: schedule.enabled,
+          sticky: schedule.sticky,
           maxRuntime: maxRuntimeMs,
           permissionMode,
           // A `paused` row whose file is back is un-paused here, because
@@ -1138,6 +1205,7 @@ export class TaskStore {
         timezone: schedule.timezone,
         agentId: agentId ?? null,
         enabled: schedule.enabled,
+        sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
         permissionMode,
         status: arm?.status ?? 'active',

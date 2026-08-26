@@ -18,6 +18,7 @@ import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from './task-append.js';
+import { resolveRunSession } from './session/sticky-session.js';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -89,6 +90,14 @@ export async function dispatchRunViaRelay(
     return;
   }
 
+  // Which session the receiver must resume, decided HERE because only this side
+  // has the store to answer it (DOR-1571). For a resuming sticky run this is the
+  // REAL SDK id of the task's previous run (so the runtime finds its transcript);
+  // a first sticky fire and every non-sticky run resolve to the run's own id with
+  // no resume — the wire default — so the branch below only adds fields for a
+  // sticky run, keeping every non-sticky envelope byte-for-byte what it was.
+  const { sessionId, hasStarted } = resolveRunSession(deps.store, task, run);
+
   const payload: TaskDispatchPayload = {
     type: 'task_dispatch',
     taskId: task.id,
@@ -103,6 +112,10 @@ export async function dispatchRunViaRelay(
     // receiver runs in another process and cannot rebuild it — the task's agent
     // and the run's trigger are not otherwise on the wire — so it travels.
     systemPromptAppend: buildTaskAppend(task, run),
+    // Sticky only: the shared session and whether it already has history to
+    // resume. Absent on a non-sticky run, where the receiver falls back to the
+    // run id and starts fresh.
+    ...(task.sticky ? { sessionId, resumeSession: hasStarted } : {}),
   };
 
   // No `replyTo`. Nothing subscribes to a task run's progress: this function

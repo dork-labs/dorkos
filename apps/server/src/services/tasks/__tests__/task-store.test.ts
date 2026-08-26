@@ -925,6 +925,96 @@ describe('TaskStore', () => {
     });
   });
 
+  // === Sticky sessions (DOR-1571) ===
+
+  describe('sticky (DOR-1571)', () => {
+    /** A parsed definition for a file at `filePath`, with a sticky flag. */
+    function definition(name: string, filePath: string, sticky: boolean) {
+      return {
+        name,
+        meta: {
+          name,
+          description: 'd',
+          schedule: { timezone: 'UTC', enabled: true, sticky, permissions: 'acceptEdits' },
+        },
+        body: 'do it',
+        filePath,
+        dirPath: filePath.replace(`/${SKILL_FILENAME}`, ''),
+        scope: 'global',
+      } as Parameters<TaskStore['upsertFromFile']>[0];
+    }
+
+    it('defaults sticky off, and round-trips it on through createTask', () => {
+      const off = store.createTask(taskInput({ name: 'plain', cron: '0 2 * * *' }));
+      expect(off.sticky).toBe(false);
+
+      const on = store.createTask(
+        taskInput({ name: 'sticky-one', cron: '0 2 * * *', sticky: true })
+      );
+      // Read back from SQLite, not echoed by the insert.
+      expect(store.getTask(on.id)?.sticky).toBe(true);
+    });
+
+    it('toggles sticky through updateTask', () => {
+      const task = store.createTask(taskInput({ name: 'toggle', cron: '0 2 * * *' }));
+      store.updateTask(task.id, { sticky: true });
+      expect(store.getTask(task.id)?.sticky).toBe(true);
+      store.updateTask(task.id, { sticky: false });
+      expect(store.getTask(task.id)?.sticky).toBe(false);
+    });
+
+    it("caches the file's schedule.sticky through upsertFromFile", () => {
+      const filePath = '/home/u/.dork/tasks/from-file/SKILL.md';
+      const created = store.upsertFromFile(definition('from-file', filePath, true));
+      expect(store.getTask(created.id)?.sticky).toBe(true);
+
+      // Editing the file back to non-sticky is reflected on the row.
+      store.upsertFromFile(definition('from-file', filePath, false));
+      expect(store.getTask(created.id)?.sticky).toBe(false);
+    });
+
+    it('hasRunningRunForTask sees only a run that is still running', () => {
+      const task = store.createTask(taskInput({ name: 'busy', cron: '0 2 * * *' }));
+      expect(store.hasRunningRunForTask(task.id)).toBe(false);
+
+      const run = store.createRun(task.id, 'scheduled'); // opens as `running`
+      expect(store.hasRunningRunForTask(task.id)).toBe(true);
+
+      store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      expect(store.hasRunningRunForTask(task.id)).toBe(false);
+    });
+
+    it("latestStickySessionId returns the newest run's real SDK id, or null", () => {
+      const task = store.createTask(taskInput({ name: 'resume', cron: '0 2 * * *' }));
+      // No run has executed yet → the first fire starts fresh.
+      expect(store.latestStickySessionId(task.id)).toBeNull();
+
+      const run1 = store.createRun(task.id, 'scheduled');
+      // A running run has written no session id yet, so it is not a resume target.
+      expect(store.latestStickySessionId(task.id)).toBeNull();
+      store.updateRun(run1.id, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        sessionId: 'sdk-uuid-1',
+      });
+      expect(store.latestStickySessionId(task.id)).toBe('sdk-uuid-1');
+
+      // A newer run's id supersedes it — the chain follows the SDK's re-mint.
+      const run2 = store.createRun(task.id, 'scheduled');
+      store.updateRun(run2.id, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        sessionId: 'sdk-uuid-2',
+      });
+      expect(store.latestStickySessionId(task.id)).toBe('sdk-uuid-2');
+
+      // A later skipped run (no session id) never becomes the target.
+      const run3 = store.createRun(task.id, 'scheduled');
+      store.updateRun(run3.id, { status: 'skipped', finishedAt: new Date().toISOString() });
+      expect(store.latestStickySessionId(task.id)).toBe('sdk-uuid-2');
+    });
+  });
+
   // === ISO 8601 timestamps ===
 
   describe('timestamps', () => {

@@ -39,6 +39,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     timezone: 'America/Chicago',
     agentId: '/Users/dev/agents/dorkbot',
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     status: 'pending_approval',

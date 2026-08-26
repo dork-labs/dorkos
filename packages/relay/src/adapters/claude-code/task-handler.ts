@@ -179,6 +179,23 @@ export async function handleTasksMessage(
   const payload = parsed.data;
   const { taskId, runId, prompt, cwd, permissionMode, systemPromptAppend } = payload;
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
+  // The session this run runs on. A STICKY task resolves a resume target on the
+  // scheduler side — the REAL SDK id of its previous run — and carries it here;
+  // every other run falls back to the run id, the isolated-per-run session this
+  // path has always used (DOR-1571). `resumeSession` is that session's
+  // `hasStarted`: resume the existing conversation, or start fresh — false for
+  // every non-sticky run and a sticky task's first fire.
+  const sessionId = payload.sessionId ?? runId;
+  const hasStarted = payload.resumeSession ?? false;
+  // A run carries `payload.sessionId` only when it is sticky. For those, the id
+  // to WRITE on the run row is the runtime's own id after the turn — the id the
+  // SDK actually wrote its transcript under (`getSdkSessionId`), which the next
+  // fire resumes and which makes the run clickable to the real conversation.
+  // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
+  // branch records the freshest answer.
+  const isSticky = payload.sessionId !== undefined;
+  const persistedSessionId = (): string =>
+    isSticky ? (deps.agentManager.getSdkSessionId(sessionId) ?? sessionId) : sessionId;
 
   // Record trace span as delivered
   deps.traceStore.insertSpan({
@@ -219,10 +236,14 @@ export async function handleTasksMessage(
       throw new Error('Run timed out (TTL budget expired)');
     }
 
-    deps.agentManager.ensureSession(runId, {
+    deps.agentManager.ensureSession(sessionId, {
       permissionMode,
       cwd: effectiveCwd,
-      hasStarted: false,
+      // Resume a sticky session that has already run; start fresh otherwise. This
+      // explicit `ensureSession` short-circuits `sendMessage`'s transcript probe,
+      // so the answer is carried on the wire (DOR-1571). The direct-dispatch twin
+      // in `task-scheduler-service.ts` does the same.
+      hasStarted,
       // Nobody is coming back to a scheduled run, so an unanswered prompt is
       // refused at ten minutes instead of parking for four hours and stalling
       // the run (spec `ask-parks-on-timeout` §7). The direct-dispatch twin in
@@ -231,7 +252,7 @@ export async function handleTasksMessage(
       unattended: true,
     });
 
-    const eventStream = deps.agentManager.sendMessage(runId, prompt, {
+    const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
       permissionMode,
       cwd: effectiveCwd,
       // Built server-side by `buildTaskAppend` and carried on the wire, because
@@ -245,7 +266,7 @@ export async function handleTasksMessage(
     const stopped = await consumeRunStream(
       eventStream,
       controller.signal,
-      () => void interruptTurn(deps.agentManager, runId, `run ${runId}`, deps.logger),
+      () => void interruptTurn(deps.agentManager, sessionId, `run ${runId}`, deps.logger),
       (event) => {
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };
@@ -269,7 +290,7 @@ export async function handleTasksMessage(
           durationMs,
           outputSummary: truncatedSummary,
           error: stoppedByOperator ? 'Run cancelled' : 'Run timed out (TTL budget expired)',
-          sessionId: runId,
+          sessionId: persistedSessionId(),
         });
       } else {
         deps.taskStore.updateRun(runId, {
@@ -277,7 +298,7 @@ export async function handleTasksMessage(
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          sessionId: runId,
+          sessionId: persistedSessionId(),
         });
       }
     }
@@ -306,7 +327,7 @@ export async function handleTasksMessage(
         durationMs,
         outputSummary: outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS),
         error: errorMsg,
-        sessionId: runId,
+        sessionId: persistedSessionId(),
       });
     }
 

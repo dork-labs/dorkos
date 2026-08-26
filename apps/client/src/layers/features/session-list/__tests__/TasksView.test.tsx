@@ -102,6 +102,7 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     cron: '* * * * *',
     timezone: null,
     agentId: null,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     filePath: '/tmp/tasks/test.md',

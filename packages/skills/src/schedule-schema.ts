@@ -110,6 +110,21 @@ export const ScheduleBlockSchema = z.object({
   'max-runtime': DurationSchema.optional(),
 
   /**
+   * Whether every run of this schedule picks up the SAME conversation instead of
+   * starting a new one each time.
+   *
+   * Off (the default) is how a schedule has always worked: each run is its own
+   * fresh session and remembers nothing from the run before. Turn it on and every
+   * run resumes one lasting session, so the agent can say things like "since I
+   * last ran, here's what changed" — it keeps the thread going across runs.
+   *
+   * Reads the YAML 1.1 boolean words (`yes`, `on`, a quoted `"true"`) the same way
+   * the rest of the frontmatter does, and a value it cannot read falls back to
+   * off, which is the same as leaving the field out.
+   */
+  sticky: z.preprocess(coerceYamlBoolean, z.boolean()).default(false).catch(false),
+
+  /**
    * Agent permission mode during a scheduled run. One of
    * {@link TASK_PERMISSION_MODES}.
    *
@@ -319,6 +334,7 @@ export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, u
   if (schedule.cron !== undefined) out.cron = schedule.cron;
   if (schedule.timezone !== DEFAULT_TIMEZONE) out.timezone = schedule.timezone;
   if (schedule.enabled !== true) out.enabled = schedule.enabled;
+  if (schedule.sticky !== false) out.sticky = schedule.sticky;
   if (schedule['max-runtime'] !== undefined) out['max-runtime'] = schedule['max-runtime'];
   if (schedule.permissions !== DEFAULT_PERMISSIONS) out.permissions = schedule.permissions;
   if (schedule.prompt !== undefined) out.prompt = schedule.prompt;

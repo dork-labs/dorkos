@@ -63,6 +63,18 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    */
   approvedContentKey: text('approved_content_key'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  /**
+   * Whether every fire of this schedule RESUMES one persistent session instead
+   * of starting a fresh one (DOR-1571).
+   *
+   * Off (the default) is today's behavior exactly: each run gets its own session,
+   * keyed by the run's own id, and carries no context from the run before it. On
+   * makes every run of this task share ONE session — `sticky-<taskId>`, derived
+   * and stable — so the agent picks up where it left off and can act on "what
+   * changed since last time". A cache of the file's `schedule.sticky`, like every
+   * other scheduling column here; the SKILL.md is the source of truth.
+   */
+  sticky: integer('sticky', { mode: 'boolean' }).notNull().default(false),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),
   status: text('status', {

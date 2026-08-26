@@ -92,6 +92,7 @@ const TASK: Task = {
   name: 'Nightly verify',
   displayName: null,
   description: null,
+  sticky: false,
   prompt: 'Run the verification suite',
   cron: '0 2 * * *',
   timezone: null,

@@ -38,6 +38,7 @@ const activeSchedule: Task = {
   prompt: 'Review code',
   cron: '0 9 * * *',
   enabled: true,
+  sticky: false,
   status: 'active',
   agentId: null,
   timezone: null,

@@ -150,6 +150,11 @@ export const TASK_WRITE_POLICY = {
   // `mcp-tools/task-tools.ts` for the separate fact that `tasks_create` accepts
   // this argument and ignores it.
   maxRuntime: 'agent-writable',
+  // Whether runs resume one session or start fresh each time (DOR-1571). A
+  // behavior choice, not a power one: sticky grants no capability an isolated run
+  // lacks, and a sticky schedule an agent proposes still parks for approval like
+  // any other. So an agent may set it on the user's word, same as `enabled`.
+  sticky: 'agent-writable',
   // The case FOR the schedule, in the proposer's own words (DOR-1394). Writable
   // by definition: it is the agent's own sentence, and the whole point is that
   // an agent must supply it. An operator-only verdict here would refuse every
