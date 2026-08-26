@@ -1,6 +1,6 @@
 'use client';
 
-import { INSTALL_COMMAND, MACBOOK } from '../../../new/_components';
+import { INSTALL_COMMAND, MACBOOK } from '../../../_components';
 
 const SWATCHES: { name: string; token: string; value: string; note: string }[] = [
   { name: 'Pitch', token: '--pitch', value: '#131110', note: 'page background' },

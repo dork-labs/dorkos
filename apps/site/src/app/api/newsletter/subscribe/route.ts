@@ -20,7 +20,9 @@ export const runtime = 'nodejs';
 
 const SubscribeSchema = z.object({
   email: z.string().email().max(254),
-  source: z.enum(['footer', 'newsletter-page', 'blog', 'unknown']).default('unknown'),
+  source: z
+    .enum(['footer', 'newsletter-page', 'blog', 'tutorials-modal', 'unknown'])
+    .default('unknown'),
 });
 
 /**

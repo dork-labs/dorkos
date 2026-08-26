@@ -18,28 +18,6 @@ export const NAV_LINKS: NavLink[] = [
   { label: 'docs', href: '/docs' },
 ];
 
-/** Where the homepage's first pill entry points, in place of Home. */
-const HOME_PAGE_FIRST_ENTRY: NavLink = {
-  label: 'about',
-  href: '#about',
-  // Yields on a phone for the same reason Home does: it is an in-page anchor,
-  // still reachable by scrolling the page you are already on.
-  yieldsOnMobile: true,
-};
-
-/**
- * The homepage's pill destinations.
- *
- * Derived from {@link NAV_LINKS} rather than written out again, so a
- * destination added to the site menu can never go missing on the homepage —
- * which is exactly how Compare came to be absent from dorkos.ai itself. The
- * homepage's only difference is its first entry: linking home from the
- * homepage is a no-op, so it points at the About section instead.
- */
-export const HOME_NAV_LINKS: NavLink[] = NAV_LINKS.map((link) =>
-  link.href === '/' ? HOME_PAGE_FIRST_ENTRY : link
-);
-
 /**
  * Whether a nav destination covers the page currently being viewed.
  *

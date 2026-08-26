@@ -19,7 +19,7 @@ import {
   SEAT_LIFT,
   STAGE_TIMING,
   type Beat,
-} from '../../../new/_components';
+} from '../../../_components';
 import { FRAME_HEIGHT, FRAME_WIDTH } from './StoryFrame';
 
 const SCALE = 0.62;

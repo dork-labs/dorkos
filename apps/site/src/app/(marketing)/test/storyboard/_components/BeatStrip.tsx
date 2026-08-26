@@ -14,7 +14,7 @@ import {
   MacbookFrame,
   PART_ONE_COUNT,
   SEAT_LIFT,
-} from '../../../new/_components';
+} from '../../../_components';
 import { StoryFrame } from './StoryFrame';
 
 const NO_APPS: ReadonlySet<string> = new Set();

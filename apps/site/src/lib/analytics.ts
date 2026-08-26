@@ -110,25 +110,23 @@ export function trackHeroInstallCopy(method: InstallMethod): void {
 }
 
 /**
- * Where a desktop-download link was clicked. The `windows_*` placements
- * mirror their macOS counterparts (`hero`, `install_page`);
- * `windows_other_ways` is the Windows link inside the "Other ways to
- * install" disclosure shown to non-Windows visitors. The former `nav` /
- * `windows_nav` placements retired when the header CTA became a "Get
- * started" link to `/install` (see {@link trackGetStartedNav}).
+ * Where a desktop-download link was clicked. `hero` and `close` are the home
+ * page's two download buttons, top and bottom; `install_page` and
+ * `terminal_hero_link` are `/install`'s. The `windows_*` placements mirror
+ * their macOS counterparts, and `windows_other_ways` is the Windows link
+ * inside the "Other ways to install" disclosure shown to non-Windows
+ * visitors. The former `nav` / `windows_nav` placements retired when the
+ * header CTA became a "Get started" link to `/install` (see
+ * {@link trackGetStartedNav}).
  */
 export type DownloadPlacement =
   | 'hero'
+  | 'close'
   | 'terminal_hero_link'
   | 'install_page'
   | 'windows_hero'
   | 'windows_install_page'
-  | 'windows_other_ways'
-  // The two buttons on `/new`, the unindexed page where the next home page is
-  // being worked out. Kept separate from `hero` so an iteration nobody is
-  // linked to cannot quietly move the published funnel's numbers.
-  | 'preview_hero'
-  | 'preview_close';
+  | 'windows_other_ways';
 
 /** Fires when a visitor clicks a desktop-download link (`/download/mac` or `/download/windows`). */
 export function trackHeroDownload(placement: DownloadPlacement): void {
@@ -186,11 +184,6 @@ export function trackClientError(
     error_message: error.message,
     error_digest: error.digest,
   });
-}
-
-/** Fires when a visitor reveals the plain-text contact email (IdentityClose). */
-export function trackContactEmailRevealed(): void {
-  capture('contact_email_revealed');
 }
 
 /** Whether PostHog currently has capture opted out. Defaults to `true` (opted out) when disabled. */

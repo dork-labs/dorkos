@@ -10,13 +10,13 @@ import {
 } from './_components';
 
 export const metadata: Metadata = {
-  title: 'Storyboard — /new',
-  description: 'The beats, cast, and palette behind /new, driven by its own components.',
+  title: 'Storyboard — the home page',
+  description: 'The beats, cast, and palette behind the home page, driven by its own components.',
   robots: { index: false, follow: false },
 };
 
 /**
- * `/test/storyboard` — an internal design surface for `/new`.
+ * `/test/storyboard` — an internal design surface for the home page.
  *
  * Every frame and swatch below renders the page's real components rather than
  * a mockup, so the storyboard cannot drift from what ships, and the scrubber
@@ -32,9 +32,9 @@ export default function StoryboardPage() {
         Storyboard: one page, one animation
       </h1>
       <p className="text-warm-gray mt-4 max-w-2xl text-lg">
-        The page at{' '}
-        <Link href="/new" className="text-brand-orange underline underline-offset-4">
-          /new
+        The{' '}
+        <Link href="/" className="text-brand-orange underline underline-offset-4">
+          home page
         </Link>{' '}
         leads with the 56-second film and then proves it with a scroll-driven animation around one
         chat. This page pins every moment of that so the visuals can be worked on without scrolling

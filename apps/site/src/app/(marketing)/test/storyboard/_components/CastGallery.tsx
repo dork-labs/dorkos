@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, CAST, DAVE, RUNTIMES } from '../../../new/_components';
+import { Avatar, CAST, DAVE, RUNTIMES } from '../../../_components';
 
 /**
  * The cast at working size: the three agents and Dave, each playing its own
