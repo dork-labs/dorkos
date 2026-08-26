@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useReducedMotion } from 'motion/react';
 import { type ProductCrop, type ProductFrameVariant } from '../lib/features';
@@ -85,7 +86,7 @@ interface ProductFrameProps {
  * @param alt - Alt text for the media.
  * @param size - `hero` (large) or `card` (compact thumbnail). Defaults to `card`.
  * @param frame - `desktop` browser chrome or `phone` portrait shell. Defaults to `desktop`.
- * @param animate - Autoplay the loop where one exists; ignored on cards and under reduced motion.
+ * @param animate - Play the loop where one exists, once it scrolls into view; under reduced motion its poster stands in.
  * @param crop - Focal edge for a still with an empty vertical center.
  * @param priority - Eager-load the still for LCP.
  */
@@ -100,7 +101,30 @@ export function ProductFrame({
 }: ProductFrameProps) {
   const reducedMotion = useReducedMotion();
   const hasLoop = shotHasLoop(surface);
-  const showLoop = animate && hasLoop && !reducedMotion;
+  // Deliberately not `&& !reducedMotion`. The server cannot know the
+  // preference, so letting it pick between a `<video>` and an `<Image>` means
+  // the served HTML and a reduced-motion client disagree about the element
+  // type: React throws #418 and re-renders the page on the client, for exactly
+  // the visitors who asked for less work. The loop's poster is the same frame
+  // the still would have been, so one element serves both and the preference
+  // decides only whether it is ever played.
+  const showLoop = animate && hasLoop;
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // `preload="none"` keeps the loop off the wire until it is wanted; this
+  // starts it when it scrolls into view and pauses it again on the way out.
+  // Under reduced motion nothing is ever started, so nothing is downloaded and
+  // the poster is all the visitor gets.
+  useEffect(() => {
+    const node = videoRef.current;
+    if (!node || reducedMotion) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) void node.play().catch(() => undefined);
+      else node.pause();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [reducedMotion, showLoop]);
 
   // Loops ship dark-only; stills that stand alone use the light capture.
   const themeKey = showLoop ? 'dark' : 'light';
@@ -120,11 +144,12 @@ export function ProductFrame({
 
   const media = showLoop ? (
     <video
+      ref={videoRef}
       className={`h-full w-full object-cover ${objectPosition}`}
-      autoPlay
       muted
       loop
       playsInline
+      preload="none"
       poster={posterSrc}
       aria-label={alt}
     >

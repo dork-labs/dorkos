@@ -131,7 +131,14 @@ export function FeatureCatalog({ features, initialProduct }: FeatureCatalogProps
                   // scaling, so media and the flagship loop never distort.
                   layout={reducedMotion ? false : 'position'}
                   className={BENTO_SPAN_CLASS[span]}
-                  initial={reducedMotion ? false : CARD_HIDDEN}
+                  // Always the hidden state, preference or not. The server
+                  // cannot know the preference, so a conditional `initial`
+                  // renders one set of styles in the served HTML and another
+                  // on a reduced-motion client — a hydration mismatch (#418)
+                  // that re-renders the page for the people who asked for
+                  // less work. The zero-duration transition below is what
+                  // makes it arrive instantly instead.
+                  initial={CARD_HIDDEN}
                   animate={CARD_VISIBLE}
                   exit={reducedMotion ? { opacity: 0 } : CARD_HIDDEN}
                   transition={reducedMotion ? INSTANT_TRANSITION : REFLOW_TRANSITION}
