@@ -430,6 +430,11 @@ describe('the clips rail', () => {
 });
 
 describe('the laptop the stage lands on', () => {
+  // The bezel ending, which is one of two the stage can play. The drawn
+  // MacBook it is being compared against has its own pins next door in
+  // `stage-endings.test.ts`, including the same 16:10 and `min-h-0` laws —
+  // both endings have to obey them, and neither file speaks for the other.
+
   it('has a modern screen, not whatever shape the chat came out as', () => {
     // The last beat says the thing you watched was running on your computer.
     // The screen it says that on has to look like a computer sold this decade,

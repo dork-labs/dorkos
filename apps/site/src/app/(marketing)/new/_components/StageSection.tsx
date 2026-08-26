@@ -16,7 +16,19 @@ import { CHAT_SCRIPT, PART_ONE_COUNT } from './chat-script';
 import { LOCALHOST_CAPTION } from './copy';
 import { PANEL } from './film-tokens';
 import { LaptopFrame } from './LaptopFrame';
-import { captionOpacityAt, chatScaleAt, shellOpacityAt } from './stage-timing';
+import { MacbookFrame } from './MacbookFrame';
+import { SEAT_LIFT } from './macbook-geometry';
+import {
+  captionOpacityAt,
+  chatScaleAt,
+  layBackAt,
+  machineArrivalAt,
+  machineOpacityAt,
+  seatAt,
+  shellOpacityAt,
+  STAGE_TIMING,
+} from './stage-timing';
+import type { StageTreatment } from './stage-treatment';
 import { useChatPlayback } from './use-chat-playback';
 import { useSectionProgress } from './use-section-progress';
 
@@ -34,6 +46,8 @@ const STAGE_VH = 320;
 interface StageSectionProps {
   /** Reports whether the agents have joined, so the hero can empty its seats. */
   onJoinedChange: (joined: boolean) => void;
+  /** Which of the two endings the last beat plays. */
+  treatment: StageTreatment;
 }
 
 /**
@@ -44,7 +58,7 @@ interface StageSectionProps {
  * Beat three — the laptop materializes around that same chat as it shrinks:
  * it was on your computer all along.
  */
-export function StageSection({ onJoinedChange }: StageSectionProps) {
+export function StageSection({ onJoinedChange, treatment }: StageSectionProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -62,9 +76,37 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
   const shellOpacity = useTransform(progress, (v: number) => shellOpacityAt(v));
   const captionOpacity = useTransform(progress, (v: number) => captionOpacityAt(v));
 
+  // The MacBook treatment's four: the assembly rides up to centre the finished
+  // machine, the machine rises to meet the chat, the chat falls the last of
+  // the way into the opening, and it tips onto the lid's plane on the way in.
+  const lift = useTransform(progress, (v: number) => `${-SEAT_LIFT * seatAt(v)}%`);
+  const rise = useTransform(
+    progress,
+    (v: number) => `${STAGE_TIMING.machineRise * (1 - machineArrivalAt(v))}%`
+  );
+  const presence = useTransform(progress, (v: number) => machineOpacityAt(v));
+  const drop = useTransform(
+    progress,
+    (v: number) => `${-STAGE_TIMING.chatDrop * (1 - seatAt(v))}%`
+  );
+  const layBack = useTransform(progress, (v: number) => layBackAt(v));
+
   const target = joined && beat !== 'talk' ? CHAT_SCRIPT.length : joined ? PART_ONE_COUNT : 0;
   const { lines, pending } = useChatPlayback(target);
   const used = new Set(lines.map((line) => line.dockApp).filter(Boolean) as string[]);
+
+  // Reduced motion gets the ending, not the journey: once the last beat is on
+  // screen the machine is simply already there, seated and square.
+  const seated = beat === 'computer';
+  const still = {
+    scale: seated ? chatScaleAt(1) : 1,
+    lift: seated ? `${-SEAT_LIFT}%` : '0%',
+    rise: '0%',
+    presence: seated ? 1 : 0,
+    drop: '0%',
+    layBack: 0,
+  };
+  const chat = <ChatWindow joined={joined} lines={lines} pending={pending} />;
 
   return (
     <section
@@ -81,12 +123,25 @@ export function StageSection({ onJoinedChange }: StageSectionProps) {
       >
         <BeatHeadline beat={beat} />
 
-        <LaptopFrame
-          scale={reduced ? 1 : chatScale}
-          shellOpacity={reduced && beat === 'computer' ? 1 : shellOpacity}
-        >
-          <ChatWindow joined={joined} lines={lines} pending={pending} />
-        </LaptopFrame>
+        {treatment === 'macbook' ? (
+          <MacbookFrame
+            scale={reduced ? still.scale : chatScale}
+            lift={reduced ? still.lift : lift}
+            rise={reduced ? still.rise : rise}
+            presence={reduced ? still.presence : presence}
+            drop={reduced ? still.drop : drop}
+            layBack={reduced ? still.layBack : layBack}
+          >
+            {chat}
+          </MacbookFrame>
+        ) : (
+          <LaptopFrame
+            scale={reduced ? 1 : chatScale}
+            shellOpacity={reduced && seated ? 1 : shellOpacity}
+          >
+            {chat}
+          </LaptopFrame>
+        )}
 
         <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
 

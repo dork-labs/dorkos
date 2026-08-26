@@ -7,6 +7,8 @@ import { CloseSection } from './CloseSection';
 import { FilmSection } from './FilmSection';
 import { Hero } from './Hero';
 import { StageSection } from './StageSection';
+import { useStageTreatment } from './stage-treatment';
+import { TreatmentToggle } from './TreatmentToggle';
 import { TUTORIALS, TutorialsSection } from './tutorials';
 
 /**
@@ -36,6 +38,12 @@ import { TUTORIALS, TutorialsSection } from './tutorials';
  * that carries the pill's anchor id and takes focus when the pill scrolls to
  * it, and nothing else.
  *
+ * The corner switch is furniture and not part of the composition. The stage
+ * has two endings under evaluation — the cream bezel it shipped with, and the
+ * drawn MacBook the chat falls into — and they can only be judged against each
+ * other on the same scroll. Whichever one wins, the switch comes off with the
+ * one that loses.
+ *
  * `joined` binds the two halves of the film-to-product hand-off. When the
  * pinned stage reports the chat is live, the agents fly out of their bridge
  * cards (shared layout ids) into the chat's member row, and fly home again on
@@ -45,12 +53,14 @@ import { TUTORIALS, TutorialsSection } from './tutorials';
 export function HomeExperience() {
   const [joined, setJoined] = useState(false);
   const handleJoinedChange = useCallback((next: boolean) => setJoined(next), []);
+  const [treatment, chooseTreatment] = useStageTreatment();
   return (
     <>
+      <TreatmentToggle value={treatment} onChange={chooseTreatment} />
       <Hero />
       <FilmSection />
       <CastBridge joined={joined} />
-      <StageSection onJoinedChange={handleJoinedChange} />
+      <StageSection onJoinedChange={handleJoinedChange} treatment={treatment} />
       <TutorialsSection config={TUTORIALS} />
       <div id="features" tabIndex={-1} className="focus:outline-none">
         <FeatureCatalogSection />
