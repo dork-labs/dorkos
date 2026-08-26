@@ -41,11 +41,14 @@ describe('the home page’s metadata', () => {
   });
 
   it('says which site the shared card came from', () => {
-    // `og:site_name` and `og:locale` are declared once, in the root layout,
-    // and an `openGraph` block anywhere below replaces that block whole rather
-    // than adding to it. So the page that redeclares it has to restate them,
-    // or the site's most-shared URL is the one card that does not say what
-    // site it belongs to.
+    // `og:site_name` and `og:locale` are declared once, in the root layout.
+    // Layouts below it inherit them even while declaring an `openGraph` of
+    // their own — every other marketing route serves both — but a *page* that
+    // declares one replaces what it inherited, which was measured on the built
+    // site: drop these two lines and `/` serves no `og:site_name` while
+    // `/features`, `/compare`, `/marketplace` and `/story` still do. This page
+    // has to restate them, or the site's most-shared URL is the one card that
+    // does not say what site it belongs to.
     const og = metadata.openGraph;
     expect(og?.siteName).toBe(siteConfig.name);
     expect(og?.locale).toBe('en_US');
