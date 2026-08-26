@@ -1,14 +1,14 @@
 # Desktop Resilience Program — never a black screen, never a silent failed update
 
 **Status:** proposed (2026-08-23, rev 2 — both root causes now CONFIRMED with user
-evidence). Investigation triggered by a real user (Lil) whose DorkOS desktop app shows a
-permanent black screen after updating to v0.63.0, and whose auto-updates have quit
+evidence). Investigation triggered by an early desktop user whose DorkOS desktop app shows
+a permanent black screen after updating to v0.63.0, and whose auto-updates have quit
 without installing for ten days.
 
-**Evidence set:** her server log (`~/.dork/logs/dorkos.log`), her Electron main-process
-log (`~/Library/Logs/@dorkos/desktop/main.log`), her updater cache
-(`~/Library/Caches/@dorkosdesktop-updater/`), her Squirrel installer state
-(`~/Library/Caches/com.dorkos.desktop.ShipIt/ShipItState.plist`), and her Chrome console
+**Evidence set:** the reporting user's server log (`~/.dork/logs/dorkos.log`), Electron
+main-process log (`~/Library/Logs/@dorkos/desktop/main.log`), updater cache
+(`~/Library/Caches/@dorkosdesktop-updater/`), Squirrel installer state
+(`~/Library/Caches/com.dorkos.desktop.ShipIt/ShipItState.plist`), and Chrome console
 at `localhost:4242`.
 
 ---
@@ -111,8 +111,9 @@ remains is one calm sentence and one obvious button.
    inline CSS, zero network).
 4. **Truth over reassurance.** If the update didn't take, say exactly that next launch
    and offer the remedy. Never re-offer a restart that just silently failed.
-5. **Diagnostics are one click.** "Save Diagnostic Report" bundles everything we asked
-   Lil to scavenge by hand. Non-technical users never see `~/Library`.
+5. **Diagnostics are one click.** "Save Diagnostic Report" bundles everything we had to
+   ask a non-technical user to scavenge by hand. Non-technical users never see
+   `~/Library`.
 
 ## 4. Implementation plan
 
@@ -179,8 +180,8 @@ attemptedAt, attempts }` in userData). Next launch: running version < offered ve
   in `~/Library/Caches/@dorkosdesktop-updater/pending/` or in Squirrel's staged
   `ShipItState.plist`, delete both. Protects a manual overwrite-install (the support
   remedy for a broken updater) from being silently DOWNGRADED by a leftover staged
-  update on the next quit — Lil's machine currently holds exactly this state (staged
-  0.63.0 + pending zip surviving the install).
+  update on the next quit — the reporting user's machine currently holds exactly this
+  state (staged 0.63.0 + pending zip surviving the install).
 - 2.8 **Detect a manual overwrite while running**: the app stays tray-resident after
   the window closes, so drag-installing a new version leaves the OLD process running —
   and the single-instance lock makes "open the new app" simply focus the old one. The

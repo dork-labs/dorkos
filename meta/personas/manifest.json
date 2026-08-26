@@ -24,7 +24,7 @@
       "name": "Ikechi",
       "archetype": "The AI-Native Founder",
       "role": "secondary",
-      "confidence": "grounded-founder-adjacent",
+      "confidence": "grounded-close-contact",
       "created": "2026-07-09",
       "reviewBy": "2027-01-09"
     },
@@ -33,7 +33,7 @@
       "name": "Lil",
       "archetype": "The Private Professional",
       "role": "horizon",
-      "confidence": "grounded-founder-adjacent",
+      "confidence": "grounded-close-contact",
       "created": "2026-07-09",
       "reviewBy": "2027-01-09",
       "notes": "Staged persona — not a launch target. Informs privacy defaults, plain-language copy, and the desktop surface. Graduation criteria in the persona file."
