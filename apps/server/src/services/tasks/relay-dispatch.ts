@@ -21,8 +21,7 @@ import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
-import type { ActivityService } from '../activity/activity-service.js';
-import { emitRunActivity } from './run-activity.js';
+import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 
 const logger = createTaggedLogger('Tasks');
@@ -33,7 +32,6 @@ export interface RelayDispatchDeps {
   relay: RelayCore;
   /** Where the run's concurrency slot is held until the run row goes terminal. */
   runs: RunAccounting;
-  activityService: ActivityService | null;
   /** Resolves the task's effective working directory; throws when its agent is gone. */
   resolveCwd: (task: Task) => Promise<string>;
 }
@@ -86,7 +84,9 @@ export async function dispatchRunViaRelay(
       error: (err as Error).message,
     });
     logger.error(`run ${run.id} failed: ${(err as Error).message}`);
-    emitRunActivity(deps.activityService, task, run, 'failed', 0, (err as Error).message);
+    // The activity-feed event for this failure rides the TaskStore run-terminal
+    // hook (DOR-1573), fired by the `updateRun('failed')` above — the one funnel
+    // both dispatch paths share.
     return;
   }
 
@@ -104,7 +104,13 @@ export async function dispatchRunViaRelay(
     runId: run.id,
     prompt: task.prompt,
     cwd: effectiveCwd,
-    permissionMode: task.permissionMode,
+    // Defence in depth, symmetric with the direct path (`executeRunDirect`): the
+    // `??` branch is unreachable through the shipped store, where
+    // `pulse_schedules.permission_mode` is NOT NULL DEFAULT, but a row that
+    // reached memory without a mode (a hand-built fixture, a future store, a
+    // column that loses its constraint) resolves to the same ladder both paths
+    // trust, so the two can never disagree on the level a run executes at.
+    permissionMode: task.permissionMode ?? resolveScheduledRunPermissionMode(),
     taskName: task.name,
     cron: task.cron,
     trigger: run.trigger,
@@ -155,14 +161,8 @@ export async function dispatchRunViaRelay(
       error: 'No receiver for the scheduled run',
     });
     logger.warn(`no receiver for relay dispatch of run ${run.id}`);
-    emitRunActivity(
-      deps.activityService,
-      task,
-      run,
-      'failed',
-      0,
-      'No receiver for the scheduled run'
-    );
+    // The activity-feed event for this failure rides the TaskStore run-terminal
+    // hook (DOR-1573), fired by the `updateRun('failed')` above.
     return;
   }
 
