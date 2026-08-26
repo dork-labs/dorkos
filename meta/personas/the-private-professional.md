@@ -1,7 +1,7 @@
 # Lil — The Private Professional
 
 **Role**: Horizon persona (staged — NOT a launch target; see Staging Rules)
-**Confidence**: Grounded — modeled on a real DorkOS user (founder-adjacent; see Validation Caveat)
+**Confidence**: Grounded — modeled on a real DorkOS user (a close contact, not an organic one; see Validation Caveat)
 **Created**: 2026-07-09
 **Review by**: 2027-01-09
 
@@ -66,11 +66,11 @@ She is also a plausible early **Solo** subscriber in the revenue arc (`positioni
 
 ## Validation Caveat (read before citing this persona)
 
-This persona is modeled on the founder's wife. She had the founder as installer, support channel, and prompt coach — scaffolding no organic user gets. Her existence proves the product _can_ serve a non-technical professional; it does not prove acquisition, self-serve setup, or unassisted recovery. Do not cite her in public copy as evidence that "anyone can use DorkOS."
+This persona is modeled on a real user who is a close contact rather than an organic one. She had someone on the project as installer, support channel, and prompt coach — scaffolding no organic user gets. Her existence proves the product _can_ serve a non-technical professional; it does not prove acquisition, self-serve setup, or unassisted recovery. Do not cite her in public copy as evidence that "anyone can use DorkOS."
 
 ## Key Assumptions to Validate
 
-1. A Lil-shaped user can be acquired at all without a founder in her house (channel unknown — she is not on HN)
+1. A Lil-shaped user can be acquired at all without hands-on setup help from someone she knows (channel unknown — she is not on HN)
 2. The desktop app closes the install gap for non-terminal users
 3. "Local and yours" is a purchase driver for privacy-sensitive professionals beyond this one instance
 4. The LifeOS-style marketplace package is reproducible by third-party authors (ecosystem claim, not just product claim)

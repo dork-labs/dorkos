@@ -8,7 +8,6 @@
 
 - [x] 2026-07-06 — Founder-hours decision: the Vault "VP" role is symbolic (no role, no paperwork, no comp; Vault is unfunded/pre-revenue); founder is effectively full-time on DorkOS. Gate removed (`11` §6.5/§7).
 - [ ] Confirm launch-week target on the calendar (Show HN aimed at week of Aug 17) — by Jul 8
-- [ ] Ask Ikechi to soften the Vault blog before it leaves staging: drop or downgrade the "VP of Product" title (symbolic titles conflict with our honesty pillar and muddy vendor neutrality) and verify the "two-time exited founder" phrasing — by Jul 10
 
 ## Phase 0: Stabilize + instrument (Weeks 1-3, Jul 6-26)
 

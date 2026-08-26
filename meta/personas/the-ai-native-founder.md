@@ -1,7 +1,7 @@
 # Ikechi — The AI-Native Founder
 
 **Role**: Secondary persona
-**Confidence**: Grounded — modeled on a real DorkOS user (founder-adjacent; see Validation Caveat)
+**Confidence**: Grounded — modeled on a real DorkOS user (a close contact, not an organic one; see Validation Caveat)
 **Created**: 2026-07-09
 **Review by**: 2027-01-09
 
@@ -88,7 +88,7 @@ Ikechi makes the brand's existing secondary audience ("AI-native entrepreneurs,"
 
 ## Validation Caveat (read before citing this persona)
 
-This persona is modeled on a real user who is close to the founder — he had a live founder as install support and prompt coach, scaffolding no organic user gets. His existence proves a non-developer _can_ operate DorkOS; it does not yet prove one can do so unassisted. The validation milestone is the first AI-native founder we've never met. Recruit at least one into the Phase-1 quiet beta and record what stops them.
+This persona is modeled on a real user who is a close contact rather than an organic one — he had live install support and prompt coaching from someone on the project, scaffolding no organic user gets. His existence proves a non-developer _can_ operate DorkOS; it does not yet prove one can do so unassisted. The validation milestone is the first AI-native founder we've never met. Recruit at least one into the Phase-1 quiet beta and record what stops them.
 
 ## Key Assumptions to Validate
 
