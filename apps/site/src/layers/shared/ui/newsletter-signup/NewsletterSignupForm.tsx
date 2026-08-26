@@ -3,8 +3,9 @@
 /**
  * Newsletter signup form (ADR 260707-025214).
  *
- * A single reusable capture surface rendered in three places (footer,
- * `/newsletter` page, end-of-blog CTA) via the `variant` prop. Double opt-in:
+ * A single reusable capture surface rendered in four places (footer,
+ * `/newsletter` page, end-of-blog CTA, tutorials modal) via the `variant`
+ * prop. Double opt-in:
  * a successful submit only means "check your inbox" — the address is not on the
  * list until the emailed link is clicked. Honest cadence microcopy and a
  * honeypot field are always present.
@@ -45,7 +46,7 @@ export function NewsletterSignupForm({
   variant = 'card',
   className,
 }: NewsletterSignupFormProps) {
-  const { state, error, submit } = useNewsletterForm(source);
+  const { state, error, errorKind, submit } = useNewsletterForm(source);
   const [email, setEmail] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const emailId = useId();
@@ -96,7 +97,10 @@ export function NewsletterSignupForm({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={state === 'submitting'}
-          aria-invalid={state === 'error'}
+          // Only a rejected address marks the field invalid. A throttled or
+          // failed request says so in the message below without a screen reader
+          // announcing "invalid entry" over a perfectly good email.
+          aria-invalid={errorKind === 'invalid-email'}
           className={cn(
             'flex-1',
             isCompact &&
