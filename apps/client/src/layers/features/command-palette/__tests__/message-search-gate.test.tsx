@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Message search is not offered in the Obsidian embed (DOR-685, and the
- * demo-claim gate in AGENTS.md).
+ * Message search is offered where there is an index and nowhere else (DOR-685,
+ * DOR-1563, and the demo-claim gate in AGENTS.md).
  *
- * **`App.tsx` is the embed's shell as well as the browser's.** The Obsidian
+ * **`App.tsx` is the Obsidian embed's shell as well as the browser's.** The
  * plugin renders it directly (`apps/obsidian-plugin/src/components/ObsidianApp.tsx`
  * imports `App` from `@dorkos/client/App`), so anything mounted there is
  * mounted inside Obsidian too. That made the first cut of this feature ship a
@@ -17,8 +17,14 @@
  * bound, and the hand-off row is not drawn. A test for one would pass while
  * either of the others still pointed at the dead end.
  *
- * Each case carries its browser-mode counterpart in the same test, so "absent
- * in the embed" cannot pass by the thing being absent everywhere.
+ * **The gate is a capability now, not a shell.** Until DOR-1563 an embed could
+ * not open the index, so `isEmbedded` and "cannot search" were the same fact and
+ * the file only had to prove one direction. They have come apart: the Obsidian
+ * plugin opens `~/.dork/dork.db` when there is one, and answers
+ * `canSearchMessages` accordingly. So each case is asked THREE ways — an embed
+ * with no index, an embed with one, and a browser — because a gate that reads
+ * the shell instead of the capability passes the first and third and fails only
+ * the second.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -88,9 +94,14 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-/** Put the app in the embed, the way the Obsidian view does at bootstrap. */
-function enterEmbed() {
-  setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+/**
+ * Put the app in the embed, the way the Obsidian view does at bootstrap.
+ *
+ * @param canSearchMessages - Whether this window opened a message index, which
+ *   `CopilotView` settles before it sets the adapter.
+ */
+function enterEmbed(canSearchMessages = false) {
+  setPlatformAdapter({ isEmbedded: true, canSearchMessages, openFile: async () => {} });
 }
 
 globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
@@ -132,7 +143,7 @@ afterEach(() => {
   setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
-describe('the search box in the Obsidian embed', () => {
+describe('where the search box exists', () => {
   it('does not mount, even when something asks it to open', () => {
     enterEmbed();
     render(<MessageSearchDialog />, { wrapper: Wrapper });
@@ -149,6 +160,55 @@ describe('the search box in the Obsidian embed', () => {
     act(() => useAppStore.getState().setMessageSearchOpen(true));
 
     expect(screen.getByTestId('message-search-dialog')).toBeInTheDocument();
+  });
+
+  it('mounts in an embed that DID open an index', () => {
+    // The direction the old gate could not express. Still the embed — same
+    // shell, same `App.tsx` — but this window has something to search, so
+    // refusing to draw the box would be hiding a working feature.
+    enterEmbed(true);
+    render(<MessageSearchDialog />, { wrapper: Wrapper });
+    act(() => useAppStore.getState().setMessageSearchOpen(true));
+
+    expect(screen.getByTestId('message-search-dialog')).toBeInTheDocument();
+  });
+
+  it('tells you, in the embed, that what it searches is only what DorkOS indexed', () => {
+    // The honest half of the read-only trade. The embed reads an index it does
+    // not keep current — it will not write to a file the DorkOS app may be
+    // writing, nor spend the vault's own thread walking transcripts — so a
+    // conversation held while only Obsidian was open is not findable here yet.
+    // A box that returned less than the browser's for the same words and said
+    // nothing is the exact surprise this whole statement exists to prevent.
+    enterEmbed(true);
+    render(<MessageSearchDialog />, { wrapper: Wrapper });
+    act(() => useAppStore.getState().setMessageSearchOpen(true));
+
+    expect(screen.getByText(/what DorkOS has already indexed/i)).toBeInTheDocument();
+  });
+
+  it('does not say it in a browser, where it is not true', () => {
+    render(<MessageSearchDialog />, { wrapper: Wrapper });
+    act(() => useAppStore.getState().setMessageSearchOpen(true));
+
+    expect(screen.queryByText(/what DorkOS has already indexed/i)).toBeNull();
+  });
+
+  it('binds ⌘⇧F in an embed that DID open an index', () => {
+    enterEmbed(true);
+    render(<MessageSearchDialog />, { wrapper: Wrapper });
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'F',
+      code: 'KeyF',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(useAppStore.getState().messageSearchOpen).toBe(true);
   });
 
   it('does not bind ⌘⇧F', () => {
@@ -189,7 +249,7 @@ describe('the search box in the Obsidian embed', () => {
   });
 });
 
-describe("⌘K's hand-off row in the Obsidian embed", () => {
+describe("where ⌘K's hand-off row is drawn", () => {
   /** The hand-off row, or `null`. */
   function handoffRow(): HTMLElement | null {
     return (
@@ -209,6 +269,18 @@ describe("⌘K's hand-off row in the Obsidian embed", () => {
     // is about the row.
     await waitFor(() => expect(screen.getByText('Dashboard overhaul')).toBeInTheDocument());
     expect(handoffRow()).toBeNull();
+  });
+
+  it('is drawn in an embed that DID open an index', async () => {
+    // ⌘K and ⌘⇧F read one function, so this row appearing is the same decision
+    // as the box mounting. Asserted anyway: they are two files, and the drift
+    // this catches is a palette advertising a box that never opens.
+    enterEmbed(true);
+    act(() => useAppStore.getState().setGlobalPaletteOpen(true));
+    render(<CommandPaletteDialog />, { wrapper: Wrapper });
+    fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: 'dash' } });
+
+    await waitFor(() => expect(handoffRow()).not.toBeNull());
   });
 
   it('is drawn in a browser on the same query', async () => {

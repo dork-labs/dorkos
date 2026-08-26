@@ -4,9 +4,10 @@
  * @module features/command-palette/ui/MessageSearchScope
  */
 import { Check, Minus } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, getPlatform } from '@/layers/shared/lib';
 import {
   SEARCH_SCOPE_COVERED,
+  SEARCH_SCOPE_EMBED_GAP,
   SEARCH_SCOPE_GAPS,
   SEARCH_SCOPE_HEADING,
   SEARCH_SCOPE_SUMMARY,
@@ -33,6 +34,13 @@ export interface MessageSearchScopeProps {
  * looks broken.
  */
 export function MessageSearchScope({ className }: MessageSearchScopeProps) {
+  // The embed reads an index it does not keep current, and says so. Appended to
+  // the gaps rather than branching the whole list: every other line is equally
+  // true in both windows.
+  const gaps = getPlatform().isEmbedded
+    ? [...SEARCH_SCOPE_GAPS, SEARCH_SCOPE_EMBED_GAP]
+    : SEARCH_SCOPE_GAPS;
+
   return (
     <div className={cn('px-3 py-3', className)}>
       <p className="text-muted-foreground mb-2 text-xs font-medium">{SEARCH_SCOPE_HEADING}</p>
@@ -43,7 +51,7 @@ export function MessageSearchScope({ className }: MessageSearchScopeProps) {
             <span>{line}</span>
           </li>
         ))}
-        {SEARCH_SCOPE_GAPS.map((line) => (
+        {gaps.map((line) => (
           <li key={line} className="text-muted-foreground flex gap-2 text-xs leading-relaxed">
             <Minus className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
             <span>{line}</span>

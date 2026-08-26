@@ -69,6 +69,26 @@ export const SEARCH_SCOPE_SUMMARY =
   'Searches what was said in channels and direct messages, and in Claude Code, Codex and OpenCode conversations. Not tool output.';
 
 /**
+ * The one thing that is different about searching from inside Obsidian
+ * (DOR-1563).
+ *
+ * **Added to the list rather than replacing anything**: everything else on it is
+ * as true in the embed as in a browser, because both read the same index through
+ * the same access rules. What differs is who keeps that index current. The embed
+ * opens the database strictly for reading — it will not write to a file the
+ * DorkOS app may be writing, and it will not spend the vault's own thread
+ * walking transcripts — so a conversation held while only Obsidian was open is
+ * not findable there until the app runs.
+ *
+ * Stating it is the whole point. A search box that quietly returned less than
+ * the browser's for the same words is the "I know I wrote that" surprise this
+ * statement exists to prevent, and it is the one gap a person can actually do
+ * something about.
+ */
+export const SEARCH_SCOPE_EMBED_GAP =
+  'In Obsidian, this shows what DorkOS has already indexed. Open the DorkOS app to pick up anything said since.';
+
+/**
  * What to say when somebody has typed, but not enough to search on.
  *
  * Derived from the server's own floor rather than written out, so the sentence

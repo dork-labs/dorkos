@@ -874,6 +874,24 @@ export class RoomsPage {
    *
    * @returns Whether the reply row is comfortably tappable right now.
    */
+  async replyRowComfortablyVisible(): Promise<boolean> {
+    const row = this.replyRows.first();
+    if ((await row.count()) === 0) return false;
+    return row.evaluate((el) => {
+      const scroller = el.closest('.chat-scroll-area');
+      if (scroller === null) return false;
+      const view = scroller.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      // A margin off each edge so "visible" means "a tap will not scroll it",
+      // not "one pixel is showing" — and enough to stay clear of the masthead
+      // and composer that frame the scroller. A sixth of the viewport is far
+      // wider than any wheel notch below, so the reader always comes to rest
+      // inside this band rather than skipping across it.
+      const margin = view.height / 6;
+      return box.top >= view.top + margin && box.bottom <= view.bottom - margin;
+    });
+  }
+
   /**
    * Whether one row is really inside the scroller's viewport right now.
    *
@@ -900,24 +918,6 @@ export class RoomsPage {
       const view = scroller.getBoundingClientRect();
       const box = el.getBoundingClientRect();
       return box.top >= view.top && box.bottom <= view.bottom;
-    });
-  }
-
-  async replyRowComfortablyVisible(): Promise<boolean> {
-    const row = this.replyRows.first();
-    if ((await row.count()) === 0) return false;
-    return row.evaluate((el) => {
-      const scroller = el.closest('.chat-scroll-area');
-      if (scroller === null) return false;
-      const view = scroller.getBoundingClientRect();
-      const box = el.getBoundingClientRect();
-      // A margin off each edge so "visible" means "a tap will not scroll it",
-      // not "one pixel is showing" — and enough to stay clear of the masthead
-      // and composer that frame the scroller. A sixth of the viewport is far
-      // wider than any wheel notch below, so the reader always comes to rest
-      // inside this band rather than skipping across it.
-      const margin = view.height / 6;
-      return box.top >= view.top + margin && box.bottom <= view.bottom - margin;
     });
   }
 }

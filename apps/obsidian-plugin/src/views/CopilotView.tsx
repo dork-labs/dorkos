@@ -62,7 +62,7 @@ export class CopilotView extends ItemView {
     // anything else is. See `openEmbeddedIndex` for every reason it answers
     // `null`.
     this.index = openEmbeddedIndex(resolvePluginDorkHome());
-    setPlatformAdapter(createObsidianAdapter(this.app));
+    setPlatformAdapter(createObsidianAdapter(this.app, { canSearchMessages: this.index !== null }));
 
     // Resolve paths: Obsidian vault is workspace/, repo root is its parent
     const vaultPath = (this.app.vault.adapter as unknown as { basePath: string }).basePath;

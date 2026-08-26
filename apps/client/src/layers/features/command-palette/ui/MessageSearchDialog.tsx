@@ -32,7 +32,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { AlertCircle, Info } from 'lucide-react';
 import type { SearchHit } from '@dorkos/shared/search-schemas';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn, platformCanSearchMessages } from '@/layers/shared/lib';
 import { useAppStore, useIsMobile, useTransport } from '@/layers/shared/model';
 import {
   Command,
@@ -59,9 +59,9 @@ const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-[10px]' as const;
 /**
  * The search box, where there is something behind it to search.
  *
- * **Not in the Obsidian embed, and this is the gate rather than a detail.**
- * `App.tsx` is the embed's shell as well as the browser's, so mounting this
- * unconditionally put the box inside Obsidian — where the index does not exist,
+ * **Only where there is an index behind it, and this is the gate rather than a
+ * detail.** `App.tsx` is the Obsidian embed's shell as well as the browser's, so
+ * mounting this unconditionally once put the box inside a window with no index:
  * `DirectTransport.search` rejects, and every line of the coverage statement is
  * false. What a person got there was a box that listed four kinds of thing it
  * searches, took two characters and a debounce to admit it searches none of
@@ -69,18 +69,22 @@ const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-[10px]' as const;
  * cannot do the thing should not be offered, which is the same rule the
  * hand-off row was built on and the same one the demo-claim gate states.
  *
+ * **What changed is who can answer yes** (DOR-1563). The question used to be
+ * "are we in the embed"; it is now "does this window have an index", which the
+ * Obsidian plugin answers for itself by opening one — or not, on a machine where
+ * DorkOS has never run, or an Obsidian it carries no SQLite build for.
+ *
  * The gate is a wrapper rather than an early return inside the component so no
- * hook is conditional — in particular ⌘⇧F is never BOUND in the embed, rather
- * than bound and made to open something inert. When DOR-691's `direct/` half
- * lands and the embed has an index, this wrapper is the one thing to delete.
+ * hook is conditional — in particular ⌘⇧F is never BOUND where the box cannot
+ * open, rather than bound and made to open something inert.
  *
  * Everything else lives in {@link MessageSearchBox}.
  */
 export function MessageSearchDialog() {
-  // `isEmbedded` is fixed at bootstrap (`setPlatformAdapter` in the Obsidian
-  // view) and never changes for the life of the app, so this branch is stable
-  // and the hooks below it are not conditional in practice.
-  if (getPlatform().isEmbedded) return null;
+  // Fixed at bootstrap (`setPlatformAdapter` in the Obsidian view, which opens
+  // the index first) and never changes for the life of the app, so this branch
+  // is stable and the hooks below it are not conditional in practice.
+  if (!platformCanSearchMessages()) return null;
   return <MessageSearchBox />;
 }
 
