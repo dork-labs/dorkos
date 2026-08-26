@@ -129,6 +129,26 @@ export const SearchHitSchema = z
     containerPath: z.string().nullable(),
     /** Position within the container — a room entry's `seq`, or the message's index in a transcript. */
     ordinal: z.number().int(),
+    /**
+     * The message's own id in the store that owns it, when it has one — the
+     * JSONL record `uuid` for `claude-code`, the `message.id` row for
+     * `opencode` (spec Amendment 12).
+     *
+     * **Absent, never null.** A room needs none — its `ordinal` IS the entry's
+     * `seq`, which the room's timeline already addresses rows by — and a
+     * transcript record that carried no id of its own contributes nothing here
+     * rather than an id invented at index time, which would differ on the next
+     * read and address nothing. So its absence is the ordinary case, and it
+     * means one thing: this hit opens its conversation rather than landing on
+     * its message.
+     *
+     * **Carrying one is not the same as being able to land on it.** Whether a
+     * source's id matches what its session view renders is verified per runtime
+     * and recorded in the client's allowlist
+     * (`features/command-palette/model/message-search-target`) — Codex, for
+     * one, indexes an id the session view never uses.
+     */
+    messageId: z.string().min(1).optional(),
     role: SearchHitRoleSchema,
     /** ISO-8601, or `null` for a source that records no timestamp. */
     createdAt: z.string().nullable(),
