@@ -10,7 +10,7 @@ import {
   ensureProvisionedOpenCodeVersion,
   provisionOpenCode,
   resolveProvisionedOpenCodePath,
-} from '../provision.js';
+} from '../providers/provision.js';
 
 // MOCK the spawned installer — never run a real npm install in CI.
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));

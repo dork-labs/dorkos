@@ -25,7 +25,7 @@ import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
 import { configManager } from '../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { resolveOpenCodeBinaryPath } from './check-dependencies.js';
+import { resolveOpenCodeBinaryPath } from './providers/check-dependencies.js';
 import type { OpenCodeClientProvider } from './session-mapper.js';
 
 /** Loopback-only binding — the sidecar is never reachable off-machine (spec §Security). */

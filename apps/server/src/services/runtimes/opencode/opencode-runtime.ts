@@ -67,8 +67,11 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from './check-dependencies.js';
-import { detectOllama } from './ollama.js';
+import {
+  checkOpenCodeDependencies,
+  getConnectedOpenCodeProvider,
+} from './providers/check-dependencies.js';
+import { detectOllama } from './providers/ollama.js';
 import {
   createOpenCodeEventContext,
   mapOpenCodeTurn,
@@ -98,7 +101,7 @@ import {
   INTERRUPT_ACK_TIMEOUT_MS,
 } from './runtime-constants.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
-import { projectModelOptions } from './models.js';
+import { projectModelOptions } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */

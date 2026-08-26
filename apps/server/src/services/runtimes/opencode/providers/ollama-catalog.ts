@@ -22,7 +22,7 @@
  * reasoning, honestly reflected in the copy. Everything here is Ollama-adjacent
  * but the SDK is never touched.
  *
- * @module services/runtimes/opencode/ollama-catalog
+ * @module services/runtimes/opencode/providers/ollama-catalog
  */
 import { execFile } from 'node:child_process';
 import os from 'node:os';

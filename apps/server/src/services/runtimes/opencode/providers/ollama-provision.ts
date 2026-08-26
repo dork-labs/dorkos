@@ -16,7 +16,7 @@
  * best-effort; failing to start is NOT an install failure and is reported
  * honestly via the terminal result's fresh detection re-probe.
  *
- * @module services/runtimes/opencode/ollama-provision
+ * @module services/runtimes/opencode/providers/ollama-provision
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

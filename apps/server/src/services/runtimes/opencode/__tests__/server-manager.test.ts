@@ -16,7 +16,7 @@ import {
   OPENCODE_SIDECAR_CONFIG,
   SIDECAR_TIMING,
 } from '../server-manager.js';
-import { resolveOpenCodeBinaryPath } from '../check-dependencies.js';
+import { resolveOpenCodeBinaryPath } from '../providers/check-dependencies.js';
 import { configManager } from '../../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../../core/credential-env.js';
 
@@ -28,7 +28,7 @@ vi.mock('@opencode-ai/sdk', () => ({
   createOpencodeClient: vi.fn(),
 }));
 
-vi.mock('../check-dependencies.js', () => ({
+vi.mock('../providers/check-dependencies.js', () => ({
   resolveOpenCodeBinaryPath: vi.fn(),
 }));
 

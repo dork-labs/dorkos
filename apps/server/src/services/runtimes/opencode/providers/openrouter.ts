@@ -22,14 +22,14 @@
  * a key with `GET /api/v1/key` (bearer). See the batch report for the residual
  * open items flagged for live re-verification.
  *
- * @module services/runtimes/opencode/openrouter
+ * @module services/runtimes/opencode/providers/openrouter
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { OpenRouterOAuthStatus, StoreCredentialResult } from '@dorkos/shared/runtime-connect';
-import { type CredentialStore } from '../../core/credential-provider.js';
-import { persistProviderCredential } from '../connect/credentials.js';
-import { logger } from '../../../lib/logger.js';
+import { type CredentialStore } from '../../../core/credential-provider.js';
+import { persistProviderCredential } from '../../connect/credentials.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** OpenRouter API + auth origins (single source so tests and prod agree). */
 const OPENROUTER_AUTH_URL = 'https://openrouter.ai/auth';

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { ModelOption } from '@dorkos/shared/types';
-import { capLocalTier, classifyTier, parseParamsB, sortModelOptions } from '../model-tiers.js';
+import {
+  capLocalTier,
+  classifyTier,
+  parseParamsB,
+  sortModelOptions,
+} from '../providers/model-tiers.js';
 
 /** Build a minimal model option for a sort/classify row. */
 function opt(value: string, displayName = value, tier?: ModelOption['tier']): ModelOption {

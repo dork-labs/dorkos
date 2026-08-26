@@ -13,15 +13,15 @@
  * by the server-manager (P3), so at check time there is nothing to reach and
  * a cold probe would spawn a server as a side effect.
  *
- * @module services/runtimes/opencode/check-dependencies
+ * @module services/runtimes/opencode/providers/check-dependencies
  */
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { configManager } from '../../core/config-manager.js';
-import { credentialProvider, type CredentialProvider } from '../../core/credential-provider.js';
-import { logger } from '../../../lib/logger.js';
-import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
-import { runBinaryProbe, findBinaryOnPath, logProbeFailure } from '../shared/run-probe.js';
+import { configManager } from '../../../core/config-manager.js';
+import { credentialProvider, type CredentialProvider } from '../../../core/credential-provider.js';
+import { logger } from '../../../../lib/logger.js';
+import { resolveRuntimeBinary } from '../../shared/resolve-binary.js';
+import { runBinaryProbe, findBinaryOnPath, logProbeFailure } from '../../shared/run-probe.js';
 import {
   OPENCODE_PACKAGE_VERSION,
   ensureProvisionedOpenCodeVersion,
