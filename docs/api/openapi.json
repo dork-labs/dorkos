@@ -8667,6 +8667,10 @@
           "ordinal": {
             "type": "integer"
           },
+          "messageId": {
+            "type": "string",
+            "minLength": 1
+          },
           "role": {
             "$ref": "#/components/schemas/SearchHitRole"
           },
