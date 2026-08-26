@@ -17,8 +17,10 @@
  * keeps a module-level `zodToOpenAPIRegistry` built from it. So every schema
  * `.openapi()` is ever called on — and `.openapi()` is called on nested schemas
  * too — is pinned in that map for the lifetime of the process. Nothing ever
- * iterates the map (`add`/`get`/`has`/`remove` only, all keyed by the schema
- * object), so the strong reference buys nothing and costs everything.
+ * iterates, sizes or serializes the map — `add`/`get`/`has`/`remove` only, all
+ * keyed by the schema object — so the strong reference buys nothing and costs
+ * everything. (`clear()` exists too, and would reinstate a strong `Map`; no
+ * caller in this repo or in the package itself invokes it.)
  *
  * In production that is invisible: the schema modules evaluate once and the
  * registry holds exactly one generation. In the test suite it is not, because
@@ -40,7 +42,7 @@
  * `dist/` — cannot lose metadata.
  *
  * Remove this when the upstream package stops bundling its own registry, or
- * bundles one whose map is weak. `zod-openapi-registry.test.ts` fails loudly if
+ * bundles one whose map is weak. `__tests__/zod-openapi.test.ts` fails loudly if
  * an upgrade changes the shape this reaches into.
  *
  * @module shared/zod-openapi
