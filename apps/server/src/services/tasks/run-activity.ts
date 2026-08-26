@@ -98,6 +98,14 @@ export function emitRunActivity(
  * attribution. `skipped` never reaches this hook at all: a skipped tick is written
  * straight to a terminal row by `recordTick`, never through the `updateRun` funnel.
  *
+ * One residual gap survives this, deliberately deferred to DOR-1580: only the
+ * DIRECT path emits a deadline-cancel event (`task-scheduler-service.ts`, the
+ * `!operatorCancelled` branch). A relay-dispatched run that hits its deadline is
+ * finalized inside `packages/relay`, which cannot import this emitter and emits
+ * no cancel event of its own — so a timed-out RELAY run currently reaches no live
+ * activity feed, while a timed-out direct run does. Operator-cancel is covered on
+ * both paths by the cancel route; only the relay+deadline case is uncovered.
+ *
  * @param activityService - The feed to write to; nothing is emitted without one.
  * @param task - The run's task, or null when the hook could not read it.
  * @param run - The run as persisted at its terminal write.

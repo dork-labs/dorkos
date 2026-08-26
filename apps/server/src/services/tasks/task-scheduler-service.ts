@@ -939,7 +939,10 @@ export class TaskSchedulerService {
         // emits its own `tasks.run_cancelled` the moment the operator asks,
         // attributed to "You"; emitting again here would double it, the second
         // time attributed to the Scheduler. A deadline or a shutdown abort has no
-        // such route emit, so it still needs this one.
+        // such route emit, so it still needs this one. NOTE: this branch is
+        // DIRECT-path only — a relay-dispatched run that hits its deadline is
+        // finalized in `packages/relay` and emits nothing, so that case reaches
+        // no activity feed today (the residual gap tracked by DOR-1580).
         if (!operatorCancelled)
           emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
       } else {
