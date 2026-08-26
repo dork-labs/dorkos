@@ -88,15 +88,24 @@ test.describe('the sidebar’s bottom slot @smoke', () => {
     await page.goto('/');
 
     // ── The card is there at all, without anybody scrolling to find it ──
+    // Both geometric reads poll for the same reason the overflow check below
+    // does: the panel's boxes shift while the boot skeleton exits, and a
+    // one-shot read can land mid-transition.
     await expect(promoCard(page)).toBeVisible();
-    expect(await isOnScreen(page, '[data-slot="promo-card-compact"]')).toBe(true);
+    await expect.poll(() => isOnScreen(page, '[data-slot="promo-card-compact"]')).toBe(true);
 
     // The list really does overflow — otherwise everything below proves nothing.
-    const overflow = await scroller(page).evaluate((el) => el.scrollHeight - el.clientHeight > 100);
-    expect(
-      overflow,
-      `seed ${CHANNEL_COUNT} channels into a ${SHORT_VIEWPORT.height}px window and the sidebar list must overflow`
-    ).toBe(true);
+    // Polled, not measured once: the bottom slot un-hides the moment the boot
+    // gate opens, but `SidebarZones` holds the skeleton through a 160ms exit
+    // under `AnimatePresence mode="wait"` — so for ~200ms the card is on screen
+    // while the scroller still holds a skeleton that is sized to fit and cannot
+    // overflow. A one-shot read in that window ejected two unrelated PRs from
+    // the merge queue on 2026-08-26.
+    await expect
+      .poll(() => scroller(page).evaluate((el) => el.scrollHeight - el.clientHeight), {
+        message: `seed ${CHANNEL_COUNT} channels into a ${SHORT_VIEWPORT.height}px window and the sidebar list must overflow`,
+      })
+      .toBeGreaterThan(100);
 
     // ── It does not move when the list does ──
     const before = await promoCard(page).boundingBox();
@@ -111,7 +120,7 @@ test.describe('the sidebar’s bottom slot @smoke', () => {
     // scroller — the arrangement this replaced — it would be gone from the
     // viewport entirely by now.
     expect(after?.y).toBe(before?.y);
-    expect(await isOnScreen(page, '[data-slot="promo-card-compact"]')).toBe(true);
+    await expect.poll(() => isOnScreen(page, '[data-slot="promo-card-compact"]')).toBe(true);
 
     // ── × takes THIS card away ──
     // Named rather than counted: the slot holds the highest-priority card that
