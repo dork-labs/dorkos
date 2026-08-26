@@ -75,6 +75,33 @@ function findPublicDir(from: string): string | null {
 /** The page's own assembly, read as text, so the order it renders in can be pinned. */
 const HOME_EXPERIENCE = readFileSync(join(import.meta.dirname, '..', 'HomeExperience.tsx'), 'utf8');
 
+/** The rail's last tile, read as text: its picture is CSS, so its picture is source. */
+const END_CARD = readFileSync(
+  join(import.meta.dirname, '..', 'tutorials', 'TutorialEndCard.tsx'),
+  'utf8'
+);
+
+
+/** Linearly interpolated alpha at `at` percent, from a sorted `[percent, alpha]` stop list. */
+function alphaAt(stops: readonly (readonly [number, number])[], at: number): number {
+  const sorted = [...stops].sort(([a], [b]) => a - b);
+  const next = sorted.findIndex(([pct]) => pct >= at);
+  if (next <= 0) return sorted[Math.max(next, 0)][1];
+  const [fromPct, fromAlpha] = sorted[next - 1];
+  const [toPct, toAlpha] = sorted[next];
+  return fromAlpha + ((at - fromPct) / (toPct - fromPct)) * (toAlpha - fromAlpha);
+}
+
+/** HSL saturation of a `rrggbb` hex, 0 (grey) to 1 (full chroma). */
+function saturationOf(hex: string): number {
+  const [r, g, b] = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) return 0;
+  const lightness = (max + min) / 2;
+  return lightness > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
+}
+
 /** Every dock tile the conversation actually puts to work. */
 const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filter(
   (id): id is DockAppId => Boolean(id)
@@ -320,15 +347,56 @@ describe('the clips rail', () => {
     }
   });
 
-  it('closes the row on a picture, cut for the frame it sits in', () => {
-    // The last tile is a photograph now, not bare type. It is a 9:16 frame
-    // like every tile beside it, so a plate cut to some other shape would be
-    // cropped to nothing at one edge and nobody would see the crop in review.
-    const { plate } = TUTORIALS.endCard;
-    expect(existsSync(join(PUBLIC_DIR ?? '', plate.src)), plate.src).toBe(true);
-    const bytes = statSync(join(PUBLIC_DIR ?? '', plate.src)).size;
-    expect(bytes, `${plate.src} is ${Math.round(bytes / 1024)}KB`).toBeLessThan(300 * 1024);
-    expect(Math.abs(plate.width / plate.height - 9 / 16)).toBeLessThan(0.02);
+  it('closes the row on a test card it draws itself, with no asset to ship', () => {
+    // The last tile is off-air colour bars, painted in CSS. Nothing about it
+    // is downloaded, which is the point: a photograph on the end of the rail
+    // read as a fifth clip, and it was also a file that could rot.
+    expect(Object.keys(TUTORIALS.endCard)).toEqual(['title', 'lede', 'label', 'href']);
+    expect(END_CARD).not.toMatch(/next\/image|\.jpe?g|\.png|\.webp/);
+  });
+
+  it('fills the whole frame with the bars, not a strip of them', () => {
+    // The operator's note: fuller. Three stacked bands — main bars,
+    // castellation, the bottom reference strip — that together cover the tile
+    // top to bottom. A ground that stops short leaves a tile that looks like
+    // it failed to load rather than one that went off the air.
+    expect(END_CARD).toMatch(/className="absolute inset-0[ "]/);
+    const bands = [...END_CARD.matchAll(/\bh-\[(\d+)%\]/g)].map(([, pct]) => Number(pct));
+    expect(bands).toHaveLength(3);
+    expect(bands.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it('keeps the bars desaturated, so the tile does not win the whole rail', () => {
+    // Full-chroma SMPTE next to this page's cream is a siren. Every tone in
+    // the two colour rows stays under half saturation, which is what makes a
+    // test card sit in the palette instead of shouting over it.
+    for (const row of [
+      END_CARD.match(/const BARS_MAIN =\s*'([^']+)'/)?.[1],
+      END_CARD.match(/const BARS_CASTELLATION =\s*'([^']+)'/)?.[1],
+    ]) {
+      expect(row, 'a colour row went missing').toBeDefined();
+      const tones = [...(row ?? '').matchAll(/#([0-9a-f]{6})/gi)].map(([, hex]) => hex);
+      expect(tones).toHaveLength(7);
+      for (const hex of tones) {
+        expect(saturationOf(hex), `#${hex} is too saturated for this page`).toBeLessThan(0.55);
+      }
+    }
+  });
+
+  it('dirties the bars with grain and keeps the words readable over them', () => {
+    // Flat CSS reads as flat CSS; a test card off a tape never does. And the
+    // brightest thing the bars can put behind three lines of type is the
+    // reference strip's white, so the scrim's floor across the bottom third is
+    // the number that keeps the label above 4.5:1.
+    expect(END_CARD).toContain('feTurbulence');
+    const stops = [...END_CARD.matchAll(/rgba\(0,0,0,(0\.\d+)\) (\d+)%/g)].map(
+      ([, alpha, at]) => [Number(at), Number(alpha)] as const
+    );
+    expect(stops.length).toBeGreaterThanOrEqual(3);
+    // The scrim runs bottom-up, and the three lines of type end about 24% of
+    // the way up the tile. Interpolated rather than read off a stop, because
+    // the stop that matters is rarely the one the text happens to sit on.
+    expect(alphaAt(stops, 24)).toBeGreaterThanOrEqual(0.85);
   });
 
   it('says more is coming without saying when', () => {

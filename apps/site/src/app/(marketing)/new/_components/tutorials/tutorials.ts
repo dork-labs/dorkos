@@ -75,19 +75,18 @@ export interface TutorialRailConfig {
     close: string;
   };
   /**
-   * The tile that closes the rail: its words, its destination, and the
-   * photograph it stands on.
+   * The tile that closes the rail: its words and its destination.
    *
-   * The picture is not optional. A rail whose last tile is bare type reads as
-   * a rail that ran out, and the whole job of this tile is to look like the
-   * next thing rather than the absence of one.
+   * It carries no picture. The tile paints itself — a full frame of off-air
+   * colour bars, drawn in CSS — so there is no asset to ship, nothing to
+   * download, and no photograph that can go stale when the rail's contents
+   * change. See `TutorialEndCard` for why bars and not a still.
    */
   endCard: {
     title: string;
     lede: string;
     label: string;
     href: string;
-    plate: TutorialPlate;
   };
   cards: readonly TutorialCardSpec[];
 }
@@ -124,21 +123,14 @@ export const TUTORIALS: TutorialRailConfig = {
     close: 'Close',
   },
   endCard: {
-    // The tapes and the manual are the sibling retro page's words, brought
-    // over whole by the operator's call. They earn the period vocabulary the
-    // rest of this rail does not use, because the tile is a photograph of a
-    // shelf of VHS cassettes: the picture is what licenses the word, and a
-    // caption that called them clips would be arguing with its own frame.
-    title: 'More tapes coming.',
-    lede: 'The manual already covers all of it.',
-    label: 'read the manual',
+    // Plain words, on purpose. The tile behind them is already the period
+    // joke — a frame of off-air colour bars — so the copy does not have to
+    // reach for tapes or manuals to carry 1999. It says the two true things
+    // in the honest order and gets out of the picture's way.
+    title: 'More on the way.',
+    lede: 'The docs already cover all of it.',
+    label: 'read the docs',
     href: '/docs',
-    plate: {
-      src: '/retro/tape-shelf.jpg',
-      alt: 'A row of blank video cassettes standing on a shelf, one lying flat with an unwritten label.',
-      width: 511,
-      height: 916,
-    },
   },
   cards: [
     {
