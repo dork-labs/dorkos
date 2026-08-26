@@ -6,7 +6,7 @@
       "slug": "agent-memory",
       "title": "Agent memory — an agent-scoped memory layer across sessions, rooms and DMs",
       "created": "2026-08-24",
-      "status": "specified",
+      "status": "implemented",
       "project": "Rooms, Channels & Threads"
     },
     {
