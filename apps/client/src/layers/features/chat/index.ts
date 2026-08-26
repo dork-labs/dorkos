@@ -13,7 +13,7 @@
  */
 export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
-export { buildListRows } from './lib/build-list-rows';
+export { buildListRows, messageRowKey } from './lib/build-list-rows';
 export type { ListRow } from './lib/build-list-rows';
 export { buildFileEntries } from './lib/build-file-entries';
 export { resolveTransportRetryText } from './lib/resolve-retry-text';

@@ -294,6 +294,47 @@ describe('SessionTranscript rows', () => {
     expect(mockScrollToIndex).not.toHaveBeenCalled();
   });
 
+  it('opens on the row a search hit asked for, and not at the end', async () => {
+    // The wiring DOR-1579 rests on: `?message=` becomes a row getter in
+    // `SessionPage` and has to reach the timeline's landing through this
+    // component. Red if the prop is dropped anywhere on the way — the
+    // conversation then opens at its newest message, which is exactly what a
+    // link that never worked looks like.
+    //
+    // Rows: day-divider, message 1, message 2 — so the asked-for row is index 2,
+    // and CENTRED rather than aligned to the top, because a message somebody
+    // searched for should be read with what was said around it.
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(
+      <SessionTranscript
+        sessionId="landing-session"
+        messages={messages}
+        landOnRow={() => 'msg-2'}
+      />
+    );
+
+    await waitFor(() => expect(mockScrollToIndex).toHaveBeenCalledWith(2, { align: 'center' }));
+    expect(mockScrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('opens at the newest message when the asked-for row is not in this transcript', async () => {
+    // The paired control, and the degrade this whole feature is built around: an
+    // id that names no row here — a stale link, a store that renumbered — leaves
+    // the ordinary landing to decide. Without this, a landing that silently did
+    // nothing at all would pass the case above.
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(
+      <SessionTranscript
+        sessionId="landing-session"
+        messages={messages}
+        landOnRow={() => 'msg-nobody-has'}
+      />
+    );
+
+    await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
+    expect(mockScrollToIndex).not.toHaveBeenCalled();
+  });
+
   it('anchors once per session, not again as messages stream in', async () => {
     const messages = [messageOnDay('1', 0, 'A')];
     const { rerender } = render(<SessionTranscript sessionId="test-session" messages={messages} />);

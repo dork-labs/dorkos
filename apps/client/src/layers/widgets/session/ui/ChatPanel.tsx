@@ -97,6 +97,12 @@ interface ChatPanelProps {
    * one.
    */
   onLaunchConsumed?: () => void;
+  /**
+   * The row this conversation was ASKED to open on — a message-search hit,
+   * addressed in the URL (DOR-1579). Passed straight to the transcript's
+   * landing, which reads it once; see `useMessageLanding`.
+   */
+  landOnRow?: () => string | undefined;
 }
 
 /** Top-level chat view composing message list, input, task panel, and celebration effects. */
@@ -108,6 +114,7 @@ export function ChatPanel({
   launchSend = false,
   launchSeed,
   onLaunchConsumed,
+  landOnRow,
 }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
@@ -495,6 +502,7 @@ export function ChatPanel({
           onRetry={handleRetry}
           inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
           runtimeLabel={runtimeAuthLabel}
+          {...(landOnRow === undefined ? {} : { landOnRow })}
         />
 
         <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />

@@ -127,12 +127,21 @@ const appShellRoute = createRoute({
  * the id of the session this fresh one continues from. A lightweight client-side
  * link recorded in the URL only; there is no DB column.
  *
+ * `message` is the conversation's answer to `entry` on a room (DOR-1579): the
+ * id of the one message the transcript should open on, which a message-search
+ * hit puts there. It is the store's own id for that message — a JSONL record
+ * `uuid`, an OpenCode message id — never a position, because the index and the
+ * session view count messages differently and only an id survives that.
+ * Unknown or stale, it lands nowhere and the conversation opens as it always
+ * does, so it is a plain optional string with nothing to `.catch()`.
+ *
  * @internal Exported for testing only.
  */
 export const sessionSearchSchema = mergeDialogSearch(
   z.object({
     session: z.string().optional(),
     dir: z.string().optional(),
+    message: z.string().optional(),
     runtime: z.string().optional(),
     prompt: z.string().optional(),
     send: z.literal('1').optional().catch(undefined),

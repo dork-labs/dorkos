@@ -308,6 +308,26 @@ describe('what the box does when a hit is chosen', () => {
     });
   });
 
+  it('lands on the message a conversation hit names when it carries an id', async () => {
+    // The end of the wire for DOR-1579: an id the server returned has to reach
+    // the route as `message`, or nothing downstream of it can work. Red if the
+    // dialog drops it, or if the field never reaches the transport's response
+    // type.
+    vi.mocked(mockTransport.search).mockResolvedValue({
+      results: [{ ...sessionHit, messageId: 'uuid-9' }],
+      warnings: [],
+    });
+    open('port');
+    await pastDebounce();
+
+    fireEvent.click(await screen.findByRole('option'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'sess-9', dir: '/work/api', message: 'uuid-9' },
+    });
+  });
+
   it('opens a conversation whose folder is gone, and says the folder is gone', async () => {
     // §6.4's decided behaviour. The transcript is on disk and "what did we
     // decide in that worktree" is precisely the question this feature exists to
