@@ -36,6 +36,13 @@ export function FilmSection() {
       style={{ backgroundColor: ROOM.base }}
       aria-label="The film"
     >
+      {/*
+        The plate is this page's largest paint, and a CSS background is found
+        only after the stylesheet has been parsed and the element matched — one
+        round trip later than everything else on the screen. React hoists this
+        into the document head, so the 40KB starts arriving with the HTML.
+      */}
+      <link rel="preload" as="image" href={ROOM_PLATE} fetchPriority="high" />
       <div
         aria-hidden="true"
         className="absolute inset-0 bg-cover bg-center"

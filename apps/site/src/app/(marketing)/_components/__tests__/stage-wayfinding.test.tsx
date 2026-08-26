@@ -3,6 +3,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, type RenderResult } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
+import { BeatHeadline } from '../BeatHeadline';
 import { BEATS, LOCALHOST_CAPTION } from '../copy';
 import { StageSection } from '../stage/StageSection';
 import { nextFrame, scrollToEndOfStage, stubBrowser } from './stage-harness';
@@ -51,6 +53,22 @@ function currentStep(container: HTMLElement): string | null {
   return container.querySelector('[aria-current="step"]')?.textContent ?? null;
 }
 
+/**
+ * The headline the stage is actually showing.
+ *
+ * All three are in the document at once — that is what puts every beat's words
+ * in the served HTML — so "the page contains this title" says nothing about
+ * which beat is on screen. The two that are not current are hidden from a
+ * screen reader, and that is what this reads.
+ */
+function headlineOnScreen(container: HTMLElement): string | null {
+  const shown = [...container.querySelectorAll('h2')].filter(
+    (heading) => heading.closest('[aria-hidden]')?.getAttribute('aria-hidden') !== 'true'
+  );
+  expect(shown, 'the stage is showing more than one headline').toHaveLength(1);
+  return shown[0].textContent;
+}
+
 beforeEach(() => {
   stubBrowser();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -69,7 +87,7 @@ describe('the stage says where you are', () => {
     const { container } = mount();
 
     expect(currentStep(container)).toContain('Step 1 of 3');
-    expect(container.textContent).toContain(BEATS.talk.title);
+    expect(headlineOnScreen(container)).toBe(BEATS.talk.title);
   });
 
   it('moves the lit step as the scroll moves', async () => {
@@ -101,6 +119,29 @@ describe('the stage says where you are', () => {
   });
 });
 
+describe('every beat reaches the served HTML', () => {
+  it('renders all three headlines on the server, not only the first', () => {
+    // The stage is a scroll, and a scroll is something only a browser does.
+    // Everything that reads a page without scrolling it — a search engine, a
+    // model, a preview card, a reader with scripting off — sees exactly what
+    // this string contains. Mounting one beat at a time left two thirds of the
+    // page's argument out of it, "Your files stay home" included.
+    const html = renderToString(<BeatHeadline beat="talk" />);
+
+    for (const copy of Object.values(BEATS)) {
+      expect(html, `"${copy.title}" is not in the served HTML`).toContain(copy.title);
+      expect(html, `"${copy.lede}" is not in the served HTML`).toContain(copy.lede);
+    }
+  });
+
+  it('still shows only the beat the scroll is on', () => {
+    // The other two are painted at zero and hidden, which is what keeps the
+    // page looking like one headline at a time rather than three stacked.
+    const { container } = render(<BeatHeadline beat="yours" />);
+    expect(headlineOnScreen(container)).toBe(BEATS.yours.title);
+  });
+});
+
 describe('the stage still tells its story under the rail', () => {
   it('shows the agents asking and the person approving', async () => {
     // The rail is wayfinding, not content. Losing a line of the conversation
@@ -123,7 +164,7 @@ describe('the stage still tells its story under the rail', () => {
     await settle();
     playOut();
 
-    expect(container.textContent).toContain(BEATS.computer.title);
+    expect(headlineOnScreen(container)).toBe(BEATS.computer.title);
     expect(container.textContent).toContain(LOCALHOST_CAPTION);
   });
 
