@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { siteConfig } from '@/config/site';
 import { metadata as layoutMetadata } from '../layout';
 import { metadata } from '../page';
 
@@ -37,6 +38,17 @@ describe('the home page’s metadata', () => {
         alt: 'DorkOS: one place for every AI agent you run',
       },
     ]);
+  });
+
+  it('says which site the shared card came from', () => {
+    // `og:site_name` and `og:locale` are declared once, in the root layout,
+    // and an `openGraph` block anywhere below replaces that block whole rather
+    // than adding to it. So the page that redeclares it has to restate them,
+    // or the site's most-shared URL is the one card that does not say what
+    // site it belongs to.
+    const og = metadata.openGraph;
+    expect(og?.siteName).toBe(siteConfig.name);
+    expect(og?.locale).toBe('en_US');
   });
 
   it('mirrors the long description onto the Twitter card', () => {

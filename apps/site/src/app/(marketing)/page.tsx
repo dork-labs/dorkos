@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { siteConfig } from '@/config/site';
 import { FOOTER_SOCIAL_LINKS, MarketingFooter } from '@/layers/features/marketing';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
-import { ExtensionNoiseGuard, HomeExperience, HomeNav } from './_components';
+import { HomeExperience, HomeNav } from './_components';
 
 const TITLE = 'DorkOS — All your agents. One place.';
 const DESCRIPTION =
@@ -14,10 +14,12 @@ const DESCRIPTION =
  * `title.absolute` skips the root layout's `%s | DorkOS` template — the title
  * already says DorkOS, and letting the template run appends it a second time.
  *
- * `openGraph` is re-declared in full, image list included. Next shallow-merges
- * metadata: naming the key at all replaces the `(marketing)` layout's block
- * outright, so an `openGraph` that omits `images` would ship the home page
- * with no card picture. Same reason `alternates.types` repeats the RSS feed —
+ * `openGraph` is re-declared in full: image list, site name and locale
+ * included. Next shallow-merges metadata, so naming the key at all replaces
+ * the root layout's block outright — an `openGraph` that omits `images` ships
+ * the home page with no card picture, and one that omits `siteName` ships the
+ * site's most-shared URL as the only page whose card does not say what site it
+ * is from. Same reason `alternates.types` repeats the RSS feed —
  * setting `alternates` here replaces the layout's, and the feed link would
  * vanish from the one page most likely to be subscribed from.
  */
@@ -30,6 +32,8 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: siteConfig.url,
     type: 'website',
+    siteName: siteConfig.name,
+    locale: 'en_US',
     images: [
       {
         url: '/opengraph-image',
@@ -71,7 +75,6 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="bg-cream-primary text-charcoal selection:bg-brand-orange selection:text-cream-white min-h-screen overflow-x-clip antialiased [overflow-anchor:none]">
-      <ExtensionNoiseGuard />
       <main>
         <HomeExperience />
       </main>

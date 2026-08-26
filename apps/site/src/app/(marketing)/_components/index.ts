@@ -21,7 +21,6 @@
 
 // The page
 export { HomeExperience } from './HomeExperience';
-export { ExtensionNoiseGuard } from './ExtensionNoiseGuard';
 export { HomeNav } from './nav';
 export { INSTALL_COMMAND, MACBOOK } from './theme';
 

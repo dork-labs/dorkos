@@ -773,14 +773,3 @@ html[data-presentation-mode] header {
   background: var(--brand-orange);
   transition: width 0.4s ease;
 }
-
-/* Cursor blink for terminal art (used in VillainSection -- included here for reuse) */
-@keyframes tab-pulse-urgent {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 0.9;
-  }
-}

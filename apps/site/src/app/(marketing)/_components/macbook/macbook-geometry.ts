@@ -90,7 +90,7 @@ export function projectDepth(depth: number, tiltDegrees: number, perspective: nu
 export const DECK_PROJECTED = projectDepth(DECK_DEPTH, DECK_TILT, PERSPECTIVE);
 
 /** Everything the machine paints below the screen: chin, hinge, deck. */
-export const MACHINE_BELOW = BEZEL.bottom + HINGE + DECK_PROJECTED;
+const MACHINE_BELOW = BEZEL.bottom + HINGE + DECK_PROJECTED;
 
 /** The machine's whole painted height, as a multiple of the screen's width. */
 export const MACHINE_HEIGHT = BEZEL.top + SCREEN_RATIO + MACHINE_BELOW;
@@ -145,9 +145,6 @@ export const KEY_ROWS: readonly KeyRow[] = [
   // the modifier row, the space bar, and the arrows
   { height: 1, keys: [1, 1, 1, 1.25, 5, 1.25, 1], arrows: true },
 ];
-
-/** Total key-unit height of the keyboard, gaps excluded. */
-export const KEY_ROW_UNITS = KEY_ROWS.reduce((total, row) => total + row.height, 0);
 
 /**
  * Where the deck's parts sit, as fractions of the deck's own box before it is

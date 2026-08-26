@@ -35,8 +35,6 @@ export const metadata: Metadata = {
   twitter: twitterFromOpenGraph({ title: storyTitle, description: storyDescription }),
 };
 
-// Reuse the same social links defined on the homepage
-
 /**
  * The DorkOS origin story -- Dorian's personal arc from LifeOS to multi-agent coordination.
  *

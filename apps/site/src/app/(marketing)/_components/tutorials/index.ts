@@ -12,9 +12,4 @@
 
 export { TutorialsSection } from './TutorialsSection';
 export { TUTORIALS } from './tutorials';
-export type {
-  TutorialRailConfig,
-  TutorialCardSpec,
-  TutorialClip,
-  TutorialPlate,
-} from './tutorials';
+export type { TutorialRailConfig } from './tutorials';
