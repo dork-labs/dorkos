@@ -130,6 +130,19 @@ export const MEMORY_GATED_CAPABILITIES = ['search', 'consolidate'] as const;
 /** One capability that gates a method. See {@link MEMORY_GATED_CAPABILITIES}. */
 export type MemoryGatedCapability = (typeof MEMORY_GATED_CAPABILITIES)[number];
 
+/**
+ * The id of the memory backend DorkOS ships with — this machine's own
+ * `MEMORY.md` files, implemented in `@dorkos/memory`.
+ *
+ * It lives on the PORT rather than in the engine because three unrelated places
+ * need to agree on it and only one of them may import the engine: the
+ * `memory.provider` config default (`config-schema.ts`), the server's registry
+ * fallback, and the engine itself. A second spelling of `'builtin'` anywhere
+ * would be a provider nobody registered, and the registry would quietly fall
+ * back to the one that does exist while the config file said otherwise.
+ */
+export const BUILTIN_MEMORY_PROVIDER_ID = 'builtin';
+
 /** How a provider identifies itself and what it can do. */
 export const MemoryProviderInfoSchema = z.object({
   /** Stable provider id, e.g. `'builtin'`. The value the `memory.provider` config key names. */

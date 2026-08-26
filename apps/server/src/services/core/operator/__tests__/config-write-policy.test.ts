@@ -83,6 +83,11 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'mcp.rateLimit.enabled',
       'mcp.rateLimit.maxPerWindow',
       'mcp.rateLimit.windowSecs',
+      // Which backend holds what every agent on this machine remembers (spec
+      // `agent-memory`, D7). One write moves every agent's notes somewhere the
+      // operator did not choose, and memory is the one store an agent writes to
+      // itself.
+      'memory.provider',
       'mesh.scanRoots',
       // Every way the operator finds out something is waiting on them. An agent
       // able to write these could silence its own alarm and then park on a
