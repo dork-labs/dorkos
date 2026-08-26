@@ -131,8 +131,8 @@ export type CreateScheduledTaskOutcome = CreateScheduledTaskSuccess | CreateSche
  * disk for a person to find with nothing to read.
  */
 const MISSING_REASON_MESSAGE =
-  'A task that has to be approved needs a reason. Say why this schedule should exist, in your ' +
-  'own words — whoever approves it has only that to go on.';
+  'A scheduled task that has to be approved needs a reason. Say why this schedule should exist, ' +
+  'in your own words — whoever approves it has only that to go on.';
 
 /** What a caller is told when Mesh cannot say where an agent's files live. */
 const NO_MESH_MESSAGE = 'Cannot resolve agent — mesh not available';
@@ -255,7 +255,7 @@ export async function createScheduledTask(
     return {
       ok: false,
       status: 409,
-      error: `Task "${slug}" already exists in target directory`,
+      error: `Scheduled task "${slug}" already exists in target directory`,
     };
   } catch {
     // Nothing there — good.

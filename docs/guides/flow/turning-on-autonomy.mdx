@@ -93,12 +93,16 @@ This is real today, but it ships turned off, and it needs the DorkOS server runn
 <Steps>
   <Step>**Start the DorkOS server.** The scheduled runs only fire while the server is up.</Step>
   <Step>
-    **Register the project's DorkOS agent.** This is the identity the scheduled run works as.
+    **Register the project's DorkOS agent.** DorkOS watches that project's skills folder, which is
+    where it finds the tick. The agent is also the identity the scheduled run works as.
   </Step>
   <Step>
     **Turn on the flow-drain schedule.** It arrives with the plugin and waits for you: open
-    **Schedules**, read what it does, and approve it. Nothing runs on a timer until you do. There's
-    no build step — the change takes effect right away.
+    **Schedules**, read what it does, and approve it. Nothing runs on a timer until you do, and
+    approving is the only step: it arms the schedule and switches it on together. There's no build
+    step, and the change takes effect right away. (flow 0.6.0 and later ships its timing in a
+    `schedule:` block. An older install lists `cron` and `enabled` flat at the top instead, which
+    still works, but update the plugin from the Marketplace to see what this page describes.)
   </Step>
   <Step>
     **Tune how often it runs and how much it takes on.** See [The
@@ -159,12 +163,12 @@ The watcher is meant for repos that don't run the DorkOS server: a script you'd 
 
 Good news: you don't have to think hard about this one.
 
-| If you want to...                                                      | Use...                                      |
-| ---------------------------------------------------------------------- | ------------------------------------------- |
-| Put the loop to work right now and watch it, no setup                  | **A, `/flow auto`**                         |
-| Do a single item, then stop                                            | **A, bare `/flow` then Continue the queue** |
-| Keep making progress while your terminal is closed, and you run DorkOS | **B, the Pulse seat** (enable `flow-drain`) |
-| Run it on a repo with no DorkOS server                                 | **C, the watcher** (once it ships)          |
+| If you want to...                                                      | Use...                                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Put the loop to work right now and watch it, no setup                  | **A, `/flow auto`**                                          |
+| Do a single item, then stop                                            | **A, bare `/flow` then Continue the queue**                  |
+| Keep making progress while your terminal is closed, and you run DorkOS | **B, the Pulse seat** (enable `flow-drain`, then approve it) |
+| Run it on a repo with no DorkOS server                                 | **C, the watcher** (once it ships)                           |
 
 Short version: attended and no server means A. Unattended and you run DorkOS means B. No server and no DorkOS repo means C, once it's built. A and B stop at the same review gate; the only difference is who keeps the loop ticking.
 

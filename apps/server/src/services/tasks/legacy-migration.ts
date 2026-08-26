@@ -41,16 +41,22 @@
  * writes a grant for every already-live row from the row's own content, so it
  * has to see the final state of the migration, not the middle of it.
  *
- * ## The one thing it does not cover
+ * ## When it runs
  *
- * It sweeps the projects of the agents registered AT BOOT. An agent that
- * registers later brings its own `.dork/tasks/` with it, and this pass has
- * already run — so that project migrates on the NEXT start instead. Left as it
- * is rather than hooked into the agent-created seam: the schedules in a
- * just-registered project were not running a moment ago either, the outcome is
- * a delay rather than a loss, and a migration that can fire at arbitrary moments
- * during a process's life is a much larger thing to reason about than one that
- * runs before anything else does.
+ * Twice, from two seams, and the second one is not optional.
+ *
+ * At BOOT it sweeps the projects of every agent registered at that moment. An
+ * agent that registers LATER brings its own `.dork/tasks/` with it, and that
+ * directory is no longer watched — so `index.ts` calls this again from the
+ * `attachAgentTaskRoots` hook, scoped to the one arriving agent, before its
+ * roots go under discovery. Without that call a just-registered project's
+ * schedules would be neither migrated nor discovered until the next restart,
+ * which is a regression against the build before this wave, where the legacy
+ * root was attached on registration and its schedules worked immediately.
+ *
+ * Safe to call from a hook for the reasons the whole module is safe to re-run:
+ * it is idempotent, it never throws, and scoped to one agent it reads two
+ * directories and returns.
  *
  * ## Crash safety
  *

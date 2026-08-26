@@ -100,8 +100,8 @@ export function PreferencesTab() {
           />
 
           <SwitchSettingRow
-            label="Task celebrations"
-            description="Show animations when tasks complete"
+            label="To-do celebrations"
+            description="Show animations when to-dos complete"
             checked={showTaskCelebrations}
             onCheckedChange={setShowTaskCelebrations}
           />
@@ -112,8 +112,8 @@ export function PreferencesTab() {
               rather than one switch here and another in a session's popover. */}
 
           <SwitchSettingRow
-            label="Tasks run notifications"
-            description="Show a toast when a scheduled Tasks run completes"
+            label="Scheduled run notifications"
+            description="Show a toast when a scheduled task finishes"
             checked={enableTasksNotifications}
             onCheckedChange={setEnableTasksNotifications}
           />

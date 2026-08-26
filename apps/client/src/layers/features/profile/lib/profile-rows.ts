@@ -300,7 +300,7 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     rows.push({
       id: 'tasks',
       kind: 'nav',
-      label: 'Tasks',
+      label: 'Schedules',
       value: countValue(facts?.tasks?.count, 'scheduled', 'scheduled'),
       meta: nextWords(facts?.tasks?.nextRunAt ?? null),
       page: 'tasks',

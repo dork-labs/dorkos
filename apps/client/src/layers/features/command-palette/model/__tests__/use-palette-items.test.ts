@@ -51,7 +51,7 @@ const mockUseAppStore = vi.fn();
 const DEFAULT_PALETTE_CONTRIBUTIONS: CommandPaletteContribution[] = [
   {
     id: 'tasks',
-    label: 'Tasks Scheduler',
+    label: 'Scheduled tasks',
     icon: 'Clock',
     action: 'openTasks',
     category: 'feature',

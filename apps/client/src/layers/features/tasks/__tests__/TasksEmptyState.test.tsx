@@ -60,6 +60,6 @@ describe('TasksEmptyState', () => {
       wrapper: Wrapper,
     });
     expect(screen.getByText('No schedules yet.')).toBeTruthy();
-    expect(screen.getByText(/Automate your workflows/i)).toBeTruthy();
+    expect(screen.getByText(/Put a skill on a timer/i)).toBeTruthy();
   });
 });

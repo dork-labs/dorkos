@@ -114,14 +114,14 @@ Relay is the messaging layer that lets agents reach you on Telegram, notify each
   }}
 />
 
-### Tasks Configuration
+### Scheduled Tasks Configuration
 
-Tasks runs agent jobs on a schedule (like "every night at 2am"), on their own, without you keeping a terminal open. See the [Task Scheduler guide](/docs/guides/task-scheduler) for setup details.
+A scheduled task runs an agent job on a timer (like "every night at 2am"), on its own, without you keeping a terminal open. See the [Scheduled tasks guide](/docs/guides/task-scheduler) for setup details.
 
 <TypeTable
   type={{
     DORKOS_TASKS_ENABLED: {
-      description: 'Enable the Tasks scheduler for autonomous cron-based agent execution.',
+      description: 'Let scheduled tasks fire on their timers.',
       type: 'boolean',
       default: 'true',
     },

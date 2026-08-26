@@ -23,7 +23,7 @@ interface SchedulerSettingsProps {
 export function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProps) {
   return (
     <>
-      <SettingRow label="Concurrent runs" description="Maximum parallel task runs">
+      <SettingRow label="Concurrent runs" description="Scheduled runs at once">
         <Input
           type="number"
           min={1}

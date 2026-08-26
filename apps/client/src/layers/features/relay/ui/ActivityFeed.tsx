@@ -164,7 +164,7 @@ export function ActivityFeed({
             <SelectContent>
               <SelectItem value="all">All sources</SelectItem>
               <SelectItem value="chat">Chat messages</SelectItem>
-              <SelectItem value="tasks">Tasks jobs</SelectItem>
+              <SelectItem value="tasks">Scheduled runs</SelectItem>
               <SelectItem value="system">System</SelectItem>
             </SelectContent>
           </Select>

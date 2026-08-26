@@ -94,8 +94,8 @@ export function TasksPanel() {
     return (
       <FeatureDisabledState
         icon={icons.tasks}
-        name="Tasks"
-        description="Tasks runs AI agent tasks on a schedule. Start DorkOS with the --tasks flag to enable it."
+        name="Scheduled tasks"
+        description="Scheduled tasks run your agents on a timer. Start DorkOS with the --tasks flag to turn them on."
         command="dorkos --tasks"
       />
     );

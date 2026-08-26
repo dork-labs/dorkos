@@ -370,6 +370,23 @@ export const TASK_CANCEL_SUBJECT_PREFIX = 'relay.control.task-cancel.';
  */
 export const TASK_SCHEDULER_PRINCIPAL = 'relay.system.tasks.scheduler';
 
+/** Every relay subject the scheduler publishes under. */
+export const TASK_SUBJECT_PREFIX = 'relay.system.tasks.';
+
+/**
+ * What a person is shown in place of a `relay.system.tasks.*` subject.
+ *
+ * Lives here because TWO resolvers render it and they must never disagree: the
+ * server's `subject-resolver.ts` (activity rows, trace views) and the client's
+ * `resolve-label.ts` (the relay feed, which resolves locally to avoid a server
+ * round-trip). They sat in separate files saying "Tasks Scheduler" apiece, and
+ * the DOR-1490 rename found exactly the drift that arrangement invites: one
+ * was renamed, the other was not, and the same object had two names on two
+ * screens. A shared constant is the guard — there is no second copy left to
+ * fall out of step.
+ */
+export const TASK_SUBJECT_LABEL = 'Scheduled tasks';
+
 export const TaskCancelPayloadSchema = z
   .object({
     type: z.literal('task_cancel'),

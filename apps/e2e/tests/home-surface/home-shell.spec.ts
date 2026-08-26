@@ -74,9 +74,9 @@ test.describe('Home surface — the shell @smoke', () => {
 
     // Move to another tab and back with the browser's own history, which is what
     // a person does. The whole address comes back, filter included.
-    await homeSurface.tab('Scheduled').click();
+    await homeSurface.tab('Schedules').click();
     await expect(page).toHaveURL(/\/tasks(\?|$)/);
-    await expect(homeSurface.activeTab).toHaveText('Scheduled');
+    await expect(homeSurface.activeTab).toHaveText('Schedules');
 
     await page.goBack();
     await expect(page).toHaveURL(/\/activity\?.*categories=agent/);
@@ -101,7 +101,7 @@ test.describe('Home surface — the shell @smoke', () => {
 
     // The three that moved into the tab bar are gone from the sidebar entirely —
     // not merely renamed or reordered.
-    for (const gone of ['Activity', 'Scheduled', 'Tasks', 'Workspaces', 'Dashboard']) {
+    for (const gone of ['Activity', 'Schedules', 'Scheduled', 'Tasks', 'Workspaces', 'Dashboard']) {
       await expect(homeSurface.sidebarNav.getByRole('button', { name: gone })).toHaveCount(0);
     }
   });

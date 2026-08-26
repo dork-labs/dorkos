@@ -1,7 +1,7 @@
 import { test, expect } from '../../fixtures';
 
 /**
- * The Tasks Scheduler dialog.
+ * The Scheduled tasks dialog.
  *
  * Two things about this spec used to be untrue of the product. It assumed a
  * schedule called `test` already existed — it never seeded one, so the dialog's
@@ -22,7 +22,7 @@ test.describe('Tasks — Scheduler Dialog @smoke', () => {
     await basePage.waitForAppReady();
   });
 
-  test('opens and closes the Tasks Scheduler dialog', async ({ tasksPage }) => {
+  test('opens and closes the Scheduled tasks dialog', async ({ tasksPage }) => {
     await tasksPage.open();
     await expect(tasksPage.heading).toBeVisible();
 

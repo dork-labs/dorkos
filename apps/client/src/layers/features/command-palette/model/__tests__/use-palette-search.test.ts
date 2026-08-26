@@ -47,10 +47,10 @@ const mockItems: SearchableItem[] = [
   },
   {
     id: 'feature-1',
-    name: 'Tasks Scheduler',
+    name: 'Scheduled tasks',
     type: 'feature',
     ...UNRANKED,
-    data: { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
+    data: { id: 'tasks', label: 'Scheduled tasks', icon: 'Clock', action: 'openTasks' },
   },
   {
     id: 'cmd-1',

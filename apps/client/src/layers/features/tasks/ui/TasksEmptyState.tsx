@@ -21,7 +21,7 @@ export function TasksEmptyState({ onCreateWithPreset, onCreateBlank }: TasksEmpt
     <div className="flex flex-col items-center justify-center px-6 py-8 md:py-12">
       <h3 className="mb-2 text-lg font-medium">No schedules yet.</h3>
       <p className="text-muted-foreground mb-6 max-w-sm text-center text-sm">
-        Automate your workflows with Tasks.
+        Put a skill on a timer and it runs without you.
       </p>
 
       <div className="w-full max-w-lg">

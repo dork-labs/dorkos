@@ -222,7 +222,7 @@ describe('runTaskCreate — naming an unattended level', () => {
     const said = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
     expect(said.some((line) => line.includes('full power'))).toBe(false);
     // The success line is still printed — the advisory is additive.
-    expect(said.some((line) => line.includes('Created task'))).toBe(true);
+    expect(said.some((line) => line.includes('Created scheduled task'))).toBe(true);
   });
 
   it('reads the judgement off the runtime, not off the mode id', async () => {

@@ -20,7 +20,7 @@ export function SchedulesDialog({ onClose }: PromoDialogProps) {
         </div>
         <div>
           <h3 className="text-sm font-medium">Agents that work on a schedule</h3>
-          <p className="text-muted-foreground text-xs">Schedule recurring tasks with Tasks</p>
+          <p className="text-muted-foreground text-xs">Put any skill on a timer</p>
         </div>
       </div>
 

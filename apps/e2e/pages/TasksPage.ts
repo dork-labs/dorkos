@@ -1,7 +1,7 @@
 import type { Page, Locator } from '@playwright/test';
 import { openFromCommandPalette } from './command-palette';
 
-/** Page Object Model for the Tasks Scheduler dialog. */
+/** Page Object Model for the Scheduled tasks dialog. */
 export class TasksPage {
   readonly page: Page;
   readonly dialog: Locator;
@@ -10,7 +10,7 @@ export class TasksPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.dialog = page.getByRole('dialog', { name: /tasks scheduler/i });
+    this.dialog = page.getByRole('dialog', { name: /scheduled tasks/i });
     // Two different buttons open the same blank form, and which one is on
     // screen depends on whether any schedule exists: the populated panel heads
     // its list with "New Schedule", the empty state offers "New custom
@@ -21,9 +21,9 @@ export class TasksPage {
     this.closeButton = this.dialog.getByRole('button', { name: /close/i });
   }
 
-  /** Open the Tasks Scheduler from the command palette. */
+  /** Open the Scheduled tasks dialog from the command palette. */
   async open() {
-    await openFromCommandPalette(this.page, 'Tasks Scheduler');
+    await openFromCommandPalette(this.page, 'Scheduled tasks');
     await this.dialog.waitFor({ state: 'visible' });
   }
 
@@ -32,9 +32,9 @@ export class TasksPage {
     await this.dialog.waitFor({ state: 'hidden' });
   }
 
-  /** Get the heading of the Tasks dialog. */
+  /** Get the heading of the Scheduled tasks dialog. */
   get heading() {
-    return this.dialog.getByRole('heading', { name: /tasks scheduler/i });
+    return this.dialog.getByRole('heading', { name: /scheduled tasks/i });
   }
 
   // No accessor for the empty state or the schedule-list heading. Both describe

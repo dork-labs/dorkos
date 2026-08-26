@@ -16,7 +16,7 @@ export const PALETTE_NEW_ACTION_IDS: readonly string[] = ['new-session', 'create
 export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   {
     id: 'tasks',
-    label: 'Tasks Scheduler',
+    label: 'Scheduled tasks',
     icon: 'Clock',
     action: 'openTasks',
     category: 'feature',

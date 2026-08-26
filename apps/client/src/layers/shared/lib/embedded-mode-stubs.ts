@@ -176,19 +176,19 @@ export const tasksStubs = {
   },
 
   async createTask(_opts: CreateTaskInput): Promise<Task> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async updateTask(_id: string, _opts: UpdateTaskRequest): Promise<Task> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async deleteTask(_id: string): Promise<{ success: boolean }> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async triggerTask(_id: string): Promise<{ runId: string }> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async listTaskRuns(_opts?: Partial<ListTaskRunsQuery>): Promise<TaskRun[]> {
@@ -196,11 +196,11 @@ export const tasksStubs = {
   },
 
   async getTaskRun(_id: string): Promise<TaskRun> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async cancelTaskRun(_id: string): Promise<CancelTaskRunResponse> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async getTaskTemplates(): Promise<TaskTemplate[]> {

@@ -96,11 +96,15 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
           PageContainer, TasksDialog via DialogContent's own padding — so the
           bar keeps only its vertical rhythm and nothing double-pads. */}
       <FilterBar state={filterState} className="px-0">
-        <FilterBar.Search placeholder="Filter tasks..." />
+        <FilterBar.Search placeholder="Filter schedules..." />
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ agent: agentOptions }} />
         <FilterBar.Sort options={taskSortOptions} defaultField={TASK_DEFAULT_SORT_FIELD} />
-        <FilterBar.ResultCount count={filteredTasks.length} total={baseTasks.length} noun="task" />
+        <FilterBar.ResultCount
+          count={filteredTasks.length}
+          total={baseTasks.length}
+          noun="schedule"
+        />
         <FilterBar.ActiveFilters />
       </FilterBar>
       <ScrollArea className="min-h-0 flex-1" data-testid={TOUR_ANCHORS.tasksList}>
@@ -115,8 +119,8 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
               <SearchX className="text-muted-foreground/50 size-10" />
               <p className="text-muted-foreground text-sm">
                 {filterState.describeActive()
-                  ? `No tasks match ${filterState.describeActive()}`
-                  : 'No tasks match your filters'}
+                  ? `No schedules match ${filterState.describeActive()}`
+                  : 'No schedules match your filters'}
               </p>
               <Button variant="outline" size="sm" onClick={filterState.clearAll}>
                 Clear filters

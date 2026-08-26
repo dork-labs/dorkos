@@ -28,6 +28,19 @@ const TOOL_PREFIX = 'mcp__dorkos__';
  * and is refused (DOR-1337). The subject format is therefore interpolated from
  * {@link AGENT_SUBJECT_FORMAT} rather than typed out, and
  * `__tests__/ContextTab.test.tsx` pins the rest against that constant.
+ *
+ * **Two known divergences, both deliberate, neither worth "fixing" blind.**
+ * This preview is ABRIDGED — the server block also lists the two ephemeral
+ * `relay.inbox.query/dispatch` subjects — and the two texts pad their columns to
+ * different widths, so a diff of the two files never lines up and a
+ * character-equality test between them would be red on arrival. What must match
+ * is the FACTS, which is what the test above pins.
+ *
+ * That is also why the `Tasks scheduler events` line here was left alone by the
+ * DOR-1490 rename while the rest of the product moved to "scheduled tasks":
+ * these words are model-facing prompt text, not UI copy, and the two copies have
+ * to say the same thing. Renaming one side only is precisely the drift this
+ * comment exists to warn about. Rename both, in one change, or neither.
  */
 const RELAY_PREVIEW = `DorkOS Relay is a pub/sub message bus for inter-agent communication.
 

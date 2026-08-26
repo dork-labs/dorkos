@@ -69,7 +69,8 @@ export type TaskProvenanceResolver = () => {
  */
 export const PARKED_SCHEDULE_NOTE =
   'This schedule will NOT run until the person approves it. Tell them so in your reply — ' +
-  'name the task and say it is waiting on them. Do not end the turn as if the work were done.';
+  'name the scheduled task and say it is waiting on them. Do not end the turn as if the work ' +
+  'were done.';
 
 /**
  * The extra sentence for an agent that is in a live DorkOS session, where it can
@@ -109,10 +110,10 @@ const DURATION_ARG = z.string().min(1).regex(TASK_DURATION_PATTERN).optional();
  * not belong — so the caller says, or nothing is created.
  */
 export const TARGET_DESCRIPTION =
-  'Where this task lives. Give your own agent id to file it under yourself — it then runs in ' +
-  'your folder, with your files — or "global" for a task that belongs to no agent and runs in ' +
-  'the DorkOS data folder. Required: DorkOS will not guess, because a task filed in the wrong ' +
-  'place runs against the wrong files.';
+  'Where this scheduled task lives. Give your own agent id to file it under yourself — it then ' +
+  'runs in your folder, with your files — or "global" for a scheduled task that belongs to no ' +
+  'agent and runs in the DorkOS data folder. Required: DorkOS will not guess, because a scheduled ' +
+  'task filed in the wrong place runs against the wrong files.';
 
 /**
  * The description both tools give the `agentId` argument, which neither accepts.
@@ -124,8 +125,8 @@ export const TARGET_DESCRIPTION =
  * failure was exactly that — so it is worth answering rather than swallowing.
  */
 export const REFUSED_AGENT_ID_DESCRIPTION =
-  'Not a field on a task write. Use `target` on `tasks_create` to say which agent a task belongs ' +
-  'to. Send this and DorkOS refuses the whole call and changes nothing.';
+  'Not a field on a scheduled task write. Use `target` on `tasks_create` to say which agent a ' +
+  'scheduled task belongs to. Send this and DorkOS refuses the whole call and changes nothing.';
 
 /**
  * The description `tasks_update` gives the `target` argument, which it refuses.
@@ -135,9 +136,9 @@ export const REFUSED_AGENT_ID_DESCRIPTION =
  * silent strip told callers otherwise.
  */
 export const REFUSED_UPDATE_TARGET_DESCRIPTION =
-  'Not something an update can change. A task is filed under one agent when it is created and ' +
-  'stays there. Send this and DorkOS refuses the whole call and changes nothing — to move a ' +
-  'task, delete it and create it again with the target you want.';
+  'Not something an update can change. A scheduled task is filed under one agent when it is ' +
+  'created and stays there. Send this and DorkOS refuses the whole call and changes nothing — ' +
+  'to move a scheduled task, delete it and create it again with the target you want.';
 
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =
@@ -146,7 +147,7 @@ export const REASON_DESCRIPTION =
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
   if (!deps.taskStore) {
-    return jsonContent({ error: 'Tasks scheduler is not enabled' }, true);
+    return jsonContent({ error: 'Scheduled tasks are turned off on this DorkOS' }, true);
   }
   return null;
 }
@@ -291,12 +292,12 @@ export function createCreateScheduleHandler(
     if (args.agentId !== undefined) {
       return jsonContent(
         {
-          error: 'DorkOS changed nothing — `agentId` is not a field on a task write.',
+          error: 'DorkOS changed nothing — `agentId` is not a field on a scheduled task write.',
           code: 'unknown_task_field',
           fields: ['agentId'],
           message:
-            'Say which agent a task belongs to with `target` instead: your own agent id to file ' +
-            'it under yourself, or "global" for a task that belongs to no agent.',
+            'Say which agent a scheduled task belongs to with `target` instead: your own agent id ' +
+            'to file it under yourself, or "global" for a scheduled task that belongs to no agent.',
         },
         true
       );
@@ -371,7 +372,7 @@ export function createCreateScheduleHandler(
       resourceType: 'schedule',
       resourceId: task.id,
       resourceLabel: task.displayName ?? task.name,
-      summary: `Proposed task ${task.displayName ?? task.name}, which needs your approval before it runs`,
+      summary: `Proposed scheduled task ${task.displayName ?? task.name}, which needs your approval before it runs`,
       linkPath: '/',
       metadata: { status: task.status },
     });
@@ -550,20 +551,20 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
   return [
     tool(
       'tasks_list',
-      'List all Tasks scheduled jobs. Returns schedule definitions with status and configuration.',
+      'List every scheduled task on this DorkOS. Returns each one with its status and settings.',
       { enabled_only: z.boolean().optional().describe('Only return enabled schedules') },
       createListSchedulesHandler(deps)
     ),
     tool(
       'tasks_create',
-      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it can run.',
+      'Propose a new scheduled task. It is created with pending_approval status and never runs until the person approves it.',
       {
-        name: z.string().describe('Name for the scheduled job'),
+        name: z.string().describe('Name for the scheduled task'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
         reason: z.string().describe(REASON_DESCRIPTION),
         target: z.string().min(1).describe(TARGET_DESCRIPTION),
-        description: z.string().optional().describe('Description of what this task does'),
+        description: z.string().optional().describe('Description of what this scheduled task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
@@ -574,7 +575,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     ),
     tool(
       'tasks_update',
-      'Update an existing Tasks schedule. Only provided fields are updated.',
+      'Update an existing scheduled task. Only the fields you send are changed.',
       {
         id: z.string().describe('Schedule ID to update'),
         // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
@@ -600,13 +601,13 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     ),
     tool(
       'tasks_delete',
-      'Delete a Tasks schedule permanently.',
+      'Delete a scheduled task permanently.',
       { id: z.string().describe('Schedule ID to delete') },
       createDeleteScheduleHandler(deps)
     ),
     tool(
       'tasks_get_run_history',
-      'Get recent run history for a Tasks schedule.',
+      'Get the recent run history for a scheduled task.',
       {
         schedule_id: z.string().describe('Schedule ID to get runs for'),
         limit: z.number().optional().describe('Max runs to return (default 20)'),

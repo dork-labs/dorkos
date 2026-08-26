@@ -338,7 +338,7 @@ describe('MCP Tool Handlers', () => {
       const result = await handler({});
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('not enabled');
+      expect(parsed.error).toContain('turned off');
     });
 
     it('handles empty schedule list', async () => {
@@ -401,7 +401,7 @@ describe('MCP Tool Handlers', () => {
       const result = await handler({ name: 'X', prompt: 'Y', cron: '* * * * *', target: 'global' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('not enabled');
+      expect(parsed.error).toContain('turned off');
     });
   });
 
@@ -508,7 +508,7 @@ describe('MCP Tool Handlers', () => {
       const result = await handler({ id: 'x' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('not enabled');
+      expect(parsed.error).toContain('turned off');
     });
   });
 
@@ -540,7 +540,7 @@ describe('MCP Tool Handlers', () => {
       const result = await handler({ id: 'x' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('not enabled');
+      expect(parsed.error).toContain('turned off');
     });
   });
 
@@ -568,7 +568,7 @@ describe('MCP Tool Handlers', () => {
       const result = await handler({ schedule_id: 'x' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('not enabled');
+      expect(parsed.error).toContain('turned off');
     });
   });
 

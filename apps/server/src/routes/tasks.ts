@@ -322,7 +322,7 @@ export function createTasksRouter(
       resourceType: 'schedule',
       resourceId: schedule.id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Created task ${schedule.displayName ?? schedule.name}`,
+      summary: `Created scheduled task ${schedule.displayName ?? schedule.name}`,
       linkPath: '/',
     });
 
@@ -351,7 +351,7 @@ export function createTasksRouter(
 
     const existing = store.getTask(req.params.id);
     if (!existing) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
     // The MERGED schedule is what gets registered, so the merged schedule is
@@ -531,7 +531,7 @@ export function createTasksRouter(
 
     let updated = store.updateTask(req.params.id, data);
     if (!updated) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
     // **Re-assert the status the caller asked for.** The file is written before
@@ -590,7 +590,7 @@ export function createTasksRouter(
         resourceType: 'schedule',
         resourceId: req.params.id,
         resourceLabel: updated.displayName ?? updated.name,
-        summary: `Paused task ${updated.displayName ?? updated.name}`,
+        summary: `Paused scheduled task ${updated.displayName ?? updated.name}`,
         linkPath: '/',
       });
     }
@@ -636,7 +636,7 @@ export function createTasksRouter(
     const { id } = req.params;
     const schedule = store.getTask(id);
     if (!schedule) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
     // The file goes first, through the seam `tasks_delete` shares: a row deleted
@@ -656,7 +656,7 @@ export function createTasksRouter(
       resourceType: 'schedule',
       resourceId: id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Deleted task ${schedule.displayName ?? schedule.name}`,
+      summary: `Deleted scheduled task ${schedule.displayName ?? schedule.name}`,
     });
 
     // Rejecting a proposed schedule is deleting it — the cockpit's Reject button
@@ -705,7 +705,7 @@ export function createTasksRouter(
 
     const run = await scheduler.triggerManualRun(req.params.id);
     if (!run) {
-      return res.status(404).json({ error: 'Schedule not found' });
+      return res.status(404).json({ error: 'Scheduled task not found' });
     }
     return res.status(201).json({ runId: run.id });
   });

@@ -73,7 +73,7 @@ test.describe('Settings — Dialog @smoke', () => {
     // control itself carries no text.
     const panel = settingsPage.activePanel;
     await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Task celebrations' })).toBeVisible();
+    await expect(panel.getByRole('switch', { name: 'To-do celebrations' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();
   });

@@ -48,7 +48,7 @@ export async function notifyRunCompleted(run: TaskRun, task: Task | null): Promi
   // Cancellations are the operator's own action — they already know.
   if (run.status !== 'completed' && run.status !== 'failed') return;
 
-  const taskName = task?.displayName?.trim() || task?.name || 'Task';
+  const taskName = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : undefined;
   const detail =
     run.status === 'failed'
@@ -107,7 +107,7 @@ function firstLine(text: string | null | undefined): string | undefined {
  * @param run - The finished run, for status, duration, and output/error.
  */
 export function formatCompletionMessage(task: Task | null, run: TaskRun): string {
-  const name = task?.displayName?.trim() || task?.name || 'Task';
+  const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : null;
 
   let body: string;

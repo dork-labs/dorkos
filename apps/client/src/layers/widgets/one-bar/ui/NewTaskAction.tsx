@@ -3,11 +3,13 @@ import { Button } from '@/layers/shared/ui/button';
 import { useTasksEnabled, useTaskTemplateDialog } from '@/layers/entities/tasks';
 
 /**
- * Scheduled's page action: make a new one.
+ * The Schedules page action: make a new one.
  *
- * Renaming the page did not rename the noun. The tab says **Scheduled** because
- * that is what people call a run that happens later, but the thing you create
- * here is still a task and the dialogs still say so.
+ * Says "Schedule", not "Task", and so does every dialog it opens (DOR-1490).
+ * The product now calls these **scheduled tasks** in full and **schedules**
+ * where a label has no room, because the bare word "task" collides with the
+ * to-do list a chat turn keeps. Only the words moved: the route is still
+ * `/tasks` and the component names still say Task.
  *
  * Draws nothing when tasks are switched off, because a button that opens a
  * dialog for a disabled feature is a promise the cockpit cannot keep.
@@ -21,7 +23,7 @@ export function NewTaskAction() {
   return (
     <Button variant="outline" size="xs" onClick={openBlank}>
       <Plus />
-      New Task
+      New Schedule
     </Button>
   );
 }

@@ -4,7 +4,7 @@ import type { Locator, Page } from '@playwright/test';
  * The four tabs of the home surface, in bar order, with the address each one
  * owns.
  *
- * The labels and the paths disagree on purpose in one place: "Scheduled"
+ * The labels and the paths disagree on purpose in one place: "Schedules"
  * addresses `/tasks`. A URL is a contract, so the page was renamed and the route
  * was not (`layers/shared/config/home-tabs.ts`). Duplicated here rather than
  * imported — this package does not build against the client, and a test that
@@ -13,7 +13,7 @@ import type { Locator, Page } from '@playwright/test';
 export const HOME_TABS = [
   { label: 'Home', path: '/' },
   { label: 'Activity', path: '/activity' },
-  { label: 'Scheduled', path: '/tasks' },
+  { label: 'Schedules', path: '/tasks' },
   { label: 'Workspaces', path: '/workspaces' },
 ] as const;
 
@@ -21,7 +21,7 @@ export const HOME_TABS = [
  * The four sidebar destinations, in the order the footer strip draws them.
  *
  * The count is the point. Seven sidebar entries became four when Activity,
- * Scheduled and Workspaces moved into the home tab bar, and a fifth appearing
+ * Schedules and Workspaces moved into the home tab bar, and a fifth appearing
  * here is what the spec is watching for. They live in the footer strip now
  * (spec `sidebar-now-today-library` BC-47) — the header nav that used to hold
  * them, and the Search row beside it, were retired with it.
