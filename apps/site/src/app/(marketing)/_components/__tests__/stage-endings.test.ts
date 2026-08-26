@@ -80,7 +80,10 @@ describe('the stage has exactly one ending', () => {
     // `/test/storyboard` pins single moments of this animation and scrubs it by
     // hand. Both halves have to drive the component that ships; a frame of
     // their own would be a picture of a page that does not exist.
-    expect(STORYBOARD.match(/<MacbookFrame/g)?.length).toBeGreaterThanOrEqual(3);
+    // Three: the beat strip pins two moments of the arrival, and the scrubber
+    // drives one live. Exact, so dropping one of the three and adding a fourth
+    // somewhere else cannot pass unnoticed.
+    expect(STORYBOARD.match(/<MacbookFrame/g)).toHaveLength(3);
     expect(STORYBOARD).not.toContain('LaptopFrame');
     // And the scrubber reads the live functions rather than its own curve.
     expect(STORYBOARD).toContain('machineArrivalAt(progress)');

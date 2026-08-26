@@ -179,8 +179,12 @@ describe('the demo-claim gate', () => {
       (line) => line.from !== 'dave' && line.text.includes('?')
     );
 
-    expect(askedFirst.length).toBeGreaterThanOrEqual(2);
-    expect(daveSaidGo.length).toBeGreaterThanOrEqual(3);
+    // Exact, because the script is fixed and the shape of it is the claim:
+    // the agents ask twice, and Dave speaks three times — once to open the
+    // conversation, then once for each answer. A floor would stay green if an
+    // approval lost the question above it and a new one appeared elsewhere.
+    expect(askedFirst).toHaveLength(2);
+    expect(daveSaidGo).toHaveLength(3);
 
     // Each approval must follow a question, not float free.
     for (const approval of daveSaidGo.slice(1)) {
@@ -316,7 +320,11 @@ describe('the clips rail', () => {
     // "Add a skill from the marketplace · clip coming" from reading as a
     // marketplace that has not shipped.
     const pending = TUTORIALS.cards.filter((card) => !card.clip);
-    expect(pending.length).toBeGreaterThan(0);
+    // Three of the four tiles, which is the honest state today. Exact rather
+    // than "more than none": the day the second clip lands, this is the test
+    // that has to be read and changed, and a floor would let the shelf fill up
+    // while the lede still says the clips are being made.
+    expect(pending).toHaveLength(3);
     expect(TUTORIALS.pendingChip).toMatch(/clip|video|soon/i);
     expect(TUTORIALS.lede).toMatch(/coming|on the way|being made|soon/i);
   });
