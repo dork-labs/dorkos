@@ -991,3 +991,77 @@ which the server serves and no client surface asks for yet"_). So a hit older th
 row to land on, and the room says so in one quiet line instead of opening at the bottom in silence —
 which looks identical to a link that worked. Back-paging a room is the change that would retire that
 sentence, and it is not this one.
+
+## Amendment 12 — a conversation hit lands on the message too (DOR-1579, 2026-08-26)
+
+Amendment 11 closed one half and named the other: _"Closing that half means carrying a stable
+per-message id end to end — the JSONL record `uuid` for Claude Code, and its equivalents elsewhere —
+rather than re-deriving the projection's filter in the client; it is a schema change and its own
+ticket."_ This is that ticket, and the shape is exactly the one it named.
+
+**One nullable column, `messages.message_id`, and it is not an identity.** The dedup key stays
+`(source_id, origin_key, ordinal)` — a re-read of a container has to write over the row it wrote
+last time, and an id is not what makes two reads of one message the same message here. D11 is
+satisfied by a consumer shipping in the same change: the client's `?message=` landing. Nothing is
+searchable that was not before; `messages_fts` still indexes `body` and nothing else.
+
+**The backfill is a rebuild, in the same migration.** `0080_message_search_message_id.sql` adds the
+column and then runs `DELETE FROM messages; DELETE FROM search_sources;`. The ids live in the stores
+this index derives from, so no statement could fill them in — and G2 already says a delete plus a
+rebuild is a complete, supported recovery. `DELETE` rather than `DROP`, because `messages_fts_ad` is
+what retracts a row's terms from an external-content index and it fires per row. The operational
+consequence, stated rather than discovered: **the first sweep after upgrading re-indexes every
+container from scratch**, and older results are missing until it finishes.
+
+**Native ids only, and never a synthesized one.** claude-code carries the JSONL record `uuid`, codex
+the `response_item`'s `item.id`, opencode the `message.id` row it already read for diagnostics;
+rooms carries `null`, because a room hit's `ordinal` IS its `seq` and it has landed since DOR-687. A
+record without an id contributes `null`. The rule matters most where it is most tempting to break:
+`parseTranscript` falls back to `crypto.randomUUID()` for a record with no `uuid`, which mints a
+fresh id per parse — an indexed copy of one would name a message no later read agrees exists, while
+looking exactly like an id that works.
+
+**Carrying an id is not the same as being able to land on it, so the client keeps an allowlist.** The
+two ids agreeing is a claim about two code paths per runtime, verified by reading both:
+
+- **claude-code — verified.** `projections/claude-code.ts` stores the record `uuid`;
+  `transcript-parser.ts` mints `ChatMessage.id` from the same field (`parsed.uuid ||
+crypto.randomUUID()`), and `mapHistoryMessage` carries it to the client unchanged.
+- **opencode — verified.** `opencode-store.ts` reads the `message.id` column and
+  `projections/opencode.ts` carries it; `runtimes/opencode/session-mapper.ts` builds
+  `HistoryMessage.id` from the SDK's `info.id`, which is the same id.
+- **codex — deliberately NOT on the list.** The index stores a real `item.id` from the rollout file,
+  and the session view never reads that file: a Codex conversation is rebuilt from DorkOS's own event
+  log, which numbers messages `user-<seq>` / `assistant-<seq>`
+  (`services/session/event-log-history.ts`). The two id spaces never intersect, so a `message` param
+  would always miss. Codex joins the list the day the event log records the item id it was built
+  from, and the id is stored now so that day is a client change alone.
+
+A hit whose source is off the list, or whose id is `null`, opens its conversation exactly as it did
+before. **That degrade is the design, not a fallback**: an id either names a row or it does not, and
+a miss can never land on a different message, so the failure mode is the behaviour that shipped
+in Amendment 11.
+
+**One thing the ticket did not anticipate: the session view FOLDS an assistant turn and the index does
+not.** `parseTranscript` emits one message per assistant record and then merges consecutive ones into
+a single turn keeping the LAST id, while the projection indexes each record that carries text as its
+own searchable message — which is right for search, since each is a separate thing that was said.
+Carrying each record's own uuid therefore addressed the rendered turn only when the text happened to
+sit in the last record of it, and an agentic turn's rarely does: it ends on a `tool_use` record.
+**Measured over 120 real transcripts, 7,352 indexed messages: 23% of messages carried an id that
+matched a rendered one** — 80% of what a person typed, 14% of what an agent said.
+
+So `projections/claude-code.ts` folds the turn as it goes and gives every message in it the id of the
+record that closes it, which took the same corpus to **90% overall and 92% for assistant messages**.
+The fold reads against `parseTranscript` branch by branch, and it is safe to approximate because
+**getting it wrong can only cost a landing, never move one**: every rendered id is the uuid of a
+record that closed some turn, so a turn folded too short or too long yields an id that matches
+nothing. The remaining 10% is mostly CLI-internal (`isMeta`) records, which are treated as turn
+enders whether or not the parser emits for them — the conservative direction on purpose.
+
+**Not done, deliberately.** A conversation says nothing when the id names no row, where a room says
+one quiet line: a room's limit is real and nameable (it holds one trailing page), while a
+conversation holds its history whole, so a miss there means the id no longer addresses anything and
+there is nothing a reader could act on. And there is no browser test for this half: the e2e suite
+reaches transcript search through no runtime it can seed — `test-mode` is not a search source, and
+the three that are read another program's files.
