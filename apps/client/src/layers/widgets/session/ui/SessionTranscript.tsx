@@ -110,6 +110,13 @@ interface SessionTranscriptProps {
   textEffect?: TextEffectConfig;
   /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
   runtimeLabel?: string;
+  /**
+   * The row this transcript was ASKED to open on, read once (DOR-1579).
+   *
+   * It outranks the unread rule and the newest message because it is the only
+   * one of the three somebody asked for — see `TimelineLandingInput.landOnRow`.
+   */
+  landOnRow?: () => string | undefined;
 }
 
 /**
@@ -139,6 +146,7 @@ export function SessionTranscript({
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
+  landOnRow,
 }: SessionTranscriptProps) {
   const [historyCount, setHistoryCount] = useState<number | null>(null);
   const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
@@ -336,6 +344,7 @@ export function SessionTranscript({
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
       landingReady={isHydrated}
+      {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}
       approvalAnnouncement={approvalAnnouncement}

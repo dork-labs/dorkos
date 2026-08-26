@@ -51,6 +51,7 @@ function wideSource(onRead: (originKey: string) => void): RowSource {
           {
             originKey,
             ordinal: 1,
+            messageId: null,
             role: 'user' as const,
             createdAt: null,
             body: `something said in ${originKey}`,

@@ -50,6 +50,7 @@ describe('projecting Claude Code transcripts', () => {
         {
           originKey: 'session-1',
           ordinal: 0,
+          messageId: null,
           role: 'user',
           createdAt: '2026-07-28T10:00:00.000Z',
           body: 'what did we decide about dogs',
@@ -57,6 +58,7 @@ describe('projecting Claude Code transcripts', () => {
         {
           originKey: 'session-1',
           ordinal: 1,
+          messageId: null,
           role: 'assistant',
           createdAt: '2026-07-28T10:00:01.000Z',
           body: 'We decided to walk them.',
@@ -198,5 +200,91 @@ describe('projecting Claude Code transcripts', () => {
     ]);
 
     expect(projection.messages[0]?.createdAt).toBeNull();
+  });
+});
+
+/**
+ * The id a hit lands on (DOR-1579).
+ *
+ * Every case here is about one property: the id an indexed message carries is
+ * the id `parseTranscript` gives the message the session view draws. Where the
+ * two disagree the answer must be `null` — a miss opens the conversation, and an
+ * id that names a DIFFERENT message would open the wrong one.
+ */
+describe('the id a Claude Code hit lands on', () => {
+  /** A tool RESULT record — the `user`-role record between the halves of a turn. */
+  function toolResult(uuid: string): string {
+    return line({
+      type: 'user',
+      uuid,
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'call-1', content: 'ok' }],
+      },
+    });
+  }
+
+  it('carries the record’s own uuid for what a person typed', () => {
+    const projection = project([said('what about dogs', { uuid: 'u-1' })]);
+
+    expect(projection.messages[0]?.messageId).toBe('u-1');
+  });
+
+  it('answers null for a record that carries no uuid, rather than inventing one', () => {
+    // `parseTranscript` falls back to `crypto.randomUUID()`, which is a fresh id
+    // on every parse. Copying that shape here would store an id that names
+    // nothing and looks exactly like one that works.
+    const projection = project([said('unidentified')]);
+
+    expect(projection.messages[0]?.messageId).toBeNull();
+  });
+
+  it('gives every part of one assistant turn the id the turn is drawn under', () => {
+    // The session view folds consecutive assistant records into ONE message and
+    // keeps the LAST id (`mergeConsecutiveAssistantMessages`), while this indexes
+    // each record that carries text. Red if a message keeps its own record's
+    // uuid: the turn on screen is not addressable by it.
+    const projection = project([
+      said('go on', { uuid: 'u-1' }),
+      answered([{ type: 'text', text: 'first I will look' }], { uuid: 'a-1' }),
+      answered([{ type: 'tool_use', name: 'Read', id: 'call-1', input: {} }], { uuid: 'a-2' }),
+      toolResult('r-1'),
+      answered([{ type: 'text', text: 'and here is the answer' }], { uuid: 'a-3' }),
+      answered([{ type: 'tool_use', name: 'Read', id: 'call-2', input: {} }], { uuid: 'a-4' }),
+    ]);
+
+    expect(projection.messages.map((message) => [message.body, message.messageId])).toEqual([
+      ['go on', 'u-1'],
+      ['first I will look', 'a-4'],
+      ['and here is the answer', 'a-4'],
+    ]);
+  });
+
+  it('does not read a task notification as the end of a turn', () => {
+    // `parseTranscript` walks straight past a `<task-notification>` record, so
+    // the assistant records either side of it are one message there. It is the
+    // commonest record of any kind between the halves of a turn, so reading it
+    // as a boundary costs most of the landings there are.
+    const projection = project([
+      answered([{ type: 'text', text: 'before' }], { uuid: 'a-1' }),
+      said('<task-notification>a run finished</task-notification>', { uuid: 'n-1' }),
+      answered([{ type: 'text', text: 'after' }], { uuid: 'a-2' }),
+    ]);
+
+    expect(projection.messages.map((message) => message.messageId)).toEqual(['a-2', 'a-2']);
+  });
+
+  it('reads what a person said as the end of the turn before it', () => {
+    // The other direction, and the one that matters for correctness: a person
+    // speaking DOES end the assistant turn there, so the two turns must not be
+    // folded into one id — that would land a hit in the first turn on the
+    // second one.
+    const projection = project([
+      answered([{ type: 'text', text: 'first turn' }], { uuid: 'a-1' }),
+      said('and now something else', { uuid: 'u-1' }),
+      answered([{ type: 'text', text: 'second turn' }], { uuid: 'a-2' }),
+    ]);
+
+    expect(projection.messages.map((message) => message.messageId)).toEqual(['a-1', 'u-1', 'a-2']);
   });
 });

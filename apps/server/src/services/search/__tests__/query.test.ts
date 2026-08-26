@@ -30,7 +30,7 @@ function say(
   originKey: string,
   ordinal: number,
   body: string,
-  opts: { role?: 'user' | 'assistant'; createdAt?: string } = {}
+  opts: { role?: 'user' | 'assistant'; createdAt?: string; messageId?: string } = {}
 ): void {
   db.insert(messages)
     .values({
@@ -40,6 +40,9 @@ function say(
       role: opts.role ?? 'user',
       createdAt: opts.createdAt ?? '2026-07-29T10:00:00.000Z',
       body,
+      // Absent by default, which is what a room row holds: the sources that
+      // carry one are the transcripts, and the cases about it pass it in.
+      ...(opts.messageId === undefined ? {} : { messageId: opts.messageId }),
     })
     .run();
 }
@@ -228,10 +231,41 @@ describe('searchMessages — what a hit carries', () => {
       sourceId: 'rooms',
       originKey: 'general',
       ordinal: 4,
+      messageId: null,
       role: 'assistant',
       createdAt: '2026-07-29T11:30:00.000Z',
       excerpt: null,
     });
+  });
+
+  it('brings back the message id a transcript row was indexed with', () => {
+    // The second coordinate (DOR-1579): `ordinal` addresses the container's
+    // position, this addresses the message. Red if the column is dropped from
+    // the SELECT — the hit still comes back, and the landing silently stops
+    // working.
+    say('claude-code', 'sess-1', 1, 'the scheduler question', { messageId: 'uuid-9' });
+
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'claude-code', visibility: 'all' }],
+      query: 'scheduler',
+      limit: 10,
+    });
+
+    expect(hits.map((hit) => hit.messageId)).toEqual(['uuid-9']);
+  });
+
+  it('brings back null for a row indexed without one', () => {
+    // The paired control: `null` has to survive as `null` rather than becoming
+    // the previous row's id or an empty string.
+    say('claude-code', 'sess-2', 1, 'another scheduler question');
+
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'claude-code', visibility: 'all' }],
+      query: 'scheduler',
+      limit: 10,
+    });
+
+    expect(hits.map((hit) => hit.messageId)).toEqual([null]);
   });
 
   it('marks the match when an excerpt is asked for', () => {

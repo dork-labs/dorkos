@@ -39,6 +39,7 @@ function rowSource(id: string, containers: readonly string[]): RowSource {
         {
           originKey,
           ordinal: 1,
+          messageId: null,
           role: 'user' as const,
           createdAt: null,
           body: `something said in ${originKey}`,
@@ -175,6 +176,7 @@ describe('a database that will not take the write recording a failure', () => {
             {
               originKey,
               ordinal: 1,
+              messageId: null,
               role: 'user' as const,
               createdAt: null,
               body: 'indexed anyway',

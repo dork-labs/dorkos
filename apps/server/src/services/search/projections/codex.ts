@@ -86,6 +86,13 @@ export interface CodexProjectionContext {
 
 /** The `response_item` payload shape this projection reads, once narrowed. */
 interface CodexMessagePayload {
+  /**
+   * The item's own id, as Codex writes it. The SDK's live event stream keys its
+   * per-item state off the same field (`event-mapper.ts`), so it is the id this
+   * message has anywhere Codex talks about it.
+   */
+  id?: unknown;
+
   /** `'message'` for a turn; `'reasoning'`, `'function_call'`, … for everything else. */
   type?: unknown;
 
@@ -188,6 +195,14 @@ export function projectCodexLines(
     messages.push({
       originKey: context.originKey,
       ordinal: ordinal++,
+      // The record's own `item.id`, or nothing — never a substitute (DOR-1579).
+      // It is carried because it is the id Codex itself uses for this item, not
+      // because anything can land on it yet: the session view rebuilds a Codex
+      // conversation from DorkOS's own event log and numbers its messages
+      // `user-<seq>` / `assistant-<seq>` (`session/event-log-history.ts`), which
+      // is a different id space. See `message-search-target.ts` for the
+      // allowlist that decides which sources actually land.
+      messageId: typeof payload.id === 'string' && payload.id !== '' ? payload.id : null,
       role,
       // Whatever the record stamped, verbatim — present on 2,200 of 2,200 lines
       // measured. A fabricated timestamp would sort results into an order nobody

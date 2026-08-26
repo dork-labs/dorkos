@@ -58,7 +58,15 @@ export interface OpenCodeMessageRow {
    */
   ordinal: number;
 
-  /** The OpenCode message id. Used for nothing but diagnostics. */
+  /**
+   * The OpenCode message id.
+   *
+   * Carried onto the indexed row as {@link ProjectedMessage.messageId}: it is
+   * the same id the session view renders this message under — the mapper builds
+   * `HistoryMessage.id` from the SDK's `info.id`, which is this row
+   * (`runtimes/opencode/session-mapper.ts`) — so it is what lets a search hit
+   * land on the message (DOR-1579).
+   */
   id: string;
 
   /** `message.time_created`, epoch milliseconds. */
@@ -131,6 +139,9 @@ export function projectOpenCodeMessages(
     messages.push({
       originKey,
       ordinal: row.ordinal,
+      // The store's own message id, or nothing for a row that carries none.
+      // Never a substitute: an id invented here would differ on the next read.
+      messageId: row.id === '' ? null : row.id,
       role,
       createdAt: toIso(row.timeCreated),
       body,

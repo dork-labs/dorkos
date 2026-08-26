@@ -2,20 +2,20 @@
  * Where a search hit opens, and what its row calls the place it was said in
  * (spec `message-search` §8).
  *
- * **A room hit opens ON the message; a conversation hit opens the
- * conversation** (DOR-687). The two halves are different because the two
- * coordinates are: a room hit's `ordinal` IS the entry's `seq`, which the room
- * addresses its own rows by, so the coordinate the index already returns is an
- * address. A transcript hit's `ordinal` is a running count of the messages the
- * projection KEPT — person-authored speech and assistant text, with tool calls,
- * tool results, thinking and command records all skipped — so it indexes
- * nothing the session view holds. `messages[ordinal]` there is a different
- * message, reliably, and a link that lands on the wrong line is worse than one
- * that lands in the right conversation.
+ * **A hit opens ON the message it matched, in a room and in a conversation
+ * alike** (DOR-687, then DOR-1579) — but by two different coordinates, because
+ * the two stores number their messages differently.
  *
- * Closing that half means carrying a stable per-message id end to end (the
- * JSONL record `uuid` for Claude Code) rather than re-deriving the
- * projection's filter in the client, and it is not this change.
+ * A room hit rides `ordinal`, which IS the entry's `seq`: the number the room
+ * addresses its own rows by, so the coordinate the index already returns is an
+ * address. A conversation hit cannot: its `ordinal` is a running count of the
+ * messages the projection KEPT, with tool calls, tool results, thinking and
+ * command records all skipped, so `messages[ordinal]` in the session view is
+ * reliably a DIFFERENT message. It rides {@link SearchHit.messageId} instead —
+ * the id the store that owns the transcript gave that message — and when there
+ * is none, or the runtime is not one whose ids have been verified against what
+ * its session view renders, the hit opens the conversation and nothing more.
+ * Landing on the wrong line is worse than landing in the right conversation.
  *
  * @module features/command-palette/model/message-search-target
  */
@@ -30,10 +30,45 @@ import { basename } from '@/layers/shared/lib/basename';
 /** The source id the room log is registered under, server-side. */
 const ROOMS_SOURCE = 'rooms';
 
+/**
+ * The sources whose indexed `messageId` has been proved to be the id their
+ * session view renders the same message under.
+ *
+ * **An allowlist rather than "send it whenever we have one", because the two
+ * ids agreeing is a per-runtime FACT and not a shape.** Carrying an id says
+ * nothing about whether anything can be found by it:
+ *
+ * - **`claude-code`** — proved. The index stores the JSONL record `uuid`
+ *   (`services/search/projections/claude-code.ts`) and the session view's
+ *   transcript reader mints `ChatMessage.id` from the same field
+ *   (`services/runtimes/claude-code/sessions/transcript-parser.ts:350,454,508,
+ *   532,679,730` — `parsed.uuid || crypto.randomUUID()`), which reaches the
+ *   client unchanged through `mapHistoryMessage` (`id: m.id`).
+ * - **`opencode`** — proved. The index stores the store's own `message.id`
+ *   (`services/search/opencode-store.ts` → `projections/opencode.ts`) and the
+ *   session view builds its history from the SDK's message info under the same
+ *   id (`services/runtimes/opencode/session-mapper.ts:282,285` — `id: info.id`,
+ *   reached through `OpenCodeRuntime.getMessageHistory`).
+ * - **`codex` is deliberately OFF.** Its rollout files carry a `response_item`
+ *   `item.id` and the index stores it, but the session view does not read those
+ *   files at all: a Codex conversation is rebuilt from DorkOS's own event log,
+ *   which numbers messages `user-<seq>` / `assistant-<seq>`
+ *   (`services/session/event-log-history.ts:290,450`). The two id spaces never
+ *   intersect, so a `message` param would always miss. It joins this list the
+ *   day the session view reads the rollout — or the day the event log records
+ *   the item id it was built from.
+ * - **`rooms` is not here and never will be**: a room lands by `seq`, above.
+ */
+const EXACT_LANDING_SOURCES: readonly string[] = ['claude-code', 'opencode'];
+
 /** Where one hit opens, as a TanStack Router destination. */
 export type MessageSearchTarget =
   | { kind: 'room'; to: '/channels'; search: { id: string; entry: number } }
-  | { kind: 'session'; to: '/session'; search: { session: string; dir: string | undefined } };
+  | {
+      kind: 'session';
+      to: '/session';
+      search: { session: string; dir: string | undefined; message?: string };
+    };
 
 /**
  * Resolve where a hit opens.
@@ -56,16 +91,26 @@ export type MessageSearchTarget =
  * (DOR-928). A hit whose container never named one sends `undefined` rather
  * than a wrong guess.
  *
+ * `message` travels with a session only when the hit carries an id AND its
+ * source is in {@link EXACT_LANDING_SOURCES} — see there for what "verified"
+ * means and why Codex is not in it. Omitted, the conversation opens where it
+ * always did, which is the correct thing to degrade to.
+ *
  * @param hit - The hit that was chosen.
  */
 export function messageSearchTarget(hit: SearchHit): MessageSearchTarget {
   if (hit.source === ROOMS_SOURCE) {
     return { kind: 'room', to: '/channels', search: { id: hit.container, entry: hit.ordinal } };
   }
+  const lands = hit.messageId !== undefined && EXACT_LANDING_SOURCES.includes(hit.source);
   return {
     kind: 'session',
     to: '/session',
-    search: { session: hit.container, dir: hit.containerPath ?? undefined },
+    search: {
+      session: hit.container,
+      dir: hit.containerPath ?? undefined,
+      ...(lands ? { message: hit.messageId } : {}),
+    },
   };
 }
 

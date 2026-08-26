@@ -212,13 +212,14 @@ export type Writer = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
 /**
  * How many message rows go into one `INSERT`.
  *
- * SQLite caps a statement at 32,766 host parameters and each row here binds six,
- * so the hard ceiling is 5,461 rows and an unchunked insert of a large container
- * fails outright above it. 500 is a tenth of that rather than the ceiling itself,
- * and it is safe for any content: parameters are **bound**, never inlined into
- * the SQL text, so a chunk of 500 costs 3,000 parameters whether the bodies are
- * ten characters or ten thousand. Every chunk runs inside the container's one
- * transaction, so this does not weaken the one-transaction-per-container rule.
+ * SQLite caps a statement at 32,766 host parameters and each row here binds
+ * seven, so the hard ceiling is 4,680 rows and an unchunked insert of a large
+ * container fails outright above it. 500 is well under a tenth of that rather
+ * than the ceiling itself, and it is safe for any content: parameters are
+ * **bound**, never inlined into the SQL text, so a chunk of 500 costs 3,500
+ * parameters whether the bodies are ten characters or ten thousand. Every chunk
+ * runs inside the container's one transaction, so this does not weaken the
+ * one-transaction-per-container rule.
  */
 const INSERT_CHUNK_ROWS = 500;
 
@@ -241,6 +242,7 @@ export function insertMessages(
       sourceId,
       originKey: message.originKey,
       ordinal: message.ordinal,
+      messageId: message.messageId,
       role: message.role,
       createdAt: message.createdAt,
       body: message.body,
@@ -264,6 +266,7 @@ export function insertMessages(
       .onConflictDoUpdate({
         target: [messages.sourceId, messages.originKey, messages.ordinal],
         set: {
+          messageId: sql`excluded.message_id`,
           role: sql`excluded.role`,
           createdAt: sql`excluded.created_at`,
           body: sql`excluded.body`,

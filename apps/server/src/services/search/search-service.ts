@@ -109,6 +109,11 @@ export function searchForCaller(
     container: hit.originKey,
     containerPath: paths.get(containerKey(hit.sourceId, hit.originKey)) ?? null,
     ordinal: hit.ordinal,
+    // OMITTED rather than sent as null when the row has none (DOR-1579). The
+    // field means "this hit can be landed on exactly"; a `null` on the wire
+    // would be a second spelling of the same absence, and every reader would
+    // have to know both.
+    ...(hit.messageId === null ? {} : { messageId: hit.messageId }),
     role: hit.role,
     createdAt: hit.createdAt,
     // Non-null by construction — `excerpts: true` above — and defaulted rather

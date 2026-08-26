@@ -46,6 +46,55 @@ describe('where a search hit opens', () => {
     });
   });
 
+  it('opens a conversation hit ON the message when the source’s ids are verified', () => {
+    // The other half of DOR-687, closed by DOR-1579. `claude-code` stores the
+    // JSONL record uuid and the session view renders the message under the same
+    // uuid, so the id is an address there.
+    expect(
+      messageSearchTarget(
+        hit({
+          source: 'claude-code',
+          container: 'sess-9',
+          containerPath: '/work/api',
+          messageId: 'uuid-1',
+        })
+      ).search
+    ).toEqual({ session: 'sess-9', dir: '/work/api', message: 'uuid-1' });
+  });
+
+  it('opens an OpenCode hit on the message too', () => {
+    // The second verified source: the index stores OpenCode's own `message.id`
+    // and its session view renders that message under the same id.
+    expect(
+      messageSearchTarget(hit({ source: 'opencode', container: 'ses_a', messageId: 'msg_7' }))
+        .search
+    ).toEqual({ session: 'ses_a', dir: undefined, message: 'msg_7' });
+  });
+
+  it('sends no message for a source whose ids have not been verified', () => {
+    // Codex carries a perfectly good `response_item` id in the index, and the
+    // session view rebuilds a Codex conversation from DorkOS's own event log
+    // under `user-<seq>` / `assistant-<seq>`. The two never match, so a param
+    // would be dead weight pretending to be a link. Red if the allowlist is
+    // dropped and "has an id" becomes the whole test.
+    expect(
+      messageSearchTarget(hit({ source: 'codex', container: 'thread-3', messageId: 'item_42' }))
+        .search
+    ).toEqual({ session: 'thread-3', dir: undefined });
+  });
+
+  it('sends no message for a verified source when the hit has no id', () => {
+    // The paired control for the case above: the allowlist is not the only
+    // gate. A `claude-code` row indexed before ids existed, or from a record
+    // that carried none, degrades to opening the conversation.
+    expect(messageSearchTarget(hit({ source: 'claude-code', container: 'sess-9' })).search).toEqual(
+      {
+        session: 'sess-9',
+        dir: undefined,
+      }
+    );
+  });
+
   it('sends a conversation hit to the conversation and drops its ordinal', () => {
     // The honest half. A transcript hit's `ordinal` counts only the messages
     // the projection KEPT — tool calls, tool results, thinking and command

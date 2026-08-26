@@ -17,6 +17,22 @@ import type { ChatMessage, MessageAuthor, MessageGrouping } from '@/layers/share
 
 export { GROUP_GAP_MS };
 
+/**
+ * The row id a message is drawn under.
+ *
+ * Exported because two places have to agree on it and only one of them builds
+ * rows: a landing addresses a row by id (`useTimelineLanding`), so a deep link
+ * asking for a message has to spell the same string this does. Spelled once
+ * here rather than as a prefix repeated at both ends, where it would fail
+ * silently — a row id nothing matches just opens the conversation at the
+ * bottom, which looks exactly like a link that was never followed.
+ *
+ * @param messageId - The message's own id.
+ */
+export function messageRowKey(messageId: string): string {
+  return `msg-${messageId}`;
+}
+
 /** A rendered message, with the author and grouping the row needs. */
 export interface TranscriptMessageRow {
   kind: 'message';
@@ -98,7 +114,7 @@ export function buildListRows(
     if (row.kind !== 'item') return row;
     return {
       kind: 'message',
-      key: `msg-${messages[row.index]!.id}`,
+      key: messageRowKey(messages[row.index]!.id),
       messageIndex: row.index,
       message: messages[row.index]!,
       grouping: row.grouping,

@@ -27,9 +27,10 @@ import { sqliteTable, text, integer, uniqueIndex, primaryKey } from 'drizzle-orm
  *
  * No column ships without a consumer (spec D11): `role` is rendered and
  * filtered, `created_at` orders and displays, `source_id` labels a result and
- * scopes the frontier, and `origin_key` + `ordinal` are the navigation
- * coordinates a hit resolves through. Widening later is a projection change and
- * a rebuild, not a migration.
+ * scopes the frontier, `origin_key` + `ordinal` are the navigation coordinates a
+ * hit resolves through, and `message_id` is what takes a conversation hit to the
+ * message itself rather than to the top of the conversation (spec Amendment 12).
+ * Widening later is a projection change and a rebuild, not a migration.
  */
 export const messages = sqliteTable(
   'messages',
@@ -45,6 +46,26 @@ export const messages = sqliteTable(
 
     /** Monotonic position within the container — `room_entries.seq`, or the index in a transcript. */
     ordinal: integer('ordinal').notNull(),
+
+    /**
+     * The message's own id in the store that owns it, when that store gives it
+     * one — the JSONL record `uuid` for Claude Code, the `response_item`
+     * `item.id` for Codex, the `message.id` row for OpenCode (DOR-1579).
+     *
+     * **For landing only, never for identity.** The dedup key stays
+     * `(source_id, origin_key, ordinal)`: a projection re-reading a container
+     * has to write over the row it wrote last time, and an id is not what makes
+     * two reads of one message the same message here.
+     *
+     * **Nullable, and never synthesized.** A room has no id of this kind —
+     * it lands by `seq` already — and a transcript record that carries no id of
+     * its own contributes `null` rather than one invented at index time, which
+     * would differ on the next read and address nothing. `null` means "no exact
+     * landing", and the client degrades to opening the conversation.
+     *
+     * Not searchable text: `messages_fts` indexes `body` and nothing else.
+     */
+    messageId: text('message_id'),
 
     /** `'user' | 'assistant'`. */
     role: text('role').notNull(),

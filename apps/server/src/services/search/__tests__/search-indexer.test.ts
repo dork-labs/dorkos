@@ -477,6 +477,7 @@ describe('SearchIndexer over the room log', () => {
         messages: Array.from({ length: 8 - after }, (_unused, i) => ({
           originKey: 'c',
           ordinal: after + i + 1,
+          messageId: null,
           role: 'user' as const,
           createdAt: null,
           body: `row ${after + i + 1}`,
@@ -551,6 +552,7 @@ describe('SearchIndexer over the room log', () => {
             {
               originKey: 'container-x',
               ordinal: 1,
+              messageId: null,
               role: 'user' as const,
               createdAt: null,
               body: 'recovered',

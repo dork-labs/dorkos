@@ -1096,6 +1096,7 @@ describe('the projection on its own', () => {
         {
           originKey: 'ses_a',
           ordinal: 7,
+          messageId: 'msg_1',
           role: 'user',
           createdAt: '2026-05-28T20:26:40.000Z',
           body: 'first line\nsecond line',
@@ -1115,6 +1116,38 @@ describe('the projection on its own', () => {
       },
     ]);
     expect(projection.messages[0]?.createdAt).toBeNull();
+  });
+
+  it('carries the store’s own message id, which is what a hit lands on', () => {
+    // The id chain OpenCode gets exact landing on (DOR-1579): this is the
+    // `message.id` row the store keeps, and the session view renders the same
+    // message under it (`runtimes/opencode/session-mapper.ts` — `id: info.id`).
+    // Red if it is dropped, or replaced by anything derived here.
+    const projection = projectOpenCodeMessages('ses_a', [
+      {
+        ordinal: 1,
+        id: 'msg_landing',
+        timeCreated: 1_780_000_000_000,
+        data: JSON.stringify({ role: 'assistant' }),
+        parts: [JSON.stringify(text('here it is'))],
+      },
+    ]);
+
+    expect(projection.messages[0]?.messageId).toBe('msg_landing');
+  });
+
+  it('answers null for a row with no id rather than inventing one', () => {
+    const projection = projectOpenCodeMessages('ses_a', [
+      {
+        ordinal: 1,
+        id: '',
+        timeCreated: 1_780_000_000_000,
+        data: JSON.stringify({ role: 'assistant' }),
+        parts: [JSON.stringify(text('unidentified'))],
+      },
+    ]);
+
+    expect(projection.messages[0]?.messageId).toBeNull();
   });
 });
 

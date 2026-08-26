@@ -92,6 +92,12 @@ export function projectRoomEntries(rows: readonly RoomEntrySourceRow[]): Project
       // `${communityRef}:${roomId}` and this line is the only one that changes.
       originKey: row.roomId,
       ordinal: row.seq,
+      // A room needs none, so it gets none (DOR-1579). `ordinal` here IS the
+      // entry's `seq`, which is the address the room's own timeline resolves —
+      // a room hit has landed on its message since DOR-687. Putting the entry id
+      // here as well would be a second address for the same row, kept in step by
+      // nothing.
+      messageId: null,
       // A human is a `user`; everything else in a room that speaks is answering
       // like one. `system` only ever writes notices, which never reach here.
       role: row.authorKind === 'human' ? 'user' : 'assistant',
