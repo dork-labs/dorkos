@@ -4,9 +4,9 @@
  * @module shared/relay-trace-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Reliability Configuration ===
 

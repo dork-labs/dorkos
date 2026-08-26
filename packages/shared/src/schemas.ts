@@ -8,7 +8,7 @@
  * @module shared/schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 // `ClientContextSchema` lives in additional-context.ts (which imports UiStateSchema
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
@@ -34,7 +34,7 @@ import type { WidgetDocument } from './ui-widget.js';
 // only restates it for the wire (see `PermissionStopSchema`).
 import type { PermissionStop } from './agent-runtime.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Enums ===
 

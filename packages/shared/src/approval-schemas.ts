@@ -10,10 +10,10 @@
  * @module shared/approval-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { CAPABILITY_TIERS } from './capabilities.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 /**
  * Longest summary an approval card will ever hold.

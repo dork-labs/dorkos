@@ -17,7 +17,7 @@
  * @module shared/session-stream
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
@@ -50,7 +50,7 @@ import {
   type QuestionOutcome,
 } from './schemas.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Session Status Projection ===
 

@@ -11,9 +11,9 @@
  * @module shared/workspace
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Port block ===
 

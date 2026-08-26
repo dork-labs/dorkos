@@ -268,6 +268,16 @@ export default defineConfig({
         // The rule this entry states: a shared subpath whose module imports
         // another aliased subpath's file must be aliased to source too, or the
         // two resolutions load the same module twice.
+        //
+        // Loading it twice is now merely wasteful rather than fatal. What made
+        // it fatal was a leak underneath: `@asteasolutions/zod-to-openapi`
+        // pinned every `.openapi()`-annotated schema in a strong map that no
+        // `vi.resetModules()` could reach, so each re-evaluation was retained
+        // forever and doubling the copies doubled the bill. That is repaired at
+        // the source in `packages/shared/src/zod-openapi.ts` (DOR-1577), and
+        // the same file's re-import loop now retains ~0.03 MB per iteration
+        // against ~31 MB before. The entry stays because the rule above still
+        // holds on its own terms.
         find: '@dorkos/shared/interaction-events',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/interaction-events.ts', import.meta.url)
