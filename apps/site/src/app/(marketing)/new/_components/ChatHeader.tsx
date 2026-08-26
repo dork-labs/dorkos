@@ -5,12 +5,25 @@ import { CAST } from './cast';
 import { agentLayoutId } from './chat-script';
 import { PANEL } from './film-tokens';
 
+interface ChatHeaderProps {
+  /** Whether the agents have joined the room. */
+  joined: boolean;
+  /**
+   * Whether this header is the one the hero cards fly into.
+   *
+   * Exactly one may be. The storyboard's frames carry the same faces without
+   * the shared layout id, so each is a picture of the room rather than another
+   * claim on the same three agents.
+   */
+  flights?: boolean;
+}
+
 /**
  * Chat header: room name, Dave (always present), and the agents' member faces.
  * The faces share layout ids with the hero cards, so flipping `joined` makes
  * them physically fly from their cards into this row, and back.
  */
-export function ChatHeader({ joined }: { joined: boolean }) {
+export function ChatHeader({ joined, flights = true }: ChatHeaderProps) {
   return (
     <div
       className="flex shrink-0 items-center justify-between px-3 py-1.5 sm:px-4 sm:py-2.5"
@@ -32,7 +45,7 @@ export function ChatHeader({ joined }: { joined: boolean }) {
               key={member.key}
               who={member.key}
               size={26}
-              layoutId={agentLayoutId(member.key)}
+              layoutId={flights ? agentLayoutId(member.key) : undefined}
             />
           ))}
       </div>

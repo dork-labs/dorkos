@@ -12,6 +12,8 @@ interface ChatMessageProps {
   line: ChatLine;
   /** When false, the bubble shows typing dots that morph into the text. */
   revealed: boolean;
+  /** Whether this copy of the conversation owns the dock-to-message flights. */
+  flights?: boolean;
 }
 
 /** The film's bubble radius, on the film's 1080px canvas. */
@@ -48,7 +50,7 @@ const POP_IN = {
  * bottom corner reads as landing next to its avatar; one that scales from the
  * centre reads as a modal opening.
  */
-export function ChatMessage({ line, revealed }: ChatMessageProps) {
+export function ChatMessage({ line, revealed, flights = true }: ChatMessageProps) {
   if (line.from === 'system') {
     return <SystemMessage line={line} />;
   }
@@ -92,7 +94,7 @@ export function ChatMessage({ line, revealed }: ChatMessageProps) {
         >
           {revealed ? (
             <span>
-              {line.dockApp && <DockBadge id={line.dockApp} />}
+              {line.dockApp && <DockBadge id={line.dockApp} flight={flights} />}
               {line.mention && (
                 <span className="rounded bg-[rgba(255,255,255,0.16)] px-1 py-0.5">
                   {line.mention}

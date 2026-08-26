@@ -22,6 +22,16 @@ interface ChatWindowProps {
   lines: readonly ChatLine[];
   /** The line currently being typed, if any. */
   pending: ChatLine | null;
+  /**
+   * Whether this copy of the room owns the page's shared-element flights — the
+   * faces arriving from the hero cards, the dock tiles landing in messages.
+   *
+   * Only one copy may. On `/new` there is exactly one and it takes the
+   * default; `/test/storyboard` paints four of the same room side by side as
+   * stills, and a layout id claimed four times sends the flight to whichever
+   * element motion measured last.
+   */
+  flights?: boolean;
 }
 
 /**
@@ -47,7 +57,7 @@ interface ChatWindowProps {
  * left after the header. It used to set `42vh` and the frame took its shape
  * from that, which is how the laptop ended up with 2003 proportions.
  */
-export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
+export function ChatWindow({ joined, lines, pending, flights = true }: ChatWindowProps) {
   const rows = pending ? [...lines, pending] : lines;
   const lastIndex = rows.length - 1;
 
@@ -58,7 +68,7 @@ export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
     >
       {/* The brand signature, and the panel's only ornament. */}
       <div style={{ height: HAIRLINE_PX, background: PANEL.hairline }} />
-      <ChatHeader joined={joined} />
+      <ChatHeader joined={joined} flights={flights} />
       <div
         className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden px-2.5 pt-2 pb-3 sm:gap-2 sm:px-4 sm:pt-4 sm:pb-5"
         style={{
@@ -68,7 +78,12 @@ export function ChatWindow({ joined, lines, pending }: ChatWindowProps) {
         aria-hidden="true"
       >
         {rows.map((line, i) => (
-          <ChatMessage key={`line-${i}`} line={line} revealed={!(pending && i === lastIndex)} />
+          <ChatMessage
+            key={`line-${i}`}
+            line={line}
+            revealed={!(pending && i === lastIndex)}
+            flights={flights}
+          />
         ))}
       </div>
     </div>

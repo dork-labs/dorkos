@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BEAT_BOUNDARIES } from '../beats';
 import {
   BEZEL,
   DECK,
@@ -25,6 +26,14 @@ import {
   seatAt,
   STAGE_TIMING,
 } from '../stage-timing';
+import { BAND_HYSTERESIS } from '../stage/stage-bands';
+
+/**
+ * Where the third beat takes the screen, derived from the beat switch rather
+ * than restated here. This is the one number the wayfinding above the stage
+ * and the ending below it both depend on.
+ */
+const LAST_BEAT_FROM = BEAT_BOUNDARIES[1] + BAND_HYSTERESIS;
 
 /** The frames' shapes live in their class names, so their shape is source. */
 const source = (name: string) => readFileSync(join(import.meta.dirname, '..', name), 'utf8');
@@ -207,15 +216,18 @@ describe('the finale reverses, because the whole page does', () => {
   });
 
   it('starts nothing before the last beat is on screen', () => {
-    // The beat flips to "It all happens on your computer." at 0.66. A machine
-    // that begins arriving under the previous headline breaks the wayfinding
-    // the three beats do.
-    expect(STAGE_TIMING.machineFrom).toBeGreaterThanOrEqual(0.66);
-    expect(STAGE_TIMING.shrinkFrom).toBeGreaterThanOrEqual(0.66);
-    expect(machineArrivalAt(0.66)).toBe(0);
-    expect(machineOpacityAt(0.66)).toBe(0);
-    expect(seatAt(0.66)).toBe(0);
-    expect(chatScaleAt(0.66)).toBe(1);
+    // Where the beat flips to "It all happens on your computer.", read off the
+    // beat switch rather than typed in again: the second boundary plus the
+    // dead zone around it. Moving one moves this, which is the point — a
+    // machine that begins arriving under the previous headline undoes the
+    // wayfinding the step rail above it is doing.
+    expect(LAST_BEAT_FROM).toBeCloseTo(0.66, 6);
+    expect(STAGE_TIMING.machineFrom).toBeGreaterThanOrEqual(LAST_BEAT_FROM);
+    expect(STAGE_TIMING.shrinkFrom).toBeGreaterThanOrEqual(LAST_BEAT_FROM);
+    expect(machineArrivalAt(LAST_BEAT_FROM)).toBe(0);
+    expect(machineOpacityAt(LAST_BEAT_FROM)).toBe(0);
+    expect(seatAt(LAST_BEAT_FROM)).toBe(0);
+    expect(chatScaleAt(LAST_BEAT_FROM)).toBe(1);
   });
 
   it('goes solid well before it stops moving', () => {

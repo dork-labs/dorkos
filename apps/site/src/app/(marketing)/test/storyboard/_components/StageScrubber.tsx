@@ -118,7 +118,10 @@ export function StageScrubber() {
             drop={`${-STAGE_TIMING.chatDrop * (1 - seat)}%`}
             layBack={layBack}
           >
-            <ChatWindow joined={joined} lines={lines} pending={null} />
+            {/* The fifth copy of the room on this page, and like the strip's
+                four it holds none of the shared layout ids: one id, one
+                element, or the flight lands wherever motion looked last. */}
+            <ChatWindow joined={joined} lines={lines} pending={null} flights={false} />
           </MacbookFrame>
           <Dock present={beat !== 'talk'} visible={beat === 'yours'} used={used} />
           <p

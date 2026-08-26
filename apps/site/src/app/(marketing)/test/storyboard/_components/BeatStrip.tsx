@@ -30,11 +30,17 @@ const JOIN_LINES = CHAT_SCRIPT.slice(0, 1);
  * the machine rises: the frame owns the 16:10 screen from the first beat and
  * the laptop arrives around it. A plain box here would show a shape the page
  * never has.
+ *
+ * `flights={false}` on every chat in the strip. Four frames on one page each
+ * render the same room, and a shared layout id claimed four times sends the
+ * flight to whichever copy motion measured last — the faces landed in the
+ * wrong frame and the dock tiles with them. These are stills, so they want
+ * none of it.
  */
 function StageChat({ lines }: { lines: readonly (typeof CHAT_SCRIPT)[number][] }) {
   return (
     <MacbookFrame presence={0}>
-      <ChatWindow joined lines={lines} pending={null} />
+      <ChatWindow joined lines={lines} pending={null} flights={false} />
     </MacbookFrame>
   );
 }
@@ -113,7 +119,7 @@ export function BeatStrip() {
             dialled in: the scale and the lift the live page holds at the last
             frame of the scroll. */}
         <MacbookFrame scale={chatScaleAt(1)} lift={`${-SEAT_LIFT}%`} presence={1}>
-          <ChatWindow joined lines={CHAT_SCRIPT} pending={null} />
+          <ChatWindow joined lines={CHAT_SCRIPT} pending={null} flights={false} />
         </MacbookFrame>
         <Dock present visible={false} used={ALL_APPS} />
       </StoryFrame>
