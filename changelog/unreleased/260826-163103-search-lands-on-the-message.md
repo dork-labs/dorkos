@@ -3,6 +3,7 @@ covers:
   - 'feat(db,shared): the message index carries the id a hit can land on (DOR-1579)'
   - 'feat(server): every projection carries the message id its store gave it (DOR-1579)'
   - 'feat(client): a conversation hit opens on the message it matched (DOR-1579)'
+  - 'fix(search): a conversation hit cannot land on a different message (DOR-1579)'
 ---
 
 ### Added
