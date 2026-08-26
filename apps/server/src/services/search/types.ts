@@ -463,19 +463,33 @@ export interface SourceSweep {
   /**
    * Everything that should have been indexed and was not, and why.
    *
-   * Most entries also wrote `search_sources.last_error`. **Three kinds cannot**,
-   * and they live here only — which is why this array is on the result rather
-   * than being left implicit in the table:
+   * A per-container failure writes `search_sources.last_error` on that
+   * container's own row. A failure that belongs to no container — a discovery
+   * that rejected, one root of several that could not be read, a container list
+   * that would not read, a snapshot that would not open — is stamped across
+   * every row the source ALREADY has, which is what makes it visible to somebody
+   * searching (`sourceWarnings` reads that column and nothing else).
    *
-   * 1. A discovery that failed before any container was enumerated. There is no
-   *    row to write to.
+   * **Two kinds still live here only**, which is why this array is on the result
+   * rather than being left implicit in the table:
+   *
+   * 1. A failure on a source with no indexed containers yet. There is no row to
+   *    stamp, and inventing one is banned: `search_sources` is keyed by
+   *    container, so a row for `(discovery)` is a row discovery can never return
+   *    and the prune would delete on the first healthy sweep.
    * 2. Two or more files claiming one container id. No row could honestly
    *    describe them: it would have to name one file's size, mtime and offset
    *    while the fault is that there are two.
-   * 3. **One root of several that could not be read.** A root is not a
-   *    container, so it has no row either — and unlike the first two, the source
-   *    still CONTRIBUTED: the readable roots indexed normally. A failure here is
-   *    therefore not the same as "this source produced nothing".
+   *
+   * A per-root failure is also not the same as "this source produced nothing":
+   * the readable roots indexed normally. The stamp lands on every row of the
+   * source that does not already carry a container's own error, healthy roots
+   * included, and it is written after the pass rather than before it — a file
+   * that indexes clears its own `last_error`, so a stamp made first would
+   * survive only on whichever containers happened not to change, and whether a
+   * person is warned would depend on who was talking. Being over-broad is the
+   * right side to err on: the warning names a source and never a container, and
+   * the corpus really is incomplete.
    */
   failures: SourceFailure[];
 }

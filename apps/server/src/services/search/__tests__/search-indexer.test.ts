@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { authors, roomEntries, rooms, messages, searchSources, eq, type Db } from '@dorkos/db';
 import type BetterSqlite3 from 'better-sqlite3';
+import { DISCOVERY_FAILURE_KEY } from '../frontier-store.js';
 import { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, SOURCE_FAILURE_KEY } from '../indexer.js';
 import { roomsSource, SEARCH_SOURCES } from '../registry.js';
 import type { RowSource } from '../types.js';
@@ -162,11 +163,12 @@ describe('the registry the indexer sweeps by default', () => {
 
 describe('one source having a bad day', () => {
   it('does not stop the sources swept after it', async () => {
-    // Each mechanism degrades per container, but a throw from OUTSIDE a
-    // container's own `try` — a container list that will not read — escapes the
-    // mechanism. Before the per-source wrap, that also skipped every source
-    // ORDERED AFTER the failing one, silently: rooms would stop indexing because
-    // another runtime's store moved.
+    // Each mechanism degrades per container, and since DOR-709 each also
+    // degrades on its own discovery — so a container list that will not read is
+    // attributed by the mechanism (`DISCOVERY_FAILURE_KEY`, and a stamp on the
+    // containers that exist) rather than escaping to the reconciler's wrap.
+    // That wrap is still the backstop for whatever no mechanism catches, and
+    // `SOURCE_FAILURE_KEY` is what it records; the test below is where it shows.
     const exploding: RowSource = {
       id: 'exploding',
       mechanism: 'rows',
@@ -184,7 +186,7 @@ describe('one source having a bad day', () => {
     expect(result.failures).toEqual([
       {
         sourceId: 'exploding',
-        originKey: SOURCE_FAILURE_KEY,
+        originKey: DISCOVERY_FAILURE_KEY,
         message: 'the container list would not read',
       },
     ]);
@@ -209,6 +211,36 @@ describe('one source having a bad day', () => {
       indexed: 0,
       pruned: 0,
     });
+  });
+
+  it('blames the source itself for a failure no mechanism could attribute', async () => {
+    // What is left for the backstop now that discovery and the per-failure write
+    // are both guarded: a write the sweep makes for the SOURCE rather than for
+    // any one container. `stampAttempt` is one statement over every row, it runs
+    // after the last container, and a `SQLITE_BUSY` there belongs to no
+    // container — so there is nothing to name it after.
+    seedRoom('room-a');
+    say('room-a', 'indexed before the stamp failed');
+    const noStamp = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'update') {
+          return () => {
+            throw new Error('SQLITE_BUSY: database is locked');
+          };
+        }
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    }) as Db;
+
+    const result = await new SearchIndexer(noStamp, [roomsSource]).sweep();
+
+    expect(result.failures).toEqual([
+      {
+        sourceId: 'rooms',
+        originKey: SOURCE_FAILURE_KEY,
+        message: 'SQLITE_BUSY: database is locked',
+      },
+    ]);
   });
 });
 

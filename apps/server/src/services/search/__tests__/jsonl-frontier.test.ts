@@ -6,7 +6,8 @@ import path from 'path';
 import readline from 'readline';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { messages, searchSources, eq, type Db } from '@dorkos/db';
-import { sweepFileSource, DISCOVERY_FAILURE_KEY } from '../jsonl-frontier.js';
+import { DISCOVERY_FAILURE_KEY, SOURCE_ERROR_MARK } from '../frontier-store.js';
+import { sweepFileSource } from '../jsonl-frontier.js';
 import { createClaudeCodeSource } from '../registry.js';
 import type { FileSource, SourceSweep } from '../types.js';
 
@@ -463,6 +464,68 @@ describe('M1 — the failure modes that lose data quietly', () => {
     expect(result.pruned).toBe(0);
     expect(indexedBodies('s1')).toEqual(['indexed while the disk was there']);
     expect(frontier('s1')).toBeDefined();
+    // **And the person searching is told.** `sourceWarnings` reads
+    // `search_sources.last_error` and nothing else, so a failure that lives only
+    // on the sweep result raises no warning at all: the largest corpus DorkOS
+    // indexes goes quiet with no visible symptom. The sweep result asserted
+    // above passes just as well without this.
+    expect(frontier('s1')?.lastError).toContain('root is on a volume that went away');
+    expect(frontier('s1')?.lastError).toContain(SOURCE_ERROR_MARK);
+    expect(frontier('s1')?.lastIndexedAt).toBe('2026-07-28T13:00:00.000Z');
+  });
+
+  it('stops warning once discovery reads again', async () => {
+    // The other half: a stamp nothing clears is a warning that outlives its
+    // fault forever, and an UNCHANGED file writes no row of its own to clear it.
+    await writeTranscript('s1', [saidLine('still here')]);
+    await sweep();
+    const broken: FileSource = {
+      ...source,
+      discover: () => Promise.reject(new Error('root is on a volume that went away')),
+    };
+    await sweepFileSource(db, broken, '2026-07-28T13:00:00.000Z');
+    expect(frontier('s1')?.lastError).not.toBeNull();
+
+    await sweep('2026-07-28T14:00:00.000Z');
+
+    expect(frontier('s1')?.lastError).toBeNull();
+  });
+
+  it('survives a database that will not take the write recording a file failure', async () => {
+    // The recording write sits inside the `catch` for ONE file. A `SQLITE_BUSY`
+    // there used to escape the catch, the loop and the sweep — on a corpus of
+    // 19,000 transcripts, one unreadable file stopped every file after it.
+    await writeTranscript('s1', [saidLine('the file that cannot be projected')]);
+    const breaking: FileSource = {
+      ...source,
+      project: () => {
+        throw new Error('unexpected record shape at line 12');
+      },
+    };
+    let armed = true;
+    const busyOnce = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'transaction' && armed) {
+          armed = false;
+          return () => {
+            throw new Error('SQLITE_BUSY: database is locked');
+          };
+        }
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    }) as Db;
+
+    const result = await sweepFileSource(busyOnce, breaking, '2026-07-28T13:00:00.000Z');
+
+    expect(result.failures).toEqual([
+      {
+        sourceId: 'claude-code',
+        originKey: 's1',
+        message: 'unexpected record shape at line 12',
+      },
+    ]);
+    // The sweep finished its own housekeeping rather than ending mid-loop.
+    expect(result.pruned).toBe(0);
   });
 
   it('numbers messages continuously across the projection batch boundary', async () => {

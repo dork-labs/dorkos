@@ -30,10 +30,12 @@ export const SEARCH_RECONCILE_INTERVAL_MS = 300_000;
  * The `originKey` a failure carries when a whole source threw before its
  * mechanism could attribute the error to anything.
  *
- * Every mechanism catches per container, and two of them also catch their own
- * setup — a discovery that rejects, a snapshot that will not open. This is the
- * backstop for whatever neither covers, and it exists so that one source's bad
- * day cannot stop the sources swept after it.
+ * Every mechanism catches per container, and every mechanism also catches its
+ * own discovery — one that rejects, a snapshot that will not open, a container
+ * list that will not read. What is left for this backstop is a throw belonging
+ * to no container at all: the prune, or the one statement that stamps the
+ * attempt across the source. It exists so that one source's bad day cannot stop
+ * the sources swept after it.
  */
 export const SOURCE_FAILURE_KEY = '(source)';
 
@@ -108,6 +110,14 @@ export class SearchIndexer {
    * milliseconds behind is the normal state of this cache, and boot should not
    * wait on a cache.
    *
+   * **Not awaiting it is only half of not waiting for it.** `better-sqlite3` is
+   * synchronous, so a row source's whole pass used to run to completion inside
+   * this call whatever the caller did with the promise — boot blocked on the
+   * work rather than on the await. What makes the claim true end to end is the
+   * yield every sweep takes between containers (`frontier-store.ts`), which is
+   * why this returns after the first container rather than after the last
+   * (DOR-702).
+   *
    * The timer is `unref`'d so it never holds the process open — **optionally**,
    * because not every host's `setInterval` is Node's. In an Electron renderer
    * with node integration the global is Blink's, which returns a plain number
@@ -123,7 +133,20 @@ export class SearchIndexer {
     this.timer.unref?.();
   }
 
-  /** Stop sweeping. */
+  /**
+   * Stop sweeping.
+   *
+   * **It stops the timer, not the sweep already running.** A sweep now yields
+   * between containers, so one can be mid-pass when this is called — an admin
+   * reset closes the database underneath it, and the next container's write
+   * lands on a closed handle. That is safe rather than lucky: every write in a
+   * pass is inside the per-container `catch`, a `tryWrite`, or — for the prune
+   * and the attempt stamp, which belong to no container — this class's own
+   * per-source wrap. The throw becomes one recorded failure and the pass ends
+   * normally on a result nobody reads. Traced deliberately (DOR-702 review) and
+   * recorded here so nobody "fixes" it into an unhandled rejection by moving a
+   * write out of a guard.
+   */
   stop(): void {
     if (!this.timer) return;
     clearInterval(this.timer);
@@ -167,7 +190,7 @@ export class SearchIndexer {
             ? await sweepFileSource(this.db, source, at)
             : source.mechanism === 'sqlite-snapshot'
               ? await sweepSnapshotSource(this.db, source, at)
-              : sweepRowSource(this.db, source, at);
+              : await sweepRowSource(this.db, source, at);
         result.containers += swept.containers;
         result.indexed += swept.indexed;
         result.skipped += swept.skipped;
@@ -189,7 +212,20 @@ export class SearchIndexer {
     return result;
   }
 
-  /** Run a sweep in the background, logging whatever it reports. */
+  /**
+   * Run a sweep in the background, logging whatever it reports.
+   *
+   * **Nothing stops two sweeps overlapping**, and since a sweep yields between
+   * containers that is now easier to reach: a pass slower than the interval is
+   * still running when the next tick fires. Left unguarded deliberately, because
+   * overlap is currently harmless rather than merely unlikely — every write is
+   * its own transaction, the message insert is an idempotent upsert keyed
+   * `(source, container, ordinal)`, the frontier write is an upsert of the same
+   * shape, and each pass computes its prune set from the container list IT
+   * discovered, so neither can delete on the other's view. The first write that
+   * is not idempotent breaks that argument; a guard is filed as DOR-1578 for
+   * when one arrives.
+   */
   private runSweep(): void {
     this.sweep()
       .then((result) => {

@@ -25,11 +25,16 @@
  */
 import { messages, searchSources, and, eq, sql, type Db } from '@dorkos/db';
 import {
+  clearSourceError,
   deleteContainerMessages,
+  DISCOVERY_FAILURE_KEY,
   insertMessages,
   pruneVanished,
   readIndexedOrdinals,
   stampAttempt,
+  stampSourceError,
+  tryWrite,
+  yieldToEventLoop,
   type Writer,
 } from './frontier-store.js';
 import type { ContainerReader, RowContainer, RowSource, SourceSweep } from './types.js';
@@ -71,7 +76,7 @@ interface FrontierState {
  * @param source - The registry row being swept.
  * @param at - The ISO-8601 timestamp to stamp this attempt with.
  */
-export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSweep {
+export async function sweepRowSource(db: Db, source: RowSource, at: string): Promise<SourceSweep> {
   return sweepContainers(
     db,
     source.id,
@@ -107,13 +112,13 @@ export function sweepRowSource(db: Db, source: RowSource, at: string): SourceSwe
  *   set by the snapshot mechanism, where a short list can also mean the copy
  *   caught an earlier moment.
  */
-export function sweepContainers(
+export async function sweepContainers(
   db: Db,
   sourceId: string,
   reader: ContainerReader,
   at: string,
   options: { minLiveShare?: number } = {}
-): SourceSweep {
+): Promise<SourceSweep> {
   const sweep: SourceSweep = {
     sourceId,
     containers: 0,
@@ -124,12 +129,40 @@ export function sweepContainers(
     failures: [],
   };
 
-  const containers = reader.listContainers();
+  // **Listing the containers is discovery, and discovery failing is a source
+  // failure rather than a sweep failure** (DOR-709). It reads either DorkOS's
+  // own tables or a copy of another program's, so it can fail for reasons that
+  // have nothing to do with any one container — a store whose schema moved, a
+  // snapshot that opened and then would not answer. This used to sit outside
+  // every `try` in the file, so the throw escaped the mechanism entirely: the
+  // reconciler's per-source wrap caught it, but nothing was written to
+  // `search_sources.last_error`, and somebody searching saw a source quietly
+  // return nothing with no warning attached.
+  //
+  // Nothing is pruned on this path — an empty container list from a failed
+  // discovery must never be read as "every container is gone".
+  let containers: RowContainer[];
+  try {
+    containers = reader.listContainers();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    tryWrite(`the ${sourceId} discovery failure`, () => {
+      stampSourceError(db, sourceId, message, at);
+    });
+    sweep.failures.push({ sourceId, originKey: DISCOVERY_FAILURE_KEY, message });
+    return sweep;
+  }
+
   sweep.containers = containers.length;
   const state = readFrontierState(db, sourceId);
   const live = new Set(containers.map((container) => container.originKey));
 
   for (const container of containers) {
+    // `better-sqlite3` is synchronous, so without this the whole pass is one
+    // unbroken block and nothing else in the process moves until it ends
+    // (DOR-702). One loop iteration per container is the price.
+    await yieldToEventLoop();
+
     try {
       const outcome = indexContainer(db, sourceId, reader, container, state, at);
       sweep.indexed += outcome.indexed;
@@ -137,10 +170,27 @@ export function sweepContainers(
       if (outcome.rebuilt) sweep.rebuilt += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      recordFailure(db, sourceId, container, state, at, message);
+      // Recording WHY must not become a second failure that escapes this catch
+      // and takes the remaining containers with it.
+      tryWrite(`why ${sourceId}/${container.originKey} failed`, () => {
+        recordFailure(db, sourceId, container, state, at, message);
+      });
       sweep.failures.push({ sourceId, originKey: container.originKey, message });
     }
   }
+
+  // The list read and every container had its turn, so whatever was wrong with
+  // the source as a WHOLE is over and its warning must stop. An unchanged
+  // container writes no frontier row of its own, so without this a whole-source
+  // stamp would outlive the fault forever. Cleared AFTER the loop and never over
+  // a container that failed in it — see {@link clearSourceError}.
+  tryWrite(`the ${sourceId} recovery`, () => {
+    clearSourceError(
+      db,
+      sourceId,
+      sweep.failures.map((failure) => failure.originKey)
+    );
+  });
 
   // **A prune is the one irreversible thing a sweep does**, so it is the one
   // that refuses to act on a container list it has reason to doubt. Everything

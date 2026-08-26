@@ -8,11 +8,8 @@ import type { UserConfig } from '@dorkos/shared/config-schema';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { resolveClaudeRootSet } from '../../runtimes/claude-code/claude-config-dir.js';
 import { discoverClaudeCodeTranscripts } from '../claude-code-discovery.js';
-import {
-  sweepFileSource,
-  DISCOVERY_FAILURE_KEY,
-  DUPLICATE_CONTAINERS_KEY,
-} from '../jsonl-frontier.js';
+import { DISCOVERY_FAILURE_KEY } from '../frontier-store.js';
+import { sweepFileSource, DUPLICATE_CONTAINERS_KEY } from '../jsonl-frontier.js';
 import { claudeCodeSource, createClaudeCodeSource } from '../registry.js';
 import type { FileSource, SourceSweep } from '../types.js';
 
@@ -109,6 +106,22 @@ function indexed(): { originKey: string; body: string }[] {
     .from(messages)
     .orderBy(messages.body)
     .all();
+}
+
+/**
+ * Every frontier row's `last_error`, in container order.
+ *
+ * The column `sourceWarnings` reads, and the only thing that decides whether a
+ * person searching is told their corpus is incomplete.
+ */
+function frontierErrors(): (string | null)[] {
+  return db
+    .select()
+    .from(searchSources)
+    .where(eq(searchSources.sourceId, 'claude-code'))
+    .orderBy(searchSources.originKey)
+    .all()
+    .map((row) => row.lastError);
 }
 
 /**
@@ -264,6 +277,39 @@ describe('one root failing does not narrow the corpus silently', () => {
         .map((row) => row.originKey)
         .sort()
     ).toEqual(['session-a', 'session-b']);
+    // **And the person searching is told, which is the whole point of reporting
+    // it.** `sourceWarnings` reads `search_sources.last_error` and nothing else,
+    // so an account missing from every result raises no warning without this.
+    // Every row of the source carries it, deterministically: a stamp written
+    // before the loop would survive only on whichever containers happened not to
+    // change, so whether anyone was warned would depend on who was talking.
+    expect(frontierErrors()).toEqual([
+      expect.stringContaining(brokenProjects),
+      expect.stringContaining(brokenProjects),
+    ]);
+  });
+
+  it('stops warning once every root reads again', async () => {
+    // A stamp nothing clears is a warning that outlives its fault forever, and
+    // an unchanged transcript writes no row of its own to clear it.
+    const healthy = await makeRoot('claude-a');
+    await writeSession(healthy.projects, 'session-a', 'indexed from the readable root');
+    const brokenRoot = path.join(tmp, 'claude-c');
+    await fs.mkdir(brokenRoot, { recursive: true });
+    const brokenProjects = path.join(brokenRoot, 'projects');
+    await fs.writeFile(brokenProjects, 'not a directory');
+    const source = createClaudeCodeSource(() => [healthy.projects, brokenProjects]);
+
+    await sweep(source);
+    expect(frontierErrors()).toEqual([expect.stringContaining(brokenProjects)]);
+
+    // The root becomes readable: the file standing where the directory belongs
+    // is replaced by the directory.
+    await fs.rm(brokenProjects);
+    await fs.mkdir(brokenProjects, { recursive: true });
+    await sweep(source, '2026-08-24T14:00:00.000Z');
+
+    expect(frontierErrors()).toEqual([null]);
   });
 
   it('prunes normally once every root reads — the control the test above needs', async () => {
