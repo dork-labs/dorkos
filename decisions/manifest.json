@@ -4942,8 +4942,8 @@
     },
     {
       "id": "260825-232207",
-      "slug": "sticky-scheduled-tasks-resume-one-derived-session",
-      "title": "Sticky scheduled tasks resume one derived session across runs",
+      "slug": "sticky-scheduled-tasks-resume-one-real-session",
+      "title": "Sticky scheduled tasks resume one real SDK session across runs",
       "status": "proposed",
       "created": "2026-08-25",
       "extractedFrom": null,
@@ -4953,6 +4953,7 @@
       "affects": [
         "apps/server/src/services/tasks/session/sticky-session.ts",
         "apps/server/src/services/tasks/task-scheduler-service.ts",
+        "apps/server/src/services/tasks/task-store.ts",
         "apps/server/src/services/tasks/relay-dispatch.ts",
         "packages/relay/src/adapters/claude-code/task-handler.ts",
         "packages/skills/src/schedule-schema.ts",

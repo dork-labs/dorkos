@@ -86,6 +86,16 @@ export interface SchedulerAgentManager {
    * running. Resolves false when the runtime found no in-flight turn to abort.
    */
   interruptQuery(sessionId: string): Promise<boolean>;
+  /**
+   * The runtime's OWN session id for a session key, after the SDK has minted or
+   * kept one (`AgentRuntime.getInternalSessionId`).
+   *
+   * A sticky run reads this once its turn is over to learn the real id the SDK
+   * wrote its transcript under, then persists it as the run's `sessionId` so the
+   * next fire can resume that exact conversation (DOR-1571). Returns undefined
+   * when the session is gone or never started.
+   */
+  getInternalSessionId(sessionId: string): string | undefined;
 }
 
 /** Configuration for the task scheduler service. */
@@ -831,15 +841,21 @@ export class TaskSchedulerService {
     const startTime = Date.now();
     let outputChars = 0;
     let outputSummary = '';
-    // Which session this run executes on. A non-sticky run is isolated on the
-    // run's own id, exactly as before; a sticky run resumes ONE derived session
-    // shared by every run of the task, so context carries across runs (DOR-1571).
-    // Declared out here, not inside the `try`, because the failure finalizer
-    // needs it too: a run that failed is exactly when somebody wants to open the
-    // transcript, and a row with no sessionId is not clickable in the run
-    // history. Writing the sticky id here is also what makes any sticky run in the
-    // history open the same growing transcript.
+    // Which session this run runs on. A non-sticky run is isolated on the run's
+    // own id, exactly as before; a sticky run resumes the real SDK session of the
+    // task's previous run, so context carries across runs (DOR-1571). Declared out
+    // here, not inside the `try`, because the failure finalizer needs it too.
     const { sessionId, hasStarted } = resolveRunSession(this.store, task, run);
+
+    // What to write as this run's `sessionId`. For a sticky run it is the RUNTIME's
+    // own id after the turn — the id the SDK actually wrote its transcript under —
+    // so the next fire can resume it cold and so clicking the run opens the real
+    // conversation. `sessionId` (the key we passed in) is only a resume request;
+    // the SDK mints or keeps its own, and `getInternalSessionId` reads it back.
+    // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
+    // branch — including the failure finalizer — records the freshest answer.
+    const persistedSessionId = (): string =>
+      task.sticky ? (this.agentManager.getInternalSessionId(sessionId) ?? sessionId) : sessionId;
 
     try {
       // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
@@ -913,7 +929,7 @@ export class TaskSchedulerService {
             timedOut && task.maxRuntime
               ? `Run stopped after passing its ${formatDuration(task.maxRuntime)} time limit`
               : 'Run cancelled',
-          sessionId,
+          sessionId: persistedSessionId(),
         });
         // The cancel route emits its own `tasks.run_cancelled` the moment the
         // operator asks, attributed to "You". Emitting again here would put the
@@ -928,7 +944,7 @@ export class TaskSchedulerService {
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: outputSummary.slice(0, 500),
-          sessionId,
+          sessionId: persistedSessionId(),
         });
         emitRunActivity(this.activityService, task, run, 'completed', durationMs);
       }
@@ -941,7 +957,7 @@ export class TaskSchedulerService {
         durationMs,
         outputSummary: outputSummary.slice(0, 500),
         error: errorMsg,
-        sessionId,
+        sessionId: persistedSessionId(),
       });
       logger.error(`run ${run.id} failed:`, err);
       emitRunActivity(this.activityService, task, run, 'failed', durationMs, errorMsg);

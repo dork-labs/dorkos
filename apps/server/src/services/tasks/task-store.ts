@@ -1,4 +1,4 @@
-import { eq, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
+import { eq, desc, and, count, inArray, notInArray, lt, isNull, isNotNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -755,29 +755,39 @@ export class TaskStore {
   }
 
   /**
-   * Whether any run has already executed on this session id (DOR-1571).
+   * The REAL SDK session id of this task's most recent run that actually ran a
+   * turn — the resume target for the next sticky fire (DOR-1571).
    *
-   * A run row carries `sessionId` only once it reaches a terminal status — that
-   * is where every dispatch path writes it — so a match means a turn genuinely
-   * ran on this session and left a transcript to resume. The scheduler uses this
-   * to decide `hasStarted` for a sticky session: the first fire finds nothing and
-   * starts fresh; a later fire finds the prior run and RESUMES, picking the
-   * conversation back up.
+   * A run row carries `sessionId` only once it reaches a terminal status, and a
+   * sticky run writes the runtime's OWN session id there (the UUID the SDK minted
+   * or kept), not a synthetic one — because the SDK writes its transcript on disk
+   * under that id, and resume finds `{sessionId}.jsonl` only when the id is the
+   * real one (`launch-resolver.ts` sets `resume = session.sdkSessionId`). So the
+   * most recent run's stored id is exactly the session the next fire must resume
+   * to pick the conversation back up, cold across eviction and restart. The very
+   * first fire finds none and starts fresh; every later fire resumes.
    *
    * A `skipped` run never ran and never wrote a `sessionId`, so it is correctly
-   * absent here — a task whose only history is skips still starts fresh.
+   * absent; the current (still-running) run has a NULL `sessionId` too, so it can
+   * never be its own resume target.
    *
-   * @param sessionId - The session id to look up.
-   * @returns True when a prior run executed on this session.
+   * @param taskId - The task whose latest session to resume.
+   * @returns The real SDK session id to resume, or null when none has run yet.
    */
-  sessionHasRun(sessionId: string): boolean {
+  latestStickySessionId(taskId: string): string | null {
     const row = this.db
-      .select({ id: pulseRuns.id })
+      .select({ sessionId: pulseRuns.sessionId })
       .from(pulseRuns)
-      .where(eq(pulseRuns.sessionId, sessionId))
+      .where(and(eq(pulseRuns.scheduleId, taskId), isNotNull(pulseRuns.sessionId)))
+      // `created_at` is an ISO string at millisecond resolution with no
+      // tiebreaker, so two runs written in the same millisecond order
+      // arbitrarily (the same hazard `pruneRuns` documents). Here the tie would
+      // resume the WRONG session, so `rowid` — strict insertion order — breaks
+      // it deterministically toward the run written last.
+      .orderBy(desc(pulseRuns.createdAt), sql`rowid DESC`)
       .limit(1)
       .get();
-    return row !== undefined;
+    return row?.sessionId ?? null;
   }
 
   /** Count total runs, optionally filtered by task. */

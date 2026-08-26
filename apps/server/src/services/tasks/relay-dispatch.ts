@@ -90,11 +90,12 @@ export async function dispatchRunViaRelay(
     return;
   }
 
-  // Which session the receiver must run on, decided HERE because only this side
-  // has the store to answer it (DOR-1571). A non-sticky run resolves to the
-  // run's own id with no resume — the wire default — so the branch below only
-  // adds fields for a sticky run, keeping every non-sticky envelope byte-for-byte
-  // what it was.
+  // Which session the receiver must resume, decided HERE because only this side
+  // has the store to answer it (DOR-1571). For a resuming sticky run this is the
+  // REAL SDK id of the task's previous run (so the runtime finds its transcript);
+  // a first sticky fire and every non-sticky run resolve to the run's own id with
+  // no resume — the wire default — so the branch below only adds fields for a
+  // sticky run, keeping every non-sticky envelope byte-for-byte what it was.
   const { sessionId, hasStarted } = resolveRunSession(deps.store, task, run);
 
   const payload: TaskDispatchPayload = {

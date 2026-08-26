@@ -179,15 +179,23 @@ export async function handleTasksMessage(
   const payload = parsed.data;
   const { taskId, runId, prompt, cwd, permissionMode, systemPromptAppend } = payload;
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
-  // The session this run executes on. A STICKY task resolves a shared, stable
-  // session on the scheduler side and carries it here; every other run falls back
-  // to the run id, which is the isolated-per-run session this path has always used
-  // (DOR-1571). `resumeSession` is that session's `hasStarted`: resume an existing
-  // sticky conversation, or start fresh — false for every non-sticky run. The
-  // resolved id is also what lands on the run row, so any sticky run in the
-  // history opens the same growing transcript.
+  // The session this run runs on. A STICKY task resolves a resume target on the
+  // scheduler side — the REAL SDK id of its previous run — and carries it here;
+  // every other run falls back to the run id, the isolated-per-run session this
+  // path has always used (DOR-1571). `resumeSession` is that session's
+  // `hasStarted`: resume the existing conversation, or start fresh — false for
+  // every non-sticky run and a sticky task's first fire.
   const sessionId = payload.sessionId ?? runId;
   const hasStarted = payload.resumeSession ?? false;
+  // A run carries `payload.sessionId` only when it is sticky. For those, the id
+  // to WRITE on the run row is the runtime's own id after the turn — the id the
+  // SDK actually wrote its transcript under (`getSdkSessionId`), which the next
+  // fire resumes and which makes the run clickable to the real conversation.
+  // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
+  // branch records the freshest answer.
+  const isSticky = payload.sessionId !== undefined;
+  const persistedSessionId = (): string =>
+    isSticky ? (deps.agentManager.getSdkSessionId(sessionId) ?? sessionId) : sessionId;
 
   // Record trace span as delivered
   deps.traceStore.insertSpan({
@@ -282,7 +290,7 @@ export async function handleTasksMessage(
           durationMs,
           outputSummary: truncatedSummary,
           error: stoppedByOperator ? 'Run cancelled' : 'Run timed out (TTL budget expired)',
-          sessionId,
+          sessionId: persistedSessionId(),
         });
       } else {
         deps.taskStore.updateRun(runId, {
@@ -290,7 +298,7 @@ export async function handleTasksMessage(
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          sessionId,
+          sessionId: persistedSessionId(),
         });
       }
     }
@@ -319,7 +327,7 @@ export async function handleTasksMessage(
         durationMs,
         outputSummary: outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS),
         error: errorMsg,
-        sessionId,
+        sessionId: persistedSessionId(),
       });
     }
 

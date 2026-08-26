@@ -23,7 +23,9 @@ function mockAgentManager(): AgentRuntimeLike {
         // no events → immediate completion
       })()
     ),
-    getSdkSessionId: vi.fn().mockReturnValue(undefined),
+    // Models the SDK remap: after the turn, the session's real id differs from
+    // the key it was handed. The handler must persist THIS, not the key.
+    getSdkSessionId: vi.fn().mockReturnValue('sdk-real-after-turn'),
     approveTool: vi.fn().mockReturnValue(true),
     interruptQuery: vi.fn().mockResolvedValue(true),
   } as unknown as AgentRuntimeLike;
@@ -71,26 +73,30 @@ describe('handleTasksMessage sticky session (DOR-1571)', () => {
   it('runs on the carried session and resumes it, writing that id to the run row', async () => {
     const payload = basePayload({
       runId: 'run-9',
-      sessionId: 'sticky-task-1',
+      // The resume target is a REAL prior SDK id (whose transcript exists), not a
+      // synthetic one — that is the whole fix.
+      sessionId: 'sdk-prev-uuid',
       resumeSession: true,
     });
 
     await handleTasksMessage('sub', envelopeFor(payload), undefined, Date.now(), config, deps);
 
-    // The turn ran on the sticky session, resuming it.
+    // The turn ran on the carried resume target, resuming it.
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      'sticky-task-1',
+      'sdk-prev-uuid',
       expect.objectContaining({ hasStarted: true, unattended: true })
     );
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
-      'sticky-task-1',
+      'sdk-prev-uuid',
       'do the thing',
       expect.anything()
     );
-    // The run row points at the shared session, not the run id.
+    // The run row records the RUNTIME's own id after the turn (via getSdkSessionId),
+    // so the next fire resumes it and the run opens the real transcript — not the
+    // key the handler was passed.
     expect(taskStore.updateRun).toHaveBeenCalledWith(
       'run-9',
-      expect.objectContaining({ status: 'completed', sessionId: 'sticky-task-1' })
+      expect.objectContaining({ status: 'completed', sessionId: 'sdk-real-after-turn' })
     );
   });
 

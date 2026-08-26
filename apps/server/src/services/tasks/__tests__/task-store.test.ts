@@ -984,21 +984,34 @@ describe('TaskStore', () => {
       expect(store.hasRunningRunForTask(task.id)).toBe(false);
     });
 
-    it('sessionHasRun is true only once a run has written that session id', () => {
+    it("latestStickySessionId returns the newest run's real SDK id, or null", () => {
       const task = store.createTask(taskInput({ name: 'resume', cron: '0 2 * * *' }));
-      const sessionId = `sticky-${task.id}`;
-      expect(store.sessionHasRun(sessionId)).toBe(false);
+      // No run has executed yet → the first fire starts fresh.
+      expect(store.latestStickySessionId(task.id)).toBeNull();
 
-      const run = store.createRun(task.id, 'scheduled');
-      // A running run has not written its session id yet, so still fresh.
-      expect(store.sessionHasRun(sessionId)).toBe(false);
-
-      store.updateRun(run.id, {
+      const run1 = store.createRun(task.id, 'scheduled');
+      // A running run has written no session id yet, so it is not a resume target.
+      expect(store.latestStickySessionId(task.id)).toBeNull();
+      store.updateRun(run1.id, {
         status: 'completed',
         finishedAt: new Date().toISOString(),
-        sessionId,
+        sessionId: 'sdk-uuid-1',
       });
-      expect(store.sessionHasRun(sessionId)).toBe(true);
+      expect(store.latestStickySessionId(task.id)).toBe('sdk-uuid-1');
+
+      // A newer run's id supersedes it — the chain follows the SDK's re-mint.
+      const run2 = store.createRun(task.id, 'scheduled');
+      store.updateRun(run2.id, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        sessionId: 'sdk-uuid-2',
+      });
+      expect(store.latestStickySessionId(task.id)).toBe('sdk-uuid-2');
+
+      // A later skipped run (no session id) never becomes the target.
+      const run3 = store.createRun(task.id, 'scheduled');
+      store.updateRun(run3.id, { status: 'skipped', finishedAt: new Date().toISOString() });
+      expect(store.latestStickySessionId(task.id)).toBe('sdk-uuid-2');
     });
   });
 

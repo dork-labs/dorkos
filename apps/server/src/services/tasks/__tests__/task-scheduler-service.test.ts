@@ -27,7 +27,84 @@ function createMockAgentManager(): SchedulerAgentManager {
       // Default: no events (immediate completion)
     }),
     interruptQuery: vi.fn().mockResolvedValue(true),
+    // The bare mock never remaps, so a sticky run persists the key it was given.
+    // The sticky tests that care about the SDK's id remap use RemapFakeAgent below.
+    getInternalSessionId: vi.fn(() => undefined),
   } as unknown as SchedulerAgentManager;
+}
+
+/**
+ * A scheduler agent-manager that MODELS the Claude Code SDK's session-id remap
+ * (DOR-1571), so a test can cross the real resume-by-id seam a bare `vi.fn()`
+ * cannot.
+ *
+ * The runtime mints (or, on a genuine resume, keeps) its OWN session id on the
+ * first turn and writes the transcript on disk under THAT id — never the key
+ * passed to `ensureSession`. Resume finds a session only when its key names a
+ * transcript that exists. This fake reproduces exactly that: `sendMessage` mints
+ * a fresh SDK id and records a transcript for it, unless the caller asked to
+ * resume a key that already has one — in which case it keeps that id and marks
+ * the turn as having loaded history. `getInternalSessionId` reports the id the
+ * turn actually ran under. {@link evict} drops the in-memory sessions while the
+ * transcripts survive, modelling idle-reap or a restart — the exact condition
+ * under which the old synthetic-id approach silently lost all context.
+ */
+class RemapFakeAgent {
+  /** Live session key → the SDK id its last turn ran under. */
+  private live = new Map<string, string>();
+  /** SDK ids that have a transcript on disk (survive {@link evict}). */
+  readonly transcripts = new Set<string>();
+  private counter = 0;
+  private pendingHasStarted = new Map<string, boolean>();
+  /** One record per turn, newest last. */
+  readonly turns: Array<{
+    key: string;
+    hasStarted: boolean;
+    resumedFrom: string | null;
+    loadedHistory: boolean;
+    ranAs: string;
+  }> = [];
+
+  ensureSession(sessionId: string, opts: { hasStarted?: boolean }): void {
+    if (!this.live.has(sessionId)) this.live.set(sessionId, sessionId);
+    this.pendingHasStarted.set(sessionId, opts.hasStarted ?? false);
+  }
+
+  async *sendMessage(sessionId: string): AsyncGenerator<StreamEvent> {
+    const hasStarted = this.pendingHasStarted.get(sessionId) ?? false;
+    // Resume succeeds ONLY if the key names a transcript that exists on disk.
+    const resuming = hasStarted && this.transcripts.has(sessionId);
+    let ranAs: string;
+    if (resuming) {
+      // Claude Code continues the same session file — the id is kept.
+      ranAs = sessionId;
+    } else {
+      // Fresh session: the SDK mints its own id and writes a new transcript.
+      ranAs = `sdk-${++this.counter}`;
+      this.transcripts.add(ranAs);
+    }
+    this.live.set(sessionId, ranAs);
+    this.turns.push({
+      key: sessionId,
+      hasStarted,
+      resumedFrom: resuming ? sessionId : null,
+      loadedHistory: resuming,
+      ranAs,
+    });
+    // No events → immediate completion.
+  }
+
+  getInternalSessionId(sessionId: string): string | undefined {
+    return this.live.get(sessionId);
+  }
+
+  interruptQuery = vi.fn().mockResolvedValue(true);
+
+  /** Idle-reap / restart: forget in-memory sessions; transcripts persist on disk. */
+  evict(): void {
+    this.live.clear();
+    this.pendingHasStarted.clear();
+  }
 }
 
 /**
@@ -763,31 +840,33 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
-    it('a sticky relay dispatch carries the shared session, resuming after the first (DOR-1571)', async () => {
+    it("a sticky relay dispatch carries the prior run's REAL session as the resume target (DOR-1571)", async () => {
       const task = store.createTask(
         taskInput({ name: 'Sticky relay', cron: '0 * * * *', sticky: true })
       );
-      const expected = `sticky-${task.id}`;
       const service = relayScheduler();
 
-      // First fire: the shared session, not yet resumed.
+      // First fire: no prior run, so it starts fresh under the run's own id.
       const first = await service.triggerManualRun(task.id);
       const [, firstPayload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
-      expect(firstPayload.sessionId).toBe(expected);
+      expect(firstPayload.sessionId).toBe(first!.id);
       expect(firstPayload.resumeSession).toBe(false);
 
-      // The receiver finishes the turn on the sticky session — only the run row
-      // knows how a relay run ends, and it now records that session.
+      // The receiver finishes the turn and records the RUNTIME's own session id
+      // (a UUID it minted), not the key it was handed — only the run row knows
+      // how a relay run ends.
+      const realId = 'sdk-real-uuid-1';
       store.updateRun(first!.id, {
         status: 'completed',
         finishedAt: new Date().toISOString(),
-        sessionId: expected,
+        sessionId: realId,
       });
 
-      // A later scheduled fire resumes the same session.
+      // A later scheduled fire resumes that REAL id — the one whose transcript
+      // exists on disk — so the runtime can rehydrate it cold.
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_100_000));
       const [, secondPayload] = mockRelay.publish.mock.calls[1] as [string, TaskDispatchPayload];
-      expect(secondPayload.sessionId).toBe(expected);
+      expect(secondPayload.sessionId).toBe(realId);
       expect(secondPayload.resumeSession).toBe(true);
       await service.stop();
     });
@@ -884,45 +963,57 @@ describe('TaskSchedulerService', () => {
       dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
     };
 
-    /** ensureSession's calls: [sessionId, opts] per invocation. */
-    function ensureCalls(): Array<[string, { hasStarted?: boolean }]> {
-      return vi.mocked(mockAgent.ensureSession).mock.calls as unknown as Array<
-        [string, { hasStarted?: boolean }]
-      >;
-    }
-
-    it('a sticky task runs every fire on ONE derived session, resuming after the first', async () => {
+    /**
+     * The critical test (DOR-1571 review, finding #1): sticky must survive the
+     * loss of the in-memory session — idle-reap or a restart — which is the norm
+     * for the hourly/daily schedules sticky targets. It fails against a synthetic
+     * derived id (which has no transcript on disk to resume) and passes only when
+     * the resume target is the runtime's REAL session id, captured from the prior
+     * run and persisted.
+     */
+    it("resumes the prior run's REAL SDK session AFTER eviction, loading its history", async () => {
+      const fake = new RemapFakeAgent();
       const task = store.createTask(
-        taskInput({ name: 'Sticky one', cron: '* * * * *', sticky: true })
+        taskInput({ name: 'Sticky cold', cron: '* * * * *', sticky: true })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService(store, fake as unknown as SchedulerAgentManager, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 5,
+      });
       const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
 
+      // First fire: fresh. The SDK mints its own id; the run row records THAT id.
       await dispatch(task, new Date(1_700_000_040_000));
+      const firstRun = store.listRuns({ taskId: task.id })[0];
+      const realId = fake.turns[0].ranAs;
+      expect(firstRun.sessionId).toBe(realId);
+      expect(realId).not.toBe(firstRun.id); // the key we passed in was remapped
+      expect(fake.turns[0].loadedHistory).toBe(false);
+
+      // The in-memory session is reaped / the process restarts — only the
+      // transcript on disk survives. This is where the derived-id approach died.
+      fake.evict();
+
+      // Second fire: resume the FIRST run's real id, and genuinely load history.
       await dispatch(task, new Date(1_700_000_100_000));
-
-      const expected = `sticky-${task.id}`;
-      // Both runs point their transcript at the SAME session — clicking either
-      // in the history opens the one growing conversation.
+      const secondTurn = fake.turns[1];
+      expect(secondTurn.key).toBe(realId); // resumed the real transcript, not a synthetic id
+      expect(secondTurn.hasStarted).toBe(true);
+      expect(secondTurn.loadedHistory, 'the runtime resumed and loaded prior context').toBe(true);
+      // Every run in the history points at the resumed conversation.
       const runs = store.listRuns({ taskId: task.id });
-      expect(runs).toHaveLength(2);
-      expect(runs[0].sessionId).toBe(expected);
-      expect(runs[1].sessionId).toBe(expected);
-
-      // The agent was asked to run on the sticky id both times; the first fire
-      // started fresh, the second RESUMED it.
-      const calls = ensureCalls();
-      expect(calls[0][0]).toBe(expected);
-      expect(calls[1][0]).toBe(expected);
-      expect(calls[0][1].hasStarted).toBe(false);
-      expect(calls[1][1].hasStarted).toBe(true);
+      expect(runs.every((r) => r.sessionId === realId)).toBe(true);
 
       await service.stop();
     });
 
     it('a non-sticky task still gets a fresh session per run (unchanged)', async () => {
+      const fake = new RemapFakeAgent();
       const task = store.createTask(taskInput({ name: 'Fresh each time', cron: '* * * * *' }));
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService(store, fake as unknown as SchedulerAgentManager, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 5,
+      });
       const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
 
       await dispatch(task, new Date(1_700_000_040_000));
@@ -930,12 +1021,12 @@ describe('TaskSchedulerService', () => {
 
       const runs = store.listRuns({ taskId: task.id });
       expect(runs).toHaveLength(2);
-      // Each run's session id is its own run id, and the two differ.
+      // Non-sticky keeps writing the run's own id (byte-for-byte the old behaviour),
+      // and the two runs differ. Neither ever resumes.
       expect(runs[0].sessionId).toBe(runs[0].id);
       expect(runs[1].sessionId).toBe(runs[1].id);
       expect(runs[0].sessionId).not.toBe(runs[1].sessionId);
-      // Never resumes.
-      expect(ensureCalls().every(([, opts]) => opts.hasStarted === false)).toBe(true);
+      expect(fake.turns.every((t) => t.loadedHistory === false)).toBe(true);
 
       await service.stop();
     });
@@ -948,7 +1039,9 @@ describe('TaskSchedulerService', () => {
       vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
 
       // Cap set high so the ONLY reason to skip is sticky single-session
-      // serialization, not the global concurrency cap.
+      // serialization, not the global concurrency cap. Reverting the stickyBusy
+      // clause turns the second fire into a SECOND sendMessage on the same
+      // session (this assertion reddens), not merely a missing skipped row.
       const service = new TaskSchedulerService(store, mockAgent, {
         ...DEFAULT_CONFIG,
         maxConcurrentRuns: 5,
@@ -958,14 +1051,20 @@ describe('TaskSchedulerService', () => {
       void dispatch(task, new Date(1_700_000_040_000));
       await parked;
 
-      await dispatch(task, new Date(1_700_000_100_000));
+      // The second fire must NOT open a turn. If the stickyBusy guard is removed,
+      // it does — and that second `sendMessage` parks forever, so we cannot simply
+      // await this dispatch. Race it against a short deadline: with the guard it
+      // resolves at once (skipped, no await); without it, it hangs on the second
+      // turn and the deadline wins — either way we then assert on the call count.
+      const secondFire = dispatch(task, new Date(1_700_000_100_000));
+      await Promise.race([secondFire, new Promise((r) => setTimeout(r, 100))]);
 
-      const runs = store.listRuns({ taskId: task.id });
-      const skipped = runs.find((r) => r.status === 'skipped');
+      // No second turn was ever started on the session (the RIGHT reason to skip,
+      // not merely a missing row): reverting stickyBusy reddens THIS.
+      expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
+      const skipped = store.listRuns({ taskId: task.id }).find((r) => r.status === 'skipped');
       expect(skipped, 'the second fire wrote a skipped run').toBeDefined();
       expect(skipped!.error).toContain('one session');
-      // No second turn was ever started on the session.
-      expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
 
       await service.stop();
     });
