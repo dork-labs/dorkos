@@ -6,7 +6,7 @@ import { cachedSessionForCwd } from '@/layers/entities/session';
 import {
   cn,
   getAgentDisplayName,
-  getPlatform,
+  platformCanSearchMessages,
   openLink,
   supportsNewTab,
   supportsSeparateWindow,
@@ -289,11 +289,12 @@ export function CommandPaletteDialog() {
   // a surface, not a page, so there is no href to follow and nothing for the
   // Obsidian embed's router-less shell to trip over.
   //
-  // **Not in the Obsidian embed**, where there is no message index and
-  // `MessageSearchDialog` deliberately does not mount: a row offering to search
-  // messages there is a door onto an empty room, which is the exact dead end
-  // this row was built to avoid pointing at.
-  const handoffTerm = getPlatform().isEmbedded ? null : searchHandoffTerm(term);
+  // **Only where `MessageSearchDialog` mounts**, and asked the same way it asks
+  // (DOR-1563): a row offering to search messages in a window with no index is a
+  // door onto an empty room, which is the exact dead end this row was built to
+  // avoid pointing at. The two gates read one function so they cannot drift into
+  // a palette that advertises a box that never opens.
+  const handoffTerm = platformCanSearchMessages() ? searchHandoffTerm(term) : null;
   const searchHandoff = handoffTerm
     ? {
         term: handoffTerm,
