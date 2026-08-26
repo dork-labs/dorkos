@@ -2,11 +2,20 @@
  * Where a search hit opens, and what its row calls the place it was said in
  * (spec `message-search` §8).
  *
- * **A hit opens its CONTAINER, not the message.** Landing on the exact line is
- * a separate task with its own problems (a room scrolls to a `seq`, a
- * transcript scrolls to an index, and neither surface has an anchor today), and
- * a half-built version of it would be a link that sometimes lands in the right
- * place. The container is a promise this cockpit can keep every time.
+ * **A room hit opens ON the message; a conversation hit opens the
+ * conversation** (DOR-687). The two halves are different because the two
+ * coordinates are: a room hit's `ordinal` IS the entry's `seq`, which the room
+ * addresses its own rows by, so the coordinate the index already returns is an
+ * address. A transcript hit's `ordinal` is a running count of the messages the
+ * projection KEPT — person-authored speech and assistant text, with tool calls,
+ * tool results, thinking and command records all skipped — so it indexes
+ * nothing the session view holds. `messages[ordinal]` there is a different
+ * message, reliably, and a link that lands on the wrong line is worse than one
+ * that lands in the right conversation.
+ *
+ * Closing that half means carrying a stable per-message id end to end (the
+ * JSONL record `uuid` for Claude Code) rather than re-deriving the
+ * projection's filter in the client, and it is not this change.
  *
  * @module features/command-palette/model/message-search-target
  */
@@ -23,7 +32,7 @@ const ROOMS_SOURCE = 'rooms';
 
 /** Where one hit opens, as a TanStack Router destination. */
 export type MessageSearchTarget =
-  | { kind: 'room'; to: '/channels'; search: { id: string } }
+  | { kind: 'room'; to: '/channels'; search: { id: string; entry: number } }
   | { kind: 'session'; to: '/session'; search: { session: string; dir: string | undefined } };
 
 /**
@@ -36,6 +45,11 @@ export type MessageSearchTarget =
  * when they are indexed — which is the difference between a switch that ages
  * well and one that starts answering `null` the week after it ships.
  *
+ * `entry` travels with a room because that is the whole of DOR-687: the room
+ * route reads it as the `seq` to land on, and the team-room redirect carries it
+ * across to Home. A room whose history no longer reaches that far says so
+ * rather than pretending (`useEntryLanding`).
+ *
  * `dir` travels with a session because the durable stream resolves a
  * conversation's history from it; a session id arriving under whatever
  * directory happened to be on screen reads another project's transcript
@@ -46,7 +60,7 @@ export type MessageSearchTarget =
  */
 export function messageSearchTarget(hit: SearchHit): MessageSearchTarget {
   if (hit.source === ROOMS_SOURCE) {
-    return { kind: 'room', to: '/channels', search: { id: hit.container } };
+    return { kind: 'room', to: '/channels', search: { id: hit.container, entry: hit.ordinal } };
   }
   return {
     kind: 'session',

@@ -35,6 +35,22 @@ export interface TimelineLandingInput {
    */
   resumeRow?: () => string | undefined;
   /**
+   * The row this conversation was ASKED to open on — a search hit's message,
+   * addressed in the URL (DOR-687).
+   *
+   * **It outranks every other landing, because it is the only one somebody
+   * asked for.** A remembered position, an unread rule and the newest message
+   * are all guesses at where a reader belongs; this is a request, and a request
+   * that loses to a guess is a link that lands in the wrong place.
+   *
+   * A getter for the same reason {@link TimelineLandingInput.resumeRow} is one,
+   * and read at the same moment — which is what keeps it out of a race with the
+   * end-landing rather than merely usually ahead of it. Answering `undefined`
+   * (no request, or a message this page of history does not hold) simply leaves
+   * the other three to decide, so the room opens where it always did.
+   */
+  landOnRow?: () => string | undefined;
+  /**
    * Told which row is at the top of the viewport, or `undefined` while the
    * reader is caught up at the bottom — which is the host's cue to forget.
    */
@@ -68,9 +84,11 @@ export interface TimelineLanding {
  * Decide where a conversation opens, ONCE per conversation, on the first render
  * that has rows.
  *
- * A reader coming back from a thread panel — which UNMOUNTS the whole timeline
+ * **A row somebody ASKED for outranks all of it** — a search hit addressed in
+ * the URL is a request rather than a guess (see `landOnRow`). Below that, a
+ * reader coming back from a thread panel — which UNMOUNTS the whole timeline
  * on a phone — belongs where they were standing, so a restored position wins
- * outright and everything else stands down. With `landOn: 'unread'` and a rule
+ * over the rest. With `landOn: 'unread'` and a rule
  * on screen, land on the rule: landing at the end makes the list pinned, which
  * marks everything seen and overwrites the very cursor that drew the rule.
  * Otherwise land on the newest row, exactly as every chat surface does.
@@ -88,7 +106,16 @@ export interface TimelineLanding {
  * @returns Whether it has landed, what it decided, and the scroll reporter.
  */
 export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding {
-  const { conversationId, rows, virtualizer, landOn, landingReady, resumeRow, onTopRow } = input;
+  const {
+    conversationId,
+    rows,
+    virtualizer,
+    landOn,
+    landingReady,
+    resumeRow,
+    landOnRow,
+    onTopRow,
+  } = input;
 
   const [measured, setMeasured] = useState(false);
   useLayoutEffect(() => {
@@ -121,6 +148,19 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // 900px, the list settled from an estimated 16 000px to a measured 4 159px,
     // and `anchorTo: 'end'` carried the offset down past zero.
     setLanded(true);
+    // Asked for, so it wins: see `landOnRow`. Centred rather than aligned to
+    // the top, because a message somebody searched for should be read WITH what
+    // was said around it — a hit flush against the viewport edge reads as the
+    // start of the conversation rather than a place in it.
+    const requested = landOnRow?.();
+    if (requested !== undefined) {
+      const index = rows.findIndex((row) => row.id === requested);
+      if (index !== -1) {
+        setLandedOn('requested');
+        virtualizer.scrollToIndex(index, { align: 'center' });
+        return;
+      }
+    }
     const remembered = resumeRow?.();
     if (remembered !== undefined) {
       const index = rows.findIndex((row) => row.id === remembered);
@@ -143,7 +183,7 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // "here is what you already read" edge that makes it legible.
     virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [measured, landingReady, conversationId, rows, virtualizer, landOn, resumeRow]);
+  }, [measured, landingReady, conversationId, rows, virtualizer, landOn, resumeRow, landOnRow]);
 
   const reportTopRow = useCallback(
     (scroller: HTMLElement | null, atBottom: boolean) => {

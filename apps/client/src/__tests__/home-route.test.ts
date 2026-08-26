@@ -7,7 +7,7 @@
  * link is pasted into chat, and a thread opened on Home is refreshed or shared.
  */
 import { describe, it, expect } from 'vitest';
-import { homeSearchSchema } from '../router';
+import { channelsSearchSchema, homeSearchSchema } from '../router';
 
 describe('the home route search schema', () => {
   it('keeps the attention deep links working', () => {
@@ -34,6 +34,22 @@ describe('the home route search schema', () => {
     // This is the address the app OPENS on. A bookmark naming a sheet that no
     // longer exists must land on the room with nothing over it.
     expect(homeSearchSchema.parse({ detail: 'no-such-sheet' }).detail).toBeUndefined();
+  });
+
+  it('addresses a message the way /channels does, because the redirect hands it over', () => {
+    // `/channels?id=<team>&entry=<seq>` is sent here, so `/` has to accept the
+    // coordinate it arrives with or a search hit in #team lands at the bottom
+    // (DOR-687).
+    expect(homeSearchSchema.parse({ entry: '412' }).entry).toBe(412);
+    expect(channelsSearchSchema.parse({ id: 'room-1', entry: '412' }).entry).toBe(412);
+  });
+
+  it('shows the room rather than an error page when the message number is nonsense', () => {
+    // A URL is hand-editable and a link can outlive the thing it named. Both
+    // routes fall back to no request rather than to a Zod dump where the room
+    // should be.
+    expect(homeSearchSchema.parse({ entry: 'banana' }).entry).toBeUndefined();
+    expect(channelsSearchSchema.parse({ id: 'room-1', entry: '0' }).entry).toBeUndefined();
   });
 
   it('has no room id to point somewhere else', () => {

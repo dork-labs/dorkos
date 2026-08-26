@@ -26,12 +26,38 @@ function hit(overrides: Partial<SearchHit> = {}): SearchHit {
 }
 
 describe('where a search hit opens', () => {
-  it('opens a room hit in the channel it was said in', () => {
+  it('opens a room hit ON the message, not merely in the channel', () => {
+    // The `seq` is the whole of DOR-687. A room addresses its own rows by it,
+    // and `ordinal` IS the entry's `seq` for this source — so the coordinate
+    // the index already returns is an address, with nothing added to the wire.
     expect(messageSearchTarget(hit())).toEqual({
       kind: 'room',
       to: '/channels',
-      search: { id: 'room-1' },
+      search: { id: 'room-1', entry: 7 },
     });
+  });
+
+  it('carries the hit’s own seq, not a constant', () => {
+    // The positive control for the line above: without it, a target hard-coding
+    // any number at all would pass.
+    expect(messageSearchTarget(hit({ ordinal: 412 })).search).toEqual({
+      id: 'room-1',
+      entry: 412,
+    });
+  });
+
+  it('sends a conversation hit to the conversation and drops its ordinal', () => {
+    // The honest half. A transcript hit's `ordinal` counts only the messages
+    // the projection KEPT — tool calls, tool results, thinking and command
+    // records are all skipped — so it indexes nothing the session view holds,
+    // and `messages[ordinal]` there is reliably a different message. A link
+    // that lands on the wrong line is worse than one that lands in the right
+    // conversation, so the ordinal is deliberately not passed on.
+    expect(
+      messageSearchTarget(
+        hit({ source: 'claude-code', container: 'sess-9', containerPath: '/work/api', ordinal: 3 })
+      ).search
+    ).toEqual({ session: 'sess-9', dir: '/work/api' });
   });
 
   it('opens a transcript hit in the conversation, carrying its directory', () => {

@@ -278,7 +278,7 @@ describe('what the box shows', () => {
 });
 
 describe('what the box does when a hit is chosen', () => {
-  it('opens the channel a room hit was said in', async () => {
+  it('lands on the message a room hit names, not merely in the channel', async () => {
     vi.mocked(mockTransport.search).mockResolvedValue({ results: [roomHit], warnings: [] });
     open('port');
     await pastDebounce();
@@ -286,8 +286,12 @@ describe('what the box does when a hit is chosen', () => {
     fireEvent.click(await screen.findByRole('option'));
 
     // The destination, not merely "a navigation happened" — a no-op navigation
-    // satisfies the weaker form.
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { id: 'room-1' } });
+    // satisfies the weaker form. `entry` is the hit's own `seq`, which is what
+    // the room route reads to open on the message rather than at the bottom.
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/channels',
+      search: { id: 'room-1', entry: 12 },
+    });
     expect(useAppStore.getState().messageSearchOpen).toBe(false);
   });
 

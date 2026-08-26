@@ -82,7 +82,13 @@ const THREAD_REPLY = {
   threadRootEntryId: 'trigger-kai',
 } as unknown as RoomEntry;
 
-/** A reply whose root is not in the loaded page at all — nothing to aim at. */
+/**
+ * A reply whose root is not in the loaded page at all.
+ *
+ * The room DRAWS this one: `groupByThread` pushes a reply it cannot hang under
+ * a root into the flow itself and marks it orphaned, rather than dropping a
+ * line of the log. So it has a row of its own, under its own entry id.
+ */
 const ORPHANED_REPLY = {
   ...entry('reply-with-no-root', 'picking this up'),
   threadRootEntryId: 'a-root-nobody-loaded',
@@ -499,15 +505,34 @@ describe('RoomLiveLane', () => {
     expect(scrollToRowSpy).toHaveBeenCalledWith('thread-row-trigger-kai');
   });
 
-  it('draws no “replying to” link at all when the trigger is drawn nowhere', () => {
-    // The defect this pins: the link resolved `room-entry-<id>` unconditionally,
-    // so a claim the room draws no row for — a reply whose thread is not even in
-    // the loaded page — offered a control that silently did nothing. Quotable is
-    // not the same as rendered.
+  it('sends an orphaned reply’s claim to its own row, because the flow does draw it', () => {
+    // An entry the room cannot hang under a thread is not an entry the room
+    // hides: `groupByThread` puts it in the flow and it says it is answering
+    // something out of view. So `room-entry-<id>` is a real element here, and
+    // the thread row that does NOT exist is `thread-row-a-root-nobody-loaded`.
+    //
+    // This is the correction DOR-687 forced. `rowIdFor` and the search-hit
+    // landing now share one answer to "which row draws this entry"
+    // (`flowRowIdForEntry`), and this case is where the two used to disagree:
+    // the lane offered no link at all while the flow was drawing the row.
     vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
     working('kai', 'working', STARTED, 'reply-with-no-root');
 
     renderLane({ entries: [...ENTRIES, ORPHANED_REPLY] });
+    fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
+    fireEvent.click(screen.getByTestId('live-peek-replying-to'));
+
+    expect(scrollToRowSpy).toHaveBeenCalledWith('room-entry-reply-with-no-root');
+  });
+
+  it('draws no “replying to” link at all when the trigger is in no loaded history', () => {
+    // The original defect this file pinned, in the case that is still real: a
+    // claim on an entry this client has never read has neither a quote nor a
+    // row, and the peek shows the row without a control that would do nothing.
+    vi.setSystemTime(new Date('2026-07-30T10:00:42.000Z'));
+    working('kai', 'working', STARTED, 'an-entry-nobody-loaded');
+
+    renderLane();
     fireEvent.click(screen.getByRole('button', { name: 'Show who is working' }));
 
     expect(screen.getByTestId('live-peek-row')).toHaveTextContent('Kai');

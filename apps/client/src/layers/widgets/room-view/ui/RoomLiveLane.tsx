@@ -17,7 +17,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   roomDisplayTitle,
-  threadRootIdOf,
   useHaltAgent,
   useHaltRoom,
   usePromoteHold,
@@ -44,9 +43,8 @@ import { InteractionAsk } from '@/layers/features/ask';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import {
   authorsById,
-  entryRowId,
+  flowRowForEntry,
   threadPanelRowId,
-  threadRowId,
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { useRoomAgentDirectory } from '../model/agent-info-context';
@@ -287,29 +285,20 @@ export function RoomLiveLane({
    * (`groupByThread` keeps replies out of it), the panel draws the open thread's
    * rows under their own ids, and on a phone the room column is unmounted while
    * a thread is open — so an entry this host can quote from `entries` may have
-   * no row anywhere. Three cases, each answered honestly:
+   * no row anywhere. Two cases, and only the first is this component's:
    *
    * - **The thread panel's lane** aims inside the panel, where its own claims
    *   are by construction (its scope is the open thread's replies).
-   * - **The room's lane** aims at the flow when the entry is top-level, and at
-   *   the "↳ N replies" row of its thread when it is not — which is the truest
-   *   place a room can take you for a reply it does not itself draw.
-   * - **Anything else** gets no link, and the peek shows the row without one.
+   * - **The room's lane** asks `flowRowIdForEntry`, which reads the flow's own
+   *   placement rule back out. It is shared with the search-hit landing rather
+   *   than restated here, because "which row draws this entry" has to have one
+   *   answer or one of the two callers links into an element nothing drew.
    */
   const rowIdFor = useCallback(
     (entryId: string): string | null => {
       if (laneScope === 'thread') return threadPanelRowId(entryId);
-      const entry = entries.find((candidate) => candidate.id === entryId);
-      if (entry === undefined) return null;
-      // `?? null` because `threadRootIdOf` reads two OPTIONAL fields and can
-      // answer `undefined` in spite of its `string | null` signature.
-      const rootId = threadRootIdOf(entry) ?? null;
-      if (rootId === null) return entryRowId(entryId);
-      // A reply the room does not draw: offer its thread's own row instead, and
-      // only when that root is itself in the flow.
-      const root = entries.find((candidate) => candidate.id === rootId);
-      if (root === undefined || (threadRootIdOf(root) ?? null) !== null) return null;
-      return threadRowId(rootId);
+      // The DOM id, because the peek's link goes through `scrollToRow`.
+      return flowRowForEntry(entries, entryId)?.domId ?? null;
     },
     [entries, laneScope]
   );

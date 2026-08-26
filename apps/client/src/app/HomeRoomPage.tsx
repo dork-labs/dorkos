@@ -116,7 +116,10 @@ export function HomeRoomPage() {
     const active = document.activeElement;
     if (isComposerField(active)) (active as HTMLElement).blur();
   }, []);
-  const { thread } = useSearch({ strict: false }) as Partial<HomeSearch>;
+  // `entry` reaches Home through the team-room redirect: a message-search hit
+  // in #team is addressed at `/channels?id=<team>&entry=<seq>`, and this is
+  // where that coordinate lands (DOR-687).
+  const { thread, entry } = useSearch({ strict: false }) as Partial<HomeSearch>;
   const unarchive = useUnarchiveRoom();
   // The strip speaks for everywhere BUT this room. Nothing is excluded until
   // the room resolves — an id this page does not have yet cannot be named, and
@@ -197,6 +200,7 @@ export function HomeRoomPage() {
       <RoomSurface
         roomId={team.room.id}
         threadId={thread}
+        entrySeq={entry}
         threadRoute="/"
         offerJumpBackIn
         onComposerFocusChange={setComposerFocused}

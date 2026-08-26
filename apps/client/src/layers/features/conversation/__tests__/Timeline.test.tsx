@@ -8,7 +8,7 @@
  */
 import { createRef, type ReactNode } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -80,6 +80,19 @@ const renderRow: ConversationRowRenderer = (row, ctx) => (
     data-index={ctx.index}
     data-can-thread={ctx.onOpenThread !== undefined}
   >
+    {row.kind}
+  </div>
+);
+
+/**
+ * A row that can hold the caret, drawn under the DOM id a host addresses it by.
+ *
+ * The plain `renderRow` above draws neither, which is right for the tests about
+ * what the list DECIDES and useless for the one about what it MARKS: an element
+ * with no id cannot be found and one with no tabindex cannot be focused.
+ */
+const focusableRow: ConversationRowRenderer = (row) => (
+  <div id={`room-entry-${row.id}`} tabIndex={-1} data-testid={`focusable-${row.id}`}>
     {row.kind}
   </div>
 );
@@ -181,6 +194,81 @@ describe('Conversation.Timeline', () => {
       // could not be honoured, which is a different event from never having had
       // one — and the browser suites tell the two apart by this word alone.
       expect(landedOn({ resumeRow: () => 'entry-gone' })).toBe('end-row-gone');
+    });
+
+    it('opens on the row it was ASKED for', () => {
+      // DOR-687: a search hit addresses one message, and this is the landing
+      // that honours it. Seeded defect: drop the `landOnRow` branch → `end`.
+      expect(landedOn({ landOnRow: () => 'entry-1' })).toBe('requested');
+    });
+
+    it('puts a request ahead of a remembered position', () => {
+      // The precedence, and the only assertion that can catch it being wrong:
+      // both getters answer with a row that IS in the page, so whichever branch
+      // runs first decides. Flip the two and this reads 'remembered'.
+      expect(landedOn({ landOnRow: () => 'entry-1', resumeRow: () => 'entry-2' })).toBe(
+        'requested'
+      );
+    });
+
+    it('falls back to the usual landing when the asked-for row is not in the page', () => {
+      // A room whose history no longer reaches the message a link names. The
+      // link must not swallow the landing — the room still opens somewhere
+      // sensible, and `useEntryLanding` is what says so out loud.
+      expect(landedOn({ landOnRow: () => 'entry-gone' })).toBe('end');
+    });
+
+    it('leaves a remembered position standing when the asked-for row is not there', () => {
+      expect(landedOn({ landOnRow: () => 'entry-gone', resumeRow: () => 'entry-2' })).toBe(
+        'remembered'
+      );
+    });
+
+    it('leaves the caret on the row it was asked for, which is the mark', () => {
+      // "Focus IS the flash" — the same doctrine `scrollToRow` states. Without
+      // it a reader lands somewhere in a wall of messages with nothing saying
+      // which one answered them. Geometry is a browser question (jsdom lays
+      // nothing out); WHICH element ends up focused is answerable here.
+      render(
+        <Providers>
+          <Conversation.Root surface="room" capabilities={BASE}>
+            <Conversation.Timeline
+              conversationId="room-1"
+              label="Messages in #mio"
+              rows={[messageRow('entry-1'), messageRow('entry-2')]}
+              renderRow={focusableRow}
+              domIdOf={(row) => `room-entry-${row.id}`}
+              landOnRow={() => 'entry-2'}
+            />
+          </Conversation.Root>
+        </Providers>
+      );
+
+      // A frame later, because the row may have had to be scrolled into
+      // existence first.
+      return waitFor(() =>
+        expect(document.activeElement).toBe(document.getElementById('room-entry-entry-2'))
+      );
+    });
+
+    it('leaves the caret alone when nothing was asked for', () => {
+      // The positive control. Without it the test above passes against a
+      // timeline that focuses a row on every open.
+      render(
+        <Providers>
+          <Conversation.Root surface="room" capabilities={BASE}>
+            <Conversation.Timeline
+              conversationId="room-1"
+              label="Messages in #mio"
+              rows={[messageRow('entry-1'), messageRow('entry-2')]}
+              renderRow={focusableRow}
+              domIdOf={(row) => `room-entry-${row.id}`}
+            />
+          </Conversation.Root>
+        </Providers>
+      );
+
+      expect(document.activeElement).toBe(document.body);
     });
   });
 

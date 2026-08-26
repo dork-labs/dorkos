@@ -16,8 +16,13 @@
  * A person has to be able to learn all three without reading a spec, and the
  * moment they are looking for that answer is the moment a list is empty.
  *
- * **Enter opens the CONTAINER**, not the message. Landing on the exact line is
- * a separate task; the container is a promise this cockpit can keep every time.
+ * **Enter lands on the message in a channel, and opens the conversation for a
+ * transcript** (DOR-687). The asymmetry is a coordinate one rather than a
+ * priority one, and `message-search-target.ts` is where it is argued: a room
+ * hit's `ordinal` is the entry `seq` a room already addresses its rows by, and
+ * a transcript hit's `ordinal` counts only the messages the index kept, so it
+ * points at nothing the session view can find. Landing in the conversation is
+ * the promise this cockpit can keep there every time.
  *
  * @module features/command-palette/ui/MessageSearchDialog
  */
@@ -133,7 +138,8 @@ function MessageSearchBox() {
   const close = useCallback(() => setOpen(false), [setOpen]);
 
   /**
-   * Open the place a hit was said in.
+   * Go to the hit — the message itself in a channel, its conversation in a
+   * transcript.
    *
    * A room's transcript and a conversation's transcript are both readable
    * whatever else has happened, so this navigates first and asks questions

@@ -145,6 +145,23 @@ export const sessionSearchSchema = mergeDialogSearch(
 export type SessionSearch = z.infer<typeof sessionSearchSchema>;
 
 /**
+ * `?entry=` — the `seq` of the one message a room should land on.
+ *
+ * **Shared by both addresses a room is read at**, so it is written once here
+ * rather than twice: `/channels?id=…&entry=…` and `/?entry=…` mean the same
+ * thing, and the team-room redirect carries it from the first to the second.
+ * A message-search hit is where it comes from — a room hit's `ordinal` IS the
+ * entry's `seq` (`SearchHitSchema`), so the coordinate the index already
+ * returns needs no new field to become an address.
+ *
+ * `.catch(undefined)` rather than throwing, for the reason every other enum on
+ * these routes catches: a URL is something a person can hand-edit and a link
+ * can outlive. `?entry=banana` lands in the room with nothing highlighted,
+ * never on a Zod dump where the room should be.
+ */
+const roomEntrySeqParam = z.coerce.number().int().min(1).optional().catch(undefined);
+
+/**
  * Search params for `/` — the home tab, which renders the #team room.
  *
  * `detail` + `itemId` are the attention deep links: a row in the pinned triage
@@ -156,6 +173,11 @@ export type SessionSearch = z.infer<typeof sessionSearchSchema>;
  * thread hangs off. Home IS a room, so a thread opened here needs an address
  * for the same reason one opened there does: a refresh, or a link handed to
  * somebody, has to land on it.
+ *
+ * `entry` is the room's other shared param, spelled and meaning exactly what
+ * `/channels` spells it: the `seq` of the message to land on. Home is reached
+ * with one on it because `/channels?id=<team>&entry=…` redirects here, so a
+ * search hit in #team has to keep its coordinate across the move.
  *
  * There is deliberately no room `id`: home is #team and nothing else. The room
  * is found by its well-known key, so a renamed channel — or a URL somebody
@@ -174,6 +196,7 @@ export const homeSearchSchema = mergeDialogSearch(
     detail: z.enum(['dead-letter', 'failed-run', 'offline-agent']).optional().catch(undefined),
     itemId: z.string().optional(),
     thread: z.string().optional(),
+    entry: roomEntrySeqParam,
   })
 );
 
@@ -447,7 +470,12 @@ const tasksRoute = createRoute({
  * addresses a DM the same way, so `/channels?id=<dmId>` is precedented rather
  * than odd.
  *
- * Two params: the room, and the thread it has open beside it.
+ * Three params: the room, the thread it has open beside it, and the one message
+ * it should land on.
+ *
+ * `?entry=` is {@link roomEntrySeqParam} — the `seq` of a message in this room,
+ * which is what a message-search hit carries. Optional, so every link that only
+ * names a room still works untouched.
  *
  * `?thread=` is the entry a thread hangs off — NOT a room id, which is what the
  * same spelling meant under the retired threads-as-rooms model. That version
@@ -464,6 +492,7 @@ export const channelsSearchSchema = mergeDialogSearch(
   z.object({
     id: z.string().optional(),
     thread: z.string().optional(),
+    entry: roomEntrySeqParam,
   })
 );
 

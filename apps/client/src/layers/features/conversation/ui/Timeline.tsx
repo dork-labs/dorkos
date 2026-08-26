@@ -130,6 +130,20 @@ export interface ConversationTimelineProps {
    */
   resumeRow?: () => string | undefined;
   /**
+   * The one row this conversation was ASKED to open on — a message somebody
+   * searched for and clicked (DOR-687).
+   *
+   * A getter returning a row id, read at landing time, and it outranks every
+   * other landing: see `TimelineLandingInput.landOnRow`. The row is centred and
+   * the caret is put on it, so the reader can see WHICH message answered them —
+   * the same "focus IS the flash" mark {@link
+   * ConversationTimelineHandle.scrollToRow} leaves, for the same reason.
+   *
+   * Marking it needs {@link ConversationTimelineProps.domIdOf}; a host that
+   * addresses no rows still gets the scroll, just not the caret.
+   */
+  landOnRow?: () => string | undefined;
+  /**
    * Told which row is at the top of the viewport, or `undefined` while the
    * reader is caught up at the bottom — which is the host's cue to forget.
    */
@@ -221,6 +235,7 @@ export function ConversationTimeline({
   landOn = 'end',
   landingReady = true,
   resumeRow,
+  landOnRow,
   onTopRow,
   pending,
   viewerAuthorId,
@@ -285,6 +300,7 @@ export function ConversationTimeline({
     landOn,
     landingReady,
     ...(resumeRow === undefined ? {} : { resumeRow }),
+    ...(landOnRow === undefined ? {} : { landOnRow }),
     ...(onTopRow === undefined ? {} : { onTopRow }),
   });
 
@@ -333,6 +349,32 @@ export function ConversationTimeline({
     row.focus({ preventScroll: true });
     return true;
   }, []);
+
+  /**
+   * Mark the row the landing was ASKED for, once it exists.
+   *
+   * The landing scrolls; this is what says *this one*. It cannot be part of the
+   * landing itself, which works in row ids and has no idea what element any of
+   * them is: only the host's {@link ConversationTimelineProps.domIdOf} knows
+   * that, and only a frame after `scrollToIndex` does the element exist to
+   * focus. One shot per conversation — a reader who scrolls away has answered
+   * the question, and dragging the caret back would be the surface arguing with
+   * them.
+   */
+  const markedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (landedOn !== 'requested' || markedRef.current === conversationId) return;
+    markedRef.current = conversationId;
+    if (domIdOf === undefined) return;
+    const requested = landOnRow?.();
+    const row = requested === undefined ? undefined : rows.find((r) => r.id === requested);
+    const domId = row === undefined ? undefined : domIdOf(row);
+    if (domId === undefined) return;
+    // A frame later, because virtualization is why the row was not in the
+    // document before the landing moved to it.
+    const frame = requestAnimationFrame(() => focusRowElement(domId));
+    return () => cancelAnimationFrame(frame);
+  }, [landedOn, conversationId, domIdOf, landOnRow, rows, focusRowElement]);
 
   useImperativeHandle(
     ref,

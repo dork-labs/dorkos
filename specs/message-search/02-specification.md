@@ -939,3 +939,37 @@ runtime the product names.
 Amendment 8's "did NOT do" note above and §927–930's "deliberately NOT changed" are resolved:
 `message-search-scope.ts` now names Codex and OpenCode in `SEARCH_SCOPE_COVERED`, its pinned
 test moved with it, and §1's product statement is true of every source this index registers.
+
+## Amendment 11 — a channel hit lands on the message; a conversation hit does not (DOR-687, 2026-08-26)
+
+Task 6.2 asked whether §8's coordinates can carry the ideation's headline promise — _"You click one
+and land where it was said"_ — the rest of the way. The answer is **yes for rooms, no for
+transcripts**, and the split is a property of the coordinate rather than a matter of effort.
+
+**Rooms.** `ordinal` for the `rooms` source IS `room_entries.seq` (`projections/rooms.ts:94`), which
+is the number the room's own timeline is built on. So the hit already carries an address, and the
+client half is a `?entry=<seq>` on `/channels` (and on `/`, which is #team; the one-door redirect
+carries it across). The room resolves the `seq` to a ROW — a reply is drawn in its thread panel, not
+in the flow, so the row is the thread's rather than the reply's — and the shared timeline gained one
+landing precedence for it: an asked-for row outranks a remembered position, an unread rule and the
+newest message, because it is the only one of the four somebody requested. The mark is focus, which
+is the doctrine `scrollToRow` already stated. **No field was added to the wire and no column to the
+index**: D11 holds.
+
+**Transcripts.** `ordinal` for `claude-code`, `codex` and `opencode` is a running count of the
+messages the projection KEPT — person-authored user records and non-sidechain assistant text, with
+tool calls, tool results, thinking blocks and command records all skipped
+(`projections/claude-code.ts:111-146`, `readSpeech`). The session view holds what `parseTranscript`
+returns, which is all of those, and then drops one more class again (`filterKickoffHistory`). The two
+numberings are unrelated, so `messages[ordinal]` there is reliably a **different message**. Landing
+on the wrong line is worse than landing in the right conversation, so a transcript hit still opens
+its conversation and nothing else. Closing that half means carrying a stable per-message id end to
+end — the JSONL record `uuid` for Claude Code, and its equivalents elsewhere — rather than
+re-deriving the projection's filter in the client; it is a schema change and its own ticket.
+
+**One limit is stated in the product rather than only here.** A room hydrates its trailing page and
+nothing pages backwards yet (`useRoomEntries`: _"Scrolling further back than that page is `?before=`,
+which the server serves and no client surface asks for yet"_). So a hit older than that page has no
+row to land on, and the room says so in one quiet line instead of opening at the bottom in silence —
+which looks identical to a link that worked. Back-paging a room is the change that would retire that
+sentence, and it is not this one.
