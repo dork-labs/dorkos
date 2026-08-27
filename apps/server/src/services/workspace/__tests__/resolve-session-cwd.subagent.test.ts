@@ -1,5 +1,5 @@
 /**
- * The subagent invariant, as a structural guard.
+ * The subagent invariant, as a structural guard — the second of its two halves.
  *
  * **The binding resolves exactly once per turn, at the session boundary, before
  * the runtime is invoked.** A subagent is the same agent doing the same task, so
@@ -10,15 +10,24 @@
  * That is true for free today — a claude-code subagent is an SDK sidechain
  * running inside the parent's `query` and inherits the parent process's cwd by
  * construction, and codex and opencode behave the same way. Nothing in any
- * subagent path re-enters session creation. So the risk this file guards is not
- * a bug that exists; it is the "resolve per tool call" convenience somebody adds
+ * subagent path re-enters session creation. So the risk guarded here is not a
+ * bug that exists; it is the "resolve per tool call" convenience somebody adds
  * later, which would silently split one task across two trees.
  *
- * A behavioral test cannot see that coming: it would pass right up until the day
- * the new call site is added, and the assertion it would need (resolver called
- * once) is exactly what the new call site would break without any test naming
- * it. So the guard is on the IMPORT GRAPH — the resolver may be reached from the
- * boundaries that start a turn, and from nowhere inside one.
+ * ## Why two tests and not one
+ *
+ * The behavioral half lives in
+ * `routes/__tests__/sessions-cwd-resolution.test.ts` ("a turn containing a
+ * subagent resolves the directory exactly once"): it drives a real turn with a
+ * Task-tool sidechain through the route and counts resolver calls. That is the
+ * invariant stated the way spec §3.4 states it, and it catches a second
+ * resolution on the paths a turn actually walks.
+ *
+ * It cannot catch a second resolution on a path that turn did not walk — a tool
+ * handler nobody's fixture exercises, a runtime adapter reached only by another
+ * SDK. So this file guards the IMPORT GRAPH as well: the resolver may be reached
+ * from the boundaries that START a turn, and from nowhere inside one. A new call
+ * site fails here the moment it is written, whether or not a fixture reaches it.
  */
 import { describe, it, expect } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
@@ -63,16 +72,33 @@ async function sourceFiles(dir: string): Promise<string[]> {
   return found;
 }
 
+/**
+ * The resolver's own module, the one file that may of course name itself.
+ *
+ * Nothing else is exempt — not its sibling modules, and emphatically not the
+ * workspace barrel `index.ts`. Skipping the whole directory (as this test first
+ * did) left a hole big enough to walk the invariant through: a `export * from
+ * './resolve-session-cwd.js'` in the barrel would make the resolver reachable
+ * as `services/workspace/index.js` from anywhere in the server, and every
+ * importer would read as an allowed one.
+ */
+const RESOLVER_ITSELF = 'services/workspace/resolve-session-cwd.ts';
+
 describe('the subagent invariant — one resolution per turn', () => {
   it('the cwd resolver is imported only where a turn BEGINS', async () => {
     const files = await sourceFiles(SERVER_SRC);
-    // The guard is only worth anything if it is reading the real tree.
-    expect(files.length).toBeGreaterThan(100);
+    // The guard is only worth anything if it is reading the real tree. Pinned
+    // close to the real count (755 at the time of writing) rather than at a
+    // token floor: a walk that silently stopped early — a renamed directory, a
+    // changed `withFileTypes` shape — would still clear a floor of 100 while
+    // reading almost nothing.
+    expect(files.length).toBeGreaterThan(700);
     expect(files).toContain('routes/sessions.ts');
+    expect(files).toContain('services/workspace/index.ts');
 
     const importers: string[] = [];
     for (const rel of files) {
-      if (rel.startsWith('services/workspace/')) continue; // the module and its own neighbours
+      if (rel === RESOLVER_ITSELF) continue;
       const source = await readFile(path.join(SERVER_SRC, rel), 'utf-8');
       if (source.includes('resolve-session-cwd.js')) importers.push(rel);
     }

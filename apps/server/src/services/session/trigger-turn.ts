@@ -680,7 +680,13 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     await settleOpenTurnBefore(sessionId, projector, deps, SESSIONS.STRANDED_TURN_SETTLE_MS);
     const tapped = tapEachEvent(
       deps.sendMessage(sessionId, content, {
-        cwd,
+        // Conditional, on the same idiom as the three below it. A turn with no
+        // opinion about its directory must hand the runtime NO cwd, not a `cwd`
+        // key holding `undefined`: the session route takes care not to stamp one
+        // (`routes/sessions.ts`, the `default` rung), and an unconditional key
+        // here quietly undid that one layer down. Every runtime already reads
+        // this as `!== undefined`, so nothing downstream changes behavior.
+        ...(cwd !== undefined ? { cwd } : {}),
         additionalContext,
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
