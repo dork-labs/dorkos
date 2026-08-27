@@ -1,0 +1,235 @@
+{
+  "spec": "specs/project-rooms/02-specification.md",
+  "slug": "project-rooms",
+  "generatedAt": "2026-08-27T20:45:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-08-27",
+  "tasks": [
+    {
+      "id": "0.1",
+      "phase": 0,
+      "phaseName": "P0 — agent workspace binding",
+      "subject": "[project-rooms] [P0] AgentWorkspaceBindingSchema + workspace field on AgentManifest + Workspace owner discriminator",
+      "description": "Implement the schema half of specs/agent-workspace-binding: `AgentWorkspaceBindingSchema` (discriminated union home|managed|none, default home) added to `AgentManifestSchema` (packages/shared/src/mesh-schemas.ts:350-431); `owner` discriminator on the Workspace entity (packages/shared/src/workspace.ts) + `owner_kind`/`owner_ref` columns on packages/db workspaces schema + drizzle migration; owner-aware sweep exemption in workspace-service (agent-owned checkouts are never swept). TSDoc on exports. Acceptance: schema fixtures parse; migration applies; sweep test proves agent-owned exemption red-before/green-after.",
+      "activeForm": "Adding workspace binding schemas",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": "DOR-1589"
+    },
+    {
+      "id": "0.2",
+      "phase": 0,
+      "phaseName": "P0 — agent workspace binding",
+      "subject": "[project-rooms] [P0] resolve-session-cwd resolver + consolidate the three cwd derivations",
+      "description": "Create `apps/server/src/services/workspace/resolve-session-cwd.ts`: ResolvedCwd { cwd, rung: 'explicit'|'room-worktree'|'agent-home'|'agent-managed'|'default', degraded? } implementing explicit cwd → agent binding → DEFAULT_CWD ('room-worktree' rung is declared in the type now, wired in task 2.2). Boundary-validate every resolved path; log the winning rung. Call it at the session boundary (routes/sessions.ts message send path). Re-point the task scheduler's resolveEffectiveCwd (task-scheduler-service.ts:635-647) and the relay binding-router's cwd stamping (binding-router.ts:674/:709/:735) onto the resolver. Zero behavior change for callers supplying cwd and for agent-less callers — pin with regression tests including subagent inheritance. Acceptance: per-rung unit tests; existing session/scheduler/relay tests stay green.",
+      "activeForm": "Building the session cwd resolver",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "0.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1590"
+    },
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — room home, repo, ROOM.md, explorer",
+      "subject": "[project-rooms] [P1] RoomRepoSidecarSchema + config.rooms.repo + drop rooms.workspaceId + room_repos cache table",
+      "description": "Shared+db half of spec §3.1/§3.12: `RoomRepoSidecarSchema` in packages/shared (new `@dorkos/shared/room-repo` subpath; mode 'owned' with 'linked' reserved, caps object, lastMergeSeq); `config.rooms.repo` fields ({ enabled: true, worktreeReapDays: 14, maxFileBytes, maxRepoBytes, maxRoomMdBytes, mergeQueueWaitMs }) via the adding-config-fields skill with semver-keyed conf migration; drizzle migration dropping the write-only `rooms.workspace_id` (remove from RoomSchema/CreateRoomRequestSchema/room-rows/room-service write; verified read-by-nothing) and adding `room_repos` cache table (room_id PK/FK, mode, created_at, last_merge_seq). Acceptance: migrations apply on a seeded db; schema fixtures; grep proves no workspaceId reader remains.",
+      "activeForm": "Adding room-repo schemas and migrations",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "0.1"
+      ],
+      "issue": "DOR-1591"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — room home, repo, ROOM.md, explorer",
+      "subject": "[project-rooms] [P1] room-repo store + operator-only enable route (git init + ROOM.md seed)",
+      "description": "Spec §3.1/§3.2: `services/rooms/repo/room-repo-store.ts` (file-first sidecar at {dorkHome}/rooms/<id>/room-repo.json written before cache row, deleted after; reconciler rebuild of room_repos); `POST /api/rooms/:id/repo` (sessionGate, operator-only — agent callers refused; git init -b main in rooms/<id>/repo/, seed + commit templated ROOM.md as the operator; idempotent 409 when present). Room delete/archive rules: archive keeps home dir; hard delete refuses while worktrees hold unmerged work. Rooms without repos behave exactly as today on every touched path. Acceptance: file-first ordering unit tests; enable-route integration incl. agent-refusal; degradation test with repo feature disabled.",
+      "activeForm": "Building the room-repo store and enable route",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1592"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — room home, repo, ROOM.md, explorer",
+      "subject": "[project-rooms] [P1] ROOM.md turn delivery — pinned systemPromptAppend + seam conformance gate",
+      "description": "Spec §3.3: compose the <dorkos_room_conventions> block from repo main's ROOM.md at turn-start commit, cache keyed (roomId, commitSha), byte cap with loud over-cap notice (never truncate), wire via systemPromptAppend on room-turn dispatch after the DorkOS base append. GATE FIRST: runtimeConformance test that a changed append is applied on the NEXT turn of a live persistent session across claude-code/codex/opencode; if the persistent claude-code seam fails, fall back to tagged additionalContext for claude-code and record the downgrade in the spec + code comment. Non-repo rooms get no block (zero-change assertion). Acceptance: pin-per-turn test (merge mid-turn does not change in-flight block); block copy pinned; conformance suite green.",
+      "activeForm": "Wiring ROOM.md turn delivery",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.4"
+      ],
+      "issue": "DOR-1593"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — room home, repo, ROOM.md, explorer",
+      "subject": "[project-rooms] [P1] Read-only room files API with per-entry git provenance",
+      "description": "Spec §3.9 server half: `GET /api/rooms/:id/files[?path=]` membership-gated like history reads (no readOnlyCarveOut; non-member answers as no-such-room), serving the main checkout: listings with { name, kind, size, lastCommit { author, at, subject } } (batched git log), file reads with size caps + binary detection, path traversal refused. Acceptance: gate tests (non-member, agent token member, owner); traversal/symlink-read refusal; provenance correctness on a fixture repo.",
+      "activeForm": "Building the room files API",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.3"
+      ],
+      "issue": "DOR-1594"
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — room home, repo, ROOM.md, explorer",
+      "subject": "[project-rooms] [P1] Unified file explorer (sessions + rooms) with provenance and pinning",
+      "description": "Spec §3.9 client half: refactor the session right-pane file list into one shared explorer component (respect FSD layering; promote to the right layer with barrel exports) with pluggable data sources (session cwd / room files API). Both surfaces gain: provenance column (last author + relative time), dotfile+plumbing hiding (default on, toggle), ROOM.md/README pinned at top. Room surface: refresh on room SSE merge events. Previews go through existing untrusted-content rendering. v1 shows main only. Update the dev playground per maintaining-dev-playground. Acceptance: component tests for both sources; session pane visual parity (no regression) + browser test.",
+      "activeForm": "Unifying the file explorer",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1595"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — collaboration",
+      "subject": "[project-rooms] [P2] Room worktree manager — lazy create, reap, stranded-work surfacing",
+      "description": "Spec §3.4: `services/rooms/repo/room-worktree-manager.ts` — lazy `git worktree add -b room/<agentSlug>` at first write-intent resolution, harness projection at create; reap sweep (idle > config.worktreeReapDays AND clean AND not ahead of main) piggybacking room maintenance cadence; dirty/ahead worktrees NEVER auto-removed, surfaced as stranded work; leave-room preserves unmerged work. One writer per tree: server never mutates a worktree. Acceptance: lifecycle unit tests incl. reap-spares-dirty and reap-spares-ahead (red-before/green-after); stranded surfacing integration test.",
+      "activeForm": "Building the room worktree manager",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1596"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — collaboration",
+      "subject": "[project-rooms] [P2] Room-worktree cwd rung — room turns run in the agent's worktree",
+      "description": "Spec §3.5: the resolver's 'room-worktree' rung goes live — a room turn in a repo-enabled room resolves cwd to that agent's standing worktree (creating it lazily via 2.1); room-turn-runner.ts:251/:349 switch from request.agentPath to the resolver. Non-repo rooms and non-room sessions: byte-identical behavior, pinned by regression tests. Busy/hold machinery stays keyed on agent identity (spec §5 Q6) — add an explicit test that a cross-room hold still holds. Acceptance: rung-order tests; room turn integration on a repo room lands writes in the worktree, never in agentPath.",
+      "activeForm": "Wiring the room-worktree cwd rung",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "0.2",
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.3"
+      ],
+      "issue": "DOR-1597"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 — collaboration",
+      "subject": "[project-rooms] [P2] merge_to_room_main + merge queue + validation + merge entries + room_repo_status",
+      "description": "Spec §3.6: rooms-capability tools. merge_to_room_main (act tier, membership-gated): refusals NOT_A_PROJECT_ROOM / UNCOMMITTED_WORK / BEHIND_MAIN (with distance) / SYMLINK_ESCAPES_REPO / FILE_TOO_LARGE / REPO_CAP_EXCEEDED; MERGE_IN_FLIGHT queues on a per-room mutex (bounded FIFO, mergeQueueWaitMs cap); success = server-side git merge --no-ff under the mutex, abort-clean on failure (main never conflicted), then ONE durable unaddressed system-voiced room entry ('X merged Y — N files, +A/−D') that stores no mentions and triggers no turns (cascade-guard assertion), updates lastMergeSeq. room_repo_status (observe): main tip, per-member ahead/behind/dirty, stranded list. No force-push/reset verbs anywhere. Acceptance: every refusal red-before/green-after; concurrent-merge serialization test; the no-cascade test; abort-cleanliness test with an induced conflict.",
+      "activeForm": "Building the room merge tool",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": "DOR-1598"
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "P2 — collaboration",
+      "subject": "[project-rooms] [P2] Context-block files section + working-in-room-repos operating skill + explorer badges",
+      "description": "Spec §3.7: room-context-block gains a compact files section for repo rooms (resolved cwd, repo path, 'main is N ahead — sync before editing', merge-tool pointer; copy pinned by tests). New `working-in-room-repos` skill in @dorkos/operating-skills (sync-first, commit etiquette, conflict resolution in your own tree, merge summaries, symlink rule publish-on-change, binaries→attachments) — version bump so the every-boot backfill propagates. Explorer pending-work badges fed by room_repo_status. Acceptance: block copy tests; skill pack version test; badge rendering test.",
+      "activeForm": "Adding room-repo guidance surfaces",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1599"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — human editing + docs",
+      "subject": "[project-rooms] [P3] Human file editing — server commits as user, optimistic locking, dirty-main degradation",
+      "description": "Spec §3.10: `PUT /api/rooms/:id/files/<path>` (human members only in v1) serialized through the merge mutex, committed to main authored as the user, one save = one commit; optimistic locking via baseCommit → 409 FILE_CHANGED when main moved and touched the path. Dirty-main detection on every server git op: pause merges/saves with MAIN_CHECKOUT_DIRTY, room-level warning, operator actions (commit-as-operator / explicit named-file discard). Acceptance: 409 path test; agent-caller refusal; dirty-main pause + recovery integration test.",
+      "activeForm": "Building human file editing",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "1.4",
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1600"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 — human editing + docs",
+      "subject": "[project-rooms] [P3] Room file editor UI (markdown first) with conflict UX",
+      "description": "Spec §3.10 client half: mount the session markdown editor on room files from the unified explorer; save via PUT with baseCommit; 409 → reload/keep-mine dialog (never silent overwrite). Markdown first, other text types later. Acceptance: component tests incl. the 409 flow; browser test editing ROOM.md end-to-end.",
+      "activeForm": "Building the room file editor UI",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "3.1",
+        "1.5"
+      ],
+      "parallelWith": [
+        "3.3"
+      ],
+      "issue": "DOR-1601"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "P3 — human editing + docs",
+      "subject": "[project-rooms] [P3] Docs, changelog, spec supersessions, ADRs",
+      "description": "Rewrite docs/concepts/rooms.mdx (the 'a room doesn't have a folder of its own' sections become the room-repo story; writing-for-humans bar); new contributing/room-repos.md (mechanism, merge contract, trust boundary); changelog fragments for the user-facing surfaces; mark specs/channel-workspace superseded-by project-rooms in the manifest; correct agent-workspace-binding stale line refs; draft the 5 ADR candidates from spec §ADR via /adr:from-spec rubric. Acceptance: docs:coverage clean; manifest statuses consistent; fragment-present green on the PRs that need it.",
+      "activeForm": "Writing docs and ADRs",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
+      "issue": "DOR-1602"
+    }
+  ]
+}

@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260827-202452",
+      "slug": "project-rooms",
+      "title": "Project Rooms — rooms with their own repo, files, and collaboration",
+      "created": "2026-08-27",
+      "status": "specified"
+    },
+    {
       "id": "260824-233720",
       "slug": "agent-memory",
       "title": "Agent memory — an agent-scoped memory layer across sessions, rooms and DMs",
