@@ -6659,13 +6659,6 @@
               "null"
             ]
           },
-          "workspaceId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Optional workspace reference. How it resolves a cwd is out of scope for v1."
-          },
           "archived": {
             "type": "boolean"
           },
@@ -6767,7 +6760,6 @@
           "slug",
           "title",
           "topic",
-          "workspaceId",
           "archived",
           "ambientMaxEntries",
           "createdAt",
@@ -7029,10 +7021,6 @@
           "topic": {
             "type": "string",
             "maxLength": 500
-          },
-          "workspaceId": {
-            "type": "string",
-            "minLength": 1
           },
           "members": {
             "type": "array",

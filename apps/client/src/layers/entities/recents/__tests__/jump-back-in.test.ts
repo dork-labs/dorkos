@@ -10,7 +10,6 @@ function room(overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>
     slug: null,
     title: 'Untitled',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     // Earlier than `lastActivityAt` by default: equal timestamps mean a room

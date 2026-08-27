@@ -219,7 +219,6 @@ function roomWithCursor(lastReadSeq: number) {
     slug: 'team',
     title: '#team',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     wellKnown: 'team',

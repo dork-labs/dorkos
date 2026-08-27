@@ -387,7 +387,6 @@ describe('AdapterManager', () => {
           slug: 'ops',
           title: 'Ops',
           topic: null,
-          workspaceId: null,
           createdAt: '2026-08-04T00:00:00.000Z',
         },
         []
@@ -2233,7 +2232,6 @@ describe('AdapterManager', () => {
           slug: 'ana',
           title: 'Ana',
           topic: null,
-          workspaceId: null,
           createdAt: '2026-08-19T00:00:00.000Z',
         },
         []

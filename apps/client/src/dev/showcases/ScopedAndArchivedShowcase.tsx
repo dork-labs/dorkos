@@ -40,7 +40,6 @@ function makeRoom(overrides: Partial<RoomSummary> & { id: string }): RoomSummary
     slug: 'shipping',
     title: 'Shipping',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: new Date(SHOWCASE_NOW - 90 * 24 * 3600_000).toISOString(),

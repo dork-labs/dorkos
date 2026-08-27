@@ -22,7 +22,6 @@ function storeWithRooms(): RoomStore {
       slug: 'general',
       title: 'General',
       topic: null,
-      workspaceId: null,
       createdAt: AT,
     },
     []
@@ -34,7 +33,6 @@ function storeWithRooms(): RoomStore {
       slug: null,
       title: 'Ana',
       topic: null,
-      workspaceId: null,
       createdAt: AT,
     },
     []

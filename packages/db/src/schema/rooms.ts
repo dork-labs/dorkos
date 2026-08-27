@@ -252,12 +252,6 @@ export const rooms = sqliteTable(
     title: text('title').notNull(),
     topic: text('topic'),
 
-    /**
-     * Optional workspace reference. Stored and returned in v1; how it composes
-     * with the agent-workspace-binding precedence chain is that spec's business.
-     */
-    workspaceId: text('workspace_id'),
-
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
 
     /**
@@ -810,3 +804,63 @@ export const roomSessions = sqliteTable(
     index('idx_room_sessions_session').on(table.sessionId),
   ]
 );
+
+/**
+ * The derived cache of which rooms have a git repo of their own (spec
+ * `project-rooms` §3.1).
+ *
+ * **A cache, not the truth.** The truth is `room-repo.json` in the room's home
+ * directory, written before this row and deleted after it — the file-first
+ * write-through of ADR-0043, applied to rooms instead of agents, and for the
+ * same reason: the thing DorkOS operates on is a directory, and a directory a
+ * person can copy, back up, and inspect is a better source of truth than a row
+ * they cannot. A reconciler sweep rebuilds this table from the sidecars.
+ *
+ * **It deliberately mirrors only the columns something QUERIES.** The caps live
+ * on the sidecar alone: they are read once, when a merge is validated, by code
+ * that has already opened the room's home directory — copying them here would
+ * be a second declaration that can disagree with the first. What is here is
+ * what a list wants to answer without touching disk: which rooms have repos,
+ * how they are bound, and where the last merge landed in the room's timeline.
+ *
+ * The room's real state is git's. Nothing about a branch, a commit or a working
+ * copy is stored here, because `git` already knows and a cached answer would be
+ * wrong the moment an agent committed.
+ */
+export const roomRepos = sqliteTable('room_repos', {
+  /**
+   * The room this repo belongs to — primary key, so "at most one repo per room"
+   * is true by construction rather than by a sweep.
+   *
+   * A real foreign key with `ON DELETE CASCADE`, unlike the other room child
+   * tables here: those predate the constraint and clean up in application code,
+   * while this row has no meaning at all once its room is gone and no path that
+   * would want to see it survive one.
+   */
+  roomId: text('room_id')
+    .primaryKey()
+    .references(() => rooms.id, { onDelete: 'cascade' }),
+
+  /**
+   * How the repo is bound — `'owned'` in every row this build writes.
+   *
+   * Stored rather than assumed, because `'linked'` is a reserved mode
+   * (`@dorkos/shared/room-repo`) and a column that only ever holds one value
+   * today is what lets a later build tell the two apart without a migration
+   * that has to guess.
+   */
+  mode: text('mode').notNull(),
+
+  /** When the operator enabled the repo, mirrored from the sidecar. */
+  createdAt: text('created_at').notNull(),
+
+  /**
+   * The `seq` of the room entry announcing the most recent merge, or `null`
+   * when nothing has been merged yet.
+   *
+   * A pointer into the room's own timeline rather than a commit sha: what it
+   * answers is where the file explorer refreshes from, and the explorer follows
+   * the room stream.
+   */
+  lastMergeSeq: integer('last_merge_seq'),
+});

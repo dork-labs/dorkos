@@ -119,7 +119,6 @@ function roomWith(id: string, slug: string): RoomWithRoster {
     slug,
     title: `#${slug}`,
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-07-26T09:00:00.000Z',

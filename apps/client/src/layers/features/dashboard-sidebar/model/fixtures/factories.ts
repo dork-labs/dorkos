@@ -59,7 +59,6 @@ export function room(
   return {
     slug: overrides.kind === 'dm' ? null : overrides.title.replace(/^#/, ''),
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 50,
     wellKnown: null,

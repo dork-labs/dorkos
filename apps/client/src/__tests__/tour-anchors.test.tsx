@@ -204,7 +204,6 @@ function transportWithTeamRoom() {
     slug: 'team',
     title: '#team',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     wellKnown: TEAM_ROOM_WELL_KNOWN,
