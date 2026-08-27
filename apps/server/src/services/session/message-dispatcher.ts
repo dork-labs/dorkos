@@ -691,6 +691,13 @@ export interface DispatchMessageOpts {
   /** Background the caller attached to this turn; the person never sees it. */
   seedContext?: string;
   /**
+   * Standing instructions for this turn's system prompt — a room's `ROOM.md`
+   * conventions, a scheduled task's brief. Passed straight through to the turn;
+   * see {@link TriggerTurnOpts.systemPromptAppend} for what belongs here and
+   * what belongs in `content` or `additionalContext`.
+   */
+  systemPromptAppend?: string;
+  /**
    * Claude account registry id this LAUNCH should bill to, when the sender made
    * an explicit pre-launch choice. Passed straight through to the turn.
    */
@@ -894,6 +901,7 @@ interface DispatchPlan {
     | 'context'
     | 'roomContext'
     | 'seedContext'
+    | 'systemPromptAppend'
     | 'accountHint'
     | 'settings'
     | 'stallTimeoutMs'
@@ -1169,6 +1177,9 @@ function launchDispatch(
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
+      ...(turn.systemPromptAppend !== undefined
+        ? { systemPromptAppend: turn.systemPromptAppend }
+        : {}),
       ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),

@@ -129,6 +129,7 @@ describe('POST /api/rooms/:id/repo', () => {
           rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
         operatorGitName: () => 'Dorian',
         caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+        maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
       })
     );
   });

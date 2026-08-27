@@ -557,6 +557,21 @@ export function getRoomRepoService(): RoomRepoService {
   return activeRepos;
 }
 
+/**
+ * The active room-repo service, or `null` when bootstrap has not registered
+ * one.
+ *
+ * For callers on a TURN's path rather than a request's. A route that reaches
+ * for a room's files was asked for them and should say so if the service is
+ * missing; a room turn was asked to answer a message, and refusing it because
+ * an optional subsystem is absent would take a room down over a feature it does
+ * not use. The embedded read-only subsystem is the ordinary case: it never
+ * bootstraps one, and every room there is simply a room without files.
+ */
+export function tryGetRoomRepoService(): RoomRepoService | null {
+  return activeRepos;
+}
+
 let activeBridges: BridgeStore | null = null;
 let activeAuthors: AuthorRegistry | null = null;
 
