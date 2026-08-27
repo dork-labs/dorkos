@@ -303,8 +303,7 @@ const DEFAULT_BASE_URL = '/api';
 
 /** Where StreamManager sources its streams from (see module doc). */
 type StreamSource =
-  | { kind: 'socket'; baseUrl: string }
-  | { kind: 'transport'; transport: TransportStreams };
+  { kind: 'socket'; baseUrl: string } | { kind: 'transport'; transport: TransportStreams };
 
 /**
  * Build the URL of a session's durable event stream. The `cwd` query is

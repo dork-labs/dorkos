@@ -73,15 +73,9 @@ Config structure:
 // electron.vite.config.ts
 import { defineConfig } from 'electron-vite';
 export default defineConfig({
-  main: {
-    /* vite config for main process */
-  },
-  preload: {
-    /* vite config for preload */
-  },
-  renderer: {
-    /* vite config for renderer (React) */
-  },
+  main: {/* vite config for main process */},
+  preload: {/* vite config for preload */},
+  renderer: {/* vite config for renderer (React) */},
 });
 ```
 

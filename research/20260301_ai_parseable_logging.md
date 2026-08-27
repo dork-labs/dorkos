@@ -258,13 +258,14 @@ TOON format (Token-Optimized Object Notation, 2025) achieves 30–60% token redu
 - The practical recommendation is to **use abbreviated but readable field names** in NDJSON
 
 **Token-saving field name choices**:
-| Verbose | Preferred | Savings |
-|---------|-----------|---------|
-| `timestamp` | `time` | ~2 tokens/line |
-| `message` | `msg` | ~1 token/line |
-| `logLevel` | `level` | ~1 token/line |
-| `errorMessage` | `err.message` | ~1 token/line |
-| `requestIdentifier` | `reqId` | ~2 tokens/line |
+
+| Verbose             | Preferred     | Savings        |
+| ------------------- | ------------- | -------------- |
+| `timestamp`         | `time`        | ~2 tokens/line |
+| `message`           | `msg`         | ~1 token/line  |
+| `logLevel`          | `level`       | ~1 token/line  |
+| `errorMessage`      | `err.message` | ~1 token/line  |
+| `requestIdentifier` | `reqId`       | ~2 tokens/line |
 
 At 1,000 log lines, these savings compound to ~7,000 fewer tokens — meaningful for context window budgeting.
 

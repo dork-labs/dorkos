@@ -24,10 +24,10 @@ lack this. Add it:
 - **In-session variant of `invokeCapabilityAsMcpResult`**
   (`core/capabilities/mcp-projection.ts` ~:187-229): when the gate returns
   `approval_required`, HOLD via `awaitDecision`; on `granted`, consume the token
-  (`approval-service.ts` `consume` ~:362) and re-invoke `registry.invoke` with the
+  (`approval-service.ts` `consume` ~~:362) and re-invoke `registry.invoke` with the
   token, returning the **real** result inline; on `denied`/`expired`/timeout,
   return today's `approval_required`/`denied` payload. Thread the live `session`
-  in via `capability-mcp-tools.ts` + `mcp-tools/index.ts` (~:240) — both already
+  in via `capability-mcp-tools.ts` + `mcp-tools/index.ts` (~~:240) — both already
   have the `session` handle with `eventQueue`.
 
 ### GATE — verify FIRST (make-or-break)

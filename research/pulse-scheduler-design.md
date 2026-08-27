@@ -273,9 +273,7 @@ activeRuns.set(runId, controller);
 try {
   for await (const event of query({
     prompt: job.prompt,
-    options: {
-      /* ... */
-    },
+    options: {/* ... */},
     signal,
   })) {
     // handle events

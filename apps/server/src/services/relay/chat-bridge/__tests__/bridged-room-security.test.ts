@@ -629,9 +629,10 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
 
   describe('§9.3 lever 3 — a stranger cannot speak to a chat the operator never connected (A9.7)', () => {
     it('A6.5: `deliver` refuses a post whose author is neither the bound agent nor the operator, BEFORE any publish', async () => {
-      const publish = vi.fn(
-        async (): Promise<PublishResult> => ({ messageId: 'm', deliveredTo: 1 })
-      );
+      const publish = vi.fn(async (): Promise<PublishResult> => ({
+        messageId: 'm',
+        deliveredTo: 1,
+      }));
       const delivery = makeDelivery(publish);
       const room = harness.service.createBridgedRoom(
         bridgeRequest({ chatType: 'private', channelType: null })

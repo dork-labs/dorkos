@@ -1087,8 +1087,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(manager.approveTool(sessionId, toolCallId, approved, options)).toBe(true);
 
       const resolved = projector.replayFrom(0).find((e) => e.type === 'interaction_resolved') as
-        | { resolution?: string; reasonGiven?: boolean; resolvedBy?: string }
-        | undefined;
+        { resolution?: string; reasonGiven?: boolean; resolvedBy?: string } | undefined;
       disposeProjector(sessionId);
       return { resolved, permission: (await permission) as { behavior: string; message?: string } };
     }

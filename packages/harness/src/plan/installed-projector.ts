@@ -396,12 +396,10 @@ function toManagedHooks(
   if (!rewritten) return undefined;
   const out: ClaudeHooksConfig = {};
   for (const [event, groups] of Object.entries(rewritten)) {
-    out[event] = groups.map(
-      (group): ManagedHookGroup => ({
-        ...group,
-        [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
-      })
-    );
+    out[event] = groups.map((group): ManagedHookGroup => ({
+      ...group,
+      [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
+    }));
   }
   return out;
 }

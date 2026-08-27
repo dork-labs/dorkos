@@ -474,9 +474,7 @@ In `apps/server/src/index.ts`, after the Claude registration block (search for "
 ```typescript
 const myConfig = configManager.get('runtimes').myruntime;
 if (myConfig.enabled) {
-  const myRuntime = new MyRuntime({
-    /* deps: db-backed maps, config */
-  });
+  const myRuntime = new MyRuntime({/* deps: db-backed maps, config */});
   myRuntime.setSessionSettings(runtimeRegistry); // ADR-0260 durable settings port
   runtimeRegistry.register(myRuntime);
   logger.info('[Runtime] MyRuntime registered');

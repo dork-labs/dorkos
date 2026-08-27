@@ -454,9 +454,7 @@ export function ToolsTab() {
     mesh: true,
     adapter: relayEnabled,
   };
-  const initErrorMap = {
-    /* unchanged */
-  };
+  const initErrorMap = {/* unchanged */};
 
   const handleToggle = useCallback(
     (key, value) => updateConfig({ [CONFIG_KEY_MAP[key]]: value }),

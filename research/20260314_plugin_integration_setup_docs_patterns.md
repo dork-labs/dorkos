@@ -488,14 +488,7 @@ Add a `button` field type to `ConfigField` for adapter-specific one-click action
 
 ```typescript
 export type ConfigFieldType =
-  | 'text'
-  | 'password'
-  | 'number'
-  | 'boolean'
-  | 'select'
-  | 'textarea'
-  | 'url'
-  | 'button'; // NEW: renders a call-to-action button
+  'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea' | 'url' | 'button'; // NEW: renders a call-to-action button
 
 export interface ConfigField {
   // ... for type === 'button':

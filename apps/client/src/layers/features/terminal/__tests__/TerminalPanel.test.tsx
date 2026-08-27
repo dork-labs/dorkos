@@ -414,9 +414,10 @@ describe('TerminalPanel', () => {
 
   it('clears an id from the list when its shell exits', async () => {
     const transport = createMockTransport({ supportsTerminal: true });
-    transport.openTerminal = vi.fn(
-      async (): Promise<TerminalHandle> => ({ id: 'fresh-pty', output: exitedOutput() })
-    );
+    transport.openTerminal = vi.fn(async (): Promise<TerminalHandle> => ({
+      id: 'fresh-pty',
+      output: exitedOutput(),
+    }));
 
     renderTerminal(transport);
 
@@ -434,13 +435,11 @@ describe('TerminalPanel', () => {
     // from the takeover window, ping-ponging it on every reload.
     writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
-    transport.attachTerminal = vi.fn(
-      async (id: string): Promise<TerminalHandle> => ({
-        id,
-        output: exitedOutput(),
-        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
-      })
-    );
+    transport.attachTerminal = vi.fn(async (id: string): Promise<TerminalHandle> => ({
+      id,
+      output: exitedOutput(),
+      closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+    }));
     const openTerminal = vi.fn();
     transport.openTerminal = openTerminal;
 
@@ -464,13 +463,11 @@ describe('TerminalPanel', () => {
     // fresh shell instead.
     writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
-    transport.attachTerminal = vi.fn(
-      async (id: string): Promise<TerminalHandle> => ({
-        id,
-        output: exitedOutput(),
-        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
-      })
-    );
+    transport.attachTerminal = vi.fn(async (id: string): Promise<TerminalHandle> => ({
+      id,
+      output: exitedOutput(),
+      closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+    }));
 
     const { unmount } = renderTerminal(transport);
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
@@ -501,13 +498,11 @@ describe('TerminalPanel', () => {
     const user = userEvent.setup();
     writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
-    transport.attachTerminal = vi.fn(
-      async (id: string): Promise<TerminalHandle> => ({
-        id,
-        output: exitedOutput(),
-        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
-      })
-    );
+    transport.attachTerminal = vi.fn(async (id: string): Promise<TerminalHandle> => ({
+      id,
+      output: exitedOutput(),
+      closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+    }));
 
     renderTerminal(transport);
     await waitFor(() =>
@@ -531,17 +526,15 @@ describe('TerminalPanel', () => {
     // client writes them straight through, after its own [reconnected] cue.
     writeTerminalTabs(null, CWD, { ids: ['t1'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
-    transport.attachTerminal = vi.fn(
-      async (id: string): Promise<TerminalHandle> => ({
-        id,
-        output: (async function* () {
-          yield new TextEncoder().encode(
-            '\x1b[2m[some output was lost while disconnected]\x1b[0m\r\n'
-          );
-          yield new TextEncoder().encode('surviving scrollback\r\n');
-        })(),
-      })
-    );
+    transport.attachTerminal = vi.fn(async (id: string): Promise<TerminalHandle> => ({
+      id,
+      output: (async function* () {
+        yield new TextEncoder().encode(
+          '\x1b[2m[some output was lost while disconnected]\x1b[0m\r\n'
+        );
+        yield new TextEncoder().encode('surviving scrollback\r\n');
+      })(),
+    }));
 
     renderTerminal(transport);
 

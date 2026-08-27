@@ -679,37 +679,40 @@ describe('client ID remap via done event', () => {
 Fixes both bugs immediately. No server changes required. Can be shipped independently.
 
 **Files changed:**
-| File | Change |
-|---|---|
-| `chat-types.ts` | Add `_streaming?: boolean` to `ChatMessage` |
-| `use-chat-session.ts` | Remove post-stream reset (lines 431-439); rewrite Branch 2 dedup; tag user message |
-| `stream-event-helpers.ts` | Tag assistant message in `ensureAssistantMessage` |
-| `stream-event-handler.ts` | Remove `setMessages([])` in remap; parse `messageIds` in done (prep for Phase 3) |
+
+| File                      | Change                                                                             |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| `chat-types.ts`           | Add `_streaming?: boolean` to `ChatMessage`                                        |
+| `use-chat-session.ts`     | Remove post-stream reset (lines 431-439); rewrite Branch 2 dedup; tag user message |
+| `stream-event-helpers.ts` | Tag assistant message in `ensureAssistantMessage`                                  |
+| `stream-event-handler.ts` | Remove `setMessages([])` in remap; parse `messageIds` in done (prep for Phase 3)   |
 
 ### Phase 2: Transcript Parser Fix (Server-Side)
 
 Fixes data loss when loading past sessions from disk. Independent of Phase 1 — can be shipped in parallel.
 
 **Files changed:**
-| File | Change |
-|---|---|
-| `transcript-parser.ts` | Add error, subagent, hook block extraction |
-| `transcript-parser.test.ts` | Add tests for new block types |
+
+| File                        | Change                                     |
+| --------------------------- | ------------------------------------------ |
+| `transcript-parser.ts`      | Add error, subagent, hook block extraction |
+| `transcript-parser.test.ts` | Add tests for new block types              |
 
 ### Phase 3: Server-Echo ID (Client + Server)
 
 Eliminates content/position matching. Depends on Phase 1 (uses `_streaming` flag infrastructure). Server changes can proceed independently of Phase 1 client changes.
 
 **Files changed:**
-| File | Change |
-|---|---|
-| `agent-runtime.ts` | Add `getLastMessageIds` to interface |
-| `claude-code-runtime.ts` | Implement `getLastMessageIds` |
-| `sessions.ts` | Include `messageIds` in done SSE event |
+
+| File                      | Change                                       |
+| ------------------------- | -------------------------------------------- |
+| `agent-runtime.ts`        | Add `getLastMessageIds` to interface         |
+| `claude-code-runtime.ts`  | Implement `getLastMessageIds`                |
+| `sessions.ts`             | Include `messageIds` in done SSE event       |
 | `stream-event-handler.ts` | Handle `messageIds` in done event, remap IDs |
-| `use-chat-session.ts` | Pass `clientMessageId` in streaming request |
-| `transport.ts` | Extend `sendMessage` with options parameter |
-| `FakeAgentRuntime` | Add `getLastMessageIds` stub |
+| `use-chat-session.ts`     | Pass `clientMessageId` in streaming request  |
+| `transport.ts`            | Extend `sendMessage` with options parameter  |
+| `FakeAgentRuntime`        | Add `getLastMessageIds` stub                 |
 
 ---
 

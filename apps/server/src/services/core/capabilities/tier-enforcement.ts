@@ -217,11 +217,7 @@ export const APPROVAL_TOKEN_HEADER = 'x-dorkos-approval';
  * - `unknown_token` — no approval matches the presented token.
  */
 export type FreshAskReason =
-  | 'no_approval'
-  | 'expired'
-  | 'already_used'
-  | 'wrong_action'
-  | 'unknown_token';
+  'no_approval' | 'expired' | 'already_used' | 'wrong_action' | 'unknown_token';
 
 /**
  * Why a destructive call is not running yet.
@@ -317,10 +313,7 @@ export interface ApprovalRequiredPayload {
  *   approval bound to a hash that ignores part of the action is worse than none.
  */
 export type TierDeniedReason =
-  | 'tier_ceiling'
-  | 'operator_denied'
-  | 'enforcement_unavailable'
-  | 'input_not_bindable';
+  'tier_ceiling' | 'operator_denied' | 'enforcement_unavailable' | 'input_not_bindable';
 
 /** The result a refused caller receives instead of the capability's output. */
 export interface TierDeniedPayload {

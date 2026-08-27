@@ -134,8 +134,7 @@ const CAPS: RuntimeCapabilities = {
  */
 const capabilityMap = {
   current: { capabilities: { 'claude-code': CAPS }, defaultRuntime: 'claude-code' } as
-    | { capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }
-    | undefined,
+    { capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string } | undefined,
 };
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({

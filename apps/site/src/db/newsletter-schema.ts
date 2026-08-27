@@ -43,11 +43,7 @@ export type NewsletterStatus = 'pending' | 'confirmed' | 'unsubscribed';
  * footage yet.
  */
 export type NewsletterSource =
-  | 'footer'
-  | 'newsletter-page'
-  | 'blog'
-  | 'tutorials-modal'
-  | 'unknown';
+  'footer' | 'newsletter-page' | 'blog' | 'tutorials-modal' | 'unknown';
 
 export const newsletterSubscriber = pgTable(
   'newsletter_subscriber',

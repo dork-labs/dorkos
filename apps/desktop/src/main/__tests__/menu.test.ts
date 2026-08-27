@@ -59,8 +59,7 @@ describe('setupMenu (B1)', () => {
     setupMenu(() => null, vi.fn());
 
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     expect(template).toBeDefined();
     expect(template![0].label).toBe('DorkOS');
     expect(template!.some((item) => item.role === 'editMenu')).toBe(true);
@@ -81,8 +80,7 @@ describe('setupMenu (B1)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const windowMenu = template!.find((item) => item.role === 'windowMenu')!
       .submenu as Electron.MenuItemConstructorOptions[];
 
@@ -107,8 +105,7 @@ describe('setupMenu (B1)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const appMenu = template![0].submenu as Electron.MenuItemConstructorOptions[];
 
     expect(appMenu.some((item) => item.role === 'about')).toBe(true);
@@ -131,8 +128,7 @@ describe('setupMenu (B1)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const appMenu = template![0].submenu as Electron.MenuItemConstructorOptions[];
     const checkForUpdates = appMenu.find((item) => item.label === 'Check for Updates…');
 
@@ -154,8 +150,7 @@ describe('setupMenu (B1)', () => {
     setupMenu(() => win as unknown as Electron.BrowserWindow, ensureWindow);
 
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const settingsItem = findItem(template!, 'Settings…');
     settingsItem!.click!({} as never, undefined, {} as never);
 
@@ -173,8 +168,7 @@ describe('setupMenu (B1)', () => {
     setupMenu(() => null, ensureWindow);
 
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const settingsItem = findItem(template!, 'Settings…');
     settingsItem!.click!({} as never, undefined, {} as never);
 
@@ -190,8 +184,7 @@ describe('setupMenu (B1)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const help = template!.find((item) => item.role === 'help');
     const helpItems = help!.submenu as Electron.MenuItemConstructorOptions[];
     // The 3 links, a separator, then Save Diagnostic Report….
@@ -216,8 +209,7 @@ describe('setupMenu (B1)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const item = findItem(template!, 'Save Diagnostic Report…');
 
     expect(item).toBeDefined();
@@ -254,8 +246,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
       setupMenu(() => null, vi.fn());
 
       const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-        | Electron.MenuItemConstructorOptions[]
-        | undefined;
+        Electron.MenuItemConstructorOptions[] | undefined;
       expect(template).toBeDefined();
       expect(template!.map((item) => item.label)).toEqual([
         'File',
@@ -278,8 +269,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     const ensureWindow = vi.fn();
     setupMenu(() => null, ensureWindow);
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const fileMenu = template!.find((item) => item.label === 'File')!
       .submenu as Electron.MenuItemConstructorOptions[];
 
@@ -304,8 +294,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const editMenu = template!.find((item) => item.label === 'Edit')!
       .submenu as Electron.MenuItemConstructorOptions[];
     const roles = editMenu.map((item) => item.role).filter(Boolean);
@@ -321,8 +310,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const viewMenu = template!.find((item) => item.label === 'View')!
       .submenu as Electron.MenuItemConstructorOptions[];
     const roles = viewMenu.map((item) => item.role).filter(Boolean);
@@ -346,8 +334,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const windowMenu = template!.find((item) => item.label === 'Window')!
       .submenu as Electron.MenuItemConstructorOptions[];
 
@@ -368,8 +355,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
 
     setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     const helpMenu = template!.find((item) => item.label === 'Help')!
       .submenu as Electron.MenuItemConstructorOptions[];
 
@@ -435,8 +421,7 @@ describe('Cmd/Ctrl+W — closing (DOR-538)', () => {
 
       setupMenu(() => null, vi.fn());
       const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-        | Electron.MenuItemConstructorOptions[]
-        | undefined;
+        Electron.MenuItemConstructorOptions[] | undefined;
 
       // Labelled "Close Tab" since DOR-540 shipped the renderer's handler: the
       // cockpit subscribes for the life of the shell, so this closes a tab
@@ -477,8 +462,7 @@ describe('setupDockMenu (B4)', () => {
 
     expect(app.dock.setMenu).toHaveBeenCalledTimes(1);
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      | Electron.MenuItemConstructorOptions[]
-      | undefined;
+      Electron.MenuItemConstructorOptions[] | undefined;
     expect(template).toHaveLength(1);
     expect(template![0].label).toBe('Show DorkOS');
 

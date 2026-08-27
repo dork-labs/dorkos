@@ -384,7 +384,7 @@ server source at v1.17.13):**
   `environment`; http → `remote` with `url` + `headers`; `sse` withheld —
   OpenCode has no SSE transport, mirrors codex), and register each via
   `client.mcp.add`. Reconciliation is keyed by `(cwd, live client instance,
-  desired-set signature, fully-applied?)`: a repeat turn on the same live sidecar
+desired-set signature, fully-applied?)`: a repeat turn on the same live sidecar
   with an unchanged set that fully applied last run is a no-op; a new client
   instance (sidecar restarted → empty registry) re-adds everything and removes
   nothing; a changed set disconnects the names WE injected that are no longer

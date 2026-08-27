@@ -79,12 +79,13 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 **File format:** Markdown with YAML frontmatter. Filename (minus `.md`) becomes the command name. Commands can alternatively be defined inline in `opencode.jsonc`.
 
 **Supported frontmatter fields:**
-| Field | Type | Purpose |
-|---|---|---|
-| `description` | string | Shown in TUI command picker |
-| `agent` | string | Which named agent executes this command |
-| `model` | string | Override default model (e.g., `anthropic/claude-3-5-sonnet-20241022`) |
-| `subtask` | boolean | Force subagent invocation (keeps primary context clean) |
+
+| Field         | Type    | Purpose                                                               |
+| ------------- | ------- | --------------------------------------------------------------------- |
+| `description` | string  | Shown in TUI command picker                                           |
+| `agent`       | string  | Which named agent executes this command                               |
+| `model`       | string  | Override default model (e.g., `anthropic/claude-3-5-sonnet-20241022`) |
+| `subtask`     | boolean | Force subagent invocation (keeps primary context clean)               |
 
 **Argument/placeholder syntax:**
 
@@ -168,9 +169,10 @@ Review the following files for security vulnerabilities: $ARGUMENTS
 **File format:** Markdown with YAML frontmatter.
 
 **Supported frontmatter fields:**
-| Field | Type | Purpose |
-|---|---|---|
-| `description` | string | Shown in slash command popup menu |
+
+| Field           | Type   | Purpose                                             |
+| --------------- | ------ | --------------------------------------------------- |
+| `description`   | string | Shown in slash command popup menu                   |
 | `argument-hint` | string | Documents expected parameters (e.g., `KEY=<value>`) |
 
 **Argument/placeholder syntax:**
@@ -211,13 +213,14 @@ Include a summary, motivation, and testing instructions.
 > Windsurf uses the term "Workflows" for what other tools call custom slash commands.
 
 **Storage locations:**
-| Scope | Path |
-|---|---|
-| Workspace | `.windsurf/workflows/*.md` |
-| Global (per-machine) | `~/.codeium/windsurf/global_workflows/*.md` |
-| Enterprise (macOS) | `/Library/Application Support/Windsurf/workflows/*.md` |
-| Enterprise (Linux) | `/etc/windsurf/workflows/*.md` |
-| Enterprise (Windows) | `C:\ProgramData\Windsurf\workflows\*.md` |
+
+| Scope                | Path                                                   |
+| -------------------- | ------------------------------------------------------ |
+| Workspace            | `.windsurf/workflows/*.md`                             |
+| Global (per-machine) | `~/.codeium/windsurf/global_workflows/*.md`            |
+| Enterprise (macOS)   | `/Library/Application Support/Windsurf/workflows/*.md` |
+| Enterprise (Linux)   | `/etc/windsurf/workflows/*.md`                         |
+| Enterprise (Windows) | `C:\ProgramData\Windsurf\workflows\*.md`               |
 
 **File format:** Markdown. No documented frontmatter schema — workflows contain a title, description, and numbered steps as plain prose with inline code blocks.
 
@@ -236,11 +239,12 @@ Include a summary, motivation, and testing instructions.
 **Programmatic API:** None. UI-only management (Workflows panel in Cascade sidebar).
 
 **Workflows vs. Rules vs. Skills distinction:**
-| Type | Storage | Invocation | Auto-invoke |
-|---|---|---|---|
-| Workflows | `.windsurf/workflows/` | Manual `/name` | Never |
-| Rules | `.windsurf/rules/` | Context-injected | Automatic (per glob) |
-| Skills | `.windsurf/skills/` | Can be auto-invoked | Yes (Cascade decides) |
+
+| Type      | Storage                | Invocation          | Auto-invoke           |
+| --------- | ---------------------- | ------------------- | --------------------- |
+| Workflows | `.windsurf/workflows/` | Manual `/name`      | Never                 |
+| Rules     | `.windsurf/rules/`     | Context-injected    | Automatic (per glob)  |
+| Skills    | `.windsurf/skills/`    | Can be auto-invoked | Yes (Cascade decides) |
 
 **Note:** Windsurf's workflow format is the least structured of all tools reviewed — no frontmatter at all, just prose steps. This makes it easy to author but difficult to introspect programmatically.
 
@@ -273,11 +277,12 @@ The June 2025 issue explicitly cited Claude Code's custom slash command system a
 **File format:** Markdown with YAML frontmatter.
 
 **Supported frontmatter fields:**
-| Field | Type | Purpose |
-|---|---|---|
-| `name` | string | Display name and slash command identifier |
-| `description` | string | Shown in command picker |
-| `invokable` | boolean | When `true`, makes this a `/` slash command in IDE + CLI |
+
+| Field         | Type    | Purpose                                                  |
+| ------------- | ------- | -------------------------------------------------------- |
+| `name`        | string  | Display name and slash command identifier                |
+| `description` | string  | Shown in command picker                                  |
+| `invokable`   | boolean | When `true`, makes this a `/` slash command in IDE + CLI |
 
 **Discovery mechanism:** Continue scans `.continue/prompts/` and registers any file with `invokable: true` as a slash command. Commands appear in the `/` dropdown in Chat, Plan, and Agent mode.
 

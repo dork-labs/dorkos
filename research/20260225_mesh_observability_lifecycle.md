@@ -100,12 +100,13 @@ React Flow (`@xyflow/react` v12) is the clear choice for the topology graph: it 
 - For DorkOS: message-based is simpler since the Relay already timestamps all messages. Use a `last_seen_at` column updated on any Relay publish. Add an optional explicit heartbeat signal on `mesh.agent.lifecycle.heartbeat` for agents that want faster health detection.
 
 **Standard thresholds from production systems:**
-| System | Heartbeat interval | Inactive threshold |
-|---|---|---|
-| SCOM (Microsoft) | 60 s | 4 missed = 240 s |
-| Bamboo CI | 30 s default | configurable |
-| CipherTrust | configurable | 2x interval |
-| AWS Step Functions | configurable `HeartbeatSeconds` | — |
+
+| System             | Heartbeat interval              | Inactive threshold |
+| ------------------ | ------------------------------- | ------------------ |
+| SCOM (Microsoft)   | 60 s                            | 4 missed = 240 s   |
+| Bamboo CI          | 30 s default                    | configurable       |
+| CipherTrust        | configurable                    | 2x interval        |
+| AWS Step Functions | configurable `HeartbeatSeconds` | —                  |
 
 **Recommended three-state machine for DorkOS:**
 

@@ -1268,8 +1268,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     const line = vi
       .mocked(logger.debug)
       .mock.calls.find((call) => String(call[0]).includes('no continuation began')) as
-      | [string, { capped?: unknown }]
-      | undefined;
+      [string, { capped?: unknown }] | undefined;
     return line?.[1].capped;
   }
 

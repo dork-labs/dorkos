@@ -600,8 +600,7 @@ export type MarketplaceJson = z.infer<typeof MarketplaceJsonSchema>;
 import { MarketplaceJsonSchema, type MarketplaceJson } from './marketplace-json-schema.js';
 
 export type ParseMarketplaceResult =
-  | { ok: true; marketplace: MarketplaceJson }
-  | { ok: false; error: string };
+  { ok: true; marketplace: MarketplaceJson } | { ok: false; error: string };
 
 /**
  * Parse a marketplace.json string into a typed MarketplaceJson object.

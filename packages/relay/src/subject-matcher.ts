@@ -44,8 +44,7 @@ export interface SubjectValidationError {
  * `valid: false` includes a `reason` with the validation error.
  */
 export type SubjectValidationResult =
-  | { valid: true }
-  | { valid: false; reason: SubjectValidationError };
+  { valid: true } | { valid: false; reason: SubjectValidationError };
 
 /**
  * Validate a subject or pattern string for use in the Relay bus.

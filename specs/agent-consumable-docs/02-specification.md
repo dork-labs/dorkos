@@ -665,11 +665,11 @@ you mean 'createOpenAPIPage'?`. v11 renamed the factory
     `APIPage`/`OpenAPIPage` from `props.components`. No client-side filesystem read. 2. **Generator ↔ tsx incompatibility — NOT predicted by D6.**
     `generate:api-docs` (`tsx scripts/generate-api-docs.ts`) crashed at import:
     `SyntaxError: The requested module '../node_modules/.pnpm/xml-js@1.6.11/.../js2xml.js'
-   does not provide an export named 'require_js2xml'`. openapi 11 bundles its
+ does not provide an export named 'require_js2xml'`. openapi 11 bundles its
     CJS deps (xml-js) as ESM copies under its own `dist/node_modules/.pnpm/…`
     with rolldown interop exports. **Node's native ESM loader imports them
     correctly** (`node -e import('fumadocs-openapi')` → `generateFiles:
-   function`); **tsx's esbuild loader mis-resolves the bundled-dependency
+ function`); **tsx's esbuild loader mis-resolves the bundled-dependency
     `.pnpm` path** and fails. Fix (tasks 2.4/2.5): run the generator under
     `node` (native TS type-stripping) instead of `tsx`.
     Both fixes land inside the adaptation boundary — Phase B's done-ness is

@@ -119,16 +119,19 @@ Each `[Unreleased]` subsection ends with a fixed anchor comment:
 ### Added
 
 - …existing entries…
+
 <!-- FLOW:ADD-ABOVE Added -->
 
 ### Changed
 
 - …
+
 <!-- FLOW:ADD-ABOVE Changed -->
 
 ### Removed
 
 - …
+
 <!-- FLOW:ADD-ABOVE Removed -->
 ```
 

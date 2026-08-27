@@ -134,12 +134,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   // Injected dependencies
   private mcpServerFactory:
-    | ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>)
-    | null = null;
+    ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null = null;
   private meshCore: AgentRegistryPort | null = null;
   private sessionConnectors:
-    | import('../../connectors/session-exposure.js').SessionConnectorService
-    | null = null;
+    import('../../connectors/session-exposure.js').SessionConnectorService | null = null;
   private mcpAuthEvidence: McpAuthEvidencePort | undefined;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;

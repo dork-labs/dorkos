@@ -36,13 +36,14 @@ The relay adapter and binding system works well mechanically, but the user exper
 Adopt the industry-standard term "Channel" for all user-facing surfaces. Internal code (relay adapter classes, transport methods, schemas) keeps its current naming — this is a UI/UX vocabulary change, not a refactor.
 
 **Mapping:**
-| Old term (UI) | New term (UI) | Internal code (unchanged) |
-|---|---|---|
-| Relay Adapters | Channels | `RelayAdapter`, `AdapterConfig`, `AdapterManifest` |
-| Adapter | Channel | `adapter-manager.ts`, adapter types |
-| Relay Panel | Channels Panel (or just "Channels") | `RelayPanel.tsx`, `useRelayEnabled()` |
-| Relay Bindings | Channel Bindings (or just "Bindings") | `AdapterBinding`, `BindingStore` |
-| Configure Relay Adapters (Cmd+K) | Configure Channels | command palette entry |
+
+| Old term (UI)                    | New term (UI)                         | Internal code (unchanged)                          |
+| -------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| Relay Adapters                   | Channels                              | `RelayAdapter`, `AdapterConfig`, `AdapterManifest` |
+| Adapter                          | Channel                               | `adapter-manager.ts`, adapter types                |
+| Relay Panel                      | Channels Panel (or just "Channels")   | `RelayPanel.tsx`, `useRelayEnabled()`              |
+| Relay Bindings                   | Channel Bindings (or just "Bindings") | `AdapterBinding`, `BindingStore`                   |
+| Configure Relay Adapters (Cmd+K) | Configure Channels                    | command palette entry                              |
 
 ### Agent-centric binding management
 

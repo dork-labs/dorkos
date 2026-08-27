@@ -267,8 +267,7 @@ describe('BindingRouter', () => {
     /** The `dispatchId` the router forwarded on its republish. */
     function forwardedId(): unknown {
       const options = vi.mocked(mockRelayCore.publish).mock.calls.at(-1)?.[2] as
-        | { dispatchId?: unknown }
-        | undefined;
+        { dispatchId?: unknown } | undefined;
       return options?.dispatchId;
     }
 

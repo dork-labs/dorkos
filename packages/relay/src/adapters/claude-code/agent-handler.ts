@@ -239,8 +239,7 @@ export async function handleAgentMessage(
 
   // Extract binding-enriched fields from the payload resolved above.
   const bindingPerms = payloadObj?.__bindingPermissions as
-    | { permissionMode?: PermissionMode }
-    | undefined;
+    { permissionMode?: PermissionMode } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred

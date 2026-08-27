@@ -184,8 +184,7 @@ describe('resolveCaller — one owner, one author id, across every login posture
 function readNaturalKey(db: Db, authorId: string): string | undefined {
   return (
     db.$client.prepare('SELECT natural_key AS k FROM authors WHERE id = ?').get(authorId) as
-      | { k: string }
-      | undefined
+      { k: string } | undefined
   )?.k;
 }
 

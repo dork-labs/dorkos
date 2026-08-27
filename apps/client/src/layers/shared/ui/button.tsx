@@ -39,14 +39,7 @@ const buttonVariants = cva(
 );
 
 export type ButtonSize =
-  | 'xs'
-  | 'sm'
-  | 'default'
-  | 'lg'
-  | 'icon'
-  | 'icon-xs'
-  | 'icon-sm'
-  | 'icon-lg';
+  'xs' | 'sm' | 'default' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg';
 
 // xs and icon-xs are intentionally small UI chrome — excluded from responsive scaling
 const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {

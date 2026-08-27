@@ -370,12 +370,13 @@ claude plugin validate .
 ```
 
 **Installation scopes:**
-| Scope | Settings file | Shared? |
-|---|---|---|
-| `user` (default) | `~/.claude/settings.json` | No |
-| `project` | `.claude/settings.json` | Yes (via git) |
-| `local` | `.claude/settings.local.json` | No |
-| `managed` | Managed settings | Yes (org-wide) |
+
+| Scope            | Settings file                 | Shared?        |
+| ---------------- | ----------------------------- | -------------- |
+| `user` (default) | `~/.claude/settings.json`     | No             |
+| `project`        | `.claude/settings.json`       | Yes (via git)  |
+| `local`          | `.claude/settings.local.json` | No             |
+| `managed`        | Managed settings              | Yes (org-wide) |
 
 **Plugin cache location:** `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`
 

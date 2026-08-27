@@ -1922,8 +1922,7 @@ export function runtimeConformance(
         // Runtime values can drift from the compile-time type via casts, so the
         // permission-modes contract is re-asserted structurally.
         const modes = capabilities.permissionModes as
-          | RuntimeCapabilities['permissionModes']
-          | undefined;
+          RuntimeCapabilities['permissionModes'] | undefined;
         expect(modes, 'capabilities.permissionModes is required').toBeDefined();
         expect(typeof modes!.supported).toBe('boolean');
         expect(Array.isArray(modes!.values)).toBe(true);

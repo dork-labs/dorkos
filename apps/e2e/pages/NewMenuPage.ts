@@ -19,11 +19,7 @@ import type { Locator, Page } from '@playwright/test';
 
 /** The New menu's items, matching `NEW_MENU_ITEM_IDS` in the client. */
 export type NewMenuItemId =
-  | 'new-session'
-  | 'new-channel'
-  | 'new-message'
-  | 'new-agent'
-  | 'new-group';
+  'new-session' | 'new-channel' | 'new-message' | 'new-agent' | 'new-group';
 
 /** Driving the one create surface. */
 export class NewMenuPage {

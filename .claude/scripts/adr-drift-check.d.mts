@@ -25,10 +25,7 @@ export interface ManifestDecision {
 export interface LinkIssue {
   key: string;
   kind:
-    | 'superseded-without-link'
-    | 'dangling'
-    | 'supersedes-live-target'
-    | 'amends-terminal-target';
+    'superseded-without-link' | 'dangling' | 'supersedes-live-target' | 'amends-terminal-target';
   field?: string;
   target?: string;
   targetStatus?: string;

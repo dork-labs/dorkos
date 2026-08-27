@@ -115,8 +115,7 @@ function textResult(payload: unknown): CallToolResult {
  * handler with these arguments, or return this result instead.
  */
 type GateOutcome =
-  | { allowed: true; input: Record<string, unknown> }
-  | { allowed: false; result: CallToolResult };
+  { allowed: true; input: Record<string, unknown> } | { allowed: false; result: CallToolResult };
 
 /**
  * Run the tier gate for one hand-registered tool call.

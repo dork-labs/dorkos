@@ -301,20 +301,22 @@ Wrap in `<MotionConfig reducedMotion="user">` (already present at app level in `
 ### File Organization
 
 **Modified files:**
-| File | Change |
-|------|--------|
-| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | Major rewrite: Mode A/B conditional, controlled tabs, extract inline components |
-| `packages/shared/src/config-schema.ts` | Add `scanRoots` to `mesh` config object |
-| `apps/server/src/routes/config.ts` | Add `boundary` to GET response |
-| `apps/client/src/layers/features/mesh/index.ts` | Export new components |
-| `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx` | Update for Mode A/B, new components |
+
+| File                                                                | Change                                                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx`             | Major rewrite: Mode A/B conditional, controlled tabs, extract inline components |
+| `packages/shared/src/config-schema.ts`                              | Add `scanRoots` to `mesh` config object                                         |
+| `apps/server/src/routes/config.ts`                                  | Add `boundary` to GET response                                                  |
+| `apps/client/src/layers/features/mesh/index.ts`                     | Export new components                                                           |
+| `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx` | Update for Mode A/B, new components                                             |
 
 **New files:**
-| File | Purpose |
-|------|---------|
-| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx` | Discovery content for both modes |
-| `apps/client/src/layers/features/mesh/ui/ScanRootInput.tsx` | Chip/tag input for scan roots |
-| `apps/client/src/layers/features/mesh/ui/MeshEmptyState.tsx` | Reusable empty state component |
+
+| File                                                                | Purpose                               |
+| ------------------------------------------------------------------- | ------------------------------------- |
+| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx`         | Discovery content for both modes      |
+| `apps/client/src/layers/features/mesh/ui/ScanRootInput.tsx`         | Chip/tag input for scan roots         |
+| `apps/client/src/layers/features/mesh/ui/MeshEmptyState.tsx`        | Reusable empty state component        |
 | `apps/client/src/layers/entities/mesh/model/use-mesh-scan-roots.ts` | Config hook for scan roots + boundary |
 
 ## User Experience

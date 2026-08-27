@@ -3532,8 +3532,7 @@ function tolerateRetiredSidebarKeys(ctx: {
 }): void {
   if (ctx.zodSchema === SidebarPrefsSchema) {
     const properties = ctx.jsonSchema.properties as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+      Record<string, Record<string, unknown>> | undefined;
     if (!properties) return;
     for (const key of Object.keys(RETIRED_SIDEBAR_COLLAPSE_KEYS)) {
       properties[key] = { type: 'boolean' };
@@ -3563,8 +3562,7 @@ function tolerateRetiredSidebarKeys(ctx: {
   }
   if (ctx.zodSchema === SidebarGroupSchema) {
     const properties = ctx.jsonSchema.properties as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+      Record<string, Record<string, unknown>> | undefined;
     if (!properties) return;
     properties[LEGACY_MEMBERS_KEY] = { type: 'array', items: { type: 'string' } };
     // conf builds Ajv with `useDefaults`, so a declared `default` is WRITTEN IN
@@ -3637,8 +3635,7 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
   // build owns the key: a write whose parse output drops it genuinely removes it.
   if (ctx.zodSchema === ClaudeCodeSettingsSchema) {
     const properties = ctx.jsonSchema.properties as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+      Record<string, Record<string, unknown>> | undefined;
     if (!properties) return;
     // Deliberately no `default`: conf builds Ajv with `useDefaults`, so a
     // declared default would WRITE this retired key into every config on earth.

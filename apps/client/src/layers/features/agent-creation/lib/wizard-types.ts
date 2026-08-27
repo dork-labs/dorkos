@@ -33,12 +33,7 @@ export interface SelectedTemplate {
 }
 
 export type ConflictStatus =
-  | 'idle'
-  | 'checking'
-  | 'no-path'
-  | 'exists-no-dork'
-  | 'exists-has-dork'
-  | 'error';
+  'idle' | 'checking' | 'no-path' | 'exists-no-dork' | 'exists-has-dork' | 'error';
 
 /**
  * Title + description shown in the dialog header for each step. The arrival step

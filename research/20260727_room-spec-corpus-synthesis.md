@@ -64,17 +64,17 @@ Statuses are from `specs/manifest.json` (324 entries). **`implemented` ≈ shipp
 These all use **"channel" = an external messaging integration** (Telegram/Slack/Discord/webhook bound to an
 agent), NOT an in-cockpit conversation. See §7 for the rename that settled this.
 
-| Spec                                        | Status                  | Relevance                                                                         |
+| Spec | Status | Relevance |
 | ------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `channels-and-agent-adapters` (2026-04-04)  | implemented             | Connectivity UX for external adapters. "Channel" = integration.                   |
-| `adapter-agent-routing` (2026-02-28)        | implemented             | Central BindingRouter routes an inbound external message to one agent (ADR-0046). |
-| `adapter-binding-improvements` (2026-03-22) | implemented             | Binding robustness, multi-instance routing.                                       |
-| `channel-sender-identity`                   | 260721-215926           | implemented                                                                       | Forwards the external sender's identity into the prompt + session UI. |
-| `agent-channels-tab-01/02/03`               | implemented             | The agent dialog's integration-binding tab.                                       |
-| `agents-first-class-entity` (2026-03-29)    | implemented             | Agents as an entity with their own registry.                                      |
-| `agent-tool-context-injection` (2026-03-03) | implemented             | Static XML context blocks (ADR-0068).                                             |
-| `auto-hide-tool-calls` (2026-02-12)         | implemented             | Unrelated to rooms.                                                               |
-| `a2a-channels-interoperability`             | **not in the manifest** | See §7.4.                                                                         |
+| `channels-and-agent-adapters` (2026-04-04) | implemented | Connectivity UX for external adapters. "Channel" = integration. |
+| `adapter-agent-routing` (2026-02-28) | implemented | Central BindingRouter routes an inbound external message to one agent (ADR-0046). |
+| `adapter-binding-improvements` (2026-03-22) | implemented | Binding robustness, multi-instance routing. |
+| `channel-sender-identity` | 260721-215926 | implemented | Forwards the external sender's identity into the prompt + session UI. |
+| `agent-channels-tab-01/02/03` | implemented | The agent dialog's integration-binding tab. |
+| `agents-first-class-entity` (2026-03-29) | implemented | Agents as an entity with their own registry. |
+| `agent-tool-context-injection` (2026-03-03) | implemented | Static XML context blocks (ADR-0068). |
+| `auto-hide-tool-calls` (2026-02-12) | implemented | Unrelated to rooms. |
+| `a2a-channels-interoperability` | **not in the manifest** | See §7.4. |
 
 Relay/Mesh corpus (~40 specs, all `implemented`) is the transport substrate underneath integrations; the
 rooms design deliberately does **not** ride it (ADR 260726-170127).

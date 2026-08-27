@@ -15,8 +15,7 @@ import { WidgetDocumentSchema, type WidgetDocument } from '@dorkos/shared/ui-wid
 
 /** Result of validating a widget payload: either a valid document or an error. */
 export type ParseWidgetResult =
-  | { ok: true; document: WidgetDocument }
-  | { ok: false; error: string; raw: string };
+  { ok: true; document: WidgetDocument } | { ok: false; error: string; raw: string };
 
 /**
  * Validate an already-parsed value (e.g. a canvas `widget` content's
