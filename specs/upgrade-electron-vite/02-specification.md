@@ -128,9 +128,7 @@ export default defineConfig({
       outDir: 'dist/preload',
     },
   },
-  renderer: {
-    /* unchanged */
-  },
+  renderer: {/* unchanged */},
 });
 ```
 
@@ -154,9 +152,7 @@ export default defineConfig({
       outDir: 'dist/preload',
     },
   },
-  renderer: {
-    /* unchanged */
-  },
+  renderer: {/* unchanged */},
 });
 ```
 

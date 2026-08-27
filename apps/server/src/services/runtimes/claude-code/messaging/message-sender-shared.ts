@@ -79,8 +79,7 @@ export interface MessageSenderOpts {
   bindingStore?: BindingStore;
   adapterManager?: AdapterManager;
   mcpServerFactory?:
-    | ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>)
-    | null;
+    ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null;
   onModelsReceived?: (models: SdkReportedModel[]) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   /**

@@ -366,9 +366,7 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "config": {
-    /* full merged UserConfig */
-  },
+  "config": {/* full merged UserConfig */},
   "warnings": ["'tunnel.authtoken' contains sensitive data..."]
 }
 ```

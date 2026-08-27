@@ -47,13 +47,11 @@ import { mergeMarketplace, type MergedMarketplaceEntry } from './merge-marketpla
  * toasts.
  */
 export type ParseMarketplaceResult =
-  | { ok: true; marketplace: MarketplaceJson }
-  | { ok: false; error: string };
+  { ok: true; marketplace: MarketplaceJson } | { ok: false; error: string };
 
 /** Discriminated result of {@link parseDorkosSidecar}. */
 export type ParseDorkosSidecarResult =
-  | { ok: true; sidecar: DorkosSidecar }
-  | { ok: false; error: string };
+  { ok: true; sidecar: DorkosSidecar } | { ok: false; error: string };
 
 /**
  * Discriminated result of {@link parseMarketplaceWithSidecar}. On success,

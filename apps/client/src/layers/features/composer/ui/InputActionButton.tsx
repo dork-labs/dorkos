@@ -4,14 +4,7 @@ import { cn } from '@/layers/shared/lib';
 import { DispositionMenu } from './DispositionMenu';
 
 type ButtonState =
-  | 'send'
-  | 'stop'
-  | 'stopping'
-  | 'queue'
-  | 'update'
-  | 'cancel'
-  | 'cancel-upload'
-  | 'dispatching';
+  'send' | 'stop' | 'stopping' | 'queue' | 'update' | 'cancel' | 'cancel-upload' | 'dispatching';
 
 interface InputActionButtonProps {
   hasText: boolean;

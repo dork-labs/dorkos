@@ -255,10 +255,7 @@ export type NotificationStorageRule = 'event' | 'standing';
  * two cannot drift.
  */
 export type StandingNotificationKind =
-  | 'ask.pending'
-  | 'schedule.parked'
-  | 'approval.pending'
-  | 'session.error';
+  'ask.pending' | 'schedule.parked' | 'approval.pending' | 'session.error';
 
 /** The kinds that record something that happened. Every kind that is not standing. */
 export type EventNotificationKind = Exclude<NotificationKind, StandingNotificationKind>;

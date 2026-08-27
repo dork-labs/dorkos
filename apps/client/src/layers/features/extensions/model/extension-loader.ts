@@ -170,12 +170,10 @@ export class ExtensionLoader {
 
     // Load all bundles in parallel to minimise startup time.
     const bundleResults: BundleResult[] = await Promise.all(
-      ready.map(
-        async (rec): Promise<BundleResult> => ({
-          rec,
-          module: await importBundle(rec.id),
-        })
-      )
+      ready.map(async (rec): Promise<BundleResult> => ({
+        rec,
+        module: await importBundle(rec.id),
+      }))
     );
 
     const activated: string[] = [];

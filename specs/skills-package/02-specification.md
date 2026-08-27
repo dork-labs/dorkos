@@ -414,8 +414,7 @@ import type { CommandFrontmatter } from './command-schema.js';
 
 /** Discriminated parse result. */
 export type ParseResult<T> =
-  | { ok: true; definition: T }
-  | { ok: false; error: string; filePath: string };
+  { ok: true; definition: T } | { ok: false; error: string; filePath: string };
 
 /** Base parsed skill definition. */
 export interface SkillDefinition {

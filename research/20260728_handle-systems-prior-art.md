@@ -164,7 +164,7 @@ So an agent in a room with `Art Blocks Analytics` is shown the line `@Art Blocks
 
 So this is **latent**, and the honest reading is that the guard is missing rather than that the product is broken. It is one join away for three agents that already exist, on a path with no check, and the schema cannot currently stop it — `AgentManifestSchema.name` is `z.string().min(1)` (`packages/shared/src/mesh-schemas.ts:157`) and the manifest is the source of truth (ADR-0043). The affected population being zero is exactly what makes now the cheap moment to restrict.
 
-**And the human's handle is the string `'You'.'** `LOCAL_HUMAN_DISPLAY_NAME = 'You'` (`author-registry.ts:56`), so `handleFor` returns `'You'` for the person, which is typeable, is claimed, and does resolve. An agent addressing the operator writes `@You`.
+**And the human's handle is the string `'You'.'** `LOCAL_HUMAN_DISPLAY_NAME = 'You'` (`author-registry.ts:56`), so `handleFor`returns`'You'`for the person, which is typeable, is claimed, and does resolve. An agent addressing the operator writes`@You`.
 
 ### 0.5 What is already right, and must not be redone
 

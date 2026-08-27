@@ -567,8 +567,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   // swallowed throw would hand back the same `{ ok: true }` as a working seed
   // and put the hole straight back.
   const meshCore = req.app.locals.meshCore as
-    | { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> }
-    | undefined;
+    { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> } | undefined;
   if (!meshCore) {
     return res.status(500).json({
       error:
@@ -644,8 +643,7 @@ testControlRouter.post('/seed-bridge', async (req, res) => {
     // the agent. Costing one idempotent write to stay correct for any path is
     // the right trade for a test seam.
     const meshCore = req.app.locals.meshCore as
-      | { syncFromDisk(path: string): Promise<unknown> }
-      | undefined;
+      { syncFromDisk(path: string): Promise<unknown> } | undefined;
     if (meshCore) await meshCore.syncFromDisk(result.data.agentPath);
 
     const rooms = getRoomService();
@@ -762,8 +760,7 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
   // Register into the mesh cache so `mcp.list`/`mcp.signin` resolve the agent id
   // to this path (ADR-0043 file-first write-through), mirroring seed-bridge.
   const meshCore = req.app.locals.meshCore as
-    | { syncFromDisk(path: string): Promise<unknown> }
-    | undefined;
+    { syncFromDisk(path: string): Promise<unknown> } | undefined;
   if (meshCore) await meshCore.syncFromDisk(agentDir);
   res.json({ ok: true, agentDir, serverUrl });
 });

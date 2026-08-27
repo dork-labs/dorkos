@@ -67,9 +67,7 @@ export const MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
  * unsatisfiable (`unsatisfiable`, → 416).
  */
 export type RangeParseResult =
-  | { kind: 'full' }
-  | { kind: 'range'; start: number; end: number }
-  | { kind: 'unsatisfiable' };
+  { kind: 'full' } | { kind: 'range'; start: number; end: number } | { kind: 'unsatisfiable' };
 
 /**
  * Parse a single-range HTTP `Range` header (`bytes=start-end`, `bytes=start-`, or

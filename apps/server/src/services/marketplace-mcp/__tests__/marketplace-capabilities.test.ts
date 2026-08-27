@@ -72,14 +72,12 @@ function buildDeps(): {
       token: 'confirmation-token',
     })
   );
-  const ranUninstall = vi.fn(
-    async (req: UninstallRequest): Promise<UninstallResult> => ({
-      ok: true,
-      packageName: req.name,
-      removedFiles: 1,
-      preservedData: [],
-    })
-  );
+  const ranUninstall = vi.fn(async (req: UninstallRequest): Promise<UninstallResult> => ({
+    ok: true,
+    packageName: req.name,
+    removedFiles: 1,
+    preservedData: [],
+  }));
 
   const confirmationProvider: ConfirmationProvider = {
     requestInstallConfirmation: askedForConfirmation,

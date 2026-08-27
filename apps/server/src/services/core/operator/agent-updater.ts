@@ -43,11 +43,7 @@ const SYSTEM_PROTECTED_FIELDS = [
 
 /** Discriminating code for {@link AgentUpdateError}, mapped to HTTP status by the route. */
 export type AgentUpdateErrorCode =
-  | 'VALIDATION'
-  | 'NOT_FOUND'
-  | 'IMMUTABLE_NAME'
-  | 'SYSTEM_PROTECTED'
-  | 'OPERATOR_ONLY';
+  'VALIDATION' | 'NOT_FOUND' | 'IMMUTABLE_NAME' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY';
 
 /**
  * Typed failure from {@link updateAgentManifest}. Callers translate `code` into

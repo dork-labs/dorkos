@@ -111,16 +111,14 @@ export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
       ? []
       : [
           { kind: 'separator', id: 'sep-smart' },
-          ...model.smartGroupPresets.map(
-            (preset): SidebarMenuNode => ({
-              kind: 'action',
-              id: `new-group-preset:${preset.label}`,
-              label: preset.label,
-              icon: Users,
-              opensInput: false,
-              run: () => model.onCreatePresetSmartGroup(preset),
-            })
-          ),
+          ...model.smartGroupPresets.map((preset): SidebarMenuNode => ({
+            kind: 'action',
+            id: `new-group-preset:${preset.label}`,
+            label: preset.label,
+            icon: Users,
+            opensInput: false,
+            run: () => model.onCreatePresetSmartGroup(preset),
+          })),
           {
             kind: 'action',
             id: 'new-group-custom',

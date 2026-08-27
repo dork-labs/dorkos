@@ -1070,9 +1070,7 @@ const session: InteractiveSession = {
 };
 
 const promise = handleAskUserQuestion(session, 'tc-1', {
-  questions: [
-    /* ... */
-  ],
+  questions: [/* ... */],
 });
 
 // Verify event was queued

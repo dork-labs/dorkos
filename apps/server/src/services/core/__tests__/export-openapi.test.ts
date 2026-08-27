@@ -64,8 +64,7 @@ describe('export-openapi', () => {
     // ...and its response is the paginated result: a oneOf over the compact/full
     // detail branches, each carrying the page envelope.
     const schema = catalog?.responses?.['200']?.content?.['application/json']?.schema as
-      | { oneOf?: Array<{ properties?: Record<string, unknown> }> }
-      | undefined;
+      { oneOf?: Array<{ properties?: Record<string, unknown> }> } | undefined;
     expect(schema?.oneOf).toHaveLength(2);
     for (const branch of schema?.oneOf ?? []) {
       expect(branch.properties).toHaveProperty('catalogVersion');

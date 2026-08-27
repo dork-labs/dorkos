@@ -69,8 +69,7 @@ describe('raiseStanding — the arrival', () => {
   it('addresses the arrival to the operator, never to an agent principal', () => {
     raiseStanding('schedule.parked', { taskId: 't', taskName: 'N', proposedBy: 'An agent' });
     const audience = broadcast.mock.calls.find((c) => c[0] === 'standing_pending')?.[2] as
-      | ((p: { kind: string }) => boolean)
-      | undefined;
+      ((p: { kind: string }) => boolean) | undefined;
     expect(audience?.({ kind: 'agent' })).toBe(false);
     expect(audience?.({ kind: 'operator' })).toBe(true);
   });

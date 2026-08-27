@@ -307,9 +307,7 @@ const subject: AskSubject = {
 };
 eventFanOut.broadcast(
   'interaction_pending',
-  InteractionPendingEventSchema.parse({
-    /* unchanged */
-  }),
+  InteractionPendingEventSchema.parse({/* unchanged */}),
   (principal) => askEntitlement(principal, subject) !== 'none'
 );
 ```

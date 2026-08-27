@@ -152,8 +152,7 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
     return harness.store
       .listEntries(roomId, { limit: 100 })
       .find((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note')?.body as
-      | { text: string }
-      | undefined;
+      { text: string } | undefined;
   }
 
   it('A7.1: after adopting a live started session, the first bridged turn RESUMES that conversation', async () => {

@@ -472,13 +472,14 @@ const PluginPanel = React.lazy(() => import('pluginA/Panel'));
 **Critical detail:** A `bootstrap.js` indirection file is required — Webpack needs a chance to negotiate shared modules before the app renders. Without it, shared singletons fail.
 
 **Tradeoffs:**
-| Pro | Con |
-|---|---|
-| True runtime loading, no rebuild needed | No isolation whatsoever |
-| Shared React instance (singleton) | Webpack-specific (or Rspack) |
-| Lazy loading via React.lazy + Suspense | Version conflicts if singleton mismatch |
-| Full React integration, no message passing | Plugin crash = host crash |
-| Hot module replacement works | Requires coordinated shared deps |
+
+| Pro                                        | Con                                     |
+| ------------------------------------------ | --------------------------------------- |
+| True runtime loading, no rebuild needed    | No isolation whatsoever                 |
+| Shared React instance (singleton)          | Webpack-specific (or Rspack)            |
+| Lazy loading via React.lazy + Suspense     | Version conflicts if singleton mismatch |
+| Full React integration, no message passing | Plugin crash = host crash               |
+| Hot module replacement works               | Requires coordinated shared deps        |
 
 **Best for:** Trusted first-party plugins, internal teams, micro-frontends within an org.
 
@@ -512,13 +513,14 @@ function PluginFrame({ pluginUrl, onMessage }) {
 ```
 
 **Tradeoffs:**
-| Pro | Con |
-|---|---|
-| Strong security boundary | Plugin cannot share React tree |
-| Plugin crash isolated | Communication via postMessage only |
-| Independent styling/CSS | Style/theme sync requires manual work |
-| Different framework per plugin | Performance overhead (separate DOM) |
-| Browser-native security | Accessibility (focus, keyboard) is hard |
+
+| Pro                            | Con                                     |
+| ------------------------------ | --------------------------------------- |
+| Strong security boundary       | Plugin cannot share React tree          |
+| Plugin crash isolated          | Communication via postMessage only      |
+| Independent styling/CSS        | Style/theme sync requires manual work   |
+| Different framework per plugin | Performance overhead (separate DOM)     |
+| Browser-native security        | Accessibility (focus, keyboard) is hard |
 
 **Key challenge:** The plugin React app and the host React app are **separate React roots**. Sharing context, theme, state, or component libraries requires explicit serialization over postMessage. This is fundamentally why VSCode webviews feel "different" from native UI.
 

@@ -557,13 +557,13 @@ function useTextEffectConfig(preferred: TextEffectMode): TextEffectConfig {
 
 ### 9. How the Major Apps Animate Text — Technical Summary
 
-| App                  | Token Arrival              | Visual Layer               | Per-Token Animation               | Cursor During Streaming                           |
+| App | Token Arrival | Visual Layer | Per-Token Animation | Cursor During Streaming |
 | -------------------- | -------------------------- | -------------------------- | --------------------------------- | ------------------------------------------------- | -------- |
-| ChatGPT              | SSE, direct DOM append     | None                       | None                              | Blinking `                                        | ` cursor |
-| Claude.ai            | SSE, React state           | Container fade-in once     | None on text                      | Blinking block cursor                             |
-| Perplexity           | SSE, React state           | Per-word blur-in CSS       | `blur(4px) → 0` + `opacity 0 → 1` | None (word animation implies activity)            |
-| DorkOS (current)     | SSE → streaming-cursor CSS | Container none             | None                              | Blinking cursor via `.streaming-cursor` CSS class |
-| DorkOS (recommended) | SSE → streaming-cursor CSS | Container motion.div enter | Per-word `blurIn` via streamdown  | Streamdown caret prop                             |
+| ChatGPT | SSE, direct DOM append | None | None | Blinking `                                       |` cursor |
+| Claude.ai | SSE, React state | Container fade-in once | None on text | Blinking block cursor |
+| Perplexity | SSE, React state | Per-word blur-in CSS | `blur(4px) → 0` + `opacity 0 → 1` | None (word animation implies activity) |
+| DorkOS (current) | SSE → streaming-cursor CSS | Container none | None | Blinking cursor via `.streaming-cursor` CSS class |
+| DorkOS (recommended) | SSE → streaming-cursor CSS | Container motion.div enter | Per-word `blurIn` via streamdown | Streamdown caret prop |
 
 ---
 

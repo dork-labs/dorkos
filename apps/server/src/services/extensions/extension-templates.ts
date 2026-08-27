@@ -16,11 +16,7 @@ function toTitleCase(str: string): string {
 
 /** Template type union for extension scaffolding. */
 export type ExtensionTemplate =
-  | 'dashboard-card'
-  | 'right-panel-tab'
-  | 'command'
-  | 'settings-panel'
-  | 'data-provider';
+  'dashboard-card' | 'right-panel-tab' | 'command' | 'settings-panel' | 'data-provider';
 
 /** Generate the `extension.json` manifest content for a new extension. */
 export function generateManifest(

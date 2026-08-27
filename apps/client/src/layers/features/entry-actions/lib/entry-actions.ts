@@ -13,13 +13,7 @@ import type { LucideIcon } from 'lucide-react';
 
 /** One position in the capsule. Stable — tests and telemetry name these. */
 export type EntryActionSlot =
-  | 'react'
-  | 'react-more'
-  | 'run-with'
-  | 'reply'
-  | 'copy'
-  | 'mention'
-  | 'profile';
+  'react' | 'react-more' | 'run-with' | 'reply' | 'copy' | 'mention' | 'profile';
 
 /**
  * Which action this is.

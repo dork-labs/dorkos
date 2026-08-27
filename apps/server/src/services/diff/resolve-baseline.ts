@@ -22,8 +22,7 @@ export type ResolveBaselineError = 'TOO_LARGE' | 'BINARY_FILE' | 'NOT_A_FILE';
 
 /** Outcome of {@link resolveTextBaseline} — the DTO, or a coded failure. */
 export type ResolveBaselineResult =
-  | { ok: true; response: DiffBaselineResponse }
-  | { ok: false; error: ResolveBaselineError };
+  { ok: true; response: DiffBaselineResponse } | { ok: false; error: ResolveBaselineError };
 
 /**
  * Read the file's current on-disk text, or a coded failure. A missing file

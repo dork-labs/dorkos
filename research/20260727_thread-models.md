@@ -84,7 +84,7 @@ It describes the mechanism. It does not defend it. And "infinitely nested" is **
 
 There is exactly one substantial piece of design prose about threading in the Buzz repo, and it is an admission of cost. `docs/nips/NIP-CW.md` ("Channel Window") is a house NIP Buzz wrote to make the ordinary chat timeline queryable — something the pointer model broke:
 
-> **A NIP-01 filter can only *match* tag values; it cannot express their absence. "Channel messages that are **not** replies" — the timeline every threaded-chat client renders first — is therefore inexpressible in vanilla filters, so generic clients page the full event stream and reassemble threads client-side. That costs bandwidth proportional to reply volume, and worse, it breaks pagination correctness: `limit` counts raw events, so a page of 50 events may contain 3 top-level rows or 50, and the client cannot ask for "the next 50 rows."**
+> **A NIP-01 filter can only _match_ tag values; it cannot express their absence. "Channel messages that are **not** replies" — the timeline every threaded-chat client renders first — is therefore inexpressible in vanilla filters, so generic clients page the full event stream and reassemble threads client-side. That costs bandwidth proportional to reply volume, and worse, it breaks pagination correctness: `limit` counts raw events, so a page of 50 events may contain 3 top-level rows or 50, and the client cannot ask for "the next 50 rows."**
 >
 > — `docs/nips/NIP-CW.md:23` (§Motivation)
 

@@ -168,14 +168,14 @@ claudeRuntime.setMcpServerFactory((session, sessionId) => ({
 
 Capability `surfaces.http` (projected + OpenAPI):
 
-| Verb           | Method | Path                                            |
+| Verb | Method | Path |
 | -------------- | ------ | ----------------------------------------------- | --------- |
-| list           | GET    | `/api/agents/:agentId/mcp-servers`              |
-| add            | POST   | `/api/agents/:agentId/mcp-servers`              |
-| update         | PATCH  | `/api/agents/:agentId/mcp-servers/:name`        |
-| remove         | DELETE | `/api/agents/:agentId/mcp-servers/:name`        |
-| enable/disable | POST   | `/api/agents/:agentId/mcp-servers/:name/(enable | disable)` |
-| test           | POST   | `/api/agents/:agentId/mcp-servers/:name/test`   |
+| list | GET | `/api/agents/:agentId/mcp-servers` |
+| add | POST | `/api/agents/:agentId/mcp-servers` |
+| update | PATCH | `/api/agents/:agentId/mcp-servers/:name` |
+| remove | DELETE | `/api/agents/:agentId/mcp-servers/:name` |
+| enable/disable | POST | `/api/agents/:agentId/mcp-servers/:name/(enable | disable)` |
+| test | POST | `/api/agents/:agentId/mcp-servers/:name/test` |
 
 Add matching methods to the `Transport` interface and both implementations
 (`HttpTransport`, `DirectTransport`) — the client never calls `fetch` directly.

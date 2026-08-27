@@ -350,9 +350,7 @@ The hooks are mounted inside the existing `AppContent` or equivalent component t
 ```typescript
 // Inside App component body, after existing hooks:
 const [selectedCwd] = useDirectoryState();
-const { status } = useChatSession(activeSessionId, {
-  /* existing options */
-});
+const { status } = useChatSession(activeSessionId, {/* existing options */});
 
 useFavicon({ cwd: selectedCwd, isStreaming: status === 'streaming' });
 useDocumentTitle({ cwd: selectedCwd, activeForm: taskState.activeForm });

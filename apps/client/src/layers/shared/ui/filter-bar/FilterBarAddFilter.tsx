@@ -135,8 +135,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
   function renderEnumPicker(name: string, enumDef: EnumFilterDefinition<unknown>) {
     const options = enumDef.dynamic ? (dynamicOptions?.[name] ?? enumDef.options) : enumDef.options;
     const current = ((values as Record<string, unknown>)[name] ?? (enumDef.multi ? [] : '')) as
-      | string
-      | string[];
+      string | string[];
     const selected = Array.isArray(current) ? current : current ? [current] : [];
 
     function toggle(option: string) {

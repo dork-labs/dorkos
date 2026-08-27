@@ -75,8 +75,7 @@ export function asProfilePageId(raw: string | null | undefined): ProfilePageId |
  * (the owner above it, an agent it manages).
  */
 export type ProfileStackEntry =
-  | { kind: 'page'; page: ProfilePageId }
-  | { kind: 'profile'; memberId: string };
+  { kind: 'page'; page: ProfilePageId } | { kind: 'profile'; memberId: string };
 
 /** A profile and everything pushed on top of it. */
 export interface ProfileStackState {

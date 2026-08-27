@@ -264,8 +264,7 @@ export function checkFileDescriptors(softLimit: number | null): CheckResult {
 export function readFileDescriptorLimit(): number | null {
   try {
     const report = process.report?.getReport() as
-      | { userLimits?: { open_files?: { soft?: unknown } } }
-      | undefined;
+      { userLimits?: { open_files?: { soft?: unknown } } } | undefined;
     const soft = report?.userLimits?.open_files?.soft;
     return typeof soft === 'number' && Number.isFinite(soft) ? soft : null;
   } catch {

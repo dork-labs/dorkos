@@ -41,9 +41,7 @@ export function createBindingCreateHandler(deps: McpToolDeps) {
         adapterId: args.adapterId,
         agentId: args.agentId,
         sessionStrategy: (args.sessionStrategy ?? 'per-chat') as
-          | 'per-chat'
-          | 'per-user'
-          | 'stateless',
+          'per-chat' | 'per-user' | 'stateless',
         label: args.label ?? '',
         ...(args.chatId && { chatId: args.chatId }),
         ...(args.channelType && {

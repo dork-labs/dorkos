@@ -356,13 +356,14 @@ Last 7 days        ← collapses older items
 ```
 
 **Event types and badges**:
-| Type | Color | Examples |
-|---|---|---|
-| Session | Blue | "researcher completed (47m)" / "coder started" |
-| Pulse | Purple | "daily-digest ran successfully" / "weekly-report failed" |
-| Relay | Teal | "Telegram: 3 messages received" |
-| Mesh | Gray | "4 agents discovered in ~/projects" |
-| System | Neutral | "DorkOS started" / "Config reloaded" |
+
+| Type    | Color   | Examples                                                 |
+| ------- | ------- | -------------------------------------------------------- |
+| Session | Blue    | "researcher completed (47m)" / "coder started"           |
+| Pulse   | Purple  | "daily-digest ran successfully" / "weekly-report failed" |
+| Relay   | Teal    | "Telegram: 3 messages received"                          |
+| Mesh    | Gray    | "4 agents discovered in ~/projects"                      |
+| System  | Neutral | "DorkOS started" / "Config reloaded"                     |
 
 **Aggregation rules**:
 
@@ -410,12 +411,13 @@ This is not a wizard or a tutorial — it is three clearly labeled links. No mod
 The dashboard must handle live data without overwhelming the user or causing jarring layout shifts.
 
 **Polling strategy by section**:
-| Section | Strategy | Interval |
-|---|---|---|
-| Needs Attention | TanStack Query + SSE fallback | Reactive to SSE events; poll 10s when active sessions exist |
-| Active Now sessions | Conditional polling | 5s when sessions active, 30s when idle, false when no sessions |
-| System Status (Pulse/Relay/Mesh) | Polling | 30s unconditionally |
-| Recent Activity | On-demand (not auto-polling) | Refresh on return to tab |
+
+| Section                          | Strategy                      | Interval                                                       |
+| -------------------------------- | ----------------------------- | -------------------------------------------------------------- |
+| Needs Attention                  | TanStack Query + SSE fallback | Reactive to SSE events; poll 10s when active sessions exist    |
+| Active Now sessions              | Conditional polling           | 5s when sessions active, 30s when idle, false when no sessions |
+| System Status (Pulse/Relay/Mesh) | Polling                       | 30s unconditionally                                            |
+| Recent Activity                  | On-demand (not auto-polling)  | Refresh on return to tab                                       |
 
 **TanStack Query v5 pattern** (from prior research):
 

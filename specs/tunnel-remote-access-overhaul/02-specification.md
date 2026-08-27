@@ -154,9 +154,7 @@ import { EventEmitter } from 'node:events';
 import type { TunnelStatus } from '@dorkos/shared/types';
 
 export class TunnelManager extends EventEmitter {
-  private _status: TunnelStatus = {
-    /* defaults */
-  };
+  private _status: TunnelStatus = {/* defaults */};
 
   private updateStatus(partial: Partial<TunnelStatus>): void {
     this._status = { ...this._status, ...partial };

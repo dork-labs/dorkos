@@ -345,9 +345,7 @@ export function deriveFromParts(parts: MessagePart[]): {
     if (part.type === 'text') {
       textSegments.push(part.text);
     } else if (part.type === 'tool_call') {
-      toolCalls.push({
-        /* ... existing mapping ... */
-      });
+      toolCalls.push({/* ... existing mapping ... */});
     }
     // SubagentParts are intentionally skipped — they render via their own component
   }

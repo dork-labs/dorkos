@@ -192,8 +192,9 @@ function notificationsByLens(
   options: { activity?: ListNotificationsResponse; report?: NotificationDTO[] } = {}
 ) {
   const empty: ListNotificationsResponse = { notifications: [], nextCursor: null, unreadCount: 0 };
-  return vi.fn().mockImplementation(
-    (query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
+  return vi
+    .fn()
+    .mockImplementation((query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
       query?.kind?.includes('report.daily')
         ? Promise.resolve({
             notifications: options.report ?? [],
@@ -201,7 +202,7 @@ function notificationsByLens(
             unreadCount: options.report?.length ?? 0,
           })
         : Promise.resolve(options.activity ?? empty)
-  );
+    );
 }
 
 /**

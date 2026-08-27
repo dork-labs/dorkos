@@ -50,16 +50,14 @@ export function useConnectFlow(): ConnectFlow {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const state = useConnectFlowStore(
-    useShallow(
-      (s): ConnectFlowState => ({
-        step: s.step,
-        toolkit: s.toolkit,
-        disclosure: s.disclosure,
-        authorizeUrl: s.authorizeUrl,
-        account: s.account,
-        error: s.error,
-      })
-    )
+    useShallow((s): ConnectFlowState => ({
+      step: s.step,
+      toolkit: s.toolkit,
+      disclosure: s.disclosure,
+      authorizeUrl: s.authorizeUrl,
+      account: s.account,
+      error: s.error,
+    }))
   );
   const flowId = useConnectFlowStore((s) => s.flowId);
 

@@ -84,9 +84,7 @@ export async function readManifest(
  * - `present` — read and validated; `id` is the manifest's ULID.
  */
 export type ManifestProbe =
-  | { state: 'absent' }
-  | { state: 'unreadable'; detail: string }
-  | { state: 'present'; id: string };
+  { state: 'absent' } | { state: 'unreadable'; detail: string } | { state: 'present'; id: string };
 
 /**
  * Ask a directory whether it still holds a manifest, **without collapsing

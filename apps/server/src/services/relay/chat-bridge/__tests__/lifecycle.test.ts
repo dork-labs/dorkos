@@ -65,9 +65,10 @@ describe('BridgeLifecycle', () => {
 
   /** A chat-notice sender over a store that knows exactly this one bound chat. */
   function noticeHarness() {
-    const publish = vi.fn(
-      async (): Promise<PublishResult> => ({ messageId: 'm1', deliveredTo: 1 })
-    );
+    const publish = vi.fn(async (): Promise<PublishResult> => ({
+      messageId: 'm1',
+      deliveredTo: 1,
+    }));
     const notify = createChatNoticeSender({
       publish,
       resolveTarget: (subject) => (subject === CHAT_SUBJECT ? { bindingId: 'binding-ana' } : null),

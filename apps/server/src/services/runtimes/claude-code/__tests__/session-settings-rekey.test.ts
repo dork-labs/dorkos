@@ -141,8 +141,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   /** The permission mode handed to the SDK on the most recent `query()` call. */
   function enforcedMode(): PermissionMode | undefined {
     const call = mockedQuery.mock.calls.at(-1) as
-      | [{ options?: { permissionMode?: PermissionMode } }]
-      | undefined;
+      [{ options?: { permissionMode?: PermissionMode } }] | undefined;
     // Without this, a turn that never reached the SDK would throw a bare
     // TypeError instead of naming what went wrong.
     expect(call, 'the SDK was never queried — there is no enforced mode').toBeDefined();

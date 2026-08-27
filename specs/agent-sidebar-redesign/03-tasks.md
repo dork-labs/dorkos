@@ -74,14 +74,15 @@ New component rendering a 6px colored dot for non-idle agent status. Returns nul
 - `apps/client/src/layers/features/dashboard-sidebar/index.ts` — add export
 
 **Color mapping:**
-| Status | Dot | Tailwind |
-|--------|-----|----------|
-| streaming | Green | `bg-green-500` |
-| active | Green | `bg-green-500` |
-| pendingApproval | Amber | `bg-amber-500` |
-| error | Red | `bg-destructive` |
-| unseen | Blue | `bg-blue-500` |
-| idle | (none) | — |
+
+| Status          | Dot    | Tailwind         |
+| --------------- | ------ | ---------------- |
+| streaming       | Green  | `bg-green-500`   |
+| active          | Green  | `bg-green-500`   |
+| pendingApproval | Amber  | `bg-amber-500`   |
+| error           | Red    | `bg-destructive` |
+| unseen          | Blue   | `bg-blue-500`    |
+| idle            | (none) | —                |
 
 **Tests:**
 
@@ -178,11 +179,12 @@ Onboarding card for sparse agent lists plus progressive empty state logic in Das
 - `apps/client/src/layers/features/dashboard-sidebar/index.ts` — add export
 
 **Progressive behavior:**
-| Agent count | Rendered |
-|-------------|----------|
-| 0-2 | Agent rows + AgentOnboardingCard |
-| 3-4 | Agent rows + "+ Add agent" text link |
-| 5+ | Agent rows only (+ button in header) |
+
+| Agent count | Rendered                             |
+| ----------- | ------------------------------------ |
+| 0-2         | Agent rows + AgentOnboardingCard     |
+| 3-4         | Agent rows + "+ Add agent" text link |
+| 5+          | Agent rows only (+ button in header) |
 
 **Tests:**
 

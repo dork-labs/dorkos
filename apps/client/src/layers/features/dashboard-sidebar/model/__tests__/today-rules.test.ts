@@ -50,15 +50,14 @@ describe('BC-16 — order is the operator’s attention, never the agent’s', (
       state = {
         ...state,
         // A tool call: the session's own timestamps and preview move.
-        sessions: state.sessions.map(
-          (entry): Session =>
-            entry.id === session.id
-              ? {
-                  ...entry,
-                  updatedAt: new Date(busyFixture.now - (100 - event) * 1000).toISOString(),
-                  lastMessagePreview: `tool call ${event}`,
-                }
-              : entry
+        sessions: state.sessions.map((entry): Session =>
+          entry.id === session.id
+            ? {
+                ...entry,
+                updatedAt: new Date(busyFixture.now - (100 - event) * 1000).toISOString(),
+                lastMessagePreview: `tool call ${event}`,
+              }
+            : entry
         ),
         sessionStatuses: { ...state.sessionStatuses, [session.id]: lifecycle },
         workingSessionIds: [...working],

@@ -409,11 +409,7 @@ export function createCreateExtensionHandler(deps: McpToolDeps) {
     }
 
     const template = (args.template ?? 'dashboard-card') as
-      | 'dashboard-card'
-      | 'right-panel-tab'
-      | 'command'
-      | 'settings-panel'
-      | 'data-provider';
+      'dashboard-card' | 'right-panel-tab' | 'command' | 'settings-panel' | 'data-provider';
     const scope = (args.scope ?? 'global') as 'global' | 'local';
 
     try {

@@ -134,8 +134,8 @@ function renderedRows(): string[] {
 
 /** Just the labels, in order. */
 function rowLabels(): string[] {
-  return [...document.querySelectorAll('[data-profile-row]')].map(
-    (row) => row.getAttribute('data-profile-row')!
+  return [...document.querySelectorAll('[data-profile-row]')].map((row) =>
+    row.getAttribute('data-profile-row')!
   );
 }
 

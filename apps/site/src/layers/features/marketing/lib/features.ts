@@ -13,13 +13,7 @@ export type FeatureStatus = 'ga' | 'beta' | 'alpha' | 'coming-soon';
  * story; `marketplace` is the distribution flywheel.
  */
 export type FeatureProduct =
-  | 'runtimes'
-  | 'console'
-  | 'tasks'
-  | 'relay'
-  | 'marketplace'
-  | 'mesh'
-  | 'core';
+  'runtimes' | 'console' | 'tasks' | 'relay' | 'marketplace' | 'mesh' | 'core';
 
 /**
  * Display labels for each product tab on /features.

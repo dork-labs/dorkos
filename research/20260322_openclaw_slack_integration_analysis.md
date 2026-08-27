@@ -57,21 +57,23 @@ Bot events subscribed: `app_mention`, `message.channels`, `message.groups`, `mes
 ### DM and Channel Access Control
 
 **DM Policies:**
-| Mode | Behavior |
-|------|----------|
+
+| Mode                | Behavior                                                                     |
+| ------------------- | ---------------------------------------------------------------------------- |
 | `pairing` (default) | Unknown senders must be approved via `openclaw pairing approve slack <code>` |
-| `allowlist` | Only pre-approved user IDs can DM |
-| `open` | Anyone can DM the bot |
-| `disabled` | DMs turned off entirely |
+| `allowlist`         | Only pre-approved user IDs can DM                                            |
+| `open`              | Anyone can DM the bot                                                        |
+| `disabled`          | DMs turned off entirely                                                      |
 
 Group DMs (MPIMs) are disabled by default.
 
 **Channel Policies:**
-| Mode | Behavior |
-|------|----------|
-| `open` | Bot responds in any channel it's invited to |
-| `allowlist` | Only responds in specific channel IDs |
-| `disabled` | Channel messages ignored |
+
+| Mode        | Behavior                                    |
+| ----------- | ------------------------------------------- |
+| `open`      | Bot responds in any channel it's invited to |
+| `allowlist` | Only responds in specific channel IDs       |
+| `disabled`  | Channel messages ignored                    |
 
 Channel messages are **mention-gated by default** -- the bot only responds when explicitly `@mentioned`, matched by a regex pattern, or when someone replies in a thread the bot started.
 
@@ -109,12 +111,13 @@ Per-channel controls include `requireMention`, user allowlists, and `allowBots` 
 ### Text Streaming
 
 Four streaming modes:
-| Mode | Behavior |
-|------|----------|
-| `off` | No live preview |
+
+| Mode                | Behavior                                 |
+| ------------------- | ---------------------------------------- |
+| `off`               | No live preview                          |
 | `partial` (default) | Replace preview with latest output chunk |
-| `block` | Append chunked updates |
-| `progress` | Show processing status |
+| `block`             | Append chunked updates                   |
+| `progress`          | Show processing status                   |
 
 Native Slack streaming uses `chat.startStream`/`appendStream`/`stopStream` APIs when enabled (requires "Agents and AI Apps" toggle in Slack settings).
 

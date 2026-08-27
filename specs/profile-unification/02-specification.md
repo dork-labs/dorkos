@@ -50,8 +50,7 @@ Fixed order, nothing else: face (`IdentityAvatar` size lg, identity colour radia
 
 ```ts
 type ProfileStackEntry =
-  | { kind: 'page'; page: ProfilePageId }
-  | { kind: 'profile'; memberId: string }; // chained profile (owner / managed agent)
+  { kind: 'page'; page: ProfilePageId } | { kind: 'profile'; memberId: string }; // chained profile (owner / managed agent)
 interface ProfileStackState {
   rootMemberId: string;
   entries: ProfileStackEntry[];

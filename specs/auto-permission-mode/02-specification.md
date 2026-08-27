@@ -61,7 +61,7 @@ Delete the `autoMode` field and `disableAutoMode` mapping end-to-end. **Do not**
 
 **Shared / DB**
 
-- `packages/shared/src/schemas.ts` — remove `autoMode` from `SessionSchema` (~:114) and `SessionSettingsSchema` (~:142). Keep `PermissionModeSchema` `'auto'`.
+- `packages/shared/src/schemas.ts` — remove `autoMode` from `SessionSchema` (~~:114) and `SessionSettingsSchema` (~~:142). Keep `PermissionModeSchema` `'auto'`.
 - `packages/shared/src/agent-runtime.ts` — remove `autoMode?` from `updateSession` opts (~:228).
 - `packages/db/src/schema/sessions.ts:26` — remove the `auto_mode` column; run `pnpm --filter @dorkos/db drizzle-kit generate` to produce a numbered `DROP COLUMN` migration under `packages/db/drizzle/`.
 - `packages/test-utils/src/fake-agent-runtime.ts` — drop `autoMode` from fixtures.

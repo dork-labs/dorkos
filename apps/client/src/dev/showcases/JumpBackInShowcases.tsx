@@ -175,8 +175,7 @@ function JumpBackInPopoverShowcase() {
 export function JumpBackInShowcases() {
   const { items } = useJumpBackInFixture();
   const firstChannel = items.find((item) => item.kind === 'channel') as
-    | JumpBackInRoomItem
-    | undefined;
+    JumpBackInRoomItem | undefined;
 
   return (
     <>

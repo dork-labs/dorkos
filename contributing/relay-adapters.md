@@ -1351,9 +1351,7 @@ export function getManifest(): AdapterManifest {
     category: 'custom',
     builtin: false,
     apiVersion: RELAY_ADAPTER_API_VERSION,
-    configFields: [
-      /* ... */
-    ],
+    configFields: [/* ... */],
     multiInstance: false,
   };
 }

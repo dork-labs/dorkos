@@ -81,8 +81,7 @@ export function PaletteResultRow({
           onSelect={() => onGoToAgentActions(item.data)}
           nameIndices={
             matches?.find((m) => m.key === 'name')?.indices as
-              | readonly [number, number][]
-              | undefined
+              readonly [number, number][] | undefined
           }
         />
       );

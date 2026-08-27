@@ -212,13 +212,14 @@ mutation AgentActivityCreate($input: AgentActivityCreateInput!) {
 ```
 
 **Activity types and their semantic meaning**:
-| Type | Purpose |
-|------|---------|
-| `thought` | Internal reasoning (required within 10s to acknowledge) |
-| `action` | Tool invocation with optional results |
-| `elicitation` | Request clarification/confirmation from user |
-| `response` | Completed work or final result |
-| `error` | Failure or blocker |
+
+| Type          | Purpose                                                 |
+| ------------- | ------------------------------------------------------- |
+| `thought`     | Internal reasoning (required within 10s to acknowledge) |
+| `action`      | Tool invocation with optional results                   |
+| `elicitation` | Request clarification/confirmation from user            |
+| `response`    | Completed work or final result                          |
+| `error`       | Failure or blocker                                      |
 
 ### 8. Multiple Agents Claiming the Same Issue: The Core Problem
 

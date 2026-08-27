@@ -230,8 +230,7 @@ export function parseAdapterConfigForPersist(
   }
 
   const schema = CONFIG_SCHEMA_BY_TYPE[envelope.data.type as keyof typeof CONFIG_SCHEMA_BY_TYPE] as
-    | z.ZodType
-    | undefined;
+    z.ZodType | undefined;
   if (!schema) {
     return { ...envelope.data, config: entry.config } as AdapterConfig;
   }

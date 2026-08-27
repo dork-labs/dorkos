@@ -235,11 +235,7 @@ export type FeatureStatus = 'ga' | 'beta' | 'coming-soon';
  * Used for visual organization, not URL structure.
  */
 export type FeatureCategory =
-  | 'scheduling'
-  | 'messaging'
-  | 'discovery'
-  | 'interface'
-  | 'intelligence';
+  'scheduling' | 'messaging' | 'discovery' | 'interface' | 'intelligence';
 
 export interface FeatureMedia {
   /** Path relative to /public, e.g. '/images/features/pulse-screenshot.png' */

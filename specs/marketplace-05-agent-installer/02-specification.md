@@ -123,9 +123,7 @@ The existing MCP server picks these up via a registration helper:
 import { registerMarketplaceTools } from '../marketplace-mcp/marketplace-mcp-tools.js';
 
 export function createMcpServer(deps: McpServerDeps): McpServer {
-  const server = new McpServer({
-    /* ... */
-  });
+  const server = new McpServer({/* ... */});
 
   // Existing registrations
   registerExistingTools(server, deps);
