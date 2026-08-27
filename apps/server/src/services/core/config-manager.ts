@@ -2870,6 +2870,43 @@ export function seedMemoryProviderDefault(store: {
 }
 
 /**
+ * Seed `rooms.repo` — whether a room may have files of its own, and the bounds
+ * on them (spec `project-rooms` §3.12; DOR-1591).
+ *
+ * **This body is the mechanism, not an anchor.** `rooms.repo` is a nested leaf
+ * inside a section every stored config already carries, and conf's
+ * pre-migration `Object.assign({}, defaults, fileStore)` is SHALLOW: a stored
+ * `rooms` object wins wholesale and never gains a member. Ajv's `useDefaults`
+ * does fill it — but only into the copy conf's `store` getter just built and is
+ * about to discard. So nothing else writes this leaf to the file, and deleting
+ * this body leaves `rooms.repo` absent from disk on every upgraded install. See
+ * "Which of these bodies is a real no-op, and which only looks like one" above
+ * {@link CONFIG_MIGRATIONS}.
+ *
+ * Safety-neutral: it turns nothing on that was off. The block ships enabled,
+ * but a room only gets a repo when a person gives it one, and this writes no
+ * room's binding — only the defaults the enable route will be measured against.
+ *
+ * Additive + idempotent: the leaf is written only when absent, so a re-run after
+ * corrupt recovery leaves an operator's own bounds alone. Reads
+ * {@link USER_CONFIG_DEFAULTS} rather than a literal, so it cannot drift from
+ * the schema.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedRoomRepoDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = rooms as Record<string, unknown>;
+  if (current.repo != null) return;
+  store.set('rooms', { ...current, repo: USER_CONFIG_DEFAULTS.rooms.repo });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3486,6 +3523,23 @@ export const CONFIG_MIGRATIONS = {
     // `seedMemoryProviderDefault` says so at length rather than implying
     // otherwise.
     seedMemoryProviderDefault(store);
+  },
+  // 0.69.0 has merged (the memory provider), so 0.70.0 is the next key. Frozen
+  // from merge, not from the release bump, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.71.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `rooms`, which only `'0.66.0'` else touches, and that one rewrites three
+  // sibling numbers rather than this member. Sequencing them either way lands
+  // the same config.
+  '0.70.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.repo` — whether a room may have files of its own, and the bounds
+    // on them (spec `project-rooms` §3.12). A nested leaf, so this body is the
+    // only thing that writes it; see `seedRoomRepoDefaults`.
+    seedRoomRepoDefaults(store);
   },
 } as const;
 

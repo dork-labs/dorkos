@@ -294,6 +294,14 @@ describe('applyProtectedState', () => {
       engagedWindowPosts: 5,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
+      repo: {
+        enabled: true,
+        worktreeReapDays: 14,
+        maxFileBytes: 5 * 1024 * 1024,
+        maxRepoBytes: 500 * 1024 * 1024,
+        maxRoomMdBytes: 24 * 1024,
+        mergeQueueWaitMs: 30_000,
+      },
     });
   });
 

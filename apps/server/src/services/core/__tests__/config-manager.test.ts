@@ -55,6 +55,7 @@ import {
   raiseSchedulerConcurrencyFloor,
   warmClaudeCodeSessionsByDefault,
   seedMemoryProviderDefault,
+  seedRoomRepoDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -724,6 +725,93 @@ describe('seedMemoryProviderDefault migration (agent-memory, DOR-1533)', () => {
     const store = createMockStore({ memory: chosen });
     seedMemoryProviderDefault(store);
     expect(store.data.memory).toBe(chosen);
+  });
+});
+
+describe('seedRoomRepoDefaults migration (project-rooms §3.12, DOR-1591)', () => {
+  it('reserves rooms.repo on a `rooms` block that predates it', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `rooms` block never inherits the new
+    // nested section on its own. Drop the body and this reads `undefined`.
+    const store = createMockStore({ rooms: { turnLimitsEnabled: true, maxAgentDepth: 30 } });
+    seedRoomRepoDefaults(store);
+    expect(store.data.rooms).toEqual({
+      turnLimitsEnabled: true,
+      maxAgentDepth: 30,
+      repo: USER_CONFIG_DEFAULTS.rooms.repo,
+    });
+  });
+
+  it('never overwrites bounds somebody set (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // slackening a ceiling the person tightened, which is exactly the wipe the
+    // operator-only verdict on these paths exists to prevent.
+    const chosen = { enabled: false, maxFileBytes: 1024 };
+    const store = createMockStore({ rooms: { repo: chosen } });
+    seedRoomRepoDefaults(store);
+    expect((store.data.rooms as Record<string, unknown>).repo).toBe(chosen);
+  });
+
+  it('does nothing when there is no `rooms` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `rooms` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    seedRoomRepoDefaults(store);
+    expect(store.data.rooms).toBeUndefined();
+  });
+
+  it('a real pre-0.70.0 config file gains rooms.repo on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach — see
+    // the `backfillPromoDismissals` case above for the measurement this shape
+    // comes from (DOR-1496). `rooms` is a nested-leaf case, so this body is the
+    // ONLY thing that puts `repo` on the file: suppress it and this goes red
+    // while `store.get('rooms').repo` still answers from Ajv's discarded copy.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-room-repo-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          rooms: { turnLimitsEnabled: true, maxAgentDepth: 12, replyWaitMinutes: 25 },
+          __internal__: { migrations: { version: '0.69.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.70.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        rooms: Record<string, unknown>;
+      };
+      expect(onDisk.rooms.repo).toEqual({
+        enabled: true,
+        worktreeReapDays: 14,
+        maxFileBytes: 5 * 1024 * 1024,
+        maxRepoBytes: 500 * 1024 * 1024,
+        maxRoomMdBytes: 24 * 1024,
+        mergeQueueWaitMs: 30_000,
+      });
+      // The upgrade adds a section; it changes nothing the person had set.
+      expect(onDisk.rooms.maxAgentDepth).toBe(12);
+      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

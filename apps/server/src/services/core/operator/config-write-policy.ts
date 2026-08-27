@@ -431,6 +431,31 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
 
+  // Whether a room may have files at all. Operator-only in the plainest sense of
+  // this list: an agent that turned it back on would be re-opening a surface the
+  // person shut, and the surface in question is a writable checkout on this
+  // machine that agents run tools in.
+  'rooms.repo.enabled': 'operator-only',
+  // When DorkOS tidies away an idle working copy. Operator-only because it
+  // governs a DELETION on disk — the sweep spares anything dirty or unmerged by
+  // construction, but "an agent may shorten the fuse on the server removing
+  // directories" is not a preference.
+  'rooms.repo.worktreeReapDays': 'operator-only',
+  // The three ceilings a merge is refused against. Operator-only for the
+  // confused-deputy reason that runs through this whole block: an agent raising
+  // the cap that would have refused its own merge is the widening, and
+  // `resources` is the stake — these bound how much of the machine the work
+  // takes up (DOR-1497's wipe floor: a person tightened a bound, an agent may
+  // not slacken it back).
+  'rooms.repo.maxFileBytes': 'operator-only',
+  'rooms.repo.maxRepoBytes': 'operator-only',
+  'rooms.repo.maxRoomMdBytes': 'operator-only',
+  // How long a queued merge waits its turn. Patience, not a bound: waiting
+  // longer buys no file, no byte and no turn, and every ceiling above still
+  // decides what the merge may carry. Same side of the line as
+  // `rooms.replyWaitMinutes`.
+  'rooms.repo.mergeQueueWaitMs': 'agent-writable',
+
   // Whether agents may speak when the person comes back, how long an absence
   // has to be to count, how many may speak, and whether a greeting may spend a
   // model turn asking for a next-step offer. All four sit on the far side
@@ -803,6 +828,11 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // its own. The second clause of this stake — how far it reaches on this
       // machine — read as a write rather than as a scope.
       'harness.autoSync',
+      // Whether a room may have a git repo of its own — a checkout under the
+      // DorkOS data directory that member agents run tools in. Same clause as
+      // `harness.autoSync`, one step further: this decides whether the writable
+      // space exists at all.
+      'rooms.repo.enabled',
     ],
   },
   {
@@ -931,6 +961,14 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'uploads.maxFiles',
       'runtimes.claudeCode.persistentSession',
       'scheduler.maxConcurrentRuns',
+      // How large a room's files may get, how much of its conventions file
+      // rides every turn, and when an idle working copy is tidied away. Disk
+      // and the bill, bounded by the person rather than by the agents filling
+      // it.
+      'rooms.repo.maxFileBytes',
+      'rooms.repo.maxRepoBytes',
+      'rooms.repo.maxRoomMdBytes',
+      'rooms.repo.worktreeReapDays',
     ],
   },
   {
