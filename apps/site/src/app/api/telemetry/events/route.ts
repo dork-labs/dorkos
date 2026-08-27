@@ -14,7 +14,11 @@
  *     the app must never learn about backend health or retry. Malformed JSON, a
  *     non-batch body, and per-event validation failures all still return
  *     `200 { ok: true, accepted }` — invalid events are dropped, valid ones
- *     accepted (partial-batch acceptance).
+ *     accepted (partial-batch acceptance). The single exception is the per-IP
+ *     throttle (DOR-1586), which answers `429` with a `Retry-After`. That is a
+ *     fact about the caller's own rate, not about the backend, so the contract
+ *     holds; the reporters drop a failed batch rather than re-queueing it, so a
+ *     `429` starts no retry storm either.
  *   - **Per-event allowlist validation.** Each event is validated against the
  *     route-LOCAL schema below, which MIRRORS the shared registry at
  *     `packages/shared/src/telemetry-events.ts`. Per ADR-0235 the site keeps
@@ -25,8 +29,10 @@
  *     valid events are accepted and simply not forwarded (zero errors, zero
  *     PostHog requests).
  *
- * Privacy contract: request headers (IP, cookies, user agent) are never read.
- * `distinct_id` is the payload's own `distinctId` (the app's anonymous
+ * Privacy contract: no request header — IP, cookies, user agent — is ever
+ * stored, logged, or forwarded to PostHog. The one header read is the client IP,
+ * taken by the throttle into a process-local counter holding nothing but a count
+ * and a timestamp. `distinct_id` is the payload's own `distinctId` (the app's anonymous
  * per-install `instanceId`), never a user id. Public payload docs:
  * https://dorkos.ai/telemetry
  *
@@ -36,6 +42,7 @@
 import { z } from 'zod';
 
 import { env } from '@/env';
+import { consumeEventsTelemetryQuota } from '@/lib/telemetry/events-rate-limit';
 
 export const runtime = 'edge';
 
@@ -266,6 +273,17 @@ type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
  * — this is a fire-and-forget event stream and the app must never retry.
  */
 export async function POST(request: Request): Promise<Response> {
+  // The one carve-out from always-200, charged before the body is read. A
+  // `429` says something about the caller's rate, never about backend health,
+  // so it does not break the "never learn about the backend" contract above.
+  const quota = consumeEventsTelemetryQuota(request);
+  if (!quota.allowed) {
+    return Response.json(
+      { error: 'Too many requests. Retry after the number of seconds in the Retry-After header.' },
+      { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();
