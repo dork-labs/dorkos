@@ -241,6 +241,20 @@ describe('RoomFilesService', () => {
       });
     });
 
+    it('answers a binding whose repo never got made as a room with no files', async () => {
+      // Reachable, not hypothetical: the enable path writes the sidecar BEFORE
+      // it creates the checkout. Without this guard git is spawned with a cwd
+      // that does not exist, and `execFile` spells that ENOENT — the same code
+      // a missing git binary has — so the person would be told to install a
+      // program they already have.
+      await rm(repoDir, { recursive: true, force: true });
+
+      await expect(service.list(ROOM_ID)).rejects.toMatchObject({ code: 'ROOM_HAS_NO_REPO' });
+      await expect(service.read(ROOM_ID, 'ROOM.md')).rejects.toMatchObject({
+        code: 'ROOM_HAS_NO_REPO',
+      });
+    });
+
     it('answers a room with no files as a room with no files', async () => {
       hasRepo = false;
       await expect(service.list(ROOM_ID)).rejects.toMatchObject({ code: 'ROOM_HAS_NO_REPO' });

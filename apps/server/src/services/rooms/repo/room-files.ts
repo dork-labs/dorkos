@@ -61,6 +61,8 @@
  * @module server/services/rooms/repo/room-files
  */
 import { randomBytes } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import type {
   RoomFileCommit,
   RoomFileContentResponse,
@@ -268,7 +270,7 @@ export class RoomFilesService {
    *   `ROOM_REPO_GIT_UNAVAILABLE`.
    */
   async list(roomId: string, rawPath?: string): Promise<RoomFileListResponse> {
-    this.requireRepo(roomId);
+    await this.requireRepo(roomId);
     const dir = normalizeRoomFilePath(rawPath);
 
     return this.translatingGitAbsence(async () => {
@@ -343,7 +345,7 @@ export class RoomFilesService {
    *   `ROOM_REPO_GIT_UNAVAILABLE`.
    */
   async read(roomId: string, rawPath: string): Promise<RoomFileContentResponse> {
-    this.requireRepo(roomId);
+    await this.requireRepo(roomId);
     const filePath = normalizeRoomFilePath(rawPath);
     if (filePath === '') {
       throw new RoomError('ROOM_FILE_NOT_READABLE', 'That is the whole room, not a file in it.');
@@ -368,11 +370,10 @@ export class RoomFilesService {
         );
       }
 
-      const [lastCommit] = [
+      const lastCommit =
         (await this.provenanceFor(roomId, commit, parentOf(filePath), [entry])).get(
           basenameOf(filePath)
-        ) ?? null,
-      ];
+        ) ?? null;
 
       const maxBytes = this.deps.maxFileBytes();
       if (entry.size > maxBytes) {
@@ -433,9 +434,24 @@ export class RoomFilesService {
    * @param roomId - The room.
    * @throws {RoomError} `ROOM_HAS_NO_REPO`.
    */
-  private requireRepo(roomId: string): void {
-    if (this.deps.hasRepo(roomId)) return;
-    throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
+  private async requireRepo(roomId: string): Promise<void> {
+    const missing = (): never => {
+      throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
+    };
+    if (!this.deps.hasRepo(roomId)) missing();
+    // **And the repo is really there.** A binding without a repo behind it is a
+    // reachable state, not a hypothetical: `RoomRepoService.enable` writes the
+    // sidecar BEFORE it creates the checkout, so a process killed between them
+    // leaves a room that says it has files and has none. It heals on the next
+    // enable — but until then git would be spawned with a cwd that does not
+    // exist, and `execFile` reports THAT as `ENOENT` too, which this module
+    // would otherwise report to the person as "git is not installed".
+    try {
+      await fs.stat(path.join(this.repoDir(roomId), '.git'));
+    } catch {
+      logger.warn('[rooms] a room repo binding has no repo behind it', { roomId });
+      missing();
+    }
   }
 
   /** The room's main checkout. */
