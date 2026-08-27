@@ -75,6 +75,11 @@ import {
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { runGit } from '../../services/rooms/repo/room-repo-git.js';
 
+/** Run git in a room's repo with that room's home as the discovery ceiling. */
+function gitInRepo(args: string[], store: RoomRepoStore, roomId: string): Promise<string> {
+  return runGit(args, store.repoPath(roomId), store.homeDir(roomId));
+}
+
 const app = createApp();
 finalizeApp(app);
 
@@ -129,6 +134,7 @@ describe('POST /api/rooms/:id/repo', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     resetAgentIdentityService();
     await rm(dorkHome, { recursive: true, force: true });
   });
@@ -150,24 +156,22 @@ describe('POST /api/rooms/:id/repo', () => {
     expect(res.status).toBe(201);
     expect(res.body.repo).toMatchObject({ roomId, mode: 'owned', defaultBranch: 'main' });
     // And it is really there, on main, with a first commit.
-    expect(await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], store.repoPath(roomId))).toBe(
-      'main'
-    );
-    expect(await runGit(['ls-files'], store.repoPath(roomId))).toBe('ROOM.md');
+    expect(await gitInRepo(['rev-parse', '--abbrev-ref', 'HEAD'], store, roomId)).toBe('main');
+    expect(await gitInRepo(['ls-files'], store, roomId)).toBe('ROOM.md');
     expect(existsSync(store.sidecarPath(roomId))).toBe(true);
   });
 
   it('answers 409 with the binding it already had, and makes no second commit', async () => {
     const roomId = await channel();
     const first = await request(app).post(`/api/rooms/${roomId}/repo`);
-    const head = await runGit(['rev-parse', 'HEAD'], store.repoPath(roomId));
+    const head = await gitInRepo(['rev-parse', 'HEAD'], store, roomId);
 
     const second = await request(app).post(`/api/rooms/${roomId}/repo`);
 
     expect(second.status).toBe(409);
     expect(second.body.code).toBe('ROOM_REPO_EXISTS');
     expect(second.body.repo).toEqual(first.body.repo);
-    expect(await runGit(['rev-parse', 'HEAD'], store.repoPath(roomId))).toBe(head);
+    expect(await gitInRepo(['rev-parse', 'HEAD'], store, roomId)).toBe(head);
   });
 
   it('refuses a member agent — enabling is never an agent capability', async () => {
@@ -232,6 +236,28 @@ describe('POST /api/rooms/:id/repo', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('ROOM_REPOS_DISABLED');
     expect(existsSync(store.homeDir(roomId))).toBe(false);
+  });
+
+  it('says plainly that git is missing, rather than answering 500', async () => {
+    // git is looked up on PATH, so an empty PATH is a machine without it. The
+    // request was well formed and nothing is broken — a program is missing, and
+    // the person can install it. A 500 would say the opposite.
+    const roomId = await channel();
+    // `vi.stubEnv` rather than assigning `process.env.PATH`: vitest unwinds it
+    // even if the request throws, and an escaped empty PATH would break every
+    // later test in this worker that spawns anything.
+    vi.stubEnv('PATH', '');
+    let res;
+    try {
+      res = await request(app).post(`/api/rooms/${roomId}/repo`);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ROOM_REPO_GIT_UNAVAILABLE');
+    expect(res.body.error).toContain('git');
+    expect(store.getRow(roomId)).toBeNull();
   });
 
   it('leaves every other room path behaving exactly as it does today', async () => {

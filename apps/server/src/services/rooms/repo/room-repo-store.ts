@@ -38,6 +38,7 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { roomRepos, rooms, type Db } from '@dorkos/db';
 import { RoomRepoSidecarSchema, type RoomRepoSidecar } from '@dorkos/shared/room-repo';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * The file inside a room's home directory that records its repo.
@@ -216,20 +217,48 @@ export class RoomRepoStore {
   /**
    * Read a room's sidecar off disk — the source of truth.
    *
-   * `null` covers both "no such file" and "the file is not a sidecar this build
-   * understands", which includes a `'linked'` binding a future build wrote: the
-   * schema refuses that by name, and a reconciler that threw on one would stop
-   * rebuilding every OTHER room's row on the install.
+   * **`null` means "this room has no binding", and nothing else.** Two causes
+   * qualify: the file is not there (`ENOENT`), and the file is not a sidecar
+   * this build understands — which includes a `'linked'` binding a future build
+   * wrote, since the schema refuses that by name and a reconciler that threw on
+   * one would stop rebuilding every OTHER room's row on the install.
+   *
+   * **Every other error is raised.** This used to swallow all of them, and the
+   * consequence was not a slow read: `null` is what the reconciler reads as "no
+   * sidecar, retire the row", so one pass under file-descriptor pressure
+   * (`EMFILE`), or against a directory the server had lost permission to
+   * (`EACCES`), would have deleted the cache row of every room on the install.
+   * A transient failure must not be spelled the same way as an answer.
    *
    * @param roomId - The room.
-   * @returns The parsed sidecar, or `null`.
+   * @returns The parsed sidecar, or `null` when the room has no binding.
+   * @throws When the sidecar exists but could not be read.
    */
   async readSidecar(roomId: string): Promise<RoomRepoSidecar | null> {
+    let raw: string;
     try {
-      const raw = await fs.readFile(this.sidecarPath(roomId), 'utf-8');
+      raw = await fs.readFile(this.sidecarPath(roomId), 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+      logger.error('[rooms] could not read a room-repo sidecar', {
+        roomId,
+        path: this.sidecarPath(roomId),
+        err,
+      });
+      throw err;
+    }
+    // Past this line the file exists and was read: a failure is about its
+    // CONTENT, which is a real answer about the binding rather than a fault.
+    try {
       const parsed = RoomRepoSidecarSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data : null;
-    } catch {
+      if (parsed.success) return parsed.data;
+      logger.warn('[rooms] a room-repo sidecar is not one this build can use', {
+        roomId,
+        reason: parsed.error.issues[0]?.message,
+      });
+      return null;
+    } catch (err) {
+      logger.warn('[rooms] a room-repo sidecar is not valid JSON', { roomId, err });
       return null;
     }
   }
@@ -241,15 +270,70 @@ export class RoomRepoStore {
    * The reconciler's starting point: the truth is what is on disk, so the sweep
    * walks the disk rather than the table it is rebuilding.
    *
+   * An empty list means no room has ever had a home — `ENOENT` on the root,
+   * which is every install until the first repo is enabled. Any other failure
+   * is raised, for the same reason {@link RoomRepoStore.readSidecar} raises:
+   * the reconciler reads "no homes on disk" as "retire every row", so a
+   * permission or descriptor failure spelled as an empty list would empty the
+   * cache table.
+   *
    * @returns Room ids, or an empty list when no room has ever had a home.
+   * @throws When the rooms root exists but could not be listed.
    */
   async listHomeDirs(): Promise<string[]> {
     try {
       const entries = await fs.readdir(this.root, { withFileTypes: true });
       return entries.filter((e) => e.isDirectory() && SAFE_ROOM_ID.test(e.name)).map((e) => e.name);
-    } catch {
-      return [];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
+      logger.error('[rooms] could not list the room homes', { root: this.root, err });
+      throw err;
     }
+  }
+
+  /**
+   * Delete leftover `.{uuid}.tmp` sidecar drafts in one room's home, older than
+   * `maxAgeMs`.
+   *
+   * {@link RoomRepoStore.write} writes to a temp file and renames it, so a
+   * process killed between the two leaves the draft behind forever — small, but
+   * unbounded across an install's life, and confusing to anybody who opens the
+   * directory. The sweep already reads this directory, so tidying costs one
+   * `readdir` it was going to do anyway.
+   *
+   * Age-gated rather than absolute: a draft that is seconds old may belong to a
+   * write happening right now, in this process or another.
+   *
+   * @param roomId - The room whose home to tidy.
+   * @param maxAgeMs - How old a draft must be before it is removed.
+   * @returns How many were removed.
+   */
+  async sweepStaleDrafts(roomId: string, maxAgeMs: number): Promise<number> {
+    const dir = this.homeDir(roomId);
+    let names: string[];
+    try {
+      names = await fs.readdir(dir);
+    } catch {
+      // Tidying is never the reason a sweep fails; the caller's real work has
+      // its own error handling.
+      return 0;
+    }
+    const cutoff = Date.now() - maxAgeMs;
+    let removed = 0;
+    for (const name of names) {
+      if (!name.startsWith('.') || !name.endsWith('.tmp')) continue;
+      const target = path.join(dir, name);
+      try {
+        const stat = await fs.stat(target);
+        if (stat.mtimeMs > cutoff) continue;
+        await fs.rm(target, { force: true });
+        removed += 1;
+      } catch {
+        // Raced with somebody else's cleanup, or not ours to remove. Either way
+        // the next pass asks again.
+      }
+    }
+    return removed;
   }
 
   /**
@@ -268,9 +352,13 @@ export class RoomRepoStore {
   /**
    * Delete a room's whole home directory — sidecar, repo, worktrees and all.
    *
-   * The on-disk half of a hard delete, and the ONLY thing in this domain that
-   * destroys work, which is why nothing calls it without passing the guard in
-   * `room-repo-service.ts` first. The cache row goes first (via
+   * **`Unguarded` is in the name as a warning.** This is the ONLY thing in the
+   * domain that destroys work, and it asks nothing before doing it: the
+   * unmerged-work question lives in `RoomRepoService.assertHomeRemovable`, and
+   * `RoomRepoService.removeHome` is the guarded pair a caller should reach for.
+   * A method called `removeHome` on a store reads like the counterpart of
+   * `write`, which is exactly the misreading that would delete an agent's
+   * unmerged work. The cache row goes first (via
    * {@link RoomRepoStore.remove}'s ordering rule) so an interrupted delete
    * cannot leave a row pointing at a directory that is half gone.
    *
@@ -281,7 +369,7 @@ export class RoomRepoStore {
    *
    * @param roomId - The room whose home goes away.
    */
-  async removeHome(roomId: string): Promise<void> {
+  async removeHomeUnguarded(roomId: string): Promise<void> {
     this.removeRow(roomId);
     await fs.rm(this.homeDir(roomId), { recursive: true, force: true });
   }

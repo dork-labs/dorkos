@@ -274,7 +274,18 @@ export type RoomErrorCode =
    * work, or delete anyway. Archiving never reaches this — an archived room
    * keeps everything.
    */
-  | 'ROOM_REPO_UNMERGED_WORK';
+  | 'ROOM_REPO_UNMERGED_WORK'
+  /**
+   * A room's files were asked for on a machine with no `git` on it.
+   *
+   * A room repo IS a git repository, so this is not a degradation DorkOS can
+   * work around — and it is not a 500 either, because nothing is broken: the
+   * machine is missing a program, the message says which, and installing it is
+   * what changes the answer. Raised only where a repo is being CREATED; the
+   * delete guard treats a worktree it cannot read as unfinished work instead,
+   * which is the conservative answer when the reason might be a missing binary.
+   */
+  | 'ROOM_REPO_GIT_UNAVAILABLE';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

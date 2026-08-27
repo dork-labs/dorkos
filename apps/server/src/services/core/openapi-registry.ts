@@ -3439,8 +3439,14 @@ const roomOperatorOnly = {
  * restates it because that schema narrows `mode` through a `refine`, which
  * zod-to-openapi renders as an unhelpful union rather than as the single value
  * this build ever writes.
+ *
+ * **Exported so the drift can be tested rather than promised.** A hand-kept
+ * copy is a copy that goes stale the day a field is added, and the symptom
+ * would be an API reference quietly describing a shape the server no longer
+ * sends. `export-openapi.test.ts` asserts this key set equals the real
+ * schema's, so adding a field to the sidecar and not to this reddens.
  */
-const LocalRoomRepoSchema = z
+export const LocalRoomRepoSchema = z
   .object({
     roomId: z.string(),
     mode: z.literal('owned').describe("Always 'owned'; linked repos are reserved and refused."),

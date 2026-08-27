@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateOpenAPISpec } from '../openapi-registry.js';
+import { RoomRepoSidecarSchema } from '@dorkos/shared/room-repo';
+import { generateOpenAPISpec, LocalRoomRepoSchema } from '../openapi-registry.js';
 
 /** Validates the OpenAPI export pipeline produces a valid, complete spec. */
 describe('export-openapi', () => {
@@ -77,5 +78,31 @@ describe('export-openapi', () => {
     const activity = paths['/api/activity']?.get;
     expect(activity?.tags).toEqual(['Operator']);
     expect((activity?.parameters ?? []).length).toBeGreaterThan(0);
+  });
+
+  it('keeps the hand-kept room-repo doc shape in step with the real schema', () => {
+    // `LocalRoomRepoSchema` restates `RoomRepoSidecarSchema` because the real
+    // one narrows `mode` through a `refine`, which renders as an unhelpful
+    // union. A hand-kept copy drifts the day a field is added, and the symptom
+    // is an API reference describing a shape the server does not send — so the
+    // drift is pinned rather than promised. Adding a field to the sidecar and
+    // not to the doc shape (or the reverse) fails here.
+    expect(Object.keys(LocalRoomRepoSchema.shape).sort()).toEqual(
+      Object.keys(RoomRepoSidecarSchema.shape).sort()
+    );
+  });
+
+  it('documents giving a room files as operator-only, with both 409s named', () => {
+    const spec = generateOpenAPISpec();
+    const repo = spec.paths?.['/api/rooms/{id}/repo'];
+
+    // One verb: a repo is created, never listed or deleted through this path.
+    expect(Object.keys(repo ?? {})).toEqual(['post']);
+    expect(repo?.post?.tags).toEqual(['Rooms']);
+    // The access rule is the half a reader most needs from the reference, since
+    // no request shape reveals it — the route takes no body at all.
+    expect(repo?.post?.description).toContain('Only the person who owns this install');
+    expect(repo?.post?.description).toContain('ROOM_REPO_EXISTS');
+    expect(repo?.post?.description).toContain('ROOM_REPOS_DISABLED');
   });
 });

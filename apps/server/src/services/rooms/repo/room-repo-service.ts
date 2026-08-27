@@ -31,6 +31,7 @@ import {
   commitAll,
   commitsAheadOfMain,
   FALLBACK_OPERATOR_GIT_NAME,
+  GitUnavailableError,
   hasUncommittedChanges,
   initRepo,
   OPERATOR_GIT_EMAIL,
@@ -110,19 +111,26 @@ export class RoomRepoService {
    *
    * **Order of writes, and what an interruption leaves behind.** The sidecar is
    * written first (it is the truth; see `room-repo-store.ts`), then the git
-   * repo is created and seeded. A failure anywhere in the git half unwinds both
-   * — the half-made repo directory and the sidecar — because a binding whose
-   * repo does not exist would be advertised to every member and satisfy
-   * nothing. A crash between them is the case the reconciler cannot heal on its
-   * own; it leaves a sidecar with an empty `repo/`, and the next enable call
-   * sees the binding, so this unwind is what keeps that window as small as two
-   * filesystem calls.
+   * repo is created and seeded. Two things follow, and between them the
+   * half-state has no way to become permanent:
+   *
+   * - A **failure** in the git half unwinds both, binding first
+   *   ({@link RoomRepoService.unwindFailedEnable}), because a binding whose
+   *   repo does not exist would be advertised to every member and satisfy
+   *   nothing.
+   * - A **crash** between them cannot run that unwind, so it leaves a sidecar
+   *   with no repo — and the reconciler cannot heal it, since a sidecar is all
+   *   the reconciler looks at. This method heals it instead: a binding whose
+   *   `repo/` is not a git repository falls through and seeds, rather than
+   *   answering `created: false` about files that are not there. Without that,
+   *   the only way out was deleting the sidecar by hand.
    *
    * @param roomId - The room to give files to.
    * @param callerAuthorId - Who is asking.
    * @returns The binding, and whether this call is what made it.
-   * @throws {RoomError} `ROOM_REPOS_DISABLED`, `ROOM_NOT_FOUND` or
-   *   `OPERATOR_ONLY`.
+   * @throws {RoomError} `ROOM_REPOS_DISABLED`, `ROOM_NOT_FOUND`,
+   *   `OPERATOR_ONLY`, or `ROOM_REPO_GIT_UNAVAILABLE` when this machine has no
+   *   git.
    */
   async enable(roomId: string, callerAuthorId: string): Promise<EnableRoomRepoResult> {
     if (!this.deps.enabled()) {
@@ -144,7 +152,20 @@ export class RoomRepoService {
       // Write the row back through on the way out: the one case where a caller
       // is looking straight at a binding whose cache row may have been lost.
       this.deps.store.upsertRow(existing);
-      return { created: false, repo: existing };
+      // **A binding without a repo heals here rather than sticking.** The write
+      // order is sidecar-then-git, so a process killed between them leaves a
+      // room that reports having files and has none — and answering
+      // `created: false` forever would make that permanent, with no path back
+      // except deleting the sidecar by hand. Falling through to seed finishes
+      // the enable the interrupted call started.
+      if (await this.repoIsInitialised(roomId)) {
+        return { created: false, repo: existing };
+      }
+      logger.warn('[rooms] a room repo binding has no repo behind it; finishing the setup', {
+        roomId,
+      });
+      await this.seedGuarded(roomId, room, callerAuthorId);
+      return { created: true, repo: existing };
     }
 
     const sidecar: RoomRepoSidecar = {
@@ -158,13 +179,54 @@ export class RoomRepoService {
     };
 
     await this.deps.store.write(sidecar);
+    await this.seedGuarded(roomId, room, callerAuthorId);
+    return { created: true, repo: sidecar };
+  }
+
+  /**
+   * Seed the repo, and unwind the binding if that fails.
+   *
+   * Split out because both {@link RoomRepoService.enable} branches need it —
+   * the fresh one and the one healing a binding whose repo never got made — and
+   * a second copy of "unwind on failure" is a second chance to forget it.
+   *
+   * @param roomId - The room.
+   * @param room - Its title and topic, for the seeded file.
+   * @param callerAuthorId - Who asked.
+   * @throws {RoomError} `ROOM_REPO_GIT_UNAVAILABLE` when this machine has no
+   *   git, and otherwise whatever git failed with.
+   */
+  private async seedGuarded(roomId: string, room: Room, callerAuthorId: string): Promise<void> {
     try {
       await this.seedRepo(roomId, room, callerAuthorId);
     } catch (err) {
       await this.unwindFailedEnable(roomId);
+      if (err instanceof GitUnavailableError) {
+        throw new RoomError(
+          'ROOM_REPO_GIT_UNAVAILABLE',
+          'This computer doesn’t have git installed, and a room’s files are a git repository. Install git, then try again.'
+        );
+      }
       throw err;
     }
-    return { created: true, repo: sidecar };
+  }
+
+  /**
+   * Whether the repo behind a binding actually exists.
+   *
+   * Asks for `.git` rather than running a git command: this runs on the enable
+   * path, the answer is a yes/no about a directory, and spawning a process to
+   * learn it would put a process spawn in front of every repeat call.
+   *
+   * @param roomId - The room.
+   */
+  private async repoIsInitialised(roomId: string): Promise<boolean> {
+    try {
+      await fs.stat(path.join(this.deps.store.repoPath(roomId), '.git'));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -193,6 +255,12 @@ export class RoomRepoService {
    */
   async listStrandedWorktrees(roomId: string): Promise<string[]> {
     const root = this.deps.store.worktreesPath(roomId);
+    // Git's repository search may not climb past the room's own home. Without
+    // it, a directory under `worktrees/` that is NOT a checkout answers for
+    // whatever repository encloses the DorkOS data directory — in dev, the
+    // dorkos checkout — and this guard would call somebody's stranded work
+    // clean. See `room-repo-git.ts`.
+    const ceiling = this.deps.store.homeDir(roomId);
     let entries;
     try {
       entries = await fs.readdir(root, { withFileTypes: true });
@@ -208,7 +276,10 @@ export class RoomRepoService {
       // guard's job to decide that something it does not understand is
       // disposable.
       try {
-        if ((await hasUncommittedChanges(dir)) || (await commitsAheadOfMain(dir)) > 0) {
+        if (
+          (await hasUncommittedChanges(dir, ceiling)) ||
+          (await commitsAheadOfMain(dir, ceiling)) > 0
+        ) {
           stranded.push(entry.name);
         }
       } catch (err) {
@@ -259,7 +330,7 @@ export class RoomRepoService {
    */
   async removeHome(roomId: string, options?: { force?: boolean }): Promise<void> {
     await this.assertHomeRemovable(roomId, options);
-    await this.deps.store.removeHome(roomId);
+    await this.deps.store.removeHomeUnguarded(roomId);
   }
 
   /**
@@ -271,35 +342,54 @@ export class RoomRepoService {
    */
   private async seedRepo(roomId: string, room: Room, callerAuthorId: string): Promise<void> {
     const repoDir = this.deps.store.repoPath(roomId);
+    const ceiling = this.deps.store.homeDir(roomId);
     await fs.mkdir(repoDir, { recursive: true });
-    await initRepo(repoDir);
+    await initRepo(repoDir, ceiling);
     await fs.writeFile(
       path.join(repoDir, ROOM_MD_FILENAME),
       seedRoomMd({ title: room.title, topic: room.topic }),
       'utf-8'
     );
-    await commitAll(repoDir, ROOM_MD_SEED_COMMIT_MESSAGE, {
-      name: this.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
-      email: OPERATOR_GIT_EMAIL,
-    });
+    await commitAll(
+      repoDir,
+      ROOM_MD_SEED_COMMIT_MESSAGE,
+      {
+        name: this.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
+        email: OPERATOR_GIT_EMAIL,
+      },
+      ceiling
+    );
     logger.info('[rooms] room repo created', { roomId, createdBy: callerAuthorId });
   }
 
   /**
-   * Undo a half-made enable: the repo directory, then the binding.
+   * Undo a half-made enable: **the binding first, then the directory**.
    *
-   * Failures are logged rather than thrown — the caller is already throwing the
-   * reason the enable failed, and replacing it with a cleanup error would hide
-   * the thing that actually went wrong.
+   * That order is the whole point, and it is the reverse of what reads
+   * naturally. The binding is what every other path believes — `hasRepo`, the
+   * next `enable`, the reconciler — so retracting it is the step that must not
+   * be skipped. Deleting `repo/` first meant a failing `fs.rm` (a file locked by
+   * another process, a permission the server has lost) threw out of the shared
+   * `try` and left the sidecar standing: a room advertising files it does not
+   * have, permanently.
+   *
+   * Each step gets its own `try` for the same reason. Failures are logged
+   * rather than thrown — the caller is already throwing the reason the enable
+   * failed, and replacing it with a cleanup error would hide the thing that
+   * actually went wrong.
    *
    * @param roomId - The room whose enable failed.
    */
   private async unwindFailedEnable(roomId: string): Promise<void> {
     try {
-      await fs.rm(this.deps.store.repoPath(roomId), { recursive: true, force: true });
       await this.deps.store.remove(roomId);
     } catch (err) {
-      logger.error('[rooms] could not unwind a failed room-repo enable', { roomId, err });
+      logger.error('[rooms] could not retract a failed room-repo binding', { roomId, err });
+    }
+    try {
+      await fs.rm(this.deps.store.repoPath(roomId), { recursive: true, force: true });
+    } catch (err) {
+      logger.error('[rooms] could not remove a half-made room repo', { roomId, err });
     }
   }
 }

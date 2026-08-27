@@ -189,13 +189,13 @@ describe('RoomRepoStore', () => {
     });
   });
 
-  describe('removeHome', () => {
+  describe('removeHomeUnguarded', () => {
     it('takes the row and the whole directory, attachments included', async () => {
       await store.write(sidecarFor());
       await mkdir(path.join(store.homeDir(ROOM_ID), 'attachments'), { recursive: true });
       await mkdir(store.repoPath(ROOM_ID), { recursive: true });
 
-      await store.removeHome(ROOM_ID);
+      await store.removeHomeUnguarded(ROOM_ID);
 
       expect(store.getRow(ROOM_ID)).toBeNull();
       expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
@@ -228,7 +228,12 @@ describe('RoomRepoReconciler', () => {
     store.removeRow(ROOM_ID);
     expect(store.getRow(ROOM_ID)).toBeNull();
 
-    await expect(reconciler.reconcile()).resolves.toEqual({ synced: 1, removed: 0, orphaned: 0 });
+    await expect(reconciler.reconcile()).resolves.toEqual({
+      synced: 1,
+      removed: 0,
+      orphaned: 0,
+      draftsRemoved: 0,
+    });
     expect(store.getRow(ROOM_ID)).toMatchObject({ roomId: ROOM_ID, mode: 'owned' });
   });
 
@@ -246,7 +251,12 @@ describe('RoomRepoReconciler', () => {
     await store.write(sidecarFor());
     await fsp.rm(store.sidecarPath(ROOM_ID));
 
-    await expect(reconciler.reconcile()).resolves.toEqual({ synced: 0, removed: 1, orphaned: 0 });
+    await expect(reconciler.reconcile()).resolves.toEqual({
+      synced: 0,
+      removed: 1,
+      orphaned: 0,
+      draftsRemoved: 0,
+    });
     expect(store.getRow(ROOM_ID)).toBeNull();
   });
 
@@ -262,7 +272,7 @@ describe('RoomRepoReconciler', () => {
 
     const result = await reconciler.reconcile();
 
-    expect(result).toEqual({ synced: 0, removed: 0, orphaned: 1 });
+    expect(result).toEqual({ synced: 0, removed: 0, orphaned: 1, draftsRemoved: 0 });
     // Nothing was deleted: a missing room row is not proof the operator wanted
     // this room's history and its agents' unmerged work destroyed.
     expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
@@ -279,11 +289,107 @@ describe('RoomRepoReconciler', () => {
 
     const result = await reconciler.reconcile();
 
-    expect(result).toEqual({ synced: 1, removed: 0, orphaned: 1 });
+    expect(result).toEqual({ synced: 1, removed: 0, orphaned: 1, draftsRemoved: 0 });
     expect(store.getRow(liveRoom)).not.toBeNull();
   });
 
   it('does nothing at all on an install where no room has a home', async () => {
-    await expect(reconciler.reconcile()).resolves.toEqual({ synced: 0, removed: 0, orphaned: 0 });
+    await expect(reconciler.reconcile()).resolves.toEqual({
+      synced: 0,
+      removed: 0,
+      orphaned: 0,
+      draftsRemoved: 0,
+    });
+  });
+
+  it('spares a binding created after the walk began — the mid-sweep enable race', async () => {
+    // The pass lists the homes, then drops rows it did not see. Those are two
+    // moments. An `enable()` landing between them wrote a sidecar AND a row the
+    // listing could not have contained, so the removal half used to delete the
+    // row of a repo that had just been created, and `hasRepo` then answered
+    // false for five minutes about a repo sitting on disk.
+    //
+    // Parked exactly there: the snapshot is taken, the binding lands, the
+    // snapshot is returned. The pass must ask the disk again before retiring
+    // anything.
+    const realList = store.listHomeDirs.bind(store);
+    vi.spyOn(store, 'listHomeDirs').mockImplementation(async () => {
+      const snapshot = await realList();
+      await store.write(sidecarFor());
+      return snapshot;
+    });
+
+    const result = await reconciler.reconcile();
+
+    expect(result.removed).toBe(0);
+    // Not merely spared: the row is brought up to date, since the walk that
+    // would have synced it never saw this room.
+    expect(result.synced).toBe(1);
+    expect(store.getRow(ROOM_ID)).toMatchObject({ roomId: ROOM_ID, mode: 'owned' });
+    expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
+  });
+
+  it('raises rather than retiring every row when the disk cannot be read', async () => {
+    // `null` from `readSidecar` means "no binding", and the removal half acts
+    // on it. If a transient failure were spelled the same way, one pass under
+    // descriptor pressure (EMFILE) or against a directory the server lost
+    // permission to (EACCES) would have deleted the cache row of every room on
+    // the install.
+    await store.write(sidecarFor());
+    const denied = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    vi.spyOn(fsp, 'readFile').mockRejectedValue(denied);
+
+    await expect(reconciler.reconcile()).rejects.toThrow('permission denied');
+    expect(store.getRow(ROOM_ID)).not.toBeNull();
+  });
+
+  it('still answers null for a sidecar that is simply not there', async () => {
+    // The other half of the same rule: ENOENT is an answer about the binding,
+    // not a fault, and it must keep flowing through as `null`.
+    await expect(store.readSidecar(ROOM_ID)).resolves.toBeNull();
+  });
+
+  it('skips a tick while the previous pass is still running', async () => {
+    // DOR-1578's shape. This pass awaits the filesystem per room, so on a busy
+    // install it can outlive the interval — and two passes racing on the same
+    // rows is the timing the removal half was just hardened against.
+    let release!: () => void;
+    const parked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let passes = 0;
+    vi.spyOn(store, 'listHomeDirs').mockImplementation(async () => {
+      passes += 1;
+      await parked;
+      return [];
+    });
+
+    reconciler = new RoomRepoReconciler(store, 5);
+    reconciler.start();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(passes).toBe(1);
+    release();
+  });
+
+  it('tidies away sidecar drafts an interrupted write left behind', async () => {
+    await store.write(sidecarFor());
+    const home = store.homeDir(ROOM_ID);
+    const stale = path.join(home, '.11111111-2222-3333-4444-555555555555.tmp');
+    const fresh = path.join(home, '.66666666-7777-8888-9999-000000000000.tmp');
+    await writeFile(stale, '{}', 'utf-8');
+    await writeFile(fresh, '{}', 'utf-8');
+    // Two hours old: past the one-hour cutoff.
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fsp.utimes(stale, old, old);
+
+    const result = await reconciler.reconcile();
+
+    expect(result.draftsRemoved).toBe(1);
+    expect(existsSync(stale)).toBe(false);
+    // A draft that is seconds old may belong to a write happening right now.
+    expect(existsSync(fresh)).toBe(true);
+    // And the sidecar itself is never a draft.
+    expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
   });
 });
