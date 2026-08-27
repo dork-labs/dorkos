@@ -284,6 +284,12 @@ date with the base**. (The repo must have auto-merge turned on; DorkOS does.)
 review, so an armed auto-merge lands the PR on its required checks alone. The order
 is the whole safeguard: review, then arm.
 
+**In this repo the merge queue owns the strategy.** `gh pr merge --auto --squash`
+prints `! The merge strategy for main is set by the merge queue` — that line
+reads like a refusal and is not; the PR was enqueued (a repeat call answers
+"already queued"). Drop the strategy flag here; `--delete-branch` is rejected
+outright. Confirm with `gh pr view <n>` rather than reacting to stderr.
+
 **A new commit disarms auto-merge.** GitHub drops the armed state on every push to
 the PR branch, silently — the PR then sits green and unarmed forever. Re-arm
 (`gh pr merge --auto <n>`) after every push you make to an armed PR, including

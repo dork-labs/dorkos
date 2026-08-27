@@ -292,6 +292,14 @@ Failures that blame the wrong thing, each measured on this machine:
   in the table's third argument; read the generated SQL to confirm every index
   survived. Two branches minting the same migration number conflict in
   `drizzle/meta/_journal.json` — roll back and regenerate against updated main.
+- **`pnpm verify --force` is a footgun** — pnpm passes `--force` through to
+  vitest, which hard-fails with `CACError: Unknown option --force` and reads as a
+  test failure. Forced forms that work: `turbo run typecheck lint --force` and
+  `turbo run test --force -- --run`.
+- **Targeted server vitest runs read some `@dorkos/shared` subpaths from `dist`**
+  (only aliased subpaths load from source), so a source-edited schema tests stale
+  until `pnpm --filter @dorkos/shared build`. CI is safe via turbo `^build`;
+  local targeted runs are not.
 - **Servers bind IPv6** — probe `localhost`, not `127.0.0.1`.
 - **zsh does not word-split unquoted variables** — `pnpm vitest run $FILES`
   silently runs nothing; write explicit paths.
