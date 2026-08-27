@@ -251,8 +251,50 @@ runtimeConformance(
     // the turn-failure gate runs only in mocked mode: `session.error`
     // (non-abort) followed by the `session.idle` terminal.
     ...(LIVE
-      ? {}
+      ? {
+          // The `project-rooms` §3.3 gate needs to read what the sidecar was
+          // sent, and a live sidecar is a separate process this suite only
+          // talks TO. The mocked run below is where the property is proven.
+          systemPromptAppendUnprovenReason:
+            'a live OpenCode sidecar is a separate process this suite can only send to, so what its prompt carried is only observable in the mocked run',
+        }
       : {
+          // The `project-rooms` §3.3 gate. OpenCode's caller append rides a
+          // SYNTHETIC part of `session.promptAsync` (`buildOpenCodeParts`) —
+          // composed per turn, never at session start — so the observation is
+          // exactly what that call was handed, read off the mocked client. Both
+          // turns run on ONE session; the second is the one that matters.
+          systemPromptAppendTurns: async (runtime, sessionId, [first, second]) => {
+            const client = lastClient;
+            if (!client) {
+              throw new Error('OpenCode conformance: no mocked client to read the prompt off');
+            }
+            for (const systemPromptAppend of [first, second]) {
+              for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+                cwd: PROJECT_DIR,
+                systemPromptAppend,
+              })) {
+                // Drained: the assertion is about the sidecar's input.
+              }
+            }
+            // ONE sidecar session across both turns. Without this, two separate
+            // sessions would satisfy every assertion the suite makes and prove
+            // nothing about "the NEXT turn of a session already running".
+            expect(
+              client.session.create,
+              'both turns were supposed to run on one sidecar session'
+            ).toHaveBeenCalledTimes(1);
+            // The mocked `promptAsync` takes no declared parameters (it answers
+            // `{}` and ignores its input), so the recorded arguments have to be
+            // named here rather than inferred.
+            const calls = vi.mocked(client.session.promptAsync).mock.calls as unknown as Array<
+              [{ body?: { parts?: Array<{ text?: string }> } }]
+            >;
+            const sent = calls.map((call) =>
+              (call[0]?.body?.parts ?? []).map((part) => part.text ?? '').join('\n\n')
+            );
+            return [sent[0] ?? '', sent[1] ?? ''] as const;
+          },
           makeFailingRuntime: () =>
             new OpenCodeRuntime({
               provider: makeMockedProvider(
