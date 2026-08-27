@@ -71,6 +71,7 @@ import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
+import { resolveSessionCwd } from '../services/workspace/resolve-session-cwd.js';
 // A control request that outlived its bound is not a claude-code-only idea, but
 // claude-code is the only runtime with one today, so the class still lives with
 // its clock. A second runtime growing one is the signal to move it somewhere
@@ -931,6 +932,21 @@ router.post('/:id/messages', async (req, res) => {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  } else {
+    // No unit-of-work key, so ask the precedence chain where this turn belongs
+    // (`services/workspace/resolve-session-cwd.ts`). `workspaceKey` above keeps
+    // its precedence deliberately: it is a per-turn statement about this piece
+    // of work, which is strictly more specific than a standing per-agent
+    // preference.
+    //
+    // The `default` rung is translated back into saying NOTHING, and that is
+    // load-bearing rather than fussy. Every runtime already falls back to
+    // `DEFAULT_CWD` on an absent cwd, so the turn runs in the same directory
+    // either way — but `effectiveCwd` is also what stamps `projector.cwd`
+    // below, overwriting whatever an `/events` subscribe put there. A turn that
+    // has no opinion about its directory must not acquire one here.
+    const resolved = await resolveSessionCwd({ cwd, agentPath, sessionId });
+    if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
   }
 
   // First-message binding: choose + persist the runtime BEFORE resolving.

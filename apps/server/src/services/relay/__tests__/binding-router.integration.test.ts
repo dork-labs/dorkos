@@ -12,6 +12,7 @@
  * crashed turn surfacing as the error+done sequence at the platform.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { initBoundary } from '../../../lib/boundary.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -24,7 +25,14 @@ import { createInitiateConsentGate } from '../initiate-consent.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 
 const PLATFORM_SUBJECT = 'relay.human.telegram.tg-bot.12345';
-const PROJECT_PATH = '/proj/agent-a';
+/**
+ * The bound agent's directory, assigned in `beforeEach`.
+ *
+ * Under a real temp root because the agent-cwd chain boundary-checks the
+ * directory a turn resolves to, and a boundary can only be rooted at a
+ * directory that exists.
+ */
+let PROJECT_PATH: string;
 
 interface Recorded {
   subject: string;
@@ -110,6 +118,9 @@ async function makeTempDir(): Promise<string> {
 }
 
 beforeEach(async () => {
+  const boundaryRoot = await fs.realpath(os.tmpdir());
+  PROJECT_PATH = path.join(boundaryRoot, 'proj', 'agent-a');
+  await initBoundary(boundaryRoot);
   const dataDir = await makeTempDir();
   const relayDir = await makeTempDir();
 

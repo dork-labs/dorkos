@@ -16,6 +16,26 @@ import { recentDispatches, resetDispatchBuffers } from '../../observability/disp
 
 vi.mock('node:fs/promises');
 
+/** The bound agent's own directory — who it is. */
+const AGENT_PATH = '/agents/a';
+
+/**
+ * Where a turn for that agent RUNS, per the agent-cwd chain
+ * (`services/workspace/resolve-session-cwd.ts`), which this file injects a
+ * stand-in for. Deliberately a DIFFERENT path from {@link AGENT_PATH}: a router
+ * that went back to stamping the raw project path would still look right if the
+ * two matched, and would fail every cwd assertion below as it should.
+ *
+ * The real chain is exercised end to end by `binding-router.integration.test.ts`
+ * — it cannot run here, because this file mocks `node:fs/promises` wholesale and
+ * the boundary check the chain performs needs a real filesystem.
+ */
+const AGENT_CWD = '/agents/a/worktree';
+
+/** The injected stand-in for the agent-cwd chain. */
+const fakeResolveCwd = async ({ agentPath }: { agentPath: string }): Promise<{ cwd: string }> =>
+  agentPath === AGENT_PATH ? { cwd: AGENT_CWD } : { cwd: agentPath };
+
 describe('BindingRouter', () => {
   let router: BindingRouter;
   let mockRelayCore: RelayCoreLike;
@@ -54,7 +74,7 @@ describe('BindingRouter', () => {
     };
 
     mockMeshCore = {
-      getProjectPath: vi.fn().mockReturnValue('/agents/a'),
+      getProjectPath: vi.fn().mockReturnValue(AGENT_PATH),
     };
 
     mockBindingStore = {
@@ -68,6 +88,7 @@ describe('BindingRouter', () => {
     };
 
     router = new BindingRouter({
+      resolveCwd: fakeResolveCwd,
       bindingStore: mockBindingStore as BindingStore,
       relayCore: mockRelayCore,
       agentManager: mockAgentManager,
@@ -222,10 +243,10 @@ describe('BindingRouter', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
-    expect(mockAgentManager.createSession).toHaveBeenCalledWith('/agents/a', 'acceptEdits');
+    expect(mockAgentManager.createSession).toHaveBeenCalledWith(AGENT_CWD, 'acceptEdits');
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
       'relay.agent.claude-code.session-abc',
-      expect.objectContaining({ text: 'hello', cwd: '/agents/a' }),
+      expect.objectContaining({ text: 'hello', cwd: AGENT_CWD }),
       expect.objectContaining({ from: 'tg' })
     );
   });
@@ -553,6 +574,7 @@ describe('BindingRouter', () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(entries));
 
       const freshRouter = new BindingRouter({
+        resolveCwd: fakeResolveCwd,
         bindingStore: mockBindingStore as BindingStore,
         relayCore: mockRelayCore,
         agentManager: mockAgentManager,
@@ -806,6 +828,11 @@ describe('BindingRouter', () => {
       const p1 = capturedHandler!(envelope);
       const p2 = capturedHandler!(envelope);
 
+      // Let both handlers reach `createSession`. Session creation now awaits the
+      // agent-cwd chain first, so `resolveSession` is not assigned in the same
+      // tick the handlers were fired in.
+      await vi.waitFor(() => expect(mockAgentManager.createSession).toHaveBeenCalled());
+
       // Resolve the single session creation
       resolveSession({ id: 'session-deduped' });
       await p1;
@@ -833,6 +860,7 @@ describe('BindingRouter', () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(entries));
 
       const evictionRouter = new BindingRouter({
+        resolveCwd: fakeResolveCwd,
         bindingStore: mockBindingStore as BindingStore,
         relayCore: mockRelayCore,
         agentManager: mockAgentManager,
@@ -1387,6 +1415,7 @@ describe('BindingRouter', () => {
         }),
       };
       flowRouter = new BindingRouter({
+        resolveCwd: fakeResolveCwd,
         bindingStore: mockBindingStore as BindingStore,
         relayCore: flowRelayCore,
         agentManager: mockAgentManager,
@@ -1521,7 +1550,7 @@ describe('BindingRouter', () => {
 
     it('returns ok=true with agent ID when routing succeeds', () => {
       vi.mocked(mockBindingStore.getById!).mockReturnValue(makeBinding());
-      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue('/agents/a');
+      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue(AGENT_PATH);
 
       const result = router.testBinding('bind-1');
 
@@ -1534,7 +1563,7 @@ describe('BindingRouter', () => {
 
     it('does not invoke the agent or publish to relay', () => {
       vi.mocked(mockBindingStore.getById!).mockReturnValue(makeBinding());
-      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue('/agents/a');
+      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue(AGENT_PATH);
 
       router.testBinding('bind-1');
 
@@ -1624,6 +1653,7 @@ describe('BindingRouter', () => {
         }),
       };
       const legacyRouter = new BindingRouter({
+        resolveCwd: fakeResolveCwd,
         bindingStore: mockBindingStore as BindingStore,
         relayCore: legacyRelayCore,
         agentManager: mockAgentManager,
@@ -1734,6 +1764,7 @@ describe('BindingRouter', () => {
       claimMeshCore = { getProjectPath: vi.fn() };
 
       claimRouter = new BindingRouter({
+        resolveCwd: fakeResolveCwd,
         bindingStore: claimBindingStore as BindingStore,
         relayCore: claimRelayCore,
         agentManager: claimAgentManager,
@@ -1889,7 +1920,7 @@ describe('BindingRouter', () => {
       expect(claimStore.isBlocked('tg-bot', '999')).toBe(true);
 
       // A person manually creates a binding for this exact chat afterward.
-      vi.mocked(claimMeshCore.getProjectPath).mockReturnValue('/agents/a');
+      vi.mocked(claimMeshCore.getProjectPath).mockReturnValue(AGENT_PATH);
       vi.mocked(claimBindingStore.resolve!).mockReturnValue({
         id: 'bind-manual',
         adapterId: 'tg-bot',
@@ -1922,6 +1953,7 @@ describe('BindingRouter', () => {
 
     it('is a no-op (never throws) when unclaimedChats is not wired', async () => {
       const bareRouter = new BindingRouter({
+        resolveCwd: fakeResolveCwd,
         bindingStore: claimBindingStore as BindingStore,
         relayCore: claimRelayCore,
         agentManager: { createSession: vi.fn() },

@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { initBoundary } from '../../../lib/boundary.js';
 import {
   TaskSchedulerService,
   scheduledTickKey,
@@ -196,10 +200,15 @@ describe('TaskSchedulerService', () => {
   let db: Db;
   let mockAgent: ReturnType<typeof createMockAgentManager>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
     store = new TaskStore(db);
     mockAgent = createMockAgentManager();
+    // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`) refuses a
+    // directory outside `DORKOS_BOUNDARY`, and this file's agent paths are
+    // absolute stand-ins. A boundary of `/` states what these tests assume:
+    // every path here is in bounds, so a case fails for its own reason.
+    await initBoundary('/');
   });
 
   describe('start()', () => {
@@ -1850,14 +1859,22 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
   let store: TaskStore;
   let db: Db;
   let mockAgent: ReturnType<typeof createMockAgentManager>;
+  /** The mesh-registered agent's directory — see the boundary note below. */
+  let agentDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
     store = new TaskStore(db);
     mockAgent = createMockAgentManager();
     vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
       // no events
     });
+    // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`)
+    // boundary-checks the directory a turn resolves to, so the agent directory
+    // below sits under a real temp root and that root is the boundary.
+    const root = await realpath(tmpdir());
+    agentDir = path.join(root, 'projects', 'agent-dir');
+    await initBoundary(root);
   });
 
   it('records failed run when agent not found in registry', async () => {
@@ -1928,7 +1945,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       })
     );
 
-    const mockMesh = createMockMeshCore({ 'agent-123': '/projects/agent-dir' });
+    const mockMesh = createMockMeshCore({ 'agent-123': agentDir });
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
@@ -1946,7 +1963,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/projects/agent-dir' })
+      expect.objectContaining({ cwd: agentDir })
     );
     // A scheduled run is UNATTENDED, and the runtime reads that: an unanswered
     // prompt is refused at the ten-minute countdown instead of waiting four
@@ -1958,7 +1975,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     expect(mockAgent.sendMessage).toHaveBeenCalledWith(
       expect.any(String),
       'test',
-      expect.objectContaining({ cwd: '/projects/agent-dir' })
+      expect.objectContaining({ cwd: agentDir })
     );
 
     await service.stop();

@@ -51,6 +51,7 @@ import {
 } from './platform-identity.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { ChatBridgeIngest } from './chat-bridge/index.js';
+import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 
 /**
  * Whether an inbound envelope's `content` is the empty string.
@@ -201,6 +202,13 @@ export interface BindingRouterDeps {
    * "a burst happened, N more than shown," never silently dropped.
    */
   onUnclaimedChatBurst?: (burst: UnclaimedChatBurst) => void;
+  /**
+   * Where a turn for the bound agent runs — the shared precedence chain
+   * (`services/workspace/resolve-session-cwd.ts`). Injected rather than
+   * imported so the router stays unit-testable, and defaulted in the
+   * constructor to the real resolver so the server wiring says nothing.
+   */
+  resolveCwd?: (req: { agentPath: string }) => Promise<{ cwd: string }>;
 }
 
 /** One rate-limit window's worth of suppressed unclaimed-chat broadcasts. */
@@ -303,8 +311,12 @@ export class BindingRouter {
   /** Whether the once-per-window burst summary has already fired. */
   private unclaimedBroadcastSummarySent = false;
 
+  /** Where a turn for the bound agent runs — see {@link BindingRouterDeps.resolveCwd}. */
+  private readonly resolveCwd: (req: { agentPath: string }) => Promise<{ cwd: string }>;
+
   constructor(private readonly deps: BindingRouterDeps) {
     this.sessionMapPath = pathJoin(deps.relayDir, 'sessions.json');
+    this.resolveCwd = deps.resolveCwd ?? ((req) => resolveSessionCwd(req));
   }
 
   /** Load persisted session map, subscribe to inbound messages. */
@@ -728,11 +740,20 @@ export class BindingRouter {
             return this.refuse(envelope, binding, 'session_failed', logError(err).error);
           }
 
+          // Where the turn runs, from the shared precedence chain rather than
+          // from `projectPath` directly. For the default `home` binding the two
+          // are the same path; for an agent that asked for a checkout of its
+          // own they are not, and this stamp is what the runtime obeys.
+          // `agentPath` above stays the agent's OWN directory — it answers "who
+          // is this", not "where does it work", and `@botusername` addressing
+          // keys on identity.
+          const { cwd: dispatchCwd } = await this.resolveCwd({ agentPath: projectPath });
+
           const enrichedPayload =
             envelope.payload && typeof envelope.payload === 'object'
               ? {
                   ...(envelope.payload as Record<string, unknown>),
-                  cwd: projectPath,
+                  cwd: dispatchCwd,
                   __bindingPermissions: {
                     canReply: binding.canReply,
                     canInitiate: binding.canInitiate,
@@ -1134,13 +1155,18 @@ export class BindingRouter {
     if (!projectPath) {
       throw new Error(`Agent '${binding.agentId}' not found in mesh registry`);
     }
+    // Same chain as the dispatch stamp above, and it must be: a session created
+    // in one directory and then fed turns stamped with another would split the
+    // agent's work across two trees.
+    const { cwd } = await this.resolveCwd({ agentPath: projectPath });
     logger.debug('[BindingRouter] createNewSession', {
       bindingId: binding.id,
       adapterId: binding.adapterId,
       agentId: binding.agentId,
       projectPath,
+      cwd,
     });
-    const session = await this.deps.agentManager.createSession(projectPath, binding.permissionMode);
+    const session = await this.deps.agentManager.createSession(cwd, binding.permissionMode);
     return session.id;
   }
 

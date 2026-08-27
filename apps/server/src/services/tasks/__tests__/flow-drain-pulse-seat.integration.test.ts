@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { initBoundary } from '../../../lib/boundary.js';
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -94,10 +95,22 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
 
   // The agent the project task is linked to, and its provisioned worktree cwd.
   const AGENT_ID = 'agent-flow-project';
-  const WORKTREE_CWD = '/Users/test/.dork/workspaces/core/spec-flow';
+  /**
+   * The worktree the linked agent works in. Assigned per case, under the test's
+   * own temp root: the agent-cwd chain boundary-checks the directory a turn
+   * resolves to, so a fixed path off in `/Users/test` would be refused.
+   */
+  let WORKTREE_CWD: string;
 
   beforeEach(async () => {
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'flow-drain-pulse-'));
+    // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`)
+    // boundary-checks the directory a turn resolves to. Everything this test
+    // builds lives under the temp root, so that is the boundary — and the temp
+    // dir is realpath'd, because the chain returns canonical paths and macOS
+    // spells `/var` as a symlink to `/private/var`.
+    await initBoundary(await realpath(tmpdir()));
+    dorkHome = await realpath(await mkdtemp(path.join(tmpdir(), 'flow-drain-pulse-')));
+    WORKTREE_CWD = path.join(dorkHome, 'workspaces', 'core', 'spec-flow');
     // Project-scoped tasks live at `<project>/.dork/tasks/`.
     skillsDir = path.join(dorkHome, 'project', '.agents', 'skills');
     await mkdir(skillsDir, { recursive: true });
