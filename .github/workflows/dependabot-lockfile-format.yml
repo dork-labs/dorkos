@@ -121,7 +121,7 @@ env:
   # in the root package.json. Only the plain `prettier` version matters for
   # correctness (see the no-`--config` note above); bump this alongside any
   # `prettier` upgrade so a future PR isn't reformatted with a stale binary.
-  PRETTIER_VERSION: '3.8.3'
+  PRETTIER_VERSION: '3.9.6'
 
 jobs:
   format-lockfile:
