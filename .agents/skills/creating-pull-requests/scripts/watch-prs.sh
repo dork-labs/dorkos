@@ -26,6 +26,10 @@
 #                              too is a standing condition, not yours
 #   EJECTED(reason)            the merge queue silently dropped the PR; nothing
 #                              else reports this (no webhook, no check goes red)
+#   STUCK_UNMERGEABLE          in the queue with entry state UNMERGEABLE — a
+#                              dead entry that will never merge; clear it with
+#                              the dequeuePullRequest mutation, then re-arm
+#                              auto-merge (remediation in SKILL.md)
 #   STALLED_IN_QUEUE           queued but zero checks reported for a while —
 #                              the classic missing `on: merge_group` trigger
 #   UNRESOLVED_THREADS(n)      open review threads (not outdated) — these block
@@ -58,8 +62,8 @@ done
 # classify: pure state machine over one JSON snapshot. The network layer
 # below builds the same shape, so fixtures exercise the real decision path.
 # Shape: {state, mergeState, failing: [names], unresolvedThreads: n,
-#         queued: bool, queuePos: n|null, autoMerge: bool, ejectionReason: str|null,
-#         checksReported: n, cyclesQueued: n}
+#         queued: bool, queuePos: n|null, queueState: str|null, autoMerge: bool,
+#         ejectionReason: str|null, checksReported: n, cyclesQueued: n}
 classify() {
   jq -r '
     if .state == "MERGED" then "MERGED"
@@ -67,6 +71,18 @@ classify() {
     elif .ejectionReason != null then "EJECTED(\(.ejectionReason))"
     elif .mergeState == "DIRTY" then "CONFLICTING"
     elif (.failing | length) > 0 then "FAILING(\(.failing | join(",")))"
+    # A queued entry GitHub has marked UNMERGEABLE is stuck: it will never
+    # merge and nothing else reports it — the entry still carries a position,
+    # so without this branch it reads as a healthy QUEUED (a false green).
+    # Precedence EJECTED > CONFLICTING > FAILING > STUCK_UNMERGEABLE:
+    # EJECTED/CONFLICTING/FAILING each name a MORE specific cause of the same
+    # stuck-ness (already dropped from the queue / a dirty tree / a named red
+    # check), so when one of those is also true it is the better report. Above
+    # STALLED_IN_QUEUE and QUEUED because UNMERGEABLE is a definite dead entry,
+    # not "queued but quiet" — it must outrank both or it is masked. Fires ONLY
+    # on the explicit "UNMERGEABLE" string; any other state (or a null/absent
+    # queueState) falls through to the branches below unchanged.
+    elif .queued and (.queueState == "UNMERGEABLE") then "STUCK_UNMERGEABLE"
     elif .queued and .checksReported == 0 and .cyclesQueued >= 5 then "STALLED_IN_QUEUE"
     elif (.unresolvedThreads // 0) > 0 then "UNRESOLVED_THREADS(\(.unresolvedThreads))"
     elif .mergeState == "CLEAN" and (.autoMerge | not) and (.queued | not) then "UNARMED_CLEAN"
@@ -94,7 +110,7 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
       repository(owner:$o,name:$r){ pullRequest(number:$n){
         state mergeStateStatus
         autoMergeRequest { enabledAt }
-        mergeQueueEntry { position }
+        mergeQueueEntry { position state }
         reviewThreads(first:100){ nodes { isResolved isOutdated } }
         timelineItems(last:5, itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){
           nodes { ... on RemovedFromMergeQueueEvent { createdAt reason } } }
@@ -114,6 +130,7 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
       unresolvedThreads: ([$p.reviewThreads.nodes[] | select((.isResolved|not) and (.isOutdated|not))] | length),
       queued: ($p.mergeQueueEntry != null),
       queuePos: ($p.mergeQueueEntry.position // null),
+      queueState: ($p.mergeQueueEntry.state // null),
       autoMerge: ($p.autoMergeRequest != null),
       # only report an ejection observed while we were watching (see loop)
       lastEjectionAt: ($p.timelineItems.nodes | map(.createdAt) | max // null),
@@ -157,7 +174,7 @@ while true; do
       case "$cur" in
         PENDING|QUEUED*)
           case "$prev" in
-            FAILING*|CONFLICTING|STALLED_IN_QUEUE) echo "PR #$pr RECOVERED -> $cur" ;;
+            FAILING*|CONFLICTING|STALLED_IN_QUEUE|STUCK_UNMERGEABLE) echo "PR #$pr RECOVERED -> $cur" ;;
             "") : ;; # first sight of a healthy PR: stay quiet
             *) echo "PR #$pr -> $cur" ;;
           esac ;;
