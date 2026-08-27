@@ -42,9 +42,11 @@ import {
   UpdateRoomRequestSchema,
   type RoomAttachment,
 } from '@dorkos/shared/room-schemas';
+import { RoomFileContentQuerySchema, RoomFilesQuerySchema } from '@dorkos/shared/room-files';
 import {
   getAttachmentRowStore,
   getRoomAttachmentStore,
+  getRoomFilesService,
   getRoomRepoService,
   getRoomService,
   RoomError,
@@ -867,6 +869,76 @@ router.post('/:id/repo', (req, res) => {
       res.status(201).json({ repo: result.repo });
     } catch (err) {
       sendRoomError(res, err, 'POST /:id/repo');
+    }
+  })();
+});
+
+/**
+ * GET /:id/files — one directory of this room's own files (spec
+ * `project-rooms` §3.9).
+ *
+ * **Gated exactly as reading the room's history is.** The membership check is
+ * `RoomService.assertCanReadFiles`, which is `read_room_history`'s own gate, so
+ * a caller who is not on the roster gets the `ROOM_NOT_FOUND` a room that does
+ * not exist gets — a room id is never a capability. **A member AGENT may read**,
+ * for the same reason it may read history: a room's files are what its members
+ * are working on together. A caller presenting a token this machine cannot
+ * verify is refused 401 by `resolveCaller` before this handler runs.
+ *
+ * **The order of the two refusals is the disclosure control.** Membership is
+ * asked first and answers 404; only then is "does this room have files" asked,
+ * which answers 409 `ROOM_HAS_NO_REPO`. Asking the second one first would let
+ * somebody holding a room id learn which rooms are project rooms.
+ *
+ * Serves `main`'s COMMIT, never the checkout on disk, so a half-written edit or
+ * a dirty tree is not something a reader can see; `commit` says which snapshot
+ * this is. A symlink is listed as a link and never followed.
+ */
+router.get('/:id/files', (req, res) => {
+  const query = parseBody(RoomFilesQuerySchema, req.query, res);
+  if (!query) return;
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      getRoomService().assertCanReadFiles(req.params.id, caller.id);
+      res.json(await getRoomFilesService().list(req.params.id, query.path));
+    } catch (err) {
+      sendRoomError(res, err, 'GET /:id/files');
+    }
+  })();
+});
+
+/**
+ * GET /:id/files/content — one file out of this room's `main`.
+ *
+ * **A query parameter rather than a path suffix**, which is the shape
+ * `GET /api/files/content?cwd=&path=` already uses for a session's files. A
+ * repo path holds slashes, and a path SEGMENT would mean encoding them on the
+ * way out and decoding them on the way in — one more place for the two ends to
+ * disagree about what a filename is. A query value carries them literally.
+ * (Spec §3.10 sketches the P3 write as `PUT /:id/files/<path>`; it should take
+ * this shape instead, so read and write name a file the same way.)
+ *
+ * Gated identically to `GET /:id/files`. Three honest answers rather than one:
+ * the text, `binary` for a file with a `NUL` in it — whose bytes are never
+ * decoded into a string — or `too-large` against
+ * `config.rooms.repo.maxFileBytes`, checked against the size git already knows
+ * so an enormous file costs nothing to refuse. A directory, a symlink and a
+ * submodule are each refused 400 `ROOM_FILE_NOT_READABLE`.
+ *
+ * Declared after `GET /:id/files`, which is safe: Express 5 matches `/:id` and
+ * the literal `files` a segment at a time, so the two paths cannot collide.
+ */
+router.get('/:id/files/content', (req, res) => {
+  const query = parseBody(RoomFileContentQuerySchema, req.query, res);
+  if (!query) return;
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      getRoomService().assertCanReadFiles(req.params.id, caller.id);
+      res.json(await getRoomFilesService().read(req.params.id, query.path));
+    } catch (err) {
+      sendRoomError(res, err, 'GET /:id/files/content');
     }
   })();
 });

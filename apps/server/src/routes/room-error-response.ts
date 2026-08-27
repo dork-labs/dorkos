@@ -84,6 +84,18 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // A 409 rather than a 500: the request was well formed and nothing is broken.
   // This machine is missing a program, and installing it changes the answer.
   ROOM_REPO_GIT_UNAVAILABLE: 409,
+  // A 409 beside the other two room-repo states: the room is real, the caller
+  // may see it, and there is simply nothing to read yet. Never a 404 — that
+  // status is reserved for "no such room", which is also what a non-member
+  // gets, and reusing it here would make the two indistinguishable in a log.
+  ROOM_HAS_NO_REPO: 409,
+  ROOM_FILE_PATH_INVALID: 400,
+  // A 404 about a PATH, not about a room. It is only reachable by a caller the
+  // room has already admitted, so it discloses nothing a listing does not.
+  ROOM_FILE_NOT_FOUND: 404,
+  // A 400: the path is real, but it is a folder, a link or another repository
+  // and the request asked for something else. The message says which.
+  ROOM_FILE_NOT_READABLE: 400,
 };
 
 /**
