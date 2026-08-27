@@ -6,8 +6,12 @@
  * catch a regression in the migration guarantee — they are why a turn that
  * already names its directory is untouched by any of this.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, realpath, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve as resolvePath } from 'node:path';
 import type { AgentManifest, AgentWorkspaceBinding } from '@dorkos/shared/mesh-schemas';
+import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { Workspace } from '@dorkos/shared/workspace';
 import {
   resolveSessionCwd,
@@ -67,6 +71,9 @@ function makeDeps(over: Partial<ResolveSessionCwdDeps> = {}): ResolveSessionCwdD
     // fails for the reason it is about, never for a temp-dir realpath.
     validateAgentHome: vi.fn(async (p: string) => p),
     validateManagedCheckout: vi.fn(async (p: string) => p),
+    // Identity by default; the canonicalization rows below inject a fake that
+    // actually collapses, so every OTHER row fails for its own reason.
+    canonicalize: vi.fn(async (p: string) => p),
     defaultCwd: DEFAULT,
     ...over,
   };
@@ -109,11 +116,16 @@ describe('resolveSessionCwd — rung 3, the agent binding', () => {
     expect(deps.validateAgentHome).toHaveBeenCalledWith(AGENT);
   });
 
-  it('an absent workspace field reads as home — the migration guarantee', async () => {
-    const legacy = manifest({ mode: 'home' });
-    // Exactly what a pre-change `agent.json` parses to once the schema default
-    // has filled the missing key.
-    const deps = makeDeps({ readManifest: vi.fn(async () => legacy) });
+  // The migration guarantee, and it has to go through the SCHEMA to mean
+  // anything. Handing the resolver an already-defaulted `{ mode: 'home' }`
+  // would assert only that `home` resolves to `home`, and would stay green with
+  // the schema's `.default()` deleted — which is the thing under test.
+  it('a pre-change manifest with no workspace key at all reads as home', async () => {
+    const { workspace: _absent, ...legacy } = manifest({ mode: 'home' });
+    const parsed = AgentManifestSchema.parse(legacy);
+    expect(parsed.workspace).toEqual({ mode: 'home' });
+
+    const deps = makeDeps({ readManifest: vi.fn(async () => parsed) });
 
     expect((await resolveSessionCwd({ agentPath: AGENT }, deps)).rung).toBe('agent-home');
   });
@@ -245,6 +257,11 @@ describe('resolveSessionCwd — rung 4, and never failing the turn', () => {
 
     expect(result.rung).toBe('agent-home');
     expect(result.degraded).toMatch(/outside directory boundary/);
+    // The whole managed branch shares one `try`, so "degraded with a
+    // boundary-shaped message" is also what a checkout that was never validated
+    // at all would look like if `ensureWorkspace` threw the same words. Assert
+    // the check RAN, on the path that was resolved.
+    expect(deps.validateManagedCheckout).toHaveBeenCalledWith(workspaceRow().path);
   });
 
   // The only route to `DEFAULT_CWD` on this rung: the agent's own folder is
@@ -305,5 +322,87 @@ describe('agentWorkspaceKey', () => {
   it('sanitizes a name that would otherwise be an illegal key', () => {
     const { key } = agentWorkspaceKey('api bot/v2', AGENT, '/vault/dorkos');
     expect(key).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+});
+
+describe('one spelling per directory', () => {
+  const tempRoots: string[] = [];
+
+  afterEach(async () => {
+    for (const dir of tempRoots.splice(0)) await rm(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * A real agent directory plus a symlink pointing at it, both absolute.
+   *
+   * Real filesystem rather than a stubbed `canonicalize`, because the bug being
+   * guarded is precisely that `realpath` and the raw spelling disagree — a fake
+   * that "collapses" whatever it is told to collapse would prove nothing about
+   * whether the production one is wired in.
+   */
+  async function realAndSymlinked(): Promise<{ real: string; link: string }> {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'agent-canon-')));
+    tempRoots.push(root);
+    const real = join(root, 'real-agent');
+    const link = join(root, 'linked-agent');
+    await mkdir(real, { recursive: true });
+    await symlink(real, link, 'dir');
+    return { real, link };
+  }
+
+  it('a symlinked agent directory derives the same workspace key as the real one', async () => {
+    const { real, link } = await realAndSymlinked();
+    const managed = manifest({ mode: 'managed', source: '/vault/dorkos' });
+
+    // The REAL `realpath`, not the identity stub every other row uses: the bug
+    // guarded here is exactly that the two spellings disagree.
+    const viaReal = makeDeps({
+      readManifest: vi.fn(async () => managed),
+      canonicalize: (p) => realpath(p),
+    });
+    const viaLink = makeDeps({
+      readManifest: vi.fn(async () => managed),
+      canonicalize: (p) => realpath(p),
+    });
+
+    await resolveSessionCwd({ agentPath: real }, viaReal);
+    await resolveSessionCwd({ agentPath: link }, viaLink);
+
+    const keyFromReal = vi.mocked(viaReal.ensureWorkspace).mock.calls[0]?.[0];
+    const keyFromLink = vi.mocked(viaLink.ensureWorkspace).mock.calls[0]?.[0];
+    expect(keyFromLink?.key).toBe(keyFromReal?.key);
+    // And the OWNER records one directory, not two — otherwise the sweep
+    // exemption protects at most one of an agent's two identities.
+    expect(keyFromLink?.owner).toEqual(keyFromReal?.owner);
+    expect(keyFromLink?.owner).toEqual({ kind: 'agent', ref: real });
+  });
+
+  it('a trailing slash and a dot segment are the same agent', async () => {
+    const deps = makeDeps({
+      readManifest: vi.fn(async () => manifest({ mode: 'managed', source: '/vault/dorkos' })),
+      canonicalize: (p) => Promise.resolve(resolvePath(p)),
+    });
+
+    await resolveSessionCwd({ agentPath: '/vault/agents/api-bot/' }, deps);
+    await resolveSessionCwd({ agentPath: '/vault/agents/./api-bot' }, deps);
+
+    const [first, second] = vi.mocked(deps.ensureWorkspace).mock.calls;
+    expect(second?.[0].key).toBe(first?.[0].key);
+    expect(second?.[0].owner).toEqual(first?.[0].owner);
+  });
+
+  it('a directory that does not resolve still answers one stable spelling', async () => {
+    const deps = makeDeps({
+      readManifest: vi.fn(async () => manifest({ mode: 'managed', source: '/vault/dorkos' })),
+      // The production fallback: `realpath` throws, `path.resolve` answers.
+      canonicalize: (p) => Promise.resolve(resolvePath(p)),
+    });
+
+    await resolveSessionCwd({ agentPath: '/nope/gone/' }, deps);
+
+    expect(vi.mocked(deps.ensureWorkspace).mock.calls[0]?.[0].owner).toEqual({
+      kind: 'agent',
+      ref: '/nope/gone',
+    });
   });
 });

@@ -46,6 +46,7 @@
  * @module server/services/workspace/resolve-session-cwd
  */
 import { createHash } from 'node:crypto';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
@@ -106,8 +107,35 @@ export interface ResolveSessionCwdDeps {
   validateAgentHome(candidate: string): Promise<string>;
   /** Boundary check for a managed checkout (no carve-out — it is a raw tree). */
   validateManagedCheckout(candidate: string): Promise<string>;
+  /** Canonical form of an agent directory — see {@link canonicalAgentPath}. */
+  canonicalize(agentPath: string): Promise<string>;
   /** The server's default working directory. */
   defaultCwd: string;
+}
+
+/**
+ * One spelling per directory, for the two places a spelling becomes an identity.
+ *
+ * `/tmp/x`, `/private/tmp/x` and `/tmp/x/` are the same folder and hash to three
+ * different digests, which would give one agent up to three separate checkouts —
+ * and, through `owner.ref`, up to three ownership records of which at most one
+ * would ever match. `realpath` collapses symlinks and `path.resolve` the
+ * trailing-slash and `.`/`..` spellings.
+ *
+ * Falls back to the lexically normalized path when the directory does not
+ * resolve. That is not a soundness hole: nothing here is a containment decision
+ * (the boundary validators, which do their own canonicalization, are), and an
+ * agent whose folder is missing is going to degrade a rung anyway. Answering
+ * something stable beats throwing on the hot path.
+ *
+ * @param agentPath - The agent's directory, however it was spelled.
+ */
+async function canonicalAgentPath(agentPath: string): Promise<string> {
+  try {
+    return await fs.realpath(agentPath);
+  } catch {
+    return path.resolve(agentPath);
+  }
 }
 
 /** The production collaborators. Resolved lazily so imports stay side-effect-free. */
@@ -118,6 +146,7 @@ function productionDeps(): ResolveSessionCwdDeps {
     sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
     validateAgentHome: (candidate) => validateBoundaryOrDorkHome(candidate),
     validateManagedCheckout: (candidate) => validateBoundary(candidate),
+    canonicalize: canonicalAgentPath,
     defaultCwd: DEFAULT_CWD,
   };
 }
@@ -260,13 +289,18 @@ async function resolveAgentBinding(
   if (binding.mode === 'home') return home(agentPath, deps);
 
   try {
-    const { projectKey, key } = agentWorkspaceKey(manifest.name, agentPath, binding.source);
+    // Canonical, because this is where a PATH becomes an IDENTITY twice over:
+    // once digested into the workspace key, once stored as `owner.ref`. The
+    // spelling the caller happened to use must not decide either — see
+    // {@link canonicalAgentPath}.
+    const canonical = await deps.canonicalize(agentPath);
+    const { projectKey, key } = agentWorkspaceKey(manifest.name, canonical, binding.source);
     const workspace = await deps.ensureWorkspace({
       projectKey,
       key,
       source: binding.source,
       ...(binding.provider ? { provider: binding.provider } : {}),
-      owner: { kind: 'agent', ref: agentPath },
+      owner: { kind: 'agent', ref: canonical },
     });
     return {
       cwd: await deps.validateManagedCheckout(workspace.path),
