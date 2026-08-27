@@ -174,7 +174,7 @@ while true; do
       case "$cur" in
         PENDING|QUEUED*)
           case "$prev" in
-            FAILING*|CONFLICTING|STALLED_IN_QUEUE) echo "PR #$pr RECOVERED -> $cur" ;;
+            FAILING*|CONFLICTING|STALLED_IN_QUEUE|STUCK_UNMERGEABLE) echo "PR #$pr RECOVERED -> $cur" ;;
             "") : ;; # first sight of a healthy PR: stay quiet
             *) echo "PR #$pr -> $cur" ;;
           esac ;;
