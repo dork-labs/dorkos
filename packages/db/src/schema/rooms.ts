@@ -832,10 +832,16 @@ export const roomRepos = sqliteTable('room_repos', {
    * The room this repo belongs to — primary key, so "at most one repo per room"
    * is true by construction rather than by a sweep.
    *
-   * A real foreign key with `ON DELETE CASCADE`, unlike the other room child
-   * tables here: those predate the constraint and clean up in application code,
-   * while this row has no meaning at all once its room is gone and no path that
-   * would want to see it survive one.
+   * A real foreign key with `ON DELETE CASCADE` — the first FK onto `rooms.id`
+   * in this schema. The sibling room tables carry none because nothing in the
+   * product deletes a room today, so they never had the question to answer.
+   *
+   * The cascade removes only the ROW. The directory it points at —
+   * `{dorkHome}/rooms/<id>/` with the sidecar, `repo/` and `worktrees/` — is
+   * not touched by SQLite, and a sidecar left behind makes the rebuild
+   * reconciler fail its re-insert on this very FK. Whatever path first deletes
+   * a room (DOR-1592 owns delete/archive) owes the on-disk cleanup in the same
+   * breath as the row.
    */
   roomId: text('room_id')
     .primaryKey()
