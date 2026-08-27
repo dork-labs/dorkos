@@ -254,7 +254,27 @@ export type RoomErrorCode =
    * instead. Refused rather than silently falling back to a create, because the
    * two differ in whether an existing room and its history are adopted.
    */
-  | 'NO_SURVIVING_BRIDGE';
+  | 'NO_SURVIVING_BRIDGE'
+  /**
+   * Somebody asked for a room's own files on an install where
+   * `config.rooms.repo.enabled` is `false` (spec `project-rooms` §3.12).
+   *
+   * A 409 rather than a 404: the surface exists and the request was well
+   * formed — the person turned this off, and turning it back on is what changes
+   * the answer. Nothing on disk is deleted when it is off, so a room that
+   * already had files still has them.
+   */
+  | 'ROOM_REPOS_DISABLED'
+  /**
+   * A hard delete would have destroyed work no `main` holds — an agent's
+   * worktree with uncommitted edits, or with commits it never merged back
+   * (spec `project-rooms` §3.2).
+   *
+   * The refusal names the worktrees, because the remedy is in them: merge the
+   * work, or delete anyway. Archiving never reaches this — an archived room
+   * keeps everything.
+   */
+  | 'ROOM_REPO_UNMERGED_WORK';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

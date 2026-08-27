@@ -271,7 +271,14 @@ import {
   setRoomInternals,
   setWelcomeBackGreeter,
   setRoomAttachmentStores,
+  setRoomRepoService,
 } from './services/rooms/index.js';
+import {
+  readRoomRepoConfig,
+  RoomRepoReconciler,
+  RoomRepoService,
+  RoomRepoStore,
+} from './services/rooms/repo/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
 import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
 import {
@@ -1155,6 +1162,44 @@ async function start() {
     if (!raw) return null;
     return sanitizeIdentity(raw) ?? null;
   };
+
+  // A room's own files (spec `project-rooms` §3). Same doctrine as the
+  // attachment store above: WHERE they live is decided here and nowhere else,
+  // and `dorkHome` is handed in rather than resolved downstream —
+  // `os.homedir()` is banned in this tree (Hard Rule 3).
+  //
+  // Unconditional, like the rooms graph itself: the store is an object and the
+  // reconciler is one unref'd timer, and a room only gains files when the
+  // person gives it some. Every config value below is read PER CALL, so
+  // turning the feature on or changing a cap binds the next request rather
+  // than the next server start.
+  const roomRepoStore = new RoomRepoStore(db, dorkHome);
+  setRoomRepoService(
+    new RoomRepoService({
+      store: roomRepoStore,
+      enabled: () => readRoomRepoConfig().enabled,
+      getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
+      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+      // The person's own name from their profile, which is the only place a
+      // real human name is stored on this machine — never the room registry's
+      // label for them, which `bindOwner` fixes at 'You' forever (right in
+      // their own window, bizarre in `git log`).
+      operatorGitName: resolveOperatorDisplayName,
+      caps: () => {
+        const repo = readRoomRepoConfig();
+        return {
+          maxFileBytes: repo.maxFileBytes,
+          maxRepoBytes: repo.maxRepoBytes,
+          maxRoomMdBytes: repo.maxRoomMdBytes,
+        };
+      },
+    })
+  );
+  // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
+  // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
+  // a room's files — see its module doc for why an orphaned home directory is
+  // reported and left standing.
+  new RoomRepoReconciler(roomRepoStore).start();
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the

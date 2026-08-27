@@ -3431,6 +3431,35 @@ const roomOperatorOnly = {
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
 
+/**
+ * The documentation shape of a room's repo binding — one of the `Local*Schema`
+ * simplifications this module's header describes.
+ *
+ * The authority is `RoomRepoSidecarSchema` in `@dorkos/shared/room-repo`; this
+ * restates it because that schema narrows `mode` through a `refine`, which
+ * zod-to-openapi renders as an unhelpful union rather than as the single value
+ * this build ever writes.
+ */
+const LocalRoomRepoSchema = z
+  .object({
+    roomId: z.string(),
+    mode: z.literal('owned').describe("Always 'owned'; linked repos are reserved and refused."),
+    createdAt: z.string(),
+    createdBy: z.string().describe('The author id of the operator who enabled it.'),
+    defaultBranch: z.literal('main'),
+    caps: z.object({
+      maxFileBytes: z.number().int(),
+      maxRepoBytes: z.number().int(),
+      maxRoomMdBytes: z.number().int(),
+    }),
+    lastMergeSeq: z
+      .number()
+      .int()
+      .nullable()
+      .describe('The room entry seq of the last merge, or null when nothing has merged yet.'),
+  })
+  .openapi('RoomRepo');
+
 registry.registerPath({
   method: 'get',
   path: '/api/rooms',
@@ -3945,6 +3974,43 @@ registry.registerPath({
     404: {
       description: 'No such room, or not a member of it',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/repo',
+  tags: ['Rooms'],
+  summary: 'Give a room files of its own',
+  description:
+    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
+  request: { params: RoomIdParams },
+  responses: {
+    201: {
+      description: 'The room now has files of its own',
+      content: {
+        'application/json': { schema: z.object({ repo: LocalRoomRepoSchema }) },
+      },
+    },
+    401: roomAgentUnverified,
+    403: {
+      description: 'The caller is not the person who owns this install (`OPERATOR_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: roomNotFound,
+    409: {
+      description:
+        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
+      content: {
+        'application/json': {
+          schema: z.object({
+            error: z.string(),
+            code: z.string(),
+            repo: LocalRoomRepoSchema.optional(),
+          }),
+        },
+      },
     },
   },
 });

@@ -31,6 +31,7 @@ import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
+import type { RoomRepoService } from './repo/room-repo-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
@@ -534,6 +535,26 @@ export function getRoomAttachmentStore(): RoomAttachmentStore {
 export function getAttachmentRowStore(): AttachmentRowStore {
   if (!activeAttachmentRows) throw new Error('AttachmentRowStore not initialized');
   return activeAttachmentRows;
+}
+
+let activeRepos: RoomRepoService | null = null;
+
+/**
+ * Register the room-repo service at bootstrap, beside
+ * {@link setRoomAttachmentStores} and for the same reason: WHERE a room's files
+ * live is a deployment decision made once in `index.ts`, and this module must
+ * not make it.
+ *
+ * @param service - The wired service.
+ */
+export function setRoomRepoService(service: RoomRepoService): void {
+  activeRepos = service;
+}
+
+/** The active room-repo service (throws if bootstrap has not run). */
+export function getRoomRepoService(): RoomRepoService {
+  if (!activeRepos) throw new Error('RoomRepoService not initialized');
+  return activeRepos;
 }
 
 let activeBridges: BridgeStore | null = null;
