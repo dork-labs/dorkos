@@ -9,7 +9,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { AgentManifestSchema } from './mesh-schemas.js';
+import { AgentManifestSchema, AgentWorkspaceBindingSchema } from './mesh-schemas.js';
 import { CONVENTION_DIR } from './convention-files.js';
 import type { AgentManifest } from './mesh-schemas.js';
 import type { Logger } from './logger.js';
@@ -68,7 +68,42 @@ export async function readManifest(
     );
     return null;
   }
+  warnIfBindingDegraded(parsed, manifestPath, logger);
   return result.data;
+}
+
+/**
+ * Say so when a `workspace` binding was read as `home` because it could not be
+ * read as itself.
+ *
+ * The degradation lives on the schema (`.catch()`), and it has to be a STATIC
+ * value there — a function catch breaks JSON Schema generation for every MCP
+ * tool that embeds the manifest. So the schema cannot speak, and this does:
+ * degrading is fine, degrading QUIETLY is not. A binding nobody can parse is
+ * either a typo somebody needs to hear about or a mode written by a newer build,
+ * and both are worth one line rather than an agent that appears to have a
+ * preference it does not have.
+ *
+ * An ABSENT `workspace` key is not a degradation — it is the migration
+ * guarantee, and it is silent.
+ *
+ * @param raw - The manifest as parsed from JSON, before schema coercion.
+ * @param manifestPath - Path to name in the warning.
+ * @param logger - Warn sink.
+ */
+function warnIfBindingDegraded(
+  raw: unknown,
+  manifestPath: string,
+  logger: Pick<Logger, 'warn'>
+): void {
+  if (raw === null || typeof raw !== 'object') return;
+  const declared = (raw as { workspace?: unknown }).workspace;
+  if (declared === undefined) return;
+  if (AgentWorkspaceBindingSchema.safeParse(declared).success) return;
+  logger.warn(
+    `[manifest] ${manifestPath} has a workspace binding this build cannot read; ` +
+      `running the agent in its own folder instead: ${JSON.stringify(declared)}`
+  );
 }
 
 /**

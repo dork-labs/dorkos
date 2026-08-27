@@ -5128,7 +5128,35 @@
             "default": []
           },
           "workspace": {
-            "$ref": "#/components/schemas/AgentWorkspaceBinding"
+            "type": "object",
+            "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "home",
+                  "managed",
+                  "none"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "description": "Repository or directory the checkout is made from ('managed' only)."
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "worktree",
+                  "clone"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "example": {
+              "mode": "home"
+            }
           }
         },
         "required": [
@@ -5372,70 +5400,6 @@
           "addedBy"
         ]
       },
-      "AgentWorkspaceBinding": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "home"
-                ]
-              }
-            },
-            "required": [
-              "mode"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "managed"
-                ]
-              },
-              "source": {
-                "type": "string",
-                "minLength": 1
-              },
-              "provider": {
-                "$ref": "#/components/schemas/WorkspaceProviderType"
-              }
-            },
-            "required": [
-              "mode",
-              "source"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "none"
-                ]
-              }
-            },
-            "required": [
-              "mode"
-            ]
-          }
-        ],
-        "default": {
-          "mode": "home"
-        }
-      },
-      "WorkspaceProviderType": {
-        "type": "string",
-        "enum": [
-          "worktree",
-          "clone"
-        ]
-      },
       "RegisterAgentRequest": {
         "type": "object",
         "properties": {
@@ -5557,7 +5521,35 @@
                 "default": []
               },
               "workspace": {
-                "$ref": "#/components/schemas/AgentWorkspaceBinding"
+                "type": "object",
+                "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "home",
+                      "managed",
+                      "none"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "Repository or directory the checkout is made from ('managed' only)."
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "worktree",
+                      "clone"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "example": {
+                  "mode": "home"
+                }
               }
             }
           },

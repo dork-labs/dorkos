@@ -11,6 +11,7 @@ import {
   MANIFEST_FILE,
 } from '../manifest.js';
 import type { AgentManifest } from '../mesh-schemas.js';
+import { AgentWorkspaceBindingSchema } from '../mesh-schemas.js';
 
 // === Helpers ===
 
@@ -544,20 +545,21 @@ describe('workspace binding (spec `agent-workspace-binding` §3.1)', () => {
     expect((await readManifest(projectDir))?.workspace).toEqual({ mode: 'none' });
   });
 
-  it('refuses a managed binding with no source', async () => {
-    const projectDir = await makeTempDir();
-    const bad = {
-      ...makeManifest(),
-      workspace: { mode: 'managed' },
-    } as unknown as AgentManifest;
+  it('rejects a managed binding with no source at the schema', () => {
+    const bad = { ...makeManifest(), workspace: { mode: 'managed' } };
 
-    await expect(writeManifest(projectDir, bad)).rejects.toThrow(/invalid agent manifest/i);
+    // The union itself is strict — `source` is what makes `managed` mean
+    // anything. It is the MANIFEST FIELD that degrades rather than refuses, and
+    // the next two cases are what that looks like.
+    expect(AgentWorkspaceBindingSchema.safeParse(bad.workspace).success).toBe(false);
   });
 
-  // Deliberately NOT `.catch()`-degraded: a binding the schema cannot read is a
-  // manifest whose author's intent is unknown, and quietly running the turn
-  // somewhere else would be the wrong kind of resilience.
-  it('reads back null on an unknown mode rather than degrading to home', async () => {
+  // `.catch()`-degraded, on the `model`/`effort` precedent. Refusing the parse
+  // would cost the agent its whole presence in the fleet — `readManifest`
+  // answers `null`, and every list, roster and router stops seeing it — over a
+  // typo that changes no cwd, since an unreadable manifest already resolves to
+  // the agent's own folder, which is exactly what `home` means.
+  it('an unreadable binding reads as home instead of losing the agent', async () => {
     const projectDir = await makeTempDir();
     const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
     await fs.mkdir(path.dirname(manifestPath), { recursive: true });
@@ -566,9 +568,54 @@ describe('workspace binding (spec `agent-workspace-binding` §3.1)', () => {
       JSON.stringify({ ...makeManifest(), workspace: { mode: 'ludicrous' } }),
       'utf-8'
     );
-
     const warn = vi.fn();
-    expect(await readManifest(projectDir, { warn })).toBeNull();
+
+    const result = await readManifest(projectDir, { warn });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace).toEqual({ mode: 'home' });
+    // Degrading is fine; degrading QUIETLY is not. The warning cannot come from
+    // the schema — a function `.catch()` breaks JSON Schema generation for every
+    // MCP tool that embeds the manifest — so `readManifest` says it instead.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/workspace binding this build cannot read/)
+    );
+  });
+
+  // Forward compatibility, which is the other half of the same decision: a mode
+  // written by a NEWER build must not make the agent vanish on a downgrade. It
+  // reads as `home` here and stays on disk verbatim, so the newer build still
+  // finds what it wrote.
+  it('keeps an unknown mode on disk while reading it as home', async () => {
+    const projectDir = await makeTempDir();
+    const warn = vi.fn();
+    const future = {
+      ...makeManifest(),
+      workspace: { mode: 'room-worktree', roomId: 'r1' },
+    } as unknown as AgentManifest;
+
+    await writeManifest(projectDir, future);
+    const reread = await readManifest(projectDir, { warn });
+    const raw: unknown = JSON.parse(
+      await fs.readFile(path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE), 'utf-8')
+    );
+
+    expect(reread?.workspace).toEqual({ mode: 'home' });
+    expect((raw as AgentManifest).workspace).toEqual({ mode: 'room-worktree', roomId: 'r1' });
     expect(warn).toHaveBeenCalled();
+  });
+
+  // The migration guarantee is NOT a degradation, so it must not be reported as
+  // one. A warning on every pre-change manifest would be noise on every boot.
+  it('says nothing when the workspace key is simply absent', async () => {
+    const projectDir = await makeTempDir();
+    const { workspace: _absent, ...legacy } = makeManifest();
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, JSON.stringify(legacy), 'utf-8');
+    const warn = vi.fn();
+
+    expect((await readManifest(projectDir, { warn }))?.workspace).toEqual({ mode: 'home' });
+    expect(warn).not.toHaveBeenCalled();
   });
 });

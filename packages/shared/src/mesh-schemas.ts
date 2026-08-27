@@ -389,6 +389,48 @@ export const AgentWorkspaceBindingSchema = z
 /** Where an agent works — see {@link AgentWorkspaceBindingSchema}. */
 export type AgentWorkspaceBinding = z.infer<typeof AgentWorkspaceBindingSchema>;
 
+/**
+ * OpenAPI metadata for the manifest field, spelled out because the generator
+ * cannot see through a `ZodCatch` (it throws "Unknown zod object type" and takes
+ * the whole document with it).
+ *
+ * So the union is described by hand here, flattened into one object rather than
+ * a `oneOf` — the same trade the `model` field makes two hundred lines below,
+ * where an enum is documented as a bare string for the same reason. The
+ * authoritative shape stays {@link AgentWorkspaceBindingSchema}; this is the
+ * doc's copy of it, and the two are kept together deliberately.
+ */
+const WORKSPACE_BINDING_OPENAPI = {
+  type: 'object' as const,
+  description:
+    "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+  properties: {
+    mode: { type: 'string' as const, enum: ['home', 'managed', 'none'] },
+    source: {
+      type: 'string' as const,
+      description: "Repository or directory the checkout is made from ('managed' only).",
+    },
+    provider: { type: 'string' as const, enum: ['worktree', 'clone'] },
+  },
+  required: ['mode'],
+  example: { mode: 'home' },
+};
+
+/**
+ * What an unreadable `workspace` binding is read as.
+ *
+ * A STATIC value, and it has to be: zod's JSON Schema generation refuses a
+ * function catch outright ("Dynamic catch values are not supported in JSON
+ * Schema"), and every MCP tool whose input schema embeds the manifest goes
+ * through that generation — a function here took `tools/list` down on both MCP
+ * servers, which is to say every external MCP caller lost every tool.
+ *
+ * So the degradation cannot announce itself from inside the schema. It is
+ * announced by {@link readManifest} instead, which has a logger and is the one
+ * path that reads these files off disk.
+ */
+const UNREADABLE_BINDING_FALLBACK: AgentWorkspaceBinding = { mode: 'home' };
+
 export const AgentManifestSchema = z
   .object({
     id: z.string().min(1).describe('ULID assigned at registration'),
@@ -473,13 +515,26 @@ export const AgentManifestSchema = z
     // field existed keeps working, and keeps meaning what it already meant: the
     // agent works in its own directory.
     //
-    // Deliberately NOT `.catch()`-degraded, unlike `model`/`effort` above. Those
-    // name a setting; this names WHERE WORK HAPPENS, and a binding that says
-    // something the schema cannot read is a manifest whose author's intent is
-    // unknown. Quietly running the turn somewhere else would be the wrong kind
-    // of resilience, so a malformed binding fails the manifest parse — loudly,
-    // with the offending path and issues logged by `readManifest`.
-    workspace: AgentWorkspaceBindingSchema.default({ mode: 'home' }),
+    // `.catch()`-degraded on exactly the `model`/`effort` precedent above, and
+    // the `.openapi(...)` outside the `.catch()` is load-bearing for the same
+    // reason (the generator cannot see through a `ZodCatch`).
+    //
+    // Strictness was tried here first and bought nothing. On the axis that
+    // matters — which directory a turn runs in — an unreadable manifest and a
+    // `home` binding reach the SAME place: `resolveSessionCwd` degrades an
+    // unreadable manifest to the agent's own folder, which is what `home` means.
+    // So refusing the parse changed no cwd; it only cost the agent its entire
+    // presence in the fleet (`readManifest` returns null, and every list, roster
+    // and router stops seeing it) over one typo. Worse, it bricked forward
+    // compatibility: a newer build writing a mode this one has not learned yet
+    // would make the agent vanish on downgrade, rather than fall back to its own
+    // folder and carry on.
+    //
+    // The degradation is not silent — {@link warnUnreadableBinding} says so on
+    // the way past.
+    workspace: AgentWorkspaceBindingSchema.default({ mode: 'home' })
+      .catch(UNREADABLE_BINDING_FALLBACK)
+      .openapi(WORKSPACE_BINDING_OPENAPI),
   })
   .openapi('AgentManifest');
 
