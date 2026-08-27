@@ -634,8 +634,20 @@ export class TaskSchedulerService {
    * method WAS the derivation, and it would have kept answering `projectPath`
    * for an agent that had asked for a checkout of its own.
    *
-   * A missing agent still throws, loudly and unchanged: an unregistered agent is
-   * a broken link a person has to fix, not a directory the scheduler may guess.
+   * Two failures, told apart on purpose:
+   *
+   * - **A missing agent throws**, loudly and unchanged. An unregistered agent is
+   *   a broken LINK a person has to fix — there is no directory to run in, so
+   *   the run must not start.
+   * - **A registered agent whose binding cannot be honored does not throw.** The
+   *   directory exists; only the preference about it is unreadable. The chain
+   *   degrades one rung, to the agent's own folder, and logs the reason
+   *   (`[cwd] resolved` carries `degraded`). Failing the run there would turn a
+   *   typo in `agent.json` into a schedule that silently stops firing.
+   *
+   * So this method is strict about the link and forgiving about the preference,
+   * which is not a contradiction: one of them says WHETHER the run can happen and
+   * the other only says WHERE.
    *
    * @param task - The task to resolve CWD for
    * @returns The absolute path to use as CWD for this run

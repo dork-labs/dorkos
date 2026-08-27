@@ -114,7 +114,11 @@ The name makes the directory legible on disk and in the `/workspaces` list; the 
 // apps/server/src/services/workspace/resolve-session-cwd.ts
 export interface ResolvedCwd {
   cwd: string;
-  rung: 'explicit' | 'agent-home' | 'agent-managed' | 'default';
+  // `room-worktree` is DECLARED here and returned by nothing: the project-rooms
+  // programme (spec `project-rooms` §3.5) wires it in its task 2.2. It sits
+  // between `explicit` and the agent binding, so the type is the whole chain
+  // rather than most of it.
+  rung: 'explicit' | 'room-worktree' | 'agent-home' | 'agent-managed' | 'default';
   workspaceId?: string;
   /** Why a lower rung answered than the binding asked for. */
   degraded?: string;
@@ -123,7 +127,7 @@ export interface ResolvedCwd {
 export async function resolveSessionCwd(req: {
   cwd?: string;
   agentPath?: string;
-  sessionId: string;
+  sessionId?: string;
 }): Promise<ResolvedCwd>;
 ```
 
@@ -133,13 +137,19 @@ Order, exactly:
 2. **An agent is named** — `req.agentPath`, else `session_metadata.agent_path` for `sessionId`. Read its manifest:
    - `home` → `{ cwd: agentPath, rung: 'agent-home' }`.
    - `managed` → `ensure({ projectKey, key, source, provider, owner })` → `{ cwd: workspace.path, rung: 'agent-managed', workspaceId }`.
-   - `none` → fall to 3.
-   - manifest unreadable or agent unregistered → fall to 3 with `degraded`.
+   - `none` → fall to 3. No `degraded`: sharing the default folder is what was asked for.
+   - manifest unreadable, or a `managed` binding that cannot be provisioned → **stay on rung 2 as `agent-home`, carrying a `degraded` reason.**
 3. **`DEFAULT_CWD`** → `{ rung: 'default' }`.
 
-The result is boundary-validated before use: `validateBoundaryOrDorkHome` for rungs 2 and 3 (an agent home under `{dorkHome}/agents/*` is legitimate by design — see `lib/boundary.ts:21-28`), `validateBoundary` for a managed checkout, which always lives under the workspace root.
+**Degradation goes one rung, not all the way out.** An earlier draft of this spec sent every rung-2 failure to `DEFAULT_CWD`. That is wrong, and the reason is DOR-500: reaching rung 2 at all means the caller ALREADY KNOWS the agent's directory, so answering with the shared default would move that agent's work into the tree every other agent is also writing in — over an unreadable file. The interleaving this whole chain exists to prevent would be reintroduced by its own error path.
 
-**Failure never fails the turn.** A `managed` binding whose provisioning throws — port pool exhausted (`port-allocator.ts:41-44`), git failure, source repo missing — degrades to rung 3 with a warning, mirroring the existing `try`/`catch` at `sessions.ts:409-417`. A turn that cannot get its preferred tree still runs; it does not 500.
+So an unreadable manifest reads as `home`, on exactly the same rule as an ABSENT `workspace` field, and a `managed` binding that cannot be provisioned falls back to the agent's own folder rather than to the vault root. `DEFAULT_CWD` is reached from rung 2 in one case only: the agent's own folder is itself refused by the boundary, so there is nothing nearer left to fall back to.
+
+The result is boundary-validated before use: `validateBoundaryOrDorkHome` for the agent-home rung (an agent home under `{dorkHome}/agents/*` is legitimate by design — see `lib/boundary.ts`), `validateBoundary` for a managed checkout, which always lives under the workspace root. Rung 1 is deliberately NOT validated — an explicit `cwd` reaches the runtime exactly as it did before this resolver existed, and the surfaces that must confine a person-supplied path (file reads, terminal, git, the directory browser) validate at their own edges. Validating here would 403 turns that run today, which is the one thing this change promised not to do.
+
+**Failure never fails the turn.** A `managed` binding whose provisioning throws — port pool exhausted (`port-allocator.ts`), git failure, source repo missing — degrades as above with a warning, mirroring the existing `try`/`catch` in the `workspaceKey` block. A turn that cannot get its preferred tree still runs; it does not 500.
+
+**One spelling per directory.** The agent path is canonicalized (`fs.realpath`, falling back to `path.resolve` when the directory does not resolve) before it is digested into the workspace key and before it is stored as `owner.ref`. `/tmp/x`, `/private/tmp/x` and `/tmp/x/` are one folder; without this they would be three digests, giving one agent up to three checkouts and up to three ownership records of which at most one could ever match.
 
 **Call site.** `POST /api/sessions/:id/messages`, replacing the current `workspaceKey` block (`sessions.ts:391-417`). `workspaceKey` survives untouched and takes precedence over the agent binding when supplied — it is a per-turn unit-of-work override, a strictly more specific statement than a standing per-agent preference.
 
@@ -214,7 +224,9 @@ apps/client/src/layers/features/agent-hub/     # the Workspace control
 
 ### 3.10 API changes
 
-- `AgentManifest` gains `workspace` — so `GET/POST /api/agents`, `PATCH /api/agents`, the mesh registration payloads, and the `create_agent` MCP tool all carry it for free through the existing Zod schema. OpenAPI regenerates.
+- `AgentManifest` gains `workspace`, so every surface that READS a manifest carries it for free through the existing Zod schema — `GET/POST /api/agents`, the mesh registration payloads, the `create_agent` MCP tool. OpenAPI regenerates.
+- **`PATCH /api/agents` does NOT carry it, and that is deliberate.** The PATCH surface is an explicit `.pick()` allowlist on `UpdateAgentRequestSchema`, and `workspace` is not in it — nothing rides that route "for free". Phase 1 leaves it out rather than answering the open question below ("should an agent be able to change its own binding?") by accident: adding it to the allowlist is a one-line, reversible decision, while shipping it and then discovering it needed operator-only classification means moving the field out of `agent.json`, which is a migration. **Until Phase 2 adds the Agent Hub control, the only way to set a binding is to edit `.dork/agent.json` directly.**
+- The `workspace` field is `.catch()`-degraded on the manifest, on the `model`/`effort` precedent: a binding this build cannot read is logged and read as `{ mode: 'home' }` rather than failing the whole manifest parse. Strictness was tried and reverted — it changed no cwd (an unreadable manifest already resolves to the agent's own folder, which is what `home` means) while costing the agent its entire presence in the fleet over a typo, and bricking forward compatibility when a newer build writes a mode this one has not learned.
 - `Workspace` gains `owner` — `GET /api/workspaces`, `GET /api/workspaces/:id`, `GET /api/workspaces/resolve`.
 - `POST /api/sessions/:id/messages` — no schema change. `workspaceKey` keeps its meaning and its precedence over the agent binding.
 - No `Transport` method is added. The binding rides the agent entity that `Transport` already carries.
