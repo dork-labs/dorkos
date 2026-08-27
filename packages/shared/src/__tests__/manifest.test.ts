@@ -16,6 +16,7 @@ import type { AgentManifest } from '../mesh-schemas.js';
 
 function makeManifest(overrides?: Partial<AgentManifest>): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HV7KJZZZ0000000000000000',
     name: 'test-agent',
     description: 'A test agent',
@@ -483,6 +484,89 @@ describe('round-trip with new fields', () => {
     const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
     await fs.mkdir(path.dirname(manifestPath), { recursive: true });
     await fs.writeFile(manifestPath, JSON.stringify(bad), 'utf-8');
+    const warn = vi.fn();
+    expect(await readManifest(projectDir, { warn })).toBeNull();
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe('workspace binding (spec `agent-workspace-binding` §3.1)', () => {
+  const tempDirs: string[] = [];
+
+  async function makeTempDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shared-manifest-test-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The migration guarantee: every manifest written before the field existed
+  // keeps meaning what it already meant.
+  it('a manifest with no workspace field reads as home', async () => {
+    const projectDir = await makeTempDir();
+    const { workspace: _dropped, ...legacy } = makeManifest();
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, JSON.stringify(legacy), 'utf-8');
+
+    const result = await readManifest(projectDir);
+
+    expect(result?.workspace).toEqual({ mode: 'home' });
+  });
+
+  it('round-trips a managed binding with its source and provider', async () => {
+    const projectDir = await makeTempDir();
+    const manifest = makeManifest({
+      workspace: { mode: 'managed', source: '/repos/dorkos', provider: 'worktree' },
+    });
+
+    await writeManifest(projectDir, manifest);
+    const result = await readManifest(projectDir);
+
+    expect(result?.workspace).toEqual({
+      mode: 'managed',
+      source: '/repos/dorkos',
+      provider: 'worktree',
+    });
+  });
+
+  it('round-trips a none binding — sharing the default folder is sayable', async () => {
+    const projectDir = await makeTempDir();
+    const manifest = makeManifest({ workspace: { mode: 'none' } });
+
+    await writeManifest(projectDir, manifest);
+
+    expect((await readManifest(projectDir))?.workspace).toEqual({ mode: 'none' });
+  });
+
+  it('refuses a managed binding with no source', async () => {
+    const projectDir = await makeTempDir();
+    const bad = {
+      ...makeManifest(),
+      workspace: { mode: 'managed' },
+    } as unknown as AgentManifest;
+
+    await expect(writeManifest(projectDir, bad)).rejects.toThrow(/invalid agent manifest/i);
+  });
+
+  // Deliberately NOT `.catch()`-degraded: a binding the schema cannot read is a
+  // manifest whose author's intent is unknown, and quietly running the turn
+  // somewhere else would be the wrong kind of resilience.
+  it('reads back null on an unknown mode rather than degrading to home', async () => {
+    const projectDir = await makeTempDir();
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({ ...makeManifest(), workspace: { mode: 'ludicrous' } }),
+      'utf-8'
+    );
+
     const warn = vi.fn();
     expect(await readManifest(projectDir, { warn })).toBeNull();
     expect(warn).toHaveBeenCalled();

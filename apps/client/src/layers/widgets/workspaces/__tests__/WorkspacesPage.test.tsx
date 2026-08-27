@@ -29,6 +29,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 function makeWorkspace(over: Partial<WorkspaceWithSessions>): WorkspaceWithSessions {
   return {
+    owner: null,
     id: 'w',
     projectKey: 'core',
     key: 'DOR-84',

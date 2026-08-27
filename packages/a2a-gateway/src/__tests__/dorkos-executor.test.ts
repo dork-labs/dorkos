@@ -15,6 +15,7 @@ import { DorkOSAgentExecutor } from '../dorkos-executor.js';
 /** Create a minimal AgentRegistryEntry for testing. */
 function makeAgent(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEntry {
   return {
+    workspace: { mode: 'home' },
     id: 'agent-01',
     name: 'Test Agent',
     description: 'A test agent',

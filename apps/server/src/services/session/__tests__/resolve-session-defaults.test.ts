@@ -29,6 +29,7 @@ import {
 
 /** The least manifest that validates, for the on-disk half of the ladder. */
 const BASE_MANIFEST: AgentManifest = {
+  workspace: { mode: 'home' },
   id: 'agent-defaults-fixture',
   name: 'defaults-fixture',
   description: '',

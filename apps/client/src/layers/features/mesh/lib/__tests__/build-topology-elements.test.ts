@@ -31,6 +31,7 @@ const baseAgent = {
 };
 
 const agent1: NamespaceInfo['agents'][number] = {
+  workspace: { mode: 'home' },
   ...baseAgent,
   id: 'agent-1',
   name: 'Builder',
@@ -41,6 +42,7 @@ const agent1: NamespaceInfo['agents'][number] = {
 };
 
 const agent2: NamespaceInfo['agents'][number] = {
+  workspace: { mode: 'home' as const },
   ...baseAgent,
   id: 'agent-2',
   name: 'Writer',

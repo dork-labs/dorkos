@@ -52,6 +52,7 @@ async function setupWorkspace(
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: '',
@@ -90,6 +91,7 @@ async function setupWorkspaceWith(connection: McpServerTransport): Promise<strin
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-authstatus-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: '',

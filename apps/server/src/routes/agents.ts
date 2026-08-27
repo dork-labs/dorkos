@@ -143,6 +143,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         isSystem: false,
         enabledToolGroups: {},
         mcpServers: [],
+        workspace: { mode: 'home' },
       };
 
       await writeManifest(agentPath, manifest);

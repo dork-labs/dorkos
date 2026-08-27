@@ -151,6 +151,7 @@ class ScriptedRelay {
 
 function makeManifest(id = 'agent-backend'): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id,
     name: 'backend-bot',
     description: 'Backend engineering agent',

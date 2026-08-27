@@ -122,6 +122,7 @@ function createWrapper() {
 
 const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): TopologyAgent => {
   const base: TopologyAgent = {
+    workspace: { mode: 'home' },
     id: overrides.id,
     name: overrides.name ?? `Agent ${overrides.id}`,
     description: '',

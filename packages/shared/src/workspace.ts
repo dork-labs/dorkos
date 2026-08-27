@@ -80,6 +80,33 @@ export const WorkspaceStatusSchema = z
 
 export type WorkspaceStatus = z.infer<typeof WorkspaceStatusSchema>;
 
+// === Ownership ===
+
+/**
+ * Who a workspace belongs to, or `null` for the original semantics: a
+ * unit-of-work checkout owned by nobody in particular.
+ *
+ * `kind` is a single-member union today and stays a union on purpose — the next
+ * owner (a room, spec `project-rooms`) is a different kind, not a different
+ * shape of the same one.
+ *
+ * `ref` is the agent's **`agentPath`**, never its ULID. The `agents` table is a
+ * derived cache the reconciler may delete and rebuild, re-registering every
+ * agent under a fresh ULID (`packages/db/src/schema/agent-identity.ts`); the
+ * path survives that, and `agents.project_path` being `unique` makes it a
+ * legitimate key. Same precedent as DOR-446 identity tokens, with the same
+ * limitation: move the agent's directory and the workspace becomes unowned.
+ */
+export const WorkspaceOwnerSchema = z
+  .object({
+    kind: z.literal('agent'),
+    ref: z.string().min(1),
+  })
+  .openapi('WorkspaceOwner');
+
+/** Who a workspace belongs to — see {@link WorkspaceOwnerSchema}. */
+export type WorkspaceOwner = z.infer<typeof WorkspaceOwnerSchema>;
+
 // === Entity ===
 
 /**
@@ -103,6 +130,9 @@ export const WorkspaceSchema = z
     hostname: z.string().nullable(),
     url: z.string().nullable(),
     pinned: z.boolean(),
+    // `null` = unit-of-work, which is what every workspace was before ownership
+    // existed — so pre-change rows and sidecar manifests need no backfill.
+    owner: WorkspaceOwnerSchema.nullable().default(null),
     createdAt: z.string(),
     lastUsedAt: z.string(),
   })
@@ -119,6 +149,10 @@ export const EnsureWorkspaceRequestSchema = z
     key: z.string(),
     source: z.string(),
     provider: WorkspaceProviderTypeSchema.optional(),
+    // Stamped only on the call that CREATES the workspace. `ensure` is
+    // reuse-or-create, and re-owning an existing checkout from a later caller
+    // would let one agent quietly adopt another's tree.
+    owner: WorkspaceOwnerSchema.nullish(),
   })
   .openapi('EnsureWorkspaceRequest');
 
@@ -158,10 +192,16 @@ export interface RemoveResult {
   dirty?: DirtyState;
 }
 
-/** The outcome of a `sweep` — removed ids and the reason each survivor was kept. */
+/**
+ * The outcome of a `sweep` — removed ids and the reason each survivor was kept.
+ *
+ * `owned` is structural rather than conventional: an agent-owned checkout is
+ * skipped because of what it IS, not because somebody remembered to pin it.
+ * Unregistering an agent says nothing about the code in its tree.
+ */
 export interface SweepResult {
   removed: string[];
-  skipped: Array<{ id: string; reason: 'pinned' | 'dirty' | 'active' }>;
+  skipped: Array<{ id: string; reason: 'owned' | 'pinned' | 'dirty' | 'active' }>;
 }
 
 /** A session attached to a workspace (its resolved cwd is under the path). */

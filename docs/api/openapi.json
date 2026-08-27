@@ -5126,6 +5126,9 @@
               "$ref": "#/components/schemas/ManagedMcpServer"
             },
             "default": []
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/AgentWorkspaceBinding"
           }
         },
         "required": [
@@ -5369,6 +5372,70 @@
           "addedBy"
         ]
       },
+      "AgentWorkspaceBinding": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "home"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "managed"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider": {
+                "$ref": "#/components/schemas/WorkspaceProviderType"
+              }
+            },
+            "required": [
+              "mode",
+              "source"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        ],
+        "default": {
+          "mode": "home"
+        }
+      },
+      "WorkspaceProviderType": {
+        "type": "string",
+        "enum": [
+          "worktree",
+          "clone"
+        ]
+      },
       "RegisterAgentRequest": {
         "type": "object",
         "properties": {
@@ -5488,6 +5555,9 @@
                   "$ref": "#/components/schemas/ManagedMcpServer"
                 },
                 "default": []
+              },
+              "workspace": {
+                "$ref": "#/components/schemas/AgentWorkspaceBinding"
               }
             }
           },

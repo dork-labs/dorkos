@@ -33,6 +33,7 @@ class FakeLocator implements AgentWorkspaceLocator {
 
 function manifestWith(servers: AgentManifest['mcpServers']): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HV7KJZZZ0000000000000000',
     name: 'test-agent',
     description: 'A test agent',

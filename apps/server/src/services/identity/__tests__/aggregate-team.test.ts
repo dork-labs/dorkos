@@ -545,6 +545,7 @@ describe('aggregateTeamRoster', () => {
     // the join ever stops restoring the path, this test goes red.
     const mesh = new AgentRegistry(db);
     mesh.upsert({
+      workspace: { mode: 'home' },
       id: 'agent-real',
       name: 'real',
       displayName: 'Real',

@@ -167,6 +167,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     personaEnabled: true,
     enabledToolGroups: {},
     mcpServers: [],
+    workspace: { mode: 'home' },
   };
 
   await writeManifest(dorkbotDir, manifest);

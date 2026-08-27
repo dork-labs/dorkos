@@ -15,6 +15,7 @@ vi.mock('../manifest.js');
 
 function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEntry {
   return {
+    workspace: { mode: 'home' },
     id: '01JKABC00001',
     name: 'backend',
     description: 'Backend service agent',
@@ -35,6 +36,7 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01JKABC00001',
     name: 'backend',
     description: 'Backend service agent',

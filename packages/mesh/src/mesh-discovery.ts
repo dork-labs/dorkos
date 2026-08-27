@@ -291,6 +291,7 @@ export async function register(
     effort: overrides?.effort,
     enabledToolGroups: overrides?.enabledToolGroups ?? {},
     mcpServers: [],
+    workspace: overrides?.workspace ?? { mode: 'home' },
   };
 
   return registerInternal(candidate.path, manifest, namespace, effectiveScanRoot, deps);
@@ -340,6 +341,7 @@ export async function registerByPath(
     effort: partial.effort,
     enabledToolGroups: partial.enabledToolGroups ?? {},
     mcpServers: [],
+    workspace: partial.workspace ?? { mode: 'home' },
   };
 
   return registerInternal(projectPath, manifest, namespace, effectiveScanRoot, deps);

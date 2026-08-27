@@ -238,6 +238,7 @@ export function createAgentRoster(overrides: Partial<AgentRoster> = {}): AgentRo
 export function createAgentManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   const name = overrides.name ?? 'reviewer';
   return {
+    workspace: { mode: 'home' },
     id: nextId('agent'),
     name,
     description: '',

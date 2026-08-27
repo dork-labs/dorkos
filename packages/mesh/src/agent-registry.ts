@@ -542,6 +542,13 @@ export class AgentRegistry {
       // diff — ADR 260803-233420). The derived cache carries the empty default;
       // the file remains the source of truth for managed servers.
       mcpServers: [],
+      // Same shape as the two above: no DB column, so the cache carries the
+      // schema default and `.dork/agent.json` remains the source of truth. The
+      // one consumer that must be right — `resolve-session-cwd.ts`, which picks
+      // the directory a turn runs in — reads the manifest, never this. Anything
+      // added later that shows a binding in a LIST view needs a real column
+      // first, on the pattern `model`/`effort` set.
+      workspace: { mode: 'home' },
     };
   }
 

@@ -122,6 +122,7 @@ class CcaShapedResponder implements AdapterRegistryLike {
 
 function makeManifest(): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: 'agent-backend',
     name: 'backend-bot',
     description: 'Backend engineering agent',

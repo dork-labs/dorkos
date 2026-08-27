@@ -84,6 +84,10 @@ export class WorkspaceService implements WorkspaceManager {
       hostname: null,
       url: null,
       pinned: false,
+      // Stamped once, here, on the create path only — the reuse branch above
+      // returns before this. An `ensure` that could re-own a workspace would
+      // let a second caller adopt a checkout the first one is working in.
+      owner: req.owner ?? null,
       createdAt: ts,
       lastUsedAt: ts,
     };
@@ -184,6 +188,16 @@ export class WorkspaceService implements WorkspaceManager {
       .sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
 
     for (const ws of ready.slice(cap)) {
+      // Ownership first, and structurally rather than by convention: an
+      // agent-owned checkout is its agent's home, and reclaiming disk is never
+      // a good enough reason to delete somebody's uncommitted work. Protecting
+      // it by setting `pinned` instead would make the guarantee depend on
+      // whoever provisioned it having remembered — a safety property nobody
+      // remembers is not one.
+      if (ws.owner) {
+        skipped.push({ id: ws.id, reason: 'owned' });
+        continue;
+      }
       if (ws.pinned) {
         skipped.push({ id: ws.id, reason: 'pinned' });
         continue;

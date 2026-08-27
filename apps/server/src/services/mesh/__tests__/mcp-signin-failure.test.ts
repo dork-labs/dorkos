@@ -225,6 +225,7 @@ async function setupCapabilityDeps(fetchImpl: typeof fetch): Promise<CapabilityD
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-signin-failure-ws-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: '',

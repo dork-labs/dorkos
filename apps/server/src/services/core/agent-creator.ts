@@ -375,6 +375,10 @@ export async function createAgentWorkspace(
       // capabilities, never at scaffold time (a packaged agent may not ship
       // auto-injectable servers — ADR 260803-233420). A fresh agent starts empty.
       mcpServers: [],
+      // A new agent works in its own folder. Written explicitly rather than
+      // left to the schema default so the file says where the agent works
+      // instead of leaving a reader to know that absence means "home".
+      workspace: { mode: 'home' },
     };
 
     await ledger.claimFile(path.join(dorkDir, MANIFEST_FILE));

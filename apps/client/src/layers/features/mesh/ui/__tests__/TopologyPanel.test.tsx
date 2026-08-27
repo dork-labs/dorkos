@@ -20,6 +20,7 @@ import { TopologyPanel } from '../TopologyPanel';
 
 function makeAgent(overrides: Partial<TopologyAgent> = {}): TopologyAgent {
   return {
+    workspace: { mode: 'home' },
     id: 'agent-1',
     name: 'agent-one',
     description: '',

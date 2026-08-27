@@ -12,6 +12,7 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
 import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
+import { WorkspaceProviderTypeSchema } from './workspace.js';
 
 extendZodWithOpenApiOnce();
 
@@ -347,6 +348,47 @@ const AgentEffortSchema = z.enum(EFFORT_LEVELS).optional().openapi({
   example: 'high',
 });
 
+/**
+ * Where an agent works — the standing preference that answers "which directory
+ * does a turn for this agent run in?" when the caller does not say.
+ *
+ * Three modes, as a discriminated union rather than three loose optional fields
+ * because `source` is meaningless without `managed`:
+ *
+ * - `home` — the agent works in its own directory (its `projectPath`, the folder
+ *   holding this very manifest). Nothing is provisioned. This is the default,
+ *   and an absent `workspace` field reads as exactly this.
+ * - `managed` — the server ensures a {@link WorkspaceSchema | Workspace} from
+ *   `source` and the agent works in that checkout. The mode that gives N agents
+ *   on one repo N trees.
+ * - `none` — no binding; the resolver falls through to the server's default
+ *   working directory. Sayable on purpose, so "share the default folder" is a
+ *   choice rather than the accident of an unset field.
+ *
+ * **A coordination default, not a containment boundary.** The binding lives in
+ * `agent.json`, which an agent can rewrite — and that is acceptable only because
+ * every resolved path is boundary-validated at resolution time, so no binding
+ * can widen what the agent could already reach. Containment stays
+ * `DORKOS_BOUNDARY` plus the capability tier gate (spec `agent-workspace-binding`
+ * §3.1).
+ */
+export const AgentWorkspaceBindingSchema = z
+  .discriminatedUnion('mode', [
+    z.object({ mode: z.literal('home') }),
+    z.object({
+      mode: z.literal('managed'),
+      /** Repository or directory the managed checkout is made from. */
+      source: z.string().min(1),
+      /** Provisioning strategy; the server's configured default when absent. */
+      provider: WorkspaceProviderTypeSchema.optional(),
+    }),
+    z.object({ mode: z.literal('none') }),
+  ])
+  .openapi('AgentWorkspaceBinding');
+
+/** Where an agent works — see {@link AgentWorkspaceBindingSchema}. */
+export type AgentWorkspaceBinding = z.infer<typeof AgentWorkspaceBindingSchema>;
+
 export const AgentManifestSchema = z
   .object({
     id: z.string().min(1).describe('ULID assigned at registration'),
@@ -427,6 +469,17 @@ export const AgentManifestSchema = z
     // Mutated only through the gated `mcp.*` capabilities, never the agent
     // PATCH surface — which is why it is absent from `AgentManifestUpdate`.
     mcpServers: z.array(ManagedMcpServerSchema).default([]),
+    // Absent reads as `{ mode: 'home' }` — every manifest written before this
+    // field existed keeps working, and keeps meaning what it already meant: the
+    // agent works in its own directory.
+    //
+    // Deliberately NOT `.catch()`-degraded, unlike `model`/`effort` above. Those
+    // name a setting; this names WHERE WORK HAPPENS, and a binding that says
+    // something the schema cannot read is a manifest whose author's intent is
+    // unknown. Quietly running the turn somewhere else would be the wrong kind
+    // of resilience, so a malformed binding fails the manifest parse — loudly,
+    // with the offending path and issues logged by `readManifest`.
+    workspace: AgentWorkspaceBindingSchema.default({ mode: 'home' }),
   })
   .openapi('AgentManifest');
 

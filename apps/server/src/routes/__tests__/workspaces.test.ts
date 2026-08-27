@@ -20,6 +20,7 @@ function mountWith(manager: Partial<WorkspaceManager>): Express {
 }
 
 const sampleWorkspace: Workspace = {
+  owner: null,
   id: 'w1',
   projectKey: 'core',
   key: 'DOR-84',

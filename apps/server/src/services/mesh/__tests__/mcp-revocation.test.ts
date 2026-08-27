@@ -155,6 +155,7 @@ async function setupWorkspace(connection: McpServerTransport = OAUTH_HTTP): Prom
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-revoke-ws-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: '',
