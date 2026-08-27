@@ -1,0 +1,130 @@
+---
+slug: project-rooms
+id: 260827-202452
+created: 2026-08-27
+status: ideation
+---
+
+# Project Rooms — rooms with their own repo, files, and collaboration
+
+**Slug:** project-rooms
+**Author:** Claude (directed by Dorian)
+**Date:** 2026-08-27
+**Tracker:** [DOR-1588](https://linear.app/dorkspace/issue/DOR-1588) - Project Rooms — rooms with their own repo, files, and collaboration (umbrella)
+**Project:** Project Rooms
+
+---
+
+## 1) Intent & Assumptions
+
+- **Task brief:** Give a room a working space of its own. A room owns a home directory and a git repo; agents and members collaborate on real files in it — complex directory structures, scripts, whole codebases — the same way multiple agents already collaborate on this repository: one clean integration tree, one worktree per writer, work merged back to main. A `ROOM.md` standard carries the room's conventions. A unified file explorer serves both agent sessions and rooms. The design was fully explored in an extended operator conversation on 2026-08-27; this document is its synthesis, and the settled decisions in §6 are not to be re-litigated.
+- **Assumptions:**
+  - The room entity (membership, message log, claims, holds, notices, cascade guards) is shipped and GA; this programme builds beside it, not inside it.
+  - `specs/agent-workspace-binding/` (status `specified`, unimplemented) lands first or alongside: it owns the cwd resolver this programme extends with one rung.
+  - `git` on `PATH` (already required by the workspace `clone` provider).
+  - Single-machine first. Multi-machine rooms arrive later via git remotes and are out of scope here beyond proving the extension path.
+- **Out of scope:**
+  - The room entity itself (rooms track owns it).
+  - Multi-machine hosting/auth for room repos.
+  - PR-style review gates (a later per-room setting; v1 merges are direct).
+  - Free-form hooks or MCP servers distributed by a room — excluded for the reasons `specs/channel-workspace/02-specification.md` §3.6 already argued (arbitrary code execution granted by a social act); that decision carries over unchanged.
+  - Replacing room attachments. Chat-shared files (upload-then-reference blob store + projection into the agent's tree) stay exactly as shipped; the repo is a second lane, not a successor.
+
+## 2) Pre-reading Log
+
+- `specs/channel-workspace/02-specification.md` — the July design for a room's shared context (git-distributed `AGENTS.md` + skills + commands). Largely correct on delivery mechanics (instructions ride the turn, skills ride harness sync, hooks excluded, sidecar outside the clone); superseded on shape by this programme: the checkout becomes a real collaborative workspace, not a read-only conventions repo. Its Open Question 1 (who owns the binding) is now answerable — the room. Its Open Question 4 (the "channel" naming collision) is sidestepped by "room" language.
+- `specs/agent-workspace-binding/02-specification.md` — the sibling prerequisite: `workspace` field on the agent manifest + one resolver, `explicit cwd → agent binding → DEFAULT_CWD`. Unimplemented; its cited line numbers are stale (`AgentManifestSchema` is now at `mesh-schemas.ts:350-431`).
+- `specs/rooms/02-specification.md` §9, §14.4 — `rooms.workspaceId` stored-and-returned, resolution explicitly punted; a room turn runs in the agent's own directory.
+- `.claude/rules/room-conduct.md` + `decisions/260726-170125` — the claim map is keyed `(room, agent)`; no arbitration; bounds are mechanisms, never prompts; over-participation is the failure mode.
+- `decisions/260807-233816` / `260807-233815` — room attachments are room-scoped upload-then-reference, projected into the agent's own tree.
+- DOR-500 measurement — concurrent agents in one tree interleave writes pervasively; the boundary is one writer per tree.
+
+## 3) Codebase Map
+
+- **Room model:** `packages/shared/src/room-schemas.ts:467-509` (`RoomSchema`), `packages/db/src/schema/rooms.ts:240-369`. `workspaceId` (`rooms.ts:259`) is write-only dead weight — written once at creation (`room-service.ts:974`), read by nothing, absent from `UpdateRoomRequestSchema`, deliberately stripped at the `CommunityAdapter` port (`local-projection.ts:10-13`).
+- **Turn cwd today:** `room-turn-runner.ts:251` (`projector.cwd = request.agentPath`) and `:349` — every room turn runs in the replying agent's own project directory; the room is never consulted.
+- **Room home dir (seed):** `<dorkHome>/rooms/<roomId>/attachments/` already exists (`local-room-attachment-store.ts:57`). Projection into the agent tree: `.dork/.temp/room-attachments/<entryId>/` (`attachment-paths.ts:24`). Agent composer uploads: `<cwd>/.dork/.temp/uploads/` (`services/core/upload-handler.ts:29`) — already near-siblings.
+- **Turn context seam:** `room-context.ts` + `runtimes/shared/room-context-block.ts` (structured `additionalContext`, per-turn nonce, untrusted-text fencing); `systemPromptAppend` honored by all three runtimes (ADR-0273).
+- **Harness:** `packages/harness` — `.agents/skills` is the sole authored source root; projections are namespaced, gitignored ephemera with an orphan sweep; `Provenance` is `'authored' | 'installed' | 'adopted'` (no `'channel'` yet).
+- **Workspace subsystem:** `services/workspace/` — provider-provisioned, sweepable unit-of-work checkouts with pin-exemption. Deliberately NOT reused here (§6 D1).
+- **Worktree precedent:** this repo's own multi-agent discipline (`AGENTS.md` Worktrees section) and the live `~/.dork/workspaces/dorkos/*` worktrees.
+- **Potential blast radius:** rooms service domain, runtimes turn assembly, harness sources, mesh/agent-workspace-binding resolver, client right-pane file components, `config-schema` (new room-repo fields), docs (`docs/concepts/rooms.mdx` currently states "a room doesn't have a folder of its own" — must be rewritten when this ships).
+
+## 5) Research — the approaches explored
+
+Five approaches were weighed for room files (full trade-off discussion in the 2026-08-27 conversation):
+
+1. **Plain shared folder** — no history, no atomic updates, no sync path; rejected (matches `channel-workspace` §3.8's own argument).
+2. **Git repo, server-mediated single-writer commits** — good history/atomicity; too weak for real collaboration (every write a tool round-trip; no dev loop).
+3. **Git repo, agents push from private clones** — push races, credential plumbing, worst complexity/value ratio; rejected.
+4. **Event-sourced files (files as room entries, materialized view)** — elegant for chat artifacts (provenance = timeline, real deletion, rides stream sync), but **disqualified for the primary use case**: no real filesystem, no execution, no dev loop. Its territory is already served by attachments.
+5. **The /flow model: main checkout + worktree per agent + merge back** — proven daily in this very repository; satisfies DOR-500 (one writer per tree) while allowing full create/edit/delete/execute workflows. **Chosen.**
+
+- **Recommendation:** approach 5, with attachments retained as the chat-file lane. An event-sourced derived view (approach 4/E-hybrid) remains a possible later add-on for human-friendly file timelines, not v1.
+
+## 6) Decisions
+
+Settled with the operator on 2026-08-27. These are resolved, not open.
+
+| #   | Decision                        | Choice                                                                                                                                                                                                                                                                                                             | Rationale                                                                                                                                                                                                                              |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Room storage entity             | The room's own home dir under `<dorkHome>/rooms/<roomId>/` (`room.json` sidecar outside the repo, `attachments/`, `repo/`, `worktrees/<agent>/`), NOT the `Workspace` entity                                                                                                                                        | Workspaces are sweepable unit-of-work checkouts; rooms are long-lived like agents; `rooms/<id>/` already exists for attachments. The inert `rooms.workspaceId` column is dropped or repurposed.                                          |
+| 2   | Repo binding modes              | v1 `owned` (git init under the room home); `linked` (bind an existing checkout) deferred                                                                                                                                                                                                                            | Owned is safe and self-contained; linked repos add force-push and ownership hazards worth their own phase.                                                                                                                              |
+| 3   | Main checkout role              | `repo/` is the integration tree — never any agent's cwd; single writer (the server: merges + human saves)                                                                                                                                                                                                          | Direct application of DOR-500; mirrors this repo's own `main` discipline.                                                                                                                                                               |
+| 4   | Collaboration mechanism         | Standing worktree per (room, agent): lazily created on first write-intent, persistent between turns, reaped when idle AND clean, never reaped holding unmerged work (surfaced instead)                                                                                                                              | Worktrees share the object database, so cost scales with active collaborators (working-tree size each), not roster size — a 40-member room does not cost 40 repos. Persistence keeps in-progress work alive.                             |
+| 5   | Turn cwd in project rooms       | The agent's room worktree; non-project rooms keep today's behavior (agent's own cwd). One new rung in the agent-workspace-binding chain: explicit cwd → room worktree (project rooms) → agent binding → `DEFAULT_CWD`                                                                                                 | "Where your turn runs is where you write" — the resolver does the deciding so instructions stay short.                                                                                                                                  |
+| 6   | Merge mechanism                 | `merge_to_room_main` tool: server-mediated, serialized (one merge at a time, queued). Clean-merge-only contract: refuses uncommitted work, refuses a branch that does not contain main's tip, computes the merge and moves main's ref only on success (never half-state)                                             | Conflicts are resolved in the agent's worktree — where the agent has full tools — never on main. Merge-queue philosophy at room scale.                                                                                                   |
+| 7   | Propagation of merged changes   | Pull-based. Shared refs make main's advance instantly visible; files change only when the agent syncs (`git merge main`) in its own tree, during its own turn. The room context block announces staleness ("main is N commits ahead"). Never mutate a worktree mid-turn or behind the agent's back                    | One writer per tree includes DorkOS itself.                                                                                                                                                                                             |
+| 8   | Merge events                    | Durable, unaddressed, system-voiced room entries ("Ana merged `parser-fix` — 4 files, +120/−30"). Never cascade triggers; agents learn of main at their next turn via context. Deliberate @mention by the merging agent is the only way a merge demands attention                                                     | Waking N agents per merge is the over-participation failure mode the room-conduct bounds exist to damp.                                                                                                                                 |
+| 9   | Tool surface                    | Minimal: `merge_to_room_main` (mandatory), `room_repo_status` (optional read), `request_review` (phase 2). Everything else is ordinary git in the agent's own worktree                                                                                                                                              | Shared refs mean agents can see main, branches, diffs with plain git; only shared-state writes need a tool. Closest to how agents work today.                                                                                            |
+| 10  | `ROOM.md` standard              | Uppercase, at the **repo root** (owned repos), not in `.dork/`                                                                                                                                                                                                                                                     | It is the room's member-authored front page (explorer pins it, like a README); `.dork/` means DorkOS-owned metadata; the consent sidecar must stay outside the repo so the repo can never rewrite its own grant.                          |
+| 11  | `ROOM.md` delivery              | Pinned system-prompt append: same bytes every turn while the pin holds (prompt-cache hit), pin advances only at turn boundaries, byte cap, over-budget rejected loudly (never silently truncated), provenance-labeled block ("from the room, not your operator")                                                     | Matches CLAUDE.md economics: read once, rides the cached prefix (~10% token cost), each change costs one cache miss. Carries over `channel-workspace` §3.3/§3.5 framing.                                                                 |
+| 12  | Instruction layering            | Mechanics in the room context block (short: cwd, repo path, staleness, merge pointer); the detailed how-to in a new `working-in-room-repos` operating skill (seeded pack, loaded on demand); room-specific norms in `ROOM.md`                                                                                        | Mechanics from DorkOS (pinned by tests), norms from the room; per-turn token cost stays low.                                                                                                                                            |
+| 13  | Skills/commands consumption     | Project rooms: **native** — the repo carries `.agents/skills` etc. and the worktree cwd makes harnesses discover them like any project. Non-project rooms: the `channel-workspace` projection path (namespaced `<roomSlug>__<name>`, gitignored, orphan-swept on leave)                                              | A project room's repo is just a project; zero new machinery for the primary case. Namespacing keeps collision impossible for the projected case.                                                                                         |
+| 14  | Instruction precedence          | Advisory, stated in the composed block (per `channel-workspace` §3.3): prohibitions from any layer are honored; direct conflicts resolve to the agent's own; repo `AGENTS.md` governs the code, `ROOM.md` governs the room                                                                                            | Enforced precedence across harnesses is a claim DorkOS cannot honor; saying so is the honest version.                                                                                                                                   |
+| 15  | Symlinks across the boundary    | Forbidden. The merge tool rejects symlinks pointing outside the repo; the operating skill says "publish-on-change instead" (copy + commit + merge). In-repo relative symlinks remain fine                                                                                                                            | A committed symlink is a path: it dangles on other machines, opens one agent's private tree to every member, bypasses commits/provenance/merge queue, and is a classic traversal vector.                                                 |
+| 16  | File explorer                   | **One unified component** for agent sessions and rooms. New room features benefit git-dir agents too: per-row provenance (last author + time), pending-work badges ("Ana has unmerged changes"), `ROOM.md`/README pinned at top, dotfiles/plumbing hidden by default (toggle), v1 shows main only (branch view later) | Membership-gated `GET /api/rooms/:id/files` reading the main checkout; refresh rides the room SSE stream on merge events; previews go through untrusted-content handling.                                                                |
+| 17  | Human editing (later phase)     | Reuse the session-page markdown/canvas editor. Humans get no worktrees: saves go `PUT /api/rooms/:id/files/<path>` → server commits to main authored as the user, serialized through the same merge queue. Optimistic locking on the loaded commit (refuse + "reload / keep mine", never silent overwrite). One save = one commit | Doc-sized edits should not need branch ceremony; the single-writer rule holds because the server is the writer.                                                                                                                          |
+| 18  | Dirty-main degradation          | The server detects out-of-band edits to the main checkout (it is the operator's machine; nothing physically stops VS Code), pauses merges, surfaces it loudly. Degrade loudly, never corrupt quietly                                                                                                                 | Honest-by-design; power users who want direct dev work clone the repo or use an agent.                                                                                                                                                  |
+| 19  | Attachments relationship        | Two lanes: attachments stay the chat-file lane (unchanged); the repo is the workspace lane. Projection-folder naming may be aligned with `uploads/` as a cosmetic rename. The room's durable copies never live under a `.temp/` path                                                                                  | `.temp/` means "safe to delete, real copy elsewhere"; room attachments ARE the real copy.                                                                                                                                               |
+| 20  | Naming                          | "Room repo" / "project room" language throughout; "channel workspace" retired                                                                                                                                                                                                                                       | Sidesteps the three-way "channel" collision (`channel-workspace` Open Question 4).                                                                                                                                                       |
+
+## 7) Risks & Security
+
+- **Prompt-injection reaches code execution.** In a shared room, another member's message can steer what an agent executes in its worktree. Defenses (all existing, all load-bearing): permission posture is member-owned and unreachable from any room content; room text is fenced as untrusted with the per-turn nonce; the room can never widen what an agent may do. This gets a full security section in the spec, not a footnote — multi-human rooms widen the door.
+- **Repo content is data until an agent runs it.** Committed scripts are an injection payload aimed at agents holding Bash; git hooks do not auto-execute on clone (git does not clone `.git/hooks`), but "run this setup script" is social engineering the operating skill must name.
+- **The consent sidecar stays outside the repo** (`room.json`), so the repo can never rewrite its own grant, pin policy, or origin — carried over from `channel-workspace` §3.1.
+- **The repeated loser.** A slow agent can keep arriving behind main. Bounded by merge-queue ordering and small-merge conventions; accepted as inherent to collaboration.
+- **Stranded work.** Unmerged worktrees of departed agents must be surfaced, never silently reaped.
+- **Claim/busy re-keying.** The room hold machinery keys "is this agent busy" partly on the agent's working tree; per-room worktrees change the key. Must be re-derived carefully in SPECIFY so holds neither dead-lock nor double-run (see room-conduct: the claim is the only thing that may answer "busy here").
+- **Binary bloat.** Git keeps everything forever. Size caps at the merge tool; binaries belong in attachments.
+- **Seam verification owed:** confirm the claude-code runtime re-applies `systemPromptAppend` per turn on a persistent session (the pin-advance-at-turn-boundary design assumes it). Verify before building on it.
+
+## 8) Open Questions
+
+1. **`ROOM.md` for linked repos** — writing it into someone's existing project root is intrusive; sidecar-side `ROOM.md` or repo-native `AGENTS.md`-only? (Deferred with linked mode.)
+2. **Merge authorization** — v1: any member agent may merge. Per-room "review required" mode is sketched (phase 2+); who reviews, and is a human approver required for some rooms?
+3. **Merge event surface** — plain system-voiced room entry vs the notices machinery (`notice-copy.ts` codes are damped; merges are per-event). Leaning plain entry; SPECIFY decides with the rooms conventions in hand.
+4. **`workspaceId` column fate** — drop vs repurpose as the repo-binding record; needs a migration decision.
+5. **Harness projection cadence inside worktrees** — when repo-carried skills need per-worktree projection (`.agents/` → `.claude/`), what triggers the sync (worktree create + main sync)?
+6. **Cross-room concurrency of one agent** — per-room worktrees would make "busy elsewhere" tree-safe; do we relax the hold, or keep serial attention per agent as a product choice?
+7. **Multi-machine rooms** — git remote per repo vs riding future stream sync; explicitly deferred, but the spec should keep both doors open.
+
+## 9) Spec-update map, phasing, and next step
+
+**Existing specs affected:**
+
+- `specs/channel-workspace/` — superseded/rewritten by the SPECIFY output of this programme (delivery mechanics survive; shape changes from read-only conventions repo to collaborative workspace).
+- `specs/rooms/` — §9's punt on `workspaceId` resolves here.
+- `specs/agent-workspace-binding/` — prerequisite; gains the room-worktree rung; stale line refs refreshed.
+- `docs/concepts/rooms.mdx` — "a room doesn't have a folder of its own" becomes false at ship time.
+
+**Proposed phases (EXECUTE-stage granularity comes at DECOMPOSE):**
+
+- **P0** — implement `agent-workspace-binding` (the resolver this extends).
+- **P1** — room home + owned repo + `ROOM.md` root convention + turn delivery (pinned append, caps) + read-only unified file explorer. No worktrees yet: the repo is readable shared context, provable end to end.
+- **P2** — collaboration: per-(room, agent) worktrees, cwd rung, `merge_to_room_main` + merge queue + merge entries, `working-in-room-repos` operating skill, symlink rejection, reap policy.
+- **P3** — human editing (server-mediated commits + optimistic locking), `room_repo_status`, pending-work badges, dirty-main degradation.
+- **P4** — linked repos, review-required rooms, non-project-room skill projection, multi-machine.
+
+**Recommended next step:** SPECIFY (`/flow:specify project-rooms`). The design is mature — this ideation is effectively fast-track input; the spec's real work is the claim/hold re-keying (§7), the config surface, the API contracts, and the security section.
