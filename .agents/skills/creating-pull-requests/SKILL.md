@@ -417,9 +417,12 @@ on 2026-08-24), and its event vocabulary is pinned by
 `FAILING(names)` (standing `Vercel` reds excluded), `EJECTED(reason)` (the
 merge queue silently dropped the PR — detected via the
 `REMOVED_FROM_MERGE_QUEUE_EVENT` timeline item, the only place that fact
-exists), `STALLED_IN_QUEUE` (queued with zero checks reporting — the classic
-missing `on: merge_group` trigger), `UNRESOLVED_THREADS(n)` (these block
-merge-tail from arming while everything else is green),
+exists), `STUCK_UNMERGEABLE` (in the queue but its entry state is `UNMERGEABLE`
+— a dead entry that keeps its position and so otherwise reads as a healthy
+`QUEUED`; the remediation is below), `STALLED_IN_QUEUE` (queued with zero checks
+reporting — the classic missing `on: merge_group` trigger),
+`UNRESOLVED_THREADS(n)` (these block merge-tail from arming while everything
+else is green),
 `UNARMED_CLEAN` (arming auto-merge 422s on an already-clean PR — merge it
 directly), `QUEUED(pos)`, `RECOVERED`, and its own expiry. Three semantics it
 gets right that ad-hoc loops get wrong: `mergeStateStatus: UNKNOWN` is
@@ -454,6 +457,35 @@ Note the shape of the four traps together: a **conflicting** PR runs nothing, a 
 missing a **path-filtered** required check hangs pending, a **BEHIND** PR is green
 and armed and still cannot merge, and a **failed-check** PR reads exactly like a
 slow one. All four look like a PR that is fine.
+
+### Clearing a STUCK_UNMERGEABLE queue entry
+
+The merge queue can leave a PR's entry in the state `UNMERGEABLE`: it is still in
+the queue and still shows a position, but the queue will never merge it. Because
+the position is there, a naive watcher reads it as a healthy `QUEUED` — the false
+green `STUCK_UNMERGEABLE` exists to catch. Nothing else surfaces it either: a
+queued PR reports `autoMergeRequest: null`, so it does not look armed, and
+`gh pr merge --auto` just says "already queued" and changes nothing.
+
+The fix is to take the PR out of the queue and put it back. Removing it uses the
+GraphQL `dequeuePullRequest` mutation. Introspecting the live GitHub GraphQL
+schema on 2026-08-27 confirmed its input type is
+`DequeuePullRequestInput { id: ID!, clientMutationId: String }` — the required
+`id` is the PR's **node id**, not its number — and it returns a
+`DequeuePullRequestPayload { mergeQueueEntry, clientMutationId }`. Get the node id
+from `gh pr view <n> --json id`, then re-arm auto-merge so it re-enters the queue
+from a clean start:
+
+```bash
+PR_ID=$(gh pr view <number> --json id --jq .id)
+gh api graphql -f query='
+  mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ mergeQueueEntry { position } } }' \
+  -f id="$PR_ID"
+gh pr merge --auto --squash <number>   # re-arm; it rejoins the queue from a clean start
+```
+
+The watcher stays read-only — it reports `STUCK_UNMERGEABLE` and never mutates.
+Clearing the entry is a deliberate, separate step you run by hand.
 
 ## One-time repo setup
 
