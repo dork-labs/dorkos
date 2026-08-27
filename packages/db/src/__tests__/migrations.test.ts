@@ -178,6 +178,10 @@ describe('Database Migrations', () => {
       'room_entries',
       'room_entry_reactions',
       'room_members',
+      // The cache of which rooms have a git repo of their own. Truth is the
+      // `room-repo.json` sidecar in each room's home directory; this table is
+      // rebuildable from it (migration 0081, DOR-1591).
+      'room_repos',
       // The two coordination counters a restart used to erase: which session ids
       // a runtime has renamed away from, and the hour of automatic turns already
       // spent (migration 0067, DOR-1205).
@@ -511,7 +515,7 @@ describe('Database Migrations', () => {
 
     raw
       .prepare(
-        "INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES ('01ROOM', 'channel', 'backend', '#backend', NULL, NULL, 0, '2026-08-08T10:00:00Z', '2026-08-08T10:00:00Z')"
+        "INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES ('01ROOM', 'channel', 'backend', '#backend', NULL, 0, '2026-08-08T10:00:00Z', '2026-08-08T10:00:00Z')"
       )
       .run();
     raw

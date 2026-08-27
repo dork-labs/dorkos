@@ -221,7 +221,7 @@ describe('snapshotBeforeMigrations', () => {
     db.$client.pragma('wal_checkpoint(TRUNCATE)');
     db.$client
       .prepare(
-        "INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES ('01WALROOM', 'channel', 'backend', '#backend', NULL, NULL, 0, '2026-08-15T10:00:00Z', '2026-08-15T10:00:00Z')"
+        "INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES ('01WALROOM', 'channel', 'backend', '#backend', NULL, 0, '2026-08-15T10:00:00Z', '2026-08-15T10:00:00Z')"
       )
       .run();
 
@@ -467,7 +467,7 @@ describe('snapshotDaily', () => {
     runMigrations(db);
     db.$client
       .prepare(
-        "INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES ('01DAILY', 'channel', 'general', '#general', NULL, NULL, 0, '2026-08-15T10:00:00Z', '2026-08-15T10:00:00Z')"
+        "INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES ('01DAILY', 'channel', 'general', '#general', NULL, 0, '2026-08-15T10:00:00Z', '2026-08-15T10:00:00Z')"
       )
       .run();
 

@@ -7,13 +7,18 @@
  * shapes, and interleaving them means reading a mapping table to follow a
  * stream.
  *
- * **Two fields are dropped on the way out, and both are deliberate.**
- * `workspaceId` binds a room to a checkout on THIS machine, and the port keeps
- * it off the wire (spec `community-adapter` §Decisions, OQ3) — it stays a
- * local-only column. `AuthorRecord.naturalKey` — an agent's absolute directory —
- * never leaves the server at all; the roster the service hands us has already
- * projected it away through {@link toAuthorRef}, which is why nothing here has
- * to remember to.
+ * **One field is dropped on the way out, and it is deliberate.**
+ * `AuthorRecord.naturalKey` — an agent's absolute directory — never leaves the
+ * server at all; the roster the service hands us has already projected it away
+ * through {@link toAuthorRef}, which is why nothing here has to remember to.
+ *
+ * `workspaceId` used to be the other one. It is gone from `Room` entirely (spec
+ * `project-rooms` §3.1, DOR-1591): a room's own files are a repo under the
+ * DorkOS data directory, recorded in a `room-repo.json` sidecar and cached in
+ * `room_repos`, and that binding is even more local than the column it replaced
+ * — an absolute path on this machine — so it never approaches this projection.
+ * The decision the old note cited (spec `community-adapter` §Decisions, OQ3)
+ * still holds; there is simply no longer a field to keep off the wire.
  *
  * @module server/services/communities/local/local-projection
  */

@@ -471,10 +471,6 @@ export const RoomSchema = z
     slug: z.string().nullable().describe('Channels only. Unique among non-archived channels.'),
     title: z.string().min(1),
     topic: z.string().nullable(),
-    workspaceId: z
-      .string()
-      .nullable()
-      .describe('Optional workspace reference. How it resolves a cwd is out of scope for v1.'),
     archived: z.boolean(),
     ambientMaxEntries: z
       .number()
@@ -1093,7 +1089,6 @@ export const CreateRoomRequestSchema = z
     title: z.string().min(1).max(200).optional(),
     slug: z.string().regex(ROOM_SLUG_REGEX).optional(),
     topic: z.string().max(500).optional(),
-    workspaceId: z.string().min(1).optional(),
     members: z
       .array(z.string().min(1))
       .default([])

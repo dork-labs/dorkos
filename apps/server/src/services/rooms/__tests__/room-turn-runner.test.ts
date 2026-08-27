@@ -200,7 +200,6 @@ function request(
     slug: 'backend',
     title: 'Backend',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     wellKnown: null,

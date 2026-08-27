@@ -108,6 +108,14 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
       'rooms.maxTurnsPerAgentPerCascade',
+      // A room's own files: whether they exist at all, and the bounds a merge
+      // is measured against. `rooms.repo.mergeQueueWaitMs` is deliberately NOT
+      // here — waiting longer for a queued merge buys no file and no byte.
+      'rooms.repo.enabled',
+      'rooms.repo.maxFileBytes',
+      'rooms.repo.maxRepoBytes',
+      'rooms.repo.maxRoomMdBytes',
+      'rooms.repo.worktreeReapDays',
       'rooms.turnLimitsEnabled',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',

@@ -67,7 +67,6 @@ function seedRoom(id: string): void {
       slug: id,
       title: `#${id}`,
       topic: null,
-      workspaceId: null,
       createdAt: AT,
       lastActivityAt: AT,
     })

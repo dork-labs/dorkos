@@ -65,7 +65,6 @@ function made(): RoomWithRoster {
     slug: 'backend',
     title: 'Backend',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-07-27T10:00:00.000Z',

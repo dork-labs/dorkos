@@ -348,7 +348,6 @@ describe('GET /api/team/:memberId/rooms', () => {
         slug: 'team',
         title: 'Team',
         topic: null,
-        workspaceId: null,
         createdAt: '2026-08-01T00:00:00.000Z',
       },
       [ownerAuthorId, anaAuthorId, dorkbotAuthorId].map((authorId) => ({

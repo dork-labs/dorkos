@@ -288,6 +288,30 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The most messages one gathered-up answer covers. Higher is the tightened bound for the same reason: raising it folds more of a busy room into one turn, and a wipe that lowered it would split that turn back into several.',
   },
   {
+    path: 'rooms.repo.enabled',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      "A room's own files default ON, and the surface is a git checkout on this machine that member agents run tools in. Someone who switched that off should not have it resume silently.",
+  },
+  {
+    path: 'rooms.repo.maxFileBytes',
+    direction: 'lower',
+    reason:
+      'A tightened ceiling on the largest file a merge may bring into a room. The default is a real bound, but a person can set a smaller one and a wipe must not raise it back.',
+  },
+  {
+    path: 'rooms.repo.maxRepoBytes',
+    direction: 'lower',
+    reason: "A tightened ceiling on how large one room's files may grow.",
+  },
+  {
+    path: 'rooms.repo.maxRoomMdBytes',
+    direction: 'lower',
+    reason:
+      "A tightened ceiling on how much of a room's ROOM.md rides every turn. Lower is the tightened bound: the conventions block is prompt text that is paid for on every message in the room.",
+  },
+  {
     path: 'welcomeBack.enabled',
     direction: 'boolean',
     protectiveValue: false,

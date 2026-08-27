@@ -38,7 +38,6 @@ const ROOM: RoomWithRoster = {
   slug: 'general',
   title: '#general',
   topic: null,
-  workspaceId: null,
   archived: false,
   ambientMaxEntries: 30,
   createdAt: '2026-07-30T09:00:00.000Z',

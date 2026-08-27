@@ -49,7 +49,6 @@ function seedRoom(store: RoomStore, id = ROOM_ID): void {
       slug: id,
       title: `#${id}`,
       topic: null,
-      workspaceId: null,
       createdAt: '2026-07-26T11:00:00.000Z',
     },
     []
@@ -167,7 +166,6 @@ describe('RoomStore.findDmByMemberSet', () => {
         slug: opts.kind === 'channel' ? id : null,
         title: id,
         topic: null,
-        workspaceId: null,
         createdAt,
       },
       authorIds.map((authorId) => ({
@@ -901,7 +899,6 @@ describe('RoomStore.listRooms ordering', () => {
         slug: id,
         title: `#${id}`,
         topic: null,
-        workspaceId: null,
         createdAt: at,
       },
       [{ authorId: ANA, responseMode: 'always', joinedAt: at }]

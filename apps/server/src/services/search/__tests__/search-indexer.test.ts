@@ -44,7 +44,6 @@ function seedRoom(id: string, title = id): void {
       slug: id,
       title,
       topic: null,
-      workspaceId: null,
       createdAt: '2026-07-28T09:00:00.000Z',
       lastActivityAt: '2026-07-28T09:00:00.000Z',
     })

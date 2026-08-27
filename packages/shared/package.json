@@ -229,6 +229,10 @@
       "types": "./src/room-export-schemas.ts",
       "default": "./dist/room-export-schemas.js"
     },
+    "./room-repo": {
+      "types": "./src/room-repo.ts",
+      "default": "./dist/room-repo.js"
+    },
     "./read-cursor-schemas": {
       "types": "./src/read-cursor-schemas.ts",
       "default": "./dist/read-cursor-schemas.js"

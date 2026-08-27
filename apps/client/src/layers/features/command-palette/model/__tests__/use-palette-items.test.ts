@@ -196,7 +196,6 @@ const makeRoom = (overrides: Partial<RoomSummary> = {}): RoomSummary => ({
   slug: 'default',
   title: 'Default',
   topic: null,
-  workspaceId: null,
   archived: false,
   ambientMaxEntries: 30,
   createdAt: '2026-07-26T10:00:00.000Z',

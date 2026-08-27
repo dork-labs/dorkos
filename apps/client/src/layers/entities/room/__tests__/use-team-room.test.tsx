@@ -24,7 +24,6 @@ function room(overrides: Partial<RoomSummary> = {}): RoomSummary {
     slug: 'general',
     title: '#general',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-08T10:00:00.000Z',

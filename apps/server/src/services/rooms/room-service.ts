@@ -971,7 +971,6 @@ export class RoomService {
       slug,
       title: request.title ?? `#${slug ?? ''}`,
       topic: request.topic ?? null,
-      workspaceId: request.workspaceId ?? null,
       createdAt: new Date().toISOString(),
     };
 
@@ -1117,7 +1116,6 @@ export class RoomService {
           slug,
           title: `#${slug}`,
           topic: seed.topic ?? null,
-          workspaceId: null,
           wellKnown,
           createdAt,
         },
@@ -1307,7 +1305,6 @@ export class RoomService {
       slug,
       title,
       topic: null,
-      workspaceId: null,
       createdAt,
     };
     // The one place this seeds a responseMode that is NOT

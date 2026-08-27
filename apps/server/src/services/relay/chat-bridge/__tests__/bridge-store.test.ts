@@ -40,7 +40,6 @@ function seedRoom(roomStore: RoomStore, id = ROOM_ID): void {
       slug: null,
       title: 'Bridged chat',
       topic: null,
-      workspaceId: null,
       createdAt: '2026-08-03T00:00:00.000Z',
     },
     []

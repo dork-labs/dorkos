@@ -24,7 +24,6 @@ function seed(db: Db): void {
       slug: 'backend',
       title: '#backend',
       topic: null,
-      workspaceId: null,
       archived: false,
       createdAt: NOW,
       lastActivityAt: NOW,
