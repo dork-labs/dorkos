@@ -566,6 +566,33 @@ Each mode ends with a concise report:
 - Use `--no-cooldown` flag only for urgent security patches
 - Keep AGENTS.md version references in sync with actual versions
 
+## Traps measured on past waves (DOR-1525, 2026-08)
+
+- **The repo keeps `pnpm-lock.yaml` Prettier-formatted.** Any `pnpm install`
+  rewrites it compact and CI's `format:check` (first step of the required
+  `typecheck` workflow) fails. Run `pnpm exec prettier --write pnpm-lock.yaml`
+  after every install, before judging the diff (an 11k-line "phantom diff" is
+  this, not a real change).
+- **`pnpm.overrides` rewrite our own workspace specs too.** An override pinned at
+  a lower version silently cancels a bump you just made — compare lockfile
+  importer specifiers against `package.json` after every relock. Overrides also
+  never reach auto-installed peers, and pnpm resolves those to _latest_, not the
+  peer range; fix by declaring the dep explicitly in the importing package.
+  Rationale for every override lives in `contributing/dependency-overrides.md`.
+- **Exact-version sibling families move in lockstep** (e.g. electron-builder's
+  packages); per-entry override pins fight the next bump.
+- **A wall of `better-auth`-style type errors mid-bump = a duplicated peer
+  instance** (two resolved copies of one transitive dep, e.g. a `jose` version
+  fork). Check for duplicate copies before debugging types.
+- **Migration briefs from changelog research average ~1 factual error per
+  package.** Verify claimed API changes against the installed `.d.ts` before
+  coding to them.
+- **Full-suite runs under multi-agent machine load flake with disjoint
+  single-test timeouts each run.** Passing-in-isolation + a clean pre-push
+  affected run is the bar; the merge queue is the arbiter. And turbo replays
+  `test` cache hits in ~300ms — use `--force` when the run itself is the
+  evidence.
+
 ```
 
 ```

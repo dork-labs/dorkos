@@ -87,6 +87,38 @@ Specific traps, each of which has produced a false green here:
   newly added subpath, which surfaces as an unrelated-looking import error in
   whichever test file happens to load first.
 
+### Dev-mode quirks when standing one up in a worktree
+
+- A fresh worktree needs `pnpm install` **and**
+  `pnpm --filter "@dorkos/server^..." build` before anything runs, and has no
+  `.env` — pass `DORKOS_PORT` and `VITE_PORT` explicitly (4242/6241 are usually
+  taken by the real instances).
+- **`turbo.json`'s `globalPassThroughEnv` is the env allowlist.** `DORKOS_PORT`,
+  `VITE_PORT`, `DORKOS_DEFAULT_CWD`, `DORKOS_CORS_ORIGIN`, `DORK_HOME` pass
+  through; `CLAUDE_CONFIG_DIR` does not, so `pnpm dev` cannot inherit an alternate
+  Claude account a shell exported.
+- Running the server **outside** turbo (`npx tsx src/index.ts`) needs
+  `DORKOS_CORS_ORIGIN=http://localhost:<VITE_PORT>` or every client query dies on
+  CORS and reads as a wall of 500s.
+- **`pnpm dev` restart-loops on a fresh `DORK_HOME`**: the server writes
+  `<DORK_HOME>/cache/extensions/server/_run/*.js` at boot, tsx-watch sees the
+  change, restarts, forever. Run the server without watch (`npx tsx src/index.ts`
+  from `apps/server`) and Vite separately; skip `pnpm dev`'s site task, which
+  binds a fixed port the real instance may hold.
+- **Two fields mislead.** `workingDirectory` in `GET /api/config` is
+  `process.cwd()`, not the session-listing root — verify `DORKOS_DEFAULT_CWD` via
+  `GET /api/sessions` instead. And the session list is cwd-scoped, so a worktree
+  instance shows zero sessions until pointed at the repo whose project slug holds
+  them.
+- `lsof` hangs on some machines — probe port occupancy with
+  `curl -s -m 2 -o /dev/null http://localhost:<p>/` and prefer a fresh port pair
+  over reclaiming a held one.
+- Driving the UI: the right panel boots collapsed but still renders its tab strip,
+  so clicks inside it fail with "subtree intercepts pointer events" — open the
+  panel first. Radix comboboxes ignore synthetic JS clicks (focus the trigger,
+  then real key events). `navigator.clipboard.readText()` hangs on a permission
+  prompt under automation — spy on `writeText` instead.
+
 For the browser-specific traps — one context vs many, and why
 `page.request.get()` silently bypasses the socket pool — see
 `apps/e2e/GOTCHAS.md`.

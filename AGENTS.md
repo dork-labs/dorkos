@@ -134,7 +134,7 @@ If compaction fires mid-`/flow`, preserve verbatim: the work item id + title, cu
 
 ## Pull Requests
 
-Open PRs from a worktree branch based on `origin/main`. The automated Claude review runs on-demand: full review on open/ready-for-review, re-review via the `re-review` label (auto-cleared). Control intensity with `skip-review`, `review:light`, `review:deep`. Flow and label semantics: `creating-pull-requests` skill; the reviewer rubric is `REVIEW.md`.
+Open PRs from a worktree branch based on `origin/main`. **Direct pushes to `main` are rejected by repository rules — everything lands via PR + merge queue, spec/docs commits included** (docs-only PRs: `skip-changelog` + `review:light`). The automated Claude review runs on-demand: full review on open/ready-for-review, re-review via the `re-review` label (auto-cleared). Control intensity with `skip-review`, `review:light`, `review:deep`. Flow and label semantics: `creating-pull-requests` skill; the reviewer rubric is `REVIEW.md`.
 
 ## Hard Rules
 
