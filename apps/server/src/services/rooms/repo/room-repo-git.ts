@@ -175,7 +175,38 @@ function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
 }
 
 /**
- * Run one git command in `cwd` and answer its trimmed stdout.
+ * How much output one git command may produce before it is killed.
+ *
+ * Node's own default is 1 MB, which is far too small here for two reasons that
+ * have nothing to do with each other: reading a file out of a commit answers
+ * its whole contents (capped by `config.rooms.repo.maxFileBytes`, 5 MB by
+ * default), and one history walk over a busy directory prints a line per file
+ * per commit. So the default is generous — and it is still a CAP, not a
+ * licence: a command that runs past it is killed rather than allowed to grow
+ * the server's heap without bound, which is exactly what a room full of
+ * member-written content needs. Callers that know their own ceiling (a file
+ * read does) pass a tighter one.
+ */
+const GIT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+
+/** What one git invocation may be tuned with. */
+export interface RunGitOptions {
+  /**
+   * Output ceiling in bytes, defaulting to {@link GIT_MAX_OUTPUT_BYTES}. Past
+   * it the child is killed and the call rejects with
+   * `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`.
+   */
+  maxBuffer?: number;
+}
+
+/**
+ * Run one git command in `cwd` and answer its stdout as raw BYTES.
+ *
+ * The primitive {@link runGit} is built on, and the one to reach for whenever
+ * the output is content rather than a value: `git cat-file blob` answers a
+ * file, and a file is bytes — decoding it as UTF-8 would corrupt anything that
+ * is not text, and trimming it would silently drop a trailing newline the
+ * person actually wrote.
  *
  * @param args - Arguments after `git`, without the shared config prefix.
  * @param cwd - The directory to run in. Must exist.
@@ -183,24 +214,60 @@ function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
  *   climb past. Required rather than defaulted: a caller that forgets it is a
  *   caller reading somebody else's repository, which is the bug this exists to
  *   prevent.
- * @returns Trimmed stdout.
+ * @param options - Per-call tuning. See {@link RunGitOptions}.
+ * @returns Raw stdout.
  * @throws {GitUnavailableError} When there is no `git` on this machine.
- * @throws When git exits non-zero or the timeout elapses.
+ * @throws When git exits non-zero, the timeout elapses, or the output cap is hit.
  */
-export async function runGit(args: string[], cwd: string, ceilingDir: string): Promise<string> {
+export async function runGitRaw(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  options: RunGitOptions = {}
+): Promise<Buffer> {
   try {
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
       timeout: GIT_TIMEOUT_MS,
       env: gitEnv(ceilingDir),
+      maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
+      // Bytes, not characters: this function's whole purpose is to answer what
+      // git wrote rather than what a decoder made of it.
+      encoding: 'buffer',
     });
-    return stdout.trim();
+    return stdout;
   } catch (err) {
     // `ENOENT` from `execFile` is the BINARY, not a missing path: the cwd is
     // checked by the caller and a missing repo exits 128 with a message.
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
     throw err;
   }
+}
+
+/**
+ * Run one git command in `cwd` and answer its trimmed stdout.
+ *
+ * The reader for VALUES — a sha, a branch name, a porcelain status. For file
+ * contents use {@link runGitRaw}, whose output this one trims and decodes.
+ *
+ * @param args - Arguments after `git`, without the shared config prefix.
+ * @param cwd - The directory to run in. Must exist.
+ * @param ceilingDir - The room home directory git's repository search may not
+ *   climb past. Required rather than defaulted: a caller that forgets it is a
+ *   caller reading somebody else's repository, which is the bug this exists to
+ *   prevent.
+ * @param options - Per-call tuning. See {@link RunGitOptions}.
+ * @returns Trimmed stdout.
+ * @throws {GitUnavailableError} When there is no `git` on this machine.
+ * @throws When git exits non-zero or the timeout elapses.
+ */
+export async function runGit(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  options: RunGitOptions = {}
+): Promise<string> {
+  return (await runGitRaw(args, cwd, ceilingDir, options)).toString('utf-8').trim();
 }
 
 /**
