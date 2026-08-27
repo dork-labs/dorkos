@@ -8135,6 +8135,69 @@
           "promoted"
         ]
       },
+      "RoomRepo": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "owned"
+            ],
+            "description": "Always 'owned'; linked repos are reserved and refused."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "The author id of the operator who enabled it."
+          },
+          "defaultBranch": {
+            "type": "string",
+            "enum": [
+              "main"
+            ]
+          },
+          "caps": {
+            "type": "object",
+            "properties": {
+              "maxFileBytes": {
+                "type": "integer"
+              },
+              "maxRepoBytes": {
+                "type": "integer"
+              },
+              "maxRoomMdBytes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "maxFileBytes",
+              "maxRepoBytes",
+              "maxRoomMdBytes"
+            ]
+          },
+          "lastMergeSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The room entry seq of the last merge, or null when nothing has merged yet."
+          }
+        },
+        "required": [
+          "roomId",
+          "mode",
+          "createdAt",
+          "createdBy",
+          "defaultBranch",
+          "caps",
+          "lastMergeSeq"
+        ]
+      },
       "RoomSnapshot": {
         "type": "object",
         "properties": {
@@ -18832,6 +18895,101 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/repo": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Give a room files of its own",
+        "description": "Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The room now has files of its own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "$ref": "#/components/schemas/RoomRepo"
+                    }
+                  },
+                  "required": [
+                    "repo"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the person who owns this install (`OPERATOR_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "$ref": "#/components/schemas/RoomRepo"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }

@@ -45,10 +45,12 @@ import {
 import {
   getAttachmentRowStore,
   getRoomAttachmentStore,
+  getRoomRepoService,
   getRoomService,
   RoomError,
   toAuthorRef,
 } from '../services/rooms/index.js';
+import { ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
@@ -819,6 +821,54 @@ router.post('/:id/holds/:authorId/promote', (req, res) => {
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/holds/:authorId/promote');
   }
+});
+
+/**
+ * POST /:id/repo — give this room files of its own (spec `project-rooms` §3.2).
+ *
+ * Creates the room's home directory, an empty git repo whose branch is `main`,
+ * and a first `ROOM.md` committed as the person who asked. Takes no body:
+ * there is nothing to configure, only a thing to do — and Express 5 leaves
+ * `req.body` undefined on an empty POST, so asking for one would refuse every
+ * honest caller (the same reasoning `POST /:id/halt` writes down).
+ *
+ * **Operator-only, and never an agent capability.** An agent that could give
+ * its own room a repo could hand itself a writable working directory that no
+ * person chose — the confused-deputy shape the membership verbs already refuse
+ * (spec §3.2, channel-workspace §3.6). A caller presenting an agent token that
+ * verifies is refused 403 `OPERATOR_ONLY`; one presenting a token this machine
+ * cannot verify is refused 401 by `resolveCaller` before this handler runs; and
+ * no capability tool offers this at all.
+ *
+ * **A room the caller cannot see answers 404 first**, before the operator gate,
+ * so an agent probing room ids cannot tell "exists, not yours" from "no such
+ * room" (DOR-1429's order, argued on `PATCH /:id`).
+ *
+ * **Idempotent.** A room that already has files answers 409
+ * `ROOM_REPO_EXISTS` carrying the binding it already had, so a client that lost
+ * the answer to its first call can carry on with the second. That is the one
+ * refusal here with a payload, which is why it is not a `RoomError`.
+ *
+ * With `config.rooms.repo.enabled` off, 409 `ROOM_REPOS_DISABLED` — the
+ * install-level fact, checked before the room is looked up.
+ */
+router.post('/:id/repo', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const result = await getRoomRepoService().enable(req.params.id, caller.id);
+      if (!result.created) {
+        return res.status(409).json({
+          error: 'This room already has files of its own.',
+          code: ROOM_REPO_EXISTS_CODE,
+          repo: result.repo,
+        });
+      }
+      res.status(201).json({ repo: result.repo });
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/repo');
+    }
+  })();
 });
 
 /**

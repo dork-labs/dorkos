@@ -77,6 +77,13 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,
   TOO_MANY_ATTACHMENTS: 400,
+  // A 409 for both room-repo refusals: the request is well formed and the room
+  // is right, but the install (or the room's own unmerged work) says not now.
+  ROOM_REPOS_DISABLED: 409,
+  ROOM_REPO_UNMERGED_WORK: 409,
+  // A 409 rather than a 500: the request was well formed and nothing is broken.
+  // This machine is missing a program, and installing it changes the answer.
+  ROOM_REPO_GIT_UNAVAILABLE: 409,
 };
 
 /**
