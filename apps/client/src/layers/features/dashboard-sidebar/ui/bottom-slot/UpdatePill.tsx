@@ -1,10 +1,10 @@
 /**
  * The transient update pill (BC-44).
  *
- * Present only while an update genuinely is ready. On the desktop app that
- * means a downloaded update waiting for a restart; on a web or CLI install it
- * means a newer published version, and the pill hands over the one command that
- * installs it.
+ * Present only while there is something to say about an update. On the desktop
+ * app that means a downloaded update waiting for a restart, or one that was
+ * staged and then failed to install; on a web or CLI install it means a newer
+ * published version, and the pill hands over the one command that installs it.
  *
  * It lived inside `SidebarFooterStrip`, stacked above the nav row. It is a
  * candidate in the sidebar's bottom slot now, so it takes its turn against the
@@ -16,12 +16,23 @@
  * @module features/dashboard-sidebar/ui/bottom-slot/UpdatePill
  */
 import { useCallback } from 'react';
-import { Check, Copy, RotateCw, X } from 'lucide-react';
-import { useCopyFeedback } from '@/layers/shared/lib';
+import { Check, Copy, Download, RotateCw, X } from 'lucide-react';
+import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import type { UpdateReadiness } from './use-update-ready';
 
 /** The command that updates a web/CLI install, offered by the pill. */
 const UPDATE_COMMAND = 'npm update -g dorkos';
+
+/**
+ * What the card says when an update was staged and then did not install.
+ *
+ * Three jobs in two sentences: name what went wrong without blaming the person,
+ * give the one action that works, and answer the question anybody asked to
+ * reinstall an app immediately has — whether they lose their work. Never
+ * "Squirrel", never a version number they cannot act on.
+ */
+const INSTALL_FAILED_COPY =
+  "The update couldn't install itself. Download a fresh copy — your settings and agents stay put.";
 
 /** Shared by both shapes of the pill, so the amber reads the same either way. */
 const PILL_CLASSES =
@@ -82,6 +93,27 @@ export function UpdatePill({ update }: UpdatePillProps) {
         >
           <RotateCw className="size-3" />
           Update ready — Restart
+        </button>
+      </div>
+    );
+  }
+
+  if (update.kind === 'desktop-install-failed') {
+    // The only shape here that needs a sentence: "Download fresh copy" alone
+    // would read as an offer rather than as the answer to something that went
+    // wrong, and it is the reassurance — nothing is lost — that decides whether
+    // anyone clicks it.
+    return (
+      <div role="group" aria-label="Update install failed" className="flex flex-col gap-1.5 px-0.5">
+        <p className="text-sidebar-foreground/70 text-[11px] leading-snug">{INSTALL_FAILED_COPY}</p>
+        <button
+          type="button"
+          onClick={update.downloadFresh}
+          aria-label="Download a fresh copy of DorkOS"
+          className={cn(PILL_CLASSES, 'self-start')}
+        >
+          <Download className="size-3" />
+          Download fresh copy
         </button>
       </div>
     );

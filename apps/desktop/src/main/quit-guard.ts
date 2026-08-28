@@ -72,6 +72,17 @@ export interface QuitGuardOptions {
    * `auto-updater.ts` imports {@link confirmInterruptingAgents} from here.
    */
   consumeUpdateRestart: () => boolean;
+  /**
+   * Write down that an update is about to be installed by this quit, so the
+   * next launch can tell whether it actually was (see `auto-updater.ts`).
+   *
+   * Wired here because **an ordinary quit installs updates too**
+   * (`autoInstallOnAppQuit`), and that path never passes through the restart
+   * button — it is how the reporting user's one successful install finally
+   * happened, unannounced. A no-op when nothing is staged, and idempotent, so
+   * the restart path calling it first costs nothing.
+   */
+  recordUpdateInstallIntent: () => void;
 }
 
 /** The options {@link armQuitGuard} was given, for {@link confirmInterruptingAgents} to reuse. */
@@ -143,11 +154,17 @@ async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
 
   quitting = true;
   try {
+    // Before the shutdown, not after: a server that hangs on the way down must
+    // not cost us the record of what this quit was about to install. Inside
+    // the try for the same reason the shutdown is — past `quitting = true`,
+    // anything that throws on the way out strands the app in a state where the
+    // NEXT quit skips the shutdown entirely.
+    options.recordUpdateInstallIntent();
     await options.shutdown();
   } catch (err) {
-    // A server that will not shut down cleanly must not trap the person in an
-    // app they asked to close; log it and go.
-    log.error('[quit] The server did not shut down cleanly.', err);
+    // A quit that will not complete cleanly must not trap the person in an app
+    // they asked to close; log it and go.
+    log.error('[quit] The quit sequence did not complete cleanly.', err);
   }
   app.quit();
 }

@@ -82,3 +82,90 @@ describe('useDesktopUpdater', () => {
     expect(result.current.status).toEqual({ state: 'downloading', percent: 10 });
   });
 });
+
+/**
+ * The card stopped lying (spec `desktop-updater-overhaul` D3).
+ *
+ * `foldStatus` used to keep "Restart to install" showing over every later
+ * `error`, which is how a machine that had not installed anything in ten days
+ * still offered a restart. These are the two states that now get through, and
+ * the one rule that keeps a recorded failure from being papered over.
+ */
+describe('useDesktopUpdater — statuses that must not be swallowed', () => {
+  /** Build a desktop `electronAPI` stub, capturing the status callback so tests can drive events. */
+  function stubDesktop(getUpdateStatus = vi.fn().mockResolvedValue(null)) {
+    const emitRef: { current?: (status: DesktopUpdateStatus) => void } = {};
+    window.electronAPI = {
+      onUpdateStatus: (cb: (status: DesktopUpdateStatus) => void) => {
+        emitRef.current = cb;
+        return vi.fn();
+      },
+      restartToUpdate: vi.fn(),
+      getUpdateStatus,
+    } as unknown as ElectronAPI;
+    return emitRef;
+  }
+
+  /** A failure showing on the card: the app came back up as the old version. */
+  const FAILED: DesktopUpdateStatus = { state: 'install-failed', version: '0.63.0', attempts: 2 };
+
+  it('lets an error replace a downloaded update, instead of hiding it', () => {
+    const emitRef = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    act(() => emitRef.current?.({ state: 'downloaded', version: '2.0.0' }));
+    act(() => emitRef.current?.({ state: 'error', message: 'signature check failed' }));
+
+    expect(result.current.status).toEqual({ state: 'error', message: 'signature check failed' });
+  });
+
+  it('lets a failed install replace whatever the card was showing', () => {
+    const emitRef = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    act(() => emitRef.current?.({ state: 'downloaded', version: '0.63.0' }));
+    act(() => emitRef.current?.(FAILED));
+
+    expect(result.current.status).toEqual(FAILED);
+  });
+
+  it.each<[string, DesktopUpdateStatus]>([
+    ['a background re-check', { state: 'checking' }],
+    ['a newer version being announced', { state: 'available', version: '0.64.0' }],
+    ['nothing new', { state: 'not-available' }],
+    ['an unrelated network error', { state: 'error', message: 'offline' }],
+    ['a download in progress', { state: 'downloading', percent: 50 }],
+    ['the SAME version downloading again', { state: 'downloaded', version: '0.63.0' }],
+    ['an OLDER version downloading', { state: 'downloaded', version: '0.62.0' }],
+  ])('keeps the failure showing through %s', (_name, next) => {
+    const emitRef = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    act(() => emitRef.current?.(FAILED));
+    act(() => emitRef.current?.(next));
+
+    // The updater re-downloads and re-stages the version that just failed, and
+    // a `downloading` carries no version at all — neither is the failure ending.
+    expect(result.current.status).toEqual(FAILED);
+  });
+
+  it('lets a genuinely newer version, once downloaded, clear the failure', () => {
+    const emitRef = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    act(() => emitRef.current?.(FAILED));
+    act(() => emitRef.current?.({ state: 'downloaded', version: '0.64.0' }));
+
+    expect(result.current.status).toEqual({ state: 'downloaded', version: '0.64.0' });
+  });
+
+  it('recovers a failed install on a renderer that mounts later', async () => {
+    // macOS close→reopen: the verdict was pushed at launch, long before this
+    // React tree existed.
+    stubDesktop(vi.fn().mockResolvedValue(FAILED));
+
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    await vi.waitFor(() => expect(result.current.status).toEqual(FAILED));
+  });
+});
