@@ -11,14 +11,27 @@ covers:
   - 'test(server): the two task power route tests answer the registry question the create path now asks (DOR-1615)'
   - 'docs(shared,db,changelog): say where resolved_model and the skill effort tier stop short (DOR-1615, DOR-1347)'
   - 'docs(api): regenerate the OpenAPI spec and reference pages (DOR-1615, DOR-1347)'
+  - 'feat(client): a scheduled task picks its runtime, model and effort in the app (DOR-1615, DOR-1347)'
+  - 'feat(operating-skills): agents learn that a task can name its runtime, model and effort (DOR-1615, DOR-1347)'
 ---
 
 ### Added
 
 - A scheduled task can now say which agent runtime it runs on — Claude Code,
-  Codex or OpenCode — which model, and how hard that model thinks. Set them in
-  the task's file, over the API, from the `dorkos task create` command, or by
-  asking an agent to make you a task with them (DOR-1615, DOR-1347)
+  Codex or OpenCode — which model, and how hard that model thinks. Pick them
+  under **Advanced settings** when you create or edit a task, or set them in the
+  task's file, over the API, from the `dorkos task create` command, or by asking
+  an agent to make you a task with them (DOR-1615, DOR-1347)
+- The task form tells you when a choice no longer works: a runtime you have not
+  turned on, or a model that runtime does not offer — which is what you see if
+  you pick a model for one runtime and then move the task to another. It never
+  drops the choice for you (DOR-1615, DOR-1347)
+- The permissions dial on a task now speaks the vocabulary of the runtime that
+  task will really run on, so it stops promising you Claude Code's behaviour for
+  a run happening on Codex (DOR-1615)
+- A task that runs somewhere other than its agent says so on its row, and
+  nowhere else — the tasks that simply follow their agent stay quiet (DOR-1615,
+  DOR-1347)
 - Leave all three unset and nothing changes: the task runs on whatever its agent
   runs on, which is what every scheduled task did before. Setting one is an
   override, and clearing it goes back to following the agent (DOR-1615)

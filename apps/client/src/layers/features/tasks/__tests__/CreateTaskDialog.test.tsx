@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -112,6 +113,11 @@ describe('CreateTaskDialog', () => {
       disconnect() {}
     };
     Element.prototype.scrollIntoView = vi.fn();
+    // Radix Select needs the pointer-capture APIs jsdom lacks before it will
+    // open its listbox under userEvent — the same shims the settings rows install.
+    const proto = Element.prototype as unknown as Record<string, unknown>;
+    if (!proto.hasPointerCapture) proto.hasPointerCapture = vi.fn();
+    if (!proto.releasePointerCapture) proto.releasePointerCapture = vi.fn();
   });
 
   beforeEach(() => {
@@ -579,11 +585,13 @@ describe('CreateTaskDialog', () => {
       expect(note).not.toHaveTextContent(/time limit/);
     });
 
-    it('shows the runtime that actually runs the task, not the registry default', async () => {
-      // `schedulerAgentManager` is bound to ClaudeCodeRuntime at boot
-      // (apps/server/src/index.ts) — `runtimes.default` moves the registry's
-      // default and never touches the scheduler. Dialling the default would
-      // caption a Claude Code run with Codex's promises.
+    it('speaks the vocabulary of the runtime the task will actually run on', async () => {
+      // This used to be pinned to `claude-code`, because the scheduler's runtime
+      // was one object bound at boot. A task carries its own runtime now
+      // (DOR-1615), so the dial follows the resolved one: no agent and no
+      // override means the registry default, and picking a runtime moves it.
+      // Read against the OLD behaviour this fails twice — the opening caption
+      // would be Claude Code's, and it would not move.
       const transport = createMockTransport({
         getCapabilities: vi.fn().mockResolvedValue({
           defaultRuntime: 'codex',
@@ -647,14 +655,25 @@ describe('CreateTaskDialog', () => {
       );
       fireEvent.click(screen.getByText('Start from scratch'));
 
+      // Nothing overridden and no agent: the run lands on the registry default,
+      // and the dial says what THAT runtime promises.
+      await waitFor(() =>
+        expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/can't pause to ask/)
+      );
+      // Codex never asks, so the note about an ask nobody answers has nothing to
+      // warn about — it is gated on the declared `asks`, not on a mode id.
+      expect(screen.queryByTestId('task-unattended-note')).toBeNull();
+
+      // Move the task onto Claude Code and the whole vocabulary moves with it.
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('task-runtime-select'));
+      await user.click(await screen.findByRole('option', { name: 'Claude Code' }));
+
       await waitFor(() =>
         expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(
           'Edits files on its own. Asks before it runs a command.'
         )
       );
-      expect(screen.getByTestId('trust-dial-caption')).not.toHaveTextContent(/can't pause to ask/);
-      // And the stall note survives: gated on the declared `asks`, it would have
-      // been suppressed by Codex's `never` for a run Codex is not doing.
       expect(screen.getByTestId('task-unattended-note')).toBeInTheDocument();
     });
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStore } from '@tanstack/react-form';
 import { ChevronRight, Trash2 } from 'lucide-react';
 import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
@@ -15,37 +16,14 @@ import {
 import { useAppForm } from '@/layers/shared/lib/form';
 import { needsConsentRitual, permissionModeLabel } from '@/layers/shared/lib';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import type { PermissionMode, Task } from '@dorkos/shared/types';
+import type { EffortLevel, PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
+import { TaskExecutionFields } from './TaskExecutionFields';
+import { useAgentRuntime, useTaskExecution } from './use-task-execution';
 
 export type DialogStep = 'preset-picker' | 'form';
-
-/**
- * The runtime a scheduled run actually executes on.
- *
- * **This is an assumption, and deliberately not the registry default.** A task
- * carries no runtime of its own, and the scheduler's is fixed at boot:
- * `apps/server/src/index.ts` binds `schedulerAgentManager` to the
- * `ClaudeCodeRuntime` it constructs and hands that to `TaskSchedulerService`.
- * The `runtimes.default` setting moves the *registry's* default — which runtime
- * a new chat session gets — and never reaches the scheduler. So on a server set
- * to Codex, dialling the default would caption a Claude Code run with Codex's
- * promises: amber "can't pause to ask" for a run that will pause and ask, and no
- * unattended-approval note at all, because Codex declares `asks: 'never'` at
- * that stop.
- *
- * **Where this breaks:** the day the scheduler takes its runtime from the
- * registry, or a task carries one. The fix then is to read it from the task (or
- * from a scheduler-runtime endpoint), not to widen this constant.
- *
- * A test-mode boot is the one case this is already wrong about — the scheduler
- * runs on `TestModeRuntime` there and `claude-code` is never registered. That
- * resolves to no profile at all, which the form says out loud rather than
- * guessing.
- */
-export const TASK_RUNTIME = 'claude-code';
 
 export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
@@ -63,6 +41,20 @@ export type ScheduleFormValues = {
   maxRuntime: string;
   /** Whether every run resumes one session instead of starting fresh (DOR-1571). */
   sticky: boolean;
+  /**
+   * Which runtime this task's runs execute on. Empty string means "no override"
+   * — the run follows its agent, then the server default (DOR-1615).
+   *
+   * The same empty-string sentinel `agentId` uses above, and for the same
+   * reason: a form value that is sometimes `undefined` fights the field types
+   * all the way down. It becomes `null` on the wire, which is how an update
+   * clears a value.
+   */
+  runtime: string;
+  /** The model this task's runs execute on; empty means "agent default" (DOR-1347). */
+  model: string;
+  /** How hard the model thinks; empty means "agent default". */
+  effort: string;
 };
 
 /** Convert milliseconds to a human-friendly duration string (e.g. "10m"). */
@@ -111,6 +103,9 @@ export function buildFormValues(
       permissionMode: editTask.permissionMode,
       maxRuntime: editTask.maxRuntime ? msToRuntimeStr(editTask.maxRuntime) : DEFAULT_MAX_RUNTIME,
       sticky: editTask.sticky,
+      runtime: editTask.runtime ?? '',
+      model: editTask.model ?? '',
+      effort: editTask.effort ?? '',
     };
   }
   if (preset) {
@@ -124,6 +119,13 @@ export function buildFormValues(
       permissionMode: defaultMode,
       maxRuntime: DEFAULT_MAX_RUNTIME,
       sticky: false,
+      // A template says what a task DOES, never where it runs: a preset
+      // carrying a runtime would put one machine's answer on everybody's
+      // schedule (spec `task-runtime-model` §2, decision 12 — marketplace
+      // shape declarations do not carry these either).
+      runtime: '',
+      model: '',
+      effort: '',
     };
   }
   return {
@@ -136,6 +138,9 @@ export function buildFormValues(
     permissionMode: defaultMode,
     maxRuntime: DEFAULT_MAX_RUNTIME,
     sticky: false,
+    runtime: '',
+    model: '',
+    effort: '',
   };
 }
 
@@ -166,8 +171,6 @@ export function ScheduleForm({
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
-  const caps = useCapabilitiesForRuntime(TASK_RUNTIME);
-  const descriptors = caps?.permissionModes.values ?? [];
   const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
   const form = useAppForm({
@@ -186,6 +189,13 @@ export function ScheduleForm({
           permissionMode: value.permissionMode,
           maxRuntime: value.maxRuntime.trim() || undefined,
           sticky: value.sticky,
+          // Always sent, and `null` where the form is empty — that is how an
+          // update CLEARS an override (`UpdateTaskRequestSchema`). Omitting the
+          // key would mean "leave it as it was", which makes the first option
+          // in each select unreachable once a value has been saved.
+          runtime: value.runtime || null,
+          model: value.model || null,
+          effort: (value.effort || null) as EffortLevel | null,
         };
         updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
       } else {
@@ -200,11 +210,43 @@ export function ScheduleForm({
           permissionMode: value.permissionMode,
           maxRuntime: value.maxRuntime.trim() || undefined,
           ...(value.sticky ? { sticky: true } : {}),
+          // Omitted rather than nulled on a CREATE: there is nothing to clear
+          // yet, and a body that carries only what was chosen is the shape the
+          // rest of this call already has.
+          ...(value.runtime ? { runtime: value.runtime } : {}),
+          ...(value.model ? { model: value.model } : {}),
+          ...(value.effort ? { effort: value.effort as EffortLevel } : {}),
         };
         createTask.mutate(input, { onSuccess: onSubmitSuccess });
       }
     },
   });
+
+  // The three values the Runs-on controls and the Trust dial both depend on,
+  // read off the live form rather than through `form.Subscribe`: the resolution
+  // below is hooks, and hooks cannot live inside a render prop.
+  const agentId = useStore(form.store, (s) => s.values.agentId);
+  const runtimeOverride = useStore(form.store, (s) => s.values.runtime);
+  const modelOverride = useStore(form.store, (s) => s.values.model);
+  const effortOverride = useStore(form.store, (s) => s.values.effort);
+
+  // The picked agent's own runtime, off the manifest that owns it (ADR-0043).
+  const agentRuntime = useAgentRuntime(agents, agentId);
+
+  const execution = useTaskExecution({
+    runtime: runtimeOverride,
+    model: modelOverride,
+    effort: effortOverride,
+    agentRuntime,
+  });
+
+  // The dial speaks the vocabulary of the runtime this task will ACTUALLY run
+  // on — the task's own choice, else its agent's, else the server default.
+  // Pinned to `claude-code` this used to caption a Codex run with Claude Code's
+  // promises, which is the defect the retired `TASK_RUNTIME` constant named in
+  // its own comment.
+  const caps = useCapabilitiesForRuntime(execution.effectiveRuntime);
+  const descriptors = caps?.permissionModes.values ?? [];
 
   return (
     <form.AppForm>
@@ -349,6 +391,26 @@ export function ScheduleForm({
             </summary>
 
             <div className="mt-3 space-y-4 pl-6">
+              {/* Above Permissions on purpose: the dial's whole vocabulary comes
+                  from the runtime chosen here, so the runtime is the thing to
+                  read first. */}
+              <TaskExecutionFields
+                runtime={runtimeOverride}
+                model={modelOverride}
+                effort={effortOverride}
+                execution={execution}
+                // A model belongs to ONE runtime's id space (spec §2, decision
+                // 3), so a model picked for Codex means nothing on Claude Code.
+                // The runtime change does NOT silently drop it: the model row
+                // goes amber and names the mismatch, the way the Runs on picker
+                // does, and the person clears it or changes it themselves.
+                // Deleting somebody's choice as a side effect of another choice
+                // is the thing they cannot undo.
+                onRuntimeChange={(value) => form.setFieldValue('runtime', value)}
+                onModelChange={(value) => form.setFieldValue('model', value)}
+                onEffortChange={(value) => form.setFieldValue('effort', value)}
+              />
+
               <form.AppField name="permissionMode">
                 {(field) => {
                   const current = descriptors.find((d) => d.id === field.state.value);
