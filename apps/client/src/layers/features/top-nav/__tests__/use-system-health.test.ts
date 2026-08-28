@@ -46,6 +46,8 @@ function makeRun(createdAt: string): TaskRun {
     error: 'Something went wrong',
     sessionId: null,
     trigger: 'scheduled',
+    resolvedRuntime: null,
+    resolvedModel: null,
     createdAt,
   };
 }

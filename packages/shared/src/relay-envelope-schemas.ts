@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
-import { PermissionModeSchema } from './schemas.js';
+import { EffortLevelSchema, PermissionModeSchema } from './schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -348,6 +348,24 @@ export const TaskDispatchPayloadSchema = z
      * first run.
      */
     resumeSession: z.boolean().optional(),
+    /**
+     * The model this run resolved to, in the executing runtime's own id space
+     * (DOR-1347).
+     *
+     * Resolved on the SCHEDULER side and carried, for the same reason
+     * `systemPromptAppend` is: the ladder behind it reads the task row, the
+     * agent's manifest and the server's config, none of which the receiver can
+     * see. Optional, and absent means "the runtime decides" — which is what
+     * every task envelope meant before this field, so an envelope written by an
+     * older build (a dead-letter replay) still parses and still runs.
+     */
+    model: z.string().min(1).optional(),
+    /**
+     * The reasoning-effort rung this run resolved to, on the shared ladder.
+     * Absent means unset. Dropped by the scheduler for a runtime whose API has
+     * no effort, so a receiver never has to know which those are.
+     */
+    effort: EffortLevelSchema.optional(),
   })
   .openapi('TaskDispatchPayload');
 

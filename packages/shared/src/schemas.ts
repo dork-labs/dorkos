@@ -4028,6 +4028,33 @@ export const TaskSchema = z
     sticky: z.boolean().default(false),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
+    /**
+     * Which agent runtime this task's runs execute on, or `null` to follow the
+     * task's agent (DOR-1615).
+     *
+     * `null` is the answer every task had before this field existed and stays
+     * the default: the target agent's manifest `runtime`, and the server's
+     * default runtime for a task with no agent. A value here overrides both.
+     *
+     * A plain string rather than the runtime enum, on the same rule the
+     * `schedule:` block states: whether a runtime can take this run is a
+     * question about what is REGISTERED where it fires, answered when it fires.
+     */
+    runtime: z.string().nullable().default(null),
+    /**
+     * The model this task's runs execute on, in the RESOLVED runtime's own id
+     * space, or `null` to follow the agent and the server default (DOR-1347).
+     *
+     * Unvalidated at write, exactly as the agent manifest's `model` is: a model
+     * catalog is remote and a runtime can be disconnected while somebody edits,
+     * so a spelling nothing offers is reported at run time, not refused here.
+     */
+    model: z.string().nullable().default(null),
+    /**
+     * How hard the model thinks during this task's runs, on the shared effort
+     * ladder, or `null` to follow the agent and the server default.
+     */
+    effort: EffortLevelSchema.nullable().default(null),
     status: TaskStatusSchema,
     filePath: z.string(),
     createdAt: z.string(),
@@ -4101,6 +4128,23 @@ export const TaskRunSchema = z
     error: z.string().nullable(),
     sessionId: z.string().nullable(),
     trigger: TaskRunTriggerSchema,
+    /**
+     * The runtime this run ACTUALLY ran on, stamped at dispatch (DOR-1615).
+     *
+     * The resolved answer, not the task's setting: a task that names no runtime
+     * still records the one its agent resolved to, so run history says what
+     * happened rather than what was configured — and a task whose agent moved to
+     * another runtime last week does not rewrite its own past.
+     *
+     * `null` on every run recorded before this column existed.
+     */
+    resolvedRuntime: z.string().nullable().default(null),
+    /**
+     * The model this run actually ran on, stamped at dispatch (DOR-1347).
+     * `null` when nothing chose one — the runtime picked — or on a run older
+     * than the column.
+     */
+    resolvedModel: z.string().nullable().default(null),
     createdAt: z.string(),
   })
   .openapi('TaskRun');
@@ -4216,6 +4260,28 @@ export const CreateTaskRequestSchema = z
      * off — the isolated-per-run default. See {@link TaskSchema.sticky}.
      */
     sticky: z.boolean().optional(),
+    /**
+     * Which agent runtime this task's runs execute on (DOR-1615).
+     *
+     * Omitted or `null` means "the agent's runtime" — the default every task
+     * had before this field existed. Agent-writable: it chooses WHICH backend
+     * does the work, not how much power the run has, and an agent that could
+     * already write the `prompt` can do far more than pick a runtime.
+     *
+     * Mirrors `ScheduleBlockSchema.runtime` in `@dorkos/skills` — a plain
+     * non-empty string, because registration is a question about the machine
+     * that fires the run. The drift guard is
+     * `packages/skills/src/__tests__/task-request-drift.test.ts`.
+     */
+    runtime: z.string().min(1).nullable().optional(),
+    /**
+     * The model this task's runs execute on, in the resolved runtime's own id
+     * space (DOR-1347). Omitted or `null` follows the agent, then the server's
+     * per-runtime default. Deliberately unvalidated — see {@link TaskSchema.model}.
+     */
+    model: z.string().min(1).nullable().optional(),
+    /** How hard the model thinks during this task's runs. `null` = follow the agent. */
+    effort: EffortLevelSchema.nullable().optional(),
     /**
      * How much this schedule's runs may do without asking.
      *
@@ -4373,6 +4439,19 @@ export const UpdateTaskRequestSchema = z
      * {@link TaskSchema.sticky}.
      */
     sticky: z.boolean().optional(),
+    /**
+     * Change which runtime this task's runs execute on, or send `null` to clear
+     * the override and go back to following the agent (DOR-1615). See
+     * {@link CreateTaskRequestSchema.runtime}.
+     */
+    runtime: z.string().min(1).nullable().optional(),
+    /**
+     * Change the model this task's runs execute on, or `null` to clear it
+     * (DOR-1347). See {@link TaskSchema.model} for why it is unvalidated.
+     */
+    model: z.string().min(1).nullable().optional(),
+    /** Change the reasoning effort, or `null` to clear it. */
+    effort: EffortLevelSchema.nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */

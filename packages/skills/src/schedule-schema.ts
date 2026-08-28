@@ -1,4 +1,9 @@
 import { z } from 'zod';
+// The dependency-free constants module, never `@dorkos/shared/schemas`. The
+// effort ladder is ONE list by design (see `EFFORT_LEVELS`), and this package
+// ships to the browser through the barrel — the DRIFT NOTE below is about the
+// permission modes, which live in the heavy module and are mirrored instead.
+import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { DurationSchema } from './duration.js';
 import { coerceYamlBoolean } from './yaml-boolean.js';
 
@@ -181,6 +186,55 @@ export const ScheduleBlockSchema = z.object({
 
   /** The package (Shape or plugin) that created this schedule. Present with `origin`. */
   shape: z.string().optional(),
+
+  /**
+   * Which agent runtime a fire of this schedule runs on — `claude-code`,
+   * `codex`, or `opencode`.
+   *
+   * Absent means "whatever the task's agent runs on", which is the answer every
+   * schedule had before this field existed: the target agent's manifest
+   * `runtime`, and the server's default runtime for a schedule with no agent.
+   *
+   * **Typed as a string rather than an enum, deliberately.** Whether a runtime
+   * can take this run is a question about what is REGISTERED on the machine that
+   * fires it, not about what the file says — a schedule naming a runtime this
+   * build has no adapter for fails its run with a message naming the runtime
+   * (`resolve-run-execution.ts`), which is a far better answer than a parse error
+   * that turns the whole file into a complaint. A value that is not a string at
+   * all degrades to absent, so one mistyped line never un-schedules the skill.
+   */
+  runtime: z.string().min(1).optional().catch(undefined),
+
+  /**
+   * The model a fire of this schedule runs on, in the RESOLVED runtime's own id
+   * space (`sonnet`, `claude-opus-4-6`, `gpt-5.5`, `anthropic/claude-sonnet-4-5`).
+   *
+   * Absent means the agent's own model, then the server's per-runtime default,
+   * then whatever the runtime picks — the same ladder every other unattended turn
+   * walks (`resolveUnattendedSessionDefaults`).
+   *
+   * **Not validated against a catalog**, on the same accepted-at-write rule the
+   * agent manifest's `model` follows: a model catalog is remote, a runtime can be
+   * disconnected while somebody edits, and a spelling nothing offers is reported
+   * at run time rather than refused here.
+   *
+   * **This is not the top-level `model:` field.** That one is the Claude Code
+   * dialect and is read when a person invokes the skill by hand, so a codex or
+   * opencode model id there would be handed to Claude Code. This field is the
+   * scheduled fire's own answer; the top-level one is still honored as a fallback,
+   * but only when the resolved runtime is claude-code.
+   */
+  model: z.string().min(1).optional().catch(undefined),
+
+  /**
+   * How hard the model thinks during a fire of this schedule.
+   *
+   * The shared {@link EFFORT_LEVELS} ladder every runtime maps into, never a
+   * per-runtime fork. Absent means the agent's own effort, then the server's
+   * per-runtime default. A runtime whose API has no effort at all (OpenCode)
+   * drops it rather than pretending — see `resolveSessionDefaults`.
+   */
+  effort: z.enum(EFFORT_LEVELS).optional().catch(undefined),
 });
 
 /**
@@ -340,5 +394,8 @@ export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, u
   if (schedule.prompt !== undefined) out.prompt = schedule.prompt;
   if (schedule.origin !== undefined) out.origin = schedule.origin;
   if (schedule.shape !== undefined) out.shape = schedule.shape;
+  if (schedule.runtime !== undefined) out.runtime = schedule.runtime;
+  if (schedule.model !== undefined) out.model = schedule.model;
+  if (schedule.effort !== undefined) out.effort = schedule.effort;
   return out;
 }

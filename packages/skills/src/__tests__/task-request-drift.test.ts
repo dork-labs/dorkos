@@ -118,30 +118,95 @@ describe('request-vs-frontmatter drift — the fields POST /api/tasks writes int
       cron: '0 3 * * *',
       timezone: 'UTC',
       maxRuntime: '2h30m',
+      runtime: 'codex',
+      model: 'gpt-5.5',
+      effort: 'high',
     });
+
+    const block = {
+      cron: request.cron,
+      timezone: request.timezone,
+      enabled: request.enabled,
+      'max-runtime': request.maxRuntime,
+      runtime: request.runtime,
+      model: request.model,
+      effort: request.effort,
+    };
 
     const result = SkillFrontmatterSchema.safeParse({
       name: request.name,
       description: request.description,
-      schedule: {
-        cron: request.cron,
-        timezone: request.timezone,
-        enabled: request.enabled,
-        'max-runtime': request.maxRuntime,
-      },
+      schedule: block,
     });
     expect(result.success).toBe(true);
     // A block that merely SURVIVES the skill schema is not enough: an unreadable
     // one parses to a complaint object rather than failing, so the file would
     // still validate while the schedule quietly became on-demand.
-    expect(
-      ScheduleBlockSchema.safeParse({
-        cron: request.cron,
-        timezone: request.timezone,
-        enabled: request.enabled,
-        'max-runtime': request.maxRuntime,
-      }).success
-    ).toBe(true);
+    const parsed = ScheduleBlockSchema.safeParse(block);
+    expect(parsed.success).toBe(true);
+    // ...and the three execution fields must arrive with the values the request
+    // carried, not merely fail to break the parse. `.catch(undefined)` degrades
+    // a value the block cannot read to absent — which is silent — so a request
+    // shape the block quietly drops would otherwise pass this test while the
+    // person's runtime override never reached the file.
+    expect(parsed.success && parsed.data).toMatchObject({
+      runtime: 'codex',
+      model: 'gpt-5.5',
+      effort: 'high',
+    });
+  });
+
+  // The execution trio's own drift check (DOR-1615/DOR-1347). Each field is
+  // written into the `schedule:` block and read straight back, so a request that
+  // accepts a value the block degrades to absent is a setting a person saves and
+  // never gets — the same class of silent partial write the duration mirror
+  // above exists for. Derived from both sides rather than restating values.
+  it.each([
+    ['runtime', 'codex', true],
+    ['runtime', 'a-runtime-nothing-ships', true], // registration is a run-time question
+    ['runtime', '', false],
+    ['model', 'gpt-5.5', true],
+    ['model', 'anthropic/claude-sonnet-4-5', true],
+    ['model', '', false],
+    ['effort', 'high', true],
+    ['effort', 'xhigh', true],
+    ['effort', 'ludicrous', false],
+  ] as const)(
+    'the %s mirror in shared agrees with the schedule block on %s',
+    // `survives` is asserted as well as compared, deliberately. Agreement alone
+    // is satisfied by two schemas that BOTH wrongly accept (or both wrongly
+    // drop) a value, so a row that only checked `requestAllows === blockKeeps`
+    // would still pass if the trio were deleted from both sides at once.
+    (field, value, survives) => {
+      const requestAllows = CreateTaskRequestSchema.safeParse({
+        name: 'nightly',
+        description: 'sweep',
+        prompt: 'go',
+        target: 'global',
+        [field]: value,
+      }).success;
+      // What the block does with the same value: a `.catch` degradation keeps it
+      // out of the parsed block, which is the block REFUSING it in every way that
+      // matters here — the value does not survive the round trip.
+      const parsedBlock = ScheduleBlockSchema.parse({ [field]: value });
+      const blockKeeps = parsedBlock[field] === value;
+      expect(requestAllows, `request on ${field}=${JSON.stringify(value)}`).toBe(survives);
+      expect(blockKeeps, `block on ${field}=${JSON.stringify(value)}`).toBe(survives);
+    }
+  );
+
+  it('an update may CLEAR each execution field with null, which the block spells as absent', () => {
+    for (const field of ['runtime', 'model', 'effort'] as const) {
+      expect(
+        UpdateTaskRequestSchema.safeParse({ [field]: null }).success,
+        `clearing ${field}`
+      ).toBe(true);
+    }
+    // `null` never reaches the file: `SCHEDULE_FIELD` deletes the key instead,
+    // and an absent key is exactly what the block reads as "follow the agent".
+    expect(ScheduleBlockSchema.parse({}).runtime).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({}).model).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({}).effort).toBeUndefined();
   });
 
   it('refuses the three bodies that used to force the unclamped path', () => {
