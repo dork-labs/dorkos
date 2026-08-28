@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getDb } from '@/db/client';
 import { createFeedbackIssue } from '@/lib/feedback/linear';
+import { FEEDBACK_RATE_LIMIT, resetFeedbackRateLimit } from '@/lib/feedback/submit-rate-limit';
 import { sendFeedbackReceipt } from '@/lib/mailer';
 
 import { POST } from '../route';
@@ -54,6 +55,7 @@ beforeEach(() => {
   vi.mocked(createFeedbackIssue).mockReset();
   vi.mocked(sendFeedbackReceipt).mockClear();
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  resetFeedbackRateLimit();
 });
 
 afterEach(() => {
@@ -61,10 +63,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function post(body: unknown): Request {
+function post(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request('https://dorkos.ai/api/feedback', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
@@ -295,5 +297,56 @@ describe('POST /api/feedback — receipt email (the core correctness claim)', ()
     });
     await POST(post(VALID_SUBMISSION));
     expect(callOrder).toEqual(['receipt', 'linear']);
+  });
+});
+
+describe('POST /api/feedback — rate limiting', () => {
+  const ip = { 'x-real-ip': '203.0.113.40' };
+
+  it('lets one IP through up to the limit, then answers 429', async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+    for (let i = 0; i < FEEDBACK_RATE_LIMIT; i += 1) {
+      expect((await POST(post(VALID_SUBMISSION, ip))).status).toBe(200);
+    }
+    expect(mockInsert).toHaveBeenCalledTimes(FEEDBACK_RATE_LIMIT);
+
+    const blocked = await POST(post(VALID_SUBMISSION, ip));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    await expect(blocked.json()).resolves.toEqual({
+      ok: false,
+      error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
+    });
+    // Nothing was persisted, mailed, or filed for the throttled request.
+    expect(mockInsert).toHaveBeenCalledTimes(FEEDBACK_RATE_LIMIT);
+    expect(sendFeedbackReceipt).toHaveBeenCalledTimes(FEEDBACK_RATE_LIMIT);
+    expect(createFeedbackIssue).toHaveBeenCalledTimes(FEEDBACK_RATE_LIMIT);
+  });
+
+  it("does not charge one IP for another IP's submissions", async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+    for (let i = 0; i <= FEEDBACK_RATE_LIMIT; i += 1) await POST(post(VALID_SUBMISSION, ip));
+    expect((await POST(post(VALID_SUBMISSION, ip))).status).toBe(429);
+
+    const bystander = await POST(post(VALID_SUBMISSION, { 'x-real-ip': '203.0.113.41' }));
+    expect(bystander.status).toBe(200);
+  });
+
+  it('charges rejected payloads too, so a garbage flood still gets throttled', async () => {
+    for (let i = 0; i < FEEDBACK_RATE_LIMIT; i += 1) {
+      expect((await POST(post({ kind: 'nope' }, ip))).status).toBe(400);
+    }
+    expect((await POST(post(VALID_SUBMISSION, ip))).status).toBe(429);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('charges an oversized body before it is read, so a 413 flood is throttled too', async () => {
+    // Charged ahead of the content-length check, so the route never buffers
+    // a flood of oversized bodies just to reject them one at a time.
+    const oversized = { ...ip, 'content-length': '999999' };
+    for (let i = 0; i < FEEDBACK_RATE_LIMIT; i += 1) {
+      expect((await POST(post(VALID_SUBMISSION, oversized))).status).toBe(413);
+    }
+    expect((await POST(post(VALID_SUBMISSION, ip))).status).toBe(429);
   });
 });

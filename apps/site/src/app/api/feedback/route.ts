@@ -28,8 +28,8 @@
  *
  * ## Flow and honesty contract
  *
- * honeypot check → Zod validate (strict, per-field caps, whole-body size
- * cap) → insert `feedback_submission` (`status: 'received'`) → best-effort
+ * per-IP throttle → honeypot check → Zod validate (strict, per-field caps,
+ * whole-body size cap) → insert `feedback_submission` (`status: 'received'`) → best-effort
  * receipt email (Part 4, when a `reporterEmail`/email-shaped `contact` is on
  * the submission) → best-effort `createFeedbackIssue` → on success, update
  * the row with Linear ids and `status: 'triaged'`. The response is
@@ -38,6 +38,12 @@
  * retryable out-of-band later (a reconciliation sweep for stuck `received`
  * rows is a documented follow-up, not built here). Only a failed Neon insert
  * or an invalid body is `{ ok: false }` / a non-200 status.
+ *
+ * The per-IP throttle (DOR-1586) is charged first, before the body is sized or
+ * read: a caller over its limit gets `429` with a `Retry-After` and nothing is
+ * persisted. It leaks nothing about any submission — only that this IP has
+ * posted too often — and every accepted request costs a Neon row, an email, and
+ * a Linear issue, so an unthrottled loop is expensive in three places at once.
  *
  * @module app/api/feedback
  */
@@ -48,6 +54,7 @@ import { getDb } from '@/db/client';
 import { feedbackSubmission } from '@/db/feedback-schema';
 import { createFeedbackIssue } from '@/lib/feedback/linear';
 import { resolveNotifyEmail } from '@/lib/feedback/notify-email';
+import { consumeFeedbackQuota } from '@/lib/feedback/submit-rate-limit';
 import { resolveBaseURL } from '@/lib/auth';
 import { sendFeedbackReceipt } from '@/lib/mailer';
 
@@ -116,11 +123,26 @@ interface ErrorResponse {
 /**
  * Handle a feedback submission POST.
  *
- * `400` for malformed JSON or a schema violation, `413` for an oversized
+ * `429` when this IP is over its limit, `400` for malformed JSON or a schema
+ * violation, `413` for an oversized
  * body, `500` only when the durable Neon insert itself fails. Every other
  * path — including a Linear failure — is `200 { ok: true, id }`.
  */
 export async function POST(request: Request): Promise<Response> {
+  // Charged before the body is even sized, let alone read: the flood this
+  // exists to slow is a loop posting whatever it likes, so what was sent must
+  // not decide whether it counts.
+  const quota = consumeFeedbackQuota(request);
+  if (!quota.allowed) {
+    return Response.json(
+      {
+        ok: false,
+        error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
+      } satisfies ErrorResponse,
+      { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
+    );
+  }
+
   // Best-effort early reject before buffering: an honest, oversized
   // Content-Length is turned away without materializing the body. It can be
   // absent or wrong, so the post-read byte check below stays the authoritative

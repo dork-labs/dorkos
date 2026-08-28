@@ -148,7 +148,7 @@ The two indexes back the only two read patterns the marketplace page needs: "cou
 
 The forbidden columns — the ones that are explicitly not on the table and never will be without a public ADR overruling this section — include:
 
-- `ipAddress` / `ip` / `xForwardedFor` — never logged. Vercel Edge runtime exposes the client IP via `req.headers.get('x-forwarded-for')`, but the Edge Function never reads that header.
+- `ipAddress` / `ip` / `xForwardedFor` — never stored, never logged, never forwarded. The Edge Function reads the client IP in exactly one place and for exactly one purpose: the per-IP rate limit (DOR-1586, `apps/site/src/lib/telemetry/install-rate-limit.ts`), which keeps a count and a window start in process memory and nothing else. The address never reaches a column, a log line, or another service. Reading it for any other purpose is a change to this contract.
 - `userAgent` — never logged.
 - `hostname` / `host` — never logged.
 - `username` / `user` / `email` — never logged.
@@ -159,7 +159,7 @@ These exclusions are enforced by three complementary tests, all of which are req
 
 1. **Schema test** — `apps/site/src/db/__tests__/schema.test.ts`. Negative assertions that walk every column on `marketplaceInstallEvents` and assert that none of the forbidden field names appear. If a future PR adds `ipAddress: text('ip_address')` to the schema, this test fails immediately.
 
-2. **Receive-side test** — `apps/site/src/app/api/telemetry/install/__tests__/route.test.ts`. Constructs a request to `/api/telemetry/install` with PII-shaped headers (`x-forwarded-for: 1.2.3.4`, `cookie: session=abc`, `user-agent: SuperSecretAgent/1.0`) and a valid event body. After the route handler runs, the test inspects the values that were passed into `db.insert(marketplaceInstallEvents).values(...)` and asserts that none of the PII strings (`1.2.3.4`, `abc`, `SuperSecretAgent`) appear anywhere in the inserted row. If the route handler ever starts copying request headers into the row, this test fails.
+2. **Receive-side test** — `apps/site/src/app/api/telemetry/install/__tests__/route.test.ts`. Constructs a request to `/api/telemetry/install` with PII-shaped headers (`x-forwarded-for: 1.2.3.4`, `cookie: session=abc`, `user-agent: SuperSecretAgent/1.0`) and a valid event body. After the route handler runs, the test inspects the values that were passed into `db.insert(marketplaceInstallEvents).values(...)` and asserts that none of the PII strings (`1.2.3.4`, `abc`, `SuperSecretAgent`) appear anywhere in the inserted row. If the route handler ever starts copying request headers into the row, this test fails. A second case in the same file covers the rate limiter specifically: it sends a request whose `x-real-ip` the throttle definitely meters, then asserts that address is absent from the insert — so "read for counting" can never quietly become "read for storing".
 
 3. **Client-side test** — `apps/server/src/services/marketplace/__tests__/telemetry-privacy.test.ts`. Stubs `global.fetch`, registers the dorkos.ai reporter with `consent: true`, triggers `reportInstallEvent`, and inspects the captured `fetch` body. Asserts (a) the JSON has only allow-listed keys, (b) the raw body string does not contain `os.hostname()`, `os.userInfo().username`, or `process.cwd()` — read at test time, so any future field that leaks the local environment fails immediately, and (c) the opt-out path (`consent: false`) makes zero `fetch` calls.
 

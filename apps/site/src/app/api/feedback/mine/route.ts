@@ -28,6 +28,7 @@ import { z } from 'zod';
 
 import { getDb } from '@/db/client';
 import { feedbackSubmission } from '@/db/feedback-schema';
+import { consumeFeedbackHistoryQuota } from '@/lib/feedback/history-rate-limit';
 
 export const runtime = 'edge';
 
@@ -53,11 +54,23 @@ interface FeedbackListItem {
 /**
  * List every submission for one install, newest first.
  *
- * `400` only for a missing/malformed `instanceId` query param — a
- * well-formed id that happens to match nothing simply returns `[]`, so the
- * response shape can never be used to probe whether an id is "real".
+ * `429` when this IP is over its limit, `400` for a missing/malformed
+ * `instanceId` query param — a well-formed id that happens to match nothing
+ * simply returns `[]`, so the response shape can never be used to probe
+ * whether an id is "real".
  */
 export async function GET(request: Request): Promise<Response> {
+  // Charged before the id is parsed: a loop walking instance-id space is
+  // exactly the traffic this exists to slow, and a malformed id costs a
+  // request either way.
+  const quota = consumeFeedbackHistoryQuota(request);
+  if (!quota.allowed) {
+    return Response.json(
+      { error: 'Too many requests. Retry after the number of seconds in the Retry-After header.' },
+      { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
+    );
+  }
+
   const instanceId = new URL(request.url).searchParams.get('instanceId');
   const parsed = InstanceIdSchema.safeParse(instanceId);
   if (!parsed.success) {

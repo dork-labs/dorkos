@@ -4,6 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getDb } from '@/db/client';
+import {
+  FEEDBACK_STATUS_RATE_LIMIT,
+  resetFeedbackStatusRateLimit,
+} from '@/lib/feedback/status-rate-limit';
 
 vi.mock('@/db/client', () => ({ getDb: vi.fn() }));
 
@@ -29,14 +33,15 @@ beforeEach(() => {
   mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
   mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
   vi.mocked(getDb).mockReturnValue({ select: mockSelect } as never);
+  resetFeedbackStatusRateLimit();
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-function get(id: string): Promise<Response> {
-  return GET(new Request(`https://dorkos.ai/api/feedback/${id}`), {
+function get(id: string, headers: Record<string, string> = {}): Promise<Response> {
+  return GET(new Request(`https://dorkos.ai/api/feedback/${id}`, { headers }), {
     params: Promise.resolve({ id }),
   });
 }
@@ -105,5 +110,40 @@ describe('GET /api/feedback/[id]', () => {
     const missingRowRes = await get(VALID_ID);
     expect(await badIdRes.json()).toEqual(await missingRowRes.json());
     expect(badIdRes.status).toBe(missingRowRes.status);
+  });
+});
+
+describe('GET /api/feedback/[id] — rate limiting', () => {
+  const ip = { 'x-real-ip': '203.0.113.90' };
+
+  it('lets one IP through up to the limit, then answers 429', async () => {
+    for (let i = 0; i < FEEDBACK_STATUS_RATE_LIMIT; i += 1) {
+      expect((await get(VALID_ID, ip)).status).toBe(200);
+    }
+    expect(mockSelect).toHaveBeenCalledTimes(FEEDBACK_STATUS_RATE_LIMIT);
+
+    const blocked = await get(VALID_ID, ip);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    await expect(blocked.json()).resolves.toEqual({
+      error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
+    });
+    // The throttled lookup never reaches the database.
+    expect(mockSelect).toHaveBeenCalledTimes(FEEDBACK_STATUS_RATE_LIMIT);
+  });
+
+  it('charges a malformed id too, so a uuid-guessing loop is throttled', async () => {
+    for (let i = 0; i < FEEDBACK_STATUS_RATE_LIMIT; i += 1) {
+      expect((await get('not-a-uuid', ip)).status).toBe(404);
+    }
+    expect((await get(VALID_ID, ip)).status).toBe(429);
+    expect(mockSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not charge one IP for another IP's lookups", async () => {
+    for (let i = 0; i <= FEEDBACK_STATUS_RATE_LIMIT; i += 1) await get(VALID_ID, ip);
+    expect((await get(VALID_ID, ip)).status).toBe(429);
+
+    expect((await get(VALID_ID, { 'x-real-ip': '203.0.113.91' })).status).toBe(200);
   });
 });

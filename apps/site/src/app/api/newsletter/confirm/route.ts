@@ -14,14 +14,35 @@
  * idempotent and reversible (one-click unsubscribe). Revisit with a
  * click-to-confirm POST page if the anti-abuse guarantee ever needs teeth.
  *
+ * The per-IP throttle (DOR-1586) is charged before the token is looked up. The
+ * token already gates what a caller can *do* here; the throttle bounds what a
+ * caller can *cost* — a loop guessing tokens spends a database read and a hash
+ * per guess. Over the limit answers `429` with a `Retry-After`, and because a
+ * person may be looking at this in a browser it answers in readable HTML rather
+ * than JSON, matching the route's human-facing style.
+ *
  * @module app/api/newsletter/confirm
  */
 import { confirm } from '@/lib/newsletter/service';
+import { consumeConfirmQuota } from '@/lib/newsletter/confirm-rate-limit';
+import { tooManyRequestsPage, waitPhrase } from '@/lib/rate-limit/too-many-requests-page';
 
 export const runtime = 'nodejs';
 
-/** Handle the confirm-link GET and redirect to the result page. */
+/**
+ * Handle the confirm-link GET and redirect to the result page. Returns `429`
+ * as a readable page when this IP is over its limit.
+ */
 export async function GET(request: Request): Promise<Response> {
+  const quota = consumeConfirmQuota(request);
+  if (!quota.allowed) {
+    return tooManyRequestsPage(
+      'One moment',
+      `Too many people opened this link from your network just now. Try again in ${waitPhrase(quota.retryAfterSeconds)} to confirm.`,
+      quota.retryAfterSeconds
+    );
+  }
+
   const token = new URL(request.url).searchParams.get('token') ?? '';
   const result = await confirm(token);
   const dest = new URL('/newsletter/confirmed', request.url);

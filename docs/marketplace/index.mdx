@@ -219,7 +219,7 @@ When telemetry is on, each successful install sends a single event containing:
 - A random per-install UUID, not tied to you or your machine
 - The DorkOS version, for compatibility analytics
 
-No IP addresses, no user identifiers, no package contents, no file paths. The full privacy contract, including what we store, who can access it, and how to opt out, is documented at [dorkos.ai/marketplace/privacy](https://dorkos.ai/marketplace/privacy).
+No IP addresses, no user identifiers, no package contents, no file paths. Your address is used for one thing only: our server counts how many requests come from it in the last few minutes, so nobody can flood the endpoint. That count lives in memory for a few minutes and then it is gone. Your address is never saved, never written to a log, and never passed to anyone else. The full privacy contract, including what we store, who can access it, and how to opt out, is documented at [dorkos.ai/marketplace/privacy](https://dorkos.ai/marketplace/privacy).
 
 To enable telemetry:
 

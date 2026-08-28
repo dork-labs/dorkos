@@ -35,7 +35,11 @@ export default function MarketplacePrivacyPage() {
           <h2 className="text-charcoal font-mono text-xl font-semibold">The contract</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-2 text-base leading-relaxed">
             <li>
-              <strong className="text-charcoal font-semibold">No IP addresses logged.</strong>
+              <strong className="text-charcoal font-semibold">No IP addresses logged.</strong> Your
+              address is used for one thing: our server counts how many requests come from it in the
+              last few minutes, so nobody can flood the endpoint. That count lives in memory for a
+              few minutes and then it is gone. Your address is never saved, never written to a log,
+              and never passed to anyone else.
             </li>
             <li>
               <strong className="text-charcoal font-semibold">No user identifiers</strong> — only

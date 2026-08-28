@@ -10,6 +10,10 @@ vi.mock('@/env', () => ({
 }));
 
 import { env } from '@/env';
+import {
+  EVENTS_TELEMETRY_RATE_LIMIT,
+  resetEventsTelemetryRateLimit,
+} from '@/lib/telemetry/events-rate-limit';
 
 import { POST } from '../route';
 
@@ -112,6 +116,7 @@ let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  resetEventsTelemetryRateLimit();
   env.POSTHOG_PROJECT_KEY = undefined;
   env.NEXT_PUBLIC_POSTHOG_HOST = 'https://us.i.posthog.com';
 });
@@ -122,10 +127,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function makeRequest(body: unknown, rawBody?: string): Request {
+function makeRequest(
+  body: unknown,
+  rawBody?: string,
+  headers: Record<string, string> = {}
+): Request {
   return new Request('https://dorkos.ai/api/telemetry/events', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: rawBody ?? JSON.stringify(body),
   });
 }
@@ -468,5 +477,46 @@ describe('POST /api/telemetry/events', () => {
       const res = await POST(makeRequest({ events: [VALID_FEEDBACK_SUBMITTED], website: '   ' }));
       expect((await readJson(res)).accepted).toBe(1);
     });
+  });
+});
+
+describe('POST /api/telemetry/events — rate limiting', () => {
+  const ip = { 'x-real-ip': '203.0.113.70' };
+  const batch = { events: [VALID_APP_STARTED] };
+
+  it('lets one IP through up to the limit, then answers 429', async () => {
+    for (let i = 0; i < EVENTS_TELEMETRY_RATE_LIMIT; i += 1) {
+      expect((await POST(makeRequest(batch, undefined, ip))).status).toBe(200);
+    }
+
+    const blocked = await POST(makeRequest(batch, undefined, ip));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    await expect(blocked.json()).resolves.toEqual({
+      error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
+    });
+  });
+
+  it('is the one answer here that is not 200, and it never forwards', async () => {
+    // Everything else on this route degrades to 200. The throttle is the
+    // deliberate exception, and a throttled batch reaches PostHog never.
+    env.POSTHOG_PROJECT_KEY = 'phc_test';
+    for (let i = 0; i < EVENTS_TELEMETRY_RATE_LIMIT; i += 1) {
+      await POST(makeRequest(batch, undefined, ip));
+    }
+    fetchSpy.mockClear();
+
+    expect((await POST(makeRequest(batch, undefined, ip))).status).toBe(429);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not charge one IP for another IP's batches", async () => {
+    for (let i = 0; i <= EVENTS_TELEMETRY_RATE_LIMIT; i += 1) {
+      await POST(makeRequest(batch, undefined, ip));
+    }
+    expect((await POST(makeRequest(batch, undefined, ip))).status).toBe(429);
+
+    const bystander = await POST(makeRequest(batch, undefined, { 'x-real-ip': '203.0.113.71' }));
+    expect(bystander.status).toBe(200);
   });
 });

@@ -12,9 +12,8 @@
  *
  * @module lib/newsletter/subscribe-rate-limit
  */
-import { clientIpFromHeaders } from '@/lib/rate-limit/client-ip';
-import { createFixedWindowLimiter } from '@/lib/rate-limit/fixed-window';
 import type { RateLimitDecision } from '@/lib/rate-limit/fixed-window';
+import { createPerIpLimiter } from '@/lib/rate-limit/per-ip-limiter';
 
 /**
  * Subscribe attempts one IP may spend per window. A real person subscribes
@@ -26,7 +25,7 @@ export const SUBSCRIBE_RATE_LIMIT = 5;
 /** Window length: ten minutes. */
 export const SUBSCRIBE_RATE_WINDOW_MS = 10 * 60 * 1000;
 
-const limiter = createFixedWindowLimiter({
+const limiter = createPerIpLimiter({
   limit: SUBSCRIBE_RATE_LIMIT,
   windowMs: SUBSCRIBE_RATE_WINDOW_MS,
 });
@@ -43,7 +42,7 @@ const limiter = createFixedWindowLimiter({
  * @returns Whether the request may proceed, and when to retry if not.
  */
 export function consumeSubscribeQuota(request: Request, now?: number): RateLimitDecision {
-  return limiter.consume(clientIpFromHeaders(request.headers), now);
+  return limiter.consume(request, now);
 }
 
 /** @internal Exported for testing only — clears every tracked window. */
