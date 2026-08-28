@@ -909,9 +909,11 @@ describe('evaluateCascade', () => {
   });
 
   it('honours a caller-supplied ceiling', () => {
-    expect(evaluateCascade('ana', provenance, { ...limits, maxAgentDepth: 0 }).reason).toBe(
-      'depth'
-    );
+    expect(evaluateCascade('ana', provenance, { ...limits, maxAgentDepth: 0 })).toEqual({
+      allowed: false,
+      depth: 1,
+      reason: 'depth',
+    });
   });
 });
 

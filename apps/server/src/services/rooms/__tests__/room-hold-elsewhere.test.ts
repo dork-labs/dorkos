@@ -475,10 +475,24 @@ describe('a message for an agent working elsewhere', () => {
     service.removeMember(b.id, human, ana);
     // The promise is withdrawn the moment it stops being keepable.
     expect(signalsIn(b.id, ana).at(-1)?.state).toBe('done');
-    // And no line: the removal is operator-only, deliberate and already visible
-    // on the roster, so a busy notice would explain a decision back to the
-    // person who just made it — and would be false, because Ana is not busy.
-    expect(notices(b.id)).toEqual([]);
+    // **And the room says so, which reverses what this test used to pin**
+    // (DOR-786). The old assertion was `notices(b.id)` is empty, on the argument
+    // that the removal is operator-only, deliberate, and already visible on the
+    // roster — so a line would explain a decision back to the person who just
+    // made it, and a BUSY line would be false besides.
+    //
+    // The false-because-busy half was right and is answered by the code rather
+    // than the copy: this is `agent_left`, its own notice, which says the member
+    // left rather than that it was occupied. The rest no longer holds. The
+    // indicator is ephemeral and reaches whoever is watching this room at that
+    // instant; the roster is visible to whoever opens the sheet afterwards. What
+    // neither reaches is the person who SENT the message — who may not be the
+    // operator in a shared room, and who was told in so many words that a turn
+    // was owed, because `POST /api/rooms/:id/entries` now answers with the agents
+    // it asked to reply. A promise the room makes and then drops in silence is
+    // the shape `.claude/rules/room-conduct.md` forbids.
+    expect(notices(b.id).map((entry) => entry.body.notice)).toEqual(['agent_left']);
+    expect(notices(b.id)[0]?.body.subjectAuthorId).toBe(ana);
 
     runner.release(ana);
     await service.triggersIdle();

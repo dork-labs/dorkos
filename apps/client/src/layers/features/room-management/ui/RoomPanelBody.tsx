@@ -419,6 +419,19 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
           <RoomLoudnessLine members={view.members} roomKind={detail.kind} preview={preview} />
         )}
 
+        {/* **Said only when it is known to be true** (DOR-786). The rows below
+            carry a working dot each, so their absence is the room's answer to
+            "is anything happening here" — and until the room read carried its
+            own presence, that absence was also what a sheet with no stream open
+            looked like. `workingKnown` is the difference: silent when nothing
+            current can say, this line when something can. Not in an archived
+            room, where nobody is triggered at all and the banner above already
+            says so — "no one is working" there would be a second, weaker way of
+            saying the same thing. */}
+        {detail !== null && !detail.archived && view.workingKnown && view.working.length === 0 && (
+          <p className="text-muted-foreground px-3 text-xs">No one is working right now.</p>
+        )}
+
         {/* Focusable, never tabbable: "Members" lands the keyboard here when
             the roster has no control of its own to land on yet. */}
         <div ref={rosterRef} tabIndex={-1} className="outline-none">

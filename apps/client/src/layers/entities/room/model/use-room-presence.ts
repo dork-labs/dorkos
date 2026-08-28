@@ -178,6 +178,29 @@ interface RoomPresenceStoreState {
    * and a `done` for one must not clear the other.
    */
   rooms: Record<string, Record<string, PresenceRecord>>;
+  /**
+   * Room id → author id → this client's clock when the stream last said that
+   * author had FINISHED working there.
+   *
+   * **The negative half of the same knowledge, and it exists because deleting
+   * nothing records nothing.** Both ways the stream says "this agent has
+   * stopped" — a `done` signal, and an entry by that author — are expressed here
+   * as deletions from {@link RoomPresenceStoreState.rooms}, so when this client
+   * never saw the matching `working` the release lands on an empty map and is a
+   * silent no-op. That is the ordinary case for a sheet opened mid-turn: signals
+   * never replay, and the dispatcher's next republish is up to ten seconds away.
+   *
+   * Nothing needed the negative while presence was stream-only — an indicator
+   * that was never drawn does not need retiring. It matters now that
+   * `RoomWithRoster.workingAgents` gives a reader a SECOND source: without this,
+   * a room read taken before the turn ended would go on claiming the agent was
+   * working for the whole TTL, under a reply already on screen (DOR-786).
+   *
+   * Read against when that snapshot was fetched, never on its own: an agent that
+   * finished and was then claimed AGAIN is working, and the room read is what
+   * says so.
+   */
+  finished: Record<string, Record<string, number>>;
 }
 
 /** Ways the picture of who is working changes. */
@@ -201,34 +224,77 @@ interface RoomPresenceActions {
    */
   observe: (roomId: string, event: RoomSignalEvent, now?: number) => void;
   /**
-   * Drop every indicator an author holds in one room, whatever its state.
+   * Drop every indicator an author holds in one room, whatever its state, and
+   * record that the stream said so.
    *
    * What an arriving entry means: this author has just spoken, so whatever it
-   * was working on, its latest word is on the log.
+   * was working on, its latest word is on the log. The record is kept even when
+   * there was no indicator to drop — see
+   * {@link RoomPresenceStoreState.finished}.
    *
    * @param roomId - The room the entry landed in.
    * @param authorId - Who wrote it.
+   * @param now - This client's clock, injectable for tests.
    */
-  clearAuthor: (roomId: string, authorId: string) => void;
+  clearAuthor: (roomId: string, authorId: string, now?: number) => void;
   /**
-   * Forget everything about one room.
+   * Forget everything about one room, the negatives included.
    *
-   * A stream this client cannot read is presence it must not claim to know.
+   * A stream this client cannot read is presence it must not claim to know —
+   * and that cuts both ways. A stale "X has finished" would go on suppressing a
+   * room read's own row long after this client stopped being able to hear
+   * whether X started again.
    *
    * @param roomId - The room whose stream has stopped.
    */
   clearRoom: (roomId: string) => void;
   /**
-   * Drop every indicator nothing has restated within {@link PRESENCE_TTL_MS}.
+   * Drop every indicator nothing has restated within {@link PRESENCE_TTL_MS},
+   * and every finish older than the same window.
+   *
+   * A finish is only ever read against a room snapshot, and a snapshot older
+   * than that window is already being ignored — so a finish that outlived it can
+   * suppress nothing and is only a leak.
    *
    * @param now - This client's clock, injectable for tests.
    */
   prune: (now?: number) => void;
+  /**
+   * Forget every room, positives and negatives alike.
+   *
+   * **For tests, and it exists because a partial reset is a silent trap.** This
+   * store is a module singleton, so a suite that leaves state behind hands it to
+   * the next file. Every reset used to be written `setState({ rooms: {} })` at
+   * eleven call sites — and `setState` MERGES, so the moment the store grew a
+   * second field every one of them silently stopped resetting all of it. One
+   * action that knows the whole shape is the fix that stays fixed.
+   */
+  reset: () => void;
 }
 
 /** The indicator key: the dispatcher's `(author, entry)` grain, flattened. */
 function indicatorKey(authorId: string, entryId: string): string {
   return `${authorId}\u0000${entryId}`;
+}
+
+/**
+ * Record that the stream said one author has finished working in one room.
+ *
+ * Written on every release path, whether or not there was an indicator to drop:
+ * that is the whole point of it (see {@link RoomPresenceStoreState.finished}).
+ *
+ * @param finished - The store's current negatives.
+ * @param roomId - The room the release was about.
+ * @param authorId - The author that stopped.
+ * @param now - This client's clock.
+ */
+function withFinish(
+  finished: RoomPresenceStoreState['finished'],
+  roomId: string,
+  authorId: string,
+  now: number
+): RoomPresenceStoreState['finished'] {
+  return { ...finished, [roomId]: { ...finished[roomId], [authorId]: now } };
 }
 
 /**
@@ -253,6 +319,7 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
   devtools(
     (set) => ({
       rooms: {},
+      finished: {},
 
       observe: (roomId, event, now = Date.now()) => {
         const { state, entryId, since, activity } = event;
@@ -262,10 +329,16 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
           (held) => {
             const indicators = held.rooms[roomId];
             if (state === 'done') {
-              if (indicators?.[key] === undefined) return held;
+              // **The finish is recorded whether or not there was anything to
+              // delete**, which is the fix for the case this store could not
+              // previously express: a client that connected after the claim was
+              // taken never saw the `working`, so this release used to return
+              // `held` and leave no trace that the turn had ended (DOR-786).
+              const finished = withFinish(held.finished, roomId, event.authorId, now);
+              if (indicators?.[key] === undefined) return { ...held, finished };
               const next = { ...indicators };
               delete next[key];
-              return { rooms: withRoom(held.rooms, roomId, next) };
+              return { rooms: withRoom(held.rooms, roomId, next), finished };
             }
             const record: PresenceRecord = {
               authorId: event.authorId,
@@ -292,16 +365,23 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
         );
       },
 
-      clearAuthor: (roomId, authorId) =>
+      clearAuthor: (roomId, authorId, now = Date.now()) =>
         set(
           (held) => {
+            // Recorded first and unconditionally, for the reason the `done`
+            // branch above records it: an entry by this author is the stream
+            // saying it has stopped, and that is true whether or not this client
+            // ever drew an indicator for the turn behind it.
+            const finished = withFinish(held.finished, roomId, authorId, now);
             const indicators = held.rooms[roomId];
-            if (indicators === undefined) return held;
+            if (indicators === undefined) return { ...held, finished };
             const next = Object.fromEntries(
               Object.entries(indicators).filter(([, record]) => record.authorId !== authorId)
             );
-            if (Object.keys(next).length === Object.keys(indicators).length) return held;
-            return { rooms: withRoom(held.rooms, roomId, next) };
+            if (Object.keys(next).length === Object.keys(indicators).length) {
+              return { ...held, finished };
+            }
+            return { rooms: withRoom(held.rooms, roomId, next), finished };
           },
           false,
           'roomPresence/clearAuthor'
@@ -310,10 +390,14 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
       clearRoom: (roomId) =>
         set(
           (held) => {
-            if (held.rooms[roomId] === undefined) return held;
+            if (held.rooms[roomId] === undefined && held.finished[roomId] === undefined) {
+              return held;
+            }
             const next = { ...held.rooms };
             delete next[roomId];
-            return { rooms: next };
+            const finished = { ...held.finished };
+            delete finished[roomId];
+            return { rooms: next, finished };
           },
           false,
           'roomPresence/clearRoom'
@@ -333,11 +417,21 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
               if (Object.keys(kept).length !== Object.keys(indicators).length) changed = true;
               if (Object.keys(kept).length > 0) rooms[roomId] = kept;
             }
-            return changed ? { rooms } : held;
+            const finished: RoomPresenceStoreState['finished'] = {};
+            for (const [roomId, byAuthor] of Object.entries(held.finished)) {
+              const kept = Object.fromEntries(
+                Object.entries(byAuthor).filter(([, at]) => now - at < PRESENCE_TTL_MS)
+              );
+              if (Object.keys(kept).length !== Object.keys(byAuthor).length) changed = true;
+              if (Object.keys(kept).length > 0) finished[roomId] = kept;
+            }
+            return changed ? { rooms, finished } : held;
           },
           false,
           'roomPresence/prune'
         ),
+
+      reset: () => set({ rooms: {}, finished: {} }, false, 'roomPresence/reset'),
     }),
     { name: 'RoomPresenceStore' }
   )
@@ -528,6 +622,37 @@ export function useRoomPresence(
   // stale numbers. A room with nothing in it answers with one shared empty
   // array, so the quiet case — which is nearly always — costs nothing.
   return summarize(indicators, scope);
+}
+
+/** One shared empty answer, so a room nothing has finished in never re-renders. */
+const NOTHING_FINISHED: Readonly<Record<string, number>> = {};
+
+/**
+ * When the stream last said each agent FINISHED working in this room.
+ *
+ * The complement of {@link useRoomPresence}, and the only reader that needs it
+ * is one holding a SECOND source of who is working — today the room details
+ * sheet, which falls back to `RoomWithRoster.workingAgents` when the stream has
+ * said nothing (DOR-786). Without this, a room read taken before a turn ended
+ * would go on claiming that agent was working for the whole
+ * {@link PRESENCE_TTL_MS}, underneath the reply already on screen — because the
+ * release lands on a store that never recorded the start and is a silent no-op.
+ *
+ * **Never an answer on its own.** It says an agent finished at a moment, not
+ * that it is idle now: an agent that finished and was claimed AGAIN is working,
+ * and the room read is what says so. Compare each timestamp against when that
+ * read landed, never against the clock.
+ *
+ * No timer: nothing here ages on its own, and the {@link RoomPresenceActions.prune}
+ * every other presence reader already runs drops these on the same window.
+ *
+ * @param roomId - The room on screen, or `null` when none is.
+ * @returns Author id → this client's clock when the stream said it finished.
+ */
+export function useRoomFinished(roomId: string | null): Readonly<Record<string, number>> {
+  return useRoomPresenceStore((held) =>
+    roomId === null ? NOTHING_FINISHED : (held.finished[roomId] ?? NOTHING_FINISHED)
+  );
 }
 
 /**

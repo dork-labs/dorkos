@@ -655,7 +655,7 @@ export function getRoomAuthors(): AuthorRegistry {
 // the broadcaster, and the pure addressing/cascade/mention rules — is imported
 // from its own module by the code that uses it, so this file does not accrue a
 // re-export for every symbol the domain happens to have.
-export { RoomService } from './room-service.js';
+export { RoomService, type PostedEntry } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export { toAuthorRef, type AuthorRecord } from './author-registry.js';
 export { resolveOperatorAuthor, peekOperatorAuthor } from './operator-author.js';

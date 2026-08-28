@@ -1677,4 +1677,76 @@ describe('RoomPanel', () => {
     expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
+
+  /**
+   * The half of DOR-786 a reader actually sees.
+   *
+   * The member rows carry a working dot each, so their absence is meant to be the
+   * room's answer to "is anything happening here". It was not: a sheet opened
+   * over a room whose stream this client does not have drew nothing either, and
+   * the two were indistinguishable. The room read now carries `workingAgents`,
+   * and this line is what the distinction buys.
+   */
+  describe('whether the sheet will say nobody is working', () => {
+    const QUIET = 'No one is working right now.';
+
+    it('says so when the room read answered that nobody is', async () => {
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: vi.fn().mockResolvedValue({
+            ...roster([HUMAN, agentMember('Ana', '/repo/ana')]),
+            workingAgents: [],
+          }),
+        }),
+      });
+      await rosterSection();
+
+      expect(screen.getByText(QUIET)).toBeInTheDocument();
+    });
+
+    it('stays quiet when the room read carried no answer at all', async () => {
+      // An older server, or a read that has not landed. Saying "no one is
+      // working" off that would be inventing the very claim this field exists to
+      // stop the sheet inventing.
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: vi.fn().mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
+        }),
+      });
+      await rosterSection();
+
+      expect(screen.queryByText(QUIET)).not.toBeInTheDocument();
+    });
+
+    it('stays quiet while somebody IS working', async () => {
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: vi.fn().mockResolvedValue({
+            ...roster([HUMAN, agentMember('Ana', '/repo/ana')]),
+            workingAgents: [{ authorId: 'author-ana', since: new Date().toISOString() }],
+          }),
+        }),
+      });
+      await rosterSection();
+
+      expect(screen.queryByText(QUIET)).not.toBeInTheDocument();
+    });
+
+    it('stays quiet in an archived room, where nobody is triggered anyway', async () => {
+      // The banner above already says the room is on hold. A second, weaker way
+      // of saying the same thing is the over-participation this sheet avoids.
+      renderPanel({
+        room: { ...ROOM, archived: true },
+        transport: createMockTransport({
+          getRoom: vi.fn().mockResolvedValue({
+            ...roster([HUMAN, agentMember('Ana', '/repo/ana')], { ...ROOM, archived: true }),
+            workingAgents: [],
+          }),
+        }),
+      });
+      await rosterSection();
+
+      expect(screen.queryByText(QUIET)).not.toBeInTheDocument();
+    });
+  });
 });
