@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
-import { QUERY_TIMING, isSessionRequestReady } from '@/layers/shared/lib';
+import { QUERY_TIMING } from '@/layers/shared/lib';
+import { isSessionScopeReady, useSessionScopedCwd } from '@/layers/entities/session';
 import type { TaskItem, TaskUpdateEvent, SessionTaskStatus } from '@dorkos/shared/types';
 import { applyTaskEvent, createTaskFoldState, type TaskFoldState } from '@dorkos/shared/task-fold';
 
@@ -67,7 +68,10 @@ const MAX_VISIBLE = 10;
  */
 export function useTaskState(sessionId: string | null, isStreaming: boolean = false): TaskState {
   const transport = useTransport();
-  const selectedCwd = useAppStore((s) => s.selectedCwd);
+  // The session's own directory, not the selected one — a session opened
+  // without `&dir=` does not live in the store's default (DOR-1444).
+  const sessionCwd = useSessionScopedCwd();
+  const selectedCwd = sessionCwd.cwd;
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const isTabVisible = useTabVisibility();
   const [state, setState] = useState<TaskFoldState>(createTaskFoldState());
@@ -76,12 +80,12 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   // Load historical tasks via TanStack Query (polled while a turn streams)
   const { data: initialTasks } = useQuery({
     queryKey: ['tasks', sessionId, selectedCwd],
-    queryFn: () => transport.getTasks(sessionId!, selectedCwd!),
+    queryFn: () => transport.getTasks(sessionId!, selectedCwd ?? undefined),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
-    // Waits for the working directory too — a fetch keyed on a directory the
-    // store has not resolved yet is one the server always refuses (DOR-495).
-    enabled: isSessionRequestReady(sessionId, selectedCwd),
+    // A null directory is a complete question — the server resolves the
+    // session's own (DOR-1444). Only an UNSETTLED one is worth waiting for.
+    enabled: isSessionScopeReady(sessionId, sessionCwd),
     refetchInterval: () => {
       if (!enableMessagePolling) return false;
       if (isStreaming) return false;

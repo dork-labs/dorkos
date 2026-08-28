@@ -45,7 +45,14 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       selector ? selector(appState) : appState,
     { getState: () => appState }
   );
-  return { ...actual, useAppStore };
+  return {
+    ...actual,
+    useAppStore,
+    // The session's own reads take their directory from the URL, not the
+    // store (DOR-1444); mirrored here so this harness keeps meaning what it
+    // did when both came from `selectedCwd`.
+    useSafeSearch: () => ({ dir: '/projects/alpha' }),
+  };
 });
 
 import { useChatSession } from '../model/use-chat-session';

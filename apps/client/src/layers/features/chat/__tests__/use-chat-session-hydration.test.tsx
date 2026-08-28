@@ -36,6 +36,10 @@ vi.mock('@/layers/shared/model', async () => {
   return {
     ...actual,
     useAppStore,
+    // The session's own reads take their directory from the URL, not the store
+    // (DOR-1444); mirrored here so this harness keeps meaning what it did when
+    // both came from `selectedCwd`.
+    useSafeSearch: () => ({ dir: '/test/cwd' }),
   };
 });
 
@@ -109,6 +113,54 @@ describe('useChatSession — hydration (Phase 3)', () => {
     const streamStatus = useSessionStreamStore.getState().getSession('s1').status;
     expect(streamStatus?.contextUsage?.totalTokens).toBe(40_000);
     expect(result.current.status).toBe('idle');
+  });
+
+  it('shows the turn already running when the FIRST frame it ever sees is a mid-turn snapshot', async () => {
+    // The second-window case (DOR-1444). This window sent nothing, saw no
+    // `turn_start`, and holds no local turn of its own — everything it knows
+    // arrives in one cold snapshot taken while the agent was mid-sentence. The
+    // Stop button and the streaming text both hang off what this renders.
+    //
+    // Pinned because the live failure LOOKED like this store dropping a
+    // snapshot's turn state, and it is worth being able to rule that out at a
+    // glance: the real cause was server-side, where a window that opened the
+    // session URL without the folder was refused the stream outright, so no
+    // snapshot ever reached here.
+    const transport = createMockTransport();
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    act(() => {
+      useSessionStreamStore.getState().applySnapshot(
+        's1',
+        makeSnapshot({
+          inProgressTurn: [
+            { seq: 6, type: 'turn_start' },
+            { seq: 7, type: 'text_delta', text: 'half a thought' },
+          ],
+          status: { ...makeSnapshot().status, lifecycle: 'streaming' },
+          cursor: 7,
+        })
+      );
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('streaming'));
+    expect(result.current.messages.map((m) => m.content)).toEqual([
+      'Hi',
+      'Hello',
+      'half a thought',
+    ]);
+
+    // …and it keeps up with the rest of the turn from that cursor onward.
+    act(() => {
+      useSessionStreamStore
+        .getState()
+        .applyEvent('s1', { seq: 8, type: 'text_delta', text: ' finished' });
+    });
+    await waitFor(() =>
+      expect(result.current.messages.at(-1)?.content).toBe('half a thought finished')
+    );
   });
 
   it('updates rendered messages + status when a live event applies', async () => {

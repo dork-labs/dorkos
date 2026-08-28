@@ -36,6 +36,12 @@ export interface SetDirOptions {
  *   A one-way `useEffect` syncs URL → Zustand so store consumers see the
  *   correct CWD. When no `?dir=` is present the getter falls back to Zustand,
  *   which holds the server default CWD set by {@link useDefaultCwd}.
+ *
+ * That fallback answers "where would NEW work happen", which is the right
+ * question for the composer, the directory picker and the agent switcher — and
+ * the wrong one for a conversation that already exists somewhere else. A
+ * session's own reads ask `useSessionScopedCwd` instead, which returns null
+ * rather than substituting the default (DOR-1444).
  * - **Embedded (Obsidian):** Zustand is the sole store; URL is unused.
  *
  * Both stores are subscribed unconditionally to satisfy React's rules of hooks.

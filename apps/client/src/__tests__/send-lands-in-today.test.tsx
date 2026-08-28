@@ -58,6 +58,9 @@ const { AGENT_PATH, FIXED_NOW, SESSION } = vi.hoisted(() => {
 });
 
 vi.mock('@tanstack/react-router', () => ({
+  // Present, because these cases render inside a routed cockpit. The safe-router
+  // wrappers ask before reading route state (DOR-1444).
+  useRouter: () => ({ stores: {} }),
   // The home surface: nothing conversational is open, so Today has no anchor
   // and cannot draw `s1` for free (BC-21). That is what makes the before-state
   // below an honest "not in Today".
