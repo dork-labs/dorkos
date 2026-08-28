@@ -217,6 +217,12 @@ export const app = {
   name: 'DorkOS',
   requestSingleInstanceLock: vi.fn((): boolean => true),
   quit: vi.fn<() => void>(),
+  /**
+   * Arms a relaunch for whenever this process next exits — which is why tests
+   * assert on the ORDER of `relaunch` against `quit` and against the agent
+   * confirmation, not merely that it was called.
+   */
+  relaunch: vi.fn<(options?: unknown) => void>(),
   getPath: vi.fn((_name?: string): string => userDataPath),
   getVersion: vi.fn((): string => '0.1.0'),
   /**
@@ -452,6 +458,7 @@ export function resetElectronMock(): void {
   app.isPackaged = false;
   app.requestSingleInstanceLock = vi.fn(() => true);
   app.quit = vi.fn();
+  app.relaunch = vi.fn();
   userDataPath = freshUserDataPath();
   app.getPath = vi.fn((_name?: string) => userDataPath);
   app.getVersion = vi.fn(() => '0.1.0');

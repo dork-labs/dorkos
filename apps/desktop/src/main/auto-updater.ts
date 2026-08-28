@@ -4,6 +4,9 @@ import { app, autoUpdater as nativeAutoUpdater, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { confirmInterruptingAgents } from './quit-guard';
+import { startServer, stopServer } from './server-process';
+import { pointWindowsAtServer } from './server-crash-recovery';
+import { purgeStaleStagedUpdates } from './updater/cache';
 import {
   clearUpdateIntent,
   isAtLeastVersion,
@@ -106,8 +109,8 @@ let lastStatus: UpdateStatus | null = null;
  * Whether this run has already written an install intent.
  *
  * Both paths that install an update end in a quit, and the in-app restart runs
- * through BOTH of them — `beginUpdateRestart()` records the attempt, then
- * `quitAndInstall()`'s own `app.quit()` reaches the quit sequence, which asks
+ * through BOTH of them — {@link prepareUpdateRestart} records the attempt, then
+ * `quitAndInstall()`'s own `app.quit()` reaches the quit guard, which asks
  * again. Without this, one restart would count as two attempts and push the
  * card to "Download fresh copy" after a single ordinary failure.
  *
@@ -146,6 +149,10 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   // the very version that just failed — which {@link foldForReplay} is what
   // stops from reading as good news.
   judgeLastInstallAttempt();
+
+  // Then clear out anything staged that this version has already caught up
+  // with, before the first check can stage something new on top of it.
+  purgeStaleStagedUpdates();
 
   autoUpdater.on('checking-for-update', () => {
     sendUpdateStatus({ state: 'checking' });
@@ -228,6 +235,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   // comes from the C++ binding, which could not be verified from here. Nothing
   // above depends on it firing.
   nativeAutoUpdater.on('before-quit-for-update', () => {
+    log.info('[updater] The installer announced its restart (before-quit-for-update).');
     armUpdateRestart();
   });
 
@@ -235,7 +243,10 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
     // Whatever else this error is, it means no restart is happening. On macOS
     // this is how an armed restart realistically dies: `quitAndInstall()` took
     // its deferred branch and returned, and Squirrel then rejected the update.
-    // Neither piece of state may outlive the attempt.
+    // Neither piece of state may outlive the attempt — and neither may the
+    // stopped server, which this restart took down for a quit that is now not
+    // coming. Recovering first, because it reads the state before clearing it.
+    void recoverFromStalledRestart(`the updater reported: ${err.message}`);
     resetUpdateRestartState();
 
     // A not-yet-ready release (metadata file 404) means "nothing to install
@@ -346,6 +357,26 @@ export function checkForUpdatesInteractive(): void {
 const RESTART_CONFIRMED_GRACE_MS = 10 * 60_000;
 
 /**
+ * How long a handed-off restart has to actually take the process, before the
+ * app assumes it is not going to and brings itself back to life.
+ *
+ * There is a branch where `quitAndInstall()` returns having issued **nothing**:
+ * `MacUpdater` quits only `if (this.squirrelDownloadedUpdate)`, and otherwise
+ * registers a deferred listener and returns — and with `autoInstallOnAppQuit`
+ * true it does not even ask Squirrel to check, because the download already
+ * did. If Squirrel then fails silently, which is the whole reported condition
+ * (electron/electron#8912), nothing further arrives: no quit, no `error`, no
+ * event of any kind. The server is already stopped by then, so without a
+ * deadline the app sits there for ever as a window in front of nothing.
+ *
+ * Fifteen seconds is far longer than Squirrel needs to finish an update it has
+ * already downloaded and verified, and short enough that nobody sits looking at
+ * a dead window wondering. Firing early costs a server restart and an honest
+ * "it did not install" card; firing late is the bug.
+ */
+const STALLED_RESTART_TIMEOUT_MS = 15_000;
+
+/**
  * Whether an update restart is under way, for the sole purpose of keeping the
  * "DorkOS is still running" notice quiet while it happens.
  *
@@ -416,6 +447,7 @@ export function resetUpdateRestartState(): void {
   restartArmed = false;
   restartConfirmedAt = null;
   intentRecorded = false;
+  clearStalledRestartWatchdog();
 }
 
 /**
@@ -423,10 +455,10 @@ export function resetUpdateRestartState(): void {
  * launch can tell whether it was.
  *
  * Called from **both** paths that install one: the in-app/native restart
- * ({@link beginUpdateRestart}) and the ordinary quit that installs on the way
+ * ({@link prepareUpdateRestart}) and the ordinary quit that installs on the way
  * out (`autoInstallOnAppQuit`, reached through the quit sequence in
  * `quit-guard.ts`). One helper for both, and idempotent per run, because the
- * restart path goes through the quit sequence too — see {@link intentRecorded}.
+ * restart path reaches the quit guard as well — see {@link intentRecorded}.
  *
  * Records nothing unless an update is genuinely staged — see
  * {@link pendingInstallVersion} — so an ordinary quit with no update waiting
@@ -437,7 +469,10 @@ export function recordUpdateInstallIntent(): void {
   const version = pendingInstallVersion();
   if (!version) return;
   intentRecorded = true;
-  writeUpdateIntent(version);
+  const intent = writeUpdateIntent(version);
+  if (intent) {
+    log.info(`[updater] Recorded install attempt ${intent.attempts} for ${intent.offeredVersion}.`);
+  }
 }
 
 /**
@@ -461,23 +496,133 @@ function pendingInstallVersion(): string | null {
 }
 
 /**
- * Arm the installer and restart, once anything mid-run has been accounted for.
+ * Get the app ready to be quit by someone else: ask about anything mid-run,
+ * write down what is about to be installed, stop the server, and mark the quit
+ * that follows as one the guard must not touch.
  *
- * The question is asked **here**, not from `before-quit`, because by then the
- * answer cannot change anything: on Windows `quitAndInstall()` has already run
- * the installer before it quits, and on macOS it may have handed off to
- * Squirrel and taken the windows with it. Asked from here, "Keep Working"
- * genuinely costs nothing — the installer was never armed, and the update still
- * lands on the next ordinary quit.
+ * **The server is stopped here, before the installer is ever called.** That is
+ * the whole point. Squirrel arms its install against the termination it starts
+ * itself, and the quit guard used to `preventDefault()` that termination,
+ * shut the server down, and issue a fresh `app.quit()` in its place — which is
+ * not the same quit. A person spent ten days clicking "Restart to install" and
+ * getting the old version back every time, with no error anywhere
+ * (`plans/desktop-resilience-program.md` §2B). Stopping the server first leaves
+ * the guard nothing to do, so it can let the installer's quit run untouched.
+ *
+ * The cost is a window in front of a stopped server for as long as the handoff
+ * takes — and on the branch where `quitAndInstall()` defers and returns having
+ * issued nothing, "as long as it takes" can be for ever. That is what
+ * {@link STALLED_RESTART_TIMEOUT_MS} bounds: the caller arms a watchdog, and a
+ * restart that has not happened by the deadline is recovered from rather than
+ * waited on (see {@link recoverFromStalledRestart}).
+ *
+ * Shared with the manual-overwrite restart (`manual-overwrite.ts`), which needs
+ * exactly the same preparation before `app.relaunch()`.
+ *
+ * @returns Whether the person agreed; `false` means nothing was armed, nothing
+ *   was stopped, and the caller must not proceed.
+ */
+export async function prepareUpdateRestart(): Promise<boolean> {
+  // The question is asked **here**, not from `before-quit`, because by then the
+  // answer cannot change anything: on Windows `quitAndInstall()` has already
+  // run the installer before it quits, and on macOS it may have handed off to
+  // Squirrel and taken the windows with it. Asked from here, "Keep Working"
+  // genuinely costs nothing — the installer was never armed, and the update
+  // still lands on the next ordinary quit.
+  if (!(await confirmInterruptingAgents('restart'))) {
+    log.info('[updater] Restart declined; the update still lands on the next quit.');
+    return false;
+  }
+
+  // Before the shutdown, not after: a server that hangs on the way down must
+  // not cost us the record of what this restart was about to install.
+  recordUpdateInstallIntent();
+
+  try {
+    await stopServer();
+    log.info('[updater] Server stopped; the quit that follows belongs to the installer.');
+  } catch (err) {
+    // A server that will not go down must not trap someone in an app they
+    // asked to restart. The quit takes the child with it either way.
+    log.error('[updater] The server did not stop cleanly before the restart.', err);
+  }
+
+  // Armed last, and after the await rather than before it: this is the token
+  // that tells the quit guard to stand aside, and it must not be standing if
+  // the shutdown above never resolves.
+  armUpdateRestart();
+  return true;
+}
+
+/**
+ * Hand the staged update to the installer, once anything mid-run has been
+ * accounted for and the server is down. See {@link prepareUpdateRestart}.
  */
 async function beginUpdateRestart(): Promise<void> {
-  if (!(await confirmInterruptingAgents('restart'))) return;
-
-  // Armed before the call, because on the branch that quits straight away the
-  // windows are gone before this function resumes.
-  armUpdateRestart();
-  recordUpdateInstallIntent();
+  log.info('[updater] Restart to install requested.');
+  if (!(await prepareUpdateRestart())) return;
+  log.info('[updater] Calling quitAndInstall().');
   autoUpdater.quitAndInstall();
+
+  // Reached on every platform, and meaningless on the branch that quits
+  // straight away: the process is gone long before the timer could fire.
+  // `unref()` so a pending watchdog is never itself a reason the app stays up.
+  stalledRestartWatchdog = setTimeout(() => {
+    void recoverFromStalledRestart('the installer never quit the app');
+  }, STALLED_RESTART_TIMEOUT_MS);
+  stalledRestartWatchdog.unref();
+}
+
+/**
+ * The watchdog armed by the last handoff, so a restart that dies loudly (an
+ * updater `error`) is not also waited on by a timer.
+ */
+let stalledRestartWatchdog: NodeJS.Timeout | null = null;
+
+/**
+ * Bring the app back from a restart that armed the installer and then did not
+ * happen.
+ *
+ * The server was stopped for a quit that never came, so this is not a tidy-up:
+ * until it runs, the app is a window in front of nothing, which is strictly
+ * worse than the silent no-op it replaced. It restarts the server, points the
+ * windows at wherever it came back, and tells the renderer the install failed —
+ * which is the truth, and which the card turns into the one remedy that works.
+ *
+ * Guarded on {@link restartArmed} and clears it before its first `await`, so
+ * the two callers — the watchdog and the updater's `error` handler, which race
+ * on exactly this case — recover once between them.
+ *
+ * @param reason - What made us give up on the restart, for the log.
+ */
+async function recoverFromStalledRestart(reason: string): Promise<void> {
+  if (!restartArmed) return;
+  const offered = pendingInstallVersion();
+  resetUpdateRestartState();
+  log.warn(`[updater] The restart did not happen (${reason}); bringing the server back up.`);
+
+  try {
+    pointWindowsAtServer(await startServer());
+  } catch (err) {
+    // Nothing left to try from here: the app is already in the state this
+    // exists to prevent, and saying so in the log is what is left.
+    log.error('[updater] Could not restart the server after a stalled update restart.', err);
+    return;
+  }
+
+  if (offered === null) return;
+  sendUpdateStatus({
+    state: 'install-failed',
+    version: offered,
+    attempts: readUpdateIntent()?.attempts ?? 1,
+  });
+}
+
+/** Disarm the stalled-restart watchdog, if one is pending. */
+function clearStalledRestartWatchdog(): void {
+  if (stalledRestartWatchdog === null) return;
+  clearTimeout(stalledRestartWatchdog);
+  stalledRestartWatchdog = null;
 }
 
 /**
@@ -485,8 +630,8 @@ async function beginUpdateRestart(): Promise<void> {
  * in-app card (the "Restart to install" button) via the `update:restart` IPC.
  *
  * Shares {@link beginUpdateRestart} with the native restart dialog, so both
- * paths ask the same question and tear the server down through the same quit
- * sequence (`quit-guard.ts`). No-ops when `!app.isPackaged`, matching
+ * paths ask the same question and stop the server the same way before the
+ * installer is called. No-ops when `!app.isPackaged`, matching
  * {@link setupAutoUpdater} — an unpackaged build has no installer to run.
  */
 export async function restartToUpdate(): Promise<void> {

@@ -6,6 +6,14 @@ import log from 'electron-log';
 import { resolveDataDirectory } from '../dork-home';
 import { redactSecrets } from './redact';
 import { getServerPort } from '../server-process';
+import { findAppBundle } from '../updater/app-bundle';
+import {
+  findCacheDirs,
+  resolveCacheRoot,
+  SHIPIT_DIR_SUFFIX,
+  SHIPIT_STATE_FILE,
+  UPDATER_DIR_SUFFIX,
+} from '../updater/cache';
 import { buildZip, type ZipEntry } from './zip-writer';
 
 /**
@@ -47,15 +55,6 @@ import { buildZip, type ZipEntry } from './zip-writer';
  * can attach to a support message without a size complaint.
  */
 export const LOG_TAIL_BYTES = 500 * 1024;
-
-/** Suffix Squirrel.Mac gives its per-app state directory in the user cache. */
-const SHIPIT_DIR_SUFFIX = '.ShipIt';
-
-/** Suffix electron-updater gives its download cache in the user cache. */
-const UPDATER_DIR_SUFFIX = '-updater';
-
-/** The file inside a Squirrel state directory that says how the last install went. */
-const SHIPIT_STATE_FILE = 'ShipItState.plist';
 
 /** Name of the archive's human-readable summary. */
 const REPORT_FILE = 'report.txt';
@@ -111,43 +110,6 @@ function describeDirectory(dirPath: string): string {
   return [`${dirPath}:`, ...(lines.length > 0 ? lines : ['  (empty)'])].join('\n');
 }
 
-/**
- * The directory the OS keeps per-app caches in — where Squirrel's install state
- * and electron-updater's downloads both live.
- *
- * Derived from the home directory rather than asked of `app.getPath`, which has
- * no name for it: Electron's path names cover `userData`, `temp` and `logs` but
- * not the cache root. These three branches are the ones electron-updater
- * resolves for itself, which is what makes them the right places to look — read
- * off `app.getPath('home')` rather than `$HOME` for the same reason
- * `dork-home.ts` does, so a relocated home still resolves.
- */
-function resolveCacheRoot(): string {
-  const home = app.getPath('home');
-  if (process.platform === 'darwin') return path.join(home, 'Library', 'Caches');
-  if (process.platform === 'win32') return path.join(home, 'AppData', 'Local');
-  return path.join(home, '.cache');
-}
-
-/**
- * Directories directly under `cacheRoot` whose name ends in `suffix`.
- *
- * Both the Squirrel state directory and the updater cache are named after
- * identifiers that live in build config rather than in this source — the app id
- * and the package name — so matching the suffix keeps the report correct if
- * either is ever renamed. A rename would otherwise turn into a confident
- * "not present", which is a worse answer than no answer.
- *
- * @param cacheRoot - The OS cache directory; see {@link resolveCacheRoot}.
- * @param suffix - The name suffix to match.
- */
-function findCacheDirs(cacheRoot: string, suffix: string): string[] {
-  return fs
-    .readdirSync(cacheRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.endsWith(suffix))
-    .map((entry) => path.join(cacheRoot, entry.name));
-}
-
 /** Can this process write to `target`? */
 function isWritable(target: string): boolean {
   try {
@@ -156,21 +118,6 @@ function isWritable(target: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * The macOS bundle that `exePath` lives inside, or `null` off macOS and for a
- * loose executable.
- *
- * @param exePath - Absolute path of the running executable.
- */
-function findAppBundle(exePath: string): string | null {
-  let current = exePath;
-  while (current !== path.dirname(current)) {
-    current = path.dirname(current);
-    if (current.endsWith('.app')) return current;
-  }
-  return null;
 }
 
 /**
