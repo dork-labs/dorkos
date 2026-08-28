@@ -2,6 +2,8 @@
 covers:
   - 'feat(relay,shared): the built-in adapter drives every runtime, not just Claude Code (DOR-1614)'
   - "feat(server): the relay carries every registered runtime, and a chat session takes its agent's (DOR-1614)"
+  - 'docs(contributing): the relay adapter drives every runtime, and the guides say so (DOR-1614)'
+  - 'refactor(relay): keep the TTL comment with the TTL it explains'
 ---
 
 ### Fixed

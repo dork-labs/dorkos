@@ -563,14 +563,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     startTime: number,
     turnController: AbortController
   ): Promise<DeliveryResult> {
-    // A hold may not outlive the message it holds. `handleAgentMessage` gives
-    // the turn whatever is left of the envelope's TTL, and falls back to
-    // `defaultTimeoutMs` when nothing is — so a wait that ate the whole TTL
-    // would start the turn on a FRESH full budget, an hour-old message running
-    // as if it had just arrived. The wait stops when the message's own time is
-    // up, and a message with no time left never waits at all.
-    // Answered BEFORE a concurrency slot is taken: a message nothing here can
-    // run must not spend one, and must not make the next message wait behind it.
+    // Which runtime answers, answered BEFORE a concurrency slot is taken: a
+    // message nothing here can run must not spend one, and must not make the
+    // next message wait behind it. The refusal reports the same way a slot
+    // refusal does — `success: false` and no run-row write — because it is the
+    // same kind of event: the handler never started.
     const selected = this.resolveRuntime(subject, envelope);
     if ('error' in selected) {
       this.status = {
@@ -584,6 +581,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     }
     const agentManager = selected.runtime;
 
+    // A hold may not outlive the message it holds. `handleAgentMessage` gives
+    // the turn whatever is left of the envelope's TTL, and falls back to
+    // `defaultTimeoutMs` when nothing is — so a wait that ate the whole TTL
+    // would start the turn on a FRESH full budget, an hour-old message running
+    // as if it had just arrived. The wait stops when the message's own time is
+    // up, and a message with no time left never waits at all.
     const ttlRemainingMs = envelope.budget.ttl - Date.now();
     const slot = await this.capacity.acquire({
       // Only a delivery the pipeline licensed may wait, and the pipeline is the
