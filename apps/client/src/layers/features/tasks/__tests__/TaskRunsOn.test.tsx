@@ -270,6 +270,35 @@ describe('the task form Runs-on controls', () => {
       expect(screen.queryByTestId('task-effort-stranded')).toBeNull();
     });
 
+    it('keeps a stored rung this model does not offer readable, and selected', async () => {
+      // A model whose ladder stops short of the rung this task holds. Filtered
+      // out, the select's value matches no item and Radix renders a BLANK
+      // trigger — a value the task will run with, that nobody can see or
+      // change. Nothing else catches it: the model does take an effort, so no
+      // breakage is reported either.
+      const transport = transportWithAgent(null, {
+        getModels: vi.fn().mockResolvedValue([
+          {
+            value: 'short-ladder',
+            displayName: 'Short ladder',
+            supportsEffort: true,
+            supportedEffortLevels: ['low', 'medium', 'high'],
+          },
+        ]),
+      });
+      renderEditTask(
+        transport,
+        createMockSchedule({ id: 'sched-1', model: 'short-ladder', effort: 'max' })
+      );
+
+      await expectSelected('task-effort-select', 'Max');
+      await user.click(screen.getByTestId('task-effort-select'));
+      const options = (await screen.findAllByRole('option')).map((el) => el.textContent);
+      expect(options).toContain('Max');
+      // Still filtered, though — the rungs GPT-5.5 does not take stay out.
+      expect(options).not.toContain('Minimal');
+    });
+
     it('shows a stored effort on such a runtime, with a way to clear it', async () => {
       // The one value that HAS to stay visible: it is stored, it does nothing,
       // and a control that is not drawn cannot be used to remove it.

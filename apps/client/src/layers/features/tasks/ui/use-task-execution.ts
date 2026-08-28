@@ -234,15 +234,23 @@ export function useTaskExecution(input: TaskExecutionInput): TaskExecution {
     return options;
   }, [models, model]);
 
-  const effortOptions = useMemo<ExecutionOption[]>(
-    () =>
-      EFFORT_LEVELS.filter(
-        (level) =>
-          !selectedModel?.supportedEffortLevels ||
-          selectedModel.supportedEffortLevels.includes(level)
-      ).map((level) => ({ value: level, label: effortLabel(level) })),
-    [selectedModel]
-  );
+  const effortOptions = useMemo<ExecutionOption[]>(() => {
+    const options: ExecutionOption[] = EFFORT_LEVELS.filter(
+      (level) =>
+        !selectedModel?.supportedEffortLevels || selectedModel.supportedEffortLevels.includes(level)
+    ).map((level) => ({ value: level, label: effortLabel(level) }));
+    // Same rule the model list follows, for the same reason: a rung this model
+    // does not take is still a rung the task HOLDS, and a select whose value
+    // matches no item renders an empty trigger. The person would be looking at a
+    // blank box holding a value they cannot see, on a task that will run with
+    // it. `describeAgentExecution` does not catch this one — it reports a model
+    // that takes no effort at all, not a model whose ladder is shorter — so
+    // dropping it here would be silent.
+    if (effort && !options.some((o) => o.value === effort)) {
+      options.push({ value: effort, label: effortLabel(effort as EffortLevel) });
+    }
+    return options;
+  }, [selectedModel, effort]);
 
   const inheritRuntimeLabel =
     inheritedRuntime === null
