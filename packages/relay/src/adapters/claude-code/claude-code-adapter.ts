@@ -72,6 +72,7 @@ import { subscribeAgentCancelHandler } from './agent-cancel-handler.js';
 import { AbortRegistry } from '../../lib/abort-registry.js';
 import {
   AGENT_SUBJECT_PREFIX,
+  RUNTIME_TYPES,
   extractSessionIdFromSubject,
   parseAgentSubject,
 } from '../../lib/subjects.js';
@@ -133,9 +134,10 @@ export const CLAUDE_CODE_MANIFEST: AdapterManifest = {
  *
  * Matches subjects produced by `BindingRouter` when the runtime resolver is
  * wired (`relay.agent.<runtimeType>.<sessionId>`). Claimed once per registered
- * runtime and listed BEFORE the legacy catch-all, so that in a multi-adapter
- * configuration these specific prefixes win the registry's
- * longest-matching-prefix race against the broader `relay.agent.`.
+ * runtime, so that in a multi-adapter configuration these specific prefixes beat
+ * the broader `relay.agent.` catch-all: `AdapterRegistry` resolves a subject to
+ * the LONGEST matching claim, and the order claims are listed in plays no part.
+ * (They are still written before the catch-all below, for reading, not routing.)
  *
  * @param runtimeType - The runtime whose sessions this prefix covers.
  */
@@ -271,6 +273,27 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * cannot accidentally leave its own default runtime out of it.
    */
   private readonly agentRuntimes: ReadonlyMap<string, AgentRuntimeLike>;
+  /**
+   * The discriminator {@link parseAgentSubject} tests slot 3 against: every
+   * runtime type this adapter could plausibly be ADDRESSED about.
+   *
+   * The union of two sets, because the two failures it prevents are opposite
+   * ones:
+   *
+   * - **The keys this adapter holds**, so a runtime registered under a type the
+   *   built-in literal list has never heard of still routes to itself. Its
+   *   prefix is claimed from this same expression, so claimed and readable are
+   *   one set by construction.
+   * - **{@link RUNTIME_TYPES}**, so a type the product knows exists but this
+   *   build did not register — `opencode` where the SDK failed to construct — is
+   *   still read as a runtime and REFUSED by name. Without it such a subject
+   *   reads as a mesh namespace and takes the default runtime silently, which is
+   *   the wrong program answering under the right agent's name.
+   *
+   * Anything in neither set is a mesh namespace and names no runtime, exactly as
+   * before.
+   */
+  private readonly addressableRuntimeTypes: ReadonlySet<string>;
   /** The runtime type a message that names none runs on. */
   private readonly defaultRuntimeType: string;
   private relay: RelayPublisher | null = null;
@@ -325,6 +348,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // this adapter's own turns somewhere the host did not choose.
     runtimes.set(this.defaultRuntimeType, deps.agentManager);
     this.agentRuntimes = runtimes;
+    this.addressableRuntimeTypes = new Set([...runtimes.keys(), ...RUNTIME_TYPES]);
+    // Claimed from the map alone, never the union: claiming
+    // `relay.agent.opencode.` on a build with no opencode would take those
+    // subjects away from an adapter that could actually serve them. They still
+    // reach this adapter — and get refused by name — through the `relay.agent.`
+    // catch-all below.
     this.subjectPrefix = [
       ...[...runtimes.keys()].map(runtimeScopedAgentPrefix),
       AGENT_SUBJECT_PREFIX_LEGACY,
@@ -435,12 +464,19 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * name none. That is honest rather than a gap: neither shape has ever carried
    * a runtime, and the host's default is what ran them before this existed.
    *
+   * The parse is told {@link ClaudeCodeAdapter.addressableRuntimeTypes} rather
+   * than left on the built-in literal list. On the literal list, a runtime
+   * registered under a type outside it — `test-mode-b` under
+   * `DORKOS_TEST_RUNTIME`, or any runtime added without editing that list — had
+   * its prefix claimed here and its subject read as a mesh namespace, so the
+   * turn ran silently on the default runtime.
+   *
    * @param subject - The subject the message arrived on.
    * @param envelope - The envelope, for a task dispatch's payload.
    */
   private namedRuntimeType(subject: string, envelope: RelayEnvelope): string | undefined {
     if (isTaskDispatchSubject(subject)) return dispatchRuntimeType(envelope.payload);
-    return parseAgentSubject(subject)?.runtimeType;
+    return parseAgentSubject(subject, this.addressableRuntimeTypes)?.runtimeType;
   }
 
   /**

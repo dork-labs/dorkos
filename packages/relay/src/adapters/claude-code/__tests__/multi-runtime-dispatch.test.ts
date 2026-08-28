@@ -277,4 +277,93 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(claude.sendMessage).toHaveBeenCalledOnce();
     });
   });
+
+  describe('a runtime type outside the built-in literal list', () => {
+    // `RUNTIME_TYPES` in `lib/subjects.ts` is a literal list; the adapter's map
+    // is open. While the parse read that list, a runtime registered under a type
+    // missing from it had its prefix CLAIMED here and its subject read as a mesh
+    // namespace — so the turn ran silently on the default runtime, the wrong
+    // program answering under the right agent's name. `test-mode-b` is the type
+    // that is real today (`DORKOS_TEST_RUNTIME` registers it); any fourth
+    // runtime added without editing that list would be the next one.
+    let extra: AgentRuntimeLike;
+    let wide: ClaudeCodeAdapter;
+
+    beforeEach(async () => {
+      extra = mockRuntime('test-mode-b');
+      wide = new ClaudeCodeAdapter(
+        'claude-code',
+        {},
+        {
+          ...deps,
+          agentRuntimes: new Map([
+            ['claude-code', claude],
+            ['test-mode-b', extra],
+          ]),
+        }
+      );
+      await wide.start(mockRelay());
+    });
+
+    it('claims a prefix for it', () => {
+      expect(wide.subjectPrefix).toContain('relay.agent.test-mode-b.');
+    });
+
+    it('routes its session to ITSELF, never silently to the default', async () => {
+      const envelope = agentEnvelope('relay.agent.test-mode-b.sess-1');
+
+      const result = await wide.deliver(envelope.subject, envelope);
+
+      expect(result.success).toBe(true);
+      expect(extra.sendMessage).toHaveBeenCalledOnce();
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('asks the settings resolver about it by name', async () => {
+      await wide.deliver('relay.agent.test-mode-b.sess-1', agentEnvelope('x'));
+
+      expect(resolveExecutionSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ runtimeType: 'test-mode-b' })
+      );
+    });
+
+    it('still reads a namespace it holds no runtime for as a mesh subject', async () => {
+      // The widening is exactly the claimed set and nothing more: a direct
+      // agent-to-agent send to `ns-a` names no runtime and takes the default,
+      // exactly as before.
+      const envelope = agentEnvelope('relay.agent.ns-a.01AGENTULID');
+
+      await wide.deliver(envelope.subject, envelope);
+
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+      expect(extra.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a refusal costs nothing', () => {
+    it('never eats a concurrency slot', async () => {
+      // The refusal has to happen BEFORE `capacity.acquire`. If it moves below,
+      // a message nothing here can run takes a slot and the next real message
+      // queues behind it — one unregistered runtime would throttle the adapter
+      // for every agent on it.
+      const one = new ClaudeCodeAdapter('claude-code', { maxConcurrent: 1 }, deps);
+      await one.start(mockRelay());
+
+      const refused = await one.deliver(
+        'relay.agent.opencode.x',
+        agentEnvelope('relay.agent.opencode.x')
+      );
+      expect(refused.success).toBe(false);
+
+      // No await in between, no slot released — if the refusal spent the only
+      // slot, this one cannot be served.
+      const served = await one.deliver(
+        'relay.agent.claude-code.y',
+        agentEnvelope('relay.agent.claude-code.y')
+      );
+
+      expect(served.success).toBe(true);
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+    });
+  });
 });
