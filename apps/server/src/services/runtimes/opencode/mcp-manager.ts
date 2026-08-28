@@ -18,10 +18,14 @@
  */
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import type { ManagedMcpServerResolver } from '@dorkos/shared/agent-runtime';
+import type { AgentRegistryPort, ManagedMcpServerResolver } from '@dorkos/shared/agent-runtime';
 import { logger, logError } from '../../../lib/logger.js';
+import {
+  DORKOS_MCP_SERVER_NAME,
+  resolveDorkosMcpInjection,
+} from '../shared/dorkos-mcp-injection.js';
 import { enumerateOpenCodeMcpServers } from './mcp-status.js';
-import { toOpenCodeMcpServers } from './mcp-server-config.js';
+import { toOpenCodeMcpServers, type OpenCodeMcpServerConfig } from './mcp-server-config.js';
 import type { OpenCodeClientProvider } from './session-mapper.js';
 
 /**
@@ -67,6 +71,14 @@ export class OpenCodeMcpManager {
   private readonly warmInFlight = new Set<string>();
   /** Resolver for an agent's enabled managed servers; absent leaves sessions unmanaged. */
   private resolver: ManagedMcpServerResolver | undefined;
+  /**
+   * The agent registry, when the composition root injected it. Used only to
+   * decide whether a directory hosts a registered agent worth minting an
+   * identity for — the same guard the Claude and Codex adapters apply before
+   * they mint. Absent leaves the `dorkos` tool server uninjected, which is the
+   * safe default.
+   */
+  private meshCore: AgentRegistryPort | undefined;
   /** What managed servers we last injected, per directory. */
   private readonly injectedByCwd = new Map<string, InjectedRecord>();
   /**
@@ -87,6 +99,44 @@ export class OpenCodeMcpManager {
   /** Inject the managed-server resolver (the DOR-892 seam). */
   setResolver(resolver: ManagedMcpServerResolver): void {
     this.resolver = resolver;
+  }
+
+  /**
+   * Accept the agent registry, so a reconcile can tell whether a directory hosts
+   * a registered agent (the identity-mint guard for the `dorkos` tool server).
+   *
+   * @param meshCore - The agent registry port from the composition root.
+   */
+  setMeshCore(meshCore: AgentRegistryPort): void {
+    this.meshCore = meshCore;
+  }
+
+  /**
+   * The `dorkos` tool server for a directory, as a one-entry record to fold into
+   * the desired set, or `{}` when it must not be injected.
+   *
+   * This is OpenCode's ONLY per-agent identity channel, and structurally so: its
+   * sidecar is one shared process with a fixed environment, so there is no
+   * `DORKOS_AGENT_TOKEN` env seam to use the way codex and claude-code do, and
+   * there never will be. The token has to ride the server's own `headers`.
+   *
+   * @param cwd - The directory being reconciled.
+   */
+  private async resolveDorkosServer(cwd: string): Promise<Record<string, OpenCodeMcpServerConfig>> {
+    const agent = this.meshCore?.getByPath(cwd);
+    const injection = await resolveDorkosMcpInjection(
+      agent ? cwd : undefined,
+      agent?.displayName ?? agent?.name
+    );
+    if (!injection) return {};
+    return {
+      [DORKOS_MCP_SERVER_NAME]: {
+        type: 'remote',
+        url: injection.url,
+        headers: injection.headers,
+        enabled: true,
+      },
+    };
   }
 
   /**
@@ -175,17 +225,38 @@ export class OpenCodeMcpManager {
    * @param cwd - The session/agent working directory (the `directory` scope).
    */
   async ensureManaged(client: OpencodeClient, cwd: string): Promise<void> {
-    if (!this.resolver) return;
-    const { servers, skipped } = toOpenCodeMcpServers(this.resolver.injectableServersForCwd(cwd));
-    if (skipped.length > 0) {
+    const managed = this.resolver
+      ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(cwd))
+      : { servers: {}, skipped: [] };
+    if (managed.skipped.length > 0) {
       logger.debug(
         '[OpenCodeRuntime] skipped SSE managed MCP servers — OpenCode has no SSE transport',
-        { cwd, skipped }
+        { cwd, skipped: managed.skipped }
       );
     }
 
+    // The `dorkos` tool server is resolved on EVERY reconcile, and its identity
+    // token is freshly minted each time (spec `tool-only-room-replies` §D4). It
+    // is written LAST so a managed server can never shadow the name DorkOS owns.
+    const servers: Record<string, OpenCodeMcpServerConfig> = {
+      ...managed.servers,
+      ...(await this.resolveDorkosServer(cwd)),
+    };
+
+    // A re-minted token changes `headers`, so it changes this signature, so the
+    // no-op early return below does NOT fire and the server is re-added with the
+    // fresh credential. That falls out of hashing the whole desired set rather
+    // than its names — true by accident before DOR-1613, and pinned by a test
+    // now, because the alternative is a session whose token quietly expires
+    // mid-life and whose every room write then 401s.
     const signature = JSON.stringify(servers);
     const prev = this.injectedByCwd.get(cwd);
+    // Nothing desired and nothing we ever injected here: no reconcile to do, and
+    // — the reason this guard is worth its lines — no `GET /mcp` round trip on
+    // every turn of an install that has neither managed servers nor the DorkOS
+    // tools switched on. That is the common case, and it used to be served by an
+    // early return on a missing resolver, which the `dorkos` entry made wrong.
+    if (Object.keys(servers).length === 0 && prev === undefined) return;
     const sameInstance = prev !== undefined && prev.client === client;
     // Same live instance, identical desired set, AND everything applied last
     // run → nothing to do. A prior partial failure (`complete: false`) falls

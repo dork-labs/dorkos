@@ -82,6 +82,13 @@ import {
 import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
+import {
+  CODEX_DORKOS_TOOL_PREFIX,
+  DORKOS_MCP_SERVER_NAME,
+  resolveDorkosMcpInjection,
+  type DorkosMcpInjection,
+} from '../shared/dorkos-mcp-injection.js';
+import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
@@ -161,10 +168,11 @@ export function buildCodexOptions(
   binaryPath?: string | null,
   mcpUiUrl?: string,
   extraEnv?: Record<string, string>,
-  managedServers?: CodexMcpServerRecord
+  managedServers?: CodexMcpServerRecord,
+  dorkosTools?: DorkosMcpInjection | null
 ): CodexOptions {
   const hasExtraEnv = extraEnv !== undefined && Object.keys(extraEnv).length > 0;
-  const mcpServers = buildMcpServersConfig(mcpUiUrl, managedServers);
+  const mcpServers = buildMcpServersConfig(mcpUiUrl, managedServers, dorkosTools);
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
     ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
@@ -173,23 +181,38 @@ export function buildCodexOptions(
 }
 
 /**
- * Merge the agent's managed MCP servers with the scoped `dorkos_ui` bridge into
- * one `mcp_servers` config record, or `undefined` when neither contributes.
+ * Merge the agent's managed MCP servers with the two servers DorkOS owns — the
+ * scoped `dorkos_ui` bridge and the `dorkos` tool server — into one
+ * `mcp_servers` config record, or `undefined` when none contributes.
  *
- * The `dorkos_ui` entry is written LAST, so a managed server can never shadow
- * the UI bridge whatever its name — the same ordering guarantee the claude-code
+ * Both DorkOS entries are written LAST, so a managed server can never shadow
+ * either whatever its name — the same ordering guarantee the claude-code
  * adapter's `mergeSessionMcpServers` gives, and defense in depth on top of the
- * converter already dropping the reserved name.
+ * converter already dropping (and now reporting) the reserved names.
+ *
+ * The `dorkos` entry is streamable HTTP with `http_headers`, which is the only
+ * transport that can carry the bearer and the agent identity — see
+ * {@link resolveDorkosMcpInjection} for why both are mandatory. Codex's MCP
+ * client sends no `Origin`, so it clears `validateMcpOrigin` through the
+ * non-browser early return, exactly as `dorkos_ui` already does.
  *
  * @param mcpUiUrl - Loopback URL of the `dorkos_ui` server, or undefined.
  * @param managedServers - Enabled managed servers in Codex config shape.
+ * @param dorkosTools - The resolved `dorkos` entry, or null/undefined to inject none.
  */
 function buildMcpServersConfig(
   mcpUiUrl?: string,
-  managedServers?: CodexMcpServerRecord
+  managedServers?: CodexMcpServerRecord,
+  dorkosTools?: DorkosMcpInjection | null
 ): CodexMcpServerRecord | undefined {
   const servers: CodexMcpServerRecord = { ...(managedServers ?? {}) };
   if (mcpUiUrl) servers[CODEX_UI_MCP_SERVER] = { url: mcpUiUrl };
+  if (dorkosTools) {
+    servers[DORKOS_MCP_SERVER_NAME] = {
+      url: dorkosTools.url,
+      http_headers: dorkosTools.headers,
+    };
+  }
   return Object.keys(servers).length > 0 ? servers : undefined;
 }
 
@@ -333,16 +356,22 @@ export class CodexRuntime implements AgentRuntime {
    *
    * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
    * @param managedServers - Enabled managed servers in Codex config shape, `{}` when none.
+   * @param dorkosTools - The resolved `dorkos` tool server, or null when it is
+   *   not injected this turn. It carries a freshly minted identity token, so a
+   *   client holding one can never be shared across turns.
    */
   private async clientForTurn(
     tokenEnv: Record<string, string>,
-    managedServers: CodexMcpServerRecord
+    managedServers: CodexMcpServerRecord,
+    dorkosTools: DorkosMcpInjection | null
   ): Promise<Codex> {
     const binary = await this.resolveTurnBinary();
     const hasToken = Object.keys(tokenEnv).length > 0;
     const hasManaged = Object.keys(managedServers).length > 0;
-    if (hasToken || hasManaged) {
-      return new Codex(buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managedServers));
+    if (hasToken || hasManaged || dorkosTools) {
+      return new Codex(
+        buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managedServers, dorkosTools)
+      );
     }
     if (this.sharedClient?.binary !== binary) {
       this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };
@@ -362,12 +391,30 @@ export class CodexRuntime implements AgentRuntime {
   private resolveManagedMcpServers(cwd: string): CodexMcpServerRecord {
     if (!this.managedMcpServers) return {};
     const neutral = this.managedMcpServers.injectableServersForCwd(cwd);
-    const { servers, skipped } = toCodexMcpServers(neutral, new Set([CODEX_UI_MCP_SERVER]));
+    const { servers, skipped, reserved } = toCodexMcpServers(
+      neutral,
+      new Set([CODEX_UI_MCP_SERVER, DORKOS_MCP_SERVER_NAME])
+    );
     if (skipped.length > 0) {
       logger.debug('[CodexRuntime] skipped SSE managed MCP servers — Codex has no SSE transport', {
         cwd,
         skipped,
       });
+    }
+    if (reserved.length > 0) {
+      // A WARN, not a debug: this is somebody's own server disappearing. The
+      // drop itself is correct and stays — DorkOS must own these names — but a
+      // person watching their tools vanish needs a line naming the collision
+      // and the remedy, which is the whole of DOR-1613's complaint about the
+      // silent version of this branch.
+      logger.warn(
+        `[CodexRuntime] managed MCP server(s) ${reserved
+          .map((name) => `"${name}"`)
+          .join(
+            ', '
+          )} use a name DorkOS reserves and were NOT injected — rename them to inject them`,
+        { cwd, reserved }
+      );
     }
     return servers;
   }
@@ -614,14 +661,9 @@ export class CodexRuntime implements AgentRuntime {
     // carries the first turn's metadata with the row instead.
     this.persistSessionMetadata(sessionId);
 
-    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
-    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
-    // Codex agent knows who it is and how to reach its capabilities.
-    // `.text` — the whole append, memory block included. The `stable` half of
-    // this result exists only for claude-code's relaunch fingerprint; codex has
-    // no warm process to keep, so it sends everything, every turn (see
-    // `buildMemoryBlock` for what that costs).
-    const agentContext = (await buildAgentContextAppend(cwd)).text;
+    // Does this working directory host a registered agent? Everything below
+    // that mints, injects or names a tool is gated on the answer.
+    const meshAgent = this.meshCore?.getByPath(cwd);
 
     // Mint this session's agent identity token when this cwd hosts a registered
     // agent. It rides the subprocess env, never the prompt, so it stays a
@@ -632,7 +674,6 @@ export class CodexRuntime implements AgentRuntime {
     // Minted under the name a PERSON reads, never the slug: the token's label
     // is replayed onto the agent's author row by every room tool it calls, so
     // the slug there renames a live agent mid-conversation (DOR-1264).
-    const meshAgent = this.meshCore?.getByPath(cwd);
     const agentTokenEnv = await resolveAgentTokenEnv(
       meshAgent ? cwd : undefined,
       meshAgent?.displayName ?? meshAgent?.name
@@ -643,8 +684,44 @@ export class CodexRuntime implements AgentRuntime {
     // at turn time because the resolver keys on the session cwd; a non-agent
     // session has no manifest and contributes none.
     const managedMcpServers = this.resolveManagedMcpServers(cwd);
+
+    // The `dorkos` tool server, when the experiment is on and this cwd hosts a
+    // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
+    // like the env token above and for the same reason: it carries a freshly
+    // minted identity token, so a per-session or per-boot resolve would let the
+    // 30-day fuse arm on a long-lived agent. `null` injects nothing, which is
+    // exactly today's behaviour.
+    //
+    // Scoped to every agent-bound session rather than to room turns: the runtime
+    // cannot know why it was called, and these tools are worth having outside a
+    // room anyway.
+    const dorkosTools = await resolveDorkosMcpInjection(
+      meshAgent ? cwd : undefined,
+      meshAgent?.displayName ?? meshAgent?.name
+    );
+
+    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
+    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
+    // Codex agent knows who it is and how to reach its capabilities.
+    // `.text` — the whole append, memory block included. The `stable` half of
+    // this result exists only for claude-code's relaunch fingerprint; codex has
+    // no warm process to keep, so it sends everything, every turn (see
+    // `buildMemoryBlock` for what that costs).
+    const neutralContext = (await buildAgentContextAppend(cwd)).text;
+
+    // The room verbs, and ONLY when this turn actually carries them — gated on
+    // the resolved injection itself, not on a second guess at it, so the prose
+    // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
+    // Named under codex's own MCP prefix, never claude-code's: a bare or
+    // wrongly-prefixed name is uncallable, which is the DOR-1292 defect. With
+    // nothing injected this is byte-identical to what a codex turn carried
+    // before.
+    const agentContext = dorkosTools
+      ? `${neutralContext}\n\n${buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX)}`
+      : neutralContext;
+
     const threadOptions = projectThreadOptions(settings, cwd);
-    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers);
+    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers, dorkosTools);
     const thread =
       boundThreadId !== undefined
         ? client.resumeThread(boundThreadId, threadOptions)

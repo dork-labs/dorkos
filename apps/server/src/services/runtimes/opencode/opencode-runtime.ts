@@ -51,6 +51,7 @@ import type {
   SseResponse,
   SessionSettingsPort,
   ToolDecisionOptions,
+  AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
@@ -67,6 +68,11 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
+import {
+  dorkosToolsEnabledFor,
+  OPENCODE_DORKOS_TOOL_PREFIX,
+} from '../shared/dorkos-mcp-injection.js';
+import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -198,6 +204,13 @@ export class OpenCodeRuntime implements AgentRuntime {
   /** MCP status + managed injection, keyed by directory (DOR-893). */
   private readonly mcp: OpenCodeMcpManager;
   private settingsPort: SessionSettingsPort | undefined;
+  /**
+   * The agent registry, when the composition root injected it. Used only to
+   * decide whether a turn's working directory hosts a registered agent — the
+   * gate on naming the DorkOS room tools in the prompt. The MCP manager holds
+   * its own reference for the injection half; see {@link setMeshCore}.
+   */
+  private meshCore: AgentRegistryPort | undefined;
 
   constructor(options: OpenCodeRuntimeOptions) {
     this.provider = options.provider;
@@ -337,7 +350,21 @@ export class OpenCodeRuntime implements AgentRuntime {
     // this result exists only for claude-code's relaunch fingerprint; opencode
     // has no warm process to keep, so it sends everything, every turn (see
     // `buildMemoryBlock` for what that costs).
-    const agentContext = (await buildAgentContextAppend(cwd)).text;
+    const neutralContext = (await buildAgentContextAppend(cwd)).text;
+
+    // The room verbs, and only when this session is going to carry them (spec
+    // `tool-only-room-replies` §D11). Named under OpenCode's own MCP prefix —
+    // one underscore and no `mcp` marker, which is nothing like claude-code's —
+    // because a wrongly-prefixed name is as uncallable as a bare one (DOR-1292).
+    //
+    // Gated on the no-mint predicate rather than on the injection result: the
+    // reconcile that actually registers the server needs a live sidecar client,
+    // which only exists further down inside `runOpenCodeTurn`. The two answers
+    // differ only when minting fails, which warns; see `dorkosToolsEnabledFor`.
+    // Off, this is byte-identical to what an OpenCode turn carried before.
+    const agentContext = dorkosToolsEnabledFor(this.meshCore?.getByPath(cwd) ? cwd : undefined)
+      ? `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`
+      : neutralContext;
 
     yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
       const model = parseModelSelection(settings.model);
@@ -882,6 +909,23 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   setManagedMcpServers(resolver: ManagedMcpServerResolver): void {
     this.mcp.setResolver(resolver);
+  }
+
+  /**
+   * Accept the agent registry, so a turn can tell whether its working directory
+   * hosts a registered agent — the guard on minting the identity the injected
+   * `dorkos` tool server presents (spec `tool-only-room-replies` §D4).
+   *
+   * The composition root calls this on every runtime that implements it. This
+   * runtime had no use for it until the DorkOS tools needed a per-agent identity
+   * channel; OpenCode's sidecar is one shared process with a fixed environment,
+   * so headers on the injected server are the ONLY place that identity can ride.
+   *
+   * @param meshCore - The agent registry port from the composition root.
+   */
+  setMeshCore(meshCore: AgentRegistryPort): void {
+    this.meshCore = meshCore;
+    this.mcp.setMeshCore(meshCore);
   }
 
   // --- Internals ---
