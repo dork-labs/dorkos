@@ -110,7 +110,8 @@ function extractClaimFeedDisplayFields(payload: unknown): ClaimFeedDisplayFields
 /** Minimal interface for AgentManager session creation. */
 export interface AgentSessionCreator {
   /**
-   * @param cwd - Working directory for the new session.
+   * @param cwd - Working directory for the new session, which is also where the
+   *   answering agent's `.dork/agent.json` lives.
    * @param permissionMode - Required, and deliberately so: an optional mode here
    *   invited a second `?? 'acceptEdits'` fallback to decide it (DOR-604). The
    *   caller resolves it from the binding, which always carries one.

@@ -16,8 +16,8 @@
  *
  * The transcript probe is the real question the sweep asks — "is there a JSONL
  * file for this session under this agent's directory" — so it is injected here
- * rather than faked at the store, and the runtime resolution is the one the
- * runner ships (`resolveRoomRuntimeType`), not a copy.
+ * rather than faked at the store, and the runtime resolution is the one
+ * `services/runtimes/shared/resolve-agent-runtime-type.ts` ships (`resolveAgentRuntimeType`), not a copy.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -260,7 +260,7 @@ describe('the repair sweep', () => {
   }
 
   beforeEach(() => {
-    // `resolveRoomRuntimeType` reads the agent's manifest and the process
+    // `resolveAgentRuntimeType` reads the agent's manifest and the process
     // registry; with neither present it answers with the registry default, which
     // is claude-code. That is exactly the shape a real install has.
     vi.restoreAllMocks();

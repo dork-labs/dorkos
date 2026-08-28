@@ -1373,7 +1373,8 @@ describe('what a room turn runs with (execution defaults)', () => {
     agentManifest = { runtime: 'claude-code', model: 'claude-haiku-4-5', effort: 'low' };
 
     await createSessionRoomTurnRunner().run(request());
-    const viaRelay = await createTurnExecutionSettingsResolver('claude-code')({
+    const viaRelay = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'a-relay-session-with-no-row',
       agentDirectory: '/repo/ana',
     });

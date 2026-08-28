@@ -832,9 +832,12 @@ export class AdapterManager {
    * `undefined` for misses, so no further disambiguation is needed here.
    *
    * The runtime type is taken from the subject when it is runtime-scoped; legacy
-   * subjects carry no runtime segment and fall back to `'claude-code'`. Resolving
-   * the runtime for a legacy subject would need an async `runtimeRegistry` lookup
-   * that this synchronous, best-effort context builder deliberately avoids.
+   * and mesh-agent subjects carry no runtime segment and fall back to the
+   * registry's default type. Resolving the real runtime for those would need an
+   * async manifest or `runtimeRegistry` lookup that this synchronous,
+   * best-effort context builder deliberately avoids — and nothing routes on this
+   * field: the adapter picks the runtime it drives from the subject itself
+   * (DOR-1614). This is context for the turn, not a routing decision.
    */
   buildContext(subject: string): AdapterContext | undefined {
     if (!this.deps.meshCore) return undefined;
@@ -849,7 +852,7 @@ export class AdapterManager {
     return {
       agent: {
         directory: projectPath,
-        runtime: parsed.runtimeType ?? 'claude-code',
+        runtime: parsed.runtimeType ?? runtimeRegistry.getDefaultType(),
       },
     };
   }

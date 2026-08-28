@@ -29,9 +29,14 @@
  * the ladder entirely — so an agent would lose its model the moment somebody
  * touched its permissions, permanently, for that conversation. The other
  * surfaces do not have that hazard because `persistSessionRuntime` fills the
- * row's NULL columns from the same ladder (`fillNullsWith(seedForNewRow(…))`),
- * and nothing on the relay path calls it. Merging per key is what makes this
- * path yield what those already yield.
+ * row's NULL columns from the same ladder (`fillNullsWith(seedForNewRow(…))`).
+ *
+ * A chat-originated session now takes that write too — the binding subsystem
+ * records which runtime owns it the moment it is created (DOR-1614) — but a
+ * relay turn can still reach a session that has no row at all: a direct
+ * agent-to-agent `relay_send` addresses a mesh agent, not a session anybody
+ * created here. Merging per key is what makes both kinds yield what the other
+ * surfaces already yield.
  *
  * The permission mode is in neither half. The relay resolves its own from the
  * binding that carried the message, and treats an absent one as prompting
@@ -46,22 +51,35 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { resolveUnattendedSessionDefaults } from '../session/index.js';
 
 /**
- * Build the resolver the Claude Code relay adapter asks before every turn.
+ * Build the resolver the built-in relay adapter asks before every turn.
  *
- * @param runtimeType - The runtime the adapter's sessions actually run on. It
- *   is the adapter's own runtime, not the one an agent's manifest names: a
- *   manifest written for a runtime this build did not register is resolved onto
- *   this one, and its model is dropped rather than handed to a runtime from
- *   another provider's namespace (see `resolveSessionDefaults`).
+ * The runtime arrives PER CALL rather than being fixed when the resolver is
+ * built (DOR-1614). It used to be the adapter's own boot runtime, which was the
+ * only honest answer while the relay drove exactly one; now the adapter resolves
+ * a runtime per message and asks about that one. The distinction is not
+ * cosmetic: every tier below the session row is a per-runtime answer — which
+ * `runtimes.*` section holds the defaults, whether an effort applies at all, and
+ * which namespace a model id is read in — so a resolver keyed by the wrong
+ * runtime hands a Codex turn a Claude model alias.
+ *
+ * A manifest naming a runtime this build did not register is still resolved
+ * onto whatever runtime the turn is actually running on, and its model dropped
+ * rather than handed to another provider's namespace (see
+ * `resolveSessionDefaults`).
+ *
  * @returns A resolver that never throws — a settings problem is a reason to run
  *   the turn on the runtime's own default, never a reason to drop a message.
  */
-export function createTurnExecutionSettingsResolver(
-  runtimeType: string
-): ExecutionSettingsResolver {
-  return async ({ sessionId, agentDirectory }) => {
+export function createTurnExecutionSettingsResolver(): ExecutionSettingsResolver {
+  return async ({ sessionId, runtimeType, agentDirectory }) => {
     const stored = await readStoredSettings(sessionId);
-    const declared = runtimeRegistry.get(runtimeType)?.getCapabilities().settings;
+    // `has` first, because `get` THROWS on an unregistered type and this
+    // resolver promises never to. It could not happen while the runtime was
+    // fixed at boot; it can now that it arrives per call, and a runtime nothing
+    // declares is the same "no preference" every other absent tier is.
+    const declared = runtimeRegistry.has(runtimeType)
+      ? runtimeRegistry.get(runtimeType).getCapabilities().settings
+      : undefined;
     const ladder = await resolveUnattendedSessionDefaults({
       runtimeType,
       ...(agentDirectory ? { agentPath: agentDirectory } : {}),

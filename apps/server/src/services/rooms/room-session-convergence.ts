@@ -50,7 +50,7 @@
 import { logger } from '../../lib/logger.js';
 import { onProjectorRekey } from '../session/index.js';
 import type { RoomStore } from './room-store.js';
-import { resolveRoomRuntimeType } from './room-turn-runner.js';
+import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 
 /** The runtime whose sessions rename themselves, and the only one to sweep. */
 const CLAUDE_CODE_RUNTIME = 'claude-code';
@@ -218,11 +218,11 @@ export async function repairRoomSessionBindings(
   for (const binding of bindings) {
     const agentPath = deps.agentPathFor(binding.authorId);
     if (agentPath === null) continue;
-    // `resolveRoomRuntimeType` swallows its own manifest read and falls back to
+    // `resolveAgentRuntimeType` swallows its own manifest read and falls back to
     // the registry default, so it cannot throw and is not wrapped. If that ever
     // stops being true, this loop is the caller that would silently skip every
     // binding — so the guarantee belongs in that function, not in a catch here.
-    if ((await resolveRoomRuntimeType(agentPath)) !== CLAUDE_CODE_RUNTIME) continue;
+    if ((await resolveAgentRuntimeType(agentPath)) !== CLAUDE_CODE_RUNTIME) continue;
 
     let exists: boolean;
     try {

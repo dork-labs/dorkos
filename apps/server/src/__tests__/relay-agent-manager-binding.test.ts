@@ -1,19 +1,23 @@
 /**
- * The relay's Claude Code adapter is bound to the claude-code runtime, never to
- * whatever `runtimes.default` happens to be (DOR-768, spec `execution-defaults`
- * §7).
+ * The relay carries every registered runtime, and `relayAgentRuntime` is
+ * authoritative for its own type — never `runtimes.default` (DOR-768, DOR-1614,
+ * spec `execution-defaults` §7).
  *
- * The adapter speaks the Claude Agent SDK's session/approval vocabulary
- * (`ensureSession`, `getSdkSessionId`, `approveTool`). It used to receive
- * `runtimeRegistry.getDefault()` through an `as unknown as
- * ClaudeCodeAgentRuntimeLike` cast, which is the exact shape of "this compiles
- * because I told it to": pointing `runtimes.default` at codex or opencode would
- * have handed the relay a runtime with none of those methods, and the cast made
- * the compiler agree. The composition root now assigns `relayAgentRuntime` from
- * the concrete runtime it constructs — ClaudeCodeRuntime in production,
- * TestModeRuntime under `DORKOS_TEST_RUNTIME` — and passes it as a map keyed by
- * that runtime's own `type`, so the binding is independent of the default and
- * the key is never a guess.
+ * `relayAgentRuntime` used to be the ONLY runtime the relay held, because the
+ * adapter was read as Claude-specific. It is not: everything below it speaks
+ * `AgentRuntimeLike` and `StreamEvent` alone, so the map now carries every
+ * runtime this server registered and the adapter picks one per message. What
+ * has not changed is where the relay's own default comes from: the concrete
+ * runtime the composition root constructed — ClaudeCodeRuntime in production,
+ * TestModeRuntime under `DORKOS_TEST_RUNTIME` — keyed by that runtime's own
+ * `type`, so the key is never a guess and never `getDefault()`.
+ *
+ * It used to receive `runtimeRegistry.getDefault()` through an `as unknown as
+ * AgentRuntimeLike` cast, which is the exact shape of "this compiles because I
+ * told it to". That cast is gone and stays gone. (It named
+ * `ClaudeCodeAgentRuntimeLike`, the alias `@dorkos/relay` exported for the
+ * years the adapter was read as Claude-only; DOR-1614 retired the alias, so the
+ * guard below reads the surviving name.)
  *
  * ## Why a source guard
  *
@@ -53,7 +57,7 @@ function adapterManagerConstruction(): string {
   return source.slice(start, end);
 }
 
-describe('the relay adapter binds claude-code, not the default runtime', () => {
+describe('the relay adapter binds every registered runtime, not the default one', () => {
   it('passes relayAgentRuntime keyed by its own type', () => {
     // Keyed by `.type`, not a literal: the AdapterManager map is read back by
     // session dispatch and by the binding subsystem's session creator, both of
@@ -62,7 +66,24 @@ describe('the relay adapter binds claude-code, not the default runtime', () => {
     // quiet without erroring — which is how test mode shipped with binding
     // routing dead.
     expect(adapterManagerConstruction()).toMatch(
-      /agentRuntimes:\s*new Map\(\[\[relayAgentRuntime\.type,\s*relayAgentRuntime\]\]\)/
+      /\[relayAgentRuntime\.type,\s*relayAgentRuntime\]/
+    );
+  });
+
+  it('carries every registered runtime, not just the relay default', () => {
+    // The whole of DOR-1614 at the composition root: a one-entry map is a relay
+    // that can only ever answer on claude-code, so an agent whose manifest says
+    // codex or opencode is answered by the wrong program under its own name.
+    expect(adapterManagerConstruction()).toMatch(/runtimeRegistry\.listRuntimes\(\)/);
+  });
+
+  it('lists relayAgentRuntime AFTER the registry sweep so it wins its own key', () => {
+    // Map construction is last-write-wins. `relayAgentRuntime` is the instance
+    // `setRelayBindingContext` reaches into later, so the relay and that wiring
+    // must hold the same object — which only holds if its entry comes second.
+    const construction = adapterManagerConstruction();
+    expect(construction.indexOf('runtimeRegistry.listRuntimes()')).toBeLessThan(
+      construction.indexOf('[relayAgentRuntime.type, relayAgentRuntime]')
     );
   });
 
@@ -73,18 +94,20 @@ describe('the relay adapter binds claude-code, not the default runtime', () => {
   it('never resolves the adapter runtime through the registry default', () => {
     expect(
       adapterManagerConstruction(),
-      'The relay adapter is Claude-specific: it calls getSdkSessionId/approveTool, which ' +
-        'codex and opencode runtimes do not implement. Binding it to ' +
-        'runtimeRegistry.getDefault() means a person who sets runtimes.default to opencode ' +
-        'gets a relay that throws on the first agent message. Use relayAgentRuntime, which ' +
-        'the runtime-registration block assigns from the concrete runtime it built.'
+      'The relay holds every runtime now, but its DEFAULT entry — what answers a message ' +
+        'naming no runtime — must still be the concrete runtime this file constructed, not ' +
+        'whatever runtimes.default points at. getDefault() here would move who answers an ' +
+        'unaddressed message every time a person changes a setting, and would key the map ' +
+        'from a lookup instead of from the object the setRelayBindingContext wiring below ' +
+        'reaches into. Use relayAgentRuntime, which the runtime-registration block assigns ' +
+        'from the concrete runtime it built.'
     ).not.toMatch(/getDefault\(\)/);
   });
 
   it('never casts a runtime into the adapter shape', () => {
     // The cast is what let the mismatch compile. Its absence is the reason the
     // typechecker now guards this instead of only this test.
-    expect(source).not.toMatch(/as unknown as ClaudeCodeAgentRuntimeLike/);
+    expect(source).not.toMatch(/as unknown as (ClaudeCode)?AgentRuntimeLike/);
   });
 
   it('assigns relayAgentRuntime on both the test-mode and production paths', () => {

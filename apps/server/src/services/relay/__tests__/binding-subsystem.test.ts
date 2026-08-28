@@ -1,6 +1,6 @@
 /**
- * Binding subsystem initialization survives a non-Claude default runtime
- * (DOR-768).
+ * Which runtime a chat-originated session is created on — and that
+ * initialization survives a non-Claude default runtime (DOR-768, DOR-1614).
  *
  * `BindingSubsystem.init` picks the runtime that new chat-originated sessions
  * are created against. It used to look up `runtimeRegistry.getDefaultType()` in
@@ -13,6 +13,13 @@
  * Both halves are now closed: the runtime lookup falls back rather than
  * throwing, and a failure that IS fatal propagates instead of being swallowed
  * (see the second describe block).
+ *
+ * The rule itself then changed (DOR-1614): the runtime is no longer "whichever
+ * one the relay was wired to" but the ADDRESSED AGENT's own, read from its
+ * manifest at the moment the session is created — and written down, so every
+ * later message on that session routes to the same program. The manifest read
+ * runs for real against a temp directory here, because "does this path read the
+ * manifest at all" is exactly the question.
  *
  * Two configurations hit that miss. `runtimes.default: opencode` is the one this
  * ticket is about. The other has been live the whole time: under
@@ -33,11 +40,17 @@ import type { AgentRuntimeLike } from '@dorkos/relay';
 
 const getDefaultType = vi.fn(() => 'claude-code');
 const getSessionRuntimeType = vi.fn(async (_sessionId: string) => 'claude-code');
+/** Which runtime types this server registered — what `has` answers about. */
+let registeredTypes = ['claude-code'];
+/** Records every session ownership write the creator makes (DOR-1614). */
+const persistSessionRuntime = vi.fn(async (..._args: unknown[]) => true);
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getDefaultType: () => getDefaultType(),
     getSessionRuntimeType: (id: string) => getSessionRuntimeType(id),
+    has: (type: string) => registeredTypes.includes(type),
+    persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     // A chat-created session is always brand new — the id is minted in the same
     // breath — so it can never have a settings row of its own.
     getSessionSettings: () => Promise.resolve(null),
@@ -98,6 +111,8 @@ beforeEach(async () => {
   vi.clearAllMocks();
   getDefaultType.mockReturnValue('claude-code');
   getSessionRuntimeType.mockResolvedValue('claude-code');
+  registeredTypes = ['claude-code', 'codex', 'opencode', 'test-mode'];
+  persistSessionRuntime.mockResolvedValue(true);
   relayDir = await mkdtemp(path.join(tmpdir(), 'dorkos-binding-subsystem-'));
   configPath = path.join(relayDir, 'adapters.json');
 });
@@ -113,6 +128,51 @@ afterEach(async () => {
  */
 async function init(agentRuntimes: Map<string, AgentRuntimeLike>) {
   return BindingSubsystem.init({ relayCore, meshCore, agentRuntimes, configPath });
+}
+
+/**
+ * Create a session through the seam the router actually uses, so a test asserts
+ * over the wiring rather than over a function it imported itself.
+ *
+ * @param subsystem - The initialized subsystem.
+ * @param cwd - The answering agent's project directory, which is what the
+ *   router passes: it resolves it from the binding's agent id.
+ */
+async function createSessionThrough(
+  subsystem: BindingSubsystem,
+  cwd: string
+): Promise<{ id: string }> {
+  const router = subsystem.getBindingRouter();
+  expect(router).toBeDefined();
+  return (
+    router as unknown as {
+      deps: { agentManager: { createSession(cwd: string, mode: string): Promise<{ id: string }> } };
+    }
+  ).deps.agentManager.createSession(cwd, 'default');
+}
+
+/**
+ * Write a real `.dork/agent.json` into a fresh temp directory. The manifest read
+ * runs for real — a stub would prove nothing about the rule under test, which is
+ * exactly "does the relay read the manifest".
+ *
+ * @param manifest - The manifest fields under test.
+ */
+async function writeAgentManifest(manifest: Record<string, unknown>): Promise<string> {
+  const agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-binding-agent-'));
+  await mkdir(path.join(agentDir, '.dork'), { recursive: true });
+  await writeFile(
+    path.join(agentDir, '.dork', 'agent.json'),
+    JSON.stringify({
+      id: 'ana',
+      name: 'Ana',
+      runtime: 'claude-code',
+      registeredAt: '2026-08-18T10:00:00.000Z',
+      registeredBy: 'test',
+      ...manifest,
+    })
+  );
+  return agentDir;
 }
 
 describe('BindingSubsystem.init runtime selection', () => {
@@ -147,46 +207,102 @@ describe('BindingSubsystem.init runtime selection', () => {
     expect(subsystem.getBindingRouter()).toBeDefined();
   });
 
-  it('prefers the default runtime over another the relay also holds', async () => {
-    // The fallback must not shadow a default that IS available — otherwise the
-    // first two cases would pass for the wrong reason (map-order luck).
-    getDefaultType.mockReturnValue('test-mode');
-    const claude = fakeRuntime('claude-code');
-    const testMode = fakeRuntime('test-mode');
+  it("creates the session on the ADDRESSED AGENT's own runtime (DOR-1614)", async () => {
+    // The rule this replaced was "whatever single runtime the relay was wired
+    // to", which answered a Codex agent's Telegram message with Claude Code —
+    // the wrong program, under the right agent's name. Which runtime an agent
+    // runs on is a property of the agent, so a chat message must reach the same
+    // program a room message would.
+    const agentDir = await writeAgentManifest({ runtime: 'codex' });
+    try {
+      const claude = fakeRuntime('claude-code');
+      const codex = fakeRuntime('codex');
+      const subsystem = await init(
+        new Map([
+          ['claude-code', claude],
+          ['codex', codex],
+        ])
+      );
 
-    const subsystem = await init(
-      new Map([
-        ['claude-code', claude],
-        ['test-mode', testMode],
-      ])
-    );
+      await createSessionThrough(subsystem, agentDir);
 
-    const router = subsystem?.getBindingRouter();
-    expect(router).toBeDefined();
-    // Reach the chosen runtime through the seam the router actually uses.
-    await (
-      router as unknown as {
-        deps: { agentManager: { createSession(cwd: string, mode: string): Promise<unknown> } };
-      }
-    ).deps.agentManager.createSession('/tmp/project', 'default');
-
-    expect((testMode as unknown as { ensured: string[] }).ensured).toHaveLength(1);
-    expect((claude as unknown as { ensured: string[] }).ensured).toHaveLength(0);
+      expect(codex.ensured).toHaveLength(1);
+      expect(claude.ensured).toHaveLength(0);
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
-  it('falls back to the runtime the relay holds, and creates sessions on it', async () => {
-    getDefaultType.mockReturnValue('opencode');
-    const claude = fakeRuntime('claude-code');
+  it('records which runtime owns the session it just created', async () => {
+    // Without this write the ownership table has no row, `getSessionRuntimeType`
+    // infers claude-code for every relay session, and the router publishes the
+    // codex turn above to `relay.agent.claude-code.*` — where the wrong program
+    // answers anyway. The rule and the write are one change.
+    const agentDir = await writeAgentManifest({ runtime: 'codex' });
+    try {
+      const subsystem = await init(
+        new Map([
+          ['claude-code', fakeRuntime('claude-code')],
+          ['codex', fakeRuntime('codex')],
+        ])
+      );
 
-    const subsystem = await init(new Map([['claude-code', claude]]));
-    const router = subsystem?.getBindingRouter();
-    await (
-      router as unknown as {
-        deps: { agentManager: { createSession(cwd: string, mode: string): Promise<unknown> } };
-      }
-    ).deps.agentManager.createSession('/tmp/project', 'default');
+      const session = await createSessionThrough(subsystem, agentDir);
 
-    expect((claude as unknown as { ensured: string[] }).ensured).toHaveLength(1);
+      expect(persistSessionRuntime).toHaveBeenCalledWith(session.id, 'codex', agentDir);
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('still opens the session when the ownership write fails', async () => {
+    // A failed bookkeeping write must never swallow somebody's first message.
+    const agentDir = await writeAgentManifest({ runtime: 'codex' });
+    try {
+      persistSessionRuntime.mockRejectedValue(new Error('database is locked'));
+      const codex = fakeRuntime('codex');
+      const subsystem = await init(new Map([['codex', codex]]));
+
+      await createSessionThrough(subsystem, agentDir);
+
+      expect(codex.ensured).toHaveLength(1);
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the registry default when the manifest names an unregistered runtime', async () => {
+    // The same soft fallback rooms take, and the reason a test-mode server —
+    // whose manifests all say claude-code — can answer anything at all.
+    const agentDir = await writeAgentManifest({ runtime: 'codex' });
+    try {
+      registeredTypes = ['test-mode'];
+      getDefaultType.mockReturnValue('test-mode');
+      const testMode = fakeRuntime('test-mode');
+      const subsystem = await init(new Map([['test-mode', testMode]]));
+
+      await createSessionThrough(subsystem, agentDir);
+
+      expect(testMode.ensured).toHaveLength(1);
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the relay's default entry when its map is missing the agent's runtime", async () => {
+    // A composition-root mismatch rather than a setting: the root passes every
+    // registered runtime. A message that arrives still has to be answered.
+    const agentDir = await writeAgentManifest({ runtime: 'codex' });
+    try {
+      const claude = fakeRuntime('claude-code');
+      const subsystem = await init(new Map([['claude-code', claude]]));
+
+      await createSessionThrough(subsystem, agentDir);
+
+      expect(claude.ensured).toHaveLength(1);
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
   it("creates a chat-originated session on the addressed agent's own model", async () => {
@@ -196,28 +312,12 @@ describe('BindingSubsystem.init runtime selection', () => {
     // model, the session already exists and that call is a no-op — so a model
     // resolved only there reached nothing on this path, and the agent answered
     // strangers on the SDK default while answering rooms on its own model.
-    const agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-binding-agent-'));
+    const agentDir = await writeAgentManifest({ model: 'claude-haiku-4-5' });
     try {
-      await mkdir(path.join(agentDir, '.dork'), { recursive: true });
-      await writeFile(
-        path.join(agentDir, '.dork', 'agent.json'),
-        JSON.stringify({
-          id: 'ana',
-          name: 'Ana',
-          runtime: 'claude-code',
-          model: 'claude-haiku-4-5',
-          registeredAt: '2026-08-18T10:00:00.000Z',
-          registeredBy: 'test',
-        })
-      );
       const claude = fakeRuntime('claude-code');
       const subsystem = await init(new Map([['claude-code', claude]]));
 
-      await (
-        subsystem.getBindingRouter() as unknown as {
-          deps: { agentManager: { createSession(cwd: string, mode: string): Promise<unknown> } };
-        }
-      ).deps.agentManager.createSession(agentDir, 'default');
+      await createSessionThrough(subsystem, agentDir);
 
       expect(claude.ensuredOpts[0]).toEqual({
         permissionMode: 'default',
@@ -230,9 +330,13 @@ describe('BindingSubsystem.init runtime selection', () => {
   });
 
   it('throws when the relay holds no runtimes at all', async () => {
-    // The one case that genuinely cannot be served. It used to be swallowed
-    // into `undefined`, and the caller started the chat adapters anyway.
-    await expect(init(new Map())).rejects.toThrow(/holds no agent runtimes/);
+    // The one case that genuinely cannot be served. It is raised where the
+    // session is created rather than at init: which runtime answers is now a
+    // per-agent question, so there is nothing for init itself to decide.
+    const subsystem = await init(new Map());
+    await expect(createSessionThrough(subsystem, '/tmp/project')).rejects.toThrow(
+      /holds no agent runtimes/
+    );
   });
 });
 
