@@ -16,9 +16,27 @@ import {
   isReservedSubject,
   endpointAccessDeniedContent,
   canonicalizeAgentSubject,
+  resolveOutboundBudget,
+  refusedByTurnCeiling,
+  TURN_CEILING_ERROR,
   type SenderIdentity,
 } from './relay-helpers.js';
 import { createRelayNotifyUserHandler } from './relay-notify-tools.js';
+import type { RelayBudget } from '@dorkos/shared/relay-schemas';
+
+/**
+ * Reads the budget of the envelope the CALLING turn is answering, at call time.
+ *
+ * Resolved per call rather than captured at tool construction for the reason
+ * the DevTools session id is: a session can be rekeyed mid-turn, and a value
+ * frozen when the tool server was built would be answering about the wrong
+ * session by the time the model reaches for it.
+ *
+ * `undefined` means this turn is not answering a relay envelope — a person
+ * typing in the cockpit, the external `/mcp` surface — and the send then mints a
+ * fresh budget exactly as it always did.
+ */
+export type InboundBudgetResolver = () => RelayBudget | undefined;
 
 /**
  * Send a message via Relay.
@@ -26,7 +44,11 @@ import { createRelayNotifyUserHandler } from './relay-notify-tools.js';
  * @param deps - Tool dependencies
  * @param identity - Server-injected sender identity (never read from tool args)
  */
-export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdentity) {
+export function createRelaySendHandler(
+  deps: McpToolDeps,
+  identity: SenderIdentity,
+  resolveInboundBudget?: InboundBudgetResolver
+) {
   return async (args: {
     subject: string;
     payload: unknown;
@@ -42,7 +64,7 @@ export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdenti
       const result = await deps.relayCore!.publish(subject, args.payload, {
         from: identity.subject,
         replyTo: args.replyTo,
-        budget: args.budget,
+        budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
       });
       // Rejected with no delivery (e.g. rate-limited) means the message was
       // dropped — report an error, never a success.
@@ -50,6 +72,19 @@ export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdenti
         const reason = result.rejected[0]?.reason ?? 'unknown';
         return jsonContent(
           { error: `Message rejected: ${reason}`, code: 'REJECTED', rejected: result.rejected },
+          true
+        );
+      }
+      // A ceiling refusal is not a failed delivery — see `refusedByTurnCeiling`.
+      if (refusedByTurnCeiling(result.rejected)) {
+        return jsonContent(
+          {
+            error: TURN_CEILING_ERROR,
+            code: 'TURN_CEILING',
+            messageId: result.messageId,
+            deliveredTo: result.deliveredTo,
+            rejected: result.rejected,
+          },
           true
         );
       }
@@ -203,7 +238,11 @@ export function createRelayRegisterEndpointHandler(deps: McpToolDeps, identity: 
  * Cleans up the subscription and ephemeral endpoint on success, timeout,
  * or error.
  */
-export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdentity) {
+export function createRelayQueryHandler(
+  deps: McpToolDeps,
+  identity: SenderIdentity,
+  resolveInboundBudget?: InboundBudgetResolver
+) {
   return async (args: {
     to_subject: string;
     payload: unknown;
@@ -254,7 +293,7 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
         const result = await relay.publish(toSubject, args.payload, {
           from: identity.subject,
           replyTo: inboxSubject,
-          budget: args.budget,
+          budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
         });
         // If the message was rejected before reaching any recipient (e.g. rate-limit),
         // return immediately rather than waiting the full timeout.
@@ -262,6 +301,23 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
           const reason = result.rejected[0]?.reason ?? 'unknown';
           return jsonContent(
             { error: `Message rejected: ${reason}`, code: 'REJECTED', reason },
+            true
+          );
+        }
+        // A ceiling refusal leaves a mailbox copy, so it slips past the check
+        // above as a delivery. Waiting on it would burn the caller's whole
+        // timeout for an answer no turn is being run to produce — the notifier's
+        // failure notice would settle it, but as a generic error rather than the
+        // one fact worth knowing. Answered here instead, immediately; the
+        // `finally` below still cleans the inbox up.
+        if (refusedByTurnCeiling(result.rejected)) {
+          return jsonContent(
+            {
+              error: TURN_CEILING_ERROR,
+              code: 'TURN_CEILING',
+              sentMessageId: result.messageId,
+              rejected: result.rejected,
+            },
             true
           );
         }
@@ -367,7 +423,11 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
  * Early rejection (deliveredTo=0 && rejected.length>0): auto-unregisters inbox,
  * returns { error, code: 'REJECTED', rejected }.
  */
-export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderIdentity) {
+export function createRelayDispatchHandler(
+  deps: McpToolDeps,
+  identity: SenderIdentity,
+  resolveInboundBudget?: InboundBudgetResolver
+) {
   return async (args: {
     to_subject: string;
     payload: unknown;
@@ -394,7 +454,7 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
       const result = await relay.publish(toSubject, args.payload, {
         from: identity.subject,
         replyTo: inboxSubject,
-        budget: args.budget,
+        budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
       });
 
       // Early rejection: auto-unregister the inbox to prevent leaks
@@ -403,6 +463,23 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
         await relay.unregisterEndpoint(inboxSubject).catch(() => undefined);
         return jsonContent(
           { error: `Message rejected: ${reason}`, code: 'REJECTED', rejected: result.rejected },
+          true
+        );
+      }
+
+      // Same refusal, same reason to say so: the mailbox copy makes it look
+      // delivered, and handing back an inbox subject would leave the caller
+      // polling for progress no turn will ever produce. The inbox is
+      // unregistered here for exactly the reason the rejection above does it.
+      if (refusedByTurnCeiling(result.rejected)) {
+        await relay.unregisterEndpoint(inboxSubject).catch(() => undefined);
+        return jsonContent(
+          {
+            error: TURN_CEILING_ERROR,
+            code: 'TURN_CEILING',
+            messageId: result.messageId,
+            rejected: result.rejected,
+          },
           true
         );
       }
@@ -488,7 +565,11 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps, identity
  *   identity to bypass namespace access rules, and as the principal the
  *   endpoint tools check ownership against (see {@link ownsEndpoint}).
  */
-export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
+export function getRelayTools(
+  deps: McpToolDeps,
+  identity: SenderIdentity,
+  resolveInboundBudget?: InboundBudgetResolver
+) {
   return [
     tool(
       'relay_send',
@@ -520,9 +601,13 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
               .describe('Remaining call budget'),
           })
           .optional()
-          .describe('Optional budget constraints'),
+          .describe(
+            'Optional budget constraints. When your turn was started by a message, that ' +
+              "message's remaining budget is inherited automatically and what you pass here " +
+              'can only tighten it — a smaller number is honoured, a larger one is ignored.'
+          ),
       },
-      createRelaySendHandler(deps, identity)
+      createRelaySendHandler(deps, identity, resolveInboundBudget)
     ),
     tool(
       'relay_inbox',
@@ -621,9 +706,13 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
               .describe('Remaining call budget'),
           })
           .optional()
-          .describe('Optional budget constraints'),
+          .describe(
+            'Optional budget constraints. When your turn was started by a message, that ' +
+              "message's remaining budget is inherited automatically and what you pass here " +
+              'can only tighten it — a smaller number is honoured, a larger one is ignored.'
+          ),
       },
-      createRelayQueryHandler(deps, identity)
+      createRelayQueryHandler(deps, identity, resolveInboundBudget)
     ),
     tool(
       'relay_send_async',
@@ -646,13 +735,23 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
         payload: z.unknown().describe('Message payload'),
         budget: z
           .object({
-            maxHops: z.number().int().min(1).optional(),
-            ttl: z.number().int().optional(),
-            callBudgetRemaining: z.number().int().min(0).optional(),
+            maxHops: z.number().int().min(1).optional().describe('Max hop count'),
+            ttl: z.number().int().optional().describe('Unix timestamp (ms) expiry'),
+            callBudgetRemaining: z
+              .number()
+              .int()
+              .min(0)
+              .optional()
+              .describe('Remaining call budget'),
           })
-          .optional(),
+          .optional()
+          .describe(
+            'Optional budget constraints. When your turn was started by a message, that ' +
+              "message's remaining budget is inherited automatically and what you pass here " +
+              'can only tighten it — a smaller number is honoured, a larger one is ignored.'
+          ),
       },
-      createRelayDispatchHandler(deps, identity)
+      createRelayDispatchHandler(deps, identity, resolveInboundBudget)
     ),
     tool(
       'relay_unregister_endpoint',

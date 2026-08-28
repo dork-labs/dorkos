@@ -29,6 +29,7 @@ import type { PermissionMode } from '@dorkos/shared/schemas';
 import type {
   ChatNoticeReason,
   ChatNoticeSender,
+  InboundTurnBudgets,
   PublishOptions,
   PublishResult,
   SubscriberVerdict,
@@ -121,6 +122,15 @@ export interface AgentSessionCreator {
 /** Minimal interface for RelayCore publish and subscription. */
 export interface RelayCoreLike {
   publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResult>;
+  /**
+   * Which inbound envelope each running agent turn is answering (DOR-791).
+   *
+   * Optional here only because this interface is a narrow structural subset a
+   * test double may implement; the real `RelayCore` always has one. The router
+   * never reads it — `AdapterManager` does, to hand the dispatching adapter the
+   * SAME map the tool surface reads back from.
+   */
+  readonly inboundBudgets?: InboundTurnBudgets;
   subscribe(
     pattern: string,
     handler: (

@@ -251,6 +251,15 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // on `'builtin'`, which IS the protective value, so there is nothing a
   // carryover could restore that recovery does not already give.
   'memory.provider': 'builtin',
+  // The two ceilings on turns agent messaging may start (DOR-791). `null` on
+  // either would mean no ceiling at all, which is exactly what shipped before
+  // them, so a NUMBER is the protective side of this axis and both ship with
+  // one. They are `safe` rather than `permissive` for that reason and not
+  // because the numbers are small: 5,000 turns an hour is a real backstop, not
+  // an everyday limit, and ADR 260824-120429 argues that trade in full. A person
+  // can set either lower, which is why both also carry across a wipe.
+  'relay.maxAgentTurnsPerAgentPerHour': 1000,
+  'relay.maxAgentTurnsTotalPerHour': 5000,
   // Automatic replies are limited by default (DOR-1428). The three numbers
   // beneath this switch are permissive at the values they now ship — see
   // PERMISSIVE_DEFAULTS — but the switch itself is the protective side of a

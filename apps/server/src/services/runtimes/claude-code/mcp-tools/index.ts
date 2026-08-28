@@ -144,6 +144,16 @@ export function handRegisteredInSessionTools(
   // directory (its agent manifest), not from tool arguments — this is what
   // relay `from`/namespace access rules key on.
   const relayIdentity = resolveSenderIdentity(deps, session?.cwd);
+  // Which relay envelope THIS turn is answering, if the bus started it (DOR-791).
+  // The adapter that dispatched the turn bound it under the session key the turn
+  // runs under, which is the id handed to this factory; the SDK's canonical id is
+  // tried too, for the same first-turn rekey reason the DevTools resolution has.
+  // Read at CALL time, and read from the relay rather than from tool arguments —
+  // a budget the model may omit is one an accidental loop always omits.
+  const inboundBudgets = deps.relayCore?.inboundBudgets;
+  const resolveInboundBudget = inboundBudgets
+    ? () => inboundBudgets.get(sessionId, session?.sdkSessionId)
+    : undefined;
   // Read-time id resolution for the DevTools tools: prefer the live session's
   // sdkSessionId (updated to the canonical id by the SDK init mid-first-turn,
   // tracking the store's rekeySession) over the static trigger id. Absent both
@@ -184,7 +194,7 @@ export function handRegisteredInSessionTools(
       [
         ...getCoreTools(deps),
         ...getTasksTools(deps, resolveTaskProvenance),
-        ...getRelayTools(deps, relayIdentity),
+        ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
         ...getAdapterTools(deps),
         ...getBindingTools(deps),
         ...getTraceTools(deps),

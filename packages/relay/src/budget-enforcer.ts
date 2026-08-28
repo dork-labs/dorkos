@@ -10,8 +10,15 @@
 import type { RelayEnvelope, RelayBudget } from '@dorkos/shared/relay-schemas';
 import type { BudgetResult } from './types.js';
 
-/** One hour in milliseconds — default TTL for new budgets. */
-const DEFAULT_TTL_MS = 3_600_000;
+/**
+ * One hour in milliseconds — default TTL for new budgets.
+ *
+ * Exported for the same reason {@link DEFAULT_MAX_HOPS} is: it is the ceiling a
+ * caller-declared deadline is clamped against, so a request continuing a chain
+ * can shorten its own life but never extend it (the webhook adapter's
+ * `continuedBudget`).
+ */
+export const DEFAULT_TTL_MS = 3_600_000;
 
 /**
  * Default maximum hop count when none is specified.
@@ -22,8 +29,13 @@ const DEFAULT_TTL_MS = 3_600_000;
  */
 export const DEFAULT_MAX_HOPS = 5;
 
-/** Default call budget when none is specified. */
-const DEFAULT_CALL_BUDGET = 10;
+/**
+ * Default call budget when none is specified.
+ *
+ * Exported alongside {@link DEFAULT_MAX_HOPS} and {@link DEFAULT_TTL_MS}: all
+ * three are ceilings a continued budget is clamped against.
+ */
+export const DEFAULT_CALL_BUDGET = 10;
 
 /**
  * Enforce budget constraints on an incoming envelope before delivery.
