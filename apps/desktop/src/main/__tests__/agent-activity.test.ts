@@ -30,9 +30,35 @@ async function start(onChange = vi.fn()): Promise<ReturnType<typeof vi.fn>> {
   return onChange;
 }
 
-/** Wait for a condition the stream will satisfy on its own. */
+/**
+ * Wait for a count the stream will settle on its own.
+ *
+ * For these the ceiling is not the subject: the stream reaches the count as fast
+ * as one loopback frame and one event-loop turn allow, so the wait is over in
+ * milliseconds on any machine and the ceiling only ever decides what happens on
+ * a starved one. At 2s a busy machine spent the budget and the file went red
+ * with no assertion mismatch. Use {@link reconnectsWithin} instead wherever the
+ * DELAY is the thing being asserted — a ceiling this wide would not notice one.
+ * The package's own `testTimeout` (30s) still bounds a genuine hang.
+ */
 async function eventually(assertion: () => void): Promise<void> {
-  await vi.waitFor(assertion, { timeout: 2_000, interval: 10 });
+  await vi.waitFor(assertion, { timeout: 15_000, interval: 10 });
+}
+
+/**
+ * Wait for a reconnection, bounded tightly enough to still catch a slow one.
+ *
+ * **Here the delay IS the assertion.** These cases are the only ones whose
+ * subject is how long the shared connection in `event-stream.ts` waits before
+ * trying again: it starts at `RECONNECT_BASE_MS` (1s) and doubles to
+ * `RECONNECT_MAX_MS` (15s). So a ceiling at that maximum would pass for every
+ * backoff this module could ever produce — measured: raising the base delay 12x
+ * fails three cases at 2s and passes all sixteen at 15s. Five seconds is the
+ * usable middle: several times the one base delay plus whatever a loaded machine
+ * adds on top, and still far below where a regressed backoff lands.
+ */
+async function reconnectsWithin(assertion: () => void): Promise<void> {
+  await vi.waitFor(assertion, { timeout: 5_000, interval: 10 });
 }
 
 describe('watchAgentActivity', () => {
@@ -163,14 +189,14 @@ describe('watchAgentActivity', () => {
     // long ago and block quitting forever, so a lost stream resets to zero.
     await eventually(() => expect(getActiveAgentCount()).toBe(0));
     expect(onChange).toHaveBeenLastCalledWith({ streaming: 0, blocked: 0 });
-    await eventually(() => expect(stream.connections).toBeGreaterThan(1));
+    await reconnectsWithin(() => expect(stream.connections).toBeGreaterThan(1));
   });
 
   it('keeps trying when the server refuses the stream, without counting anything', async () => {
     stream.status = 403;
     watch = watchAgentActivity({ getPort: () => stream.port, onChange: vi.fn() });
 
-    await eventually(() => expect(stream.connections).toBeGreaterThan(1));
+    await reconnectsWithin(() => expect(stream.connections).toBeGreaterThan(1));
     expect(getActiveAgentCount()).toBe(0);
   });
 
@@ -181,7 +207,7 @@ describe('watchAgentActivity', () => {
     expect(stream.connections).toBe(0);
     port = stream.port;
 
-    await eventually(() => expect(stream.connections).toBe(1));
+    await reconnectsWithin(() => expect(stream.connections).toBe(1));
   });
 
   it('stops for good once stopped', async () => {
