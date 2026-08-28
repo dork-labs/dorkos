@@ -38,9 +38,10 @@ answer a Telegram or Slack message, the ground had moved:
   never called by anything. Routing had settled one layer down, in the adapter,
   because that is where a message and its subject are both in hand.
 
-The specification for this work (`specs/task-runtime-model`, PR3) sketched the
-subclasses but explicitly licensed the smaller shape: "prefer the smallest
-honest change that makes a codex/opencode agent answer over relay".
+The specification for this work (`specs/task-runtime-model`, PR3) called for
+the subclasses. Implementation found that call unjustified — the facts above
+left a subclass with nothing to override — and this ADR is the record that
+supersedes it.
 
 ## Decision
 
