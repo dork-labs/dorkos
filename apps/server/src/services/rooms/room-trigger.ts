@@ -2000,7 +2000,7 @@ export class RoomTriggerDispatcher {
       // **Where this turn runs, decided before anything describes it.** The
       // context below names attachment paths relative to this directory and the
       // runner puts the files there, so it has to be settled first — see
-      // `room-turn-cwd.ts`. For a room with no files of its own the answer is
+      // `resolveCwd` below. For a room with no files of its own the answer is
       // `target.agentPath`, unchanged.
       const { cwd } = await this.resolveCwd(room.id, target.agentPath, target.displayName);
       // Built before the request so the context and the projection plan it

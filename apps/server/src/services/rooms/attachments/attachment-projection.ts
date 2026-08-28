@@ -5,8 +5,9 @@
  * ## Why a projection and not an absolute path
  *
  * This is the decision, not an implementation note. A room turn runs with
- * a directory the room decided (`room-turn-cwd.ts` — the agent's own folder, or
- * its working copy of the room's repo), and a room's attachments live under the
+ * a directory the room resolved (`resolve-session-cwd.ts` rung 2 — the agent's
+ * own folder, or its working copy of the room's repo), and a room's attachments
+ * live under the
  * DorkOS data directory, which is outside either. Reading outside
  * the working directory is precisely what a runtime asks a person's permission
  * for — so handing the model an absolute path would park the turn on

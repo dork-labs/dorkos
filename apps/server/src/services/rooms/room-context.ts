@@ -163,7 +163,7 @@ export interface RoomContextInput {
    *
    * **Not the agent's identity, and since DOR-1597 not always its folder.** A
    * turn in a project room runs in that agent's working copy of the ROOM's repo
-   * (`room-turn-cwd.ts`, spec §3.5) while its `agentPath` — which the claim map,
+   * (`resolve-session-cwd.ts` rung 2, spec §3.5) while its `agentPath` — which the claim map,
    * the busy ceilings and the runtime lookup all key on — stays exactly what it
    * was. This field is the files half of that split; anything that means
    * "which agent is this" wants `agentAuthorId` or the dispatch's `agentPath`.

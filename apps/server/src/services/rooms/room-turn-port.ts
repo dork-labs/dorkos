@@ -43,7 +43,8 @@ export interface RoomTurnRequest {
    * Resolved ONCE per turn, by the dispatcher, BEFORE the room context is built
    * — because the context names attachment paths relative to it and the runner
    * puts the files there, so a cwd decided later would describe files the model
-   * cannot open. `services/rooms/repo/room-turn-cwd.ts` is what decides it.
+   * cannot open. The dispatcher's `resolveCwd`, feeding the session-cwd
+   * resolver's rung 2, is what decides it.
    *
    * For a room with no files of its own this is {@link RoomTurnRequest.agentPath}
    * exactly. For a project room it is that agent's standing working copy of the

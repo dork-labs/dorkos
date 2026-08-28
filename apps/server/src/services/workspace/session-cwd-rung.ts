@@ -2,29 +2,27 @@
  * The vocabulary of "which directory does this turn run in?" — the rung names,
  * the answer shape, and the one log line that reports them.
  *
- * Split out of {@link module:server/services/workspace/resolve-session-cwd} so
- * that the two places a turn BEGINS can share one vocabulary without sharing an
- * import of the resolver itself. That import is guarded: the resolver may be
- * named only by the boundaries that start a turn, and
- * `__tests__/resolve-session-cwd.subagent.test.ts` fails the moment a new file
- * names it. A room turn answers its own rung (see below) and must not be added
- * to that list to borrow a type — so the type lives here instead, and the
- * resolver re-exports it, which keeps every existing importer unchanged.
+ * A plain sibling split out of {@link module:server/services/workspace/resolve-session-cwd}
+ * to keep that file focused on the chain rather than on its types. **Every rung
+ * is answered by the resolver** — there is one resolver, one precedence chain,
+ * and one log line for every turn on the install, session or room alike. The
+ * `room-worktree` rung is reached when a caller names a `room` on the request
+ * and is resolved through an injected worktree-ensure seam, so the resolver
+ * imports nothing from the rooms domain (see `resolveSessionCwd`).
  *
- * ## Where each rung is answered
+ * ## The rungs, in precedence order
  *
- * | Rung             | Answered by                                          |
- * | ---------------- | ---------------------------------------------------- |
- * | `explicit`       | `resolve-session-cwd.ts`                             |
- * | `room-worktree`  | `services/rooms/repo/room-turn-cwd.ts`                    |
- * | `agent-home`     | `resolve-session-cwd.ts`, and the room rung's floor  |
- * | `agent-managed`  | `resolve-session-cwd.ts`                             |
- * | `default`        | `resolve-session-cwd.ts`                             |
+ * | Rung             | Reached when                                              |
+ * | ---------------- | --------------------------------------------------------- |
+ * | `explicit`       | the caller already resolved a `cwd`                       |
+ * | `room-worktree`  | the request names a `room` and that room has files        |
+ * | `agent-home`     | an agent was named — its own folder, or a room's floor    |
+ * | `agent-managed`  | an agent's manifest asks for a provisioned checkout       |
+ * | `default`        | nobody had a better answer                                |
  *
- * Two answerers rather than one is a deliberate, bounded exception, argued in
- * `room-turn-cwd.ts`'s module doc. What is NOT split is the vocabulary or the
- * log line: an operator asking "why is my agent writing there" greps one string
- * and gets every turn on the install, room or session alike.
+ * The types live here rather than beside the chain so this vocabulary and the
+ * `[cwd] resolved` line are one greppable thing: an operator asking "why is my
+ * agent writing there" finds every turn, room or session, on one string.
  *
  * @module server/services/workspace/session-cwd-rung
  */

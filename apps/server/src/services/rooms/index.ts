@@ -640,8 +640,9 @@ export function setRoomWorktreeManager(manager: RoomWorktreeManager): void {
  * The active room-worktree manager, or `null` where none was wired.
  *
  * **Nullable, unlike every getter above it, and that is the point.** Its one
- * consumer is the cwd rung on the hot path of every room turn (`room-turn-cwd.ts`),
- * which must place a turn on an install whose repo machinery was never
+ * consumer is the cwd rung on the hot path of every room turn — the dispatcher's
+ * `resolveCwd`, which feeds the session-cwd resolver — and it must place a turn
+ * on an install whose repo machinery was never
  * bootstrapped. Throwing here would turn "this deployment has no room repos"
  * into "this room stopped answering".
  */
