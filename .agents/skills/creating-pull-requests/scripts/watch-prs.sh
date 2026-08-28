@@ -10,7 +10,10 @@
 #                                  # one PR (gh pr checks + the GraphQL query) and
 #                                  # print its classify() input JSON. Read-only —
 #                                  # same network calls the watch loop makes, no
-#                                  # state kept, nothing mutated.
+#                                  # state kept, nothing mutated. Takes EXACTLY
+#                                  # one PR; a missing or extra argument is a
+#                                  # usage error, not a silent first-wins pick.
+#                                  # Exits non-zero when the snapshot is ERR.
 #
 # One line per state TRANSITION on stdout (pipe into the Monitor tool or a
 # notification hook). Silence means "same state as last cycle", so pair it
@@ -61,7 +64,10 @@ while [ $# -gt 0 ]; do
     --max-cycles) MAX_CYCLES="$2"; shift 2 ;;
     --once) ONCE=1; shift ;;
     --classify) CLASSIFY=1; shift ;;
-    --probe) PROBE="$2"; shift 2 ;;
+    --probe)
+      PROBE="${2:-}"
+      [ -n "$PROBE" ] || { echo "usage: watch-prs.sh --probe PR" >&2; exit 2; }
+      shift 2 ;;
     *) PRS+=("$1"); shift ;;
   esac
 done
@@ -103,9 +109,23 @@ if [ "$CLASSIFY" = 1 ]; then
   exit 0
 fi
 
-[ ${#PRS[@]} -gt 0 ] || [ -n "$PROBE" ] || { echo "usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR..." >&2; exit 2; }
+USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR... | --classify | --probe PR"
+[ ${#PRS[@]} -gt 0 ] || [ -n "$PROBE" ] || { echo "$USAGE" >&2; exit 2; }
+# --probe takes exactly one PR: a stray extra argument (e.g. `--probe 42 43`)
+# must be a usage error, not a silent "PROBE wins, the rest is ignored".
+if [ -n "$PROBE" ] && [ ${#PRS[@]} -gt 0 ]; then
+  echo "$USAGE" >&2
+  echo "  --probe takes exactly one PR; got extra argument(s): ${PRS[*]}" >&2
+  exit 2
+fi
 
-REPO_JSON=$(gh repo view --json owner,name)
+# SKILL.md's own rule for this script: "a watcher that dies must say so."
+# `gh repo view` is the one call with no retry path below it — every other
+# `gh`/API failure in this script degrades to a snapshot the loop already
+# knows how to treat as transient (the {"state":"ERR"} sentinel). This one
+# runs once, before any PR is ever watched, so a silent failure here would
+# exit the script with no output at all rather than an announced death.
+REPO_JSON=$(gh repo view --json owner,name) || { echo "WATCHER DIED: gh repo view failed — check auth/network" >&2; exit 4; }
 OWNER=$(jq -r .owner.login <<<"$REPO_JSON")
 REPO=$(jq -r .name <<<"$REPO_JSON")
 
@@ -135,14 +155,26 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
   # fallback and wiped the collected names EXACTLY when checks failed —
   # FAILING could never be reported (DOR-1630). Fix: collect stdout first, in
   # its own command substitution, decide from that — never from `gh`'s exit
-  # code. Only empty stdout means the call itself failed (auth, rate limit);
-  # that is the one case that still falls back.
-  local checks_raw
-  checks_raw=$(gh pr checks "$pr" 2>/dev/null) || true
+  # code alone.
+  #
+  # Empty stdout is NOT automatically a dead call: a PR with zero checks
+  # configured also prints nothing, and `gh` still exits 0, 1, or 8 for that
+  # case — its exit code tracks the checks bucket, not whether any checks
+  # exist. Only empty stdout paired with an exit code OUTSIDE {0,1,8} means
+  # the call itself never reached GitHub (auth failure, network error, rate
+  # limit). Reporting that as a healthy zero-check PR would read as PENDING
+  # forever, same shape of bug as the one above — so it returns the same
+  # {"state":"ERR"} sentinel the GraphQL call above uses, which the watch
+  # loop already retries as transient rather than classifying.
+  local checks_raw rc
+  rc=0
+  checks_raw=$(gh pr checks "$pr" 2>/dev/null) || rc=$?
   local failing checks_reported
   if [ -z "$checks_raw" ]; then
-    failing='[]'
-    checks_reported=0
+    case "$rc" in
+      0 | 1 | 8) failing='[]'; checks_reported=0 ;; # a real zero-check PR
+      *) echo '{"state":"ERR"}'; return ;;           # the call itself failed
+    esac
   else
     # awk, not grep, excludes Vercel: grep -v exits 1 on no-match (e.g. zero
     # non-Vercel failures), which would re-trip the same pipefail trap this
@@ -168,7 +200,11 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
 }
 
 if [ -n "$PROBE" ]; then
-  snapshot "$PROBE"
+  snap=$(snapshot "$PROBE")
+  printf '%s\n' "$snap"
+  # A probe that can only ever exit 0 hides the one outcome it exists to
+  # surface: `gh` itself failing. Match the loop's own read of the sentinel.
+  [ "$(jq -r .state <<<"$snap")" != "ERR" ] || exit 1
   exit 0
 fi
 
