@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260828-010140",
+      "slug": "tool-only-room-replies",
+      "title": "Room replies go through tool calls only — silence, reactions and DMs become real choices",
+      "created": "2026-08-28",
+      "status": "specified",
+      "linearIssue": "DOR-1613"
+    },
+    {
       "id": "260828-002928",
       "slug": "task-runtime-model",
       "title": "Per-task runtime, model, and effort for scheduled tasks",
