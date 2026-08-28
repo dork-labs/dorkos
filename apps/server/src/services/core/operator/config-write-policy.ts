@@ -623,6 +623,15 @@ export const CONFIG_WRITE_POLICY = {
   'workbench.autoOpenDiff': 'agent-writable',
 
   'runtimes.default': 'agent-writable',
+  // Whether Codex and OpenCode agents carry the DorkOS tools (spec
+  // `tool-only-room-replies` §D5). Operator-only, and it sits on the module's
+  // line rather than near it: writing `true` wires this server's own `/mcp`
+  // into every agent-bound Codex and OpenCode session, carrying the local MCP
+  // bearer, and hands those agents the whole DorkOS tool surface — rooms,
+  // memory, the marketplace's install verbs. That is a reach widened by one
+  // write, on runtimes whose sandboxing DorkOS does not own. A person turns it
+  // on from Settings → Experiments, where they can read what it costs.
+  'runtimes.dorkosTools': 'operator-only',
   // How much every FUTURE session may do without asking (spec `trust-dial`,
   // decision 6). Operator-only, and it is the one field in this block that is not
   // a preference — the neighbouring model and effort leaves say how work runs,
@@ -824,6 +833,14 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.auth',
       'mcp.enabled',
       'a2a.enabled',
+      // Whether Codex and OpenCode sessions dial this instance's own `/mcp`,
+      // holding the local bearer and an agent identity. Filed under the FIRST
+      // clause of this stake rather than under `tools`: that stake's clause is
+      // deliberately weak ("told about"), because those switches only feed
+      // context blocks while the tools stay registered. This one is the
+      // opposite — off, the tools are unreachable on those runtimes; on, two
+      // more programs become callers of this server.
+      'runtimes.dorkosTools',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',
       'mcp.rateLimit.maxPerWindow',

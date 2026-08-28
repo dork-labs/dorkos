@@ -996,7 +996,16 @@ async function start() {
             // validateMcpOrigin via the non-browser early return (not the allowlist).
             // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
             // the resulting mcp_tool_call into a ui_command).
-            mcpUiUrl: `http://127.0.0.1:${PORT}/codex-ui-mcp`,
+            //
+            // Minted from the DIAL form of the bind host, never a hardcoded
+            // `127.0.0.1` (DOR-723): the server binds `env.DORKOS_HOST`, which
+            // Node resolves to ONE address family, so on a host where that is
+            // `::1` a `127.0.0.1` URL is connection-refused — and the shipped
+            // Docker image binds the wildcard `0.0.0.0`, which Windows refuses
+            // to dial at all. This was the last hardcoded mint site in the
+            // server; the sibling sites below already went through
+            // `localDialHost`.
+            mcpUiUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}/codex-ui-mcp`,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
