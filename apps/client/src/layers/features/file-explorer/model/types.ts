@@ -1,4 +1,4 @@
-import type { FileEntry } from '@dorkos/shared/types';
+import type { ExplorerEntry } from './source';
 
 /**
  * File-explorer model types (spec right-panel-workbench, Chunk B).
@@ -10,7 +10,7 @@ import type { FileEntry } from '@dorkos/shared/types';
  * The least you need to know about an entry to copy it: where it is, and
  * whether it is a directory.
  *
- * Deliberately not a whole {@link FileEntry}. A copy is often started long
+ * Deliberately not a whole {@link ExplorerEntry}. A copy is often started long
  * after the source row left the screen — the explorer clipboard survives a
  * collapse, and the directory listing it came from can be evicted from the
  * query cache in the meantime — so the operation must carry what it needs
@@ -30,7 +30,7 @@ export interface EntryRef {
  */
 export interface FlatRow {
   /** The file or directory this row renders. */
-  entry: FileEntry;
+  entry: ExplorerEntry;
   /** Nesting depth from the root (root children are depth 0). */
   depth: number;
   /** True when this directory is expanded (irrelevant for files). */
@@ -46,7 +46,7 @@ export interface FlatRow {
  */
 export interface DirState {
   /** The directory's immediate children (empty until the first fetch resolves). */
-  entries: FileEntry[];
+  entries: ExplorerEntry[];
   /** True while this directory's first fetch is in flight. */
   loading: boolean;
   /** True when this directory's listing failed to load. */

@@ -279,12 +279,17 @@ describe('the page itself draws every section', () => {
    * The whole page, once.
    *
    * The panel gets its own describe block above because it is the one thing
-   * here with a fake server behind it. The other six sections are plain props
-   * — which means nothing would stop one of them throwing on mount, being
-   * swallowed by `ShowcaseErrorBoundary`, and shipping as a red box that only
-   * somebody who opened `/dev/rooms` would ever see.
+   * here with a fake server behind it. Room Files brings its own fixture
+   * source and its own query cache, so it needs no server either. The
+   * remaining six sections are plain props — which means nothing would stop
+   * one of them throwing on mount, being swallowed by
+   * `ShowcaseErrorBoundary`, and shipping as a red box that only somebody who
+   * opened `/dev/rooms` would ever see.
+   *
+   * The list is read from the registry rather than written out here, so a
+   * section added to the page is asserted by this test the day it lands.
    */
-  it('renders all seven, and none of them crashes into the boundary', async () => {
+  it('renders all eight, and none of them crashes into the boundary', async () => {
     render(
       <EventStreamProvider>
         <TransportProvider transport={createPlaygroundTransport()}>

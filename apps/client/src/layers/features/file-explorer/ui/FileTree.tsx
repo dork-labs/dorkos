@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { FileEntry } from '@dorkos/shared/types';
+import type { ExplorerEntry } from '../model/source';
 import { cn, hasFilePathDrag, readFilePathDrag } from '@/layers/shared/lib';
 import { parentOf, ROOT_KEY } from '../model/tree';
 import type { EntryRef, FlatRow } from '../model/types';
@@ -22,32 +22,45 @@ interface FileTreeProps {
   /** Visible expanded directories whose listing failed (render an inline retry). */
   errorPaths: Set<string>;
   onSelectPath: (path: string) => void;
-  onToggle: (entry: FileEntry) => void;
-  onOpen: (entry: FileEntry) => void;
+  onToggle: (entry: ExplorerEntry) => void;
+  onOpen: (entry: ExplorerEntry) => void;
   /** Retry a directory whose listing failed. */
   onRetryDir: (path: string) => void;
-  onSubmitRename: (entry: FileEntry, newName: string) => void;
+  onSubmitRename: (entry: ExplorerEntry, newName: string) => void;
   onCancelRename: () => void;
-  onStartRename: (entry: FileEntry) => void;
+  onStartRename: (entry: ExplorerEntry) => void;
   onNewFile: (parent: string) => void;
   onNewFolder: (parent: string) => void;
-  onDelete: (entry: FileEntry) => void;
+  onDelete: (entry: ExplorerEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
   /** Copy rather than move — an Alt-held drop, or Paste and Duplicate. */
   onCopyInto: (from: EntryRef, toDir: string) => void;
   /** Put an entry on the explorer clipboard. */
-  onCopy: (entry: FileEntry) => void;
+  onCopy: (entry: ExplorerEntry) => void;
   /** Paste the clipboard into a directory. */
   onPaste: (toDir: string) => void;
   /** Copy an entry beside itself. */
-  onDuplicate: (entry: FileEntry) => void;
+  onDuplicate: (entry: ExplorerEntry) => void;
   /** Whether the clipboard holds something this directory could take. */
   canPasteInto: (toDir: string) => boolean;
   /** Reveal-item label from the server's platform, or null to hide the item. */
   revealLabel: string | null;
-  onReveal: (entry: FileEntry) => void;
-  onAddToChat: (entry: FileEntry) => void;
-  onCopyPath: (entry: FileEntry, kind: CopyPathKind) => void;
+  onReveal: (entry: ExplorerEntry) => void;
+  onAddToChat: (entry: ExplorerEntry) => void;
+  onCopyPath: (entry: ExplorerEntry, kind: CopyPathKind) => void;
+  /**
+   * Whether the tree can only be looked at — no drag, no rename, no menu.
+   * Defaults to false, which is every session tree.
+   */
+  readOnly?: boolean;
+  /** Whether rows draw the "who last touched this" column. Defaults to false. */
+  provenance?: boolean;
+  /**
+   * Where the scroll offset is remembered, for a tree whose scope is not the
+   * one the feature store currently holds. Defaults to the store, which is what
+   * the session pane has always used.
+   */
+  onScrollTop?: (scrollTop: number) => void;
 }
 
 /**
@@ -62,11 +75,12 @@ export function FileTree(props: FileTreeProps) {
   const { rows, selectedPath, renamingPath, errorPaths, onSelectPath, onRetryDir } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const setScrollTop = useFileExplorerStore((s) => s.setScrollTop);
+  const persistScrollTop = useFileExplorerStore((s) => s.setScrollTop);
+  const setScrollTop = props.onScrollTop ?? persistScrollTop;
   const scopeKey = useFileExplorerStore((s) => s.scopeKey);
 
   const activate = useCallback(
-    (entry: FileEntry) => (entry.type === 'dir' ? props.onToggle(entry) : props.onOpen(entry)),
+    (entry: ExplorerEntry) => (entry.type === 'dir' ? props.onToggle(entry) : props.onOpen(entry)),
     [props]
   );
 
@@ -179,12 +193,16 @@ export function FileTree(props: FileTreeProps) {
   // bubbling, so this only ever sees drops that landed on nothing.
   const [rootDropTarget, setRootDropTarget] = useState(false);
   const { onCopyInto, onMove } = props;
-  const handleRootDragOver = useCallback((e: React.DragEvent) => {
-    if (!hasFilePathDrag(e.dataTransfer.types)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
-    setRootDropTarget(true);
-  }, []);
+  const readOnly = props.readOnly === true;
+  const handleRootDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (readOnly || !hasFilePathDrag(e.dataTransfer.types)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+      setRootDropTarget(true);
+    },
+    [readOnly]
+  );
   // A dragged path only ever names a row that is on screen — that is what made
   // it draggable — so the rows are where its `isDir` comes from.
   const copyDropped = useCallback(
@@ -199,13 +217,14 @@ export function FileTree(props: FileTreeProps) {
   const handleRootDrop = useCallback(
     (e: React.DragEvent) => {
       setRootDropTarget(false);
+      if (readOnly) return;
       const from = readFilePathDrag(e.dataTransfer);
       if (from === null) return;
       e.preventDefault();
       if (e.altKey) copyDropped(from, ROOT_KEY);
       else onMove(from, ROOT_KEY);
     },
-    [copyDropped, onMove]
+    [copyDropped, onMove, readOnly]
   );
 
   const renderRow = (row: FlatRow) => (
@@ -233,6 +252,8 @@ export function FileTree(props: FileTreeProps) {
       onReveal={props.onReveal}
       onAddToChat={props.onAddToChat}
       onCopyPath={props.onCopyPath}
+      readOnly={props.readOnly}
+      provenance={props.provenance}
     />
   );
 
@@ -280,13 +301,13 @@ export function FileTree(props: FileTreeProps) {
  * Where a paste lands given what is selected: inside a selected folder, beside
  * a selected file, or at the tree's root when nothing is selected.
  */
-function pasteTargetOf(entry: FileEntry | undefined): string {
+function pasteTargetOf(entry: ExplorerEntry | undefined): string {
   if (!entry) return ROOT_KEY;
   return entry.type === 'dir' ? entry.path : parentOf(entry.path);
 }
 
 /** Keyboard navigation for the tree, returning the container `onKeyDown` handler. */
-function useKeyboardNav(props: FileTreeProps, activate: (entry: FileEntry) => void) {
+function useKeyboardNav(props: FileTreeProps, activate: (entry: ExplorerEntry) => void) {
   const { rows, selectedPath, renamingPath, onSelectPath } = props;
 
   return useCallback(
@@ -300,6 +321,9 @@ function useKeyboardNav(props: FileTreeProps, activate: (entry: FileEntry) => vo
       // — Cmd on a Mac, Ctrl everywhere else — and the rename input above has
       // already returned, so typing a name keeps its own copy and paste.
       if (e.metaKey || e.ctrlKey) {
+        // A read-only tree has nothing to copy INTO and nothing to paste, so
+        // the modifier ladder is skipped whole rather than each rung guarded.
+        if (props.readOnly === true) return;
         const key = e.key.toLowerCase();
         if (key === 'c' && current) {
           e.preventDefault();
@@ -349,14 +373,14 @@ function useKeyboardNav(props: FileTreeProps, activate: (entry: FileEntry) => vo
           }
           break;
         case 'F2':
-          if (current) {
+          if (current && props.readOnly !== true) {
             e.preventDefault();
             props.onStartRename(current.entry);
           }
           break;
         case 'Delete':
         case 'Backspace':
-          if (current) {
+          if (current && props.readOnly !== true) {
             e.preventDefault();
             props.onDelete(current.entry);
           }

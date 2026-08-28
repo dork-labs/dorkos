@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { toast } from 'sonner';
 import type { QueryClient } from '@tanstack/react-query';
-import type { FileEntry, FileTreeResponse } from '@dorkos/shared/types';
+import type { ExplorerEntry, ExplorerListing } from './source';
 import { useTransport } from '@/layers/shared/model';
 import { toastCrudError, getErrorCode, COPY_INTO_SELF_MESSAGE } from '../lib/crud-errors';
 import { freeCopyName } from '../lib/copy-name';
@@ -45,8 +45,8 @@ export interface FileCrudDeps {
 /** The CRUD surface the explorer UI drives. */
 export interface FileCrudApi {
   createEntry: (parent: string, name: string, type: 'file' | 'dir') => Promise<boolean>;
-  renameEntry: (entry: FileEntry, newName: string) => Promise<boolean>;
-  removeEntry: (entry: FileEntry) => Promise<void>;
+  renameEntry: (entry: ExplorerEntry, newName: string) => Promise<boolean>;
+  removeEntry: (entry: ExplorerEntry) => Promise<void>;
   moveEntry: (fromPath: string, toDir: string) => Promise<void>;
   /**
    * Copy an entry into a directory, naming it so it never lands on something
@@ -58,13 +58,13 @@ export interface FileCrudApi {
    */
   copyEntry: (from: EntryRef, toDir: string) => Promise<void>;
   /** A non-empty directory awaiting recursive-delete confirmation, or null. */
-  pendingRecursiveDelete: FileEntry | null;
+  pendingRecursiveDelete: ExplorerEntry | null;
   confirmRecursiveDelete: () => Promise<void>;
   cancelRecursiveDelete: () => void;
 }
 
 /** Build an optimistic placeholder entry for a not-yet-persisted create/move. */
-function draftEntry(path: string, name: string, type: 'file' | 'dir'): FileEntry {
+function draftEntry(path: string, name: string, type: 'file' | 'dir'): ExplorerEntry {
   return { name, path, type, size: 0, mtime: Date.now(), isSymlink: false };
 }
 
@@ -72,7 +72,7 @@ function draftEntry(path: string, name: string, type: 'file' | 'dir'): FileEntry
 export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   const transport = useTransport();
   const { cwd, showHidden, queryClient, inFlightRef } = deps;
-  const [pendingRecursiveDelete, setPendingRecursiveDelete] = useState<FileEntry | null>(null);
+  const [pendingRecursiveDelete, setPendingRecursiveDelete] = useState<ExplorerEntry | null>(null);
 
   // Raise the in-flight guard for the whole duration of an optimistic op. While
   // it is raised the explorer's prune effect stands down, so the op's transient
@@ -97,8 +97,8 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
     const treeKey = (path: string) => ['file-explorer', 'tree', cwd, path, showHidden] as const;
     return {
       /** A directory's current cached children (empty when not cached). */
-      getChildren: (path: string): FileEntry[] =>
-        queryClient.getQueryData<FileTreeResponse>(treeKey(path))?.entries ?? [],
+      getChildren: (path: string): ExplorerEntry[] =>
+        queryClient.getQueryData<ExplorerListing>(treeKey(path))?.entries ?? [],
       /** Whether a directory's listing has been fetched into the cache. */
       isLoaded: (path: string): boolean => queryClient.getQueryData(treeKey(path)) !== undefined,
       /**
@@ -121,16 +121,16 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         return listing.entries.map((e) => e.name);
       },
       /** Snapshot a directory's cached response for rollback. */
-      snapshot: (path: string): FileTreeResponse | undefined =>
-        queryClient.getQueryData<FileTreeResponse>(treeKey(path)),
+      snapshot: (path: string): ExplorerListing | undefined =>
+        queryClient.getQueryData<ExplorerListing>(treeKey(path)),
       /** Rewrite a directory's cached children (re-sorted). */
-      setChildren: (path: string, next: (entries: FileEntry[]) => FileEntry[]): void => {
-        queryClient.setQueryData<FileTreeResponse>(treeKey(path), (prev) => ({
+      setChildren: (path: string, next: (entries: ExplorerEntry[]) => ExplorerEntry[]): void => {
+        queryClient.setQueryData<ExplorerListing>(treeKey(path), (prev) => ({
           entries: sortEntries(next(prev?.entries ?? [])),
         }));
       },
       /** Restore a snapshotted directory response (rollback). */
-      restore: (path: string, data: FileTreeResponse | undefined): void => {
+      restore: (path: string, data: ExplorerListing | undefined): void => {
         queryClient.setQueryData(treeKey(path), data);
       },
       /** Invalidate one directory level so it refetches from the server. */
@@ -165,7 +165,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   );
 
   const renameEntry = useCallback(
-    (entry: FileEntry, newName: string): Promise<boolean> =>
+    (entry: ExplorerEntry, newName: string): Promise<boolean> =>
       guard(async () => {
         if (newName === entry.name || newName.length === 0) return true;
         const parent = parentOf(entry.path);
@@ -176,7 +176,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         // pre-existing sibling. Let the transport reject and just toast.
         const collides = cache.getChildren(parent).some((e) => e.path === newPath);
         const prev = cache.snapshot(parent);
-        const renamed: FileEntry = { ...entry, name: newName, path: newPath };
+        const renamed: ExplorerEntry = { ...entry, name: newName, path: newPath };
         if (!collides)
           cache.setChildren(parent, (es) => es.map((e) => (e.path === entry.path ? renamed : e)));
         try {
@@ -196,7 +196,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   );
 
   const deleteRecursive = useCallback(
-    (entry: FileEntry): Promise<void> =>
+    (entry: ExplorerEntry): Promise<void> =>
       guard(async () => {
         const parent = parentOf(entry.path);
         const prev = cache.snapshot(parent);
@@ -215,7 +215,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   );
 
   const removeEntry = useCallback(
-    (entry: FileEntry): Promise<void> =>
+    (entry: ExplorerEntry): Promise<void> =>
       guard(async () => {
         const parent = parentOf(entry.path);
         if (entry.type === 'file') {
@@ -278,7 +278,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         // optimistically; on failure it snaps back.
         const destShown = cache.isLoaded(toDir);
         const destCollides = destShown && cache.getChildren(toDir).some((e) => e.path === newPath);
-        const moved: FileEntry = { ...entry, name, path: newPath };
+        const moved: ExplorerEntry = { ...entry, name, path: newPath };
         const prevFrom = cache.snapshot(fromParent);
         const prevTo = destShown ? cache.snapshot(toDir) : undefined;
         cache.setChildren(fromParent, (es) => es.filter((e) => e.path !== fromPath));
@@ -336,7 +336,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         const prev = destShown ? cache.snapshot(toDir) : undefined;
         if (destShown) {
           const source = cache.getChildren(parentOf(from.path)).find((e) => e.path === from.path);
-          const copied: FileEntry = source
+          const copied: ExplorerEntry = source
             ? { ...source, name, path: newPath }
             : draftEntry(newPath, name, from.isDir ? 'dir' : 'file');
           cache.setChildren(toDir, (es) => [...es, copied]);

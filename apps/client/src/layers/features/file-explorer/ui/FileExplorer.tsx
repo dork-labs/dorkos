@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { File, Folder, Loader2, RotateCw } from 'lucide-react';
-import type { FileEntry } from '@dorkos/shared/types';
+import type { ExplorerEntry, FileExplorerSource } from '../model/source';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,11 +12,14 @@ import {
   AlertDialogTitle,
   Button,
 } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { isAtOrUnder, joinPath, parentOf, ROOT_KEY } from '../model/tree';
 import { useFileExplorer } from '../model/use-file-explorer';
+import { createSessionCwdSource } from '../model/session-cwd-source';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTree } from './FileTree';
+import { FilePreviewDialog } from './FilePreviewDialog';
 
 /** In-progress inline create: the target parent directory and the entry type. */
 interface DraftCreate {
@@ -24,18 +27,47 @@ interface DraftCreate {
   type: 'file' | 'dir';
 }
 
+/** What {@link FileExplorer} renders over. */
+export interface FileExplorerProps {
+  /**
+   * Where the entries come from. Omitted means the session's selected working
+   * directory, which is what the Files right-panel tab has always shown.
+   *
+   * **Memoize it.** The pane subscribes to the source's `events` and keys its
+   * cache off its identity, so a source rebuilt every render resubscribes every
+   * render. `useMemo` over the ids it is built from is the whole discipline.
+   */
+  source?: FileExplorerSource | null;
+  /** Extra classes for the pane container, for a surface that is not a whole tab. */
+  className?: string;
+}
+
 /**
- * The Files right-panel tab (spec right-panel-workbench, Chunk B): a lazy,
- * worktree-aware tree of the session cwd with full CRUD. Files open into the
- * canvas via the shared `open_file` command; directory writes are optimistic
- * with rollback + coded-error toasts. The whole feature is lazy-loaded by the
- * right-panel contribution.
+ * The file explorer (spec right-panel-workbench Chunk B, sources by
+ * `project-rooms` §3.9): a lazy tree of whatever its source lists, with the
+ * writes its source allows.
+ *
+ * Over a session's working directory that is the pane it has always been —
+ * full CRUD, optimistic with rollback and coded-error toasts, files opening
+ * into the canvas through the shared `open_file` command. Over a room's own
+ * files the same tree is read-only, carries a provenance column, and previews
+ * a file in place, because a commit has no disk to write to and no session to
+ * open a document beside.
  *
  * @module features/file-explorer/ui/FileExplorer
  */
-export function FileExplorer() {
+export function FileExplorer({ source: sourceProp, className }: FileExplorerProps = {}) {
+  const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
-  const explorer = useFileExplorer(cwd);
+  // Built here rather than by the right-panel registration, so the Files tab
+  // stays a component with no props and the session default lives in one place.
+  const sessionSource = useMemo(
+    () => (cwd ? createSessionCwdSource({ transport, cwd }) : null),
+    [transport, cwd]
+  );
+  const source = sourceProp === undefined ? sessionSource : sourceProp;
+  const readOnly = source !== null && !source.writable;
+  const explorer = useFileExplorer(source);
   const { rows, rootLoading, rootError, errorPaths } = explorer;
   const setCommands = useFileExplorerStore((s) => s.setCommands);
   // Selection lives in the store (DOR-404 D1) so it survives an unmount and a
@@ -46,6 +78,9 @@ export function FileExplorer() {
 
   const [draft, setDraft] = useState<DraftCreate | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // The file an in-pane preview is showing, for a source with nowhere else to
+  // put it. Component-local: a preview is a look, not a place you return to.
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   // Paste is offered only where it could actually land: something has to be on
   // the clipboard, and a folder cannot be pasted inside itself. Dimming the
@@ -73,14 +108,18 @@ export function FileExplorer() {
   useEffect(() => {
     commandHandlersRef.current = { startCreate, reload: explorer.reload };
   });
+  // Only the writable pane publishes them: the toolbar they drive is the Files
+  // tab's header, whose New File and New Folder a read-only source could not
+  // honour — and a second publisher would clear the first's on unmount.
   useEffect(() => {
+    if (readOnly) return;
     setCommands({
       newFile: () => commandHandlersRef.current.startCreate(ROOT_KEY, 'file'),
       newFolder: () => commandHandlersRef.current.startCreate(ROOT_KEY, 'dir'),
       refresh: () => commandHandlersRef.current.reload(),
     });
     return () => setCommands(null);
-  }, [setCommands]);
+  }, [setCommands, readOnly]);
 
   const submitDraft = useCallback(
     async (name: string) => {
@@ -95,7 +134,7 @@ export function FileExplorer() {
   );
 
   const submitRename = useCallback(
-    async (entry: FileEntry, newName: string) => {
+    async (entry: ExplorerEntry, newName: string) => {
       setRenamingPath(null);
       const ok = await explorer.renameEntry(entry, newName);
       if (ok) setSelectedPath(joinPath(parentOf(entry.path), newName));
@@ -103,7 +142,11 @@ export function FileExplorer() {
     [explorer, setSelectedPath]
   );
 
-  if (!cwd) {
+  if (source === null) {
+    // Only the session pane has a sentence to say here: a caller that passed a
+    // null source of its own already decided what "nothing to browse" looks
+    // like on its surface.
+    if (sourceProp !== undefined) return null;
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
         Select a working directory to browse its files.
@@ -112,7 +155,7 @@ export function FileExplorer() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={cn('flex h-full flex-col', className)}>
       <div className="min-h-0 flex-1">
         {draft && (
           <DraftRow
@@ -145,7 +188,12 @@ export function FileExplorer() {
             errorPaths={errorPaths}
             onSelectPath={setSelectedPath}
             onToggle={explorer.toggleExpand}
-            onOpen={explorer.openFile}
+            onOpen={(entry) => {
+              // A canvas source pushes the document somewhere else; an in-pane
+              // source shows it right here.
+              if (source.preview === 'inline') setPreviewPath(entry.path);
+              else explorer.openFile(entry);
+            }}
             onRetryDir={explorer.retryDir}
             onSubmitRename={(entry, name) => void submitRename(entry, name)}
             onCancelRename={() => setRenamingPath(null)}
@@ -166,6 +214,8 @@ export function FileExplorer() {
               )
             }
             canPasteInto={canPasteInto}
+            readOnly={readOnly}
+            provenance={source.provenance}
             revealLabel={explorer.revealLabel}
             onReveal={(entry) => void explorer.reveal(entry)}
             onAddToChat={explorer.addToChat}
@@ -173,6 +223,14 @@ export function FileExplorer() {
           />
         )}
       </div>
+
+      {source.preview === 'inline' && (
+        <FilePreviewDialog
+          source={source}
+          path={previewPath}
+          onClose={() => setPreviewPath(null)}
+        />
+      )}
 
       <AlertDialog
         open={explorer.pendingRecursiveDelete !== null}
