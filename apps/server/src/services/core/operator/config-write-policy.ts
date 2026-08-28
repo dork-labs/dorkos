@@ -521,10 +521,11 @@ export const CONFIG_WRITE_POLICY = {
   // `resolveToolConfig` reads `agent.<group> ?? globalConfig.<group>Tools`, so an
   // explicit PER-AGENT value BEATS the global switch — and the per-agent seam has
   // no bar of its own: `PATCH /api/agents/current` validates the boundary and
-  // delegates to `updateAgentManifest`, which refuses `account` and nothing else,
-  // with no caller-identity check at all. An agent can therefore restore its own
-  // context blocks through its manifest after a person turned the global switch
-  // off. Reproduced during review.
+  // delegates to `updateAgentManifest`, which refuses `account` and the one
+  // enforced tool group (`roomsManage`, DOR-1611) and nothing else, with no
+  // caller-identity check at all. **The four keys named below are not among the
+  // refusals**, so an agent can still restore its own context blocks through its
+  // manifest after a person turned the global switch off. Reproduced during review.
   //
   // Two things bound it, neither of which makes it a non-issue: the `update_agent`
   // MCP tool does not expose `enabledToolGroups` (see `UpdateAgentArgs`), so the
