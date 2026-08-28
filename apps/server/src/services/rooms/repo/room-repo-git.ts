@@ -313,6 +313,42 @@ export async function hasMainBranch(checkoutDir: string, ceilingDir: string): Pr
 }
 
 /**
+ * Strip the control characters out of a name or an address a commit will carry.
+ *
+ * **A commit's author is not DorkOS's own text.** It is a person's profile name
+ * or an agent's, and both are member-writable; `config_patch` can set the
+ * first mid-conversation, and an agent's own worktree can be given any
+ * `user.name` at all. What comes out the other end is `git log` output, which
+ * DorkOS then PARSES — the room files API separates a commit's fields with
+ * `U+001F`, so a name holding one shifts every field after it and a reader is
+ * shown an author and a subject that were never committed together (measured:
+ * display corruption, in the room's own file explorer).
+ *
+ * So the fix is at the source, where the ambiguity is created rather than where
+ * it is discovered: nothing that is not printable text reaches a commit header.
+ * The parser checks the shape of what it reads as well, because two closures on
+ * a trust boundary is the right number, but this is the one that means no
+ * DorkOS-written commit can ever be ambiguous.
+ *
+ * C0 (`U+0000`–`U+001F`), `DEL` and C1 (`U+0080`–`U+009F`) all go: git itself
+ * rejects a newline in `user.name`, and the rest are invisible to a reader and
+ * meaningful to a parser, which is the whole hazard. Everything printable —
+ * accents, ideographs, emoji — is untouched, because a person's name is theirs.
+ *
+ * Module-private on purpose: it is not a sanitiser for general use, it is
+ * what {@link commitAll} does to an identity on its way into a commit header.
+ * A second caller would be a second policy. Tested through `commitAll`, which
+ * is the path that matters.
+ *
+ * @param value - The name or address as it was configured.
+ * @returns The same string with its control characters removed.
+ */
+function stripControlCharacters(value: string): string {
+  // eslint-disable-next-line no-control-regex -- removing control characters is the entire purpose.
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+}
+
+/**
  * Stage everything in the tree and commit it under `identity`.
  *
  * The identity is passed per command rather than written into the repo's
@@ -320,6 +356,11 @@ export async function hasMainBranch(checkoutDir: string, ceilingDir: string): Pr
  * as the agent that asked for it, a `ROOM.md` save as the person who typed it —
  * and a config value would make the LAST writer's name the default for the
  * next one.
+ *
+ * The identity's control characters are stripped on the way in
+ * ({@link stripControlCharacters}) — a commit header DorkOS writes is parsed
+ * again later, and a name carrying a field separator is a name that rewrites
+ * somebody else's row.
  *
  * @param repoDir - The checkout to commit in.
  * @param message - The commit subject.
@@ -337,9 +378,11 @@ export async function commitAll(
   await runGit(
     [
       '-c',
-      `user.name=${identity.name}`,
+      // Stripped, not trusted: see {@link stripControlCharacters} for the
+      // parser this protects and the measurement behind it.
+      `user.name=${stripControlCharacters(identity.name)}`,
       '-c',
-      `user.email=${identity.email}`,
+      `user.email=${stripControlCharacters(identity.email)}`,
       'commit',
       // The second line, not the first: `core.hooksPath` above is what actually
       // stops a hook. See the module doc — this skips `pre-commit` and

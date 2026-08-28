@@ -895,11 +895,17 @@ router.post('/:id/repo', (req, res) => {
  * this is. A symlink is listed as a link and never followed.
  */
 router.get('/:id/files', (req, res) => {
-  const query = parseBody(RoomFilesQuerySchema, req.query, res);
-  if (!query) return;
   void (async () => {
     try {
+      // **Who is asking comes before what they asked for**, and the order is
+      // load-bearing rather than tidy: the TSDoc above promises that an
+      // unverifiable agent token is refused 401 before anything else happens,
+      // and with `parseBody` first a malformed query answered 400 to a caller
+      // this machine had already decided it could not identify. Measured, and
+      // the doc was the thing that was wrong.
       const caller = resolveCaller(req, res);
+      const query = parseBody(RoomFilesQuerySchema, req.query, res);
+      if (!query) return;
       getRoomService().assertCanReadFiles(req.params.id, caller.id);
       res.json(await getRoomFilesService().list(req.params.id, query.path));
     } catch (err) {
@@ -930,11 +936,12 @@ router.get('/:id/files', (req, res) => {
  * the literal `files` a segment at a time, so the two paths cannot collide.
  */
 router.get('/:id/files/content', (req, res) => {
-  const query = parseBody(RoomFileContentQuerySchema, req.query, res);
-  if (!query) return;
   void (async () => {
     try {
+      // Caller first, for the reason `GET /:id/files` above writes down.
       const caller = resolveCaller(req, res);
+      const query = parseBody(RoomFileContentQuerySchema, req.query, res);
+      if (!query) return;
       getRoomService().assertCanReadFiles(req.params.id, caller.id);
       res.json(await getRoomFilesService().read(req.params.id, query.path));
     } catch (err) {

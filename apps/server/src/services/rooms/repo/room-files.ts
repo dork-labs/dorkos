@@ -78,18 +78,32 @@ import { GitUnavailableError, runGit, runGitRaw } from './room-repo-git.js';
 /**
  * How many commits one provenance walk may look at.
  *
+ * Module-private: it is a policy this module applies, not a value anything
+ * outside it configures. The test that proves the bound rewrites the `-n`
+ * argument through the injected runner instead of importing the number, which
+ * has the side benefit of proving the argument really reaches git.
+ *
  * A ceiling on work, not a statement about how much history matters. A room
  * repo is young and small, so in practice every entry is attributed long before
  * this; a room that outgrows it loses provenance on its oldest untouched files
  * and nothing else.
  */
-export const PROVENANCE_COMMIT_LIMIT = 1000;
+const PROVENANCE_COMMIT_LIMIT = 1000;
 
 /** The branch a room's files are read from. Always `main` (spec §3.1). */
 const DEFAULT_BRANCH = 'main';
 
 /** The field separator inside one commit's header in the provenance walk. */
 const FIELD_SEPARATOR = '\u001f';
+
+/**
+ * What `%aI` looks like — a strict ISO 8601 instant with an offset.
+ *
+ * Used to decide whether a parsed record's head really is a commit header. A
+ * loose check would be no check: the point is that the two fields git controls
+ * are shaped the way git shapes them.
+ */
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
 /** How git spells "this is a symlink" in a tree. */
 const SYMLINK_MODE = '120000';
@@ -155,39 +169,70 @@ export interface RoomFilesServiceDeps {
  * - **An empty segment** — `a//b` is a second spelling of one path, and two
  *   spellings of one thing is what a later comparison gets wrong.
  *
- * A trailing `/` is trimmed rather than refused: asking for `docs/` is asking
- * for `docs`.
+ * - **Leading or trailing whitespace** — refused, and this is the rule that was
+ *   learned the hard way. The normaliser used to `.trim()` the whole path, and
+ *   a filename may legitimately end in a space: with `notes` and `notes ` both
+ *   committed, asking for `notes ` was silently rewritten to `notes` and
+ *   answered with the OTHER FILE's bytes under a `path` field that named
+ *   neither honestly. That is a decoy primitive — commit a padded twin of a
+ *   file somebody trusts and their reader serves the wrong one — and it came
+ *   entirely from a normaliser that mutated instead of refusing. **Nothing here
+ *   rewrites a path any more.** The emptiness test runs on a trimmed COPY; the
+ *   value itself is never touched.
+ *
+ *   The consequence is deliberate and worth stating: a file whose name begins
+ *   or ends in whitespace is listed, under its real name, and cannot be opened.
+ *   A visible dead end carrying a reason beats a quiet wrong answer.
+ *
+ * ONE trailing `/` is dropped, because asking for `docs/` is asking for `docs`
+ * and every file explorer spells it that way. `docs//` is not that: it is a
+ * second spelling with an empty segment in it, and it now refuses exactly as
+ * `docs//two.md` does — the two used to disagree.
  *
  * @param raw - The path as the caller sent it. `undefined` or `''` is the root.
- * @returns The normalised path, `''` for the repo root.
+ * @returns The path, unchanged but for one optional trailing slash; `''` for the
+ *   repo root.
  * @throws {RoomError} `ROOM_FILE_PATH_INVALID` when it could mean somewhere else.
  */
 export function normalizeRoomFilePath(raw: string | undefined): string {
-  const value = (raw ?? '').trim();
+  const value = raw ?? '';
   if (value === '' || value === '.') return '';
 
-  const refuse = (why: string): never => {
-    throw new RoomError(
-      'ROOM_FILE_PATH_INVALID',
-      `That path is not one this room can have: ${why}`
-    );
-  };
-
-  if (value.length > 4096) refuse('it is too long');
-  if (value.includes('\\')) refuse('it uses backslashes');
+  if (value.length > 4096) refusePath('it is too long');
+  // The one place a trimmed copy is consulted, and it decides nothing but the
+  // refusal. The value below is the caller's, byte for byte.
+  if (value !== value.trim()) refusePath('it starts or ends with a space');
+  if (value.includes('\\')) refusePath('it uses backslashes');
   // eslint-disable-next-line no-control-regex -- control characters are exactly what this rejects.
-  if (/[\u0000-\u001f\u007f]/.test(value)) refuse('it contains a control character');
-  if (value.startsWith('/')) refuse('it is absolute');
-  if (/^[A-Za-z]:/.test(value)) refuse('it names a drive');
+  if (/[\u0000-\u001f\u007f]/.test(value)) refusePath('it contains a control character');
+  if (value.startsWith('/')) refusePath('it is absolute');
+  if (/^[A-Za-z]:/.test(value)) refusePath('it names a drive');
 
-  const trimmed = value.replace(/\/+$/, '');
-  const segments = trimmed.split('/');
+  // Exactly one, so `docs//` keeps its empty segment and is refused below with
+  // every other doubled slash rather than being quietly repaired.
+  const withoutTrailingSlash = value.endsWith('/') ? value.slice(0, -1) : value;
+  if (withoutTrailingSlash === '') return '';
+  const segments = withoutTrailingSlash.split('/');
   for (const segment of segments) {
-    if (segment === '') refuse('it has an empty part');
-    if (segment === '..') refuse('it points outside the room');
-    if (segment === '.') refuse('it has a "." in it');
+    if (segment === '') refusePath('it has an empty part');
+    if (segment === '..') refusePath('it points outside the room');
+    if (segment === '.') refusePath('it has a "." in it');
+    if (segment !== segment.trim()) refusePath('one of its parts starts or ends with a space');
   }
-  return segments.join('/');
+  return withoutTrailingSlash;
+}
+
+/**
+ * Refuse a path, naming what is wrong with it.
+ *
+ * Its own function rather than a closure inside the normaliser, so every rule
+ * refuses in one voice and TypeScript narrows past each call.
+ *
+ * @param why - The reason, completing "that path is not one this room can have".
+ * @throws {RoomError} Always `ROOM_FILE_PATH_INVALID`.
+ */
+function refusePath(why: string): never {
+  throw new RoomError('ROOM_FILE_PATH_INVALID', `That path is not one this room can have: ${why}`);
 }
 
 /** One line of `git ls-tree --long`, parsed. */
@@ -312,10 +357,15 @@ export class RoomFilesService {
         size: entry.size,
         lastCommit: provenance.get(entry.name) ?? null,
       }));
+      // Directories first, then code-unit order — deliberately NOT
+      // `localeCompare`, whose answer depends on the machine's ICU data and
+      // locale, so one room would list in two orders on two computers and a
+      // client diffing two listings would see phantom moves.
       entries.sort((a, b) => {
         const aDir = a.kind === 'dir' ? 0 : 1;
         const bDir = b.kind === 'dir' ? 0 : 1;
-        return aDir !== bDir ? aDir - bDir : a.name.localeCompare(b.name);
+        if (aDir !== bDir) return aDir - bDir;
+        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
       });
 
       return { path: dir, commit, entries };
@@ -588,13 +638,25 @@ export class RoomFilesService {
       const header = parts[0] ?? '';
       const fields = header.split(FIELD_SEPARATOR);
       const [sha, at, author] = fields;
-      // The subject is whatever is left, so a name holding the separator spills
-      // into the subject of its OWN commit and never into another's.
+      // **The two machine-shaped fields are checked, not assumed.** `%H` and
+      // `%aI` are git's own and cannot hold the separator; the AUTHOR NAME can,
+      // because a commit made in an agent's worktree carries whatever
+      // `user.name` that tree was given. `commitAll` strips control characters
+      // on the way in, so this is the second of two closures rather than the
+      // only one — and a record whose head is not a sha and a timestamp is
+      // dropped rather than half-read.
       const subject = fields.slice(3).join(FIELD_SEPARATOR);
-      if (!sha || !at) continue;
+      if (!sha || !at || !/^[0-9a-f]{40}$/.test(sha) || !ISO_TIMESTAMP.test(at)) continue;
 
-      for (const raw of parts.slice(1)) {
-        const changed = raw.replace(/^\n+/, '');
+      // **Exactly one leading newline, and only from the FIRST name.** git's
+      // `-z --name-only` layout is `<header>NUL LF <path>NUL<path>NUL…`: that
+      // line feed is a separator that appears once per record, before the first
+      // path and nowhere else. Stripping `/^\n+/` from every part instead ate
+      // the first character of a filename that legitimately BEGINS with a
+      // newline — and a filename may. Proven: a file named "\nplain.md" read as
+      // "plain.md" and handed its neighbour's row the forger's commit.
+      for (const [index, raw] of parts.slice(1).entries()) {
+        const changed = index === 0 && raw.startsWith('\n') ? raw.slice(1) : raw;
         if (changed === '' || !changed.startsWith(prefix)) continue;
         const name = changed.slice(prefix.length).split('/')[0];
         if (!name || !wanted.has(name) || found.has(name)) continue;

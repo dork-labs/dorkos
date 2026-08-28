@@ -199,9 +199,13 @@ describe('room files routes', () => {
       expect(
         listed.body.entries.map((e: { name: string; kind: string }) => [e.name, e.kind])
       ).toEqual([
+        // Directories first, then code-unit order — `ROOM.md` ahead of
+        // `logo.png` because every capital sorts before every lowercase. Byte
+        // order rather than the machine's locale, so one room lists the same
+        // way on every computer.
         ['docs', 'dir'],
-        ['logo.png', 'file'],
         ['ROOM.md', 'file'],
+        ['logo.png', 'file'],
         ['secrets', 'symlink'],
       ]);
       expect(listed.body.entries[0].lastCommit).toMatchObject({
@@ -268,6 +272,41 @@ describe('room files routes', () => {
 
       const res = await request(app)
         .get(`/api/rooms/${roomId}/files`)
+        .set('X-DorkOS-Agent', 'not-a-real-token');
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    });
+
+    it('still serves an archived room, because archiving keeps every byte', async () => {
+      // Pins the claim `assertCanReadFiles` makes in prose. Archiving stops a
+      // room; `RoomRepoService` keeps its home directory on purpose, so
+      // refusing to show the files would hide work nobody agreed to delete —
+      // and un-archiving is supposed to return everything exactly as it was.
+      const roomId = await roomWithFiles();
+      expect(
+        (await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
+      ).toBe(200);
+
+      const listed = await request(app).get(`/api/rooms/${roomId}/files`);
+      const read = await request(app)
+        .get(`/api/rooms/${roomId}/files/content`)
+        .query({ path: 'ROOM.md' });
+
+      expect(listed.status).toBe(200);
+      expect(listed.body.entries.length).toBeGreaterThan(0);
+      expect(read.status).toBe(200);
+      expect(read.body.body.kind).toBe('text');
+    });
+
+    it('answers 401 before 400, so a malformed query never outranks an unverifiable token', async () => {
+      const roomId = await roomWithFiles();
+
+      // No `path` at all on the content route is the 400 case; the token is the
+      // 401 case. The caller is resolved first, so the answer is about WHO is
+      // asking rather than about what they typed.
+      const res = await request(app)
+        .get(`/api/rooms/${roomId}/files/content`)
         .set('X-DorkOS-Agent', 'not-a-real-token');
 
       expect(res.status).toBe(401);

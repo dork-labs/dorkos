@@ -59,7 +59,14 @@ export type RoomFileCommit = z.infer<typeof RoomFileCommitSchema>;
 export const RoomFileEntrySchema = z.object({
   /** The entry's own name, with no directory in it. */
   name: z.string(),
-  /** Its path from the repo root, `/`-separated and never leading with one. */
+  /**
+   * Its path from the repo root, `/`-separated and never leading with one.
+   *
+   * **Hand this straight back to the content route.** The server never rewrites
+   * a path — no trimming, no case folding, no unicode normalisation — so what a
+   * listing mints is exactly what a read accepts, and a name that ends in a
+   * space stays a name that ends in a space.
+   */
   path: z.string(),
   /** What it is. See {@link RoomFileKindSchema}. */
   kind: RoomFileKindSchema,
@@ -89,8 +96,11 @@ export const RoomFilesQuerySchema = z.object({
   /**
    * The directory, relative to the repo root. Omitted or empty means the root.
    *
-   * `..`, an absolute path and a backslash are all refused before git is asked
-   * anything.
+   * Refused before git is asked anything: `..`, an absolute path, a backslash,
+   * a control character, a doubled slash, and leading or trailing whitespace.
+   * The last one is a refusal rather than a repair because a filename may
+   * legitimately end in a space, and trimming the REQUEST would answer with a
+   * different file's contents. One trailing `/` is fine — `docs/` is `docs`.
    */
   path: z.string().optional(),
 });
@@ -107,7 +117,13 @@ export const RoomFileListResponseSchema = z.object({
    * commits at all.
    */
   commit: z.string().nullable(),
-  /** Directories first, then files, each group by name. */
+  /**
+   * Directories first, then files, each group in code-unit order.
+   *
+   * Byte order, deliberately not the machine's locale: one room lists the same
+   * way on every computer, so a client diffing two listings never sees a
+   * phantom move. Every capital therefore sorts ahead of every lowercase.
+   */
   entries: z.array(RoomFileEntrySchema),
 });
 
@@ -116,7 +132,12 @@ export type RoomFileListResponse = z.infer<typeof RoomFileListResponseSchema>;
 
 /** `GET /api/rooms/{id}/files/content` — which file to read. */
 export const RoomFileContentQuerySchema = z.object({
-  /** The file, relative to the repo root. Required — there is no default file. */
+  /**
+   * The file, relative to the repo root. Required — there is no default file.
+   *
+   * Use a `path` a listing gave you: it is accepted verbatim, and the same
+   * refusals the listing route applies apply here.
+   */
   path: z.string().min(1),
 });
 
