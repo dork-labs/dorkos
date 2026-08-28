@@ -114,21 +114,23 @@ Room turns run on the same runtime fork as sessions. With the experiment on, a r
 
 ## 5. Rooms, threads, DMs
 
-| ID   | Capability                                                                                              | Surfaces | Coverage                             |
-| ---- | ------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------ |
-| M-01 | Create a channel; roster of humans + agents                                                             | channel  | U, E                                 |
-| M-02 | Post in a channel; everyone (and every window) sees it live                                             | channel  | E                                    |
-| M-03 | Agent room turns: an addressed/mentioned agent replies in the room; turn budget respected               | channel  | U                                    |
-| M-04 | Etiquette: agents don't over-participate (see `meta/agent-etiquette.md`)                                | channel  | —                                    |
-| M-05 | **Threads**: open a thread, reply in it, replies stay out of the main timeline, thread arrivals surface | thread   | U, E (desktop + phone)               |
-| M-06 | Thread deep-link (`?thread=`) restores the panel and focus                                              | thread   | U, E                                 |
-| M-07 | DMs: open, post, agent replies                                                                          | dm       | E (open/post)                        |
-| M-08 | Unread/read state, correct across devices                                                               | rooms    | E                                    |
-| M-09 | Presence (who's here, incl. sidebar)                                                                    | rooms    | E                                    |
-| M-10 | Archive a room; archived rooms discoverable in palette                                                  | rooms    | E                                    |
-| M-11 | Bridged/relay channels (Buzz) behave like local rooms (community conformance)                           | channel  | U (conformance), E (bridged-channel) |
-| M-12 | Room ↔ session binding: the agent's room turn maps to a real transcript that can be repaired/converged  | channel  | U                                    |
-| M-13 | Notifications: 🔔 title prefix / attention signals when a background surface needs you                  | all      | S (partial)                          |
+| ID   | Capability                                                                                                                                                                                               | Surfaces | Coverage                             |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------ |
+| M-01 | Create a channel; roster of humans + agents                                                                                                                                                              | channel  | U, E                                 |
+| M-02 | Post in a channel; everyone (and every window) sees it live                                                                                                                                              | channel  | E                                    |
+| M-03 | Agent room turns: an addressed/mentioned agent replies in the room; turn budget respected                                                                                                                | channel  | U                                    |
+| M-04 | Etiquette: agents don't over-participate (see `meta/agent-etiquette.md`)                                                                                                                                 | channel  | —                                    |
+| M-05 | **Threads**: open a thread, reply in it, replies stay out of the main timeline, thread arrivals surface                                                                                                  | thread   | U, E (desktop + phone)               |
+| M-06 | Thread deep-link (`?thread=`) restores the panel and focus                                                                                                                                               | thread   | U, E                                 |
+| M-07 | DMs: open, post, agent replies                                                                                                                                                                           | dm       | E (open/post)                        |
+| M-08 | Unread/read state, correct across devices                                                                                                                                                                | rooms    | E                                    |
+| M-09 | Presence (who's here, incl. sidebar)                                                                                                                                                                     | rooms    | E                                    |
+| M-10 | Archive a room; archived rooms discoverable in palette                                                                                                                                                   | rooms    | E                                    |
+| M-11 | Bridged/relay channels (Buzz) behave like local rooms (community conformance)                                                                                                                            | channel  | U (conformance), E (bridged-channel) |
+| M-12 | Room ↔ session binding: the agent's room turn maps to a real transcript that can be repaired/converged                                                                                                   | channel  | U                                    |
+| M-13 | Notifications: 🔔 title prefix / attention signals when a background surface needs you                                                                                                                   | all      | S (partial)                          |
+| M-14 | An agent turns a name into a room (`find_room`): "post it in #mio", "my DM with @kai", or "is there already a room with these people in it" — no room id needed, and it only finds rooms the agent is in | rooms    | U                                    |
+| M-15 | An agent sees one room in full (`get_room`): its topic and everyone in it, each with an @handle and whether they are a person or an agent — what it needs to know before it speaks                       | rooms    | U                                    |
 
 ## 6. Agent autonomy & conversational behavior
 

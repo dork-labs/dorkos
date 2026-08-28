@@ -460,22 +460,25 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
     "Ids here" line needs to keep naming the marker.
     A region is not trusted because a comment says so. It is trusted because
     everything reaching it went through that function.
-- **An agent's hand in a room is four verbs, and every one of them goes through
-  the service.** `post_to_room`, `react_to_room_entry`, `read_room_history` and
-  `search_room_history` are the `rooms` capability domain
-  (`room-capabilities.ts`), and each one is a thin caller of a `RoomService`
-  method — never a second write path and never a second read predicate. Four
-  consequences to keep true. **Membership is the gate**, not the tier: both reads
-  are `observe`, which returns allowed before any other check runs, so nothing but
-  the membership check stands between a caller and a room's log — and "not a
-  member" answers exactly as "no such room", so a room id is never a capability.
-  **Neither read takes `readOnlyCarveOut`**, and that omission is a decision
-  rather than a gap: the flag would make them reachable on the login-off external
-  `/mcp` surface with no token at all, and what they return is other people's
-  messages. Do not add it to make a client's life easier. **A member reads only
+- **An agent's hand in a room is eight verbs, and every one of them goes through
+  the service.** Two writes — `post_to_room`, `react_to_room_entry` — and six
+  reads: `read_room_history` and `search_room_history` inside one room,
+  `list_member_rooms` and `search_member_rooms` across every room the caller is
+  in, and `get_room` and `find_room` for which room and who is in it. They are
+  the `rooms` capability domain (`room-capabilities.ts`), and each one is a thin
+  caller of a `RoomService` method — never a second write path and never a second
+  read predicate. Four consequences to keep true. **Membership is the gate**, not
+  the tier: every read is `observe`, which returns allowed before any other check
+  runs, so nothing but the membership check stands between a caller and a room's
+  log — and "not a member" answers exactly as "no such room", so a room id is
+  never a capability. **No read takes `readOnlyCarveOut`**, and that omission is a
+  decision rather than a gap: the flag would make them reachable on the login-off
+  external `/mcp` surface with no token at all, and what they return is other
+  people's messages — or, for the three lookups, the shape of somebody's install.
+  Do not add it to make a client's life easier. **A member reads only
   above its `joinedSeq`** — the same floor the ambient window keeps, and the same
   floor `GET /api/rooms/:id/export` keeps for every caller **but one**. The export
-  is this domain's fifth read path and the only one that can drop the floor: the
+  is this domain's seventh read path and the only one that can drop the floor: the
   install's OWNER exporting a room they are a member of gets it from `seq` 0,
   because an export is the exit path (DOR-596 C2) rather than one participant's
   view, and an owner handed a copy of their own room with the first months missing
