@@ -17,6 +17,10 @@
  * - Dropping the `info/exclude` write reddens "a projected worktree still reads
  *   clean": the generated `.claude/skills/` link and harness manifest make
  *   every worktree permanently dirty, hence permanently un-reapable.
+ * - Returning early on sight of the block's marker — what the write did before
+ *   its list could change — reddens "brings a stale exclude block up to date":
+ *   a repo whose first worktree predates an addition keeps the old block, and
+ *   whatever the new line hides makes every worktree dirty again.
  * - Dropping the digest from `slugFor` reddens "two agents with one name get
  *   two worktrees".
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
@@ -49,7 +53,15 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomRepoReconciler } from '../room-repo-reconciler.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { commitAll, hasLocalBranch, removeWorktree, runGit } from '../room-repo-git.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '../../attachments/attachment-paths.js';
+import {
+  absoluteGitDir,
+  commitAll,
+  commonGitDir,
+  hasLocalBranch,
+  removeWorktree,
+  runGit,
+} from '../room-repo-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -306,6 +318,59 @@ describe('RoomWorktreeManager', () => {
       // And the tree the agent works in still reads clean, so the reap can tell
       // "nothing here" from "somebody's unsaved work" and §3.6's merge gate is
       // not blocked by DorkOS's own output.
+      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
+    });
+
+    it('brings a stale exclude block up to date instead of trusting its marker', async () => {
+      // Recognizing the marker and returning was enough while the list never
+      // changed. It stopped being enough when the projected-attachments root
+      // joined it (DOR-1597): a repo whose first worktree predates an addition
+      // would keep the old block forever, and every worktree that ever carried
+      // a file would read permanently dirty — never reaped, never mergeable.
+      await service.enable(ROOM_ID, OPERATOR);
+      const repoDir = store.repoPath(ROOM_ID);
+      const infoDir = path.join(await commonGitDir(repoDir, store.homeDir(ROOM_ID)), 'info');
+      await mkdir(infoDir, { recursive: true });
+      // A block written by an older DorkOS, with somebody else's lines on both
+      // sides of it — neither of which may be touched.
+      await writeFile(
+        path.join(infoDir, 'exclude'),
+        [
+          '# somebody’s own line, above',
+          '/scratch/',
+          '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
+          '/.claude/skills/',
+          '# --- end DorkOS ---',
+          '# somebody’s own line, below',
+          '/notes.local.md',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+
+      const exclude = await readFile(path.join(infoDir, 'exclude'), 'utf-8');
+      // The block is current…
+      expect(exclude).toContain(`/${PROJECTED_ATTACHMENTS_ROOT}/`);
+      // …written exactly once, not appended beside the old one…
+      expect(exclude.match(/--- DorkOS:/g)).toHaveLength(1);
+      // …and everything that was not ours is still there, on both sides.
+      expect(exclude).toContain('# somebody’s own line, above');
+      expect(exclude).toContain('/scratch/');
+      expect(exclude).toContain('# somebody’s own line, below');
+      expect(exclude).toContain('/notes.local.md');
+
+      // The point of all of it: an attachment projected into the tree leaves it
+      // reading clean.
+      await mkdir(path.join(handle.path, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), {
+        recursive: true,
+      });
+      await writeFile(
+        path.join(handle.path, PROJECTED_ATTACHMENTS_ROOT, 'entry-1', 'notes.txt'),
+        'the notes',
+        'utf-8'
+      );
       expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
     });
 
