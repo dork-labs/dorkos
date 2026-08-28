@@ -66,8 +66,13 @@ vi.mock('../../../core/auth/mcp-local-token.js', async (importOriginal) => {
   return { ...actual, getMcpLocalToken: () => tokenMocks.local };
 });
 
-const { dorkosMcpUrl, resolveDorkosMcpInjection, dorkosToolsEnabledFor, DORKOS_MCP_SERVER_NAME } =
-  await import('../dorkos-mcp-injection.js');
+const {
+  dorkosMcpUrl,
+  resolveDorkosMcpInjection,
+  dorkosToolsEnabledFor,
+  DORKOS_MCP_SERVER_NAME,
+  DORKOS_MCP_HEADER_ENV_VARS,
+} = await import('../dorkos-mcp-injection.js');
 
 /** Config with the experiment on and `/mcp` mounted — the working baseline. */
 function wiredConfig(): Record<string, unknown> {
@@ -202,24 +207,49 @@ describe('the dorkos MCP entry DorkOS injects into codex and opencode', () => {
       expect(await resolveDorkosMcpInjection(agentDir, 'Researcher')).toBeNull();
     });
 
-    it('never emits a partial header set on any of those paths', async () => {
+    it('never emits a partial header set — on the withholding paths OR the injecting one', async () => {
       // The invariant behind all five: there is no state in which one header
-      // ships without the other. Checked as a property over the cases rather
-      // than trusting each case above to have noticed.
-      const partial = [
-        { runtimes: { dorkosTools: true }, mcp: { enabled: false } },
-        { runtimes: { dorkosTools: false }, mcp: { enabled: true } },
-        {},
+      // ships without the other.
+      //
+      // The wired config is FIRST and is asserted to actually inject, because
+      // without it this loop is vacuous: every other case returns null, the
+      // `if` never runs, and the whole thing passes with a header deleted from
+      // the implementation. That was measured, not imagined.
+      const cases = [
+        { config: wiredConfig(), injects: true },
+        { config: { runtimes: { dorkosTools: true }, mcp: { enabled: false } }, injects: false },
+        { config: { runtimes: { dorkosTools: false }, mcp: { enabled: true } }, injects: false },
+        { config: {}, injects: false },
       ];
-      for (const value of partial) {
-        configState.value = value;
+      let asserted = 0;
+      for (const { config, injects } of cases) {
+        configState.value = config;
         const injection = await resolveDorkosMcpInjection(agentDir, 'Researcher');
+        expect(injection !== null, JSON.stringify(config)).toBe(injects);
         if (injection !== null) {
           expect(Object.keys(injection.headers).sort()).toEqual([
             'Authorization',
             'x-dorkos-agent',
           ]);
+          asserted += 1;
         }
+      }
+      // The guard on the guard: at least one case reached the assertion.
+      expect(asserted).toBe(1);
+    });
+
+    it('has an environment variable defined for every header it emits', async () => {
+      // Codex cannot pass a header value through `config` — that becomes visible
+      // argv — so it redirects each one through an env var named in
+      // `DORKOS_MCP_HEADER_ENV_VARS`. A header added here without a variable
+      // there would have no safe way to travel, and `dorkosHeaderEnvNames`
+      // throws on it. This is the cheaper place to notice.
+      const injection = await resolveDorkosMcpInjection(agentDir, 'Researcher');
+      expect(injection).not.toBeNull();
+      for (const header of Object.keys(injection?.headers ?? {})) {
+        expect(DORKOS_MCP_HEADER_ENV_VARS[header], `no env var for the ${header} header`).toEqual(
+          expect.any(String)
+        );
       }
     });
   });

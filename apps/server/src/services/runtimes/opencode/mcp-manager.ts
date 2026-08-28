@@ -20,10 +20,8 @@ import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { AgentRegistryPort, ManagedMcpServerResolver } from '@dorkos/shared/agent-runtime';
 import { logger, logError } from '../../../lib/logger.js';
-import {
-  DORKOS_MCP_SERVER_NAME,
-  resolveDorkosMcpInjection,
-} from '../shared/dorkos-mcp-injection.js';
+import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
+import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
 import { enumerateOpenCodeMcpServers } from './mcp-status.js';
 import { toOpenCodeMcpServers, type OpenCodeMcpServerConfig } from './mcp-server-config.js';
 import type { OpenCodeClientProvider } from './session-mapper.js';
@@ -36,6 +34,25 @@ import type { OpenCodeClientProvider } from './session-mapper.js';
  * them on the next poll while keeping the getter synchronous.
  */
 const MCP_STATUS_TTL_MS = 60_000;
+
+/**
+ * What one reconcile settled, for a caller that has to describe the result to
+ * the agent.
+ *
+ * Only `dorkosApplied` is reported, and only because the PROMPT depends on it:
+ * a turn told it can post in rooms, whose `dorkos` server was never registered,
+ * spends itself discovering that. Managed servers need no equivalent — nothing
+ * writes prose about them.
+ */
+export interface EnsureManagedResult {
+  /**
+   * Whether the `dorkos` tool server is registered on this sidecar for this
+   * directory right now. `false` covers every way it is absent: the experiment
+   * is off, the directory hosts no agent, a user's own server owns the name, or
+   * the add threw.
+   */
+  dorkosApplied: boolean;
+}
 
 /** What we last registered into a live sidecar instance for one directory. */
 interface InjectedRecord {
@@ -224,7 +241,7 @@ export class OpenCodeMcpManager {
    * @param client - The live sidecar client for this turn.
    * @param cwd - The session/agent working directory (the `directory` scope).
    */
-  async ensureManaged(client: OpencodeClient, cwd: string): Promise<void> {
+  async ensureManaged(client: OpencodeClient, cwd: string): Promise<EnsureManagedResult> {
     const managed = this.resolver
       ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(cwd))
       : { servers: {}, skipped: [] };
@@ -256,12 +273,16 @@ export class OpenCodeMcpManager {
     // every turn of an install that has neither managed servers nor the DorkOS
     // tools switched on. That is the common case, and it used to be served by an
     // early return on a missing resolver, which the `dorkos` entry made wrong.
-    if (Object.keys(servers).length === 0 && prev === undefined) return;
+    if (Object.keys(servers).length === 0 && prev === undefined) {
+      return { dorkosApplied: false };
+    }
     const sameInstance = prev !== undefined && prev.client === client;
     // Same live instance, identical desired set, AND everything applied last
     // run → nothing to do. A prior partial failure (`complete: false`) falls
     // through so the failed add is retried.
-    if (sameInstance && prev.signature === signature && prev.complete) return;
+    if (sameInstance && prev.signature === signature && prev.complete) {
+      return { dorkosApplied: prev.names.has(DORKOS_MCP_SERVER_NAME) };
+    }
 
     // Names WE own on THIS live instance. On a new instance the sidecar's
     // in-memory registry was wiped, so we own nothing yet (and any name already
@@ -293,8 +314,16 @@ export class OpenCodeMcpManager {
         conflicts.push({
           name,
           type: config.type === 'remote' ? 'http' : 'stdio',
+          // Whose server the person can actually rename depends on which one is
+          // DorkOS's. For a managed server the remedy is to rename it; for
+          // `dorkos` that remedy is impossible — DorkOS owns that name and
+          // cannot move off it — so the honest instruction is to rename THEIR
+          // server instead.
           status: 'failed',
-          error: `"${name}" is already configured in OpenCode — rename the managed server to inject it`,
+          error:
+            name === DORKOS_MCP_SERVER_NAME
+              ? `a server named "${name}" is already configured in OpenCode — rename yours so DorkOS can inject its tools`
+              : `"${name}" is already configured in OpenCode — rename the managed server to inject it`,
         });
         logger.warn(
           `[OpenCodeRuntime] managed MCP server "${name}" collides with a user-configured OpenCode server — not injected`,
@@ -319,6 +348,10 @@ export class OpenCodeMcpManager {
     this.injectedByCwd.set(cwd, { client, names: appliedNames, signature, complete });
     if (conflicts.length > 0) this.conflictsByCwd.set(cwd, conflicts);
     else this.conflictsByCwd.delete(cwd);
+    // Only a name that ACTUALLY registered is in `appliedNames`, so a collision
+    // and a thrown add both report `false` here — which is the point: the caller
+    // uses this to decide whether to tell the agent it has room tools.
+    return { dorkosApplied: appliedNames.has(DORKOS_MCP_SERVER_NAME) };
   }
 
   /**

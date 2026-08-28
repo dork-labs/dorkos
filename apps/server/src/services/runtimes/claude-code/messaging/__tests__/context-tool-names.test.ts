@@ -126,7 +126,7 @@ import { buildRoomToolsBlock } from '../../../shared/room-tools-context.js';
 import {
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
-} from '../../../shared/dorkos-mcp-injection.js';
+} from '../../../shared/dorkos-tool-names.js';
 import { buildAgentContextAppend } from '../../../shared/agent-context.js';
 import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
@@ -509,6 +509,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'asar-path.ts',
       'derive-title.ts',
       'dorkos-mcp-injection.ts',
+      'dorkos-tool-names.ts',
       'gen-ui-context.ts',
       'mcp-content.ts',
       'resolve-binary.ts',

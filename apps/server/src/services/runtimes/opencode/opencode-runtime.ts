@@ -68,10 +68,7 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import {
-  dorkosToolsEnabledFor,
-  OPENCODE_DORKOS_TOOL_PREFIX,
-} from '../shared/dorkos-mcp-injection.js';
+import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import {
   checkOpenCodeDependencies,
@@ -352,33 +349,46 @@ export class OpenCodeRuntime implements AgentRuntime {
     // `buildMemoryBlock` for what that costs).
     const neutralContext = (await buildAgentContextAppend(cwd)).text;
 
-    // The room verbs, and only when this session is going to carry them (spec
-    // `tool-only-room-replies` §D11). Named under OpenCode's own MCP prefix —
-    // one underscore and no `mcp` marker, which is nothing like claude-code's —
-    // because a wrongly-prefixed name is as uncallable as a bare one (DOR-1292).
+    // Reconcile the sidecar's MCP servers BEFORE the prompt is assembled, so the
+    // room verbs are named only when the `dorkos` server really registered.
+    // Gating on an intention instead would tell the agent it can post whenever
+    // the experiment is on — including the turns where a user's own server owns
+    // the name, or the add threw — and it would spend itself finding out.
     //
-    // Gated on the no-mint predicate rather than on the injection result: the
-    // reconcile that actually registers the server needs a live sidecar client,
-    // which only exists further down inside `runOpenCodeTurn`. The two answers
-    // differ only when minting fails, which warns; see `dorkosToolsEnabledFor`.
-    // Off, this is byte-identical to what an OpenCode turn carried before.
-    const agentContext = dorkosToolsEnabledFor(this.meshCore?.getByPath(cwd) ? cwd : undefined)
+    // This is why the reconcile moved out of `runOpenCodeTurn`: the answer has
+    // to exist before the prompt, and re-running it there would mint a second
+    // token, change the signature, and re-add the server every single turn.
+    const mcpClient = await this.provider.getClient(cwd);
+    const { dorkosApplied } = await this.mcp.ensureManaged(mcpClient, cwd);
+
+    // Named under OpenCode's own MCP prefix — one underscore and no `mcp`
+    // marker, which is nothing like claude-code's — because a wrongly-prefixed
+    // name is as uncallable as a bare one (DOR-1292). Not applied, this is
+    // byte-identical to what an OpenCode turn carried before.
+    const agentContext = dorkosApplied
       ? `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`
       : neutralContext;
 
-    yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
-      const model = parseModelSelection(settings.model);
-      const prompted = await client.session.promptAsync({
-        path: { id: ocSessionId },
-        body: {
-          parts: buildOpenCodeParts(content, opts, agentContext),
-          ...(model !== undefined ? { model } : {}),
-        },
-      });
-      if (prompted.error !== undefined) {
-        throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
-      }
-    });
+    yield* this.runOpenCodeTurn(
+      sessionId,
+      cwd,
+      opts?.title,
+      async (client, ocSessionId) => {
+        const model = parseModelSelection(settings.model);
+        const prompted = await client.session.promptAsync({
+          path: { id: ocSessionId },
+          body: {
+            parts: buildOpenCodeParts(content, opts, agentContext),
+            ...(model !== undefined ? { model } : {}),
+          },
+        });
+        if (prompted.error !== undefined) {
+          throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
+        }
+      },
+      // Already reconciled above, to gate the prompt on the real outcome.
+      { alreadyReconciled: true }
+    );
   }
 
   /**
@@ -426,12 +436,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param cwd - Working directory used to resolve the client and session.
    * @param title - Optional title used only when a new OpenCode session is created.
    * @param trigger - Fires the turn against the resolved client + `ses_*` id.
+   * @param opts - `alreadyReconciled` when the caller ran
+   *   {@link OpenCodeMcpManager.ensureManaged} itself. `sendMessage` does,
+   *   because it has to know whether the `dorkos` server registered before it
+   *   can write the prompt — and reconciling twice would mint a second identity
+   *   token, change the desired-set signature, and re-add every server on every
+   *   turn.
    */
   private async *runOpenCodeTurn(
     sessionId: string,
     cwd: string,
     title: string | undefined,
-    trigger: (client: OpencodeClient, ocSessionId: string) => Promise<void>
+    trigger: (client: OpencodeClient, ocSessionId: string) => Promise<void>,
+    opts?: { alreadyReconciled?: boolean }
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
@@ -440,7 +457,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     // (spec `mcp-server-management` §6, DOR-893). Ephemeral: the sidecar's
     // `POST /mcp` mutates only its in-memory per-directory registry — no
     // `opencode.json` write — so this never pollutes the user's config.
-    await this.mcp.ensureManaged(client, cwd);
+    if (opts?.alreadyReconciled !== true) await this.mcp.ensureManaged(client, cwd);
     const directory = await this.resolveSessionDirectory(client, ocSessionId);
 
     const ctx = createOpenCodeEventContext(sessionId);

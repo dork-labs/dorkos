@@ -83,11 +83,11 @@ import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import {
-  CODEX_DORKOS_TOOL_PREFIX,
-  DORKOS_MCP_SERVER_NAME,
+  DORKOS_MCP_HEADER_ENV_VARS,
   resolveDorkosMcpInjection,
   type DorkosMcpInjection,
 } from '../shared/dorkos-mcp-injection.js';
+import { CODEX_DORKOS_TOOL_PREFIX, DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
@@ -144,25 +144,32 @@ export interface CodexRuntimeOptions {
  * `codexPathOverride` is set whenever a binary path is given, and every DorkOS
  * caller now gives one ({@link CodexRuntime} resolves it through the shared
  * ladder first) — leaving it unset falls back to the SDK's own binary discovery,
- * which THROWS when it finds nothing rather than reporting it. `config.mcp_servers` carries the
- * agent's enabled managed servers (`managedServers`, spec
- * `mcp-server-management`) plus the scoped `dorkos_ui` bridge when a UI MCP URL
- * is provided — see {@link buildMcpServersConfig} for the merge and the
- * shadowing guarantee. `config` is omitted entirely when neither source
- * contributes a server.
+ * which THROWS when it finds nothing rather than reporting it.
+ * `config.mcp_servers` carries three contributors: the agent's enabled managed
+ * servers (`managedServers`, spec `mcp-server-management`), the scoped
+ * `dorkos_ui` bridge when a UI MCP URL is provided, and the `dorkos` tool server
+ * when one is injected (`dorkosTools`, spec `tool-only-room-replies`) — see
+ * {@link buildMcpServersConfig} for the merge and the shadowing guarantee.
+ * `config` is omitted entirely when no source contributes a server.
  *
- * `extraEnv` is the ONLY reason to set `CodexOptions.env`: when provided the SDK
- * stops inheriting `process.env` wholesale, so this function spreads the parent
- * environment back in explicitly (see {@link inheritedEnv}) before layering the
- * extra keys on top. Omit it and `env` stays unset, which is the SDK's own
+ * `CodexOptions.env` has two sources, and both are secrets that must not travel
+ * any other way: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`) and the `dorkos`
+ * server's two header values, which are placed under the variable names
+ * `env_http_headers` points Codex at. Setting `env` at all stops the SDK
+ * inheriting `process.env` wholesale, so this function spreads the parent
+ * environment back in explicitly (see {@link inheritedEnv}) before layering
+ * those on top. With neither source, `env` stays unset — the SDK's own
  * inherit-everything path.
  *
  * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
  * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
  * @param extraEnv - Extra environment entries for the `codex exec` subprocess
- *   (the agent's identity token). Omitted or empty leaves `env` unset.
+ *   (the agent's identity token). Omitted or empty contributes none.
  * @param managedServers - The agent's enabled managed MCP servers, already
  *   converted to Codex config shape. Omitted or empty adds none.
+ * @param dorkosTools - The resolved `dorkos` tool server, or null/undefined to
+ *   inject none. Its URL goes into `config`; its header VALUES go into `env`,
+ *   never into `config`, because `config` becomes visible argv.
  */
 export function buildCodexOptions(
   binaryPath?: string | null,
@@ -171,12 +178,13 @@ export function buildCodexOptions(
   managedServers?: CodexMcpServerRecord,
   dorkosTools?: DorkosMcpInjection | null
 ): CodexOptions {
-  const hasExtraEnv = extraEnv !== undefined && Object.keys(extraEnv).length > 0;
+  const env = { ...(extraEnv ?? {}), ...dorkosHeaderEnv(dorkosTools) };
+  const hasExtraEnv = Object.keys(env).length > 0;
   const mcpServers = buildMcpServersConfig(mcpUiUrl, managedServers, dorkosTools);
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
     ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
-    ...(hasExtraEnv ? { env: { ...inheritedEnv(), ...extraEnv } } : {}),
+    ...(hasExtraEnv ? { env: { ...inheritedEnv(), ...env } } : {}),
   };
 }
 
@@ -210,10 +218,61 @@ function buildMcpServersConfig(
   if (dorkosTools) {
     servers[DORKOS_MCP_SERVER_NAME] = {
       url: dorkosTools.url,
-      http_headers: dorkosTools.headers,
+      // `env_http_headers`, never `http_headers`. This config object is
+      // flattened into `--config key=value` arguments on the `codex exec`
+      // command line, so a value written here lands in the spawned argv, where
+      // any process running as this user can read it with `ps`. Both values are
+      // credentials — the MCP bearer, and an identity that can post as this
+      // agent — so the config carries only the NAMES of the environment
+      // variables holding them, and Codex resolves the values inside the
+      // subprocess. `buildCodexOptions` puts them there.
+      env_http_headers: dorkosHeaderEnvNames(dorkosTools),
     };
   }
   return Object.keys(servers).length > 0 ? servers : undefined;
+}
+
+/**
+ * Header name → env var NAME, for the `env_http_headers` config entry.
+ *
+ * Derived from the headers the injection actually produced rather than from a
+ * fixed pair, so a header added there without a variable name to carry it fails
+ * loudly here instead of being dropped on the floor.
+ *
+ * @param injection - The resolved `dorkos` entry.
+ */
+function dorkosHeaderEnvNames(injection: DorkosMcpInjection): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const header of Object.keys(injection.headers)) {
+    const envVar = DORKOS_MCP_HEADER_ENV_VARS[header];
+    if (envVar === undefined) {
+      throw new Error(
+        `[CodexRuntime] no environment variable is defined for the "${header}" header. ` +
+          'Add one to DORKOS_MCP_HEADER_ENV_VARS — it must not be passed through `config`, ' +
+          'which becomes visible argv.'
+      );
+    }
+    names[header] = envVar;
+  }
+  return names;
+}
+
+/**
+ * The header VALUES, keyed by the env var Codex will read each one from.
+ *
+ * This is the half that carries the secrets, and it goes into
+ * `CodexOptions.env` — the subprocess environment — never into `config`.
+ *
+ * @param injection - The resolved `dorkos` entry, or null when none is injected.
+ */
+function dorkosHeaderEnv(injection?: DorkosMcpInjection | null): Record<string, string> {
+  if (!injection) return {};
+  const values: Record<string, string> = {};
+  for (const [header, value] of Object.entries(injection.headers)) {
+    const envVar = DORKOS_MCP_HEADER_ENV_VARS[header];
+    if (envVar !== undefined) values[envVar] = value;
+  }
+  return values;
 }
 
 /**

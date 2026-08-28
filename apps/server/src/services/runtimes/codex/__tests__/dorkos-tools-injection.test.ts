@@ -178,18 +178,64 @@ describe('the dorkos tool server on a Codex turn', () => {
   }
 
   describe('flag ON', () => {
-    it('injects a streamable-HTTP dorkos server carrying both headers', async () => {
+    it('injects a streamable-HTTP dorkos server naming both headers by env var', async () => {
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
 
       const dorkos = lastMcpServers()['dorkos'];
       expect(dorkos).toBeDefined();
       expect(dorkos?.['url']).toBe('http://localhost:4242/mcp');
-      const headers = dorkos?.['http_headers'] as Record<string, string>;
-      expect(headers['Authorization']).toBe('Bearer dork_mcp_local_abc123');
-      // Without this one `callerAuthor` falls through to the install owner and
-      // the agent posts in the operator's name.
-      expect(headers['x-dorkos-agent']).toEqual(expect.any(String));
-      expect(headers['x-dorkos-agent']).not.toBe('');
+      // `env_http_headers`, never `http_headers` — see the argv case below.
+      expect(dorkos?.['http_headers']).toBeUndefined();
+      expect(dorkos?.['env_http_headers']).toEqual({
+        Authorization: 'DORKOS_MCP_HEADER_AUTHORIZATION',
+        // Without this one `callerAuthor` falls through to the install owner and
+        // the agent posts in the operator's name.
+        'x-dorkos-agent': 'DORKOS_MCP_HEADER_AGENT_TOKEN',
+      });
+    });
+
+    it('keeps both credential VALUES out of the config, and puts them in the env', async () => {
+      // The vulnerability this shape exists for. `CodexOptions.config` is
+      // flattened by the SDK into `--config key=value` arguments on the
+      // `codex exec` command line, so anything written there is in the spawned
+      // process's argv — readable by any process running as this user, with a
+      // bare `ps`. Both values are credentials: one is the MCP bearer for this
+      // whole instance, the other is an identity that can post in rooms AS this
+      // agent.
+      //
+      // Asserted by serialising the WHOLE options object and searching it,
+      // rather than by checking the one key they used to live under: the SDK
+      // flattens nested config, so a value could reappear under any path, and a
+      // key-specific check would not notice.
+      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
+
+      const options = sdkMocks.constructorOptions.at(-1) as {
+        config?: unknown;
+        env?: Record<string, string>;
+      };
+      const bearer = 'dork_mcp_local_abc123';
+      const agentToken = options.env?.['DORKOS_MCP_HEADER_AGENT_TOKEN'];
+
+      // The env carries them — that is the whole point of the redirection.
+      expect(options.env?.['DORKOS_MCP_HEADER_AUTHORIZATION']).toBe(`Bearer ${bearer}`);
+      expect(agentToken).toEqual(expect.any(String));
+      expect(agentToken).not.toBe('');
+
+      // And the config carries neither, anywhere in it.
+      const serializedConfig = JSON.stringify(options.config ?? {});
+      expect(serializedConfig).not.toContain(bearer);
+      expect(serializedConfig).not.toContain(agentToken);
+      expect(serializedConfig).not.toContain('Bearer ');
+    });
+
+    it('still inherits the parent environment when it adds the header vars', async () => {
+      // Setting `CodexOptions.env` at all stops the SDK inheriting `process.env`
+      // wholesale, so the header vars must not cost the subprocess its PATH.
+      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
+      const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
+      expect(env?.['PATH']).toBe(process.env['PATH']);
+      // The agent's own identity var still rides alongside them.
+      expect(env?.['DORKOS_AGENT_TOKEN']).toEqual(expect.any(String));
     });
 
     it('never mints a URL containing 127.0.0.1, including the UI bridge (DOR-723)', async () => {
@@ -206,16 +252,17 @@ describe('the dorkos tool server on a Codex turn', () => {
 
     it('mints a fresh identity token per TURN, so a long session cannot go stale', async () => {
       // The 30-day absolute fuse is why this is per turn rather than per
-      // session: a cached header would eventually 401 on every room write.
+      // session: a cached credential would eventually 401 on every room write.
+      // Read off the ENV now, which is where the value lives.
+      const agentTokenOf = (): string | undefined =>
+        (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env?.[
+          'DORKOS_MCP_HEADER_AGENT_TOKEN'
+        ];
       const runtime = makeRuntime();
       await drain(runtime.sendMessage('s1', 'one', { cwd: agentDir }));
-      const first = (lastMcpServers()['dorkos']?.['http_headers'] as Record<string, string>)[
-        'x-dorkos-agent'
-      ];
+      const first = agentTokenOf();
       await drain(runtime.sendMessage('s1', 'two', { cwd: agentDir }));
-      const second = (lastMcpServers()['dorkos']?.['http_headers'] as Record<string, string>)[
-        'x-dorkos-agent'
-      ];
+      const second = agentTokenOf();
       expect(first).toBeDefined();
       expect(second).toBeDefined();
       expect(second).not.toBe(first);

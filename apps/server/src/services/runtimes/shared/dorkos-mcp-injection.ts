@@ -44,39 +44,32 @@ import { configManager } from '../../core/config-manager.js';
 import { getMcpLocalToken } from '../../core/auth/mcp-local-token.js';
 import { resolveAgentTokenEnv, AGENT_TOKEN_ENV_VAR } from '../../core/agent-identity/index.js';
 import { AGENT_IDENTITY_HEADER } from '../../../middleware/agent-identity.js';
+import { DORKOS_MCP_SERVER_NAME } from './dorkos-tool-names.js';
+
+export { DORKOS_MCP_SERVER_NAME };
 
 /**
- * The name the injected server is registered under, on both runtimes.
+ * The environment variables Codex reads the two header VALUES out of.
  *
- * It matches the in-session server's name on claude-code deliberately: an agent
- * that moves between runtimes should not have to learn a second spelling of the
- * same tool. Both adapters reserve it so a user's own server of this name cannot
- * shadow it.
+ * Codex flattens `CodexOptions.config` into `--config key=value` arguments on
+ * the `codex exec` command line, so a header value written into `http_headers`
+ * is an argv entry — readable by any process running as this user, via `ps`.
+ * Both of these values are credentials (one is the MCP bearer, the other is an
+ * agent identity that can post as that agent), so neither may go there.
+ *
+ * Codex's `env_http_headers` takes header name → env var NAME and resolves the
+ * value inside the subprocess, so the config carries only these variable names
+ * and the secrets ride the environment — the same channel `DORKOS_AGENT_TOKEN`
+ * already uses.
+ *
+ * The names are prefixed and explicit rather than short, because they are
+ * spread into an inherited environment: a collision would silently replace a
+ * credential with somebody else's value.
  */
-export const DORKOS_MCP_SERVER_NAME = 'dorkos';
-
-/**
- * What Codex puts in front of a `dorkos` MCP tool name.
- *
- * Codex qualifies plugin-provided MCP tools as `mcp__server__tool` — stated in
- * its own system prompt, and already the convention `event-mapper.ts` reproduces
- * when it maps an `mcp_tool_call` into a StreamEvent.
- *
- * Assembled from {@link DORKOS_MCP_SERVER_NAME} rather than written out, so
- * renaming the server moves the prompt with it and cannot leave the two
- * disagreeing.
- */
-export const CODEX_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__`;
-
-/**
- * What OpenCode puts in front of a `dorkos` MCP tool name.
- *
- * OpenCode composes `sanitize(server) + "_" + sanitize(tool)` and hands that key
- * straight to the model as the callable function name — one underscore, and no
- * `mcp` marker at all. Neither `dorkos` nor any DorkOS tool name contains a
- * character its sanitizer rewrites, so the result is exactly this concatenation.
- */
-export const OPENCODE_DORKOS_TOOL_PREFIX = `${DORKOS_MCP_SERVER_NAME}_`;
+export const DORKOS_MCP_HEADER_ENV_VARS: Readonly<Record<string, string>> = {
+  Authorization: 'DORKOS_MCP_HEADER_AUTHORIZATION',
+  [AGENT_IDENTITY_HEADER]: 'DORKOS_MCP_HEADER_AGENT_TOKEN',
+};
 
 /** One injected `dorkos` server: where to reach it, and what to present. */
 export interface DorkosMcpInjection {

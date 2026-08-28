@@ -180,12 +180,40 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
     // server is ours.
     const { client, adds } = fakeSidecar(['dorkos']);
     const manager = makeManager(agentDir);
-    await manager.ensureManaged(client, agentDir);
+    const result = await manager.ensureManaged(client, agentDir);
 
     expect(adds).toHaveLength(0);
     const conflict = manager.getStatus(agentDir)?.find((entry) => entry.name === 'dorkos');
     expect(conflict?.status).toBe('failed');
-    expect(conflict?.error).toContain('already configured in OpenCode');
+    // The remedy has to be one the PERSON can carry out. DorkOS owns the name
+    // `dorkos` and cannot move off it, so telling them to rename the managed
+    // server — the wording every other collision gets — is an instruction that
+    // cannot be followed.
+    expect(conflict?.error).toBe(
+      'a server named "dorkos" is already configured in OpenCode — rename yours so DorkOS can inject its tools'
+    );
+    // And the reconcile reports the truth, which is what the prompt is gated on.
+    expect(result.dorkosApplied).toBe(false);
+  });
+
+  it('reports dorkosApplied false when the add throws, so the prompt stays honest', async () => {
+    // The other divergence the prompt gate used to miss: the server was desired
+    // and not refused, but registering it failed. An agent told it can post in
+    // rooms would spend a turn discovering otherwise.
+    const { client, adds } = fakeSidecar();
+    vi.mocked(client.mcp.add).mockRejectedValueOnce(new Error('sidecar exploded'));
+    const result = await makeManager(agentDir).ensureManaged(client, agentDir);
+    expect(adds).toHaveLength(0);
+    expect(result.dorkosApplied).toBe(false);
+  });
+
+  it('reports dorkosApplied true on a successful add, and again on the cheap re-check', async () => {
+    // The positive half, without which every assertion above is satisfied by a
+    // method that always returns false.
+    const { client } = fakeSidecar();
+    const manager = makeManager(agentDir);
+    expect((await manager.ensureManaged(client, agentDir)).dorkosApplied).toBe(true);
+    expect((await manager.ensureManaged(client, agentDir)).dorkosApplied).toBe(true);
   });
 
   describe('when it withholds', () => {
