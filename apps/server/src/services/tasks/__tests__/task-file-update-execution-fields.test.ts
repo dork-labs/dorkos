@@ -91,7 +91,8 @@ describe('planTaskFileUpdate — where the trio is written', () => {
     );
 
     expect(plan.kind).toBe('write');
-    const block = plan.kind === 'write' ? (plan.frontmatter.schedule as Record<string, unknown>) : {};
+    const block =
+      plan.kind === 'write' ? (plan.frontmatter.schedule as Record<string, unknown>) : {};
     expect(block).not.toHaveProperty('runtime');
     expect(block).not.toHaveProperty('model');
     // Untouched fields survive — a clear of one is not a reset of the block.
@@ -102,7 +103,8 @@ describe('planTaskFileUpdate — where the trio is written', () => {
     const plan = planTaskFileUpdate(FILE_PATH, file(), { description: 'Sweep harder' });
 
     expect(plan.kind).toBe('write');
-    const block = plan.kind === 'write' ? (plan.frontmatter.schedule as Record<string, unknown>) : {};
+    const block =
+      plan.kind === 'write' ? (plan.frontmatter.schedule as Record<string, unknown>) : {};
     expect(block).not.toHaveProperty('runtime');
     expect(block).not.toHaveProperty('model');
     expect(block).not.toHaveProperty('effort');

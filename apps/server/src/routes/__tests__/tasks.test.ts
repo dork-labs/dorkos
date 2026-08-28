@@ -569,7 +569,9 @@ describe('Tasks routes', () => {
     });
 
     it('sets runtime, model and effort, and clears them with null (DOR-1615)', async () => {
-      const sched = store.createTask(taskInput({ name: 'Retarget', prompt: 'p', cron: '0 * * * *' }));
+      const sched = store.createTask(
+        taskInput({ name: 'Retarget', prompt: 'p', cron: '0 * * * *' })
+      );
 
       const set = await request(app)
         .patch(`/api/tasks/${sched.id}`)

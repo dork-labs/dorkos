@@ -154,7 +154,10 @@ describe('capabilitiesForTaskRuntime', () => {
     expect(
       capabilitiesForTaskRuntime(
         'codex',
-        registry({ 'claude-code': CLAUDE_CODE_CAPABILITIES, codex: CODEX_CAPABILITIES }, 'claude-code')
+        registry(
+          { 'claude-code': CLAUDE_CODE_CAPABILITIES, codex: CODEX_CAPABILITIES },
+          'claude-code'
+        )
       )
     ).toBe(CODEX_CAPABILITIES);
   });
@@ -164,10 +167,7 @@ describe('capabilitiesForTaskRuntime', () => {
       expect(
         capabilitiesForTaskRuntime(
           named,
-          registry(
-            { 'claude-code': CLAUDE_CODE_CAPABILITIES, codex: CODEX_CAPABILITIES },
-            'codex'
-          )
+          registry({ 'claude-code': CLAUDE_CODE_CAPABILITIES, codex: CODEX_CAPABILITIES }, 'codex')
         )
       ).toBe(CODEX_CAPABILITIES);
     }

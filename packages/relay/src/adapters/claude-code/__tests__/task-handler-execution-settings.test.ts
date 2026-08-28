@@ -117,7 +117,14 @@ describe('handleTasksMessage execution settings (DOR-1615/DOR-1347)', () => {
     // every task envelope meant before these fields — so an envelope written by
     // an older build (a dead-letter replay) still runs, and runs identically. A
     // `model: undefined` handed to the runtime is not the same as silence.
-    await handleTasksMessage('sub', envelopeFor(basePayload()), undefined, Date.now(), config, deps);
+    await handleTasksMessage(
+      'sub',
+      envelopeFor(basePayload()),
+      undefined,
+      Date.now(),
+      config,
+      deps
+    );
 
     const [, ensureOpts] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
     const [, , sendOpts] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;

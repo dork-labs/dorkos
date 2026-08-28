@@ -161,7 +161,7 @@ export const STICKY_DESCRIPTION =
  */
 export const RUNTIME_DESCRIPTION =
   'Which agent runtime the scheduled task runs on — "claude-code", "codex" or "opencode". ' +
-  'Leave it out and it runs on whatever the task\'s agent runs on, which is almost always ' +
+  "Leave it out and it runs on whatever the task's agent runs on, which is almost always " +
   'what you want. A runtime that is not turned on here fails the run rather than quietly ' +
   'running somewhere else.';
 
@@ -175,13 +175,13 @@ export const RUNTIME_DESCRIPTION =
 export const MODEL_DESCRIPTION =
   'Which model the scheduled task runs on, written the way the chosen runtime names it ' +
   '("sonnet", "gpt-5.5", "anthropic/claude-sonnet-4-5"). Leave it out to use the agent\'s own ' +
-  'model, then this DorkOS\'s default. A name the runtime does not offer is reported when the ' +
+  "model, then this DorkOS's default. A name the runtime does not offer is reported when the " +
   'task runs, not now.';
 
 /** The description both tools give the `effort` argument — how hard the model thinks. */
 export const EFFORT_DESCRIPTION =
-  'How hard the model thinks during each run. Leave it out to use the agent\'s own setting, ' +
-  'then this DorkOS\'s default. A runtime that has no such setting ignores it.';
+  "How hard the model thinks during each run. Leave it out to use the agent's own setting, " +
+  "then this DorkOS's default. A runtime that has no such setting ignores it.";
 
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =

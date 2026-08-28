@@ -1,13 +1,7 @@
 import { Cron } from 'croner';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
-import type {
-  EffortLevel,
-  Task,
-  TaskRun,
-  PermissionMode,
-  StreamEvent,
-} from '@dorkos/shared/types';
+import type { EffortLevel, Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -816,7 +810,10 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return { cwd: (await resolveSessionCwd({ agentPath: projectPath })).cwd, agentPath: projectPath };
+      return {
+        cwd: (await resolveSessionCwd({ agentPath: projectPath })).cwd,
+        agentPath: projectPath,
+      };
     }
     // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
     // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an

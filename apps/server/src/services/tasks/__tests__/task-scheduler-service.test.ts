@@ -812,9 +812,7 @@ describe('TaskSchedulerService', () => {
     ): Promise<TaskRun | null> {
       const before = mockRelay.publish.mock.calls.length;
       const run = await service.triggerManualRun(taskId);
-      await vi.waitFor(() =>
-        expect(mockRelay.publish.mock.calls.length).toBeGreaterThan(before)
-      );
+      await vi.waitFor(() => expect(mockRelay.publish.mock.calls.length).toBeGreaterThan(before));
       return run;
     }
 
@@ -2254,9 +2252,9 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     // A second fire on the SAME runtime resumes that session — the control that
     // makes the next assertion mean something.
     const second = await runToCompletion(service, task.id);
-    expect(
-      vi.mocked(managers['claude-code']!.ensureSession).mock.calls.at(-1)![1]
-    ).toMatchObject({ hasStarted: true });
+    expect(vi.mocked(managers['claude-code']!.ensureSession).mock.calls.at(-1)![1]).toMatchObject({
+      hasStarted: true,
+    });
     expect(second.resolvedRuntime).toBe('claude-code');
 
     // Now move it. The prior session belongs to Claude Code and there is nothing

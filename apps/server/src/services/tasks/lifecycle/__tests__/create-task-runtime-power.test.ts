@@ -41,9 +41,8 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 
 vi.mock('../../../core/runtime-registry.js', async () => {
-  const { CLAUDE_CODE_CAPABILITIES } = await import(
-    '../../../runtimes/claude-code/runtime-constants.js'
-  );
+  const { CLAUDE_CODE_CAPABILITIES } =
+    await import('../../../runtimes/claude-code/runtime-constants.js');
   const { CODEX_CAPABILITIES } = await import('../../../runtimes/codex/runtime-constants.js');
   const registered: Record<string, unknown> = {
     'claude-code': CLAUDE_CODE_CAPABILITIES,

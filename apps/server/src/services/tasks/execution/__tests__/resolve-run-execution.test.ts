@@ -35,7 +35,9 @@ import {
 // singleton, which is undefined until the server boots. Mocked so the tier can
 // be given a value on purpose — an unmocked test would silently never exercise
 // it and would still pass.
-const storedRuntimes = vi.hoisted(() => ({ current: undefined as UserConfig['runtimes'] | undefined }));
+const storedRuntimes = vi.hoisted(() => ({
+  current: undefined as UserConfig['runtimes'] | undefined,
+}));
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'runtimes' ? storedRuntimes.current : undefined),
