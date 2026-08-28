@@ -685,6 +685,38 @@ describe('RoomMergeService', () => {
       const refusal = await refusalOf(merges.status(ROOM_ID, BEN));
       expect(refusal.code).toBe('ROOM_NOT_FOUND');
     });
+
+    it('gives each caller their OWN branch as `mine`, even off the same cached answer', async () => {
+      // The answer is memoized per `(room, main sha)` for a few seconds, and
+      // `mine` is the one field in it that is about who ASKED rather than about
+      // the room. So the cache must hold the room's answer and re-aim `mine`
+      // per caller — the tempting mistake is to cache the whole per-caller
+      // object, which hands the second caller the first one's idea of whose
+      // branch is theirs. Both agents commit so both have a branch to own.
+      await enableRepo();
+      await commitIn(ANA, 'ana.md', 'ana\n');
+      await commitIn(BEN, 'ben.md', 'ben\n');
+
+      // Ana asks first: a cache miss, so this computes and stores.
+      const forAna = await merges.status(ROOM_ID, ANA);
+      // Ben asks inside the memo window: a cache HIT on the same `main` sha, so
+      // this exercises `withCaller` on a cached answer rather than a fresh one.
+      const forBen = await merges.status(ROOM_ID, BEN);
+
+      const anaSlug = slugOf(ANA);
+      const benSlug = slugOf(BEN);
+
+      // Each sees exactly their own row as theirs.
+      expect(forAna.branches.find((b) => b.slug === anaSlug)?.mine).toBe(true);
+      expect(forAna.branches.find((b) => b.slug === benSlug)?.mine).toBe(false);
+      expect(forBen.branches.find((b) => b.slug === benSlug)?.mine).toBe(true);
+      expect(forBen.branches.find((b) => b.slug === anaSlug)?.mine).toBe(false);
+
+      // And it really was one cached computation, not two: the two answers agree
+      // on every field that is about the ROOM, differing only in `mine`.
+      expect(forBen.mainCommit).toBe(forAna.mainCommit);
+      expect(forBen.branches.map((b) => b.slug)).toEqual(forAna.branches.map((b) => b.slug));
+    });
   });
 
   describe('mergeNoFf', () => {
