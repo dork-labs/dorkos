@@ -234,10 +234,23 @@ const roomHarness = createRoomHarness({
 });
 
 /** A channel the conformance caller (the operator, login off) belongs to. */
-const CONFORMANCE_ROOM_ID = roomHarness.service.createRoom(
+const CONFORMANCE_ROOM = roomHarness.service.createRoom(
   { kind: 'channel', title: 'Conformance', members: [], agentPaths: [] },
   roomHarness.human
-).id;
+);
+const CONFORMANCE_ROOM_ID = CONFORMANCE_ROOM.id;
+
+/**
+ * The channel's own `#name`, read off the room rather than assumed from its
+ * title — `find_room`'s fixture has to name a room that really exists, and a
+ * slug this file spelled by hand would keep passing after `slugify` changed its
+ * mind. Loud rather than defaulted: a channel with no slug means the fixture
+ * stopped being what this suite thinks it is.
+ */
+const CONFORMANCE_ROOM_SLUG = CONFORMANCE_ROOM.slug;
+if (!CONFORMANCE_ROOM_SLUG) {
+  throw new Error('conformance fixture: the channel came back with no slug to search by');
+}
 
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
@@ -500,6 +513,14 @@ capabilityConformance(registry, {
     'rooms.search_history': { roomId: CONFORMANCE_ROOM_ID, query: 'conformance' },
     'rooms.list_member_rooms': {},
     'rooms.search_member_rooms': { query: 'conformance' },
+    'rooms.get_room': { roomId: CONFORMANCE_ROOM_ID },
+    // A REAL filter, deliberately. `find_room` would have passed this suite with
+    // `{}` too — but only by accident: its no-filter guard answers a typed
+    // MISSING_FILTER, which reads as "structured refusal, therefore wired" while
+    // never reaching the service at all. Naming the room's own `#slug` makes the
+    // invocation do the thing the suite is asking about, and exercises the sigil
+    // that `normalizeRoomNameNeedle` strips on the way in.
+    'rooms.find_room': { name: `#${CONFORMANCE_ROOM_SLUG}` },
   },
 });
 
@@ -514,7 +535,7 @@ describe('capability conformance wiring', () => {
     expect(ids).toContain('capabilities.list');
     // Rooms is the newest arrival (DOR-1611) and the one most at risk of
     // dropping back out: it is gated on `roomDeps`, so forgetting the handle in
-    // this fixture would silently take six verbs out of every check above
+    // this fixture would silently take eight verbs out of every check above
     // without failing a single one of them.
     expect(ids).toContain('rooms.post');
   });
