@@ -21,3 +21,4 @@ export { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './roo
 export { RoomConventions, ROOM_CONVENTIONS_TAG } from './room-conventions.js';
 export { readRoomRepoConfig, type RoomRepoConfig } from './room-repo-config.js';
 export { GitUnavailableError } from './room-repo-git.js';
+export { RoomFilesService } from './room-files.js';

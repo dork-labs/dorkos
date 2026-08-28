@@ -272,9 +272,11 @@ import {
   setWelcomeBackGreeter,
   setRoomAttachmentStores,
   setRoomRepoService,
+  setRoomFilesService,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
+  RoomFilesService,
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
@@ -1174,28 +1176,38 @@ async function start() {
   // turning the feature on or changing a cap binds the next request rather
   // than the next server start.
   const roomRepoStore = new RoomRepoStore(db, dorkHome);
-  setRoomRepoService(
-    new RoomRepoService({
+  const roomRepoService = new RoomRepoService({
+    store: roomRepoStore,
+    enabled: () => readRoomRepoConfig().enabled,
+    getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
+    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // The person's own name from their profile, which is the only place a
+    // real human name is stored on this machine — never the room registry's
+    // label for them, which `bindOwner` fixes at 'You' forever (right in
+    // their own window, bizarre in `git log`).
+    operatorGitName: resolveOperatorDisplayName,
+    caps: () => {
+      const repo = readRoomRepoConfig();
+      return {
+        maxFileBytes: repo.maxFileBytes,
+        maxRepoBytes: repo.maxRepoBytes,
+        maxRoomMdBytes: repo.maxRoomMdBytes,
+      };
+    },
+    // What may be SENT, as against what `caps` froze onto a room's sidecar
+    // for what may be merged IN. Read per turn, like every other value here.
+    maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+  });
+  setRoomRepoService(roomRepoService);
+  // Reading those files back (spec §3.9). It shares the store and nothing
+  // else: `hasRepo` already folds the feature flag in, so a room whose files
+  // are switched off reads exactly as a room that never had any, and the size
+  // ceiling is read per call so lowering it binds the next request.
+  setRoomFilesService(
+    new RoomFilesService({
       store: roomRepoStore,
-      enabled: () => readRoomRepoConfig().enabled,
-      getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
-      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-      // The person's own name from their profile, which is the only place a
-      // real human name is stored on this machine — never the room registry's
-      // label for them, which `bindOwner` fixes at 'You' forever (right in
-      // their own window, bizarre in `git log`).
-      operatorGitName: resolveOperatorDisplayName,
-      caps: () => {
-        const repo = readRoomRepoConfig();
-        return {
-          maxFileBytes: repo.maxFileBytes,
-          maxRepoBytes: repo.maxRepoBytes,
-          maxRoomMdBytes: repo.maxRoomMdBytes,
-        };
-      },
-      // What may be SENT, as against what `caps` froze onto a room's sidecar
-      // for what may be merged IN. Read per turn, like every other value here.
-      maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+      hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+      maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
