@@ -3,6 +3,7 @@ covers:
   - 'feat(server): agents can look up rooms by name or by who is in them (DOR-1610)'
   - 'feat(server): register the room lookups on the gates that decide who may call them (DOR-1610)'
   - "fix(server): review fixes — find_room '#' guard, honest gate comments, three new pins (DOR-1610)"
+  - 'fix(server): one normalizer decides what a name filter means (DOR-1610)'
 ---
 
 ### Added

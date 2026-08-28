@@ -127,6 +127,8 @@ import {
   FIND_ROOMS_MAX,
   HISTORY_PAGE_MAX,
   MEMBER_ROOMS_PAGE_MAX,
+  normalizeMemberHandle,
+  normalizeRoomNameNeedle,
   type RoomDetail,
   type RoomService,
 } from './room-service.js';
@@ -779,16 +781,16 @@ export const roomsDomain: CapabilityDomain = {
         // which reaches the model with no `code` and no sentence saying what to
         // do instead — the exact shape `answering` exists to prevent.
         //
-        // Blank counts as absent: `"  "`, `"#"` and `["@"]` all pass the schema,
-        // narrow nothing, and would quietly degrade a find into a capped list.
-        // The sigil comes off BEFORE the emptiness test on both fields for the
-        // same reason — a `#` or an `@` with no name after it is a filter that
-        // reduces to nothing, and the service strips both too, so a guard
-        // reading the raw string would wave through exactly what the service
-        // then discards.
-        const name = input.name?.trim().replace(/^#/, '').trim();
+        // Blank counts as absent: `"  "`, `"#"`, `"##"` and `["@@"]` all pass the
+        // schema, narrow nothing, and would quietly degrade a find into a capped
+        // list. What decides that is the SERVICE's own normalizers rather than a
+        // second opinion spelled here — the earlier version stripped one sigil
+        // on each side of the seam, so `"##"` read as non-empty to the guard and
+        // as empty to the matcher, and an empty needle matches everything. One
+        // function, asked twice, cannot disagree with itself.
+        const name = input.name === undefined ? '' : normalizeRoomNameNeedle(input.name);
         const members = (input.members ?? [])
-          .map((handle) => handle.trim().replace(/^@/, ''))
+          .map(normalizeMemberHandle)
           .filter((handle) => handle.length > 0);
         if (!name && members.length === 0) {
           throw new CapabilityToolError({

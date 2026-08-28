@@ -754,20 +754,41 @@ describe('the rooms capability domain', () => {
     it('refuses a filter that narrows nothing, rather than quietly listing everything', async () => {
       // Every one of these passes the schema and matches every room the caller
       // is in, which would turn a find into a capped list wearing the wrong
-      // name. The two sigils are the sharp cases: the service strips `#` and
-      // `@` before matching, so a guard that tested the RAW string would wave
-      // through exactly what the service then reduces to nothing.
+      // name. The sigils are the sharp cases, and the DOUBLED ones are sharper
+      // still: while the guard and the matcher each stripped one `#`, `"##"`
+      // read as a real filter on the way in and as an empty needle on the way
+      // out — and an empty needle matches everything. Both now ask the same
+      // normalizer, so there is no arithmetic left to get wrong.
       for (const input of [
         { name: '   ' },
         { name: '#' },
         { name: ' # ' },
+        { name: '##' },
+        { name: ' ## ' },
+        { name: '####' },
         { members: ['@'] },
+        { members: ['@@'] },
         { members: ['@', ' '] },
+        { name: '#', members: ['@'] },
       ]) {
         await expect(call('rooms.find_room', input), JSON.stringify(input)).rejects.toMatchObject({
           payload: { code: 'MISSING_FILTER' },
         });
       }
+    });
+
+    it('takes a sigil-heavy filter that still names something, and simply finds nothing', async () => {
+      // The other side of the refusal, and the one that keeps it honest: the
+      // guard must refuse an EMPTY needle, never a strange-looking one. `##`
+      // in front of a real word still names that word, so this is an ordinary
+      // search that happens to match no room — an empty list, not an error.
+      await expect(findAs({ name: '##no-such-room' })).resolves.toEqual([]);
+      await expect(findAs({ members: ['@@nobody'] })).resolves.toEqual([]);
+      // And the same shape over a name that DOES match proves the sigils were
+      // stripped rather than merely tolerated.
+      expect((await findAs({ name: '##backend' })).map((room) => room.roomId)).toEqual([
+        channel.id,
+      ]);
     });
 
     it(`answers at most ${FIND_ROOMS_MAX} matches, however many there are`, async () => {

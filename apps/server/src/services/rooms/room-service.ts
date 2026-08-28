@@ -476,6 +476,48 @@ export interface FindMemberRoomsFilter {
 }
 
 /**
+ * What a `find_room` name filter MEANS, decided in one place.
+ *
+ * Trim, drop every leading `#`, lowercase. Both callers ask this rather than
+ * spelling it themselves, and that is the whole point: the guard in
+ * `room-capabilities.ts` has to refuse a filter that narrows nothing, and it can
+ * only do that if it computes the same needle {@link RoomService.findMemberRooms}
+ * will match on. Two hand-rolled copies is exactly how `"##"` got through — each
+ * side stripped ONE `#`, so the guard saw a non-empty `"#"`, the matcher saw an
+ * empty string, and an empty needle matches every room the caller is in.
+ *
+ * **Every leading `#`, not one**, which also makes this idempotent: normalizing
+ * an already-normalized needle is a no-op, so the guard may hand its own result
+ * to the service without the second pass changing it again.
+ *
+ * @param name - What the caller typed.
+ * @returns The needle to match on. Empty means the filter narrows nothing.
+ */
+export function normalizeRoomNameNeedle(name: string): string {
+  return name.trim().replace(/^#+/, '').trim().toLowerCase();
+}
+
+/**
+ * What a `find_room` member filter MEANS, decided in one place.
+ *
+ * The `@` twin of {@link normalizeRoomNameNeedle}, and it had the same defect
+ * for the same reason: `["@@"]` survived a guard that stripped one `@` and then
+ * emptied out in the service, leaving `wanted` empty — which
+ * {@link RoomService.holdsEveryHandle} reads as "no handle filter at all", so a
+ * caller asking for an impossible roster got every room instead of none.
+ *
+ * Also used on the handles read back OFF a roster, so both sides of the
+ * comparison are normalized by the same function rather than by two rules that
+ * agree today.
+ *
+ * @param handle - A handle as typed, with or without its sigil.
+ * @returns The handle to compare on. Empty means it names nobody.
+ */
+export function normalizeMemberHandle(handle: string): string {
+  return handle.trim().replace(/^@+/, '').trim().toLowerCase();
+}
+
+/**
  * What a room is called when an agent is told about it.
  *
  * `#slug` for a channel, because that is the name a person types and the name
@@ -2793,9 +2835,9 @@ export class RoomService {
    * @returns At most {@link FIND_ROOMS_MAX} matches, newest activity first.
    */
   findMemberRooms(viewerAuthorId: string, filter: FindMemberRoomsFilter): RoomDetail[] {
-    const needle = filter.name?.trim().replace(/^#/, '').toLowerCase();
+    const needle = filter.name === undefined ? undefined : normalizeRoomNameNeedle(filter.name);
     const wanted = (filter.memberHandles ?? [])
-      .map((handle) => handle.trim().replace(/^@/, '').toLowerCase())
+      .map(normalizeMemberHandle)
       .filter((handle) => handle.length > 0);
     const joinedAt = new Map(
       this.store
@@ -2827,7 +2869,7 @@ export class RoomService {
     const held = new Set<string>();
     for (const member of this.store.listMembers(room.id)) {
       const handle = this.authorRegistry.getById(member.authorId)?.handle;
-      if (handle) held.add(handle.toLowerCase());
+      if (handle) held.add(normalizeMemberHandle(handle));
     }
     return wanted.every((handle) => held.has(handle));
   }
