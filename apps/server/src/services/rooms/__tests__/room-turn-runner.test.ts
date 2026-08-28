@@ -5,6 +5,16 @@
  * model. The projector is the REAL projector — which is the point, because the
  * claim this file checks is that a room reads the agent's answer off the same
  * stream a client renders from, gap-free from a cursor taken before the turn.
+ *
+ * Seeded defects, each run red before the code stood:
+ *
+ * - Stamping `request.agentPath` where `request.cwd` belongs reddens "runs the
+ *   turn — and projects its files — in the directory the room resolved": the
+ *   dispatch and the projector both go to the agent's home instead of the tree
+ *   the room placed the turn in.
+ * - Projecting attachments under `agentPath` reddens the same test, and does it
+ *   silently in production: the model is told a relative path that resolves to
+ *   nothing from where it is standing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync } from 'fs';

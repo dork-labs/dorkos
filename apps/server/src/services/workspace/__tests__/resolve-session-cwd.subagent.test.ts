@@ -1,5 +1,5 @@
 /**
- * The subagent invariant, as a structural guard — the second of its two halves.
+ * The subagent invariant, guarded on the import graph — the second of its two halves.
  *
  * **The binding resolves exactly once per turn, at the session boundary, before
  * the runtime is invoked.** A subagent is the same agent doing the same task, so
@@ -45,16 +45,28 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * - the session route's message-send path — a person pressing enter;
  * - the task scheduler — a cron tick starting a scheduled run;
  * - the relay binding router — an inbound chat message opening or feeding a
- *   session.
+ *   session;
+ * - the room trigger dispatcher — a message in a room starting an agent's turn.
  *
  * Adding a file here is a deliberate act. Adding one that runs INSIDE a turn —
  * a tool handler, a runtime adapter, a transcript reader — breaks the invariant
  * this suite exists for, and this list is where that argument has to be made.
+ *
+ * **The room dispatcher is the fourth, added for DOR-1597, and the argument is
+ * this.** A room turn BEGINS there: `runOneInDispatch` is the moment a room
+ * message becomes an agent's turn, and nothing is running yet. It resolves the
+ * directory once, before `buildRoomContext` — which has to be before, because
+ * the context names attachment paths anchored on that directory and the runner
+ * then puts the files there (DOR-1266), so a cwd decided later would describe
+ * files the model cannot open. It is the DISPATCHER rather than
+ * `room-turn-runner.ts` for the same reason: by the time the runner has the
+ * request, the context describing it has already been built.
  */
 const ALLOWED = new Set([
   'routes/sessions.ts',
   'services/tasks/task-scheduler-service.ts',
   'services/relay/binding-router.ts',
+  'services/rooms/room-trigger.ts',
 ]);
 
 /** Every `.ts` file under `apps/server/src`, relative to it, tests excluded. */

@@ -191,9 +191,12 @@ import {
 } from './room-collect.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
 import { buildRoomContext } from './room-context.js';
-import { resolveRoomTurnCwd } from './repo/room-turn-cwd.js';
-import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
-import type { ResolvedCwd } from '../workspace/session-cwd-rung.js';
+import { RoomWorktreeManager } from './repo/room-worktree-manager.js';
+import {
+  resolveSessionCwd,
+  sessionCwdDeps,
+  type ResolvedCwd,
+} from '../workspace/resolve-session-cwd.js';
 import {
   RoomNoticeLog,
   type CascadeStamp,
@@ -201,7 +204,7 @@ import {
   type RoomTurnUnanswered,
 } from './notices/notice-log.js';
 import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './notices/notice-copy.js';
-import type { RoomAgentLookup } from './room-errors.js';
+import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { LateRoomReply, RoomTurnReply, RoomTurnRunner } from './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
@@ -1999,7 +2002,7 @@ export class RoomTriggerDispatcher {
       // runner puts the files there, so it has to be settled first — see
       // `room-turn-cwd.ts`. For a room with no files of its own the answer is
       // `target.agentPath`, unchanged.
-      const { cwd } = await this.resolveCwd(room.id, target.authorId, target.agentPath);
+      const { cwd } = await this.resolveCwd(room.id, target.agentPath, target.displayName);
       // Built before the request so the context and the projection plan it
       // implies are one value, resolved once.
       const turnContext = buildRoomContext(this.deps, {
@@ -2598,7 +2601,7 @@ export class RoomTriggerDispatcher {
     try {
       // An aside turn is a real turn in a real checkout, so it is placed the
       // same way an ordinary one is — see `runOneInDispatch`.
-      const { cwd } = await this.resolveCwd(room.id, authorId, input.agentPath);
+      const { cwd } = await this.resolveCwd(room.id, input.agentPath, displayName);
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
@@ -3731,12 +3734,13 @@ export class RoomTriggerDispatcher {
   /**
    * Where one agent's turn in this room runs — the `room-worktree` rung.
    *
-   * **Called once per turn, before the context that describes it is built.** A
-   * room with files of its own puts the turn in that agent's standing working
-   * copy; every other room, and every failure, answers with the agent's own
-   * directory, which is exactly what a room turn used before this rung existed.
-   * The decision itself lives in `room-turn-cwd.ts` — see its module doc for why
-   * it is not the session resolver's chain.
+   * **The room's own turn boundary, and the one place this domain names the
+   * session-cwd resolver.** A room turn begins here, so this is where its
+   * directory is decided — once, through the same resolver every other turn
+   * boundary uses, so there is exactly one precedence chain and one `[cwd]
+   * resolved` log line on the install (`resolve-session-cwd.ts`, spec
+   * `project-rooms` §3.5). The room supplies the one collaborator only it can:
+   * how to make a worktree.
    *
    * **`agentPath` is untouched by any of this.** It goes on carrying identity:
    * the claim map, both busy ceilings and the runtime lookup all key on it, and
@@ -3745,23 +3749,32 @@ export class RoomTriggerDispatcher {
    * turn in room B.
    *
    * @param roomId - The room being answered.
-   * @param authorId - The agent answering, for the readable half of its worktree
-   *   directory name.
    * @param agentPath - That agent's directory — its identity, and the floor.
+   * @param displayName - The label the room already shows for this agent; the
+   *   readable half of its worktree directory name and nothing else. Identity is
+   *   the digest of `agentPath` ({@link RoomWorktreeManager.slugFor}), so a
+   *   rename costs a new working copy and never somebody else's.
    * @returns The directory the turn runs in, and the rung that chose it.
    */
-  private resolveCwd(roomId: string, authorId: string, agentPath: string): Promise<ResolvedCwd> {
-    return resolveRoomTurnCwd(
-      {
-        roomId,
-        agentPath,
-        // The same label the room shows for this agent. It is the readable half
-        // of the worktree's directory name and nothing else — identity is the
-        // digest of `agentPath` (`RoomWorktreeManager.slugFor`), so a rename
-        // costs a new working copy and never somebody else's.
-        agentName: this.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'agent',
-      },
-      { worktrees: () => this.deps.worktrees?.() ?? null }
+  private resolveCwd(roomId: string, agentPath: string, displayName: string): Promise<ResolvedCwd> {
+    return resolveSessionCwd(
+      { agentPath, room: { roomId, agentName: displayName } },
+      sessionCwdDeps({
+        ensureRoomWorktree: async (id, dir, name) => {
+          const worktrees = this.deps.worktrees?.();
+          if (!worktrees) return null;
+          try {
+            return (await worktrees.ensureWorktree(id, dir, name)).path;
+          } catch (err) {
+            // "This room has no files of its own" is the ordinary case, and the
+            // manager says it by throwing. Translated to `null` HERE so the
+            // resolver never has to know what a `RoomError` is — and so it can
+            // tell that case from a real failure, which it degrades and reports.
+            if (err instanceof RoomError && err.code === 'NOT_A_PROJECT_ROOM') return null;
+            throw err;
+          }
+        },
+      })
     );
   }
 

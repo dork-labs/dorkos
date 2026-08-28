@@ -381,7 +381,7 @@ export function createRoomSubsystem(opts: {
     // bootstrap (it needs this very service's claim map), and an install with no
     // repo machinery answers `null` forever, which puts every turn in the
     // agent's own directory exactly as before.
-    worktrees: () => getRoomWorktreeManager(),
+    worktrees: () => tryGetRoomWorktreeManager(),
     // The budget reads its own spent hour back out of this database at
     // construction, so the ceilings mean an hour of wall clock rather than an
     // hour of uptime (DOR-1205).
@@ -645,7 +645,7 @@ export function setRoomWorktreeManager(manager: RoomWorktreeManager): void {
  * bootstrapped. Throwing here would turn "this deployment has no room repos"
  * into "this room stopped answering".
  */
-export function getRoomWorktreeManager(): RoomWorktreeManager | null {
+export function tryGetRoomWorktreeManager(): RoomWorktreeManager | null {
   return activeWorktrees;
 }
 

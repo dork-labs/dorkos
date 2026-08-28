@@ -20,15 +20,16 @@
  *
  * Seeded defects, each run red before the code stood:
  *
- * - Stamping `request.agentPath` instead of `request.cwd` in `room-turn-runner`
- *   reddens "runs the turn in the agent's own working copy".
- * - Projecting attachments under `agentPath` reddens "the file the model is told
- *   about is in the tree it is standing in": the path renders under the worktree
- *   and the bytes land in the agent's home.
- * - Dropping `PROJECTED_ATTACHMENTS_ROOT` from the exclude block reddens "a
+ * - Dropping the room's `info/exclude` entry for DorkOS's own scratch area reddens "a
  *   worktree that received a file still reads clean".
  * - Keying the cross-room ceiling on `cwd` rather than `agentPath` reddens "an
  *   agent working in one room's worktree still holds another room's message".
+ *
+ * The two defects INSIDE the runner — stamping `agentPath` where `cwd` belongs,
+ * and projecting attachments under the wrong root — are pinned in
+ * `__tests__/room-turn-runner.test.ts`, not here: this file drives a scripted
+ * runner, so it can see the dispatcher's answer and nothing the runner does with
+ * it.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
