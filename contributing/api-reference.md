@@ -382,6 +382,8 @@ Update user configuration. Accepts a partial config object that is deep-merged w
 
 The `agentContext` section controls global tool domain toggles. Each toggle determines whether the corresponding MCP tool group's DOCUMENTATION is included in agent system prompts by default. It does not restrict which tools a session can call: every tool stays registered either way (ADR-260726-171347). Per-agent overrides are set via `enabledToolGroups` on the agent manifest (see [PATCH /api/agents/current](#patch-apiagentscurrent)).
 
+These four are the only groups with a global default. The per-agent grant key `roomsManage` deliberately has no twin here (ADR-260828-123331): it is granted per agent or not at all, because a second and weaker path to the same grant would be a way around the first.
+
 **Responses:**
 
 - `200` - Success. Returns the full updated config and optional warnings for sensitive fields:
@@ -540,7 +542,7 @@ Update agent fields by path. Merges the request body into the existing manifest.
   "color": "#6366f1",
   "icon": "\ud83e\udd16",
   "enabledToolGroups": {
-    "pulse": true,
+    "tasks": true,
     "relay": false,
     "mesh": true,
     "adapter": true
@@ -550,10 +552,20 @@ Update agent fields by path. Merges the request body into the existing manifest.
 
 All fields are optional. The `enabledToolGroups` object controls per-agent tool domain toggles. Omitted fields inherit the global default from the `agentContext` section in `~/.dork/config.json`.
 
+**This route is agent-reachable, and two fields are refused here because of it.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path (DOR-1506):
+
+| Field                           | Why it is refused                                                                            | Where it is set instead      |
+| ------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------- |
+| `account`                       | Billing is the operator's call — an agent could repoint whose subscription its work bills to | `PATCH /api/mesh/agents/:id` |
+| `enabledToolGroups.roomsManage` | A grant the governed agent can set for itself is not a grant (ADR-260828-123331)             | `PATCH /api/mesh/agents/:id` |
+
+Both are **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming `roomsManage` at all — `true`, `false`, or `null` — refuses the whole patch, so a client that reads the stored `enabledToolGroups` object and spreads it into an unrelated toggle must use the operator route too. The other four keys stay writable here.
+
 **Responses:**
 
 - `200` - Updated `AgentManifest`
 - `400` - Validation error or missing `path`
+- `403` - Refused as operator-only: the patch named `account` or `enabledToolGroups.roomsManage`
 - `403` - Path outside configured boundary
 - `404` - No agent registered at this path
 

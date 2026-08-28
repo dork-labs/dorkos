@@ -535,8 +535,17 @@ export class AgentRegistry {
       // preference" rather than travelling into the launch ladder as a
       // reference that always misses.
       account: row.account || undefined,
-      // enabledToolGroups is not yet persisted in the DB schema — defaults to {} (inherit global).
-      // A future migration will add a JSON column; until then, read from the manifest file.
+      // enabledToolGroups is not persisted in the DB schema, so this cache cannot
+      // answer for it and hands back the empty default. **`{}` here does NOT mean
+      // "inherit global" any more**: the four documentation keys do inherit, but
+      // `roomsManage` (DOR-1611) is a grant where absent means OFF, so an empty
+      // object reads as "no grant" for that key.
+      //
+      // Nothing may make an authorization decision from this value. The tool-group
+      // gate reads `.dork/agent.json` directly for exactly that reason — asking
+      // here would report every agent as ungranted AND silently ignore a real
+      // grant a person had set. A future migration may add a JSON column; until
+      // then the manifest file is the only place the answer exists.
       enabledToolGroups: {},
       // mcpServers is manifest-file-only by design (no DB column, no reconciler
       // diff — ADR 260803-233420). The derived cache carries the empty default;

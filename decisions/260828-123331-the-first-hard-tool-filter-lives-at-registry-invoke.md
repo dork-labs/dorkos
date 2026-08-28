@@ -55,8 +55,10 @@ write.** Five parts.
 1. **The capability declares its own group.** `CapabilityDefinition.toolGroup?:
 CapabilityToolGroup` (one member today, `roomsManage`), following the `inSessionCard?`
    precedent — the definition states what it needs and a seam elsewhere decides what to do
-   about it. One declaration, three readers: enforcement, the cockpit reading the live
-   catalog, and the docs projection. No second list to drift.
+   about it. One declaration, three readers, and the third is why `serializeCapability`
+   emits the field: enforcement reads it at the choke point, and the cockpit and the docs
+   projection both read it off the live catalog — so neither needs a static list of which
+   tools sit behind which grant, which is the copy that would drift.
 
 2. **Enforcement runs inside `registry.invoke`, before the tier gate.**
    `enforceToolGroupGrant` (`services/core/capabilities/tool-group-enforcement.ts`) is
@@ -144,10 +146,16 @@ enforcement path, reachable only by rooms, inheriting none of the rendering abov
   fifth documentation key added carelessly beside `roomsManage` would inherit the wrong
   mental model.
 - **A capability declaring a group is agent-only by construction.** `trustedCaller` is
-  minted at two production sites and the invoke route is not one of them, so a person
-  cannot reach a gated capability through `dorkos call` at all. Correct for rooms — a
-  person manages rooms in the app, over the HTTP room routes — but it is a real property of
-  the mechanism, not of this one feature.
+  called at four production sites — `routes/extensions-approval.ts`, `routes/config.ts`,
+  `routes/marketplace.ts` and `routes/shapes.ts` — and three of them use it as a bare
+  predicate; only `routes/marketplace.ts` keeps the marker and carries it onward. The
+  operative fact is narrower than the count and does not depend on it: **neither of the two
+  `capability.invoke(...)` call sites is ever reached with a trusted marker from the invoke
+  route**, which deliberately mints none. So a person cannot reach a gated capability
+  through `dorkos call` at all. Correct for rooms — a person manages rooms in the app, over
+  the HTTP room routes — but it is a real property of the mechanism, not of this one
+  feature, and a fifth call site that started FORWARDING its marker into `invoke` would
+  change it.
 - **The self-grant closure is narrow.** It covers one field on the sanctioned agent
   surfaces. It does not stop an agent with shell access from curling `PATCH
 /api/mesh/agents/:id` directly, because with login off a bare loopback request is
