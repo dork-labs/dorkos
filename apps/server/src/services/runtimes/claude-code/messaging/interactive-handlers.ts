@@ -121,6 +121,11 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // bound, same identity qualifier — see IDENTITY_SCOPED_TOOLS below.
     'list_member_rooms',
     'search_member_rooms',
+    // The two lookups (DOR-1610): which room, and who is in it. Same membership
+    // bound and the same identity qualifier as every verb above them — both
+    // answer from the caller's own roster rows and nothing else.
+    'get_room',
+    'find_room',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -157,14 +162,14 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all eight: **the per-call card an operator watching a DIRECT session
+ * thing for all ten: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
  * is not necessarily refused, because a wildcard binding's scope covers the whole
  * adapter. The consent that holds is the one on the binding, not one per chat.)
  *
- * ## Why the six rooms verbs need the qualifier
+ * ## Why the eight rooms verbs need the qualifier
  *
  * The rooms verbs authorize on MEMBERSHIP: each resolves the caller's roster row
  * before doing anything, and the reads answer "not a member" with the same
@@ -180,10 +185,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * readable, the owner's own DMs with agents included — and an owner-attributed
  * post lands as a human message at cascade depth zero, which triggers every
  * always/mentioned agent in the channel and is bounded by no claim. So without
- * the qualifier these six would have been a no-prompt path to the operator's
+ * the qualifier these eight would have been a no-prompt path to the operator's
  * whole room history from any ordinary coding session.
  *
- * **`list_member_rooms` and `search_member_rooms` are the widest of the six, and
+ * **`list_member_rooms` and `search_member_rooms` are the widest of the eight, and
  * that is exactly why they are here** (DOR-1532). Every other room verb takes a
  * room id and answers about that one room; these two answer about EVERY room the
  * caller is in at once, from no argument at all. Under an identity that is still
@@ -194,6 +199,16 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * and then search the operator's whole room history in one hop. The qualifier is
  * what keeps "list the rooms you are in" from meaning "list every room on this
  * machine".
+ *
+ * **`get_room` and `find_room` are the same argument about a different payload**
+ * (DOR-1610). What they hand back is not messages but the SHAPE of the install:
+ * a room's topic, its whole roster, and — for `find_room`, from no room id at
+ * all — which rooms hold which people. Under an identity that is the agent's own
+ * membership, which its roster panel and its own room context block already show
+ * it. Without one the caller is the owner, `seesEveryRoom` short-circuits the
+ * membership check, and one uncarded call from any ordinary coding session would
+ * read out every room on this machine and who is in it — the operator's private
+ * DMs with other agents included.
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *
@@ -276,7 +291,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * {@link createInSessionContextResolver}, the same function, with the same
  * argument, that `mcp-tools/index.ts` builds the capability resolver from. For
  * the rooms verbs that is also the same STORE, so this gate and the caller those
- * four run as cannot disagree.
+ * eight run as cannot disagree.
  *
  * **`relay_notify_user` is the exception, and not one to paper over.** The gate's
  * answer comes from an unrevoked `agent_identity_tokens` row
@@ -319,6 +334,8 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'search_room_history',
     'list_member_rooms',
     'search_member_rooms',
+    'get_room',
+    'find_room',
     'relay_notify_user',
     'memory_write',
   ].map(inSessionToolName)

@@ -29,7 +29,7 @@
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other
- *   seventy. Sessions that ARE a registered mesh agent additionally get the
+ *   eighty. Sessions that ARE a registered mesh agent additionally get the
  *   {@link AGENT_TO_AGENT_TOOLS} six, for the same reason applied to a different
  *   turn; see {@link alwaysLoadedToolsFor}.
  * - **`searchHint`** is a short phrase the tool can be FOUND by, so the deferred
@@ -102,6 +102,16 @@ export function inSessionToolName(bare: string): string {
  *   DOR-1292 defect wearing a third name. They ride together because the pair is
  *   one act: the search hands back a room id, and the list is where an agent gets
  *   one when the search found nothing to start from.
+ *
+ * **`get_room` and `find_room` are deliberately NOT here** (DOR-1610), and the
+ * omission is written down because this list otherwise reads as "the room tools"
+ * and now names six of the domain's eight. The rule that admits a tool is not
+ * "it is a room verb" but "the prompt already tells an agent to reach for it":
+ * every entry above is named in a prompt block, or is the entry point to
+ * everything else. Nothing in the turn-1 prompt names either lookup, so deferring
+ * them costs a search only on the turns that actually want one — and both are
+ * the kind of tool `searchHint` finds by intent. Add them the day a prompt block
+ * names them, and not before; that is the DOR-1292 rule read in this direction.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',

@@ -6,7 +6,7 @@
  *
  * `resolveCaller` guards the HTTP room routes. It is not the only seam that
  * turns a request into a room author: `room-capabilities.ts`'s `callerAuthor`
- * does the same job for the four `rooms.*` capabilities, and those are reachable
+ * does the same job for the eight `rooms.*` capabilities, and those are reachable
  * over `POST /api/capabilities/:id/invoke` and over the external `/mcp` server.
  * Both of those surfaces read identity with `getRequestAgentIdentity`, which is
  * empty for a token that did not resolve — so a revoked agent arrived as
