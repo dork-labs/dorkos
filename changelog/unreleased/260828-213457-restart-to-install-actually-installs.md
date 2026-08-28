@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(desktop): satisfy the formatting and raw-NUL gates (prettier table, plist fixture escape)'
   - "fix(desktop): Restart to install actually installs — and never touches another app's updates (DOR-1455)"
 ---
 
