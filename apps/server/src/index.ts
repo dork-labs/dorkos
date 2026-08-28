@@ -1193,6 +1193,9 @@ async function start() {
           maxRoomMdBytes: repo.maxRoomMdBytes,
         };
       },
+      // What may be SENT, as against what `caps` froze onto a room's sidecar
+      // for what may be merged IN. Read per turn, like every other value here.
+      maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
     })
   );
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute

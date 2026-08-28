@@ -36,6 +36,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { Room } from '@dorkos/shared/room-schemas';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
   isBlockingInteractionEvent,
@@ -45,7 +46,7 @@ import {
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
-import { getRoomAttachmentStore } from './index.js';
+import { getRoomAttachmentStore, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   dispatchMessage,
@@ -112,6 +113,18 @@ export interface RoomTurnRunnerOptions {
    * production.
    */
   waitingGraceMs?: () => number;
+  /**
+   * This room's own conventions, composed for one turn — spec `project-rooms`
+   * §3.3. `null` for a room with no files, which is every room today unless the
+   * operator gave one a repo.
+   *
+   * Injected so a test can hand the runner a block without standing up a git
+   * repository; production defaults to the room-repo service, and to `null`
+   * wherever no such service was bootstrapped.
+   *
+   * @param room - The room being answered.
+   */
+  roomConventions?: (room: Room) => Promise<string | null>;
 }
 
 /** The shipped wait, used when a caller supplies no reader. */
@@ -119,6 +132,22 @@ const DEFAULT_REPLY_WAIT_MS = 10 * 60_000;
 
 /** The shipped ceiling, used when a caller supplies no reader. */
 const DEFAULT_LATE_REPLY_CEILING_MS = 60 * 60_000;
+
+/**
+ * The production reader for a room's `ROOM.md` conventions block.
+ *
+ * Resolved through the registered room-repo service, and `null` when there is
+ * none: a room turn is somebody's message being answered, and it must not fail
+ * because an optional subsystem was never bootstrapped. The service's own
+ * `hasRepo` — feature flag included — is what makes a room without files answer
+ * `null` too, so nothing here needs a second copy of that question.
+ *
+ * @param room - The room being answered.
+ * @returns The block, or `null` when this turn carries none.
+ */
+async function readRoomConventions(room: Room): Promise<string | null> {
+  return (await tryGetRoomRepoService()?.conventionsFor(room)) ?? null;
+}
 
 /**
  * Build the runner that turns a room trigger into a real session turn.
@@ -130,6 +159,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
   const readWaitMs = options.waitMs ?? (() => DEFAULT_REPLY_WAIT_MS);
   const readCeilingMs = options.ceilingMs ?? (() => DEFAULT_LATE_REPLY_CEILING_MS);
   const readGraceMs = options.waitingGraceMs ?? (() => WAITING_NOTICE_GRACE_MS);
+  const readRoomConventionsBlock = options.roomConventions ?? readRoomConventions;
   /**
    * Sessions a Stop reached before their turn could be stopped — the boot
    * window (DOR-1424) — and the runtime to aim the stop at when it can be.
@@ -280,6 +310,45 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         attachments: request.attachmentProjection,
       });
 
+      // **The room's own conventions, resolved ONCE and pinned to this turn**
+      // (spec `project-rooms` §3.3). It is read HERE, at the top of the turn,
+      // and the string is what the dispatch below carries: a merge that lands
+      // while the model is mid-answer takes effect at the next turn boundary,
+      // never under a running agent (the session-snapshot discipline,
+      // ADR 260711-142049). That pin is this line's, not the composer's —
+      // re-reading it at dispatch time would move the block under a turn that
+      // had already been told something else.
+      //
+      // It rides `systemPromptAppend` rather than `additionalContext`, which is
+      // the one place this domain departs from ADR-0273's default, and
+      // deliberately: the bag is for what is true about THIS turn, and a room's
+      // conventions are true about every turn — put there they would be re-sent
+      // outside the cacheable prefix on every message, for the life of the
+      // conversation. What ADR-0273 protects is `content`, which is untouched.
+      //
+      // `null` for every room with no files, which is every room today unless
+      // the operator gave one a repo — so a non-repo room dispatches exactly the
+      // arguments it did before this existed.
+      //
+      // **Guarded, because a throw out of `run` must mean NOTHING RAN.** The
+      // dispatcher reads one as "the turn never started" and rewinds the room's
+      // read cursor to replay the whole window (room-participation spec §8.3),
+      // so a `SQLITE_BUSY` on the repo's cache row — or any future composer that
+      // stops degrading on its own — would replay somebody's conversation
+      // instead of dropping one optional block. The composer already answers
+      // `null` for every git failure; this is the backstop for the seam itself,
+      // and it fails the way the rest of this path does: the room still answers,
+      // without its conventions.
+      let roomConventions: string | null = null;
+      try {
+        roomConventions = await readRoomConventionsBlock(request.room);
+      } catch (err) {
+        logger.warn('[rooms] could not read the room’s conventions; answering without them', {
+          roomId: request.room.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       const waitMs = readWaitMs();
       // The turn's identity, filled in by the dispatcher the instant this turn's
       // `turn_start` is stamped and read by the collector to tell that event
@@ -348,6 +417,16 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         content: prompt,
         cwd: request.agentPath,
         roomContext: request.roomContext,
+        // Omitted, never passed as an empty string, when this room has no files.
+        // Not because `''` misbehaves today — it does not: all three adapters
+        // guard with `if (opts?.systemPromptAppend)` and claude-code's launch
+        // fingerprint digests the same base either way, so an empty append is
+        // measurably inert right now. That is the point. It is inert only
+        // because four separate consumers each happen to treat it as falsy, and
+        // a guarantee resting on a coincidence is one refactor from being
+        // false. Absent is the guarantee, and it is pinned at the two layers
+        // below (`message-dispatcher.test.ts`).
+        ...(roomConventions !== null ? { systemPromptAppend: roomConventions } : {}),
         settings: seed,
         projector,
         runtime,

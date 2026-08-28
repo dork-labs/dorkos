@@ -1,7 +1,7 @@
 /**
  * Giving a room files, and taking them away again (spec `project-rooms` §3.2).
  *
- * Three things live here, and they are the three that need a policy rather than
+ * Four things live here, and they are the four that need a policy rather than
  * a filesystem call:
  *
  * - **Enabling.** Operator-only, feature-flagged, idempotent. Writes the
@@ -17,6 +17,10 @@
  *   `room_repos.room_id` cascades the ROW away and SQLite cannot touch the
  *   directory, so the on-disk half has to be somebody's job, and it is this
  *   one's.
+ * - **What a room's files say to a turn.** The composing itself is
+ *   `room-conventions.ts`'s; what belongs here is holding the one instance, so
+ *   the cache it keeps has the same lifetime as the service that knows when a
+ *   room's files go away.
  *
  * @module server/services/rooms/repo/room-repo-service
  */
@@ -37,6 +41,7 @@ import {
   OPERATOR_GIT_EMAIL,
 } from './room-repo-git.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
+import { RoomConventions } from './room-conventions.js';
 
 /**
  * The code a caller sees when the room already has files.
@@ -87,11 +92,54 @@ export interface RoomRepoServiceDeps {
    * change cannot retroactively make an existing repo's contents illegal.
    */
   caps: () => RoomRepoCaps;
+  /**
+   * How many bytes of `ROOM.md` may ride a member agent's turn, read LIVE from
+   * `config.rooms.repo.maxRoomMdBytes`.
+   *
+   * Beside {@link RoomRepoServiceDeps.caps} rather than inside it, because the
+   * two answer different questions and must be free to disagree. `caps` is
+   * frozen onto a room's sidecar at create so a config change cannot make an
+   * existing repo's CONTENTS illegal. This one bounds what is SENT, which is a
+   * cost paid on every message — somebody who turns it down means the next turn.
+   */
+  maxRoomMdBytes: () => number;
 }
 
 /** Enabling, archiving and deleting a room's files. */
 export class RoomRepoService {
-  constructor(private readonly deps: RoomRepoServiceDeps) {}
+  /**
+   * The `ROOM.md` composer, built here because it needs exactly what this
+   * service already holds: the store's paths, the feature flag, and the live
+   * delivery cap. Callers reach it through
+   * {@link RoomRepoService.conventionsFor}.
+   */
+  private readonly conventions: RoomConventions;
+
+  constructor(private readonly deps: RoomRepoServiceDeps) {
+    this.conventions = new RoomConventions({
+      hasRepo: (roomId) => this.hasRepo(roomId),
+      repoPath: (roomId) => deps.store.repoPath(roomId),
+      homeDir: (roomId) => deps.store.homeDir(roomId),
+      maxRoomMdBytes: deps.maxRoomMdBytes,
+    });
+  }
+
+  /**
+   * The conventions block this room's `ROOM.md` should ride into a turn on, or
+   * `null` when this room has nothing to say (spec §3.3).
+   *
+   * Resolved at TURN START and held by the caller for the whole turn: it reads
+   * the commit `main` points at, so a merge landing mid-turn takes effect at the
+   * next turn boundary rather than under a running agent.
+   *
+   * @param room - The room being answered.
+   * @param room.id - The room id.
+   * @param room.title - The room's title, as its members set it.
+   * @returns The block, or `null`.
+   */
+  conventionsFor(room: { id: string; title: string }): Promise<string | null> {
+    return this.conventions.compose(room);
+  }
 
   /**
    * Give a room files, or answer with the ones it already has.
@@ -331,6 +379,11 @@ export class RoomRepoService {
   async removeHome(roomId: string, options?: { force?: boolean }): Promise<void> {
     await this.assertHomeRemovable(roomId, options);
     await this.deps.store.removeHomeUnguarded(roomId);
+    // The composer's cache outlives the files it read, and a room id can be
+    // given files again. Forgetting here is what stops a second `enable` on the
+    // same id from serving the deleted repo's conventions until its first
+    // commit happens to differ.
+    this.conventions.forget(roomId);
   }
 
   /**

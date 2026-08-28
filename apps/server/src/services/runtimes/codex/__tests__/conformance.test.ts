@@ -23,7 +23,7 @@
  * Turns run in the 'default' permission mode → read-only sandbox, so a live
  * run cannot write outside its temp cwd.
  */
-import { afterAll, vi } from 'vitest';
+import { afterAll, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,6 +48,26 @@ const LIVE = vi.hoisted(() => process.env.DORKOS_CODEX_LIVE === '1');
  */
 const failNextThread = vi.hoisted(() => ({ value: false }));
 
+/**
+ * Every prompt string the mocked SDK has been handed, in order.
+ *
+ * The `project-rooms` §3.3 gate reads it: codex has no system-prompt channel at
+ * all, so `systemPromptAppend` reaches the model as part of the composed PROMPT
+ * (`buildCodexPrompt`), and the only honest place to observe what the backend
+ * received is where the backend receives it.
+ */
+const sdkPrompts = vi.hoisted(() => [] as string[]);
+
+/**
+ * How each thread the mocked SDK minted was reached: `'start'` for a new
+ * conversation, `'resume'` for one that already existed.
+ *
+ * The §3.3 gate is about the NEXT turn of a session ALREADY RUNNING, and codex
+ * has no warm process to read that off — a resumed thread is what "already
+ * running" means here, so it is checked rather than assumed.
+ */
+const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
+
 /** Default success turn, or (one-shot) the scripted failed turn. */
 function mintTurnEvents() {
   if (!failNextThread.value) return codexSimpleTurn('pong');
@@ -63,11 +83,37 @@ vi.mock('@openai/codex-sdk', async (importOriginal) => {
     // mockReturnValue here (a spent generator would end multi-turn tests with
     // zero events).
     Codex: class {
-      startThread = vi.fn(() => makeMockThread(mintTurnEvents()));
-      resumeThread = vi.fn(() => makeMockThread(mintTurnEvents()));
+      startThread = vi.fn(() => {
+        threadMints.push('start');
+        return recordPrompts(makeMockThread(mintTurnEvents()));
+      });
+      resumeThread = vi.fn(() => {
+        threadMints.push('resume');
+        return recordPrompts(makeMockThread(mintTurnEvents()));
+      });
     },
   };
 });
+
+/**
+ * Tap a mock thread's `runStreamed` so every prompt the adapter sends lands in
+ * {@link sdkPrompts}, then hand the thread back unchanged.
+ *
+ * A wrapper rather than a change to `makeMockThread`: what the SDK was handed is
+ * this suite's question, and the shared fixture builder has no business growing
+ * a recorder every other test file would carry.
+ *
+ * @param thread - The mock thread to tap.
+ * @returns The same thread.
+ */
+function recordPrompts<T extends { runStreamed: (...args: never[]) => unknown }>(thread: T): T {
+  const inner = thread.runStreamed.bind(thread);
+  thread.runStreamed = ((...args: never[]) => {
+    sdkPrompts.push(String(args[0]));
+    return inner(...args);
+  }) as T['runStreamed'];
+  return thread;
+}
 
 // checkDependencies() shells out to `codex --version` / `codex login status`
 // for real — mock the probe so conformance never spawns (or requires) the
@@ -158,9 +204,43 @@ runtimeConformance(
     // A deterministic failed turn cannot be scripted against the live binary,
     // so the turn-failure gate runs only in mocked mode: the one-shot selector
     // makes the next minted thread stream `turn.failed`.
+    // The `project-rooms` §3.3 gate. Codex has no system-prompt channel at all
+    // (`ThreadOptions` carries none), so `buildCodexPrompt` puts the caller's
+    // append in the PROMPT — which means every turn composes it afresh and a
+    // changed one cannot go stale. Proven rather than argued: the two turns run
+    // on ONE session (the second resumes the same thread) and the assertion
+    // reads what the SDK was handed, not what the driver passed in.
     ...(LIVE
-      ? {}
+      ? {
+          // A live binary is a subprocess, and nothing in this suite can read
+          // the prompt it was given. The mocked run above is where the property
+          // is proven; saying so beats a case that quietly asserts nothing.
+          systemPromptAppendUnprovenReason:
+            'a live codex binary is a subprocess this suite hands a prompt and cannot read back, so what it received is only observable in the mocked run',
+        }
       : {
+          systemPromptAppendTurns: async (runtime, sessionId, [first, second]) => {
+            const before = sdkPrompts.length;
+            const mintedBefore = threadMints.length;
+            for (const systemPromptAppend of [first, second]) {
+              for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+                cwd: projectDir,
+                systemPromptAppend,
+              })) {
+                // Drained: the assertion is about the SDK's input, not its output.
+              }
+            }
+            // The second turn RESUMED the first one's thread. Codex holds no
+            // process between turns, so this is what "a session already
+            // running" means for it — and without checking, two unrelated
+            // conversations would satisfy every assertion the suite makes.
+            expect(
+              threadMints.slice(mintedBefore),
+              'the second turn was supposed to resume the first turn’s thread, not start a conversation of its own'
+            ).toEqual(['start', 'resume']);
+            const [firstPrompt, secondPrompt] = sdkPrompts.slice(before);
+            return [firstPrompt ?? '', secondPrompt ?? ''] as const;
+          },
           makeFailingRuntime: () => {
             failNextThread.value = true;
             return new CodexRuntime({

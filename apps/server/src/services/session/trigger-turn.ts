@@ -406,6 +406,24 @@ export interface TriggerTurnOpts {
    */
   seedContext?: string;
   /**
+   * Instructions the CALLER attaches to this turn's system prompt, ahead of
+   * anything the person typed and behind everything DorkOS says about the agent
+   * itself (`launch-resolver.ts` concatenates it after the base append).
+   *
+   * The channel for standing framing that must sit in the cacheable prefix
+   * rather than in the turn's own words: a scheduled task's brief, a room's
+   * `ROOM.md` conventions. Not for anything a person typed — that is `content`,
+   * and not for per-turn signals — those are `additionalContext` (ADR-0273).
+   *
+   * Passed straight to the runtime, which decides how to deliver it: claude-code
+   * puts it on the SDK's `systemPrompt.append` and relaunches a warm process
+   * when it changes, while codex and opencode have no system-prompt channel and
+   * compose it into each turn's input. All three deliver a CHANGED value on the
+   * next turn of a running session, which the shared runtime conformance suite
+   * pins (`project-rooms` §3.3).
+   */
+  systemPromptAppend?: string;
+  /**
    * Which billing account this LAUNCH should run on, as a Claude account
    * registry id. Set only by the route that accepted a person's pre-launch
    * choice on the send that creates a claude-code session; passed straight
@@ -531,6 +549,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     context,
     roomContext,
     seedContext,
+    systemPromptAppend,
     accountHint,
     settings,
     projector,
@@ -688,6 +707,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // this as `!== undefined`, so nothing downstream changes behavior.
         ...(cwd !== undefined ? { cwd } : {}),
         additionalContext,
+        ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
         ...settings,

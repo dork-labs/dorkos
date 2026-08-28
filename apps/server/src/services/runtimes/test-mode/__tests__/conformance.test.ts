@@ -38,6 +38,13 @@ runtimeConformance(() => new TestModeRuntime(), {
   // conformance runs never wait on an approval card.
   autonomyDefaultReason:
     'test-mode exists to answer every approval deterministically; always-allow is its whole purpose',
+  // The `project-rooms` §3.3 gate has nothing to grip here, and that is the
+  // fixture's nature rather than a gap: a scripted scenario answers from a
+  // table, so there is no model a system prompt could reach and no backend
+  // input to read the append off. The three production runtimes prove the
+  // property; saying so beats a case that quietly asserts nothing.
+  systemPromptAppendUnprovenReason:
+    'test-mode answers from a scripted scenario table — there is no model to give a system prompt to, and no backend input a caller’s append could be read off',
   // Turn failure rides the scenario store: the built-in 'error' scenario is
   // the runtime's production failing turn (typed error, then terminal done).
   makeFailingRuntime: () => {

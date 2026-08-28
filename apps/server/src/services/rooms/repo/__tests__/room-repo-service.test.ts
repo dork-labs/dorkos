@@ -114,6 +114,7 @@ describe('RoomRepoService', () => {
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => operatorName,
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
   });
 
