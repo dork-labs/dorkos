@@ -1550,10 +1550,21 @@ async function start() {
   // agent that runs on Codex or OpenCode answers a Telegram or Slack message on
   // the runtime its manifest names, the same one it answers a room on.
   //
-  // `relayAgentRuntime` still wins for its own type: it is the concrete
-  // claude-code runtime (or TestModeRuntime), and it is the instance the
-  // `setRelayBindingContext` wiring below reaches into, so the relay and that
-  // wiring must be holding the same object.
+  // `relayAgentRuntime`'s entry is written LAST so it wins ITS OWN key, and
+  // that key alone. Two things make the ordering matter rather than be tidy:
+  // `listRuntimes()` hands back trace-WRAPPED runtimes, and on the production
+  // path this key is `claude-code` and the object is `claudeRuntime` — the very
+  // instance `setRelayBindingContext` configures further down. The relay and
+  // that wiring have to hold the same object, and last-write is what makes them.
+  //
+  // Under `DORKOS_TEST_RUNTIME` the key is `test-mode` instead, and
+  // `setRelayBindingContext` is never called (there is no ClaudeCodeRuntime to
+  // call it on). `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS` then registers a SECOND,
+  // separate TestModeRuntime under `claude-code` (DOR-952) which
+  // `relayAgentRuntime` is not — so do not read the rule as "relayAgentRuntime
+  // is whatever answers `claude-code`". Nothing configures that alias and
+  // nothing in test mode needs it configured; it exists so a seeded manifest
+  // naming a real runtime enum resolves.
   if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
     try {
       const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
