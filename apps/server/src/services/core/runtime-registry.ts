@@ -367,6 +367,32 @@ export class RuntimeRegistry {
    *
    * @param sessionId - Session identifier
    */
+  /**
+   * Every session id bound to one agent directory.
+   *
+   * The bulk sibling of {@link RuntimeRegistry.getSessionAgentPath}, for the
+   * session fan-out: it asks once per agent rather than once per row, and the
+   * answer is what still says "this conversation is this agent's" when the
+   * conversation's own directory says something else — a room turn running in
+   * that room's worktree (spec `project-rooms` §3.5).
+   *
+   * The STORED value, never re-derived from a cwd. Returns an empty set when
+   * the registry has no database, so a caller on a bare install degrades to
+   * cwd-only membership rather than failing.
+   *
+   * @param agentPath - The agent's directory, exactly as it was bound.
+   */
+  listSessionIdsForAgentPath(agentPath: string): Set<string> {
+    const db = this.db;
+    if (!db) return new Set();
+    const rows = db
+      .select({ sessionId: sessionMetadata.sessionId })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.agentPath, agentPath))
+      .all();
+    return new Set(rows.map((row) => row.sessionId));
+  }
+
   async getSessionAgentPath(sessionId: string): Promise<string | null> {
     const db = this.requireDb('getSessionAgentPath');
     const row = db

@@ -157,7 +157,11 @@ export type {
 
 // --- Multi-runtime session-list aggregation (ADR-0310) ---
 export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
-export { fanOutAgentSessions } from './agent-session-fanout.js';
+export {
+  fanOutAgentSessions,
+  setAgentSessionSources,
+  type AgentSessionSources,
+} from './agent-session-fanout.js';
 export { listRecentSessions } from './recent-sessions.js';
 export { countSessionsPerDay } from './session-daily-counts.js';
 

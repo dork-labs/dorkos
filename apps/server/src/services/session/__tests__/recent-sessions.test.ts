@@ -8,10 +8,11 @@
  * warnings aggregation, and bounded-concurrency correctness — all directly on
  * the service, no HTTP layer.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { FakeAgentRuntime, DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import { listRecentSessions } from '../recent-sessions.js';
+import { setAgentSessionSources } from '../agent-session-fanout.js';
 
 function makeSession(
   id: string,
@@ -38,6 +39,11 @@ function runtimeReturning(type: string, byDir: Record<string, Session[]>): FakeA
 }
 
 describe('listRecentSessions', () => {
+  // Every test but the room-worktree block runs with no extra sources, which is
+  // an install that has never given a room files — and is what keeps the rest of
+  // this file a test of the behaviour it was written for.
+  afterEach(() => setAgentSessionSources(null));
+
   it('fans out across paths and runtimes, merged updatedAt desc', async () => {
     const a = runtimeReturning('fake-a', {
       '/p1': [makeSession('a1', '2026-03-01T00:00:00.000Z', '/p1', 'fake-a')],
@@ -229,5 +235,97 @@ describe('listRecentSessions', () => {
     const a = runtimeReturning('fake-a', {});
     const result = await listRecentSessions({ runtimes: [a], agentPaths: [], limit: 10 });
     expect(result).toEqual({ sessions: [], agentActivity: {}, warnings: [] });
+  });
+});
+
+describe('an agent working in a room’s repo (DOR-1597)', () => {
+  afterEach(() => setAgentSessionSources(null));
+
+  const WORKTREE = '/dork/rooms/room-1/worktrees/ana-abcd1234';
+
+  it('finds a room-worktree conversation and calls it the agent’s own', async () => {
+    // The regression the cwd rung creates, and it is a DISCOVERY problem before
+    // it is a filtering one. Session storage is derived per working directory
+    // (ADR-0310), so this conversation is filed under the WORKTREE's slug and
+    // scanning `/p1` alone returns nothing at all — no filter could recover it.
+    const runtime = runtimeReturning('fake-a', {
+      '/p1': [makeSession('desk', '2026-03-01T00:00:00.000Z', '/p1')],
+      [WORKTREE]: [makeSession('in-room', '2026-03-02T00:00:00.000Z', WORKTREE)],
+    });
+    setAgentSessionSources({
+      extraDirs: (agentPath) => Promise.resolve(agentPath === '/p1' ? [WORKTREE] : []),
+      boundSessionIds: () => Promise.resolve(new Set<string>()),
+    });
+
+    const result = await listRecentSessions({
+      runtimes: [runtime],
+      agentPaths: ['/p1'],
+      limit: 10,
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['in-room', 'desk']);
+    // And it counts as that agent's activity, which is what Recent and the
+    // daily counts both read.
+    expect(result.agentActivity['/p1']).toBe('2026-03-02T00:00:00.000Z');
+  });
+
+  it('keeps a conversation the STORED binding claims, whatever its directory says', async () => {
+    // The second half of the rule, and the one that does not depend on where a
+    // runtime happens to file things: `session_metadata.agent_path` is written
+    // when the session is created and is never re-derived from a cwd.
+    const runtime = runtimeReturning('fake-a', {
+      '/p1': [makeSession('bound', '2026-03-03T00:00:00.000Z', '/somewhere/else')],
+    });
+    setAgentSessionSources({
+      extraDirs: () => Promise.resolve([]),
+      boundSessionIds: (agentPath) =>
+        Promise.resolve(agentPath === '/p1' ? new Set(['bound']) : new Set<string>()),
+    });
+
+    const result = await listRecentSessions({
+      runtimes: [runtime],
+      agentPaths: ['/p1'],
+      limit: 10,
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['bound']);
+  });
+
+  it('never lists one conversation twice when both rules claim it', async () => {
+    const runtime = runtimeReturning('fake-a', {
+      '/p1': [],
+      [WORKTREE]: [makeSession('in-room', '2026-03-02T00:00:00.000Z', WORKTREE)],
+    });
+    setAgentSessionSources({
+      extraDirs: () => Promise.resolve([WORKTREE]),
+      boundSessionIds: () => Promise.resolve(new Set(['in-room'])),
+    });
+
+    const result = await listRecentSessions({
+      runtimes: [runtime],
+      agentPaths: ['/p1'],
+      limit: 10,
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['in-room']);
+  });
+
+  it('an install with no room repos is exactly what it was', async () => {
+    // The zero-change pin: the default sources scan nothing extra and bind
+    // nothing, so a foreign session is still foreign.
+    const runtime = runtimeReturning('fake-a', {
+      '/p1': [
+        makeSession('member', '2026-03-01T00:00:00.000Z', '/p1'),
+        makeSession('foreign', '2026-04-01T00:00:00.000Z', '/other'),
+      ],
+    });
+
+    const result = await listRecentSessions({
+      runtimes: [runtime],
+      agentPaths: ['/p1'],
+      limit: 10,
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['member']);
   });
 });
