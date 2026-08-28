@@ -9,7 +9,11 @@ import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { FakeScheduler } from './fake-scheduler.js';
-import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
+import {
+  TaskSchedulerService,
+  singleRuntimeSource,
+  type SchedulerAgentManager,
+} from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -171,7 +175,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
 
     scheduler = new TaskSchedulerService({
       store,
-      agentManager: asAgentManager(runtime),
+      runtimes: singleRuntimeSource(asAgentManager(runtime)),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
@@ -233,7 +237,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     const runtime = new FakeAgentRuntime();
     scheduler = new TaskSchedulerService({
       store,
-      agentManager: asAgentManager(runtime),
+      runtimes: singleRuntimeSource(asAgentManager(runtime)),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
@@ -281,7 +285,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
 
     scheduler = new TaskSchedulerService({
       store,
-      agentManager: asAgentManager(runtime),
+      runtimes: singleRuntimeSource(asAgentManager(runtime)),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,

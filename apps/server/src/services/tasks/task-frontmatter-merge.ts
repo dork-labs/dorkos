@@ -93,6 +93,22 @@ export interface TaskFrontmatterWrite {
   maxRuntime?: string | null;
   /** How much an unattended run may do without asking. */
   permissionMode?: string;
+  /**
+   * Which runtime a fire of this schedule runs on. Clearable — `null` goes back
+   * to "whatever this task's agent runs on" (DOR-1615). Lives inside the
+   * `schedule:` block, so it is written through `SCHEDULE_FIELD` in
+   * `task-file-update.ts`, not the top-level {@link FRONTMATTER_KEY} table here.
+   */
+  runtime?: string | null;
+  /**
+   * The model a fire runs on, in the resolved runtime's id space. Clearable.
+   * Block-scoped like {@link TaskFrontmatterWrite.runtime}, and deliberately NOT
+   * the top-level `model:` — that one is the Claude Code dialect a person's own
+   * invocation reads.
+   */
+  model?: string | null;
+  /** The reasoning-effort rung a fire runs at. Clearable. Block-scoped. */
+  effort?: string | null;
 }
 
 /**

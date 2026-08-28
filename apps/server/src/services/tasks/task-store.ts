@@ -43,6 +43,12 @@ export interface CreateTaskStoreInput {
   sticky?: boolean;
   maxRuntime?: number | null;
   permissionMode?: string;
+  /** Which runtime this task's runs execute on; absent follows the agent (DOR-1615). */
+  runtime?: string | null;
+  /** The model its runs execute on, in the resolved runtime's id space (DOR-1347). */
+  model?: string | null;
+  /** The reasoning-effort rung its runs execute at. */
+  effort?: string | null;
   filePath: string;
   /** Why the schedule should exist, in the proposer's own words. See {@link CreateTaskStoreInput.proposedByAgentPath}. */
   reason?: string | null;
@@ -276,6 +282,9 @@ export class TaskStore {
         sticky: input.sticky ?? false,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
+        runtime: input.runtime ?? null,
+        model: input.model ?? null,
+        effort: input.effort ?? null,
         status: 'active',
         // An operator create is itself the approval, so the row arrives armed.
         // A caller that must not arm anything — an agent — is parked by the
@@ -328,6 +337,12 @@ export class TaskStore {
         typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
     }
     if (input.permissionMode !== undefined) updates.permissionMode = input.permissionMode;
+    // `null` CLEARS the override, which is a state a person chooses: back to
+    // "whatever this task's agent runs on". The column and the request spell it
+    // the same way, so the three need no translation (DOR-1615/DOR-1347).
+    if (input.runtime !== undefined) updates.runtime = input.runtime;
+    if (input.model !== undefined) updates.model = input.model;
+    if (input.effort !== undefined) updates.effort = input.effort;
     if (input.status !== undefined) updates.status = input.status;
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
@@ -626,6 +641,33 @@ export class TaskStore {
       .run();
 
     return this.getRun(id)!;
+  }
+
+  /**
+   * Stamp what a run RESOLVED to execute on, at the moment it is dispatched
+   * (DOR-1615/DOR-1347).
+   *
+   * Its own method rather than a widening of {@link updateRun}, for two reasons
+   * that both matter. This is not a lifecycle update — it records a fact settled
+   * before the turn starts, and it must land whatever the run then does. And
+   * `updateRun` deliberately ignores a write to a run that already reached a
+   * terminal status; in-process relay delivery runs an entire turn inside
+   * `publish()`, so a stamp written on that path afterwards would be silently
+   * dropped. Both dispatch paths therefore call this BEFORE they hand the work
+   * over, where the run is by construction still open.
+   *
+   * `null` for the model is a real answer and is stored as one: nothing chose a
+   * model, so the runtime picked.
+   *
+   * @param id - The run being dispatched.
+   * @param execution - The resolved runtime, and the model if one was chosen.
+   */
+  recordRunExecution(id: string, execution: { runtime: string; model?: string | null }): void {
+    this.db
+      .update(pulseRuns)
+      .set({ resolvedRuntime: execution.runtime, resolvedModel: execution.model ?? null })
+      .where(eq(pulseRuns.id, id))
+      .run();
   }
 
   /**
@@ -1141,6 +1183,12 @@ export class TaskStore {
           sticky: schedule.sticky,
           maxRuntime: maxRuntimeMs,
           permissionMode,
+          // The file is the source of truth for these three, like every other
+          // scheduling column here — so a key REMOVED from the block clears the
+          // row's override rather than leaving a stale one behind (DOR-1615).
+          runtime: schedule.runtime ?? null,
+          model: schedule.model ?? null,
+          effort: schedule.effort ?? null,
           // A `paused` row whose file is back is un-paused here, because
           // nothing else ever will: the scheduler requires `enabled` AND
           // `status === 'active'`, and restoring only `enabled` leaves a task
@@ -1208,6 +1256,9 @@ export class TaskStore {
         sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
         permissionMode,
+        runtime: schedule.runtime ?? null,
+        model: schedule.model ?? null,
+        effort: schedule.effort ?? null,
         status: arm?.status ?? 'active',
         reason: arm?.reason ?? null,
         origin: arm ? 'file' : null,

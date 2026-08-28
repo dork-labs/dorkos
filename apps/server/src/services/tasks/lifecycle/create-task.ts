@@ -37,7 +37,10 @@ import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from '../skills-ro
 import { readScheduleFromSkill } from '../skills-root-discovery.js';
 import { describeScheduleProblem } from '../cron-validation.js';
 import { clampSchedulePermissionMode } from '../schedule-permission-clamp.js';
-import { resolveScheduledRunPermissionMode } from '../scheduled-run-power.js';
+import {
+  capabilitiesForTaskRuntime,
+  resolveScheduledRunPermissionMode,
+} from '../scheduled-run-power.js';
 import { planTaskFileCreate } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
 import type { TaskStore } from '../task-store.js';
@@ -203,7 +206,15 @@ export async function createScheduledTask(
   // `full-power-defaults`, D6). A caller that named a mode keeps it verbatim; one
   // that named none gets the operator's own trust stop, mapped through the runtime
   // the scheduler drives, and `acceptEdits` when no stop is configured.
-  const permissionMode = data.permissionMode ?? resolveScheduledRunPermissionMode();
+  // The runtime whose vocabulary the stop is read in is the one this schedule
+  // will run on: what the caller named, or the registry default when they named
+  // nothing (DOR-1615). A schedule created for Codex must not have its trust
+  // stop mapped through Claude Code's mode ids.
+  const permissionMode =
+    data.permissionMode ??
+    resolveScheduledRunPermissionMode({
+      capabilities: capabilitiesForTaskRuntime(data.runtime),
+    });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is
   // the value written to the file AND inserted into the row; the explicit un-clamp
@@ -277,6 +288,13 @@ export async function createScheduledTask(
       // and `scheduleToFrontmatter` drops a `false` back out anyway (DOR-1571).
       sticky: data.sticky === true ? true : undefined,
       maxRuntime: data.maxRuntime || undefined,
+      // Only an OVERRIDE says so in the file. Absent is "whatever this task's
+      // agent runs on", which is what a schedule that names nothing means, so
+      // writing a resolved value here would freeze today's answer into the file
+      // and stop the task following its agent (DOR-1615/DOR-1347).
+      runtime: data.runtime || undefined,
+      model: data.model || undefined,
+      effort: data.effort || undefined,
       // The CLAMPED mode, so the file and the row agree. A SKILL.md declaring more
       // power than its row holds is a standing request from disk that nobody made
       // and no screen shows.
@@ -332,6 +350,9 @@ export async function createScheduledTask(
       ...(data.sticky !== undefined && { sticky: data.sticky }),
       maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
       permissionMode: effectivePermissionMode,
+      ...(data.runtime !== undefined && { runtime: data.runtime }),
+      ...(data.model !== undefined && { model: data.model }),
+      ...(data.effort !== undefined && { effort: data.effort }),
       filePath,
     });
   }

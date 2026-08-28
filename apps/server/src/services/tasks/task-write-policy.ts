@@ -160,6 +160,22 @@ export const TASK_WRITE_POLICY = {
   // an agent must supply it. An operator-only verdict here would refuse every
   // proposal that did what it was asked to do.
   reason: 'agent-writable',
+  // WHICH backend does the work, and how hard it thinks (DOR-1615/DOR-1347).
+  // Not a power choice: every runtime here runs under the SAME
+  // `permissionMode`, which stays operator-only below, so moving a task from
+  // Claude Code to Codex changes who executes the prompt, never what the run is
+  // allowed to do. An agent that can already write the `prompt` — the thing
+  // that decides what actually happens — can do far more than pick a runtime,
+  // and an agent-proposed schedule still parks for approval like any other.
+  //
+  // The one thing an agent CAN do with these is name a runtime that is not
+  // turned on. That fails the run loudly with a message naming it
+  // (`resolve-run-execution.ts`), which is a visible broken task rather than a
+  // quiet escalation — deliberately, and the reason the resolver never falls
+  // back to another runtime.
+  runtime: 'agent-writable',
+  model: 'agent-writable',
+  effort: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
   permissionMode: 'operator-only',
