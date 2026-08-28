@@ -205,10 +205,14 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * a room's topic, its whole roster, and — for `find_room`, from no room id at
  * all — which rooms hold which people. Under an identity that is the agent's own
  * membership, which its roster panel and its own room context block already show
- * it. Without one the caller is the owner, `seesEveryRoom` short-circuits the
- * membership check, and one uncarded call from any ordinary coding session would
- * read out every room on this machine and who is in it — the operator's private
- * DMs with other agents included.
+ * it. Without one the caller is the owner, and one uncarded call from any
+ * ordinary coding session reads out any room the OPERATOR belongs to and
+ * everyone in it — their private DMs with other agents included, which is the
+ * part that matters. Note what this does NOT claim: `seesEveryRoom` does not
+ * come into it, because both verbs go through `requireMemberRoom`, which wants
+ * an explicit member row even from the owner. The exposure is the operator's own
+ * rooms rather than every room on the machine, and that is still an ordinary
+ * coding session reading somebody's private conversations without being asked.
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *

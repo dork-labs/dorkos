@@ -323,12 +323,16 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
   return {
     roomId: detail.roomId,
     kind: detail.kind,
-    name: sanitizeIdentity(detail.name),
-    // `?? null` rather than letting `undefined` through: a topic written
-    // entirely in angle brackets sanitizes to nothing, and `undefined` is a key
-    // JSON drops — which would report "somebody set a topic I cannot show you"
-    // as "nobody set a topic". The two are different facts and `null` is one of
-    // them.
+    // `?? null` on every label, for the reason spelled out on the topic below:
+    // a name written entirely in angle brackets sanitizes to nothing, and
+    // `undefined` is a key JSON drops — so a room would arrive with no `name`
+    // field at all and an agent would have nothing to call it by. `null` says
+    // "there is a name here and none of it survived", which is the true one.
+    name: sanitizeIdentity(detail.name) ?? null,
+    // A topic written entirely in angle brackets sanitizes to nothing, and
+    // reporting that as an absent key would say "nobody set a topic" when the
+    // truth is "somebody set a topic I cannot show you". Two different facts,
+    // and `null` is one of them.
     topic:
       detail.topic === null
         ? null
@@ -337,7 +341,7 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
     lastActivity: detail.lastActivityAt,
     members: detail.members.map((member) => ({
       authorId: member.authorId,
-      name: sanitizeIdentity(member.name),
+      name: sanitizeIdentity(member.name) ?? null,
       ...(member.handle ? { handle: sanitizeIdentity(member.handle) } : {}),
       kind: member.kind,
     })),
@@ -626,8 +630,10 @@ export const roomsDomain: CapabilityDomain = {
             roomId: room.roomId,
             kind: room.kind,
             // A room's name is typed by a person and read by a model, so it goes
-            // through the same sanitizer every other label in this file does.
-            name: sanitizeIdentity(room.name),
+            // through the same sanitizer every other label in this file does —
+            // and lands on `null` rather than vanishing when nothing survives
+            // it, exactly as `projectDetail` does. One domain, one answer.
+            name: sanitizeIdentity(room.name) ?? null,
             joined: room.joinedAt,
             lastActivity: room.lastActivityAt,
           })),
@@ -773,9 +779,14 @@ export const roomsDomain: CapabilityDomain = {
         // which reaches the model with no `code` and no sentence saying what to
         // do instead — the exact shape `answering` exists to prevent.
         //
-        // Blank counts as absent: `"  "` and `["@"]` pass the schema, narrow
-        // nothing, and would quietly degrade a find into a capped list.
-        const name = input.name?.trim();
+        // Blank counts as absent: `"  "`, `"#"` and `["@"]` all pass the schema,
+        // narrow nothing, and would quietly degrade a find into a capped list.
+        // The sigil comes off BEFORE the emptiness test on both fields for the
+        // same reason — a `#` or an `@` with no name after it is a filter that
+        // reduces to nothing, and the service strips both too, so a guard
+        // reading the raw string would wave through exactly what the service
+        // then discards.
+        const name = input.name?.trim().replace(/^#/, '').trim();
         const members = (input.members ?? [])
           .map((handle) => handle.trim().replace(/^@/, ''))
           .filter((handle) => handle.length > 0);

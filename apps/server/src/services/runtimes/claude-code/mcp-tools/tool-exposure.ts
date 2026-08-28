@@ -107,7 +107,8 @@ export function inSessionToolName(bare: string): string {
  * omission is written down because this list otherwise reads as "the room tools"
  * and now names six of the domain's eight. The rule that admits a tool is not
  * "it is a room verb" but "the prompt already tells an agent to reach for it":
- * every entry above is named in a prompt block, or is the entry point to
+ * every entry above is named in a prompt block, rides with one that is (the
+ * listing pair, for the reason the bullet above gives), or is the entry point to
  * everything else. Nothing in the turn-1 prompt names either lookup, so deferring
  * them costs a search only on the turns that actually want one — and both are
  * the kind of tool `searchHint` finds by intent. Add them the day a prompt block

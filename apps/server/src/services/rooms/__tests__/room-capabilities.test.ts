@@ -9,6 +9,7 @@
  * those, which is exactly the shape of enforcement this repo has been bitten by.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { rooms as roomsTable, eq } from '@dorkos/db';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from '../../core/self-description/dorkos-registry.js';
@@ -477,11 +478,11 @@ describe('the rooms capability domain', () => {
     interface RoomDetailPayload {
       roomId: string;
       kind: string;
-      name: string;
+      name: string | null;
       topic: string | null;
       joined: string;
       lastActivity: string;
-      members: Array<{ authorId: string; name: string; handle?: string; kind: string }>;
+      members: Array<{ authorId: string; name: string | null; handle?: string; kind: string }>;
     }
 
     /** Ask for one room, as Ana. */
@@ -570,6 +571,42 @@ describe('the rooms capability domain', () => {
       expect(bosView.topic).toBe('the thing nobody else is told');
     });
 
+    it('refuses the OWNER a room they can SEE but never joined', async () => {
+      // Visibility is not membership, and the owner is exactly where the two
+      // come apart: `seesEveryRoom` lets them see every room on the machine,
+      // and reading one still takes a member row. Built on `requireVisibleRoom`
+      // instead, this would hand the operator a room an agent opened without
+      // them — roster, topic and all — from any session with no identity.
+      const anasOwn = service.createRoom(
+        { kind: 'channel', title: 'Ana alone', members: [], agentPaths: [] },
+        ana
+      );
+      expect(harness.store.getMember(anasOwn.id, human)).toBeNull();
+
+      await expect(
+        registry.invoke('rooms.get_room', { roomId: anasOwn.id }, { retryChannel: 'http-header' })
+      ).rejects.toMatchObject({ payload: { code: 'ROOM_NOT_FOUND' } });
+
+      // The control on the same room: it exists and describes perfectly well
+      // for the agent that IS in it, so the refusal above is the missing member
+      // row rather than a missing room.
+      expect((await describeAs(anasOwn.id)).roomId).toBe(anasOwn.id);
+    });
+
+    it('reports a name that sanitizes to nothing as `null`, rather than dropping the key', async () => {
+      // Same reasoning as the topic: `undefined` is a key JSON drops, and a room
+      // arriving with no `name` at all leaves an agent nothing to call it by.
+      const dm = service.createRoom(
+        { kind: 'dm', title: '<>', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+
+      const room = await describeAs(dm.id);
+
+      expect(room.name).toBeNull();
+      expect(Object.hasOwn(room, 'name')).toBe(true);
+    });
+
     it('strips the brackets out of every label it hands back', async () => {
       // Nothing sanitizes a title, a topic or an agent's display name on the way
       // IN — `createRoom` writes what it is given — so this read is where the
@@ -613,7 +650,7 @@ describe('the rooms capability domain', () => {
     interface FoundRoom {
       roomId: string;
       kind: string;
-      name: string;
+      name: string | null;
       members: Array<{ handle?: string }>;
     }
 
@@ -621,6 +658,15 @@ describe('the rooms capability domain', () => {
     async function findAs(input: Record<string, unknown>): Promise<FoundRoom[]> {
       const result = (await call('rooms.find_room', input)) as { rooms: FoundRoom[] };
       return result.rooms;
+    }
+
+    /** Pin a room's last-activity, so an ordering assertion is not a race. */
+    function stampActivity(roomId: string, at: string): void {
+      harness.db
+        .update(roomsTable)
+        .set({ lastActivityAt: at })
+        .where(eq(roomsTable.id, roomId))
+        .run();
     }
 
     /** Open a channel with Ana in it, and answer with its id. */
@@ -706,14 +752,22 @@ describe('the rooms capability domain', () => {
     });
 
     it('refuses a filter that narrows nothing, rather than quietly listing everything', async () => {
-      // Both of these pass the schema and match every room the caller is in,
-      // which would turn a find into a capped list wearing the wrong name.
-      await expect(call('rooms.find_room', { name: '   ' })).rejects.toMatchObject({
-        payload: { code: 'MISSING_FILTER' },
-      });
-      await expect(call('rooms.find_room', { members: ['@'] })).rejects.toMatchObject({
-        payload: { code: 'MISSING_FILTER' },
-      });
+      // Every one of these passes the schema and matches every room the caller
+      // is in, which would turn a find into a capped list wearing the wrong
+      // name. The two sigils are the sharp cases: the service strips `#` and
+      // `@` before matching, so a guard that tested the RAW string would wave
+      // through exactly what the service then reduces to nothing.
+      for (const input of [
+        { name: '   ' },
+        { name: '#' },
+        { name: ' # ' },
+        { members: ['@'] },
+        { members: ['@', ' '] },
+      ]) {
+        await expect(call('rooms.find_room', input), JSON.stringify(input)).rejects.toMatchObject({
+          payload: { code: 'MISSING_FILTER' },
+        });
+      }
     });
 
     it(`answers at most ${FIND_ROOMS_MAX} matches, however many there are`, async () => {
@@ -725,6 +779,58 @@ describe('the rooms capability domain', () => {
       }
 
       expect(await findAs({ name: 'shipping-lane' })).toHaveLength(FIND_ROOMS_MAX);
+    });
+
+    it('answers most recently active first, which is what the description promises', async () => {
+      // Stamped rather than raced: three rooms opened in one loop can share a
+      // millisecond, and the id tiebreak is a random ULID suffix — so an
+      // ordering assertion built on creation order would pass or fail by luck.
+      const alpha = anasChannel('lane-alpha');
+      const beta = anasChannel('lane-beta');
+      const gamma = anasChannel('lane-gamma');
+      stampActivity(alpha, '2026-08-25T09:00:00.000Z');
+      stampActivity(beta, '2026-08-25T11:00:00.000Z');
+      stampActivity(gamma, '2026-08-25T10:00:00.000Z');
+
+      expect((await findAs({ name: 'lane-' })).map((room) => room.roomId)).toEqual([
+        beta,
+        gamma,
+        alpha,
+      ]);
+    });
+
+    it('applies BOTH filters before the cap, never the cap between them', async () => {
+      // The order is load-bearing, and a cap in the wrong place is invisible in
+      // a small fixture. Here the three rooms that answer the whole query are
+      // the OLDEST, so they sit below the cap in activity order: a slice taken
+      // after the name filter drops them before the members filter ever runs,
+      // and the answer comes back empty instead of complete.
+      const withBo: string[] = [];
+      for (let n = 0; n < 3; n += 1) {
+        const room = service.createRoom(
+          {
+            kind: 'channel',
+            title: `dedupe-lane-old-${n}`,
+            members: [],
+            agentPaths: ['/agents/ana', '/agents/bo'],
+          },
+          human
+        );
+        stampActivity(room.id, `2026-08-25T09:0${n}:00.000Z`);
+        withBo.push(room.id);
+      }
+      for (let n = 0; n < FIND_ROOMS_MAX + 2; n += 1) {
+        const padded = String(n).padStart(2, '0');
+        stampActivity(anasChannel(`dedupe-lane-new-${padded}`), `2026-08-25T10:${padded}:00.000Z`);
+      }
+
+      const found = await findAs({ name: 'dedupe-lane', members: ['bo'] });
+
+      expect(found.map((room) => room.roomId).sort()).toEqual([...withBo].sort());
+      // The control: the name filter on its own really does match more than the
+      // cap, so the complete answer above is the ORDER of the filters rather
+      // than a fixture too small to tell the difference.
+      expect(await findAs({ name: 'dedupe-lane' })).toHaveLength(FIND_ROOMS_MAX);
     });
 
     it('does not find a room the caller is not in, however well it matches', async () => {
