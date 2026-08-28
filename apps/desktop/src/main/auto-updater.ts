@@ -4,6 +4,13 @@ import { app, autoUpdater as nativeAutoUpdater, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { confirmInterruptingAgents } from './quit-guard';
+import {
+  clearUpdateIntent,
+  isAtLeastVersion,
+  isNewerVersion,
+  readUpdateIntent,
+  writeUpdateIntent,
+} from './updater-intent';
 
 /** The IPC channel the main process pushes {@link UpdateStatus} events to the renderer on. */
 export const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -23,7 +30,13 @@ export type UpdateStatus =
   | { state: 'not-available' }
   | { state: 'downloading'; percent: number }
   | { state: 'downloaded'; version: string }
-  | { state: 'error'; message: string };
+  | { state: 'error'; message: string }
+  /**
+   * An update was staged, the app restarted for it, and the version that came
+   * back up is still the old one — the failure Squirrel cannot report in-process
+   * (see `updater-intent.ts`). Decided at launch, never during a session.
+   */
+  | { state: 'install-failed'; version: string; attempts: number };
 
 /** How often to re-check for updates in the background once the app is running. */
 const BACKGROUND_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -71,19 +84,38 @@ function isReleaseNotReadyError(err: Error): boolean {
 }
 
 /**
- * The last *actionable* update status (`downloading` / `downloaded`), retained
- * so a renderer that mounts *after* the event fired can recover it via the
- * `get-update-status` IPC — the analogue of `navigation.ts`'s pending-navigate
- * replay. This matters on macOS: closing the window (`mainWindow` → null, app
- * stays alive) then reopening mounts a fresh React tree that would otherwise
- * never learn a `downloaded` update is waiting, stranding it with no in-app
- * restart affordance (the native dialog having been suppressed).
+ * The update status a freshly-mounted renderer should start from, retained so a
+ * renderer that mounts *after* the event fired can recover it via the
+ * `get-update-status` IPC — the analogue of
+ * `navigation.ts`'s pending-navigate replay. This matters on macOS: closing the
+ * window (`mainWindow` → null, app stays alive) then reopening mounts a fresh
+ * React tree that would otherwise never learn a `downloaded` update is waiting,
+ * stranding it with no in-app restart affordance (the native dialog having been
+ * suppressed).
  *
- * Only `downloading`/`downloaded` are stored — the transient
- * `checking`/`available`/`not-available`/`error` states are not worth
- * replaying and must never overwrite a stored `downloaded`.
+ * Whatever the renderer would be showing, in other words — {@link foldForReplay}
+ * applies the renderer's own folding rule, so this is not "the last actionable
+ * status" but "the status a window opened right now should start from". An
+ * `error` that superseded a `downloaded` is stored, because a renderer that
+ * replayed the `downloaded` instead would offer a restart the live window had
+ * already stopped offering.
  */
 let lastStatus: UpdateStatus | null = null;
+
+/**
+ * Whether this run has already written an install intent.
+ *
+ * Both paths that install an update end in a quit, and the in-app restart runs
+ * through BOTH of them — `beginUpdateRestart()` records the attempt, then
+ * `quitAndInstall()`'s own `app.quit()` reaches the quit sequence, which asks
+ * again. Without this, one restart would count as two attempts and push the
+ * card to "Download fresh copy" after a single ordinary failure.
+ *
+ * Cleared by {@link resetUpdateRestartState}, which the updater's `error`
+ * handler calls: a restart that Squirrel rejected while the app stayed up is
+ * over, and the next click is a genuinely new attempt.
+ */
+let intentRecorded = false;
 
 /**
  * Set up automatic updates via GitHub Releases: checks on launch and every
@@ -107,6 +139,13 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
 
   autoUpdater.logger = log;
   autoUpdater.autoInstallOnAppQuit = true;
+
+  // Judge the previous attempt before asking for a new one. Ordering matters
+  // twice over: a verdict of `install-failed` has to be latched before the
+  // launch check starts emitting, and the check that follows will re-download
+  // the very version that just failed — which {@link foldForReplay} is what
+  // stops from reading as good news.
+  judgeLastInstallAttempt();
 
   autoUpdater.on('checking-for-update', () => {
     sendUpdateStatus({ state: 'checking' });
@@ -136,6 +175,8 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
 
   autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
     checkingInteractively = false;
+    // Read before the send, which may retire the failure this asks about.
+    const knownBad = failedInstallStandingFor(event.version);
     // The renderer's in-app card is the primary "restart to install" surface.
     sendUpdateStatus({ state: 'downloaded', version: event.version });
 
@@ -145,6 +186,22 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
     // (macOS keeps the app alive with zero windows open).
     const win = getMainWindow?.();
     if (win && !win.isDestroyed()) return;
+
+    if (knownBad) {
+      // This exact version already failed to install, and the 4-hourly check
+      // re-stages it indefinitely — so this dialog would offer, over and over,
+      // the one action known not to work.
+      //
+      // Silence rather than a second dialog offering the download page: there
+      // is no window here, so acting on anything means opening one, and doing
+      // that shows the card that already carries the honest remedy. A native
+      // dialog would only duplicate the platform download map into the main
+      // process to say the same thing a beat earlier.
+      log.info(
+        `[updater] Not offering a restart for ${event.version}: it is already recorded as failing to install.`
+      );
+      return;
+    }
 
     void showMessageBox({
       type: 'info',
@@ -351,13 +408,56 @@ function armUpdateRestart(): void {
 }
 
 /**
- * Clear both pieces of update-restart state.
+ * Clear the module's per-run update-restart state.
  *
  * @internal Exported for testing only.
  */
 export function resetUpdateRestartState(): void {
   restartArmed = false;
   restartConfirmedAt = null;
+  intentRecorded = false;
+}
+
+/**
+ * Write down that the update now waiting is about to be installed, so the next
+ * launch can tell whether it was.
+ *
+ * Called from **both** paths that install one: the in-app/native restart
+ * ({@link beginUpdateRestart}) and the ordinary quit that installs on the way
+ * out (`autoInstallOnAppQuit`, reached through the quit sequence in
+ * `quit-guard.ts`). One helper for both, and idempotent per run, because the
+ * restart path goes through the quit sequence too — see {@link intentRecorded}.
+ *
+ * Records nothing unless an update is genuinely staged — see
+ * {@link pendingInstallVersion} — so an ordinary quit with no update waiting
+ * writes no file and the next launch has nothing to judge.
+ */
+export function recordUpdateInstallIntent(): void {
+  if (!app.isPackaged || intentRecorded) return;
+  const version = pendingInstallVersion();
+  if (!version) return;
+  intentRecorded = true;
+  writeUpdateIntent(version);
+}
+
+/**
+ * The version this quit is about to hand to the installer, or `null` when a
+ * quit installs nothing.
+ *
+ * Two states mean an update is staged on disk, and **both have to count**:
+ *
+ * - `downloaded` — the ordinary case, staged during this session.
+ * - `install-failed` — staged during an earlier session and still sitting
+ *   there. `autoInstallOnAppQuit` hands it to Squirrel again on every quit, so
+ *   each of those quits is a further attempt. Counting only `downloaded`
+ *   froze `attempts` at 1 for ever: the count that decides "stop re-offering
+ *   the restart" could never reach 2, and the warn line reported one attempt
+ *   for a machine on its tenth.
+ */
+function pendingInstallVersion(): string | null {
+  if (lastStatus?.state === 'downloaded') return lastStatus.version;
+  if (lastStatus?.state === 'install-failed') return lastStatus.version;
+  return null;
 }
 
 /**
@@ -376,6 +476,7 @@ async function beginUpdateRestart(): Promise<void> {
   // Armed before the call, because on the branch that quits straight away the
   // windows are gone before this function resumes.
   armUpdateRestart();
+  recordUpdateInstallIntent();
   autoUpdater.quitAndInstall();
 }
 
@@ -394,20 +495,105 @@ export async function restartToUpdate(): Promise<void> {
 }
 
 /**
- * The last actionable status ({@link lastStatus}), for the `get-update-status`
- * replay IPC. Returns `null` until a `downloading`/`downloaded` event fires.
+ * The status a renderer mounting now should start from ({@link lastStatus}),
+ * for the `get-update-status` replay IPC. `null` until the first check says
+ * anything.
  */
 export function getLastUpdateStatus(): UpdateStatus | null {
   return lastStatus;
 }
 
+/**
+ * Decide whether the last install attempt landed, and say so.
+ *
+ * Runs once per launch, before the first check. A recorded intent whose version
+ * the running app has reached is a success — the file goes, and nothing is
+ * shown, because a working update is not news. A version the running app has
+ * NOT reached is the failure Squirrel could not report: the record is kept (it
+ * is what counts the attempts), and the renderer is told, so the card can offer
+ * the one remedy that bypasses Squirrel entirely.
+ */
+function judgeLastInstallAttempt(): void {
+  const intent = readUpdateIntent();
+  if (!intent) return;
+
+  const running = app.getVersion();
+  if (isAtLeastVersion(running, intent.offeredVersion)) {
+    clearUpdateIntent();
+    return;
+  }
+
+  log.warn(
+    `[updater] Update ${intent.offeredVersion} did not install: still running ${running} ` +
+      `after ${intent.attempts} attempt(s).`
+  );
+  sendUpdateStatus({
+    state: 'install-failed',
+    version: intent.offeredVersion,
+    attempts: intent.attempts,
+  });
+}
+
+/**
+ * Fold a status into the one kept for replay.
+ *
+ * **This is `foldStatus` from the renderer (`use-desktop-updater.ts`), rule for
+ * rule**, and it has to stay that way: what a window recreated by
+ * `get-update-status` shows must be what the window that stayed open shows. It
+ * used to be a looser "latch the actionable ones", and the gap was a real lie —
+ * `downloaded` then `error` stored the `downloaded`, so closing and reopening
+ * the window brought "Restart to install" back from the dead.
+ *
+ * So an `error` replaces a stored `downloaded`, a transient
+ * (`checking`/`available`/`not-available`) cannot clear a stored download, and
+ * a recorded install failure is cleared **only** by a strictly newer version
+ * finishing its download — the updater re-stages the exact version that just
+ * failed within minutes of every launch.
+ *
+ * The one knowing divergence: version ordering here is
+ * {@link isNewerVersion} (full semver), while the renderer uses the client's
+ * shared `isNewer` (numeric core only). They agree on every version our release
+ * train produces and can only differ on a prerelease, which the updater channel
+ * never offers.
+ *
+ * @param prev - What is currently stored.
+ * @param next - The status just sent.
+ */
+function foldForReplay(prev: UpdateStatus | null, next: UpdateStatus): UpdateStatus | null {
+  if (prev?.state === 'install-failed') {
+    const replaced = next.state === 'downloaded' && isNewerVersion(next.version, prev.version);
+    return replaced ? next : prev;
+  }
+  if (REPLACING_STATES.has(next.state)) return next;
+  if (prev && (prev.state === 'downloading' || prev.state === 'downloaded')) return prev;
+  return next;
+}
+
+/** States that replace whatever is showing, rather than deferring to it. */
+const REPLACING_STATES: ReadonlySet<UpdateStatus['state']> = new Set([
+  'downloading',
+  'downloaded',
+  'install-failed',
+  'error',
+]);
+
+/**
+ * Is a recorded install failure still standing against `version`?
+ *
+ * True when the app already knows this exact update (or an older one) will not
+ * install. The staged copy on disk is unchanged, so every path that would offer
+ * to install it — the native restart dialog most of all — is offering something
+ * that cannot work.
+ *
+ * @param version - The version just staged.
+ */
+function failedInstallStandingFor(version: string): boolean {
+  return lastStatus?.state === 'install-failed' && !isNewerVersion(version, lastStatus.version);
+}
+
 /** Push an {@link UpdateStatus} to the tracked main window's renderer, mirroring how `navigation.ts` sends `navigate`. */
 function sendUpdateStatus(status: UpdateStatus): void {
-  // Latch only the actionable states for replay; transient ones must not clobber
-  // a stored `downloaded` (a background re-check emits checking→available).
-  if (status.state === 'downloading' || status.state === 'downloaded') {
-    lastStatus = status;
-  }
+  lastStatus = foldForReplay(lastStatus, status);
   const win = getMainWindow?.();
   if (win && !win.isDestroyed()) win.webContents.send(UPDATE_STATUS_CHANNEL, status);
 }

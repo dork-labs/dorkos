@@ -3,6 +3,7 @@ import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-u
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('electron-updater', () => import('./electron-updater-mock'));
+vi.mock('electron-log', () => import('./electron-log-mock'));
 
 /**
  * `vi.mock(..., factory)` memoizes its result for the whole test file, so
@@ -494,6 +495,7 @@ describe('restarting to install an update (DOR-538)', () => {
       getWindow: () => null,
       shutdown,
       consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+      recordUpdateInstallIntent: autoUpdaterModule.recordUpdateInstallIntent,
     });
     return { app, autoUpdater, autoUpdaterModule, quitGuard, shutdown };
   }
@@ -669,5 +671,368 @@ describe('restarting to install an update (DOR-538)', () => {
       '1 agent is still working or waiting on your answer. Restart anyway?'
     );
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The honesty half of the updater overhaul (spec `desktop-updater-overhaul`
+ * D1–D3, DOR-1454).
+ *
+ * Squirrel cannot report an install that failed, so the app writes down what it
+ * was promised and judges the promise on the next launch. These cases drive
+ * that end to end through the REAL intent file (a throwaway `userData`
+ * directory per test — see `electron-mock.ts`), because "did anything actually
+ * survive the restart" is the entire question.
+ */
+describe('install intent and the next-launch verdict (DOR-1454)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Boot the updater as `index.ts` does, with a window present and a chosen running version. */
+  async function launch(runningVersion = '0.63.0') {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    app.getVersion = vi.fn(() => runningVersion);
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const intent = await import('../updater-intent');
+    const autoUpdaterModule = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    return { app, autoUpdater, autoUpdaterModule, intent, win };
+  }
+
+  /** Every `update:status` payload the renderer was sent. */
+  function sentStatuses(win: { webContents: { send: ReturnType<typeof vi.fn> } }): unknown[] {
+    return win.webContents.send.mock.calls
+      .filter(([channel]) => channel === 'update:status')
+      .map(([, status]) => status);
+  }
+
+  it('says nothing on a machine that has never attempted an install', async () => {
+    const { autoUpdaterModule, win } = await launch();
+
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(sentStatuses(win)).not.toContainEqual(
+      expect.objectContaining({ state: 'install-failed' })
+    );
+    expect(autoUpdaterModule.getLastUpdateStatus()).toBeNull();
+  });
+
+  it('forgets the attempt when the update actually landed', async () => {
+    const { autoUpdaterModule, intent, win } = await launch('0.63.0');
+    intent.writeUpdateIntent('0.63.0');
+
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(intent.readUpdateIntent()).toBeNull();
+    expect(sentStatuses(win)).not.toContainEqual(
+      expect.objectContaining({ state: 'install-failed' })
+    );
+  });
+
+  it('forgets the attempt when an even newer version is running (a manual install)', async () => {
+    const { autoUpdaterModule, intent, win } = await launch('0.64.0');
+    intent.writeUpdateIntent('0.63.0');
+
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(intent.readUpdateIntent()).toBeNull();
+  });
+
+  it('tells the renderer, warns once, and KEEPS the record when the update did not land', async () => {
+    const log = (await import('electron-log')).default;
+    const { autoUpdaterModule, intent, win } = await launch('0.58.0');
+    intent.writeUpdateIntent('0.63.0');
+
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(sentStatuses(win)).toContainEqual({
+      state: 'install-failed',
+      version: '0.63.0',
+      attempts: 1,
+    });
+    // Kept: it is the record that counts the attempts.
+    expect(intent.readUpdateIntent()).toMatchObject({ offeredVersion: '0.63.0', attempts: 1 });
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(log.warn).mock.calls[0]?.[0]).toContain('0.63.0');
+  });
+
+  it('carries the attempt count through to the card on a second failure', async () => {
+    const { autoUpdaterModule, intent, win } = await launch('0.58.0');
+    intent.writeUpdateIntent('0.63.0');
+    intent.writeUpdateIntent('0.63.0');
+
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(sentStatuses(win)).toContainEqual({
+      state: 'install-failed',
+      version: '0.63.0',
+      attempts: 2,
+    });
+  });
+
+  it('replays a failed install to a renderer that mounts later', async () => {
+    // macOS close→reopen: the window that was told is gone, and the fresh React
+    // tree learns nothing unless the status was latched.
+    const { autoUpdaterModule, intent, win } = await launch('0.58.0');
+    intent.writeUpdateIntent('0.63.0');
+
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual({
+      state: 'install-failed',
+      version: '0.63.0',
+      attempts: 1,
+    });
+  });
+
+  it('does not let the SAME version re-downloading erase the failure', async () => {
+    // What actually happens within minutes of every launch: the updater
+    // re-downloads and re-stages the exact version that would not install.
+    const { autoUpdater, autoUpdaterModule, intent, win } = await launch('0.58.0');
+    intent.writeUpdateIntent('0.63.0');
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    autoUpdater.emit('download-progress', { percent: 80 } as ProgressInfo);
+    autoUpdater.emit('update-downloaded', { version: '0.63.0' } as UpdateDownloadedEvent);
+
+    // A renderer mounting now must not be handed "Restart to install" for the
+    // one thing restarting cannot fix.
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual({
+      state: 'install-failed',
+      version: '0.63.0',
+      attempts: 1,
+    });
+  });
+
+  it('lets a genuinely newer version replace the failure once it has downloaded', async () => {
+    const { autoUpdater, autoUpdaterModule, intent, win } = await launch('0.58.0');
+    intent.writeUpdateIntent('0.63.0');
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual({
+      state: 'downloaded',
+      version: '0.64.0',
+    });
+  });
+
+  it('records the attempt BEFORE handing off to the installer', async () => {
+    const { autoUpdater, autoUpdaterModule, intent, win } = await launch();
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+    vi.mocked(autoUpdater.quitAndInstall).mockImplementation(() => {
+      // Whatever Squirrel does next, the record has to already be on disk:
+      // on the branch that quits straight away nothing after this runs.
+      expect(intent.readUpdateIntent()).toMatchObject({ offeredVersion: '0.64.0', attempts: 1 });
+    });
+
+    await autoUpdaterModule.restartToUpdate();
+
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(intent.readUpdateIntent()).toMatchObject({ offeredVersion: '0.64.0', attempts: 1 });
+  });
+
+  it('counts one restart as ONE attempt, though it passes both recording paths', async () => {
+    // The restart records, then `quitAndInstall()`'s own `app.quit()` reaches
+    // the quit sequence, which asks again. Two writes would send the card to
+    // "Download fresh copy" after a single ordinary failure.
+    const { app, autoUpdater, autoUpdaterModule, intent, win } = await launch();
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => 0,
+      getWindow: () => null,
+      shutdown: () => Promise.resolve(),
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+      recordUpdateInstallIntent: autoUpdaterModule.recordUpdateInstallIntent,
+    });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+
+    await autoUpdaterModule.restartToUpdate();
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(intent.readUpdateIntent()?.attempts).toBe(1);
+  });
+
+  it('records the attempt for an ordinary quit that installs on the way out', async () => {
+    // `autoInstallOnAppQuit` — the path that finally installed something on the
+    // reporting user's machine, and the one nothing ever announced.
+    const { app, autoUpdater, autoUpdaterModule, intent, win } = await launch();
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => 0,
+      getWindow: () => null,
+      shutdown: () => Promise.resolve(),
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+      recordUpdateInstallIntent: autoUpdaterModule.recordUpdateInstallIntent,
+    });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+
+    // Nobody clicked restart; this is Cmd+Q.
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(intent.readUpdateIntent()).toMatchObject({ offeredVersion: '0.64.0', attempts: 1 });
+  });
+
+  it('writes nothing when a quit has no update staged', async () => {
+    const { app, autoUpdater, autoUpdaterModule, intent, win } = await launch();
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => 0,
+      getWindow: () => null,
+      shutdown: () => Promise.resolve(),
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+      recordUpdateInstallIntent: autoUpdaterModule.recordUpdateInstallIntent,
+    });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    // Downloading is not staged: there is nothing for the next launch to judge.
+    autoUpdater.emit('download-progress', { percent: 40 } as ProgressInfo);
+
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(intent.readUpdateIntent()).toBeNull();
+  });
+
+  it('stops counting once an error retires the offer, rather than inventing attempts', async () => {
+    // The macOS shape: quitAndInstall deferred, then Squirrel refused, and the
+    // app is still up. The error replaces the `downloaded` everywhere — the
+    // card stops offering a restart, and with nothing staged to point at,
+    // neither a second click nor a later quit may invent a further attempt.
+    const { app, autoUpdater, autoUpdaterModule, intent, win } = await launch();
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => 0,
+      getWindow: () => null,
+      shutdown: () => Promise.resolve(),
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+      recordUpdateInstallIntent: autoUpdaterModule.recordUpdateInstallIntent,
+    });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+
+    await autoUpdaterModule.restartToUpdate();
+    expect(intent.readUpdateIntent()?.attempts).toBe(1);
+
+    autoUpdater.emit('error', new Error('Could not get code signature'));
+    expect(autoUpdaterModule.getLastUpdateStatus()).toMatchObject({ state: 'error' });
+
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // The one real attempt stands; the count reflects what was tried.
+    expect(intent.readUpdateIntent()?.attempts).toBe(1);
+  });
+
+  it('replays the ERROR, not the dead downloaded, after a download that then failed', async () => {
+    // The lie this whole change exists to kill, in its last hiding place: the
+    // renderer replaces a `downloaded` with a later `error`, so a window
+    // recreated by `get-update-status` must not be handed the `downloaded`
+    // back. It was, and "Restart to install" returned from the dead.
+    const { autoUpdater, autoUpdaterModule, win } = await launch();
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+    autoUpdater.emit('error', new Error('code signature check failed'));
+
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual({
+      state: 'error',
+      message: 'code signature check failed',
+    });
+  });
+
+  it('does not strand a stale error once a later check resolves it', async () => {
+    // The replay folds exactly as the renderer does, so a transient that the
+    // renderer would move on from moves the stored status on too.
+    const { autoUpdater, autoUpdaterModule, win } = await launch();
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+    autoUpdater.emit('error', new Error('offline'));
+    autoUpdater.emit('update-not-available', { version: '0.63.0' } as UpdateInfo);
+
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual({ state: 'not-available' });
+  });
+
+  it('does not offer a native restart for a version already known not to install', async () => {
+    // No window (macOS, closed), a judged failure, and the 4-hourly check
+    // re-staging the same version for ever. The modal used to appear every
+    // time, offering the one action that cannot work.
+    const { app, autoUpdater, autoUpdaterModule, intent } = await launch('0.58.0');
+    const { dialog } = await getElectronMock();
+    intent.writeUpdateIntent('0.63.0');
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    autoUpdater.emit('update-downloaded', { version: '0.63.0' } as UpdateDownloadedEvent);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('still offers the native restart once a genuinely newer version is staged', async () => {
+    // The suppression is about THIS version, never a blanket silence.
+    const { autoUpdater, autoUpdaterModule, intent } = await launch('0.58.0');
+    const { dialog } = await getElectronMock();
+    intent.writeUpdateIntent('0.63.0');
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    autoUpdater.emit('update-downloaded', { version: '0.64.0' } as UpdateDownloadedEvent);
+
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({ buttons: ['Restart Now', 'Later'] })
+    );
+  });
+
+  it('keeps counting attempts across launches, so the count can reach two', async () => {
+    // Squirrel re-attempts the staged update on every ordinary quit
+    // (`autoInstallOnAppQuit`). Counting only a fresh `downloaded` froze this
+    // at 1 for ever, which made the warn line untrue and the >= 2 rule inert.
+    const { app, autoUpdaterModule, intent } = await launch('0.58.0');
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => 0,
+      getWindow: () => null,
+      shutdown: () => Promise.resolve(),
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+      recordUpdateInstallIntent: autoUpdaterModule.recordUpdateInstallIntent,
+    });
+    // Launch 2: the first attempt is on record and judged a failure.
+    intent.writeUpdateIntent('0.63.0');
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    expect(intent.readUpdateIntent()?.attempts).toBe(1);
+
+    // The person quits; Squirrel tries the staged copy again on the way out.
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(intent.readUpdateIntent()).toMatchObject({ offeredVersion: '0.63.0', attempts: 2 });
+  });
+
+  it('records nothing in an unpackaged build, which has no installer to run', async () => {
+    const { app, autoUpdaterModule, intent, win } = await launch();
+    app.isPackaged = false;
+
+    autoUpdaterModule.recordUpdateInstallIntent();
+
+    expect(intent.readUpdateIntent()).toBeNull();
+    expect(win.webContents.send).not.toHaveBeenCalled();
   });
 });

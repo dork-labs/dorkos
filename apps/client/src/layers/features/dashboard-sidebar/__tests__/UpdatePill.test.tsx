@@ -28,7 +28,10 @@ vi.mock('@/layers/entities/config', () => ({
 }));
 
 // ── The desktop native updater. Off by default: these run in a browser ──
-let mockDesktop: { isDesktop: boolean; status: { state: string; version?: string } | null } = {
+let mockDesktop: {
+  isDesktop: boolean;
+  status: { state: string; version?: string; attempts?: number } | null;
+} = {
   isDesktop: false,
   status: null,
 };
@@ -53,7 +56,28 @@ beforeEach(() => {
   mockDesktop = { isDesktop: false, status: null };
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  delete window.electronAPI;
+});
+
+/**
+ * Put the app inside the desktop shell on `platform`, and hand back the spy the
+ * "Download fresh copy" button ends up calling.
+ *
+ * The real seam: `openExternalLink` prefers the preload bridge over
+ * `window.open`, because at the app's own origin the shell would turn
+ * `window.open` into a second cockpit window rather than leaving for a browser.
+ */
+function stubDesktopShell(platform: NodeJS.Platform): ReturnType<typeof vi.fn> {
+  const openExternal = vi.fn().mockResolvedValue(undefined);
+  window.electronAPI = {
+    platform,
+    openExternal,
+    getServerPort: () => 4242,
+  } as unknown as ElectronAPI;
+  return openExternal;
+}
 
 describe('UpdatePill', () => {
   it('renders zero DOM when no update is ready', () => {
@@ -151,6 +175,82 @@ describe('UpdatePill', () => {
     render(<PillHost />);
     fireEvent.click(screen.getByText('Update ready — Restart'));
     expect(mockRestart).toHaveBeenCalled();
+  });
+
+  it('stops offering a restart once the install has failed, and offers a fresh copy instead', () => {
+    // Restarting is precisely the thing that did not work — this is the state
+    // where the card used to keep saying "Update ready — Restart" forever.
+    stubDesktopShell('darwin');
+    mockDesktop = {
+      isDesktop: true,
+      status: { state: 'install-failed', version: '0.63.0', attempts: 1 },
+    };
+    render(<PillHost />);
+
+    expect(
+      screen.getByText(
+        "The update couldn't install itself. Download a fresh copy — your settings and agents stay put."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText('Download fresh copy')).toBeInTheDocument();
+    expect(screen.queryByText('Update ready — Restart')).toBeNull();
+  });
+
+  it('never re-offers a plain restart past two failed attempts', () => {
+    stubDesktopShell('darwin');
+    mockDesktop = {
+      isDesktop: true,
+      status: { state: 'install-failed', version: '0.63.0', attempts: 2 },
+    };
+    render(<PillHost />);
+
+    expect(screen.queryByText('Update ready — Restart')).toBeNull();
+    expect(screen.queryByLabelText('Restart to install the update')).toBeNull();
+    fireEvent.click(screen.getByText('Download fresh copy'));
+    expect(mockRestart).not.toHaveBeenCalled();
+  });
+
+  it('sends a Mac to the Mac download', () => {
+    const openExternal = stubDesktopShell('darwin');
+    mockDesktop = {
+      isDesktop: true,
+      status: { state: 'install-failed', version: '0.63.0', attempts: 2 },
+    };
+    render(<PillHost />);
+
+    fireEvent.click(screen.getByText('Download fresh copy'));
+
+    expect(openExternal).toHaveBeenCalledWith('https://dorkos.ai/download/mac');
+  });
+
+  it('sends Windows to the Windows download', () => {
+    // Handing someone the wrong installer is worse than handing them nothing.
+    const openExternal = stubDesktopShell('win32');
+    mockDesktop = {
+      isDesktop: true,
+      status: { state: 'install-failed', version: '0.63.0', attempts: 2 },
+    };
+    render(<PillHost />);
+
+    fireEvent.click(screen.getByText('Download fresh copy'));
+
+    expect(openExternal).toHaveBeenCalledWith('https://dorkos.ai/download/windows');
+  });
+
+  it('falls back to the front door on a platform with no installer route', () => {
+    // No Linux desktop build exists, so nothing reaches this today — but a Mac
+    // disk image would be the wrong answer if one ever did.
+    const openExternal = stubDesktopShell('linux');
+    mockDesktop = {
+      isDesktop: true,
+      status: { state: 'install-failed', version: '0.63.0', attempts: 2 },
+    };
+    render(<PillHost />);
+
+    fireEvent.click(screen.getByText('Download fresh copy'));
+
+    // Normalized by the link seam, which hands the browser a parsed URL.
+    expect(openExternal).toHaveBeenCalledWith('https://dorkos.ai/');
   });
 
   it('never puts an update in Heads up', () => {
