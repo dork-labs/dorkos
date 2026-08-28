@@ -32,6 +32,7 @@ import {
   type GrantedApproval,
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
+import { enforceToolGroupGrant } from './tool-group-enforcement.js';
 
 /**
  * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
@@ -251,8 +252,9 @@ export interface CapabilityRegistry {
    * @returns The capability's plain output.
    * @throws If no capability is registered under `id`; if `input` fails schema
    *   validation (a `ZodError`); if the context carries both a trusted marker and
-   *   an agent identity; or, when the tier gate does not allow the call, a
-   *   {@link CapabilityGateRefusal} carrying the payload to return to the caller.
+   *   an agent identity; or, when either gate does not allow the call — the
+   *   per-agent tool-group grant (`tool-group-enforcement.ts`) or the tier gate —
+   *   a {@link CapabilityGateRefusal} carrying the payload to return to the caller.
    */
   invoke(id: string, input: unknown, context?: CapabilityInvocationContext): Promise<unknown>;
   /**
@@ -475,9 +477,20 @@ export function composeRegistry(
         ? { trusted: supplied.trusted, ...surface }
         : { ...(supplied.identity ? { identity: supplied.identity } : {}), ...surface };
 
-      // The gate. A trusted caller skips it, having already proved it may decide
-      // the very approval this gate would ask for.
+      // The gates. A trusted caller skips both, having already proved it may
+      // decide the very approval the tier gate would ask for.
       if (!supplied.trusted) {
+        // The per-agent tool-group grant, BEFORE the tier gate on purpose: a
+        // capability this caller may never reach must not mint an approval card
+        // for an action that was never going to run. Ungated capabilities — every
+        // one but the few that declare a `toolGroup` — pay one `undefined` check
+        // here and nothing else.
+        const grant = await enforceToolGroupGrant({
+          action: capability,
+          ...(supplied.identity ? { identity: supplied.identity } : {}),
+        });
+        if (grant.outcome !== 'allowed') throw new CapabilityGateRefusal(grant);
+
         const decision = enforceCapabilityTier({
           action: capability,
           input: parsed,
