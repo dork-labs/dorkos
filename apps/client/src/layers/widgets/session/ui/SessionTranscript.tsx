@@ -263,7 +263,6 @@ export function SessionTranscript({
     [listRows]
   );
 
-
   /**
    * Render one row by kind.
    *

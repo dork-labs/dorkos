@@ -202,6 +202,12 @@ export function useConfigureForm({
   }
 
   function reset() {
+    // The two seeding guards go with it. They record what this wizard has
+    // already filled in, and a reset says none of it happened — leave them set
+    // and re-entering the wizard on the same template seeds nothing, so the
+    // name stays empty and Create never enables (DOR-1558).
+    filledFor.current = null;
+    seededFace.current = null;
     setDisplayName('');
     setNameAutoFilled(false);
     setDirectoryOverride('');

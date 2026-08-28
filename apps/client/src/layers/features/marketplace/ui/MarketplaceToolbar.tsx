@@ -12,6 +12,7 @@ import {
 } from '@/layers/shared/ui';
 import type { MarketplaceSort } from '../model/marketplace-search';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
+import { useRenderSlot } from '@/layers/shared/lib';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -108,12 +109,26 @@ export function MarketplaceToolbar() {
 function MarketplaceSearchInput() {
   const { search: committedSearch, setSearch } = useMarketplaceParams();
   const inputRef = useRef<HTMLInputElement>(null);
-  // What has been typed but not yet committed, stamped with the committed value
-  // it was typed over. A committed search that changes elsewhere (reset filters,
-  // a link) therefore wins on its own, without an effect writing the field back.
-  const [typed, setTyped] = useState<{ over: string; value: string } | null>(null);
-  const localSearch = typed !== null && typed.over === committedSearch ? typed.value : committedSearch;
-  const setLocalSearch = (value: string) => setTyped({ over: committedSearch, value });
+  // A number that moves once per committed search, whatever the search says.
+  // Stamping typed text against THIS rather than against the committed string is
+  // what lets an external change win: "Reset filters" puts the committed search
+  // back to '', the value it had when the typing started, and the string alone
+  // cannot tell that new commit from the one the typing was stamped over — so
+  // the field refilled itself and the debounce re-committed the query it had
+  // just been asked to drop.
+  const commit = useRenderSlot({ value: committedSearch, generation: 0 });
+  if (commit.read().value !== committedSearch) {
+    commit.write({ value: committedSearch, generation: commit.read().generation + 1 });
+  }
+  const commitGeneration = commit.read().generation;
+
+  // What has been typed but not yet committed. A committed search that changes
+  // elsewhere (reset filters, a link) therefore wins on its own, without an
+  // effect writing the field back.
+  const [typed, setTyped] = useState<{ generation: number; value: string } | null>(null);
+  const localSearch =
+    typed !== null && typed.generation === commitGeneration ? typed.value : committedSearch;
+  const setLocalSearch = (value: string) => setTyped({ generation: commitGeneration, value });
 
   // Debounce the local input before committing it to the URL.
   useEffect(() => {

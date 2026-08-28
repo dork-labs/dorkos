@@ -11,10 +11,7 @@ import { useAgentCreationStore, useIsTouchOnly, useProfileDeepLink } from '@/lay
 import { RoomLoudnessLine, roomDisplayTitle, type LoudnessPreview } from '@/layers/entities/room';
 import { useRoomDetailsView } from '../model/use-room-details-view';
 import { useRoomDetailsWrites } from '../model/use-room-details-writes';
-import {
-  useRoomPanelFocusStore,
-  type RoomPanelFocusRequest,
-} from '../model/room-panel-focus';
+import { useRoomPanelFocusStore, type RoomPanelFocusRequest } from '../model/room-panel-focus';
 import { AddMembersRow } from './AddMembersRow';
 import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';

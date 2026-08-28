@@ -239,13 +239,23 @@ export function ApprovalPrompt({
   // nothing left to warn about, so the region empties the moment it settles —
   // which also keeps it empty at rest, the state a live region has to be in for
   // its next change to be heard as news.
-  const announcement = (() => {
-    if (decided) return '';
-    if (secondsRemaining === WARN_AT_S) return 'Tool approval required. 2 minutes remaining.';
-    if (secondsRemaining === URGENT_AT_S) return 'Urgent: 1 minute to approve or deny.';
-    if (secondsRemaining === 0) return 'Nobody answered. The agent is waiting for you.';
-    return '';
-  })();
+  //
+  // Written as BANDS rather than exact seconds, which is what makes the sentence
+  // persist between crossings the way the latched state it replaces did: a
+  // region that emptied itself a second after speaking would leave a reader who
+  // asked to re-read it with nothing there. Bands also survive a skipped second
+  // — a backgrounded tab that jumps 121 → 119 still gets the warning, where an
+  // exact match got silence.
+  const announcement =
+    decided || secondsRemaining === null
+      ? ''
+      : secondsRemaining <= 0
+        ? 'Nobody answered. The agent is waiting for you.'
+        : secondsRemaining <= URGENT_AT_S
+          ? 'Urgent: 1 minute to approve or deny.'
+          : secondsRemaining <= WARN_AT_S
+            ? 'Tool approval required. 2 minutes remaining.'
+            : '';
 
   // NOTE: the RESOLUTION is deliberately not announced from here. Answering
   // resolves the interaction, which clears the input zone and unmounts this

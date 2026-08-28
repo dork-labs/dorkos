@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import type { BackgroundTaskPart, BackgroundTaskStatus } from '@dorkos/shared/types';
+import { useRenderSlot } from '@/layers/shared/lib';
 import type { ChatMessage } from './chat-types';
 
 /** A background task with a stable color assignment, ready for display. */
@@ -46,12 +47,22 @@ const NO_CELEBRATIONS: ReadonlySet<string> = new Set();
  * Agent tasks appear immediately when running. Bash tasks are suppressed until
  * they have been running for at least 5 seconds, preventing UI churn from
  * short-lived commands. All tasks remain visible for 1500ms after completion
- * (celebration window). Colors are assigned from a stable 5-color pool.
+ * (celebration window). Colors are pinned per task from a stable 5-color pool,
+ * the first time a task is drawn — a task keeps its color for as long as it
+ * exists, and one nobody ever sees never takes a slot out of the pool.
  *
  * @param messages - The current chat message list to scan for BackgroundTaskPart entries.
  */
 export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTask[] {
   const prevStatusRef = useRef<Map<string, string>>(new Map());
+  // Each task's colour, pinned the first time it is actually DRAWN. A render
+  // slot rather than a ref because the list below is built during render and has
+  // to read it; the write is idempotent (a task that already has a colour keeps
+  // it), so a render React discards costs nothing.
+  const colors = useRenderSlot<{ byTask: Map<string, string>; assigned: number }>({
+    byTask: new Map(),
+    assigned: 0,
+  });
   // Celebrating tasks are state, not a ref: the visible-task list below is
   // computed during render and has to see them, and render cannot read refs.
   const [celebrating, setCelebrating] = useState<ReadonlySet<string>>(NO_CELEBRATIONS);
@@ -134,17 +145,10 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
     const now = Date.now();
     const result: VisibleBackgroundTask[] = [];
 
-    // Colors follow each task's position in the message stream rather than the
-    // order it happened to become visible, so a task keeps the same color for
-    // as long as it exists and nothing shifts when a neighbour finishes. (The
-    // old render-time counter lived in a ref, which render is not allowed to
-    // read; it also re-colored survivors whenever the pool was re-walked.)
-    let colorIndex = 0;
+    const pinned = colors.read();
+    let assigned = pinned.assigned;
 
     for (const [taskId, part] of taskMap) {
-      const color = TASK_COLORS[colorIndex % TASK_COLORS.length];
-      colorIndex += 1;
-
       const isRunning = part.status === 'running';
       const isCelebrating = celebrating.has(taskId);
 
@@ -157,6 +161,21 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
         now - part.startedAt < BASH_VISIBILITY_THRESHOLD_MS
       ) {
         continue;
+      }
+
+      // The colour is pinned to the taskId the first time the task is drawn, and
+      // never moves again: a task keeps its colour for as long as it exists, and
+      // a task nobody ever sees — a bash command that finished inside the
+      // five-second threshold, or history that was terminal before this client
+      // loaded — never takes a slot out of the pool.
+      let color = pinned.byTask.get(taskId);
+      if (color === undefined) {
+        color = TASK_COLORS[assigned % TASK_COLORS.length]!;
+        assigned += 1;
+        pinned.byTask.set(taskId, color);
+        // The map and the counter move together, so a render React discards
+        // cannot leave one ahead of the other and hand two live tasks one colour.
+        colors.write({ byTask: pinned.byTask, assigned });
       }
 
       result.push({
@@ -175,5 +194,5 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
     }
 
     return result;
-  }, [taskMap, celebrating]);
+  }, [taskMap, celebrating, colors]);
 }

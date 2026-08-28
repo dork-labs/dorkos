@@ -90,36 +90,39 @@ export function useBrowserNotifications(): void {
     return typeof window !== 'undefined' && typeof window.Notification !== 'undefined';
   }, [inDesktopShell, permission]);
 
-  const show = useCallback((key: string, title: string, body: string, href: string | null) => {
-    let notification: Notification;
-    try {
-      // `tag` makes the OS replace rather than stack when the same thing is
-      // announced twice — a re-arrival after an answer, say.
-      //
-      // `silent` because DorkOS has already made the sound. The knock plays for
-      // the same arrival that raises this banner, so leaving the OS free to add
-      // its own default alert is two noises for one event — the same rule the
-      // desktop shell's wrapper follows for its native notifications.
-      notification = new Notification(title, { body, tag: key, silent: true });
-    } catch {
-      // Some browsers throw here rather than rejecting: Chrome on Android
-      // refuses the constructor outright and insists on a service worker. There
-      // is nothing to tell the person — they are not looking at this tab.
-      return;
-    }
+  const show = useCallback(
+    (key: string, title: string, body: string, href: string | null) => {
+      let notification: Notification;
+      try {
+        // `tag` makes the OS replace rather than stack when the same thing is
+        // announced twice — a re-arrival after an answer, say.
+        //
+        // `silent` because DorkOS has already made the sound. The knock plays for
+        // the same arrival that raises this banner, so leaving the OS free to add
+        // its own default alert is two noises for one event — the same rule the
+        // desktop shell's wrapper follows for its native notifications.
+        notification = new Notification(title, { body, tag: key, silent: true });
+      } catch {
+        // Some browsers throw here rather than rejecting: Chrome on Android
+        // refuses the constructor outright and insists on a service worker. There
+        // is nothing to tell the person — they are not looking at this tab.
+        return;
+      }
 
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-      openRef.current.delete(key);
-      if (href !== null) void latestNavigate.read()?.({ href });
-    };
-    notification.onclose = () => {
-      openRef.current.delete(key);
-    };
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+        openRef.current.delete(key);
+        if (href !== null) void latestNavigate.read()?.({ href });
+      };
+      notification.onclose = () => {
+        openRef.current.delete(key);
+      };
 
-    openRef.current.set(key, { notification, href });
-  }, [latestNavigate]);
+      openRef.current.set(key, { notification, href });
+    },
+    [latestNavigate]
+  );
 
   const onArrive = useCallback(
     (items: readonly BlockingItem[]) => {

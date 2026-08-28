@@ -191,6 +191,41 @@ describe('MarketplaceToolbar', () => {
     expect(mockParams.setSearch).toHaveBeenCalledWith('reviewer');
   });
 
+  it('clears the field for good when Reset filters puts the search back to empty', () => {
+    // The A→B→A hazard (DOR-1558): the committed search starts empty, the typing
+    // commits a query, and "Reset filters" returns it to empty — the same string
+    // the typing was stamped over. A stamp made of the value alone cannot tell
+    // that new commit from the old one, so the field refilled itself and the
+    // debounce re-committed the query the reader had just cleared.
+    vi.useFakeTimers();
+    const { rerender } = render(<MarketplaceToolbar />);
+
+    const searchInput = screen.getByTestId('marketplace-search') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: 'reviewer' } });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockParams.setSearch).toHaveBeenCalledWith('reviewer');
+
+    // The commit lands in the URL.
+    mockParams.search = 'reviewer';
+    rerender(<MarketplaceToolbar />);
+    expect((screen.getByTestId('marketplace-search') as HTMLInputElement).value).toBe('reviewer');
+
+    // Reset filters puts it back to the value it started at.
+    mockParams.setSearch.mockClear();
+    mockParams.search = '';
+    rerender(<MarketplaceToolbar />);
+    expect((screen.getByTestId('marketplace-search') as HTMLInputElement).value).toBe('');
+
+    // …and it STAYS empty past the debounce window, with nothing re-committed.
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect((screen.getByTestId('marketplace-search') as HTMLInputElement).value).toBe('');
+    expect(mockParams.setSearch).not.toHaveBeenCalled();
+  });
+
   // -------------------------------------------------------------------------
   // Sort
   // -------------------------------------------------------------------------

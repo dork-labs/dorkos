@@ -139,7 +139,8 @@ export function CanvasMarkdownContent({
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-
+      // Dropping edit mode when the active canvas session changes, which mirrors
+      // `use-debounced-input`'s reset-on-key-change.
       setIsEditing(false);
       setDocumentEditing(documentId, false);
     }

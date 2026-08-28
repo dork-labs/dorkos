@@ -150,7 +150,7 @@ export function useFilterState<
   useEffect(() => {
     if (prevSearchRef.current !== search) {
       prevSearchRef.current = search;
-
+      // Syncing with external URL state (browser back/forward).
       setInputValues(deserializeAll(definitions, search));
     }
   }, [search, definitions]);

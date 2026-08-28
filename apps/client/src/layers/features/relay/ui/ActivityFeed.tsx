@@ -112,7 +112,8 @@ export function ActivityFeed({
   // see: dead letters arriving, or the health bar asking for them.
   const honoured = choice !== null && (choice.afterAutoShow || !autoShowFailures) ? choice : null;
   const userToggled = honoured !== null;
-  const showFailures = honoured !== null ? honoured.open : Boolean(autoShowFailures) || deadLetterGroups.length > 0;
+  const showFailures =
+    honoured !== null ? honoured.open : Boolean(autoShowFailures) || deadLetterGroups.length > 0;
 
   const hasActiveFilters = sourceFilter !== 'all' || statusFilter !== 'all' || searchFilter !== '';
 

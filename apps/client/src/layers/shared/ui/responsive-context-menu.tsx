@@ -61,14 +61,18 @@ function ResponsiveContextMenu({ children }: ResponsiveContextMenuProps) {
 
   if (isDesktop) {
     return (
-      <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, setKeepsFocus, takeKeepsFocus }}>
+      <ResponsiveContextMenuContext.Provider
+        value={{ isDesktop, close, open, setKeepsFocus, takeKeepsFocus }}
+      >
         <ContextMenu>{children}</ContextMenu>
       </ResponsiveContextMenuContext.Provider>
     );
   }
 
   return (
-    <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, setKeepsFocus, takeKeepsFocus }}>
+    <ResponsiveContextMenuContext.Provider
+      value={{ isDesktop, close, open, setKeepsFocus, takeKeepsFocus }}
+    >
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
         {children}
       </Drawer>

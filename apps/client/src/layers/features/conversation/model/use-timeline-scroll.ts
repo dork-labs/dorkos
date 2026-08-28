@@ -136,7 +136,8 @@ export function useTimelineScroll(input: TimelineScrollInput): TimelineScroll {
     if (trackedRef.current === conversationId) return;
     trackedRef.current = conversationId;
     atBottomRef.current = true;
-
+    // A switch is an event: the reader asked for somewhere else, and this is the
+    // only place that hears it.
     setIsAtBottom(true);
     setHasNewRows(false);
     const el = elRef.current;
@@ -150,6 +151,7 @@ export function useTimelineScroll(input: TimelineScrollInput): TimelineScroll {
     const previous = lastRowCountRef.current;
     lastRowCountRef.current = rowCount;
     if (rowCount > previous && !atBottomRef.current) {
+      // An arrival is an event, and the row count is the only signal of one.
       setHasNewRows(true);
     }
   }, [rowCount]);

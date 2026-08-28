@@ -6,7 +6,7 @@
  *
  * @module features/marketplace/ui/InstallConfirmationDialog
  */
-import {useState} from 'react';
+import { useState } from 'react';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,

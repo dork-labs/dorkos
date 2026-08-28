@@ -173,11 +173,14 @@ export function useMentionAutocomplete({
     setTriggerPos((match.index ?? 0) + match[1].length);
   }, []);
 
-  const noteTextChange = useCallback((value: string) => {
-    latestText.write(value);
-    // Typing is new intent: whatever was dismissed is no longer what is there.
-    suppressedRef.current = false;
-  }, [latestText]);
+  const noteTextChange = useCallback(
+    (value: string) => {
+      latestText.write(value);
+      // Typing is new intent: whatever was dismissed is no longer what is there.
+      suppressedRef.current = false;
+    },
+    [latestText]
+  );
 
   const handleCursorChange = useCallback(
     (cursorPos: number) => {

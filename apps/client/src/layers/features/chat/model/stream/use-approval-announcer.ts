@@ -85,8 +85,7 @@ export function useApprovalAnnouncer(tailParts: MessagePart[], sessionId: string
       fresh.length === 1
         ? sentenceFor(fresh[0])
         : `Answered ${fresh.length} permission requests. Recorded in the conversation.`;
-
-    // landing is an EVENT, not derived state: it has to be said once and not
+    // An answer landing is an EVENT, not derived state: it has to be said once and not
     // re-said on the next render, which is exactly what the `seen` set above
     // guarantees. There is no cascade — this runs at most once per answered
     // request. Same shape as the sibling `useStreamingAnnouncer`.

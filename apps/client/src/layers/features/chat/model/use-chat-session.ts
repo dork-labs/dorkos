@@ -131,10 +131,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // stale closures from a destroyed-and-recreated session.
   const mountGenerationMapRef = useRef<Map<string, number>>(new Map());
 
-  // Seed the generation for this session before anything can write messages.
-  // A layout effect, not render: render may not touch refs, and this is the
-  // first effect the hook declares, so it lands ahead of every passive effect
-  // in the tree — nothing can reach `setMessages` before the entry exists.
+  // Seed the generation for this session. A layout effect rather than render,
+  // because render may not touch refs — and the first one this hook declares, so
+  // it lands ahead of every effect this component owns and every passive effect
+  // anywhere. It is NOT ahead of a descendant's layout effect, which React runs
+  // child-first; the guard fails open there, since `setMessages` skips the
+  // generation check entirely when the map has no entry for the session yet.
   useLayoutEffect(() => {
     if (!sid) return;
     if (mountGenerationMapRef.current.has(sid)) return;

@@ -22,6 +22,7 @@ import {
   isDesktopShell,
   registerLinkNavigator,
   registerTabOpener,
+  useRenderSlot,
 } from '@/layers/shared/lib';
 import {
   TransportProvider,
@@ -74,12 +75,23 @@ const MIN_PANEL_HEIGHT = 150;
 function DevToolsPanel() {
   const devtoolsOpen = useAppStore((s) => s.devtoolsOpen);
   const routerDevtoolsOpen = useAppStore((s) => s.routerDevtoolsOpen);
-  // The tab, chosen for whichever pair of panels is open. Toggling one on
-  // changes that pair, which drops an older pick and lands on the panel that was
-  // just opened — the auto-switch, derived rather than set from two effects.
+  // The tab, chosen for whichever pair of panels was open when it was chosen.
+  // Stamped against a GENERATION rather than the pair itself: there are only
+  // four pairs, so one comes back around quickly, and a stamp made of the pair
+  // would revive a pick from an older opening instead of following the panel
+  // that was just toggled on.
+  const panels = useRenderSlot({ query: devtoolsOpen, router: routerDevtoolsOpen, generation: 0 });
+  if (panels.read().query !== devtoolsOpen || panels.read().router !== routerDevtoolsOpen) {
+    panels.write({
+      query: devtoolsOpen,
+      router: routerDevtoolsOpen,
+      generation: panels.read().generation + 1,
+    });
+  }
+  const panelsGeneration = panels.read().generation;
+
   const [picked, setPicked] = React.useState<{
-    forQuery: boolean;
-    forRouter: boolean;
+    generation: number;
     tab: 'query' | 'router';
   } | null>(null);
   const [panelHeight, setPanelHeight] = React.useState(DEFAULT_PANEL_HEIGHT);
@@ -89,13 +101,13 @@ function DevToolsPanel() {
   const isOpen = devtoolsOpen || routerDevtoolsOpen;
 
   const activeTab =
-    picked !== null && picked.forQuery === devtoolsOpen && picked.forRouter === routerDevtoolsOpen
+    picked !== null && picked.generation === panelsGeneration
       ? picked.tab
       : routerDevtoolsOpen
         ? 'router'
         : 'query';
   const setActiveTab = (tab: 'query' | 'router') =>
-    setPicked({ forQuery: devtoolsOpen, forRouter: routerDevtoolsOpen, tab });
+    setPicked({ generation: panelsGeneration, tab });
 
   // Drag-to-resize handler
   const handleDragStart = React.useCallback(
