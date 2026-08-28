@@ -2,14 +2,16 @@
 covers:
   - 'feat(config): runtimes.dorkosTools experiment leaf (DOR-1613)'
   - 'feat(runtimes): give codex and opencode the DorkOS tools over /mcp (DOR-1613)'
-  # The two below are folded in deliberately, with no bullet of their own.
+  # The three below are folded in deliberately, with no bullet of their own.
   #
-  # The first corrects a defect in the feature above, on the same branch,
-  # before either ever shipped: a "Fixed" line would describe to people a
-  # problem they never had. The second only moves code between files and
-  # deletes an unused function — there is nothing in it a person could notice.
+  # The two fixes each correct a defect in the feature above, on the same
+  # branch, before any of it ever shipped — a "Fixed" line would describe to
+  # people a problem they never had. The refactor only moves code between files
+  # and deletes an unused function, so there is nothing in it a person could
+  # notice either.
   - 'fix(runtimes): keep codex MCP credentials out of the spawned argv (DOR-1613)'
   - 'refactor(server): extract codex header-env + opencode prompt assembly; drop dead gate (DOR-1613)'
+  - 'fix(runtimes): reserve the dorkos name only when codex actually injects it (DOR-1613)'
 ---
 
 ### Added
