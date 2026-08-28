@@ -12,7 +12,14 @@ import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
-import { getAgentDisplayName, cn, isDesktopShell, normalizeTeamView } from '@/layers/shared/lib';
+import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
+import {
+  getAgentDisplayName,
+  cn,
+  isDesktopShell,
+  normalizeTeamView,
+  LAUNCH_STARTED_AT,
+} from '@/layers/shared/lib';
 // Off the barrel by construction — see the module's own note.
 import { basename } from '@/layers/shared/lib/basename';
 import {
@@ -24,6 +31,7 @@ import {
   useSessionDetail,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
+import { useConfig } from '@/layers/entities/config';
 import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
@@ -90,6 +98,20 @@ import {
   useProfileDockDeepLink,
   useProfileShortcut,
 } from '@/layers/features/profile';
+
+/**
+ * How long a config read may hang before the shell calls the server unreachable.
+ *
+ * **Not the 3s escape hatch below, and the gap is the point.** A rejection is
+ * proof; a request that has not come back is only a wait, and the inline boot
+ * sentinel's own deadlines are set the same way — long enough that a machine
+ * which was merely busy is never accused. Fifteen seconds is past every healthy
+ * boot measured on this app, including a cold desktop start where the server is
+ * still coming up, and it is the point at which "still starting" and "wedged"
+ * stop being worth telling apart: the screen says the same honest thing about
+ * both, and clears itself the moment either resolves.
+ */
+const SERVER_HANG_DEADLINE_MS = 15_000;
 
 // ── Private slot types ────────────────────────────────────────
 
@@ -327,6 +349,60 @@ export function AppShell() {
     overlayVisible: showOnboarding,
   });
 
+  // **A failed config read is not a slow one, and the gate below cannot tell.**
+  // `isLoading` is `isPending && isFetching`, so the moment the read ERRORS it
+  // reads false with nothing in hand: the shell fell through to a first-run
+  // overlay that could not save a single answer it collected, and before that
+  // to `<div class="bg-background h-dvh" />` — a black rectangle
+  // indistinguishable from the v0.63.0 crash (DOR-1475).
+  //
+  // Same cache entry as the onboarding gate's read (one key, one request), so
+  // this observes that failure rather than causing a second one.
+  //
+  // **"Has data" is the wrong question, because the boot cache always has
+  // data.** `query-persister.ts` restores `configKeys.current()` out of
+  // `localStorage`, up to 24 hours old, so every returning user starts with a
+  // config in hand. Gated on `data === undefined`, this screen was unreachable
+  // for exactly the people most likely to hit it: the shell painted the whole
+  // cockpit — sidebar, rooms, agents, all from last night's copy — over a
+  // server that answered nothing, and every action inside it failed. So the
+  // test is whether the server has answered THIS launch
+  // (`dataUpdatedAt > LAUNCH_STARTED_AT`, the distinction the moments rail
+  // already draws), not whether the browser remembers something.
+  //
+  // **`errorUpdateCount`, not `isError`, and the difference is a hot loop.**
+  // TanStack resets a query with NO data back to `status: 'pending'` and clears
+  // its error the instant a retry STARTS (`fetchState` in query-core), so
+  // `isError` reads false for the whole of every retry — including the one the
+  // failure screen's own mount kicks off. Gated on `isError`, the screen
+  // mounted, triggered a refetch, saw pending, unmounted, saw the rejection,
+  // and mounted again: measured at ~3000 requests in 500ms, at a server that is
+  // already down. `errorUpdateCount` only counts failures and never rewinds, so
+  // "we asked, it failed, and we still have nothing fresh" survives the retry
+  // that the answer itself sets off.
+  const { dataUpdatedAt: configAnsweredAt, errorUpdateCount: configFailures } = useConfig();
+  const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
+
+  // **The wedged server never errors, so failures alone cannot see it.** A
+  // server that accepts the connection and then says nothing leaves the read
+  // pending forever: no rejection, no `errorUpdateCount`, and the 3s escape
+  // below hands the window to a shell whose every query is hanging too. A
+  // deadline is the only evidence available for that one — and it is
+  // deliberately far longer than the 3s escape, because the cost of being wrong
+  // here is the boot sentinel's lesson: accusing a machine that was merely
+  // slow. Fifteen seconds with nothing fresh in hand is no longer slow.
+  const [hangDeadlinePassed, setHangDeadlinePassed] = useState(false);
+  useEffect(() => {
+    if (answeredThisLaunch) return;
+    const timer = setTimeout(() => setHangDeadlinePassed(true), SERVER_HANG_DEADLINE_MS);
+    return () => clearTimeout(timer);
+  }, [answeredThisLaunch]);
+
+  // Either kind of evidence, and in both cases only while nothing fresh has
+  // arrived — so a cockpit that IS talking to its server never sees this, and
+  // one whose server comes back mid-screen loses it on the next answer.
+  const isServerUnreachable = !answeredThisLaunch && (configFailures > 0 || hangDeadlinePassed);
+
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
@@ -403,6 +479,19 @@ export function AppShell() {
   // Eligible global banners, ranked and rendered one-at-a-time by AppBannerSlot
   // (below the header, inside the inset — so the sidebar never paints over them).
   const appBanners = useAppBanners(activeSessionId);
+
+  // Say so — ahead of the quiet gate below, which passes for a black window,
+  // and ahead of the whole cockpit, which a restored cache would otherwise
+  // paint over a server that is not there.
+  //
+  // Deliberately NOT behind the 3s escape: that timer only runs while
+  // `isOnboardingLoading` is true, and a refused connection ends that within a
+  // retry — gating on it would mean the commonest dead-server case never
+  // reached this screen at all. The hang has its own, much longer deadline
+  // instead.
+  if (isServerUnreachable) {
+    return <ServerUnreachableScreen />;
+  }
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before
   // onboarding appears on first run.

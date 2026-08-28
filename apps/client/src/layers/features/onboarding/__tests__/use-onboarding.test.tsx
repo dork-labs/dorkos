@@ -62,6 +62,26 @@ describe('useOnboarding', () => {
     });
   });
 
+  it('a config read that FAILED is not a fresh install', async () => {
+    // The wizard's inputs all fall back to "nothing done yet" when there is no
+    // config, and a failed read has no config — so a settled install whose
+    // server was down came back reading brand new, and the overlay's latch made
+    // that permanent for the session (DOR-1475). The honest answer to "should
+    // the first-run flow show" while the server is unreachable is no: we have
+    // not been told, and being told is what a fresh install looks like.
+    const transport = createMockTransport();
+    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.shouldShowOnboarding).toBe(false);
+    expect(result.current.shouldShowGettingStarted).toBe(false);
+  });
+
   it('completedAt is authoritative: a finished install never re-shows the flow, even with skipped steps', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
