@@ -813,12 +813,31 @@ export class TaskStore {
    * absent; the current (still-running) run has a NULL `sessionId` too, so it can
    * never be its own resume target.
    *
+   * ## …and which runtime it ran on
+   *
+   * Returned from the SAME row, deliberately, because a sticky task that has
+   * since been moved to another runtime must NOT resume it (ADR-0255,
+   * DOR-1615): a session belongs to one runtime and the id names a transcript in
+   * that program's store.
+   *
+   * The run row is the authority on that, not `session_metadata`. Only an
+   * interactive session ever calls `persistSessionRuntime`, so a scheduled run's
+   * session has no binding recorded — asking the registry answered `null` for
+   * every scheduled run ever made, which made the rule inert in production
+   * (DOR-1615 review). `resolved_runtime` is stamped by the scheduler on every
+   * dispatch, so it is the one place the answer actually exists.
+   *
+   * One query rather than two, so the id and the runtime cannot come from
+   * different runs.
+   *
    * @param taskId - The task whose latest session to resume.
-   * @returns The real SDK session id to resume, or null when none has run yet.
+   * @returns The resume target and the runtime it ran on, or null when none has
+   *   run yet. `runtime` is null for a run recorded before that column existed,
+   *   which reads as "no owner on record" and never as a mismatch.
    */
-  latestStickySessionId(taskId: string): string | null {
+  latestStickyRun(taskId: string): { sessionId: string; runtime: string | null } | null {
     const row = this.db
-      .select({ sessionId: pulseRuns.sessionId })
+      .select({ sessionId: pulseRuns.sessionId, runtime: pulseRuns.resolvedRuntime })
       .from(pulseRuns)
       .where(and(eq(pulseRuns.scheduleId, taskId), isNotNull(pulseRuns.sessionId)))
       // `created_at` is an ISO string at millisecond resolution with no
@@ -829,7 +848,7 @@ export class TaskStore {
       .orderBy(desc(pulseRuns.createdAt), sql`rowid DESC`)
       .limit(1)
       .get();
-    return row?.sessionId ?? null;
+    return row?.sessionId ? { sessionId: row.sessionId, runtime: row.runtime ?? null } : null;
   }
 
   /** Count total runs, optionally filtered by task. */

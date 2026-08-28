@@ -23,7 +23,7 @@
  *
  * So the resume target is the runtime's own session id, captured after each run
  * (`getInternalSessionId`) and persisted as that run's `TaskRun.sessionId`. The
- * next fire reads it back (`latestStickySessionId`) and resumes it, which the
+ * next fire reads it back (`latestStickyRun`) and resumes it, which the
  * runtime can genuinely rehydrate from `{id}.jsonl` cold. Storing the real id on
  * the run row also makes "click any sticky run → open its conversation" work
  * after eviction, since the row now names the actual transcript.
@@ -31,36 +31,14 @@
  * @module services/tasks/session/sticky-session
  */
 import type { Task, TaskRun } from '@dorkos/shared/types';
-import { runtimeRegistry } from '../../core/runtime-registry.js';
 
 /** The store method {@link resolveRunSession} needs — the resume-target lookup. */
 export interface StickySessionLookup {
-  /** The real SDK session id of the task's most recent run, or null for the first. */
-  latestStickySessionId(taskId: string): string | null;
-}
-
-/**
- * Which runtime a session is RECORDED as running on, or `null` when nothing is
- * recorded (DOR-1615).
- *
- * `null` must mean "no owner on record", never a guess. That is why this reads
- * `getSessionBindings` — the registry's no-inference read — and not
- * `getSessionRuntimeType`, which answers every unbound session with the
- * registered default so an ordinary read never 503s. A guessed answer here would
- * manufacture a runtime MISMATCH for a sticky task whose prior session simply
- * predates the metadata table, throwing away the very history sticky exists to
- * carry.
- *
- * @param sessionId - The session to look up.
- */
-export function boundRuntimeOf(sessionId: string): string | null {
-  try {
-    return runtimeRegistry.getSessionBindings([sessionId]).get(sessionId)?.runtime ?? null;
-  } catch {
-    // The registry has no database yet (pre-boot, or a test that never wired
-    // one). Nothing is recorded, which is exactly what `null` says.
-    return null;
-  }
+  /**
+   * The task's most recent run that actually ran a turn: the real SDK session id
+   * to resume, and the runtime it ran on. `null` for a task that has never run.
+   */
+  latestStickyRun(taskId: string): { sessionId: string; runtime: string | null } | null;
 }
 
 /** Which session a run runs on, and whether it resumes existing history. */
@@ -91,40 +69,46 @@ export interface RunSession {
  *
  * A session belongs to ONE runtime, decided by the first authoritative write and
  * never revised (ADR-0255). So a sticky task that now resolves to a different
- * runtime than its previous session was bound to cannot resume it: the id names
- * a transcript in another program's store, and asking a Codex thread to be
- * resumed by Claude Code is not a degraded resume, it is a resume of nothing.
+ * runtime than its previous run used cannot resume it: the id names a transcript
+ * in another program's store, and asking a Codex thread to be resumed by Claude
+ * Code is not a degraded resume, it is a resume of nothing.
  *
  * The honest answer is a FRESH session — the same answer the task's very first
  * fire gets. Its history does not vanish: the prior runs keep their own session
  * ids and stay clickable. What changes is that "since I last ran" starts over,
  * which is the truth of moving a task to a different agent runtime.
  *
+ * **The prior runtime comes off the RUN ROW**, `pulse_runs.resolved_runtime`,
+ * which the scheduler stamps on every dispatch. It used to be read from
+ * `session_metadata` through the runtime registry — but only an interactive
+ * session ever calls `persistSessionRuntime`, so a scheduled run's session has
+ * no binding there and the answer was `null` for every scheduled run ever made.
+ * The rule parsed, tested green against an injected stub, and did nothing in
+ * production (DOR-1615 review).
+ *
  * @param lookup - The resume-target lookup (the task store).
  * @param task - The task being dispatched.
  * @param run - Its run row, already opened.
  * @param opts.runtimeType - The runtime THIS run resolved to.
- * @param opts.boundRuntimeOf - Which runtime a prior session is recorded under;
- *   `null` for one with no owner on record, which is never a mismatch. See
- *   {@link boundRuntimeOf} for why "unknown" and "different" must not be
- *   collapsed here.
  * @returns The session id and whether to resume it.
  */
 export function resolveRunSession(
   lookup: StickySessionLookup,
   task: Task,
   run: TaskRun,
-  opts: { runtimeType: string; boundRuntimeOf: (sessionId: string) => string | null }
+  opts: { runtimeType: string }
 ): RunSession {
   if (!task.sticky) return { sessionId: run.id, hasStarted: false };
-  const previous = lookup.latestStickySessionId(task.id);
+  const previous = lookup.latestStickyRun(task.id);
   if (!previous) return { sessionId: run.id, hasStarted: false };
 
-  // A session with no recorded owner is resumed exactly as it always was. Only a
-  // recorded owner that DISAGREES with this run's runtime starts over.
-  const bound = opts.boundRuntimeOf(previous);
-  if (bound !== null && bound !== opts.runtimeType) {
+  // A prior run with no runtime on record — one written before the column
+  // existed — is resumed exactly as it always was. "Unknown" and "different"
+  // must not collapse: guessing here would manufacture a mismatch for every
+  // sticky task older than this change and throw away the history sticky exists
+  // to carry. Only a recorded runtime that DISAGREES starts over.
+  if (previous.runtime !== null && previous.runtime !== opts.runtimeType) {
     return { sessionId: run.id, hasStarted: false };
   }
-  return { sessionId: previous, hasStarted: true };
+  return { sessionId: previous.sessionId, hasStarted: true };
 }

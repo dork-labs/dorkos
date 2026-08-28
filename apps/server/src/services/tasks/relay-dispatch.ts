@@ -18,8 +18,8 @@ import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from './task-append.js';
-import { boundRuntimeOf, resolveRunSession } from './session/sticky-session.js';
-import type { RunExecution } from './resolve-run-execution.js';
+import { resolveRunSession } from './session/sticky-session.js';
+import type { RunExecution } from './execution/resolve-run-execution.js';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
@@ -101,12 +101,11 @@ export async function dispatchRunViaRelay(
   // a first sticky fire and every non-sticky run resolve to the run's own id with
   // no resume — the wire default — so the branch below only adds fields for a
   // sticky run, keeping every non-sticky envelope byte-for-byte what it was.
-  // A sticky task whose resolved runtime differs from the one its previous
-  // session was bound to starts FRESH, exactly as on the direct path — sessions
-  // are runtime-bound and never revised (ADR-0255, DOR-1615).
+  // A sticky task whose resolved runtime differs from the one its previous RUN
+  // used starts FRESH, exactly as on the direct path — sessions are
+  // runtime-bound and never revised (ADR-0255, DOR-1615).
   const { sessionId, hasStarted } = resolveRunSession(deps.store, task, run, {
     runtimeType: execution.runtimeType,
-    boundRuntimeOf,
   });
 
   const payload: TaskDispatchPayload = {
