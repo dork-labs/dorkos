@@ -141,7 +141,7 @@ export {
   callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
-} from './resolve-session-cwd.js';
+} from './resolve-read-cwd.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
 export {

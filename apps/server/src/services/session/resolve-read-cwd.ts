@@ -48,7 +48,14 @@
  * were left alone rather than converted untested. Converting them means giving
  * them the same post-resolution boundary check as the reads.
  *
- * @module services/session/resolve-session-cwd
+ * @module services/session/resolve-read-cwd
+ *
+ * Named `resolve-read-cwd` (not `resolve-session-cwd`) deliberately: the
+ * workspace resolver of that name owns the ONE-RESOLUTION-PER-TURN binding and
+ * guards its import graph by basename
+ * (`services/workspace/__tests__/resolve-session-cwd.subagent.test.ts`). This
+ * module answers a different question — which directory a READ route should
+ * consult — and must stay clear of that guard's match.
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
