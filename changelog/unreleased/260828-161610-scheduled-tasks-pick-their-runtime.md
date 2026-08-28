@@ -4,6 +4,13 @@ covers:
   - 'feat(server): a scheduled run resolves and records what it actually runs on (DOR-1615, DOR-1347)'
   - 'feat(relay): a run sent over the message bus starts on the model it was sent with (DOR-1615, DOR-1347)'
   - 'feat(server,cli): the task doors take runtime, model and effort (DOR-1615, DOR-1347)'
+  - "fix(server): the execution ladder reads the agent's own directory, not the run's cwd (DOR-1615)"
+  - 'fix(server): a task naming a prototype key for its runtime no longer 500s the create (DOR-1615)'
+  - 'fix(server): the sticky runtime-change rule reads the run row, so it actually fires (DOR-1615)'
+  - "fix(server): a new task's trust stop is read in its AGENT's runtime vocabulary (DOR-1615)"
+  - 'test(server): the two task power route tests answer the registry question the create path now asks (DOR-1615)'
+  - 'docs(shared,db,changelog): say where resolved_model and the skill effort tier stop short (DOR-1615, DOR-1347)'
+  - 'docs(api): regenerate the OpenAPI spec and reference pages (DOR-1615, DOR-1347)'
 ---
 
 ### Added
