@@ -506,12 +506,17 @@ capabilityConformance(registry, {
 // A tiny sanity assertion so this file also documents the shape of the fixtures
 // it feeds the shared suite (and fails loudly if a domain stops registering).
 describe('capability conformance wiring', () => {
-  it('composes a non-empty registry across all four domains', () => {
+  it('composes a non-empty registry across all five domains', () => {
     const ids = registry.capabilities.map((c) => c.id);
     expect(ids).toContain('operator.config_get');
     expect(ids).toContain('marketplace.search');
     expect(ids).toContain('connector.list_toolkits');
     expect(ids).toContain('capabilities.list');
+    // Rooms is the newest arrival (DOR-1611) and the one most at risk of
+    // dropping back out: it is gated on `roomDeps`, so forgetting the handle in
+    // this fixture would silently take six verbs out of every check above
+    // without failing a single one of them.
+    expect(ids).toContain('rooms.post');
   });
 
   it('keeps runtime, model and effort out of what an agent may edit on ITS OWN manifest', () => {

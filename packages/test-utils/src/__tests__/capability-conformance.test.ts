@@ -436,6 +436,29 @@ describe('checkToolGroupGateConformance', () => {
     expect(violations.some((v) => v.detail.includes('not with a gate refusal'))).toBe(true);
   });
 
+  it('seeded drift: the gate keys on identity PRESENCE and waves named agents through', async () => {
+    // The defect an anonymous-only check cannot see, and the exact shape this
+    // boundary exists to prevent: refusing the caller that named nobody while
+    // letting every agent that named itself straight past the grant.
+    const caps = [observeCapability(), gatedCapability()];
+    const registry: ConformanceRegistry = {
+      capabilities: caps,
+      invoke: async (id, _input, context) => {
+        const cap = caps.find((c) => c.id === id);
+        if (cap?.toolGroup !== undefined && !context?.identity) throw toolGroupRefusal();
+        return { ok: true };
+      },
+    };
+
+    const violations = await checkToolGroupGateConformance(registry);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations.some((v) => v.detail.includes('identified agent holding no grant'))).toBe(
+      true
+    );
+    // And the anonymous row still passes, which is what made it insufficient.
+    expect(violations.some((v) => v.detail.includes('unidentified caller'))).toBe(false);
+  });
+
   it('seeded drift: the refusal claims a person could approve it', async () => {
     // `approvable: true` is not a cosmetic slip. It sends a model round the
     // approval loop forever for a switch only the operator can flip.

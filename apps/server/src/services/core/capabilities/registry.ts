@@ -271,6 +271,13 @@ export interface CapabilityRegistry {
  * Convert one capability to its serializable catalog entry: drop `invoke` and
  * render both Zod schemas as JSON Schema via Zod v4's native conversion.
  *
+ * `toolGroup` is OMITTED rather than nulled when a capability declares none, so
+ * the catalog stays byte-identical for every capability that has no grant and
+ * the content hash does not move for them. It is carried at all because the
+ * declaration on the definition is meant to have exactly one answer everywhere:
+ * the gate enforces it, the cockpit reads it off the live catalog instead of a
+ * static list that would drift, and the docs projection reports the same field.
+ *
  * @param capability - The runtime capability definition.
  * @returns The serialized, wire-safe entry.
  */
@@ -283,6 +290,7 @@ export function serializeCapability(capability: CapabilityDefinition): Serialize
     inputSchema: z.toJSONSchema(capability.input),
     outputSchema: z.toJSONSchema(capability.output),
     surfaces: capability.surfaces,
+    ...(capability.toolGroup ? { toolGroup: capability.toolGroup } : {}),
   };
 }
 

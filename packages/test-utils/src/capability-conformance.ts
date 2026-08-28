@@ -175,9 +175,30 @@ export interface ConformanceRegistry {
    *
    * @param id - The capability id to invoke.
    * @param input - Raw input; parsed against the capability's input schema.
+   * @param context - Optional invocation context. Only the calling identity is
+   *   modelled here, and only because the tool-group check has to ask the
+   *   IDENTIFIED question as well as the anonymous one — "an agent that named
+   *   itself and holds no grant is refused" is the sentence the product makes,
+   *   and an anonymous refusal does not prove it. Deliberately narrower than the
+   *   server's own context type, which this package must not import.
    * @returns The capability's plain output.
    */
-  invoke(id: string, input: unknown): Promise<unknown>;
+  invoke(id: string, input: unknown, context?: ConformanceInvocationContext): Promise<unknown>;
+}
+
+/** The slice of an invocation context the conformance checks supply. */
+export interface ConformanceInvocationContext {
+  /** The calling agent, when a check drives an identified caller. */
+  identity?: {
+    /** The agent's project directory — what a grant is keyed on. */
+    agentPath: string;
+    /** Human-facing name, as a refusal would report it. */
+    displayName: string;
+    /** The caller's tier ceiling. `destructive` means "no extra restriction". */
+    tierCeiling: CapabilityTier;
+    /** When the identity was minted, ISO-8601. */
+    createdAt: string;
+  };
 }
 
 /**
@@ -600,6 +621,37 @@ function isToolGroupDenial(payload: unknown): boolean {
 }
 
 /**
+ * The two callers every grant-bearing capability is driven as, both holding no
+ * grant.
+ *
+ * The anonymous row alone proves a WEAKER sentence than the product makes. "A
+ * caller that named nobody is refused" would still be true of a gate that keyed
+ * on identity PRESENCE and waved every named agent through — which is the exact
+ * shape of the defect this boundary exists to prevent. The identified row is
+ * what pins the sentence the spec actually promises: an agent that named itself
+ * and does not hold the grant is refused too.
+ */
+const TOOL_GROUP_CALLERS: readonly {
+  label: string;
+  context: ConformanceInvocationContext | undefined;
+}[] = [
+  { label: 'unidentified caller', context: undefined },
+  {
+    label: 'identified agent holding no grant',
+    context: {
+      identity: {
+        agentPath: '/conformance/agents/ungranted',
+        displayName: 'Ungranted',
+        // `destructive` is "no extra restriction", so a refusal here cannot be
+        // the TIER gate answering by accident — it has to be the group gate.
+        tierCeiling: 'destructive',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  },
+];
+
+/**
  * Prove that every capability declaring a per-agent tool group is REFUSED when the
  * caller does not hold it, through the only path any surface can use to run one
  * (DOR-1611).
@@ -608,10 +660,12 @@ function isToolGroupDenial(payload: unknown): boolean {
  * for the same reason: a hand-listed set of tool names can only fail for a name
  * somebody already added, and this repo has twice shipped a hole that was simply
  * never on the list. Every capability carrying a `toolGroup` is driven through
- * `registry.invoke` with no trusted marker and no identity — the anonymous caller,
- * which by construction holds no grant — and must come back refused. A capability
- * that gains a group tomorrow is covered the day it declares one, and one that
- * silently LOSES its group is covered by the structural surface checks.
+ * `registry.invoke` with no trusted marker, as BOTH an anonymous caller and an
+ * identified agent holding no grant — see {@link TOOL_GROUP_CALLERS} for why one
+ * row proves a weaker sentence than the product makes — and must come back
+ * refused each time. A capability that gains a group tomorrow is covered the day
+ * it declares one, and one that silently LOSES its group is covered by the
+ * structural surface checks.
  *
  * "No side effect" needs no separate probe: a refusal is a REJECTION, so the
  * handler never ran. A gate that returned the right payload after doing the damage
@@ -640,36 +694,38 @@ export async function checkToolGroupGateConformance(
   const gated = registry.capabilities.filter((cap) => cap.toolGroup !== undefined);
 
   for (const cap of gated) {
-    let thrown: unknown;
-    let refused = false;
-    try {
-      await registry.invoke(cap.id, sampleInputs[cap.id] ?? {});
-    } catch (err) {
-      thrown = err;
-      refused = true;
-    }
+    for (const caller of TOOL_GROUP_CALLERS) {
+      let thrown: unknown;
+      let refused = false;
+      try {
+        await registry.invoke(cap.id, sampleInputs[cap.id] ?? {}, caller.context);
+      } catch (err) {
+        thrown = err;
+        refused = true;
+      }
 
-    if (!refused) {
-      add(
-        `${cap.id}: registry.invoke RAN a capability behind the "${cap.toolGroup}" grant for a ` +
-          `caller holding no grant — the tool-group gate is not inside invoke, so every surface ` +
-          `that calls it is ungated`
-      );
-      continue;
-    }
-    if (!isGateRefusal(thrown)) {
-      add(
-        `${cap.id}: registry.invoke rejected, but not with a gate refusal — got ` +
-          `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`
-      );
-      continue;
-    }
-    if (!isToolGroupDenial(thrown.decision.payload)) {
-      add(
-        `${cap.id}: the gate refused but its payload is not a structured tool_group_disabled ` +
-          `denial (status: 'denied', reason: 'tool_group_disabled', approvable: false, message), ` +
-          `got ${JSON.stringify(thrown.decision.payload)}`
-      );
+      if (!refused) {
+        add(
+          `${cap.id} (${caller.label}): registry.invoke RAN a capability behind the ` +
+            `"${cap.toolGroup}" grant for a caller holding no grant — the tool-group gate is not ` +
+            `inside invoke, so every surface that calls it is ungated`
+        );
+        continue;
+      }
+      if (!isGateRefusal(thrown)) {
+        add(
+          `${cap.id} (${caller.label}): registry.invoke rejected, but not with a gate refusal — ` +
+            `got ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`
+        );
+        continue;
+      }
+      if (!isToolGroupDenial(thrown.decision.payload)) {
+        add(
+          `${cap.id} (${caller.label}): the gate refused but its payload is not a structured ` +
+            `tool_group_disabled denial (status: 'denied', reason: 'tool_group_disabled', ` +
+            `approvable: false, message), got ${JSON.stringify(thrown.decision.payload)}`
+        );
+      }
     }
   }
 

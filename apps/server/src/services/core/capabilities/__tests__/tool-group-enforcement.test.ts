@@ -65,7 +65,7 @@ function gated(tier: 'act' | 'destructive' = 'act') {
     tier,
     input: z.object({}),
     output: z.unknown(),
-    surfaces: { mcp: { toolName: `demo_${tier}_gated`, servers: ['external'] } },
+    surfaces: { mcp: { toolName: `demo_${tier}_gated`, servers: ['in-session', 'external'] } },
     toolGroup: 'roomsManage',
     ...(tier === 'destructive' ? { approvalDisplayFields: [] as readonly string[] } : {}),
     invoke: async () => {
@@ -83,7 +83,7 @@ const UNGATED = defineCapability({
   tier: 'act',
   input: z.object({}),
   output: z.unknown(),
-  surfaces: { mcp: { toolName: 'demo_ungated', servers: ['external'] } },
+  surfaces: { mcp: { toolName: 'demo_ungated', servers: ['in-session', 'external'] } },
   invoke: async () => {
     handlerRan = true;
     return { ok: true };

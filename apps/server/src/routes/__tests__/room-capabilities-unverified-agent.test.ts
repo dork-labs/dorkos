@@ -99,6 +99,8 @@ import {
 } from '../../services/core/capabilities/index.js';
 import { roomsDomain } from '../../services/rooms/room-capabilities.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
+import { capabilityMcpTools } from '../../services/runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
+import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import { NotifyBudget } from '../../services/relay/notify-budget.js';
 import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
@@ -378,7 +380,9 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
         tier: 'act' as const,
         input: z.object({}),
         output: z.unknown(),
-        surfaces: { mcp: { toolName: PROBE_TOOL, servers: ['external' as const] } },
+        surfaces: {
+          mcp: { toolName: PROBE_TOOL, servers: ['in-session' as const, 'external' as const] },
+        },
         toolGroup: 'roomsManage' as const,
         invoke: async () => {
           probeRan = true;
@@ -542,6 +546,90 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {}), token))).toMatchObject({
         reason: 'tool_group_disabled',
       });
+      expect(probeRan).toBe(false);
+    });
+  });
+
+  describe('the in-session dorkos server', () => {
+    /**
+     * The in-session adapter's REAL tool definition, invoked the way the runtime
+     * invokes it.
+     *
+     * This leg exists because acceptance criteria 1 and 3 say BOTH servers, and
+     * "both" is a claim about wiring — the half this file's header says defects
+     * live in. The two adapters reach the gate by different routes (a per-session
+     * tool list here, a registered `McpServer` callback there), and only one of
+     * them was ever proved.
+     *
+     * In-session identity is derived from the session's working directory rather
+     * than a presented token, which is why the resolver hands one in directly
+     * instead of setting a header: an in-session agent cannot become anonymous.
+     */
+    function inSessionProbe(identity?: AgentIdentity) {
+      const tools = capabilityMcpTools(
+        registry,
+        'in-session',
+        identity ? async () => ({ identity }) : undefined
+      );
+      const tool = tools.find((t) => (t as { name: string }).name === PROBE_TOOL)!;
+      const handler = (
+        tool as unknown as {
+          handler: (
+            args: unknown,
+            extra: unknown
+          ) => Promise<{ isError?: boolean; content: { text?: string }[] }>;
+        }
+      ).handler;
+      return handler({}, {});
+    }
+
+    /** Ana as the in-session runtime resolves her: from where she runs. */
+    const ANA_IDENTITY: AgentIdentity = {
+      agentPath: ANA_PATH,
+      displayName: 'Ana',
+      tierCeiling: 'destructive',
+      createdAt: new Date().toISOString(),
+    };
+
+    it('registers the gated tool at all, so the rows below are not vacuous', () => {
+      const names = capabilityMcpTools(registry, 'in-session').map(
+        (t) => (t as { name: string }).name
+      );
+      expect(names).toContain(PROBE_TOOL);
+    });
+
+    it('refuses an identified agent whose manifest does not carry the grant', async () => {
+      grantIs(undefined);
+
+      const result = await inSessionProbe(ANA_IDENTITY);
+
+      expect(result.isError).toBeFalsy();
+      const payload = JSON.parse(result.content[0]!.text!);
+      expect(payload).toMatchObject({
+        status: 'denied',
+        capabilityId: 'grantprobe.run',
+        reason: 'tool_group_disabled',
+        approvable: false,
+      });
+      expect(probeRan).toBe(false);
+    });
+
+    it('runs the same call for the same agent once the grant is on', async () => {
+      grantIs(true);
+
+      const result = await inSessionProbe(ANA_IDENTITY);
+
+      expect(result.isError).toBeFalsy();
+      expect(probeRan).toBe(true);
+    });
+
+    it('refuses a call the surface could not attribute to any agent', async () => {
+      grantIs(true);
+
+      const result = await inSessionProbe();
+
+      const payload = JSON.parse(result.content[0]!.text!);
+      expect(payload.reason).toBe('tool_group_disabled');
       expect(probeRan).toBe(false);
     });
   });
