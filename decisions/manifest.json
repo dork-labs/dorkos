@@ -4977,6 +4977,25 @@
         "packages/skills/src/schedule-schema.ts",
         "packages/db/src/schema/tasks.ts"
       ]
+    },
+    {
+      "id": "260828-002929",
+      "slug": "scheduled-tasks-resolve-runtime-and-model-at-fire-time",
+      "title": "Scheduled tasks resolve runtime and model per task at fire time, through the shared defaults ladder",
+      "status": "accepted",
+      "created": "2026-08-28",
+      "extractedFrom": "spec",
+      "specSlug": "task-runtime-model",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/skills/src/schedule-schema.ts",
+        "apps/server/src/services/tasks/task-scheduler-service.ts",
+        "apps/server/src/services/tasks/scheduled-run-power.ts",
+        "apps/server/src/services/tasks/relay-dispatch.ts",
+        "apps/server/src/services/session/resolve-session-defaults.ts",
+        "apps/client/src/layers/features/tasks/ui/TaskFormInner.tsx"
+      ]
     }
   ]
 }
