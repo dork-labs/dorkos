@@ -1200,8 +1200,6 @@ async function start() {
       maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
-  });
-  setRoomRepoService(roomRepoService);
   // One standing working copy per (room, agent), and the reap that tidies away
   // the empty ones (spec `project-rooms` §3.4). It gets no timer of its own:
   // the reconciler below owns the single sweep, and therefore the single

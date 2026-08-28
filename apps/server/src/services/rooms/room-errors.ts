@@ -330,7 +330,8 @@ export type RoomErrorCode =
    * any path on the machine, and nothing in DorkOS resolves it. The message
    * says which of the three it was, because the remedy differs.
    */
-  | 'ROOM_FILE_NOT_READABLE';
+  | 'ROOM_FILE_NOT_READABLE'
+  /**
    * Something that only makes sense for a room with files was asked of a room
    * without any — a working copy, a merge, a file listing (spec `project-rooms`
    * §3.4, §3.6).

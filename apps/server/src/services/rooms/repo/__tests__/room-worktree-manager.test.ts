@@ -176,6 +176,7 @@ describe('RoomWorktreeManager', () => {
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => 'Dorian',
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
     manager = new RoomWorktreeManager({
       store,
