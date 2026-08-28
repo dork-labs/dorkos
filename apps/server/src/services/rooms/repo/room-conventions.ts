@@ -4,13 +4,16 @@
  *
  * ## The three things this module is careful about
  *
- * **It reads a COMMIT, never the working tree.** `git show main:ROOM.md` asks
- * the commit `main` points at, so a merge landing while a turn is in flight
- * cannot change what that turn was told — and an out-of-band edit sitting
- * uncommitted in the main checkout reaches nobody until somebody commits it.
- * The pin itself is the CALLER's: this resolves once, and `room-turn-runner.ts`
- * holds the string it gets for the whole turn. Reading the file off disk would
- * make both of those impossible to promise.
+ * **It reads ONE COMMIT, and never the working tree.** `main` is resolved to a
+ * sha ONCE, and every read after that names the sha rather than the branch. Both
+ * halves are load-bearing. Reading the branch again is how the block came to
+ * attribute one tree's rules to another tree's commit, and how a 40 KB body shipped
+ * under a 1 KB ceiling that had been measured against a file nobody sent — a
+ * merge landing between two of this module's own git commands is enough for
+ * either. Reading the file off DISK would break the other promise: an
+ * out-of-band edit sitting uncommitted in the main checkout reaches nobody until
+ * somebody commits it. The per-TURN pin on top of this is the caller's:
+ * `room-turn-runner.ts` resolves once and holds the string for the whole turn.
  *
  * **It never truncates.** Past `config.rooms.repo.maxRoomMdBytes` the block
  * carries a notice saying how big the file is and what the ceiling is, and none
@@ -18,13 +21,21 @@
  * handed the first 24 KB of a 40 KB conventions file would follow what it saw
  * and have no way to know a prohibition was cut off mid-sentence.
  *
- * **The body is member-written, and it says so inside the block.** `ROOM.md` is
- * whatever the room's members put in it, so it is untrusted text reaching a
- * model that holds the filesystem. What bounds it is the block's own framing —
- * these are additions, your own instructions win, they come from the room's
- * members and not from your operator — which is why that framing is copy pinned
- * by tests like `room-context-block.ts`'s is, rather than being prose anyone may
- * tidy.
+ * **The body is member-written, so its runtime tags are defused.** The opening
+ * line is a provenance claim — what follows came from the room's members — and
+ * the closing marker is where that claim ends. A `ROOM.md` containing that
+ * marker would end the block early and leave the rest of the file loose in the
+ * system prompt, outside the claim, free to forge an `<agent_safety_boundaries>`
+ * that lands LATER in the prompt than the real one. So the body goes through
+ * `defuseSystemTags` ({@link DEFUSED_TAGS}) — the same treatment
+ * `staged-context-block.ts` gives a note the OPERATOR wrote, which is a more
+ * trusted input than this one. Only tags a runtime acts on are touched:
+ * `Vec<T>`, `a < b` and `<div>` reach the model as typed, because a room's rules
+ * have to say what their authors wrote. What bounds the CONTENT is the block's
+ * own framing — these are additions, your own instructions win, they come from
+ * the room's members and not from your operator — which is why that framing is
+ * copy pinned by tests like `room-context-block.ts`'s is, rather than being
+ * prose anyone may tidy.
  *
  * ## Why this block carries no per-turn nonce, unlike the room context fence
  *
@@ -41,13 +52,38 @@
  *
  * @module server/services/rooms/repo/room-conventions
  */
-import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import {
+  AGENT_CONTEXT_BLOCK_TAGS,
+  defuseSystemTags,
+  sanitizeIdentity,
+} from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { GitUnavailableError, runGit } from './room-repo-git.js';
 import { ROOM_MD_FILENAME } from './room-md.js';
 
 /** The tag the composed block opens and closes with. */
 export const ROOM_CONVENTIONS_TAG = 'dorkos_room_conventions';
+
+/**
+ * Tags a `ROOM.md` body must not be able to spell.
+ *
+ * This block's own marker leads the list, and it is the one that matters most:
+ * a body containing the closing marker ends the block early and leaves the rest
+ * of the file loose in the system prompt, outside the provenance claim the
+ * opening line just made. Everything after it is then free to forge
+ * {@link AGENT_CONTEXT_BLOCK_TAGS} — and a forged `<agent_safety_boundaries>`
+ * here lands LATER in the prompt than the real one, which is the position that
+ * wins. `system-reminder` is in the set for the same reason
+ * `untrusted-fence.ts` puts it there.
+ *
+ * A module-level constant because `defuseSystemTags` compiles and caches one
+ * matcher per tag set: a list built per call would grow that cache by the
+ * number of turns rather than by the number of call sites. De-duplicated
+ * because the sources may overlap.
+ */
+const DEFUSED_TAGS = [
+  ...new Set([ROOM_CONVENTIONS_TAG, ...AGENT_CONTEXT_BLOCK_TAGS, 'system-reminder']),
+];
 
 /**
  * The framing that turns a member-written file into an instruction an agent can
@@ -115,12 +151,15 @@ interface CachedRoomMd {
 /**
  * Compose a room's conventions block, caching what git said per commit.
  *
- * **The cache holds ONE entry per room, and that is the whole bound.** The key
- * is `(roomId, commitSha)` as the spec asks — a lookup hits only when the commit
- * still matches — but a room that has moved on from a commit will never ask
- * about it again, so keeping the older entry would be a leak with no reader.
- * What it costs is one `git rev-parse` per turn, which is what tells us whether
- * the entry is still current; what it saves is reading and measuring the file.
+ * **One entry per room, so the memory bound is rooms-with-files ×
+ * `maxRoomMdBytes`** — 24 KB each at the shipped ceiling, and only for rooms
+ * that have actually taken a turn since this process started. The key is
+ * `(roomId, commitSha)` as the spec asks, a lookup hitting only when the commit
+ * still matches; keeping the SUPERSEDED entry too is what would be unbounded,
+ * and it would have no reader, because a room that has moved on from a commit
+ * never asks about it again. What the cache costs is one `git rev-parse` per
+ * turn — that is what tells it whether the entry is current — and what it saves
+ * is measuring and reading the file.
  *
  * **The room's TITLE is not cached with it.** The title can change without a
  * commit, and a block naming what the room used to be called until somebody next
@@ -162,7 +201,16 @@ export class RoomConventions {
     const inside =
       overCapBytes !== null
         ? overCapNotice(overCapBytes, this.deps.maxRoomMdBytes())
-        : `${CONVENTIONS_PREAMBLE}\n${body ?? ''}`;
+        : `${CONVENTIONS_PREAMBLE}\n${defuseSystemTags(body ?? '', DEFUSED_TAGS)}`;
+    // **Renaming a room relaunches every member agent's warm process**, on that
+    // agent's next turn there. The title is in the append, the append is a
+    // `relaunch` pin for claude-code (`launch-fingerprint.ts`), so a changed one
+    // replaces a process rather than riding it — which is the same mechanism
+    // that makes a merged `ROOM.md` reach the next turn at all, and cannot be
+    // had for one without the other. Accepted rather than overlooked: a rename
+    // is rare and deliberate, the cost is one process boot per agent, and the
+    // alternative — a block that names the room's old title until its files
+    // next change — is a room telling its agents something untrue.
     return [
       `<${ROOM_CONVENTIONS_TAG} room="${attributeValue(room.title)}" commit="${commit.slice(0, 7)}">`,
       inside,
@@ -206,16 +254,25 @@ export class RoomConventions {
     const cached = this.cache.get(roomId);
     if (cached?.commit === commit) return cached;
 
+    // **Every read below names the SHA, never `main` again.** `main` is a moving
+    // ref and this method issues three commands: asking it each time means the
+    // sha the block ATTRIBUTES the rules to and the bytes it actually carries
+    // can come from different trees, because a merge may land between any two
+    // of them. Measured, both halves: a merge between the resolve and the size
+    // probe produced a block whose `commit=` named one tree and whose body came
+    // from another, and a merge between the size probe and the read let a 40 KB
+    // body ship under a 1 KB ceiling that had been applied to a file nobody
+    // sent. The resolve above is the only place `main` is read, and its answer
+    // is what the rest of this turn means by "the room's conventions".
+    const pinned = `${commit}:${ROOM_MD_FILENAME}`;
+
     let size: number;
     try {
       // The blob's real size, asked before the blob is read: it is the honest
       // measure of the file (`runGit` trims what it hands back), it answers
       // whether `ROOM.md` exists at all, and it keeps a pathological file from
       // being pulled into memory only to be refused.
-      size = Number.parseInt(
-        await runGit(['cat-file', '-s', `main:${ROOM_MD_FILENAME}`], repoDir, ceiling),
-        10
-      );
+      size = Number.parseInt(await runGit(['cat-file', '-s', pinned], repoDir, ceiling), 10);
     } catch {
       // Almost always the ordinary case: this room's members have not written a
       // `ROOM.md`. Cached as a miss so the next turn costs one `rev-parse`.
@@ -231,7 +288,7 @@ export class RoomConventions {
     }
 
     try {
-      const body = await runGit(['show', `main:${ROOM_MD_FILENAME}`], repoDir, ceiling);
+      const body = await runGit(['show', pinned], repoDir, ceiling);
       return this.remember(roomId, { commit, body, overCapBytes: null });
     } catch (err) {
       this.warn(roomId, 'could not read ROOM.md out of the room repo', err);

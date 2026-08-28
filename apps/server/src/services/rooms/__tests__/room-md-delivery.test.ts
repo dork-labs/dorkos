@@ -2,29 +2,35 @@
  * `ROOM.md` reaching a room turn (spec `project-rooms` §3.3).
  *
  * The runner is real and the dispatcher is stubbed to a recorder, which is what
- * lets this file assert the two claims that matter and cannot be read anywhere
- * else:
+ * lets this file assert the claims that cannot be read anywhere else:
  *
- * - **A room with no files dispatches exactly what it did before.** Not "an
- *   empty append", not "an append that renders to nothing" — the field is
- *   absent, because an empty string is still a value a runtime digests into its
- *   launch fingerprint.
+ * - **A room with no files dispatches exactly what it did before** — the field
+ *   is ABSENT, not empty. What the layers below the runner do with the same
+ *   promise is pinned in `session/__tests__/message-dispatcher.test.ts`.
  * - **The block is pinned to its turn.** It is composed from a real git repo, so
  *   a merge landing while the turn is in flight is a real merge, and the
  *   assertion is that the dispatch's argument did not move under it.
+ * - **The default path is really connected.** The last block leaves the
+ *   injection point alone and drives `readRoomConventions` →
+ *   `tryGetRoomRepoService` → `RoomRepoService.conventionsFor` over a really
+ *   enabled repo.
  *
  * Seeded defects, each run red before the code stood:
  *
  * - Passing `systemPromptAppend: ''` for a non-repo room reddens the zero-change
  *   case.
- * - Re-composing at dispatch time instead of at turn start reddens the pin.
+ * - Re-composing at dispatch time instead of at turn start reddens the pin (on
+ *   the compose COUNT — the strings alone would still agree).
  * - Delivering the block on `additionalContext` reddens the seam case.
+ * - Returning `null` from the default reader reddens the wiring case.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { rooms } from '@dorkos/db';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
@@ -94,8 +100,11 @@ vi.mock('../../session/index.js', async (importOriginal) => ({
 
 const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
 const { RoomConventions } = await import('../repo/room-conventions.js');
+const { RoomRepoService } = await import('../repo/room-repo-service.js');
+const { RoomRepoStore } = await import('../repo/room-repo-store.js');
 const { commitAll, initRepo } = await import('../repo/room-repo-git.js');
 const { ROOM_MD_FILENAME } = await import('../repo/room-md.js');
+const { setRoomRepoService, tryGetRoomRepoService } = await import('../index.js');
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = { name: 'Dorian', email: 'operator@dorkos.local' };
@@ -223,9 +232,11 @@ describe('ROOM.md delivery', () => {
 
     await runner().run(request());
 
-    // Absent, not empty. An empty append is still a value: claude-code digests
-    // it into the launch fingerprint that decides whether a warm process may be
-    // reused, so `''` is a behaviour change for every room on the install.
+    // Absent, not empty — the seam's own promise, so no consumer downstream has
+    // to be careful. `''` happens to be inert today (every adapter guards with a
+    // truthiness check), which is exactly why the guarantee is stated here
+    // rather than inferred from four coincidences. The layers between this and
+    // the runtime are pinned in `session/__tests__/message-dispatcher.test.ts`.
     expect(triggered).toHaveLength(1);
     expect('systemPromptAppend' in triggered[0]!).toBe(false);
   });
@@ -292,5 +303,93 @@ describe('ROOM.md delivery', () => {
     // room without files for this turn — never a turn nobody gets an answer to.
     expect(result.text).toBe('ok');
     expect('systemPromptAppend' in triggered[0]!).toBe(false);
+  });
+});
+
+/**
+ * The DEFAULT path — the one production takes.
+ *
+ * Everything above injects a `roomConventions` reader, which proves the runner's
+ * behaviour and nothing about the wiring underneath it. This block leaves that
+ * option OFF, so the runner resolves through `readRoomConventions` →
+ * `tryGetRoomRepoService()` → `RoomRepoService.conventionsFor` — three seams
+ * that had no coverage at all, and any one of which could have been left
+ * unconnected with every other test in this file still green.
+ *
+ * **The two cases are order-dependent, so the first one says so out loud.**
+ * `setRoomRepoService` writes module state with no reset, so "no service is
+ * registered" is only true before the other case runs. The precondition is
+ * asserted rather than assumed: reordered, this fails loudly instead of passing
+ * for the wrong reason.
+ */
+describe('the production wiring', () => {
+  let scratch: string;
+  let dorkHome: string;
+
+  beforeEach(async () => {
+    triggered.length = 0;
+    scratch = await mkdtemp(path.join(await fsp.realpath(tmpdir()), 'dorkos-room-md-wiring-'));
+    dorkHome = path.join(scratch, '.dork');
+    await mkdir(dorkHome, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(scratch, { recursive: true, force: true });
+  });
+
+  it('answers without conventions when no repo service is registered', async () => {
+    expect(
+      tryGetRoomRepoService(),
+      'this case must run before anything registers a service; see the block doc'
+    ).toBeNull();
+
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    // The embedded read-only subsystem is the ordinary case: it bootstraps no
+    // repo service at all, and every room there is simply a room without files.
+    expect(result.text).toBe('ok');
+    expect('systemPromptAppend' in triggered[0]!).toBe(false);
+  });
+
+  it('reaches ROOM.md through the registered service, with nothing injected', async () => {
+    const db = createTestDb();
+    const store = new RoomRepoStore(db, dorkHome);
+    const room = request().room;
+    // `room_repos.room_id` is a foreign key, so the room has to exist before it
+    // can be given files — the same order the enable route meets in production.
+    db.insert(rooms)
+      .values({
+        id: room.id,
+        kind: room.kind,
+        title: room.title,
+        topic: room.topic,
+        createdAt: room.createdAt,
+        lastActivityAt: room.lastActivityAt,
+      })
+      .run();
+    const service = new RoomRepoService({
+      store,
+      enabled: () => true,
+      getRoom: () => room,
+      isOwnerAuthor: (authorId) => authorId === 'author-operator',
+      operatorGitName: () => 'Dorian',
+      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
+    });
+    // A real enable: the sidecar, `git init -b main`, and the seeded `ROOM.md`
+    // committed as the operator. Nothing here writes the file by hand, so what
+    // the turn carries is what the enable route really produces.
+    const enabled = await service.enable(ROOM_ID, 'author-operator');
+    expect(enabled.created).toBe(true);
+    setRoomRepoService(service);
+
+    // No `roomConventions` option: this is the default reader, end to end.
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    expect(result.text).toBe('ok');
+    const append = triggered[0]!.systemPromptAppend;
+    expect(append).toContain('<dorkos_room_conventions room="Release train"');
+    // The seeded file's own words, so the assertion cannot pass on framing alone.
+    expect(append).toContain('This room has files of its own');
   });
 });

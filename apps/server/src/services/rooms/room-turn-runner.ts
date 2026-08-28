@@ -417,9 +417,15 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         content: prompt,
         cwd: request.agentPath,
         roomContext: request.roomContext,
-        // Omitted, never passed as an empty string, when this room has no
-        // files: a non-repo room's dispatch has to be byte-identical to what it
-        // was, and an empty append is still an append the runtime would digest.
+        // Omitted, never passed as an empty string, when this room has no files.
+        // Not because `''` misbehaves today — it does not: all three adapters
+        // guard with `if (opts?.systemPromptAppend)` and claude-code's launch
+        // fingerprint digests the same base either way, so an empty append is
+        // measurably inert right now. That is the point. It is inert only
+        // because four separate consumers each happen to treat it as falsy, and
+        // a guarantee resting on a coincidence is one refactor from being
+        // false. Absent is the guarantee, and it is pinned at the two layers
+        // below (`message-dispatcher.test.ts`).
         ...(roomConventions !== null ? { systemPromptAppend: roomConventions } : {}),
         settings: seed,
         projector,
