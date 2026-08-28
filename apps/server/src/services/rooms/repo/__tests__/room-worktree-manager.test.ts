@@ -38,7 +38,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, lutimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
@@ -105,6 +105,23 @@ describe('RoomWorktreeManager', () => {
       cwd: repoDir,
       env: { ...process.env, GIT_COMMITTER_DATE: iso, GIT_AUTHOR_DATE: iso },
     });
+  }
+
+  /**
+   * Set every mtime `lastTouchedAt` reads in one worktree to `when`.
+   *
+   * Exactly the set the production code stats: the directory itself and each
+   * name its own `readdir(dir)` returns — no more, no less — so a source can
+   * never be aged in the test but read fresh by the reap. `lutimes` matches the
+   * reap's `lstat`: a symlinked child (none today, but the code allows it) is
+   * aged as the link, not its target. Meant to be the LAST write before the
+   * reap; nothing may run between it and `reapRoom`.
+   */
+  async function ageWorktreeMtimes(dir: string, when: Date): Promise<void> {
+    for (const name of await readdir(dir)) {
+      await lutimes(path.join(dir, name), when, when).catch(() => undefined);
+    }
+    await lutimes(dir, when, when);
   }
 
   /** Give `name` its worktree and answer where it is. */
@@ -576,16 +593,21 @@ describe('RoomWorktreeManager', () => {
 
     it('ignores a git-status index refresh — the load bug, guarded at the source', async () => {
       // The production fix, pinned WITHOUT the injected clock so it actually
-      // discriminates: `git status` rewrites a worktree's index mtime to now
-      // (proven in isolation), and if `lastTouchedAt` read that mtime, any git
-      // read the sweep does would make a genuinely idle tree look fresh — the CI
-      // failure. Here the directory, its children AND main's tip are genuinely
-      // aged (none of which a git read ever moves), only the index is freshened,
-      // and the tree must still be reaped. Re-add the index as a source and this
-      // reddens: touched reads `now`, the tree is spared.
+      // discriminates. A freshly checked-out worktree already carries a `now`
+      // index mtime (the checkout wrote it), and a sweep's `git status` keeps it
+      // there — so if `lastTouchedAt` read the index, this idle tree would look
+      // fresh and be spared. That was the CI failure. Only the working-tree
+      // mtimes and HEAD's committer date are aged here, all of which no git read
+      // moves; the index stays fresh, and the tree must still be reaped. Re-add
+      // the index as a source and this reddens: touched reads `now`, spared.
       //
-      // Uses the REAL clock on purpose: the aged mtimes are all sweep-immune, so
-      // there is nothing here for a slow runner to perturb.
+      // **Aging is the LAST write before the reap, and that ordering is the
+      // robustness.** An earlier version aged first and THEN ran `git status`,
+      // and on a loaded CI runner something git touched after the aging —
+      // whatever it was — landed on top of an aged mtime and the tree read
+      // fresh. Nothing runs here between the aging and `reapRoom`, whose dating
+      // pass reads these mtimes before its own `git status`, so there is nothing
+      // left to settle after the value the reap reads is written.
       const when = new Date(Date.now() - 40 * DAY_MS);
       await service.enable(ROOM_ID, OPERATOR);
       // Age main's tip BEFORE the worktree exists, so the worktree inherits an
@@ -593,15 +615,17 @@ describe('RoomWorktreeManager', () => {
       // otherwise the head-date source alone keeps the tree looking active.
       await commitWithDate(store.repoPath(ROOM_ID), when);
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      // Age the working tree — dir and every direct child. Git never moves these
-      // on a read, so this stays true however the sweep runs.
-      for (const name of await readdir(handle.path)) {
-        await utimes(path.join(handle.path, name), when, when).catch(() => undefined);
-      }
-      await utimes(handle.path, when, when);
-      // Freshen the index the way any sweep git op would.
+      // The sweep-refresh hazard, made real and made FIRST: a `git status`
+      // stamps the index `now`. Anything it might do to a working-tree mtime is
+      // then overwritten by the aging below.
       await git(['status', '--porcelain=v1'], handle.path);
       reapAfterDays = 14;
+
+      // The final writes before the reap: age the directory and exactly the
+      // entries `lastTouchedAt` stats — its own `readdir` of the same directory.
+      // `lutimes`, not `utimes`, to match the reap's `lstat` on the off chance a
+      // child is ever a symlink.
+      await ageWorktreeMtimes(handle.path, when);
 
       const swept = await manager.reapRoom(ROOM_ID);
 
