@@ -267,6 +267,44 @@ expect(frames.some((f) => f.event === 'text_delta')).toBe(true);
 
 Omit `until` only for finite mocked `subscribeSession` sources — a real projector stream never ends on its own.
 
+## Runner and environment traps
+
+Failures that blame the wrong thing, each measured on this machine:
+
+- **A loaded machine manufactures false reds in interaction-heavy tests.** With
+  several agents' suites running (load average >100), the client suite stretches
+  250s → 1300s and default 5s timeouts fail 11–26 files with zero assertion
+  mismatches. The discriminator: re-run the exact failed set at low load. Never
+  inflate `testTimeout` to pass a gate — that is a check that cannot fail.
+- **Exit 143 with no test summary is starvation, not a red.** The run was
+  SIGTERM'd, usually by memory/CPU pressure from orphaned runners. Check
+  `pgrep -fl vitest` for strays from earlier runs before concluding the gate is
+  broken — killing them and re-running has turned "broken gate" into 880/880.
+- **Stopping a backgrounded test task kills the wrapper, not the workers.** After
+  stopping any heavy run, verify with `pgrep`/`ps` filtered by worktree path that
+  zero processes remain; a stopped wrapper is an exit code, zero processes is the
+  outcome.
+- **A shared-package type change needs the full forced typecheck.** A narrowing
+  regression can pass `--filter <pkg> typecheck` and still break a downstream
+  package's build; run `turbo run typecheck --force` when an exported type in
+  `packages/*` changes.
+- **Drizzle ignores standalone `index(...)` exports silently.** Indexes must live
+  in the table's third argument; read the generated SQL to confirm every index
+  survived. Two branches minting the same migration number conflict in
+  `drizzle/meta/_journal.json` — roll back and regenerate against updated main.
+- **`pnpm verify --force` is a footgun** — pnpm passes `--force` through to
+  vitest, which hard-fails with `CACError: Unknown option --force` and reads as a
+  test failure. Forced forms that work: `turbo run typecheck lint --force` and
+  `turbo run test --force -- --run`.
+- **Targeted server vitest runs read some `@dorkos/shared` subpaths from `dist`**
+  (only aliased subpaths load from source), so a source-edited schema tests stale
+  until `pnpm --filter @dorkos/shared build`. CI is safe via turbo `^build`;
+  local targeted runs are not.
+- **Servers bind IPv6** — probe `localhost`, not `127.0.0.1`.
+- **zsh does not word-split unquoted variables** — `pnpm vitest run $FILES`
+  silently runs nothing; write explicit paths.
+- **Diff against `$(git merge-base origin/main HEAD)`**, never `origin/main..HEAD`.
+
 ## Running Tests
 
 ```bash

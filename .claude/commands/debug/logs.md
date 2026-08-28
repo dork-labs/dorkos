@@ -360,6 +360,17 @@ print('\n'.join(sorted(tags)))
 | 409  | Conflict - Session locked            |
 | 500  | Internal Server Error                |
 
+## Known signature: silent write denials with no approval card
+
+When a user reports an agent "can't write" in a permissive mode and no permission
+prompt ever appeared, check the logs for the `[phantom-cancellation]` tag BEFORE
+suspecting the permission-mode plumbing — the Claude CLI can cancel pending tool
+calls itself (even under bypassPermissions), writing a user-refusal sentinel that
+reads exactly like a denied permission. `GET /api/debug/phantom-cancellations`
+and `dorkos debug phantoms` expose the counter; `path: turn` vs `pump`
+distinguishes resume-turn from persistent-session cancellations. The sentinel
+string lives in `phantom-cancellation.ts` and must be re-verified on SDK bumps.
+
 ## Important Behaviors
 
 1. **ALWAYS** resolve the correct DORK_HOME path first

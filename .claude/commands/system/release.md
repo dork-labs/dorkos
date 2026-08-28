@@ -42,11 +42,21 @@ git status --porcelain
 If output is not empty, **STOP**: report the uncommitted files and tell the user to commit or stash before releasing.
 
 ```bash
-# Check 2: On main branch
+# Check 2: On main branch, up to date with origin
 git branch --show-current
+git pull --ff-only
 ```
 
-If not `main`, **STOP**: releases must be created from `main`.
+If not `main`, **STOP**: releases are cut from current `main`.
+
+**Repo reality (learned across v0.59.0–v0.65.0): `main` is push-protected and
+merges only through the merge queue, so the release commit CANNOT be pushed
+directly, and all branch/commit work happens in a dedicated worktree — never by
+switching the shared main checkout's branch.** Phase 6 below is written for that
+flow: edit → release worktree → PR → queue merges it → tag the MERGED squash SHA
+→ publish npm last. Tagging your local pre-merge commit tags the wrong SHA
+(squash rewrites it), and `pnpm publish` before the merge fails pnpm's git-checks
+(`ERR_PNPM_GIT_NOT_LATEST`).
 
 ```bash
 # Check 3: Read current version from VERSION file (single source of truth)
@@ -262,7 +272,7 @@ The verdicts apply during Phase 6.4 compilation. No `covers:` bookkeeping is nee
 
 ### Present the plan
 
-Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, the curation outcome (kept/dropped/folded counts **plus the dropped bullets themselves**, so a wrong drop is visible before it happens), and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; **npm publish, push to origin, and the draft GitHub Release** — a patch/minor run carries all the way through these without another stop).
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, the curation outcome (kept/dropped/folded counts **plus the dropped bullets themselves**, so a wrong drop is visible before it happens), and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` on a `release/vX.Y.Z` worktree branch → PR → merge queue; **then tag the merged squash SHA, publish npm, and create the draft GitHub Release** — a patch/minor run carries all the way through these without another stop).
 
 Also note: pushing the `vX.Y.Z` tag triggers the "Desktop Release" workflow (`.github/workflows/desktop-release.yml`), which asynchronously builds the macOS (signed + notarized) and Windows apps, attaches their installers + `latest*.yml` to the **draft** release created in Phase 6.11, and then publishes that draft. That runs in a separate workflow, so a desktop build failure can never unwind the product release created here (npm + changelog are already published). Publishing the GitHub Release is gated on macOS only: `publish-release` flips the draft to published when the macOS build and its install-verification pass, so a macOS failure deliberately holds the release as a draft. The Windows alpha is non-gating (`continue-on-error`) and can never block it.
 
@@ -270,7 +280,7 @@ If `--dry-run`, **STOP** here — `--dry-run` is the way to preview this plan wi
 
 **Otherwise, branch on the resolved bump type:**
 
-- **PATCH or MINOR** — proceed automatically; do **not** prompt. Starting `/system:release` is the go-ahead for a routine release, so the plan above is shown for visibility, not approval, and the run continues through tag → npm publish → push → draft GitHub Release without stopping. (To override a bump you disagree with, cancel and re-run with an explicit `patch` / `minor` / `major` argument, or use `--dry-run` first to preview.)
+- **PATCH or MINOR** — proceed automatically; do **not** prompt. Starting `/system:release` is the go-ahead for a routine release, so the plan above is shown for visibility, not approval, and the run continues through release PR → queue merge → tag the merged SHA → npm publish → draft GitHub Release without stopping. (To override a bump you disagree with, cancel and re-run with an explicit `patch` / `minor` / `major` argument, or use `--dry-run` first to preview.)
 - **MAJOR** — a major release is breaking, so confirm before proceeding. Use AskUserQuestion:
 
   ```
@@ -459,9 +469,16 @@ npm install -g dorkos@X.Y.Z
 
 The user can edit this post before the release commit.
 
-### 6.8: Commit and tag
+### 6.8: Commit on a release branch in its own worktree, land via PR
+
+The release commit goes on `release/vX.Y.Z` in a dedicated worktree (`main` is
+push-protected; the shared main checkout never switches branches):
 
 ```bash
+git worktree add .claude/worktrees/release-vX.Y.Z -b release/vX.Y.Z origin/main
+# copy/apply the edits from 6.2–6.7 into the worktree, then:
+cd .claude/worktrees/release-vX.Y.Z && pnpm install   # or the pre-push hook dies on missing dotenv
+
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
 # also stage apps/server/src/services/core/config-manager.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
@@ -471,19 +488,54 @@ git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z
 EOF
 )"
-
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push -u origin release/vX.Y.Z
+gh pr create --title "chore(release): vX.Y.Z" --label skip-changelog --body "Release vX.Y.Z"
+gh pr merge --auto <n>
 ```
 
-### 6.9: Publish to npm
+**Do NOT tag yet** — the queue squashes, so the tag must go on the merged SHA.
+Two traps while the PR is in flight: blog images must use **relative** paths
+(`/product/archive/vX.Y.Z/…`) because the archive directory is in this very PR
+and an absolute `https://dorkos.ai/...` URL 404s the Vercel build (GitHub
+release notes are the opposite — they need absolute URLs); and a UI-heavy release
+often breaks its own capture locators — budget one locator fix + re-run into any
+release shipping conversation or marketplace UI.
 
-Publish now — **no prompt**. Starting `/system:release` is the intent to publish, and any failure earlier in the process would have already stopped the run before reaching here, so if execution got this far, publish:
+### 6.9: Tag the merged SHA, then check for stranded fragments
+
+After the queue lands the PR:
+
+```bash
+git -C <main-checkout> pull --ff-only
+git tag -a vX.Y.Z -m "Release vX.Y.Z" <merged-squash-sha>
+git push origin vX.Y.Z
+```
+
+Then check whether any PR merged **behind** the release commit, leaving its
+fragment stranded (its fix is inside the tag but its fragment sits in
+`changelog/unreleased/`, headed for the wrong version):
+
+```bash
+git log <old-base>..vX.Y.Z --oneline
+git ls-tree vX.Y.Z changelog/unreleased/
+```
+
+Fold any stranded user-facing bullet into the release notes and the just-cut
+section via a small follow-up PR (this happened on v0.62.0, fixed in #1118).
+
+### 6.10: Publish to npm (after the merge, never before)
 
 ```bash
 pnpm run publish:cli
 ```
 
 The `prepublishOnly` hook in `packages/cli/package.json` builds before publishing. (If the publish itself fails — e.g. an expired token — that is a genuine failure: report it and retry per the auth guidance below; do not silently skip it.)
+
+**npm takes ~10-15 minutes to make the ~19 MB package fetchable.** `+ dorkos@X.Y.Z`
+and exit 0 mean accepted, not live. `publish-docker.yml` waits only ~5 minutes, so
+its first run fails on every release (v0.63.0–v0.65.0; DOR-1606 tracks raising the
+wait) — re-run the failed job once `npm view dorkos version` answers with the new
+version.
 
 #### Authentication: use a granular access token, not `npm login`
 
@@ -504,17 +556,9 @@ The durable fix (lasts up to ~90 days, no per-publish OTP):
 
 When the token expires (~every couple months), the publish 403s again — repeat step 1 to mint a fresh one. To check auth state without printing the secret: `grep -c "_authToken" ~/.npmrc`.
 
-### 6.10: Push to origin
-
-```bash
-git push origin main && git push origin vX.Y.Z
-```
-
-If push fails: the commit and tag exist locally — report the error, retry with the same commands, or undo with `git reset --hard HEAD~1 && git tag -d vX.Y.Z`.
-
 ### 6.11: GitHub Release notes
 
-**Create the GitHub Release now, as a draft — this is required, not optional, under the unified release model.** The release is the canonical release artifact and the target the "Desktop Release" workflow attaches the macOS + Windows builds to. It is created as a **draft** on purpose: electron-updater ignores draft releases, so installed apps keep reporting "up to date" until every installer + `latest*.yml` is attached and the workflow publishes the draft — closing the window where a "Check for updates" would 404 on a not-yet-uploaded metadata file. That workflow is otherwise **attach-only**: pushing the tag in Phase 6.10 already started it, but it will not create the release itself — it polls for this release and **fails** if it never appears. Skipping this step therefore fails the desktop build and leaves `dorkos.ai/download/mac` with nothing to serve. Do it immediately after the push, before stepping away.
+**Create the GitHub Release now, as a draft — this is required, not optional, under the unified release model.** The release is the canonical release artifact and the target the "Desktop Release" workflow attaches the macOS + Windows builds to. It is created as a **draft** on purpose: electron-updater ignores draft releases, so installed apps keep reporting "up to date" until every installer + `latest*.yml` is attached and the workflow publishes the draft — closing the window where a "Check for updates" would 404 on a not-yet-uploaded metadata file. That workflow is otherwise **attach-only**: pushing the tag in Phase 6.9 already started it, but it will not create the release itself — it polls for this release and **fails** if it never appears. Skipping this step therefore fails the desktop build and leaves `dorkos.ai/download/mac` with nothing to serve. Do it immediately after the push, before stepping away.
 
 Generate **narrative release notes**, using the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
 
@@ -529,7 +573,7 @@ gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes "[narrative release no
 
 If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually (as a draft) at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
 
-**The GitHub Release is created here, first, as a draft with the notes above.** The desktop assets (macOS `.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`, Windows `.exe` + `latest.yml` + `.blockmap`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.10) already kicked off the "Desktop Release" workflow, which builds (and, on macOS, signs + notarizes) each platform, uploads the files onto this release, and then — in its `publish-release` job — flips the draft to **published**. The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. Until the workflow publishes it, the release stays a draft — invisible to the auto-updater and the public, which is what prevents the "Check for updates" 404 during the build. Publishing is gated on macOS only: `publish-release` flips the draft to published when the macOS build and its install-verification pass, and the Windows alpha (`continue-on-error`) can never block it. If the macOS build or verification fails, the release stays a draft by design (electron-updater ignores drafts, so users keep the previous version) — fix the cause and re-run the failed job, or, once you've confirmed the assets are good, publish by hand: `gh release edit vX.Y.Z --draft=false`.
+**The GitHub Release is created here, first, as a draft with the notes above.** The desktop assets (macOS `.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`, Windows `.exe` + `latest.yml` + `.blockmap`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.9) already kicked off the "Desktop Release" workflow, which builds (and, on macOS, signs + notarizes) each platform, uploads the files onto this release, and then — in its `publish-release` job — flips the draft to **published**. The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. Until the workflow publishes it, the release stays a draft — invisible to the auto-updater and the public, which is what prevents the "Check for updates" 404 during the build. Publishing is gated on macOS only: `publish-release` flips the draft to published when the macOS build and its install-verification pass, and the Windows alpha (`continue-on-error`) can never block it. If the macOS build or verification fails, the release stays a draft by design (electron-updater ignores drafts, so users keep the previous version) — fix the cause and re-run the failed job, or, once you've confirmed the assets are good, publish by hand: `gh release edit vX.Y.Z --draft=false`.
 
 ---
 
