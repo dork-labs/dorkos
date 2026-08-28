@@ -17,7 +17,7 @@
  *    byte-for-byte what it was.
  * 2. **`room-worktree`** — a room turn in a repo-enabled room, resolving to that
  *    agent's standing worktree in the room's repo (spec `project-rooms` §3.5).
- *    **Answered by `services/rooms/room-turn-cwd.ts`, not by this function**,
+ *    **Answered by `services/rooms/repo/room-turn-cwd.ts`, not by this function**,
  *    which is why {@link resolveSessionCwd} still never returns it. A room turn
  *    does not reach this chain at all: its boundary is the room dispatcher, and
  *    routing it through here would silently apply rungs 3 and 4 to room turns,
@@ -203,7 +203,7 @@ async function resolve(
   if (req.cwd) return { cwd: req.cwd, rung: 'explicit' };
 
   // Rung 2 (`room-worktree`) is answered at the ROOM's own turn boundary
-  // (`services/rooms/room-turn-cwd.ts`), and no room turn reaches this chain —
+  // (`services/rooms/repo/room-turn-cwd.ts`), and no room turn reaches this chain —
   // see the module doc's rung 2 for why routing one through here would change
   // what a repo-less room turn does today.
 

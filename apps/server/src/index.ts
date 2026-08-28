@@ -272,6 +272,7 @@ import {
   setRoomAttachmentStores,
   setRoomRepoService,
   setRoomFilesService,
+  setRoomWorktreeManager,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
@@ -1219,11 +1220,14 @@ async function start() {
     listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
     reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
     // The claim map is the only live record that an agent is mid-turn, and once
-    // the cwd rung lands (task 2.2) its worktree IS that turn's working
+    // the cwd rung landed (DOR-1597) its worktree IS that turn's working
     // directory. Without this the sweep can delete the directory a turn is
     // standing in — a turn that only reads leaves no mark on any timestamp.
     busyAgentPaths: () => roomService.listBusyAgentPaths(),
   });
+  // And the cwd rung can now find it: every room turn asks this manager where
+  // to run before its context is built (`room-turn-cwd.ts`, spec §3.5).
+  setRoomWorktreeManager(roomWorktrees);
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
   // a room's files — see its module doc for why an orphaned home directory is

@@ -106,6 +106,7 @@ function gatedRunner(): GatedRunner {
         roomId: request.room.id,
         authorId: request.authorId,
         agentPath: request.agentPath,
+        cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.prompt,
         roomContext: request.roomContext,

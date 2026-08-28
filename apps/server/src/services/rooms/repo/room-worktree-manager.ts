@@ -16,7 +16,7 @@
  * schema. A worktree is removed only when FOUR independent things agree:
  *
  * 1. Its agent is not mid-turn ({@link RoomWorktreeManagerDeps.busyAgentPaths}).
- *    Once the cwd rung lands (task 2.2) a room turn RUNS in this directory, and
+ *    Since the cwd rung landed (DOR-1597) a room turn RUNS in this directory, and
  *    a turn that is only reading — think, then write — leaves no mark any date
  *    source below can see. Deleting the cwd out from under a live turn is the
  *    one way this sweep could break something that was not even idle.
@@ -94,6 +94,14 @@
  * never mergeable either. So the generated paths are excluded in the repo's
  * shared `info/exclude` before the first worktree is added.
  *
+ * **Harness projection is no longer the only thing DorkOS writes in here.**
+ * Since the cwd rung landed (DOR-1597) a room turn RUNS in this tree, so the
+ * room's attachments are projected into it too — under
+ * `PROJECTED_ATTACHMENTS_ROOT`, which is therefore in the same block, derived
+ * from the projector's own constant rather than spelled again. It is DorkOS's
+ * own `.temp` area and nothing a member would author, which is what makes it
+ * safe to hide by the same rule the other two entries pass.
+ *
  * The list holds only what DorkOS generates in THIS configuration, and nothing
  * a person might write. Two paths were considered and left out, for the same
  * reason: `.claude/commands/` (members author commands there for claude-code)
@@ -105,9 +113,9 @@
  * makes its worktree read dirty, which is the conservative direction: spared,
  * never deleted.
  *
- * **An exclude cannot hide a TRACKED file**, which is what makes the two
- * entries safe: a room that commits its own harness manifest keeps working on
- * it normally.
+ * **An exclude cannot hide a TRACKED file**, which is what makes these entries
+ * safe: a room that commits its own harness manifest keeps working on it
+ * normally.
  *
  * @module server/services/rooms/repo/room-worktree-manager
  */
@@ -117,6 +125,7 @@ import path from 'node:path';
 import { slugifyAgentName } from '@dorkos/shared/validation';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
 import {
   projectAgentWorkspace,
   type AgentWorkspaceProjection,
@@ -166,23 +175,33 @@ export function roomWorktreeBranch(slug: string): string {
 }
 
 /**
- * The `info/exclude` block that keeps harness projection out of `git status`.
+ * The `info/exclude` block that keeps what DorkOS writes out of `git status`.
  *
- * Marker-delimited so the block can be recognized and left alone on the next
- * call rather than appended twice, and so a person reading the file knows what
- * wrote it and why. See the module doc for the two paths deliberately NOT in
- * it, and why excluding a file DorkOS does not generate would be worse than
- * leaving a generated one visible.
+ * Marker-delimited so the block can be recognized and REPLACED on the next call
+ * rather than appended twice, and so a person reading the file knows what wrote
+ * it and why. See the module doc for the paths deliberately NOT in it, and why
+ * excluding a file DorkOS does not generate would be worse than leaving a
+ * generated one visible.
+ *
+ * `PROJECTED_ATTACHMENTS_ROOT` is derived, never spelled twice: the projector
+ * decides where a room's files land in a turn's directory, and a second copy of
+ * that path here would go stale the moment it moved — leaving every worktree
+ * that ever received an attachment permanently dirty, and therefore never
+ * reaped and never mergeable.
  */
 const EXCLUDE_BLOCK = [
-  '# --- DorkOS: harness projection output, not anybody’s work (room-worktree-manager.ts) ---',
+  '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
   '/.claude/skills/',
   '/.agents/harness.manifest.json',
+  `/${PROJECTED_ATTACHMENTS_ROOT}/`,
   '# --- end DorkOS ---',
 ].join('\n');
 
-/** The first line of {@link EXCLUDE_BLOCK}, used to detect an existing block. */
+/** The first line of {@link EXCLUDE_BLOCK}, used to find an existing block. */
 const EXCLUDE_MARKER = EXCLUDE_BLOCK.split('\n')[0] ?? '';
+
+/** The last line of {@link EXCLUDE_BLOCK}, which closes it. */
+const EXCLUDE_END = '# --- end DorkOS ---';
 
 /** One agent's standing working copy in one room. */
 export interface RoomWorktreeHandle {
@@ -392,7 +411,7 @@ export class RoomWorktreeManager {
    *
    * **Every resolution stamps the directory** (`utimes`), including the ones
    * that create nothing. That is not bookkeeping, it is the reap's first line
-   * of defence: once the cwd rung lands, this method IS how a room turn learns
+   * of defence: since the cwd rung landed, this method IS how a room turn learns
    * where to run, so a turn that only reads its worktree would otherwise leave
    * no trace on any date source and the sweep would delete the directory it is
    * standing in. Handing out a path is itself evidence of use, so it is
@@ -599,8 +618,8 @@ export class RoomWorktreeManager {
     // `worktreeReapDays`. Removing this line is what the module's red-before
     // tests re-introduce.
     const stranded = new Set(await this.deps.listStrandedWorktrees(roomId));
-    // Agents that are mid-turn. Their worktree is a live cwd once the cwd rung
-    // lands, and a turn that only reads leaves no mark on any date above.
+    // Agents that are mid-turn. Their worktree is a live cwd since the cwd rung
+    // landed, and a turn that only reads leaves no mark on any date above.
     const busy = new Set(
       this.deps.busyAgentPaths().map((agentPath) => RoomWorktreeManager.digestFor(agentPath))
     );
@@ -791,14 +810,23 @@ export class RoomWorktreeManager {
   }
 
   /**
-   * Put the projection paths in the repo's shared `info/exclude`, once.
+   * Put the generated paths in the repo's shared `info/exclude`, keeping the
+   * block current.
    *
    * Written to the COMMON git directory, so one write covers `repo/` and every
    * worktree — git resolves `info/` to the common directory even from a linked
-   * worktree. Idempotent by marker, and best-effort: a repo whose git directory
-   * cannot be written is a repo whose worktrees read dirty, which is the
-   * conservative failure (spared, never deleted) rather than a reason to refuse
-   * an agent its working copy.
+   * worktree. Best-effort: a repo whose git directory cannot be written is a
+   * repo whose worktrees read dirty, which is the conservative failure (spared,
+   * never deleted) rather than a reason to refuse an agent its working copy.
+   *
+   * **A block that is already there is REPLACED when its content has moved, not
+   * left alone.** Recognizing the marker and returning was enough while the list
+   * never changed; it stopped being enough the moment a path was added to it,
+   * because a repo whose first worktree predates the addition would keep the old
+   * block forever — and the thing the new line hides is written on the hot path
+   * of every room turn that carries a file. A stale block is exactly the
+   * permanently-dirty worktree this whole mechanism exists to prevent.
+   * Everything outside the two markers is another writer's and is preserved.
    *
    * @param repoDir - The room's main checkout.
    * @param ceiling - The room home directory git's search may not climb past.
@@ -813,10 +841,10 @@ export class RoomWorktreeManager {
       } catch (err) {
         if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
       }
-      if (current.includes(EXCLUDE_MARKER)) return;
+      const next = withExcludeBlock(current);
+      if (next === current) return;
       await fs.mkdir(infoDir, { recursive: true });
-      const separator = current === '' || current.endsWith('\n') ? '' : '\n';
-      await fs.writeFile(file, `${current}${separator}${EXCLUDE_BLOCK}\n`, 'utf-8');
+      await fs.writeFile(file, next, 'utf-8');
     } catch (err) {
       logger.warn('[rooms] could not hide harness projection from a room repo’s git status', {
         repoDir,
@@ -824,6 +852,31 @@ export class RoomWorktreeManager {
       });
     }
   }
+}
+
+/**
+ * The `info/exclude` file with DorkOS's block present and current.
+ *
+ * Returns the input unchanged when the block is already exactly right, so the
+ * caller can skip the write entirely — this runs at every worktree creation.
+ *
+ * @param current - What the file holds now, or `''` when it does not exist.
+ * @returns What it should hold, ending in a newline.
+ */
+function withExcludeBlock(current: string): string {
+  const start = current.indexOf(EXCLUDE_MARKER);
+  if (start === -1) {
+    const separator = current === '' || current.endsWith('\n') ? '' : '\n';
+    return `${current}${separator}${EXCLUDE_BLOCK}\n`;
+  }
+
+  // An unterminated block — hand-edited, or a write that died mid-file — takes
+  // everything from the marker on. There is nothing after it that can be
+  // attributed to anybody else.
+  const endAt = current.indexOf(EXCLUDE_END, start);
+  const after = endAt === -1 ? '' : current.slice(endAt + EXCLUDE_END.length).replace(/^\n/, '');
+  const before = current.slice(0, start);
+  return `${before}${EXCLUDE_BLOCK}\n${after}`;
 }
 
 /** Whether a path is a directory that exists. */

@@ -191,6 +191,9 @@ import {
 } from './room-collect.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
 import { buildRoomContext } from './room-context.js';
+import { resolveRoomTurnCwd } from './repo/room-turn-cwd.js';
+import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
+import type { ResolvedCwd } from '../workspace/session-cwd-rung.js';
 import {
   RoomNoticeLog,
   type CascadeStamp,
@@ -385,6 +388,12 @@ export interface RoomTriggerDeps {
    */
   attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
   runner: RoomTurnRunner;
+  /**
+   * The install's room-worktree manager, for placing a turn in a project room
+   * (spec §3.5). Optional: an install with no repo machinery runs every turn in
+   * the agent's own directory, which is what a room did before this existed.
+   */
+  worktrees?: () => RoomWorktreeManager | null;
   writer: RoomTriggerWriter;
   /**
    * The per-room ceiling on automatic turns, counted whoever the caller claims
@@ -1985,6 +1994,12 @@ export class RoomTriggerDispatcher {
     // this frame at all, so its outcome is that method's to report.
     let outcome: ClaimOutcome = 'quiet';
     try {
+      // **Where this turn runs, decided before anything describes it.** The
+      // context below names attachment paths relative to this directory and the
+      // runner puts the files there, so it has to be settled first — see
+      // `room-turn-cwd.ts`. For a room with no files of its own the answer is
+      // `target.agentPath`, unchanged.
+      const { cwd } = await this.resolveCwd(room.id, target.authorId, target.agentPath);
       // Built before the request so the context and the projection plan it
       // implies are one value, resolved once.
       const turnContext = buildRoomContext(this.deps, {
@@ -1992,8 +2007,8 @@ export class RoomTriggerDispatcher {
         agentAuthorId: target.authorId,
         // The tree the turn below runs in, so a file the context names is named
         // by a path that opens from where the agent actually stands (DOR-1266).
-        // The same value reaches the runner as `agentPath` a few lines down.
-        agentPath: target.agentPath,
+        // The same value reaches the runner as `cwd` a few lines down.
+        cwd,
         entry,
         working: this.workingIn(room.id),
         // The cursor as it stood before the claim moved it. The stored row has
@@ -2020,6 +2035,9 @@ export class RoomTriggerDispatcher {
         room,
         authorId: target.authorId,
         agentPath: target.agentPath,
+        // Identity above, files here — the same value the context was built
+        // against, never resolved a second time.
+        cwd,
         sessionId: target.sessionId,
         entry,
         // The message, unchanged. A trigger asks the agent exactly what was
@@ -2578,10 +2596,13 @@ export class RoomTriggerDispatcher {
       sessionId: input.sessionId,
     });
     try {
+      // An aside turn is a real turn in a real checkout, so it is placed the
+      // same way an ordinary one is — see `runOneInDispatch`.
+      const { cwd } = await this.resolveCwd(room.id, authorId, input.agentPath);
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
-        agentPath: input.agentPath,
+        cwd,
         entry,
         working: this.workingIn(room.id),
         // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the
@@ -2608,6 +2629,7 @@ export class RoomTriggerDispatcher {
         room,
         authorId,
         agentPath: input.agentPath,
+        cwd,
         sessionId: input.sessionId,
         entry,
         prompt: input.prompt,
@@ -3704,6 +3726,43 @@ export class RoomTriggerDispatcher {
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
     return claimBusyWith(this.claimed, roomId, authorId, agentPath);
+  }
+
+  /**
+   * Where one agent's turn in this room runs — the `room-worktree` rung.
+   *
+   * **Called once per turn, before the context that describes it is built.** A
+   * room with files of its own puts the turn in that agent's standing working
+   * copy; every other room, and every failure, answers with the agent's own
+   * directory, which is exactly what a room turn used before this rung existed.
+   * The decision itself lives in `room-turn-cwd.ts` — see its module doc for why
+   * it is not the session resolver's chain.
+   *
+   * **`agentPath` is untouched by any of this.** It goes on carrying identity:
+   * the claim map, both busy ceilings and the runtime lookup all key on it, and
+   * spec §5 Q6 settles that none of them relaxes because a turn now runs
+   * somewhere else. An agent working in room A's worktree still blocks its own
+   * turn in room B.
+   *
+   * @param roomId - The room being answered.
+   * @param authorId - The agent answering, for the readable half of its worktree
+   *   directory name.
+   * @param agentPath - That agent's directory — its identity, and the floor.
+   * @returns The directory the turn runs in, and the rung that chose it.
+   */
+  private resolveCwd(roomId: string, authorId: string, agentPath: string): Promise<ResolvedCwd> {
+    return resolveRoomTurnCwd(
+      {
+        roomId,
+        agentPath,
+        // The same label the room shows for this agent. It is the readable half
+        // of the worktree's directory name and nothing else — identity is the
+        // digest of `agentPath` (`RoomWorktreeManager.slugFor`), so a rename
+        // costs a new working copy and never somebody else's.
+        agentName: this.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'agent',
+      },
+      { worktrees: () => this.deps.worktrees?.() ?? null }
+    );
   }
 
   /**

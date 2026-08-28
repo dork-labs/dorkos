@@ -106,6 +106,7 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
 import { notifyRoomMessage as emitRoomMessageNotification } from '../notifications/emitters/room-messages.js';
@@ -221,6 +222,15 @@ export interface RoomServiceDeps {
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */
   turns: RoomTurnRunner;
+  /**
+   * Where that turn runs, when the room has files of its own (spec §3.5).
+   *
+   * A thunk rather than the manager, because the manager is built after this
+   * service — it needs the claim map this service owns to know which working
+   * copies are in use. Optional: without one, every turn runs in the agent's own
+   * directory, exactly as it did before project rooms existed.
+   */
+  worktrees?: () => RoomWorktreeManager | null;
   /** The per-room ceiling on automatic turns, counted whoever is calling. */
   budget: RoomTurnBudget;
   /**
@@ -814,6 +824,7 @@ export class RoomService {
       topicNamesFor: (entryIds) => topicNamesForEntries(this.bridges, entryIds),
       attachmentsFor: (roomId, entryIds) => this.attachments.listFor(roomId, entryIds),
       runner: deps.turns,
+      ...(deps.worktrees ? { worktrees: deps.worktrees } : {}),
       budget: deps.budget,
       limitsFor: deps.limitsFor,
       engagedWindow: deps.engagedWindow,

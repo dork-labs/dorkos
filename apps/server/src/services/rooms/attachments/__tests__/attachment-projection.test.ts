@@ -112,7 +112,7 @@ describe('projecting room attachments', () => {
     await projectRoomAttachments({
       store: () => opts.store ?? store,
       roomId: ROOM_ID,
-      agentPath,
+      cwd: agentPath,
       attachments,
       now: opts.now,
     });

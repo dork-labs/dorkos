@@ -715,6 +715,11 @@ describe('asking one agent aside', () => {
       aboutEntryId: entry.id,
       prompt: 'do you have a next step?',
     });
+    // Let the turn reach the runner before landing its late answer — the same
+    // flush its sibling above already does. An aside turn resolves where it will
+    // run before it describes itself (`room-turn-cwd.ts`), so `land` is assigned
+    // a tick after `askAside` is called rather than inside it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     land({ text: null, waitedMs: 45 * 60_000 });
 
     await expect(asking).resolves.toBeNull();

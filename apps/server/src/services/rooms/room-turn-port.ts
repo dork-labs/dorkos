@@ -28,8 +28,28 @@ export interface RoomTurnRequest {
   room: Room;
   /** The agent author being triggered. */
   authorId: string;
-  /** The agent's directory — its identity and its working directory. */
+  /**
+   * The agent's directory — its IDENTITY, and nothing about where files go.
+   *
+   * It selects the runtime, keys the claim map and both busy ceilings, and names
+   * the worktree the turn may run in. It stopped being the working directory in
+   * DOR-1597; {@link RoomTurnRequest.cwd} is that now, and the two are the same
+   * string for every room without files of its own.
+   */
   agentPath: string;
+  /**
+   * The directory this turn actually runs in (spec `project-rooms` §3.5).
+   *
+   * Resolved ONCE per turn, by the dispatcher, BEFORE the room context is built
+   * — because the context names attachment paths relative to it and the runner
+   * puts the files there, so a cwd decided later would describe files the model
+   * cannot open. `services/rooms/repo/room-turn-cwd.ts` is what decides it.
+   *
+   * For a room with no files of its own this is {@link RoomTurnRequest.agentPath}
+   * exactly. For a project room it is that agent's standing working copy of the
+   * room's repo. Nothing downstream may substitute one for the other.
+   */
+  cwd: string;
   /** The session bound to this `(room, agent)`, or `null` on its first answer. */
   sessionId: string | null;
   /** The entry that triggered this turn. */
@@ -58,8 +78,9 @@ export interface RoomTurnRequest {
   roomContext: RoomContextData;
   /**
    * The files {@link RoomTurnRequest.roomContext} refers to, and the runner's
-   * obligation: every one of these must be on disk under `agentPath` before the
-   * turn starts, or the context is describing files the agent cannot open.
+   * obligation: every one of these must be on disk under {@link RoomTurnRequest.cwd}
+   * before the turn starts, or the context is describing files the agent cannot
+   * open.
    *
    * Carried on the request rather than looked up by the runner because the set
    * is decided by the context window `buildRoomContext` resolved — recomputing

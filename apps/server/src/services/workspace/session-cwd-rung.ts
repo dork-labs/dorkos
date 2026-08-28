@@ -16,7 +16,7 @@
  * | Rung             | Answered by                                          |
  * | ---------------- | ---------------------------------------------------- |
  * | `explicit`       | `resolve-session-cwd.ts`                             |
- * | `room-worktree`  | `services/rooms/room-turn-cwd.ts`                    |
+ * | `room-worktree`  | `services/rooms/repo/room-turn-cwd.ts`                    |
  * | `agent-home`     | `resolve-session-cwd.ts`, and the room rung's floor  |
  * | `agent-managed`  | `resolve-session-cwd.ts`                             |
  * | `default`        | `resolve-session-cwd.ts`                             |

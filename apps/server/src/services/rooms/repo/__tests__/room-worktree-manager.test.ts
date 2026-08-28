@@ -362,7 +362,7 @@ describe('RoomWorktreeManager', () => {
 
     it('refreshes the idle clock every time it hands the path out', async () => {
       // The reap's first line of defence, and the reason it is needed: once the
-      // cwd rung lands this method IS how a turn learns where to run, and a
+      // cwd rung landed this method IS how a turn learns where to run, and a
       // turn that only READS its worktree moves no timestamp of its own. The
       // sibling test 'removes a genuinely ancient working copy at the SHIPPED
       // default' is this one's control — same fixture, same setting, and it is

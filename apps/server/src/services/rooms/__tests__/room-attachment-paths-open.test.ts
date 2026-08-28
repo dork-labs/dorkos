@@ -158,7 +158,7 @@ describe('every path the agent is told about', () => {
     await projectRoomAttachments({
       store: () => store,
       roomId: room.id,
-      agentPath,
+      cwd: agentPath,
       attachments: projection,
     });
 
@@ -213,7 +213,7 @@ describe('every path the agent is told about', () => {
     await projectRoomAttachments({
       store: () => store,
       roomId: room.id,
-      agentPath,
+      cwd: agentPath,
       attachments: projection,
     });
 
@@ -253,7 +253,7 @@ describe('every path the agent is told about', () => {
     await projectRoomAttachments({
       store: () => store,
       roomId: room.id,
-      agentPath,
+      cwd: agentPath,
       attachments: projection,
     });
 

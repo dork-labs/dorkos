@@ -5,8 +5,9 @@
  * ## Why a projection and not an absolute path
  *
  * This is the decision, not an implementation note. A room turn runs with
- * `cwd: request.agentPath` (`room-turn-runner.ts`), and a room's attachments
- * live under the DorkOS data directory, which is outside it. Reading outside
+ * a directory the room decided (`room-turn-cwd.ts` — the agent's own folder, or
+ * its working copy of the room's repo), and a room's attachments live under the
+ * DorkOS data directory, which is outside either. Reading outside
  * the working directory is precisely what a runtime asks a person's permission
  * for — so handing the model an absolute path would park the turn on
  * `awaiting_approval` and make the word "automatic" false. The alternative,
@@ -89,8 +90,10 @@ function isUnlinkable(err: unknown): boolean {
  *   signal from a remote store that the bytes must be fetched rather than
  *   linked.
  * @param input.roomId - The room the files were posted in.
- * @param input.agentPath - The agent's working directory; every destination is
- *   inside it.
+ * @param input.cwd - The directory this turn runs in; every destination is
+ *   inside it. In a project room that is the agent's working copy of the room's
+ *   repo, NOT its home — a file put under the home would be named to the model
+ *   by a relative path that does not resolve from where it stands.
  * @param input.attachments - Exactly the files `buildRoomContext` told the model
  *   about. Never widened here.
  * @param input.now - The clock the sweep reads, injectable so a test can age a
@@ -99,7 +102,7 @@ function isUnlinkable(err: unknown): boolean {
 export async function projectRoomAttachments(input: {
   store: () => RoomAttachmentStore;
   roomId: string;
-  agentPath: string;
+  cwd: string;
   attachments: readonly ProjectableAttachment[];
   now?: () => number;
 }): Promise<void> {
@@ -115,12 +118,12 @@ export async function projectRoomAttachments(input: {
   // them. Growth is still bounded, which is what the sweep is for.
   if (input.attachments.length === 0) return;
 
-  await sweep(input.agentPath, input.now ?? Date.now);
+  await sweep(input.cwd, input.now ?? Date.now);
 
   const store = input.store();
   for (const file of input.attachments) {
     try {
-      await projectOne(store, input.roomId, input.agentPath, file);
+      await projectOne(store, input.roomId, input.cwd, file);
     } catch (err) {
       // Logged and swallowed, per this module's contract: one missing file is
       // survivable, a room that stopped answering is not.
@@ -138,13 +141,13 @@ export async function projectRoomAttachments(input: {
 async function projectOne(
   store: RoomAttachmentStore,
   roomId: string,
-  agentPath: string,
+  cwd: string,
   file: ProjectableAttachment
 ): Promise<void> {
   // The SAME helper that produced the path the model was told, never a second
   // expression of it — that identity is the whole invariant.
   const destination = path.join(
-    agentPath,
+    cwd,
     projectedAttachmentPath(file.entryId, file.attachmentId, file.name)
   );
 
@@ -164,9 +167,9 @@ async function projectOne(
   // The root is created and resolved FIRST so a redirected root is refused
   // before anything is made inside whatever it points at. The sweep inherits
   // the same protection: it only ever walks this root.
-  const root = path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT);
+  const root = path.join(cwd, PROJECTED_ATTACHMENTS_ROOT);
   await mkdir(root, { recursive: true });
-  await assertInside(agentPath, root);
+  await assertInside(cwd, root);
 
   await mkdir(path.dirname(destination), { recursive: true });
 
@@ -201,10 +204,10 @@ async function projectOne(
  * before the comparison; the separator on the prefix stops `/agents/ana-evil`
  * from passing as inside `/agents/ana`.
  */
-async function assertInside(agentPath: string, directory: string): Promise<void> {
-  const [root, real] = await Promise.all([realpath(agentPath), realpath(directory)]);
+async function assertInside(cwd: string, directory: string): Promise<void> {
+  const [root, real] = await Promise.all([realpath(cwd), realpath(directory)]);
   if (real !== root && !real.startsWith(root + path.sep)) {
-    throw new Error(`a projected attachment would land outside the agent directory: ${real}`);
+    throw new Error(`a projected attachment would land outside the turn's directory: ${real}`);
   }
 }
 
@@ -234,8 +237,8 @@ async function exists(file: string): Promise<boolean> {
  * has mentioned in a day goes. Failures are swallowed for the same reason
  * projection failures are: a sweep that could not run must not stop a turn.
  */
-async function sweep(agentPath: string, now: () => number): Promise<void> {
-  const root = path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT);
+async function sweep(cwd: string, now: () => number): Promise<void> {
+  const root = path.join(cwd, PROJECTED_ATTACHMENTS_ROOT);
   let entries: string[];
   try {
     entries = await readdir(root);

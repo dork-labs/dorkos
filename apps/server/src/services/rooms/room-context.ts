@@ -158,8 +158,15 @@ export interface RoomContextInput {
   /** The agent whose turn this is. */
   agentAuthorId: string;
   /**
-   * That agent's working directory — the `cwd` its turn runs in
-   * (`room-turn-runner.ts`) and the root every attachment is projected under.
+   * The directory this turn runs in — and therefore the root every attachment is
+   * projected under.
+   *
+   * **Not the agent's identity, and since DOR-1597 not always its folder.** A
+   * turn in a project room runs in that agent's working copy of the ROOM's repo
+   * (`room-turn-cwd.ts`, spec §3.5) while its `agentPath` — which the claim map,
+   * the busy ceilings and the runtime lookup all key on — stays exactly what it
+   * was. This field is the files half of that split; anything that means
+   * "which agent is this" wants `agentAuthorId` or the dispatch's `agentPath`.
    *
    * Passed in rather than derived, exactly as {@link RoomContextInput.engaged}
    * and {@link RoomContextInput.lastReadSeq} are: it is a fact about the
@@ -172,7 +179,7 @@ export interface RoomContextInput {
    * {@link ProjectableAttachment.relativePath} — so the two halves of "the model
    * is only told about files it can open" stay one expression.
    */
-  agentPath: string;
+  cwd: string;
   /** The entry that triggered it. Never appears in `pending`: it IS the message. */
   entry: RoomEntry;
   /**
@@ -477,13 +484,13 @@ export function buildRoomContext(
       });
       // **Told absolute, planned relative, joined the same way the projector
       // joins it** (DOR-1266). The plan is relative because it is a plan for a
-      // tree — `projectRoomAttachments` puts it under this same `agentPath` with
+      // tree — `projectRoomAttachments` puts it under this same `cwd` with
       // this same `path.join` — but a path in a model's context has no base
       // unless one is stated, and a live run measured the cost of leaving it
       // implicit: the agent resolved `.dork/.temp/room-attachments/…` against
       // the DorkOS home instead of its own cwd and was told the file does not
       // exist. Nothing new is disclosed; an agent already knows its cwd.
-      return { name: file.name, path: path.join(input.agentPath, relativePath) };
+      return { name: file.name, path: path.join(input.cwd, relativePath) };
     });
 
   // Reactions on those same posts, in ONE query. Scoped to `ownRecent` because

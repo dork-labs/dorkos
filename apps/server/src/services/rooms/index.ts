@@ -34,6 +34,7 @@ import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
 import type { RoomFilesService } from './repo/room-files.js';
+import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
@@ -376,6 +377,11 @@ export function createRoomSubsystem(opts: {
         waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
         ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
       }),
+    // Read per turn, never captured: the manager is registered later in
+    // bootstrap (it needs this very service's claim map), and an install with no
+    // repo machinery answers `null` forever, which puts every turn in the
+    // agent's own directory exactly as before.
+    worktrees: () => getRoomWorktreeManager(),
     // The budget reads its own spent hour back out of this database at
     // construction, so the ceilings mean an hour of wall clock rather than an
     // hour of uptime (DOR-1205).
@@ -616,6 +622,31 @@ export function setRoomFilesService(service: RoomFilesService): void {
 export function getRoomFilesService(): RoomFilesService {
   if (!activeRoomFiles) throw new Error('RoomFilesService not initialized');
   return activeRoomFiles;
+}
+
+let activeWorktrees: RoomWorktreeManager | null = null;
+
+/**
+ * Register the room-worktree manager at bootstrap, beside
+ * {@link setRoomRepoService}.
+ *
+ * @param manager - The wired manager.
+ */
+export function setRoomWorktreeManager(manager: RoomWorktreeManager): void {
+  activeWorktrees = manager;
+}
+
+/**
+ * The active room-worktree manager, or `null` where none was wired.
+ *
+ * **Nullable, unlike every getter above it, and that is the point.** Its one
+ * consumer is the cwd rung on the hot path of every room turn (`room-turn-cwd.ts`),
+ * which must place a turn on an install whose repo machinery was never
+ * bootstrapped. Throwing here would turn "this deployment has no room repos"
+ * into "this room stopped answering".
+ */
+export function getRoomWorktreeManager(): RoomWorktreeManager | null {
+  return activeWorktrees;
 }
 
 let activeBridges: BridgeStore | null = null;
