@@ -299,7 +299,7 @@ describe('checkForManualOverwrite', () => {
   it('says nothing when the plist cannot be read', async () => {
     // A binary plist, a truncated file, a bundle mid-copy. Guessing here means
     // interrupting someone over a version we did not actually read.
-    fs.writeFileSync(path.join(holder.bundle, 'Contents', 'Info.plist'), 'bplist00 ');
+    fs.writeFileSync(path.join(holder.bundle, 'Contents', 'Info.plist'), 'bplist00\0');
 
     await checkForManualOverwrite(noWindow);
 
