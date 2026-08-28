@@ -325,20 +325,25 @@ describe('the dorkos tool server on a Codex turn', () => {
     });
 
     it('lets a user server called dorkos through untouched, and warns about nothing', async () => {
-      // Off, DorkOS is not using the name, so reserving it would be taking
-      // something for nothing. It is still reserved — the name belongs to
-      // DorkOS on both runtimes whatever the flag says — so what this pins is
-      // that the reservation is the ONLY reason it is dropped, and the warning
-      // still names it.
+      // The name is reserved only on the turns DorkOS actually injects it. Off,
+      // DorkOS wants nothing called `dorkos`, so dropping this person's own
+      // server of that name would take something and give nothing back — and it
+      // would make the flag-OFF path stop being byte-identical to what shipped
+      // before the feature, which is the one promise the flag makes.
+      //
+      // OpenCode already behaved this way (its desired set simply has no
+      // `dorkos` entry when the experiment is off), so this is also what keeps
+      // the two runtimes answering the same question the same way.
       configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
       const managed: ManagedMcpServerResolver = {
         injectableServersForCwd: () => ({
-          files: { transport: 'stdio', command: '/bin/files' },
+          dorkos: { transport: 'stdio', command: '/bin/their-server' },
         }),
       } as unknown as ManagedMcpServerResolver;
       await drain(makeRuntime({ managed }).sendMessage('s1', 'hello', { cwd: agentDir }));
 
-      expect(Object.keys(lastMcpServers()).sort()).toEqual(['dorkos_ui', 'files']);
+      // Theirs, verbatim — same name, their command, and no URL of ours.
+      expect(lastMcpServers()['dorkos']).toEqual({ command: '/bin/their-server' });
       const warned = loggerMocks.warn.mock.calls.map((call) => String(call[0]));
       expect(warned.some((line) => line.includes('reserve'))).toBe(false);
     });

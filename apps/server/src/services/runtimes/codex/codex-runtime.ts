@@ -294,13 +294,27 @@ export class CodexRuntime implements AgentRuntime {
    *
    * @param cwd - The session's working directory (the agent's workspace path).
    */
-  private resolveManagedMcpServers(cwd: string): CodexMcpServerRecord {
+  private resolveManagedMcpServers(
+    cwd: string,
+    injectingDorkosTools: boolean
+  ): CodexMcpServerRecord {
     if (!this.managedMcpServers) return {};
     const neutral = this.managedMcpServers.injectableServersForCwd(cwd);
-    const { servers, skipped, reserved } = toCodexMcpServers(
-      neutral,
-      new Set([CODEX_UI_MCP_SERVER, DORKOS_MCP_SERVER_NAME])
-    );
+    // `dorkos_ui` is always ours — it is injected on every turn. `dorkos` is
+    // ours only on the turns we actually inject it, which is why the set is
+    // built per turn rather than being a constant.
+    //
+    // Reserving it unconditionally was a REGRESSION on the default path: with
+    // the experiment off DorkOS wants nothing called `dorkos`, so dropping a
+    // person's own server of that name took something and gave nothing back,
+    // and it made the flag-OFF path stop being byte-identical to the one that
+    // shipped before this feature. It also disagreed with OpenCode, where the
+    // desired set simply has no `dorkos` entry when the experiment is off and a
+    // user's server of that name is therefore never touched. Same experiment,
+    // same name, two runtimes: they have to answer this the same way.
+    const reservedNames = new Set([CODEX_UI_MCP_SERVER]);
+    if (injectingDorkosTools) reservedNames.add(DORKOS_MCP_SERVER_NAME);
+    const { servers, skipped, reserved } = toCodexMcpServers(neutral, reservedNames);
     if (skipped.length > 0) {
       logger.debug('[CodexRuntime] skipped SSE managed MCP servers — Codex has no SSE transport', {
         cwd,
@@ -585,12 +599,6 @@ export class CodexRuntime implements AgentRuntime {
       meshAgent?.displayName ?? meshAgent?.name
     );
 
-    // The agent's ENABLED managed MCP servers for this cwd, injected inline via
-    // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
-    // at turn time because the resolver keys on the session cwd; a non-agent
-    // session has no manifest and contributes none.
-    const managedMcpServers = this.resolveManagedMcpServers(cwd);
-
     // The `dorkos` tool server, when the experiment is on and this cwd hosts a
     // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
     // like the env token above and for the same reason: it carries a freshly
@@ -601,10 +609,19 @@ export class CodexRuntime implements AgentRuntime {
     // Scoped to every agent-bound session rather than to room turns: the runtime
     // cannot know why it was called, and these tools are worth having outside a
     // room anyway.
+    //
+    // Resolved BEFORE the managed servers because it decides whether the name
+    // `dorkos` is reserved against them this turn — see below.
     const dorkosTools = await resolveDorkosMcpInjection(
       meshAgent ? cwd : undefined,
       meshAgent?.displayName ?? meshAgent?.name
     );
+
+    // The agent's ENABLED managed MCP servers for this cwd, injected inline via
+    // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
+    // at turn time because the resolver keys on the session cwd; a non-agent
+    // session has no manifest and contributes none.
+    const managedMcpServers = this.resolveManagedMcpServers(cwd, dorkosTools !== null);
 
     // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
     // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
