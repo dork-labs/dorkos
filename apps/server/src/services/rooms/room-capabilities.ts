@@ -3,8 +3,8 @@
  * to (room-participation spec §10.2 and §10.3, plus the E16b reversal in
  * ADR 260814-195522).
  *
- * Six verbs, and between them they are everything an agent can do in a room that
- * is not simply answering the message it was handed:
+ * Eight verbs, and between them they are everything an agent can do in a room
+ * that is not simply answering the message it was handed:
  *
  * | Capability          | Tool                    | Tier      | What it is |
  * | ------------------- | ----------------------- | --------- | ---------- |
@@ -14,14 +14,29 @@
  * | `rooms.search_history`| `search_room_history` | `observe` | Find where something was said in ONE room. |
  * | `rooms.list_member_rooms`| `list_member_rooms` | `observe` | Which rooms this agent is in at all. |
  * | `rooms.search_member_rooms`| `search_member_rooms` | `observe` | Find where something was said across ALL of them. |
+ * | `rooms.get_room`    | `get_room`              | `observe` | One room in full: topic, roster, who is human. |
+ * | `rooms.find_room`   | `find_room`             | `observe` | Turn a `#name` or a set of members into a room. |
  *
- * ## The last two close a gap the first four had (agent-memory spec D6)
+ * ## The lookup pair answers WHO and WHICH (DOR-1610)
+ *
+ * The listing pair below hands over ids and names; these two hand over the rest
+ * of what the operator's own sidebar shows. `get_room` is one room's detail —
+ * its topic and its roster, each member with a handle and a `human`/`agent`
+ * kind, which is what the etiquette rules need an agent to know before it
+ * speaks. `find_room` turns the names people actually use ("post it in #mio",
+ * "my DM with @kai") into the ids every other verb takes, and its members
+ * filter answers "does a room for exactly these people already exist?" before
+ * anybody opens a duplicate. **Neither creates access**: both are built from
+ * the caller's own membership, and a non-member asking after a room is told
+ * `ROOM_NOT_FOUND`, exactly as the reads answer.
+ *
+ * ## The listing two close a gap the first four had (agent-memory spec D6)
  *
  * Every one of the original four takes a room id, and the only id an agent held
  * was the room it was answering in. So an agent seated in six rooms could read
  * and search exactly one of them, and asked "where did we decide that" about a
- * conversation in a channel it belongs to, it had no way to look. The lookup pair
- * is that gap and nothing more: `list_member_rooms` hands over the ids, and
+ * conversation in a channel it belongs to, it had no way to look. The listing
+ * pair is that gap and nothing more: `list_member_rooms` hands over the ids, and
  * `search_member_rooms` is `search_room_history` with the caller's whole
  * membership as its scope. **Neither creates access.** The scope is exactly what
  * `specs/message-search/02-specification.md` §7's table already grants an agent —
@@ -31,7 +46,7 @@
  *
  * ## The tiers, and what they honestly gate
  *
- * The four reads are `observe`, the tier that returns allowed before any other
+ * The six reads are `observe`, the tier that returns allowed before any other
  * check runs — so the thing standing between a caller and a room's log is the
  * MEMBERSHIP check, not the tier. That is the honest statement, and it is why
  * every read resolves membership first and answers "not a member" exactly as "no
@@ -67,22 +82,28 @@
  * ## The runtime constraint (§10.2.1)
  *
  * Only claude-code declares `supportsMcp: true`, so only a claude-code agent gets
- * these in-session. Codex and OpenCode agents reach the same four through the
+ * these in-session. Codex and OpenCode agents reach the same eight through the
  * external `/mcp` server if their owner wires it up, and keep today's behaviour if
  * not: the turn's text is the message. That is a difference in who DECIDES, not in
  * whether posting is possible, which is why nothing here is a mute.
  *
  * ## Untrusted text crosses this seam
  *
- * Both reads return words other people wrote, to a model that also holds the
- * filesystem and the credentials (`I5`). Two things follow, and neither is a
- * comment claiming safety: every LABEL — a handle, a display name — goes through
- * `sanitizeIdentity`, and every result carries the standing line in
- * {@link UNTRUSTED_NOTE} saying what the payload is. What is NOT claimed is a
- * nonce fence: a tool result is JSON the SDK renders, not a block this code
- * formats, so the boundary is the structure rather than a marker somebody could
- * type. The residual — a model that reads a message body as an instruction — is
- * real, is the same residual every room turn has, and is what the note is for.
+ * Every read here returns text other people wrote, to a model that also holds
+ * the filesystem and the credentials (`I5`). Two things follow, and neither is a
+ * comment claiming safety: every LABEL — a handle, a display name, a room name,
+ * a topic — goes through `sanitizeIdentity`, and every result that carries a
+ * MESSAGE BODY carries the standing line in {@link UNTRUSTED_NOTE} saying what
+ * the payload is. The three lookups that return labels only —
+ * `list_member_rooms`, `get_room`, `find_room` — do not, deliberately: a note on
+ * a payload of sanitized labels is a line spent on every call that says nothing
+ * new, and printing it everywhere is how a real warning becomes furniture.
+ *
+ * What is NOT claimed is a nonce fence: a tool result is JSON the SDK renders,
+ * not a block this code formats, so the boundary is the structure rather than a
+ * marker somebody could type. The residual — a model that reads a message body
+ * as an instruction — is real, is the same residual every room turn has, and is
+ * what the note is for.
  *
  * @module server/services/rooms/room-capabilities
  */
@@ -102,7 +123,13 @@ import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { resolveOperatorAuthor } from './operator-author.js';
 import { RoomError } from './room-errors.js';
-import { HISTORY_PAGE_MAX, MEMBER_ROOMS_PAGE_MAX, type RoomService } from './room-service.js';
+import {
+  FIND_ROOMS_MAX,
+  HISTORY_PAGE_MAX,
+  MEMBER_ROOMS_PAGE_MAX,
+  type RoomDetail,
+  type RoomService,
+} from './room-service.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -270,6 +297,54 @@ function projectEntry(rooms: RoomService, entry: RoomEntry): Record<string, unkn
 }
 
 /**
+ * One room in full, as `get_room` and `find_room` return it: the listing facts,
+ * the topic, and the roster with every label sanitized.
+ *
+ * The member rows deliberately carry `authorId` — it is what history entries
+ * name their writer by, so an agent can join "who said this" to "who is this"
+ * without a guess. What they deliberately do NOT carry is the operator's
+ * per-member configuration (response modes, read cursors): context spent on
+ * fields a model cannot act on.
+ *
+ * **The topic is sanitized for safety and not for length**, the same idiom
+ * `welcome-back/greeter.ts` uses: the sanitizer is asked only for the thing it
+ * is for. A topic is already bounded where it is WRITTEN — `UpdateRoomRequest`
+ * caps it at 500 characters — and this projection is built when an agent asks
+ * after one room rather than on every turn, so neither the 200-character cut
+ * `room-context-block.ts` makes for its per-turn preamble nor the identity
+ * default of 80 belongs here. Eighty would silently halve an ordinary sentence,
+ * and a second cap copied to this side of the seam is a number that drifts from
+ * the schema and truncates in a place nobody would think to look.
+ *
+ * @param detail - The service's projection.
+ * @returns The compact, label-sanitized shape a tool returns.
+ */
+function projectDetail(detail: RoomDetail): Record<string, unknown> {
+  return {
+    roomId: detail.roomId,
+    kind: detail.kind,
+    name: sanitizeIdentity(detail.name),
+    // `?? null` rather than letting `undefined` through: a topic written
+    // entirely in angle brackets sanitizes to nothing, and `undefined` is a key
+    // JSON drops — which would report "somebody set a topic I cannot show you"
+    // as "nobody set a topic". The two are different facts and `null` is one of
+    // them.
+    topic:
+      detail.topic === null
+        ? null
+        : (sanitizeIdentity(detail.topic, Number.MAX_SAFE_INTEGER) ?? null),
+    joined: detail.joinedAt,
+    lastActivity: detail.lastActivityAt,
+    members: detail.members.map((member) => ({
+      authorId: member.authorId,
+      name: sanitizeIdentity(member.name),
+      ...(member.handle ? { handle: sanitizeIdentity(member.handle) } : {}),
+      kind: member.kind,
+    })),
+  };
+}
+
+/**
  * Run a room verb, turning its typed refusal into the MCP `isError` payload
  * rather than a stack trace.
  *
@@ -310,8 +385,9 @@ const historyScope = {
 
 /**
  * The rooms domain: the affirmative posting verb, the reaction, the two ways to
- * look back inside one room, and the two that look across every room the caller
- * belongs to. Registration order is the order they are advertised in.
+ * look back inside one room, the two that look across every room the caller
+ * belongs to, and the two that answer WHICH room and WHO is in it. Registration
+ * order is the order they are advertised in.
  */
 export const roomsDomain: CapabilityDomain = {
   name: 'rooms',
@@ -611,6 +687,113 @@ export const roomsDomain: CapabilityDomain = {
             ...projectEntry(rooms, match.entry),
           })),
         });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.get_room',
+      title: 'Look at one room',
+      description:
+        'See one room you are a member of, in full: whether it is a channel or a direct ' +
+        'message, its topic, and everyone in it — each member with their @handle and whether ' +
+        'they are a person or an agent. ' +
+        'Use it to check who would read a message before you post it, to find the @handle that ' +
+        'reaches a colleague, or to tell a channel from a DM when all you hold is an id. ' +
+        'Takes a room id, never a #name: inside a room turn your room context names the room ' +
+        'you are in, and outside one you can list the rooms you are in or find a room by its ' +
+        'name to get an id. You must be a member of the room.',
+      tier: 'observe',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe(
+            'The room to look at, by its id — not its #name. Finding a room by name is what ' +
+              'turns a name into an id.'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'get_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const detail = answering(() =>
+          rooms.describeRoom(input.roomId, callerAuthor(rooms, context).id)
+        );
+        return Promise.resolve(projectDetail(detail));
+      },
+    }),
+    defineCapability({
+      id: 'rooms.find_room',
+      title: 'Find a room by name or members',
+      description:
+        'Find rooms you are a member of, by name, by who is in them, or both. ' +
+        'Name matches a channel #name ("#mio" and "mio" both work) or any part of a room ' +
+        'title, so it also finds a DM by who it is with. ' +
+        'Members matches rooms holding EVERY @handle you list — the way to check whether a ' +
+        'direct message with someone already exists before opening a new one. ' +
+        'Each match comes back in full — kind, topic and members included — so the common ' +
+        'lookup is one call, not two. ' +
+        `At most ${FIND_ROOMS_MAX} matches, most recently active first; narrow the filter if ` +
+        'the answer looks cut off. It only searches rooms you belong to: a room you are not ' +
+        'in is not findable.',
+      tier: 'observe',
+      input: z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('A #name, or part of a room title. Case does not matter.'),
+        members: z
+          .array(z.string().min(1).max(100))
+          .max(10)
+          .optional()
+          .describe('Handles that must ALL be in the room, with or without the @.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'find_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        // Guarded here rather than by a schema `.refine()`, for two measured
+        // reasons rather than a preference. `z.toJSONSchema` — what
+        // `registry.ts` projects this schema through for both MCP surfaces —
+        // drops a refinement SILENTLY, so the model would be handed two optional
+        // fields and no rule at all. And a refinement that did fire would throw
+        // a raw `ZodError` out of `registry.invoke`, before this handler runs,
+        // which reaches the model with no `code` and no sentence saying what to
+        // do instead — the exact shape `answering` exists to prevent.
+        //
+        // Blank counts as absent: `"  "` and `["@"]` pass the schema, narrow
+        // nothing, and would quietly degrade a find into a capped list.
+        const name = input.name?.trim();
+        const members = (input.members ?? [])
+          .map((handle) => handle.trim().replace(/^@/, ''))
+          .filter((handle) => handle.length > 0);
+        if (!name && members.length === 0) {
+          throw new CapabilityToolError({
+            error:
+              'Give a name, members, or both. To see every room you are in instead, list your ' +
+              'rooms.',
+            code: 'MISSING_FILTER',
+          });
+        }
+        const found = answering(() =>
+          rooms.findMemberRooms(callerAuthor(rooms, context).id, {
+            ...(name ? { name } : {}),
+            ...(members.length > 0 ? { memberHandles: members } : {}),
+          })
+        );
+        return Promise.resolve({ rooms: found.map(projectDetail) });
       },
     }),
   ],
