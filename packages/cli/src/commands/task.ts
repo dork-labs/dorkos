@@ -66,21 +66,29 @@ interface TaskSchedule {
   nextRun?: string | null;
   /** How much the run may do without asking, as the server resolved it. */
   permissionMode?: string | null;
+  /**
+   * Which runtime the task's runs execute on, or `null` when it follows its
+   * agent (DOR-1615). Read only to say a permission mode in the right runtime's
+   * vocabulary — see {@link FALLBACK_ADVISORY_RUNTIME}.
+   */
+  runtime?: string | null;
 }
 
 /**
- * The runtime a scheduled run executes on.
+ * The runtime to read a permission mode's meaning in, for a task that named
+ * none of its own.
  *
- * The same assumption the server and the task form both make, written down in a
- * third place rather than imported, because this package is the published CLI
- * bundle and reaching into server internals for a constant would drag the module
- * graph with it. The reasoning lives once, in
- * `apps/server/src/services/tasks/scheduled-run-power.ts`: a task carries no
- * runtime of its own and the scheduler's is fixed at boot to Claude Code, so the
- * registry default is the wrong thing to read. If that stops being true, all
- * three move together.
+ * This used to be the whole answer, and it was an honest one while the
+ * scheduler's runtime was fixed at boot. A task carries its own runtime now
+ * (DOR-1615), so the named one is read first and this is only the fallback for a
+ * task that follows its agent — which the CLI cannot resolve, because doing so
+ * would mean reading the agent's manifest off a machine the CLI may not be on.
+ *
+ * Getting the fallback wrong costs at most one advisory line that is not printed
+ * or is printed about the wrong vocabulary; the mode itself is the server's, and
+ * the task runs the same either way.
  */
-const TASK_RUNTIME = 'claude-code';
+const FALLBACK_ADVISORY_RUNTIME = 'claude-code';
 
 /** What `GET /api/capabilities` answers, narrowed to the part read here. */
 interface CapabilitiesResponse {
@@ -115,12 +123,14 @@ interface CapabilitiesResponse {
  * @returns The line to print, or `null` when there is nothing worth saying.
  */
 async function describeUnattendedLevel(
-  permissionMode: string | null | undefined
+  permissionMode: string | null | undefined,
+  runtime: string | null | undefined
 ): Promise<string | null> {
   if (!permissionMode) return null;
   try {
     const { capabilities } = await apiCall<CapabilitiesResponse>('GET', '/api/capabilities');
-    const declared = capabilities?.[TASK_RUNTIME]?.permissionModes?.values ?? [];
+    const declared =
+      capabilities?.[runtime || FALLBACK_ADVISORY_RUNTIME]?.permissionModes?.values ?? [];
     const descriptor = declared.find((mode) => mode.id === permissionMode);
     if (!descriptor || !isUnattendedAutonomy(descriptor)) return null;
     return `Runs at full power — no approval prompts (from your default trust level). Change it in Settings, or per task.`;
@@ -138,6 +148,16 @@ export interface TaskCreateArgs {
   cron?: string;
   timezone?: string;
   displayName?: string;
+  /**
+   * Which agent runtime the task's runs execute on (DOR-1615). Absent means
+   * "whatever the task's agent runs on", which is the answer every scheduled
+   * task gave before the flag existed.
+   */
+  runtime?: string;
+  /** Which model its runs execute on, written the way the runtime names it. */
+  model?: string;
+  /** How hard the model thinks during a run. */
+  effort?: string;
   json: boolean;
 }
 
@@ -176,7 +196,8 @@ function rethrowUnknownOption(err: unknown, subcommand: string, usage: string): 
  */
 export function parseTaskCreateArgs(rawArgs: string[]): TaskCreateArgs {
   const usage =
-    'Usage: dorkos task create --name <name> --description <text> --prompt <text> --target <ref> [--cron <expr>]';
+    'Usage: dorkos task create --name <name> --description <text> --prompt <text> --target <ref> ' +
+    '[--cron <expr>] [--runtime <claude-code|codex|opencode>] [--model <id>] [--effort <level>]';
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -189,6 +210,9 @@ export function parseTaskCreateArgs(rawArgs: string[]): TaskCreateArgs {
         cron: { type: 'string' },
         timezone: { type: 'string' },
         'display-name': { type: 'string' },
+        runtime: { type: 'string' },
+        model: { type: 'string' },
+        effort: { type: 'string' },
         json: { type: 'boolean', default: false },
       },
       allowPositionals: false,
@@ -214,6 +238,13 @@ export function parseTaskCreateArgs(rawArgs: string[]): TaskCreateArgs {
     cron: typeof values.cron === 'string' ? values.cron : undefined,
     timezone: typeof values.timezone === 'string' ? values.timezone : undefined,
     displayName: typeof values['display-name'] === 'string' ? values['display-name'] : undefined,
+    // Passed through unvalidated, deliberately. Which runtimes are registered
+    // and which model ids they offer are the SERVER's questions — it holds the
+    // registry and the catalogs, and it answers a bad value with a message
+    // naming it. A second opinion here would go stale the day a runtime ships.
+    runtime: typeof values.runtime === 'string' ? values.runtime : undefined,
+    model: typeof values.model === 'string' ? values.model : undefined,
+    effort: typeof values.effort === 'string' ? values.effort : undefined,
     json: jsonOf(values),
   };
 }
@@ -310,6 +341,9 @@ export async function runTaskCreate(args: TaskCreateArgs): Promise<number> {
     if (args.cron) body.cron = args.cron;
     if (args.timezone) body.timezone = args.timezone;
     if (args.displayName) body.displayName = args.displayName;
+    if (args.runtime) body.runtime = args.runtime;
+    if (args.model) body.model = args.model;
+    if (args.effort) body.effort = args.effort;
     const created = await apiCall<TaskSchedule>('POST', '/api/tasks', body);
     if (args.json) {
       printJson(created);
@@ -319,7 +353,7 @@ export async function runTaskCreate(args: TaskCreateArgs): Promise<number> {
     // Printed after the success line, and only when there is something a person
     // would want to have been told. `--json` callers get the mode in the payload
     // and no prose.
-    const level = await describeUnattendedLevel(created.permissionMode);
+    const level = await describeUnattendedLevel(created.permissionMode, created.runtime);
     if (level) console.log(level);
     return 0;
   } catch (err) {

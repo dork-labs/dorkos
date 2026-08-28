@@ -67,6 +67,50 @@ describe('parseTaskCreateArgs', () => {
     });
   });
 
+  it('parses --runtime, --model and --effort (DOR-1615/DOR-1347)', () => {
+    // Passed through unvalidated on purpose: which runtimes are registered and
+    // which model ids they offer are the SERVER's questions, and it answers a
+    // bad value with a message naming it. A second opinion here would go stale
+    // the day a runtime ships.
+    expect(
+      parseTaskCreateArgs([
+        ...['--name', 'nightly'],
+        ...['--description', 'd'],
+        ...['--prompt', 'p'],
+        ...['--target', 'global'],
+        ...['--runtime', 'codex'],
+        ...['--model', 'gpt-5.5'],
+        ...['--effort', 'high'],
+      ])
+    ).toMatchObject({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
+  });
+
+  it('leaves all three undefined when the flags are absent', () => {
+    // Absent means "whatever this task's agent runs on" — the answer every
+    // scheduled task gave before the flags existed.
+    expect(
+      parseTaskCreateArgs([
+        ...['--name', 'nightly'],
+        ...['--description', 'd'],
+        ...['--prompt', 'p'],
+        ...['--target', 'global'],
+      ])
+    ).toMatchObject({ runtime: undefined, model: undefined, effort: undefined });
+  });
+
+  it('names the three flags in its usage line', () => {
+    // The usage string is the only place a person discovers them.
+    let usage = '';
+    try {
+      parseTaskCreateArgs(['--name', 'x']);
+    } catch (err) {
+      usage = (err as Error).message;
+    }
+    expect(usage).toContain('--runtime');
+    expect(usage).toContain('--model');
+    expect(usage).toContain('--effort');
+  });
+
   it('throws when a required flag is missing', () => {
     expect(() => parseTaskCreateArgs(['--name', 'x'])).toThrow(/Missing required --description/);
   });
@@ -139,6 +183,92 @@ describe('runTaskCreate', () => {
       target: 'global',
       cron: '0 2 * * *',
     });
+  });
+
+  it('sends runtime, model and effort when they were given, and omits them otherwise', async () => {
+    apiCallMock.mockResolvedValue({ id: 't1', name: 'nightly', enabled: true });
+    const base = {
+      name: 'nightly',
+      description: 'd',
+      prompt: 'p',
+      target: 'global',
+      cron: '0 2 * * *',
+      timezone: undefined,
+      displayName: undefined,
+      json: false,
+    };
+
+    await runTaskCreate({ ...base, runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
+    expect(apiCallMock).toHaveBeenLastCalledWith(
+      'POST',
+      '/api/tasks',
+      expect.objectContaining({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' })
+    );
+
+    // An omitted flag must leave the key OFF the body, not send `undefined`:
+    // the server reads presence, and `null` there means "clear the override".
+    await runTaskCreate(base);
+    const [, , body] = apiCallMock.mock.calls.at(-1)!;
+    expect(body).not.toHaveProperty('runtime');
+    expect(body).not.toHaveProperty('model');
+    expect(body).not.toHaveProperty('effort');
+  });
+
+  it("reads the created task's OWN runtime when saying how much power it has", async () => {
+    // The advisory names a permission mode, and a mode id is not portable
+    // between runtimes — so the capability profile it looks the id up in has to
+    // be the one the task will actually run on (DOR-1615). Before this, the CLI
+    // held a `TASK_RUNTIME = 'claude-code'` constant and read Claude Code's
+    // profile whatever the task said.
+    apiCallMock.mockImplementation((method: string, path: string) =>
+      Promise.resolve(
+        path === '/api/capabilities'
+          ? {
+              capabilities: {
+                'claude-code': { permissionModes: { values: [] } },
+                codex: {
+                  permissionModes: {
+                    values: [
+                      {
+                        id: 'bypassPermissions',
+                        label: 'Full autonomy',
+                        stop: 'autonomy',
+                        asks: 'never',
+                        reach: 'all',
+                      },
+                    ],
+                  },
+                },
+              },
+            }
+          : {
+              id: 't1',
+              name: 'nightly',
+              enabled: true,
+              runtime: 'codex',
+              permissionMode: 'bypassPermissions',
+            }
+      )
+    );
+
+    expect(
+      await runTaskCreate({
+        name: 'nightly',
+        description: 'd',
+        prompt: 'p',
+        target: 'global',
+        cron: '0 2 * * *',
+        timezone: undefined,
+        displayName: undefined,
+        runtime: 'codex',
+        json: false,
+      })
+    ).toBe(0);
+
+    // Only Codex declares this id at the autonomy stop; `claude-code` declares
+    // nothing at all, so a lookup against the old constant would say nothing.
+    const said = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
+    expect(said.some((line) => line.includes('Runs at full power'))).toBe(true);
   });
 });
 
