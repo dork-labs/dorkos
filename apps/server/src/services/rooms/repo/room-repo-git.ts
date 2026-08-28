@@ -90,6 +90,17 @@ const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
 
 /**
+ * How much stdout a command whose output scales with the repository may write.
+ *
+ * `execFile` defaults to 1 MB and KILLS the child past it, so `ls-tree -r` — one
+ * line per file in the tree — fails somewhere around fifteen to twenty thousand
+ * files. That failure carries no code a caller could branch on, so it surfaced
+ * as an unmapped 500 on a merge that was merely large. Sixty-four megabytes is
+ * roughly a million paths, well past any room repo and still a bound.
+ */
+const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
+
+/**
  * Config overrides applied to EVERY command, ahead of the subcommand.
  *
  * `-c` rather than writing them into the repo's own config, because the repo's
@@ -632,20 +643,36 @@ export async function aheadBehind(
   return { ahead: ahead ?? 0, behind: behind ?? 0 };
 }
 
-/** One blob in a tree, as `git ls-tree -r -l` describes it. */
+/** One entry in a tree, as `git ls-tree -r -l` describes it. */
 export interface TreeEntry {
   /** The path, relative to the repo root, with `/` separators. */
   path: string;
-  /** The git file mode — `100644`, `100755`, or `120000` for a symlink. */
+  /**
+   * The git file mode — `100644`, `100755`, `120000` for a symlink, or
+   * `160000` for a gitlink (a submodule).
+   */
   mode: string;
-  /** The blob's object id. */
+  /** The object id. */
   sha: string;
-  /** The blob's size in bytes. For a symlink, the length of its target. */
+  /**
+   * The blob's size in bytes. For a symlink, the length of its target; for a
+   * gitlink, `0`, because there is no object in this repository to measure.
+   */
   size: number;
 }
 
 /** The mode git gives a symlink. */
 export const SYMLINK_MODE = '120000';
+
+/**
+ * The mode git gives a **gitlink** — the pointer a submodule leaves in a tree.
+ *
+ * Named here because a caller has to be able to REFUSE it, and because it is
+ * the entry that does not behave like the others: it names a commit in a
+ * repository that is not this one, so there is nothing to size, nothing to read,
+ * and nothing this validation could inspect.
+ */
+export const GITLINK_MODE = '160000';
 
 /**
  * Every blob in a commit's tree, with its mode, object id and size.
@@ -669,7 +696,18 @@ export async function listTree(
   commitish: string,
   ceilingDir: string
 ): Promise<Map<string, TreeEntry>> {
-  const out = await runGit(['ls-tree', '-r', '-l', '-z', commitish], repoDir, ceilingDir);
+  const out = await runGit(
+    ['ls-tree', '-r', '-l', '-z', commitish],
+    repoDir,
+    ceilingDir,
+    // A tree listing is one line per file, so a large repo outruns the shared
+    // default — measured to break around 15-20k files against `execFile`'s own
+    // 1 MB, and it surfaces as an unmapped 500 rather than as anything a caller
+    // could act on. Asked for explicitly rather than left to
+    // {@link GIT_MAX_OUTPUT_BYTES}, because this command's output is the one
+    // that scales with the whole repository.
+    { maxBuffer: LARGE_OUTPUT_MAX_BUFFER }
+  );
   const entries = new Map<string, TreeEntry>();
   for (const record of out.split('\0')) {
     if (record.length === 0) continue;
@@ -678,7 +716,13 @@ export async function listTree(
     const match = /^(\d{6}) (\w+) ([0-9a-f]+) +(\d+|-)\t(.*)$/s.exec(record);
     if (!match) continue;
     const [, mode, type, sha, size, entryPath] = match;
-    if (type !== 'blob' || !mode || !sha || !entryPath) continue;
+    // **`commit` is kept, and dropping it was a hole.** A gitlink is type
+    // `commit`, so a filter of `type !== 'blob'` removed submodules from the
+    // listing entirely — which meant they appeared in neither the before tree
+    // nor the after tree, were therefore never in the delta, and reached `main`
+    // without meeting a single check. They are listed here so the caller can
+    // refuse them by name.
+    if ((type !== 'blob' && type !== 'commit') || !mode || !sha || !entryPath) continue;
     entries.set(entryPath, {
       path: entryPath,
       mode,

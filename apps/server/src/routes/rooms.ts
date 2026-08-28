@@ -56,7 +56,7 @@ import {
   toAuthorRef,
   type PostedEntry,
 } from '../services/rooms/index.js';
-import { ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
+import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
@@ -1032,6 +1032,13 @@ router.post('/:id/repo/merge', (req, res) => {
       });
       res.status(200).json(result);
     } catch (err) {
+      // A 429 that says "come back" without saying when is a client's own guess
+      // about a backoff. The room's merge queue has a real number for it, so it
+      // is sent: the wait the NEXT caller would get, rounded up to the second
+      // the header is allowed to carry.
+      if (err instanceof RoomError && err.code === 'MERGE_IN_FLIGHT') {
+        res.set('Retry-After', String(Math.ceil(readRoomRepoConfig().mergeQueueWaitMs / 1000)));
+      }
       sendRoomError(res, err, 'POST /:id/repo/merge');
     }
   })();

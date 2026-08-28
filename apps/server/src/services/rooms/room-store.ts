@@ -12,6 +12,7 @@
  */
 import {
   DEFAULT_AMBIENT_MAX_ENTRIES,
+  authors,
   rooms,
   roomMembers,
   roomEntries,
@@ -1103,6 +1104,15 @@ export class RoomStore {
    *   the reverse (spec §3.2).
    * - **`kind = 'post'`.** A notice is the room talking about the conversation,
    *   not a turn in it, so it neither anchors a window nor decays one.
+   * - **Not the room's own voice.** The same rule as the line above, on the axis
+   *   the kind cannot express: the system author writes POSTS too — a milestone
+   *   (`postMoment`) and, since `project-rooms` §3.6, a merge event — and those
+   *   are the room reporting rather than anybody taking a turn. Left in, they
+   *   decayed a window nobody had spoken into: measured, five merges in a
+   *   project room stood an engaged agent down in the middle of a conversation,
+   *   and merges are that room's ordinary traffic. It is spelled as the author's
+   *   KIND rather than as "not a merge", because the reason has nothing to do
+   *   with merges — it is that the room is not a member of its own conversation.
    * - **Not this author.** An agent's own posts do not decay its own window, and
    *   an entry it wrote cannot be the message that addressed it.
    *
@@ -1145,7 +1155,14 @@ export class RoomStore {
             ? isNull(roomEntries.threadRootEntryId)
             : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId),
           eq(roomEntries.kind, 'post'),
-          ne(roomEntries.authorId, opts.excludeAuthorId)
+          ne(roomEntries.authorId, opts.excludeAuthorId),
+          // The room's own voice, excluded by the author's kind. A residual
+          // filter on a primary-key lookup per candidate row, so the `(room_id,
+          // seq)` walk the plan test pins is unchanged.
+          notInArray(
+            roomEntries.authorId,
+            this.db.select({ id: authors.id }).from(authors).where(eq(authors.kind, 'system'))
+          )
         )
       )
       .orderBy(desc(roomEntries.seq))

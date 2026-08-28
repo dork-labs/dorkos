@@ -74,7 +74,7 @@ export interface RoomRepoQueueOptions {
    */
   waitMs: number;
   /**
-   * The refusal to throw when the wait is spent, or when the queue is full.
+   * The refusal to throw when the wait is spent.
    *
    * A factory rather than a value so each caller words its own refusal — a
    * merge says `MERGE_IN_FLIGHT`, an enable says the room is busy being set up
@@ -82,6 +82,22 @@ export interface RoomRepoQueueOptions {
    * points at the wait rather than at the call that set it up.
    */
   busy: () => Error;
+  /**
+   * The refusal to throw when the queue was already full on arrival.
+   *
+   * **Its own sentence, because it is its own fact.** This caller never waited:
+   * it was turned away at the door, instantly. Reusing the timeout's wording
+   * told an agent "the wait ran out" about a call that returned in under a
+   * millisecond, which is the kind of small lie that costs somebody an
+   * afternoon — and the domain's own rule is that two different things a person
+   * can act on differently get two different messages. The CODE is deliberately
+   * the same on both paths: "somebody else is merging, come back" is one thing
+   * to do about it.
+   *
+   * Optional, and it falls back to {@link RoomRepoQueueOptions.busy}: a caller
+   * that has nothing more specific to say should not be forced to invent it.
+   */
+  queueFull?: () => Error;
 }
 
 /**
@@ -121,8 +137,8 @@ export class RoomRepoMutex {
       if (lane.queue.length >= MAX_QUEUE_DEPTH) {
         // Nobody was added, so a lane that is empty apart from its holder must
         // not be left behind by this refusal — the holder's own `release` will
-        // drop it.
-        throw options.busy();
+        // drop it. This caller waited for nothing, so it is told so.
+        throw (options.queueFull ?? options.busy)();
       }
       await this.waitForLane(lane, options);
     } else {

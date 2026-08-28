@@ -482,7 +482,20 @@ export type RoomErrorCode =
    * refusal is visible; an announcement of nothing is noise the whole room
    * pays for.
    */
-  | 'NOTHING_TO_MERGE';
+  | 'NOTHING_TO_MERGE'
+  /**
+   * The work being merged carries a **submodule** — a gitlink pointing at
+   * another git repository.
+   *
+   * A room's files have to be the room's own. A gitlink is a pointer at a
+   * repository this room knows nothing about, which every member would then
+   * have to fetch from somewhere DorkOS never chose, over credentials it never
+   * granted; and it is the one tree entry no validation here can see inside,
+   * because the object it names does not live in this repository at all. It
+   * used to reach `main` unchecked, since the tree listing dropped everything
+   * that was not a blob and a gitlink is a `commit`.
+   */
+  | 'SUBMODULE_NOT_ALLOWED';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

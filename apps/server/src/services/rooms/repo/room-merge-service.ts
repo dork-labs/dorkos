@@ -64,6 +64,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomRepoCaps } from '@dorkos/shared/room-repo';
+import { MERGE_SUMMARY_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
@@ -82,20 +83,10 @@ import {
   readBlob,
   revParse,
   shortstat,
+  GITLINK_MODE,
   SYMLINK_MODE,
   type TreeEntry,
 } from './room-repo-git.js';
-
-/**
- * The most of an agent's own summary that reaches a commit subject and a room
- * entry.
- *
- * Two hundred characters, which is generous for a subject line and short enough
- * that a model narrating its whole turn into the field cannot fill a room's log
- * with it. Everything the agent wants to say at length belongs in the commits it
- * is merging.
- */
-const SUMMARY_MAX_CHARS = 200;
 
 /**
  * The domain every merge commit is authored under.
@@ -105,6 +96,20 @@ const SUMMARY_MAX_CHARS = 200;
  * one can never resolve or be mailed by accident.
  */
 const AGENT_GIT_EMAIL_DOMAIN = 'dorkos.local';
+
+/**
+ * How long a computed `room_repo_status` answer may be reused.
+ *
+ * Five seconds, and the number is about what the answer is FOR. It feeds the
+ * explorer's pending-work badges, which poll — and the underlying work is
+ * `2 + 3n` git spawns for `n` agent members, so a busy room's badges would
+ * otherwise cost more processes than the merges they are watching. Five seconds
+ * of staleness is invisible next to "how far behind is Ana", and the cache is
+ * keyed on `main`'s sha as well as on time, so the one event that really changes
+ * the answer — a merge — invalidates it immediately rather than waiting out the
+ * clock.
+ */
+const STATUS_CACHE_MS = 5_000;
 
 /** What a completed merge answers. */
 export interface RoomMergeResult {
@@ -130,6 +135,14 @@ export interface RoomBranchStatus {
   branch: string;
   /** The agent's display name, sanitized. */
   agent: string;
+  /**
+   * The author id of the agent whose branch this is.
+   *
+   * An id rather than a path: it is the same id the room's roster and its
+   * entries carry, so a client can join this row to a member without learning
+   * where that agent lives on disk.
+   */
+  authorId: string;
   /** Whether this row is the caller's own. */
   mine: boolean;
   /** Whether the agent has a working copy on disk right now. */
@@ -143,9 +156,15 @@ export interface RoomBranchStatus {
   /**
    * Whether this branch holds work `main` has not got — `dirty || ahead > 0`.
    *
-   * The same definition `RoomRepoService.listStrandedWorktrees` uses, restated
-   * per branch so a reader does not have to derive it, and so the explorer's
-   * badge and the reap's safety gate can never mean two different things.
+   * The same DEFINITION `RoomRepoService.listStrandedWorktrees` uses, restated
+   * per branch so a reader does not have to derive it. It is deliberately not
+   * the same COMPUTATION: that one walks the worktree directories and this one
+   * walks the roster, so the two can disagree in the cases where those disagree
+   * — a worktree whose agent has left the room, a branch whose working copy the
+   * reap removed, or a directory git cannot read (which the other one calls
+   * stranded and this one cannot see at all). {@link RoomRepoStatus
+   * .strandedWorktrees} carries that other answer alongside, precisely so the
+   * two are visible rather than reconciled behind a reader's back.
    */
   stranded: boolean;
 }
@@ -181,8 +200,6 @@ export interface RoomRepoStatus {
 export interface RoomMergeServiceDeps {
   /** Owns every path under a room's home; never construct one by hand. */
   store: RoomRepoStore;
-  /** Resolves and creates the standing per-agent working copies. */
-  worktrees: RoomWorktreeManager;
   /** The per-room serialized queue every write to `repo/` goes through. */
   mutex: RoomRepoMutex;
   /** `config.rooms.repo.enabled`, read per call. */
@@ -230,6 +247,18 @@ export interface RoomMergeServiceDeps {
 
 /** Merging work into a room's `main`, and reporting what its repo holds. */
 export class RoomMergeService {
+  /**
+   * The last computed status per room, with the commit it was computed at.
+   *
+   * Bounded by the number of rooms that have repos and have been asked about,
+   * and each entry is a handful of small objects — so it is not swept. See
+   * {@link STATUS_CACHE_MS} for why it exists at all.
+   */
+  private readonly statusCache = new Map<
+    string,
+    { mainCommit: string; at: number; status: RoomRepoStatus }
+  >();
+
   constructor(private readonly deps: RoomMergeServiceDeps) {}
 
   /**
@@ -250,6 +279,14 @@ export class RoomMergeService {
    * room has no way to tell the difference afterwards. Naming a `worktree` is
    * therefore the operator's affordance (spec §5 Q2 puts the owner on the merge
    * list, and the owner has no branch of their own).
+   *
+   * That is a rule about the AUTHOR this call resolves to, and it inherits the
+   * install's posture rather than improving on it: with login off, a local
+   * caller that presents no agent token resolves to the operator (`callerAuthor`
+   * in `room-capabilities.ts`, the documented DOR-505 residual), and the
+   * operator may name any worktree. So the honest claim is that no agent ACTING
+   * AS ITSELF can merge a colleague's work — the same claim, and the same
+   * caveat, that `POST /:id/repo`'s operator-only gate carries.
    *
    * @param roomId - The room whose `main` gains the work.
    * @param callerAuthorId - Who is asking.
@@ -277,6 +314,13 @@ export class RoomMergeService {
             'MERGE_IN_FLIGHT',
             'Someone else is merging into this room right now, and the wait ran out. Try again in a moment.'
           ),
+        // A different fact, so a different sentence: this caller never waited at
+        // all. Same code, because the thing to do about it is the same.
+        queueFull: () =>
+          new RoomError(
+            'MERGE_IN_FLIGHT',
+            'This room already has as many merges queued as it will hold, so this one was not added to the queue. Wait for them to land, then merge again.'
+          ),
       },
       () => this.mergeUnderLock(room, target, input.summary)
     );
@@ -301,10 +345,79 @@ export class RoomMergeService {
     this.requireProjectRoom(roomId, callerAuthorId);
     const repoDir = this.deps.store.repoPath(roomId);
     const ceiling = this.deps.store.homeDir(roomId);
-    const caps = await this.requireCaps(roomId);
 
+    // One cheap read decides whether the expensive ones have to happen at all.
     const mainCommit = await revParse(repoDir, 'main', ceiling);
+    const cached = this.cachedStatus(roomId, mainCommit);
+    if (cached) return this.withCaller(cached, callerAuthorId);
+
+    const fresh = await this.computeStatus(roomId, repoDir, ceiling, mainCommit);
+    this.statusCache.set(roomId, { mainCommit, at: Date.now(), status: fresh });
+    return this.withCaller(fresh, callerAuthorId);
+  }
+
+  /**
+   * The cached answer for this room, if it is still about the same `main` and
+   * still young enough.
+   *
+   * @param roomId - The room.
+   * @param mainCommit - What `main` points at right now.
+   */
+  private cachedStatus(roomId: string, mainCommit: string): RoomRepoStatus | null {
+    const hit = this.statusCache.get(roomId);
+    if (!hit) return null;
+    // A merge moves `main`, so a stale entry cannot outlive the thing it is
+    // most likely to be wrong about.
+    if (hit.mainCommit !== mainCommit) return null;
+    if (Date.now() - hit.at > STATUS_CACHE_MS) return null;
+    return hit.status;
+  }
+
+  /**
+   * Re-aim a cached answer at whoever is asking now.
+   *
+   * `mine` is the one field in the payload that is about the CALLER rather than
+   * about the room, so a cache shared between two members would otherwise hand
+   * the second one the first one's idea of which branch is theirs.
+   *
+   * @param status - The cached answer.
+   * @param callerAuthorId - Who is asking.
+   */
+  private withCaller(status: RoomRepoStatus, callerAuthorId: string): RoomRepoStatus {
+    return {
+      ...status,
+      branches: status.branches.map((branch) => ({
+        ...branch,
+        mine: branch.authorId === callerAuthorId,
+      })),
+    };
+  }
+
+  /**
+   * Ask git everything, for one room at one commit.
+   *
+   * **Split out so it can be cached, and it needed to be.** The work here is
+   * `2 + 3n` git spawns for `n` agent members — a branch probe, an ahead/behind
+   * and a dirty check each — so a forty-member room is around a hundred and
+   * twenty processes, serially, per call. `room_repo_status` is what task 2.4's
+   * explorer badges poll, so that would have been paid on a timer, per viewer.
+   * The cache is keyed on `main`'s own sha as well as on time, so the answer can
+   * never survive the event most likely to change it.
+   *
+   * @param roomId - The room.
+   * @param repoDir - Its main checkout.
+   * @param ceiling - The room home directory git's search may not climb past.
+   * @param mainCommit - What `main` points at.
+   */
+  private async computeStatus(
+    roomId: string,
+    repoDir: string,
+    ceiling: string,
+    mainCommit: string
+  ): Promise<RoomRepoStatus> {
+    const caps = await this.requireCaps(roomId);
     const committedAt = await headCommittedAt(repoDir, ceiling);
+
     const tree = await listTree(repoDir, mainCommit, ceiling);
     let usedBytes = 0;
     for (const entry of tree.values()) usedBytes += entry.size;
@@ -339,7 +452,10 @@ export class RoomMergeService {
         branch,
         // Somebody's display name, rendered next to facts DorkOS states.
         agent: sanitizeIdentity(member.displayName) ?? 'an agent',
-        mine: member.authorId === callerAuthorId,
+        authorId: member.authorId,
+        // Re-aimed per caller by `withCaller`, because this is the one field in
+        // the payload that is about who asked rather than about the room.
+        mine: false,
         hasWorktree,
         ahead,
         behind,
@@ -524,7 +640,7 @@ export class RoomMergeService {
     await this.assertDeltaAllowed(repoDir, ceiling, mainCommit, target.branch, caps);
 
     const stat = await shortstat(repoDir, mainCommit, target.branch, ceiling);
-    const summary = sanitizeIdentity(rawSummary, SUMMARY_MAX_CHARS);
+    const summary = sanitizeIdentity(rawSummary, MERGE_SUMMARY_MAX_CHARS);
     const subject = summary ?? `Merge ${target.branch}`;
 
     let commit: string;
@@ -664,6 +780,20 @@ export class RoomMergeService {
     }
 
     for (const entry of changed) {
+      // **A gitlink is refused before anything else looks at it**, because
+      // nothing else CAN: it names a commit in a repository that is not this
+      // one, so there is no blob to size, no target to resolve and no content to
+      // inspect. It reached `main` unchecked while `listTree` was dropping
+      // non-blobs — it appeared in neither tree, so it was never in the delta.
+      // A room's files are the room's; a pointer at somebody else's repository
+      // is a dependency every member would have to fetch from a place this
+      // room knows nothing about.
+      if (entry.mode === GITLINK_MODE) {
+        throw new RoomError(
+          'SUBMODULE_NOT_ALLOWED',
+          `\`${entry.path}\` is a link to another git repository (a submodule). A room's files have to be the room's own — copy in what you need, or share the other repository another way.`
+        );
+      }
       if (entry.mode === SYMLINK_MODE) {
         const target = await readBlob(repoDir, entry.sha, ceiling);
         if (symlinkLeavesRepo(entry.path, target)) {
@@ -759,6 +889,25 @@ function describeBytes(bytes: number): string {
 }
 
 /**
+ * Spellings of `.git` that a case-insensitive or 8.3-aware filesystem opens as
+ * the real thing.
+ *
+ * `.git` is compared **lower-cased**, which is the whole of the first two
+ * entries: APFS and NTFS are case-insensitive by default, so `.GIT/config` and
+ * `.Git/hooks/pre-commit` open exactly the file `.git/config` opens. A
+ * case-blind comparison here let both through end to end — into `repo/`, the
+ * server-owned checkout where `.git` is a real directory and `.git/config` is
+ * the COMMON directory shared by every worktree of the room.
+ *
+ * The last two are NTFS's other doors to the same place: a trailing dot is
+ * stripped by the Win32 path layer, and `git~1` is the short (8.3) alias
+ * Windows generates for `.git`. Both are refused for the same reason git itself
+ * refuses them in `.gitmodules` paths — the name that reaches the filesystem is
+ * not the name in the tree.
+ */
+const GIT_DIR_SPELLINGS: readonly string[] = ['.git', '.git.', 'git~1'];
+
+/**
  * Whether a symlink stored at `entryPath` points anywhere but inside the room's
  * own files.
  *
@@ -768,23 +917,41 @@ function describeBytes(bytes: number): string {
  * lands inside the repo here can land outside it there. The question is about
  * the path, so the path is what is answered.
  *
- * Four ways out, and all four are refused: an absolute POSIX path, a
- * Windows-style drive path, a relative path that climbs past the root, and a
- * path into the repository's own `.git` — which is not one of the room's files
- * and is the one place a link could reach git's own configuration.
+ * Five ways out, and all five are refused: an absolute POSIX path, a
+ * Windows-style drive path, a UNC share, a relative path that climbs past the
+ * root, and a path into the repository's own git directory — which is not one
+ * of the room's files and is the one place a link could reach git's own
+ * configuration and its hooks.
+ *
+ * **Separators are normalized BEFORE any of the five run, and the order is a
+ * fix rather than a tidy-up.** The absolute test used to read the RAW target,
+ * so a Windows-absolute `\etc\passwd` and a UNC `\\server\share\x` both failed
+ * `startsWith('/')`, and only THEN were their backslashes turned into slashes —
+ * by which point nothing was left to catch them. One normalization, then five
+ * questions, all asked of the same string.
  *
  * @param entryPath - Where the link lives, relative to the repo root.
  * @param target - What it points at, as stored in the blob.
  * @returns `true` when the link leaves the room's files.
  */
 export function symlinkLeavesRepo(entryPath: string, target: string): boolean {
-  if (target.startsWith('/')) return true;
-  if (/^[A-Za-z]:[\\/]/.test(target)) return true;
+  // FIRST, so every test below sees one separator. A UNC path (`\\server\x`)
+  // becomes `//server/x` and is caught by the absolute test, which is exactly
+  // what it is.
+  const normalized = target.replaceAll('\\', '/');
+  if (normalized.startsWith('/')) return true;
+  if (/^[A-Za-z]:\//.test(normalized)) return true;
+
   const resolved = path.posix.normalize(
-    path.posix.join(path.posix.dirname(entryPath), target.replaceAll('\\', '/'))
+    path.posix.join(path.posix.dirname(entryPath), normalized)
   );
   if (resolved === '..' || resolved.startsWith('../') || resolved.startsWith('/')) return true;
-  return resolved === '.git' || resolved.startsWith('.git/');
+
+  // Lower-cased: on APFS and NTFS, `.GIT/config` opens `.git/config`.
+  const lowered = resolved.toLowerCase();
+  return GIT_DIR_SPELLINGS.some(
+    (spelling) => lowered === spelling || lowered.startsWith(`${spelling}/`)
+  );
 }
 
 /**

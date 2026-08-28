@@ -161,7 +161,11 @@
  */
 import { z } from 'zod';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { directMessageTitle, type RoomEntry } from '@dorkos/shared/room-schemas';
+import {
+  directMessageTitle,
+  MERGE_SUMMARY_MAX_CHARS,
+  type RoomEntry,
+} from '@dorkos/shared/room-schemas';
 
 import {
   CapabilityToolError,
@@ -762,7 +766,9 @@ export const roomsDomain: CapabilityDomain = {
         summary: z
           .string()
           .min(1)
-          .max(500)
+          // The same cap the server truncates at, so a long summary is refused
+          // while the agent can still write a shorter one, never silently cut.
+          .max(MERGE_SUMMARY_MAX_CHARS)
           .describe(
             'What you did, in one line — it becomes the merge’s own description and the line ' +
               'the room sees. "Add the deploy checklist", not "changes".'

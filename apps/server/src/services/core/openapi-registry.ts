@@ -4133,7 +4133,13 @@ registry.registerPath({
     },
     429: {
       description:
-        'Another merge held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`). Ask again.',
+        'Another merge held the room’s queue and the wait ran out, or the queue was already full when this call arrived — both `MERGE_IN_FLIGHT`, with a message saying which. `Retry-After` carries the room’s own queue wait in seconds, so a client does not have to guess a backoff.',
+      headers: {
+        'Retry-After': {
+          description: 'Seconds to wait before merging again.',
+          schema: { type: 'integer' },
+        },
+      },
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

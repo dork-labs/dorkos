@@ -826,6 +826,16 @@ export const RoomMergeEventSchema = z
 export type RoomMergeEvent = z.infer<typeof RoomMergeEventSchema>;
 
 /**
+ * The most of a merge summary that survives to the commit subject and the room.
+ *
+ * **Shared so the cap is asked once.** The server sanitizes and truncates at
+ * this length; a schema that accepted more would take a summary, silently cut
+ * it, and post two thirds of somebody's sentence. Refusing at the door instead
+ * means the caller finds out while it can still write a shorter one.
+ */
+export const MERGE_SUMMARY_MAX_CHARS = 200;
+
+/**
  * Asking for one agent's work to be merged into a room's `main`
  * (`POST /api/rooms/:id/repo/merge`).
  *
@@ -841,7 +851,7 @@ export const MergeRoomRepoRequestSchema = z
     summary: z
       .string()
       .min(1)
-      .max(500)
+      .max(MERGE_SUMMARY_MAX_CHARS)
       .describe(
         'What the work does, in one line. It becomes the merge commit’s subject and the sentence the room sees.'
       ),

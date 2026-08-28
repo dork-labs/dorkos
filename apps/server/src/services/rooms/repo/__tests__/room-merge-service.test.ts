@@ -38,7 +38,7 @@ import { ROOM_REPO_CAP_DEFAULTS, type RoomRepoCaps } from '@dorkos/shared/room-r
 import { RoomError } from '../../room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
-import { RoomRepoMutex } from '../room-repo-mutex.js';
+import { MAX_QUEUE_DEPTH, RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { RoomMergeService, symlinkLeavesRepo } from '../room-merge-service.js';
 import { mergeNoFf, runGit } from '../room-repo-git.js';
@@ -215,7 +215,6 @@ describe('RoomMergeService', () => {
     });
     merges = new RoomMergeService({
       store,
-      worktrees,
       mutex,
       enabled: () => enabled,
       mergeQueueWaitMs: () => 5000,
@@ -460,6 +459,42 @@ describe('RoomMergeService', () => {
       });
     });
 
+    it('refuses a submodule, which no other check can see inside', async () => {
+      await enableRepo();
+      const dir = await worktreeFor(ANA);
+      // A gitlink, built the way git itself records one: a tree entry of mode
+      // 160000 naming a commit that lives in another repository. It used to
+      // reach `main` untouched, because the tree listing dropped everything
+      // that was not a blob — so it appeared in neither tree and was never in
+      // the delta any validation walks.
+      const foreign = path.join(scratch, 'foreign');
+      await mkdir(foreign, { recursive: true });
+      await runGit(['init', '-b', 'main', '--quiet', '.'], foreign, scratch);
+      await writeFile(path.join(foreign, 'a.txt'), 'x', 'utf-8');
+      await runGit(['add', '--all'], foreign, scratch);
+      await runGit(
+        ['-c', 'user.name=F', '-c', 'user.email=f@dorkos.local', 'commit', '-q', '-m', 'foreign'],
+        foreign,
+        scratch
+      );
+      // Cloned in rather than hand-written into the index, so the working copy
+      // is genuinely CLEAN afterwards — otherwise the dirty check refuses first
+      // and the test would pass for the wrong reason.
+      await git(['clone', '--quiet', foreign, 'vendor'], dir);
+      await git(['add', 'vendor'], dir);
+      await git(
+        ['-c', 'user.name=A', '-c', 'user.email=a@dorkos.local', 'commit', '-q', '-m', 'submodule'],
+        dir
+      );
+
+      const refusal = await refusalOf(merges.merge(ROOM_ID, ANA, { summary: 'vendor it' }));
+
+      expect(refusal.code).toBe('SUBMODULE_NOT_ALLOWED');
+      expect(refusal.message).toContain('vendor');
+      // Nothing landed: main still holds only its seed commit.
+      expect(await git(['rev-list', '--count', 'HEAD'], store.repoPath(ROOM_ID))).toBe('1');
+    });
+
     it('refuses a file bigger than the room’s own limit', async () => {
       caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 64 };
       await enableRepo();
@@ -526,6 +561,37 @@ describe('RoomMergeService', () => {
       await commitIn(BEN, 'ben.md', 'ben\n');
       const refusal = await refusalOf(merges.merge(ROOM_ID, OPERATOR, { summary: 'mine' }));
       expect(refusal.code).toBe('NOTHING_TO_MERGE');
+    });
+  });
+
+  describe('the queue’s two refusals', () => {
+    it('tells a caller turned away at the door that it never waited', async () => {
+      await enableRepo();
+      await commitIn(ANA, 'ana.md', 'ana\n');
+      // Fill the lane and its queue, then arrive. The wait cap here is minutes,
+      // so nothing below can be a timeout — the refusal can only be the depth
+      // cap, and it must not claim a wait that never happened.
+      const held: Promise<unknown>[] = [];
+      let release = (): void => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      held.push(mutex.run(ROOM_ID, { waitMs: 60_000, busy: () => new Error('x') }, () => gate));
+      for (let i = 0; i < MAX_QUEUE_DEPTH; i += 1) {
+        held.push(
+          mutex.run(ROOM_ID, { waitMs: 60_000, busy: () => new Error('x') }, async () => undefined)
+        );
+      }
+
+      const refusal = await refusalOf(merges.merge(ROOM_ID, ANA, { summary: 'work' }));
+
+      expect(refusal.code).toBe('MERGE_IN_FLIGHT');
+      // The words are the point: this caller was refused instantly.
+      expect(refusal.message).toContain('not added to the queue');
+      expect(refusal.message).not.toContain('wait ran out');
+
+      release();
+      await Promise.all(held);
     });
   });
 
@@ -664,16 +730,44 @@ describe('RoomMergeService', () => {
   });
 
   describe('symlinkLeavesRepo', () => {
+    // Every row that reads `true` below and is NOT a plain POSIX escape was a
+    // hole first, and each was proven end to end before it was closed: the
+    // case-variant `.git` spellings landed on `main` and reached the
+    // server-owned `repo/`, where `.git` is a real directory and `.git/config`
+    // is the common directory shared by every worktree of the room; the
+    // Windows-absolute and UNC targets were allowed because the absolute test
+    // ran on the RAW string, before backslashes became slashes.
     it.each([
+      // Plain POSIX escapes — the cases that always worked.
       ['/etc/passwd', 'notes/link', true],
       ['C:\\Windows\\system32', 'link', true],
       ['../../../etc/passwd', 'notes/link', true],
       ['../secrets', 'link', true],
       ['.git/config', 'link', true],
       ['../.git/hooks/pre-commit', 'notes/link', true],
+      // Separator-ordering holes: normalize first, then test.
+      ['\\etc\\passwd', 'link', true],
+      ['\\\\server\\share\\x', 'link', true],
+      ['..\\..\\etc\\passwd', 'notes/link', true],
+      ['c:/Windows/system32', 'link', true],
+      // Case-insensitive filesystems open all of these as `.git`.
+      ['.GIT/config', 'link', true],
+      ['.Git/hooks/pre-commit', 'link', true],
+      ['.gIt', 'link', true],
+      ['../.GIT/config', 'notes/link', true],
+      ['.GIT', 'link', true],
+      // NTFS's other two doors to the same directory.
+      ['.git./config', 'link', true],
+      ['git~1/config', 'link', true],
+      ['GIT~1/hooks/pre-commit', 'link', true],
+      // And the things that are genuinely fine, including names that merely
+      // START with the forbidden ones — `.gitignore` is a file, not a door.
       ['real.md', 'link', false],
       ['../shared/real.md', 'notes/link', false],
       ['./real.md', 'notes/link', false],
+      ['.gitignore', 'link', false],
+      ['.github/workflows/ci.yml', 'link', false],
+      ['gitlab/config', 'link', false],
     ])('%s at %s escapes: %s', (target, at, escapes) => {
       expect(symlinkLeavesRepo(at, target)).toBe(escapes);
     });

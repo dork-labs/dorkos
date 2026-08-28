@@ -172,8 +172,8 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     // The rooms domain contributes NOTHING today, and is listed anyway. All
     // SEVEN of its reads are `observe` and deliberately withhold
     // `readOnlyCarveOut`, because what they return is other people's messages —
-    // or, for the three lookups and the repo status, the shape of somebody's
-    // install and somebody's work; naming the
+    // or, for the three lookups, the shape of somebody's install, and for
+    // `room_repo_status`, the shape of somebody's unfinished work; naming the
     // domain here is what puts them under the drift guard, so a later edit that
     // adds the flag has to move this set — and be argued for — rather than
     // widening the tokenless surface in silence. A domain nobody lists is a

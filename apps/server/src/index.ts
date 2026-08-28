@@ -1254,7 +1254,6 @@ async function start() {
   // `RoomService`, so a room's log keeps its single write path.
   const roomMerges = new RoomMergeService({
     store: roomRepoStore,
-    worktrees: roomWorktrees,
     mutex: roomRepoMutex,
     enabled: () => readRoomRepoConfig().enabled,
     mergeQueueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,

@@ -121,6 +121,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   REPO_CAP_EXCEEDED: 409,
   MERGE_CONFLICT: 409,
   NOTHING_TO_MERGE: 409,
+  SUBMODULE_NOT_ALLOWED: 409,
   // The exception, and the canonical status for it: the caller waited its turn
   // and the room is still busy. A 429 says "ask again", which is exactly the
   // remedy, and is the same answer `REACTION_RATE_LIMITED` gives for the same

@@ -342,7 +342,6 @@ describe('the room repo routes', () => {
     setRoomMergeService(
       new RoomMergeService({
         store,
-        worktrees: roomWorktrees,
         mutex,
         enabled: () => true,
         mergeQueueWaitMs: () => 5000,

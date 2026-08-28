@@ -16,8 +16,23 @@
  * that the vocabulary is not available anywhere under the surface — so that is
  * what is checked, in the one directory that is allowed to run git for a room.
  *
+ * **What a source grep cannot catch, stated rather than pretended away.** A
+ * command assembled from pieces — `'re' + 'set'`, a template literal, a name
+ * held in a variable — passes this test and runs anyway. That is inherent, and
+ * chasing it would mean writing a parser. What the guard is worth is the case
+ * that actually happens: somebody adds a plainly-spelled destructive command
+ * because it was the obvious way to fix something, and this fails their build
+ * with the reason in the message. It is a tripwire against drift, not a sandbox
+ * against an author who means it — and the reviewer of a PR that obfuscates a
+ * git command has a much louder signal than this test.
+ *
+ * **The walk recurses**, which it did not at first: `readdir` without
+ * `recursive` read only the top level, so anything in a subdirectory of the
+ * domain was invisible to a guard whose whole claim is "anywhere under here".
+ *
  * Seeded defect: adding `await runGit(['reset', '--hard', 'main'], …)` anywhere
- * under `services/rooms/repo/` reddens it, naming the file and the phrase.
+ * under `services/rooms/repo/` — at any depth — reddens it, naming the file and
+ * the phrase.
  */
 import { describe, it, expect } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
@@ -40,6 +55,10 @@ const REPO_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const FORBIDDEN: readonly { phrase: RegExp; why: string }[] = [
   { phrase: /'reset'/, why: 'git reset moves a branch off commits nobody else has a copy of' },
   { phrase: /'push'/, why: 'a room repo has no remote, and a push is how history leaves it' },
+  {
+    phrase: /'update-ref'/,
+    why: 'the most direct rewrite there is — it repoints a branch with no safety check at all',
+  },
   { phrase: /'--force'/, why: 'every force flag here overrides a refusal that is protecting work' },
   { phrase: /'-f'/, why: 'the short force flag, same reason' },
   { phrase: /'--hard'/, why: 'a hard reset throws away the working tree as well' },
@@ -48,19 +67,46 @@ const FORBIDDEN: readonly { phrase: RegExp; why: string }[] = [
     why: 'branch -D deletes a branch main does not contain; the domain uses -d, which refuses',
   },
   {
+    phrase: /'-M'/,
+    why: 'branch -M renames over an existing branch, which is a delete wearing a rename',
+  },
+  { phrase: /'clean'/, why: 'git clean deletes untracked files — somebody’s unsaved work' },
+  {
+    phrase: /'restore'|'switch'/,
+    why: 'both discard working-tree changes; the domain never writes in a tree it does not own',
+  },
+  {
+    phrase: /'reflog'/,
+    why: 'the reflog is the last copy of a rewritten history; nothing here should be pruning it',
+  },
+  {
     phrase: /'filter-branch'|'rebase'|'commit-tree'/,
     why: 'history rewriting, in the three spellings git offers',
   },
 ];
 
-/** Every TypeScript module in the domain, excluding its tests. */
+/**
+ * Every TypeScript module in the domain, at any depth, excluding its tests.
+ *
+ * `recursive` is load-bearing: without it this read only the top level, and a
+ * guard that claims "anywhere under here" while looking at one directory is
+ * worse than no guard, because it reads as coverage.
+ */
 async function domainSources(): Promise<{ name: string; source: string }[]> {
-  const names = (await readdir(REPO_DIR)).filter((name) => name.endsWith('.ts'));
+  const entries = await readdir(REPO_DIR, { recursive: true, withFileTypes: true });
+  const files = entries.filter(
+    (entry) =>
+      entry.isFile() &&
+      entry.name.endsWith('.ts') &&
+      // The tests themselves name these commands on purpose — this file most of
+      // all — and a guard that failed on its own vocabulary would be unusable.
+      !path.join(entry.parentPath, entry.name).includes('__tests__')
+  );
   return Promise.all(
-    names.map(async (name) => ({
-      name,
-      source: await readFile(path.join(REPO_DIR, name), 'utf-8'),
-    }))
+    files.map(async (entry) => {
+      const full = path.join(entry.parentPath, entry.name);
+      return { name: path.relative(REPO_DIR, full), source: await readFile(full, 'utf-8') };
+    })
   );
 }
 

@@ -168,13 +168,22 @@ describe('merge entries', () => {
     expect(runner.turns).toHaveLength(woken);
   });
 
-  it('does not move the room’s activity order — it is not a message', () => {
-    // A merge is real content and DOES belong in the log; what it must not do
-    // is behave like somebody talking. It goes through the ordinary entry
-    // writer, so this pins what that writer does rather than asserting a
-    // special case.
+  it('DOES move the room up the sidebar, because a merge is real activity', () => {
+    // Stated as the behaviour rather than the opposite, which is what an earlier
+    // version of this test claimed while asserting neither. A merge goes through
+    // the ordinary entry writer, which bumps `lastActivityAt` unconditionally —
+    // and that is right: work landing in a room's files is something a person
+    // wants to see the room surface for, unlike a reaction, which deliberately
+    // does not move it. What a merge must not do is take a TURN, and the tests
+    // above are where that is proved.
+    const before = service.getRoom(room.id, human)?.lastActivityAt;
     const entry = announce();
+    const after = service.getRoom(room.id, human)?.lastActivityAt;
+
     expect(entry.seq).toBeGreaterThan(0);
+    expect(after).toBeDefined();
+    expect(Date.parse(after!)).toBeGreaterThanOrEqual(Date.parse(before!));
+    expect(after).toBe(entry.createdAt);
     expect(log().filter((e) => e.body.merge !== undefined)).toHaveLength(1);
   });
 
