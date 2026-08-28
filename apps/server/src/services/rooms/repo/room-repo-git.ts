@@ -593,20 +593,6 @@ export async function headCommittedAt(
 }
 
 /**
- * The absolute git directory backing a checkout.
- *
- * For a linked worktree this is `<repo>/.git/worktrees/<name>`, which is where
- * that worktree's own `index` lives — the file whose mtime says when anything
- * was last staged, committed or refreshed in it.
- *
- * @param checkoutDir - The checkout to ask.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function absoluteGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
-  return runGit(['rev-parse', '--absolute-git-dir'], checkoutDir, ceilingDir);
-}
-
-/**
  * The git directory shared by a repo and every worktree of it.
  *
  * `info/exclude` lives here (git's `common_list` maps `info` to the common

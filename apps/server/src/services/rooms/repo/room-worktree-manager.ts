@@ -123,7 +123,6 @@ import {
 } from '../../harness/project-agent-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import {
-  absoluteGitDir,
   addWorktree,
   commitsAheadOfMain,
   commonGitDir,
@@ -304,6 +303,18 @@ export interface RoomWorktreeManagerDeps {
    * wrong in this one delays a tidy-up by five minutes.
    */
   busyAgentPaths(): readonly string[];
+  /**
+   * The wall clock, as epoch ms. Defaults to `Date.now`.
+   *
+   * Injectable for ONE reason: the reap's idle decision and the directory stamp
+   * must be drivable from a single deterministic source in tests, so a test
+   * never has to age a worktree by writing real mtimes into the past and then
+   * race a real `git` that might refresh them. Advancing this clock past the cap
+   * makes a freshly created worktree "idle" without touching a single mtime —
+   * which is exactly the kind of coupling the index-mtime removal exists to
+   * kill. In production it is `Date.now` and nothing changes.
+   */
+  now?: () => number;
 }
 
 /**
@@ -332,6 +343,11 @@ export class RoomWorktreeManager {
    * @param deps - The seams above.
    */
   constructor(private readonly deps: RoomWorktreeManagerDeps) {}
+
+  /** Epoch ms from the injected clock, or the wall clock. */
+  private nowMs(): number {
+    return (this.deps.now ?? Date.now)();
+  }
 
   /**
    * The directory name one agent's worktree takes in any room.
@@ -454,8 +470,10 @@ export class RoomWorktreeManager {
     branch: string
   ): Promise<RoomWorktreeHandle> {
     if (await isCheckout(dir)) {
-      // Handing the path out is the use. See `ensureWorktree`'s docs.
-      await stampDirectory(dir);
+      // Handing the path out is the use. See `ensureWorktree`'s docs. Stamped
+      // from the same clock the reap's cutoff reads, so the two never disagree
+      // about what "now" is.
+      await stampDirectory(dir, this.nowMs());
       return { slug, path: dir, branch, created: false, projection: null };
     }
     if (await directoryExists(dir)) await this.setCorpseAside(roomId, dir, slug);
@@ -586,7 +604,7 @@ export class RoomWorktreeManager {
     const busy = new Set(
       this.deps.busyAgentPaths().map((agentPath) => RoomWorktreeManager.digestFor(agentPath))
     );
-    const idleCutoff = Date.now() - this.deps.reapAfterDays() * 24 * 60 * 60 * 1000;
+    const idleCutoff = this.nowMs() - this.deps.reapAfterDays() * 24 * 60 * 60 * 1000;
 
     for (const slug of candidates) {
       if (stranded.has(slug)) {
@@ -662,8 +680,8 @@ export class RoomWorktreeManager {
   /**
    * The most recent moment anything in a worktree moved.
    *
-   * **Bounded on purpose, and the bound is what it is honest about.** Four
-   * cheap sources are taken, and the newest wins:
+   * **Bounded on purpose, and every source it keeps is one the sweep cannot
+   * move.** Three cheap sources are taken, and the newest wins:
    *
    * - the committer date of `HEAD` — when the agent last committed here, and
    *   the floor for a worktree that has done nothing else (a fresh one inherits
@@ -671,9 +689,28 @@ export class RoomWorktreeManager {
    * - the mtime of the working tree's own root directory — moved by anything
    *   created or deleted at the top level, including the `git worktree add`
    *   that made it, so a brand-new worktree reads as touched now,
-   * - the mtime of that worktree's `index` — moved by every `git add`, commit
-   *   and status refresh,
    * - the newest mtime among the root's direct children.
+   *
+   * **The `index` mtime is deliberately NOT among them, and that is a fix
+   * rather than an omission.** It used to be the fourth source, and it was the
+   * one that made the reap load-sensitive: git rewrites its index whenever a
+   * read finds the cached `stat` untrustworthy — a plain `git status`, and on a
+   * slow filesystem an ordinary read — and that rewrite stamps the index file
+   * `now`. Reproduced directly: after a worktree was aged forty days, one
+   * index-refreshing git call in this very method read the index back as
+   * "touched now", and the reap spared a genuinely idle tree. On a busy CI
+   * runner that surfaced as a reap that removed nothing. Dropping the source
+   * removes the coupling at the root: the sweep runs `git status` in every
+   * candidate (`listStrandedWorktrees`) and this method runs `git log` — none
+   * of it moves a directory or a working-file mtime, only the index, which is
+   * no longer read.
+   *
+   * Nothing real is lost with it. The index mtime moves on `git add` (which
+   * leaves the tree dirty — the stranded gate catches it), on `commit` (which
+   * moves `HEAD` and puts the branch ahead of main — the stranded gate again,
+   * and the head date here), and on a bare `git status` (which is a read, not
+   * work). The one thing it uniquely marked was "somebody ran `git status`
+   * here", which is not a reason to keep a checkout alive.
    *
    * That is one `readdir` and a handful of `stat`s, no matter how large the
    * tree. A full recursive walk would be the complete answer and would also be
@@ -689,19 +726,20 @@ export class RoomWorktreeManager {
    *
    * @param dir - The worktree.
    * @param ceiling - The room home directory git's search may not climb past.
-   * @returns The newest of the four.
+   * @returns The newest of the three.
    */
   private async lastTouchedAt(dir: string, ceiling: string): Promise<Date> {
     const stamps: number[] = [];
 
-    const head = await headCommittedAt(dir, ceiling);
-    if (head) stamps.push(head.getTime());
-
-    const gitDir = await absoluteGitDir(dir, ceiling);
-    stamps.push(...(await newestMtime([path.join(gitDir, 'index')])));
-
+    // The filesystem mtimes first, and the one git spawn last: even though
+    // `git log` does not touch a directory or working-file mtime, reading the
+    // durable sources before any child process runs keeps this method's answer
+    // provably independent of anything git might do.
     const entries = await fs.readdir(dir);
     stamps.push(...(await newestMtime([dir, ...entries.map((name) => path.join(dir, name))])));
+
+    const head = await headCommittedAt(dir, ceiling);
+    if (head) stamps.push(head.getTime());
 
     return new Date(Math.max(...stamps, 0));
   }
@@ -812,18 +850,22 @@ async function isCheckout(dir: string): Promise<boolean> {
 }
 
 /**
- * Mark a directory as used, right now.
+ * Mark a directory as used, as of `nowMs`.
  *
  * `utimes` on the directory itself, which is one of the sources
  * {@link RoomWorktreeManager.lastTouchedAt} reads and the only one a turn that
- * merely READS its worktree would otherwise never move. Best-effort: a stamp
+ * merely READS its worktree would otherwise never move. The time is passed in
+ * rather than read here so it is the SAME clock the reap's cutoff uses — a
+ * stamp and a cutoff drawn from two clocks could disagree by exactly the margin
+ * that decides whether a live turn's directory survives. Best-effort: a stamp
  * that fails costs a tidy-up, and refusing a turn its working directory because
  * a timestamp would not write would cost the turn.
  *
  * @param dir - The directory to stamp.
+ * @param nowMs - The moment to record, epoch ms.
  */
-async function stampDirectory(dir: string): Promise<void> {
-  const now = new Date();
+async function stampDirectory(dir: string, nowMs: number): Promise<void> {
+  const now = new Date(nowMs);
   try {
     await fs.utimes(dir, now, now);
   } catch (err) {

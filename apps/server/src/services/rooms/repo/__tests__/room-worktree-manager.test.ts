@@ -21,12 +21,27 @@
  *   two worktrees".
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
  *   reap left behind".
+ * - Dropping the directory stamp reddens "refreshes the idle clock".
+ * - Dropping the busy gate reddens "SPARES AN ANCIENT WORKTREE ITS AGENT IS
+ *   WORKING IN".
+ *
+ * **Idle is driven by an injected clock, never by aged mtimes.** An earlier
+ * version of this suite made a worktree "ancient" by writing its file mtimes
+ * forty days into the past, then read them back. That was doubly fragile: the
+ * reap's own git reads could refresh a worktree's index mtime to "now" on a
+ * slow runner (a real bug, since fixed by dropping the index as a source), and
+ * the backdating itself raced a real `git`. Instead the manager's clock is
+ * injectable, and {@link makeAncient} advances IT past the cap. No worktree's
+ * real mtime is ever moved, so nothing the sweep does to a timestamp can change
+ * the answer — which is the property the production fix guarantees too.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { promisify } from 'node:util';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { rooms, type Db } from '@dorkos/db';
 import type { Room } from '@dorkos/shared/room-schemas';
@@ -36,13 +51,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomRepoReconciler } from '../room-repo-reconciler.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import {
-  absoluteGitDir,
-  commitAll,
-  hasLocalBranch,
-  removeWorktree,
-  runGit,
-} from '../room-repo-git.js';
+import { commitAll, hasLocalBranch, removeWorktree, runGit } from '../room-repo-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -69,6 +78,8 @@ describe('RoomWorktreeManager', () => {
   let reapAfterDays: number;
   /** The agent workspace paths holding a live room claim, per test. */
   let busyAgentPaths: string[];
+  /** The manager's injected clock (epoch ms). Advance it to age a worktree. */
+  let nowMs: number;
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -80,56 +91,53 @@ describe('RoomWorktreeManager', () => {
     return path.join(scratch, 'agents', name);
   }
 
+  /**
+   * Amend a repo's HEAD to a fixed committer date.
+   *
+   * A plain `execFile`, not `runGit`: the hardened helper deliberately owns its
+   * environment and offers no seam for `GIT_COMMITTER_DATE`, which is exactly
+   * the one thing a test needs here and no production caller ever should. Runs
+   * against a real `.git`, so nothing climbs to the enclosing repo.
+   */
+  async function commitWithDate(repoDir: string, when: Date): Promise<void> {
+    const iso = when.toISOString();
+    await promisify(execFile)('git', ['commit', '--amend', '--no-edit', '-q', '--date', iso], {
+      cwd: repoDir,
+      env: { ...process.env, GIT_COMMITTER_DATE: iso, GIT_AUTHOR_DATE: iso },
+    });
+  }
+
   /** Give `name` its worktree and answer where it is. */
   async function worktreeFor(name: string): Promise<string> {
     const handle = await manager.ensureWorktree(ROOM_ID, agentPath(name), name);
     return handle.path;
   }
 
-  /** Milliseconds in a day, for the ageing helpers. */
+  /** Milliseconds in a day. */
   const DAY_MS = 24 * 60 * 60 * 1000;
 
   /**
-   * Push main's tip commit date into the past.
+   * Make everything already on disk look idle, by moving the reap's clock
+   * forward `days` — never by touching a single mtime.
    *
-   * `lastTouchedAt` reads HEAD's committer date, and a worktree branched from a
-   * repo created seconds ago can never look idle. Amending on MAIN rather than
-   * in the worktree matters: amending in the worktree would leave it holding a
-   * commit main has not got, which the stranded gate catches first and would
-   * make every ageing test pass for the wrong reason.
+   * The advance dwarfs the seconds a test actually takes, so every real mtime
+   * (all `<= real now`) sits far below the cutoff (`injected now - reapDays`).
+   * That is the whole point: nothing the sweep does to a timestamp can pull a
+   * worktree back across the line, because the line is days away.
    */
-  async function ageRepoMain(days: number): Promise<void> {
-    const when = new Date(Date.now() - days * DAY_MS).toISOString();
-    vi.stubEnv('GIT_COMMITTER_DATE', when);
-    vi.stubEnv('GIT_AUTHOR_DATE', when);
-    try {
-      await git(['commit', '--amend', '--no-edit', '--quiet'], store.repoPath(ROOM_ID));
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  }
-
-  /** Backdate every mtime `lastTouchedAt` reads in one worktree. */
-  async function ageWorktree(dir: string, days: number): Promise<void> {
-    const when = new Date(Date.now() - days * DAY_MS);
-    const gitDir = await absoluteGitDir(dir, store.homeDir(ROOM_ID));
-    for (const name of await readdir(dir)) {
-      await utimes(path.join(dir, name), when, when).catch(() => undefined);
-    }
-    await utimes(path.join(gitDir, 'index'), when, when).catch(() => undefined);
-    await utimes(dir, when, when);
+  function makeAncient(days = 40): void {
+    nowMs = Date.now() + days * DAY_MS;
   }
 
   /**
-   * A worktree that every date source says has sat untouched for `days`.
+   * Give `name` a worktree and then make it look ancient.
    *
    * The shape the reap is supposed to tidy away — and the shape every gate
-   * above the date has to survive.
+   * above the idle clock has to survive.
    */
   async function ancientWorktree(name: string, days = 40): Promise<string> {
-    await ageRepoMain(days);
     const dir = await worktreeFor(name);
-    await ageWorktree(dir, days);
+    makeAncient(days);
     return dir;
   }
 
@@ -159,6 +167,7 @@ describe('RoomWorktreeManager', () => {
     store = new RoomRepoStore(db, dorkHome);
     reapAfterDays = 14;
     busyAgentPaths = [];
+    nowMs = Date.now();
     db.insert(rooms)
       .values({
         id: ROOM_ID,
@@ -184,11 +193,11 @@ describe('RoomWorktreeManager', () => {
       listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
       reapAfterDays: () => reapAfterDays,
       busyAgentPaths: () => busyAgentPaths,
+      now: () => nowMs,
     });
   });
 
   afterEach(async () => {
-    vi.unstubAllEnvs();
     await rm(scratch, { recursive: true, force: true });
   });
 
@@ -374,12 +383,9 @@ describe('RoomWorktreeManager', () => {
       // turn that only READS its worktree moves no timestamp of its own. The
       // sibling test 'removes a genuinely ancient working copy at the SHIPPED
       // default' is this one's control — same fixture, same setting, and it is
-      // reaped when nothing hands the path out first.
-      //
-      // Asserted through the REAP rather than through `worktreeStatus`,
-      // deliberately: reading the status runs `git status`, which refreshes the
-      // index and would refresh the clock all by itself. The observable that
-      // matters is whether the directory survives.
+      // reaped when nothing hands the path out first. The only difference here
+      // is the extra `ensureWorktree`, whose stamp writes `now()` onto the
+      // directory and pulls it back inside the window.
       await service.enable(ROOM_ID, OPERATOR);
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
@@ -503,7 +509,7 @@ describe('RoomWorktreeManager', () => {
     it('removes a clean, merged, idle working copy and retires its branch', async () => {
       await service.enable(ROOM_ID, OPERATOR);
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      reapAfterDays = 0;
+      makeAncient();
 
       const swept = await manager.reapRoom(ROOM_ID);
 
@@ -553,11 +559,11 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('removes a genuinely ancient working copy at the SHIPPED default', async () => {
-      // The control for everything below, and the test the M5 ordering fix is
-      // for: `listStrandedWorktrees` runs `git status` in every candidate, and
-      // a status refresh rewrites that worktree's index — one of the four
-      // sources the idle clock reads. Dated afterwards, this tree looks touched
-      // seconds ago and is spared forever.
+      // The control for the spare-because-busy and refresh-the-clock tests:
+      // same fixture, same 14-day cap, and with nothing protecting it the idle
+      // tree is reaped. This is also the regression guard for the load bug —
+      // the reap's idle clock no longer reads any mtime the sweep can perturb,
+      // so a genuinely idle tree is removed however slow the runner.
       await service.enable(ROOM_ID, OPERATOR);
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
@@ -566,6 +572,41 @@ describe('RoomWorktreeManager', () => {
 
       expect(swept.reaped).toEqual([path.basename(dir)]);
       expect(existsSync(dir)).toBe(false);
+    });
+
+    it('ignores a git-status index refresh — the load bug, guarded at the source', async () => {
+      // The production fix, pinned WITHOUT the injected clock so it actually
+      // discriminates: `git status` rewrites a worktree's index mtime to now
+      // (proven in isolation), and if `lastTouchedAt` read that mtime, any git
+      // read the sweep does would make a genuinely idle tree look fresh — the CI
+      // failure. Here the directory, its children AND main's tip are genuinely
+      // aged (none of which a git read ever moves), only the index is freshened,
+      // and the tree must still be reaped. Re-add the index as a source and this
+      // reddens: touched reads `now`, the tree is spared.
+      //
+      // Uses the REAL clock on purpose: the aged mtimes are all sweep-immune, so
+      // there is nothing here for a slow runner to perturb.
+      const when = new Date(Date.now() - 40 * DAY_MS);
+      await service.enable(ROOM_ID, OPERATOR);
+      // Age main's tip BEFORE the worktree exists, so the worktree inherits an
+      // old HEAD committer date rather than the fresh one `enable` just wrote —
+      // otherwise the head-date source alone keeps the tree looking active.
+      await commitWithDate(store.repoPath(ROOM_ID), when);
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+      // Age the working tree — dir and every direct child. Git never moves these
+      // on a read, so this stays true however the sweep runs.
+      for (const name of await readdir(handle.path)) {
+        await utimes(path.join(handle.path, name), when, when).catch(() => undefined);
+      }
+      await utimes(handle.path, when, when);
+      // Freshen the index the way any sweep git op would.
+      await git(['status', '--porcelain=v1'], handle.path);
+      reapAfterDays = 14;
+
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([handle.slug]);
+      expect(existsSync(handle.path)).toBe(false);
     });
 
     it('SPARES AN ANCIENT WORKTREE ITS AGENT IS WORKING IN RIGHT NOW', async () => {
@@ -607,28 +648,27 @@ describe('RoomWorktreeManager', () => {
       // .min(1) — but if it ever did, "tidied away" would be a false summary of
       // a branch that is still sitting there.
       await service.enable(ROOM_ID, OPERATOR);
-      const dir = await ancientWorktree('ana');
+      const dir = await worktreeFor('ana');
       const slug = path.basename(dir);
+      // A commit main does not have — real "now", so it is genuinely ahead. The
+      // idle clock is advanced past the cap AFTER the commit, so the tree still
+      // reads ancient; this is simulating a commit the stranded list MISSED, not
+      // one the idle clock should have caught.
       await writeFile(path.join(dir, 'late.md'), 'committed after the list', 'utf-8');
-      // Backdated so the tree still reads idle: this is simulating a commit the
-      // stranded list MISSED, not one the idle clock should have caught. A
-      // commit made at the real "now" is spared by gate 3, which is precisely
-      // the by-design closure the module doc describes.
-      vi.stubEnv('GIT_COMMITTER_DATE', new Date(Date.now() - 40 * DAY_MS).toISOString());
       await commitAll(
         dir,
         'late',
         { name: 'Ana', email: 'ana@dorkos.local' },
         store.homeDir(ROOM_ID)
       );
-      vi.unstubAllEnvs();
-      await ageWorktree(dir, 40);
+      makeAncient();
       const blind = new RoomWorktreeManager({
         store,
         hasRepo: (roomId) => service.hasRepo(roomId),
         listStrandedWorktrees: async () => [],
         reapAfterDays: () => 14,
         busyAgentPaths: () => [],
+        now: () => nowMs,
       });
 
       const swept = await blind.reapRoom(ROOM_ID);
@@ -657,7 +697,8 @@ describe('RoomWorktreeManager', () => {
       const idle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       const busy = await manager.ensureWorktree(ROOM_ID, agentPath('bo'), 'Bo');
       await writeFile(path.join(busy.path, 'wip.md'), 'half an idea', 'utf-8');
-      reapAfterDays = 0;
+      reapAfterDays = 14;
+      makeAncient();
 
       const result = await new RoomRepoReconciler(store, undefined, manager).reconcile();
 
