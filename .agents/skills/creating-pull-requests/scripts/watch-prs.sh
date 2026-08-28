@@ -5,7 +5,12 @@
 #
 # Usage:
 #   watch-prs.sh [--interval SECONDS] [--max-cycles N] [--once] PR [PR...]
-#   watch-prs.sh --classify   # test seam: JSON snapshot on stdin -> event token
+#   watch-prs.sh --classify        # test seam: JSON snapshot on stdin -> event token
+#   watch-prs.sh --probe PR        # test seam: run the real collection path for
+#                                  # one PR (gh pr checks + the GraphQL query) and
+#                                  # print its classify() input JSON. Read-only —
+#                                  # same network calls the watch loop makes, no
+#                                  # state kept, nothing mutated.
 #
 # One line per state TRANSITION on stdout (pipe into the Monitor tool or a
 # notification hook). Silence means "same state as last cycle", so pair it
@@ -48,6 +53,7 @@ INTERVAL=60
 MAX_CYCLES=0 # 0 = unbounded (caller supplies the timeout)
 ONCE=0
 CLASSIFY=0
+PROBE=""
 PRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -55,6 +61,7 @@ while [ $# -gt 0 ]; do
     --max-cycles) MAX_CYCLES="$2"; shift 2 ;;
     --once) ONCE=1; shift ;;
     --classify) CLASSIFY=1; shift ;;
+    --probe) PROBE="$2"; shift 2 ;;
     *) PRS+=("$1"); shift ;;
   esac
 done
@@ -96,7 +103,7 @@ if [ "$CLASSIFY" = 1 ]; then
   exit 0
 fi
 
-[ ${#PRS[@]} -gt 0 ] || { echo "usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR..." >&2; exit 2; }
+[ ${#PRS[@]} -gt 0 ] || [ -n "$PROBE" ] || { echo "usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR..." >&2; exit 2; }
 
 REPO_JSON=$(gh repo view --json owner,name)
 OWNER=$(jq -r .owner.login <<<"$REPO_JSON")
@@ -118,10 +125,31 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
     }' -f o="$OWNER" -f r="$REPO" -F n="$pr" 2>/dev/null) || { echo '{"state":"ERR"}'; return; }
   # Standing Vercel reds are excluded: frequently red on main itself and not
   # in the queue's required set. Everything else red is reported.
-  local failing
-  failing=$(gh pr checks "$pr" 2>/dev/null | awk -F'\t' '$2=="fail"{print $1}' | grep -vi '^Vercel' | jq -R . | jq -cs .) || failing='[]'
-  local checks_reported
-  checks_reported=$(gh pr checks "$pr" 2>/dev/null | wc -l | tr -d ' ') || checks_reported=0
+  #
+  # `gh pr checks` exits 1 when ANY check failed and 8 when checks are still
+  # pending — BY DESIGN, and BOTH exits still carry the full stdout we need.
+  # Piping that command straight into awk/grep/jq (as this used to) drags its
+  # exit code through `set -o pipefail`: bash reports a pipeline's status as
+  # the rightmost non-zero exit among its stages, so `gh`'s 1-on-fail outranks
+  # every downstream command succeeding, which tripped the `|| failing='[]'`
+  # fallback and wiped the collected names EXACTLY when checks failed —
+  # FAILING could never be reported (DOR-1630). Fix: collect stdout first, in
+  # its own command substitution, decide from that — never from `gh`'s exit
+  # code. Only empty stdout means the call itself failed (auth, rate limit);
+  # that is the one case that still falls back.
+  local checks_raw
+  checks_raw=$(gh pr checks "$pr" 2>/dev/null) || true
+  local failing checks_reported
+  if [ -z "$checks_raw" ]; then
+    failing='[]'
+    checks_reported=0
+  else
+    # awk, not grep, excludes Vercel: grep -v exits 1 on no-match (e.g. zero
+    # non-Vercel failures), which would re-trip the same pipefail trap this
+    # fix removes upstream. awk always exits 0 regardless of match count.
+    failing=$(printf '%s\n' "$checks_raw" | awk -F'\t' '$2=="fail" && tolower($1) !~ /^vercel/ {print $1}' | jq -R . | jq -cs .)
+    checks_reported=$(printf '%s\n' "$checks_raw" | wc -l | tr -d ' ')
+  fi
   jq -c --argjson failing "$failing" --argjson reported "${checks_reported:-0}" '
     .data.repository.pullRequest as $p | {
       state: $p.state,
@@ -138,6 +166,14 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
       checksReported: $reported
     }' <<<"$gql"
 }
+
+if [ -n "$PROBE" ]; then
+  snapshot "$PROBE"
+  exit 0
+fi
+
+# PROBE is empty here, so the usage guard above already proved PRS is
+# non-empty — nothing further to check before starting the watch loop.
 
 # Per-PR state in indexed arrays (macOS ships bash 3.2: no `declare -A`).
 LAST=(); STATE_CYCLES=(); BASELINE_EJECTION=()
