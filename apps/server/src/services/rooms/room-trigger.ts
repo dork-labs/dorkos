@@ -160,6 +160,7 @@ import {
   DISPATCH_OUTCOMES,
   agentKey,
   claimBusyWith,
+  claimedAgentPaths,
   claimsWorkingIn,
   deepestClaimOf,
   describeClaims,
@@ -3623,6 +3624,20 @@ export class RoomTriggerDispatcher {
    */
   listClaims(): ActiveClaimView[] {
     return describeClaims(this.claimed);
+  }
+
+  /**
+   * Every agent workspace with a turn running in it right now.
+   *
+   * An in-process seam for the room-worktree reap, which must not delete the
+   * directory a live turn is standing in. Unlike
+   * {@link RoomTriggerDispatcher.listClaims} this carries filesystem paths, so
+   * it is deliberately not part of the diagnostic read surface.
+   *
+   * @returns Each distinct workspace path holding a claim.
+   */
+  busyAgentPaths(): string[] {
+    return claimedAgentPaths(this.claimed);
   }
 
   /**

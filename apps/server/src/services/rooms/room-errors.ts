@@ -339,6 +339,11 @@ export type RoomErrorCode =
    * says the feature is available and this particular room was never given
    * files. The remedy differs — turn the setting back on, versus give this room
    * a repo — so the codes do too.
+   *
+   * No `ROOM_REPO_` prefix, unlike its three neighbours, and that is on purpose:
+   * the spec names this code verbatim in §3.6's refusal contract, which agent
+   * tools will answer with. A code an agent may be told to expect is not one to
+   * rename for tidiness.
    */
   | 'NOT_A_PROJECT_ROOM';
 

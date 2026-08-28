@@ -9,28 +9,43 @@
  * Two agents editing the same file at the same time is then not a race anybody
  * has to arbitrate; it is two branches and a merge.
  *
- * ## The reap spares work, and that is the only promise it makes
+ * ## The reap spares work, and exactly which gate does that
  *
  * `config.rooms.repo.worktreeReapDays` is filed as a no-risk setting — no value
  * of it can lose work — and the reason is here rather than in the config
- * schema. A worktree is removed only when THREE independent things agree:
+ * schema. A worktree is removed only when FOUR independent things agree:
  *
- * 1. It is not in {@link RoomWorktreeManagerDeps.listStrandedWorktrees}, which
+ * 1. Its agent is not mid-turn ({@link RoomWorktreeManagerDeps.busyAgentPaths}).
+ *    Once the cwd rung lands (task 2.2) a room turn RUNS in this directory, and
+ *    a turn that is only reading — think, then write — leaves no mark any date
+ *    source below can see. Deleting the cwd out from under a live turn is the
+ *    one way this sweep could break something that was not even idle.
+ * 2. It is not in {@link RoomWorktreeManagerDeps.listStrandedWorktrees}, which
  *    is the delete guard's own list: anything dirty, anything holding commits
  *    `main` has never seen, and anything git cannot read at all.
- * 2. Nothing in it has been touched inside the idle window.
- * 3. `git worktree remove` — **without `--force`** — agrees to remove it. Git
- *    refuses a working tree holding modified or untracked files, so this is a
- *    second dirty check made by a different program at a later moment than the
- *    first. An agent that started typing between the two is caught by the one
- *    that runs last.
+ * 3. Nothing in it has been touched inside the idle window.
+ * 4. `git worktree remove` — **without `--force`** — agrees to remove it, and
+ *    then `git branch -d` — never `-D` — agrees to retire the branch.
  *
- * Only then is the branch retired, with `git branch -d` and never `-D`, which
- * refuses anything `main` does not already contain. Four gates, of which any
- * one alone would be enough to make the setting safe. The two that matter most
- * are pinned red-before/green-after in this module's tests: remove the stranded
- * check and a dirty worktree is deleted; remove it and a clean-but-unmerged one
- * is deleted too.
+ * **These gates are not interchangeable, and an earlier version of this note
+ * claimed they were.** Only gate 2 is complete. `git worktree remove` refuses a
+ * tree holding modified or untracked files and says nothing about unmerged
+ * COMMITS; `git branch -d` refuses a branch `main` does not contain and says
+ * nothing about uncommitted EDITS. Each covers one half, which is why the tree
+ * and the branch are reported separately: a removal whose branch survived is
+ * `reapedTreeKeptBranch`, never `reaped`, because something was left behind on
+ * purpose and a person may want to know. Gate 2 is pinned
+ * red-before/green-after in this module's tests — remove it and a
+ * clean-but-unmerged worktree is deleted along with its working copy.
+ *
+ * **The commit-between-list-and-removal window is closed by design, so do not
+ * "fix" it by reordering.** An agent could in principle commit after gate 2
+ * read the tree and before gate 4 removes it, which no `git status` check would
+ * catch. It cannot matter here: `lastTouchedAt` reads `HEAD`'s committer date,
+ * that read happens after the stranded list, and `worktreeReapDays` is
+ * `.min(1)` in the schema — so a commit made anywhere near the sweep puts the
+ * tree inside the idle window and gate 3 spares it. Shortening the minimum to
+ * zero would open this; the schema minimum is load-bearing.
  *
  * The reap is the ONLY thing that removes a worktree. Leaving a room does not:
  * membership is about who is talked to, and an agent that leaves with unmerged
@@ -56,6 +71,14 @@
  * registered twice under different spellings gets two worktrees — harmless,
  * and not worth lowercasing a path for on the systems where case is real.
  *
+ * The path is normalized with `path.resolve` and deliberately NOT `realpath`.
+ * Resolving symlinks would be the more "correct" identity, and it would also
+ * make a worktree's name depend on where a link happens to point today: move
+ * the link and every agent it names silently changes worktree, stranding the
+ * one it was working in. A lexical path is a name the person chose, so an agent
+ * reached through a symlink gets a second worktree and keeps both — visible,
+ * and fixable by them rather than by us.
+ *
  * ## Harness projection, and why it cannot dirty the tree
  *
  * A room repo may carry `.agents/skills/` like any project (§3.8), and Claude
@@ -71,18 +94,25 @@
  * never mergeable either. So the generated paths are excluded in the repo's
  * shared `info/exclude` before the first worktree is added.
  *
- * The exclude list holds only what DorkOS generates, never what a member would
- * author, and **an exclude cannot hide a tracked file** — so a room that
- * commits its own `.claude/settings.local.json` keeps working on it normally.
- * The known gap: a repo carrying `.dork/plugins/` also gets generated command
- * wrappers under `.claude/commands/`, which is not excluded because members
- * author there too. Such a worktree reads dirty, which is the conservative
- * direction (spared, never deleted).
+ * The list holds only what DorkOS generates in THIS configuration, and nothing
+ * a person might write. Two paths were considered and left out, for the same
+ * reason: `.claude/commands/` (members author commands there for claude-code)
+ * and `.claude/settings.local.json` — which the harness engine treats as the
+ * person's own file, and which this projection never generates anyway, because
+ * it runs claude-code-only with plugin hooks denied. Excluding a file DorkOS
+ * does not write would hide somebody's settings from `git status` and then let
+ * the reap delete them without a word. Anything generated that is left visible
+ * makes its worktree read dirty, which is the conservative direction: spared,
+ * never deleted.
+ *
+ * **An exclude cannot hide a TRACKED file**, which is what makes the two
+ * entries safe: a room that commits its own harness manifest keeps working on
+ * it normally.
  *
  * @module server/services/rooms/repo/room-worktree-manager
  */
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { slugifyAgentName } from '@dorkos/shared/validation';
 import { logger } from '../../../lib/logger.js';
@@ -125,7 +155,13 @@ const SLUG_DIGEST_CHARS = 8;
  */
 const SLUG_NAME_CHARS = 40;
 
-/** The branch a room worktree checks out, given its slug. */
+/**
+ * The branch a room worktree checks out, given its slug.
+ *
+ * Not exported from the domain barrel: the branch name is this module's
+ * business, and every surface above it takes the name from
+ * {@link RoomWorktreeHandle.branch} rather than rebuilding it.
+ */
 export function roomWorktreeBranch(slug: string): string {
   return `room/${slug}`;
 }
@@ -135,12 +171,13 @@ export function roomWorktreeBranch(slug: string): string {
  *
  * Marker-delimited so the block can be recognized and left alone on the next
  * call rather than appended twice, and so a person reading the file knows what
- * wrote it and why. See the module doc for what is deliberately NOT in it.
+ * wrote it and why. See the module doc for the two paths deliberately NOT in
+ * it, and why excluding a file DorkOS does not generate would be worse than
+ * leaving a generated one visible.
  */
 const EXCLUDE_BLOCK = [
   '# --- DorkOS: harness projection output, not anybody’s work (room-worktree-manager.ts) ---',
   '/.claude/skills/',
-  '/.claude/settings.local.json',
   '/.agents/harness.manifest.json',
   '# --- end DorkOS ---',
 ].join('\n');
@@ -156,10 +193,17 @@ export interface RoomWorktreeHandle {
   path: string;
   /** The branch checked out in it. */
   branch: string;
-  /** Whether THIS call is what created it. */
+  /**
+   * Whether this resolution is what created the tree.
+   *
+   * Shared by concurrent callers: two turns asking at the same moment await one
+   * creation and both see `true`, because both are looking at a tree that did
+   * not exist when they asked. It answers "was this made just now", not "was
+   * mine the winning call".
+   */
   created: boolean;
   /**
-   * What harness projection did, when this call created the worktree.
+   * What harness projection did, when this resolution created the worktree.
    *
    * `null` when the worktree was already there — projection runs at create
    * (spec §5 Q5), and re-running it every turn would make the server a writer
@@ -189,9 +233,25 @@ export interface RoomWorktreeStatus {
 
 /** What one reap pass did to one room's worktrees. */
 export interface RoomWorktreeSweepResult {
-  /** Worktrees removed: idle past the cap, clean, and merged. */
+  /** Worktrees fully gone: working copy removed AND branch retired. */
   reaped: string[];
-  /** Worktrees kept because they have been touched inside the idle window. */
+  /**
+   * Worktrees whose working copy was removed while their branch was kept.
+   *
+   * Its own field rather than a line in `reaped`, because it is a different
+   * outcome and the difference is a person's business: `git branch -d` refused,
+   * which can only mean `main` does not contain that branch, which can only
+   * mean something got committed after the stranded list was taken. Nothing was
+   * lost — the commits are still on the branch — but "we tidied that away"
+   * would be a false summary of it.
+   */
+  reapedTreeKeptBranch: string[];
+  /**
+   * Worktrees kept because they are in use or were touched recently.
+   *
+   * Covers both "an agent is mid-turn in it" and "something in it moved inside
+   * the idle window", plus the working copies git declined to remove.
+   */
   spared: string[];
   /**
    * Worktrees kept because they hold work `main` does not have.
@@ -226,12 +286,24 @@ export interface RoomWorktreeManagerDeps {
   /** `config.rooms.repo.worktreeReapDays`, read per call. */
   reapAfterDays(): number;
   /**
-   * Harness projection for a freshly created worktree.
+   * The workspace path of every agent holding a live room claim right now.
    *
-   * Injected so a test can prove it ran without depending on the engine's
-   * output; production passes {@link projectAgentWorkspace}.
+   * `RoomService.listBusyAgentPaths` in production, straight off the claim map
+   * that already bounds one checkout per agent (`room-claims.ts`).
+   *
+   * **The enumerable form of "is this (room, agent) busy", and it has to be.**
+   * The reap walks directory NAMES, and a name is `<slug>-<digest of the agent
+   * path>` — a one-way hash. There is no way back from a directory to the agent
+   * that owns it, so the question is asked in the only direction that can be
+   * answered: list the busy paths, digest each one, and skip the directories
+   * that match.
+   *
+   * Install-wide rather than per-room, deliberately. An agent mid-turn in room
+   * B is not writing in room A's worktree, so room-scoping would be more
+   * precise — and being wrong in that direction deletes a live cwd, while being
+   * wrong in this one delays a tidy-up by five minutes.
    */
-  project?: (dir: string) => AgentWorkspaceProjection;
+  busyAgentPaths(): readonly string[];
 }
 
 /**
@@ -274,34 +346,71 @@ export class RoomWorktreeManager {
    */
   static slugFor(agentName: string, agentPath: string): string {
     const name = slugifyAgentName(agentName).slice(0, SLUG_NAME_CHARS).replace(/-+$/, '');
-    const digest = createHash('sha256')
+    return `${name || 'agent'}-${RoomWorktreeManager.digestFor(agentPath)}`;
+  }
+
+  /**
+   * The identity half of a worktree name — the part that survives a rename.
+   *
+   * Its own method because the reap needs it without the agent's NAME: it holds
+   * directory names and a set of busy agent paths, and matching on this suffix
+   * is the only join available between the two.
+   *
+   * @param agentPath - The agent's workspace path.
+   * @returns The digest that ends every worktree name for that agent.
+   */
+  static digestFor(agentPath: string): string {
+    return createHash('sha256')
       .update(path.resolve(agentPath))
       .digest('hex')
       .slice(0, SLUG_DIGEST_CHARS);
-    return `${name || 'agent'}-${digest}`;
   }
 
   /**
    * Give an agent its standing working copy in this room, making it if it is
    * not there yet.
    *
-   * Idempotent: a second call for the same agent returns the same directory and
-   * touches nothing. The first call branches `room/<slug>` off `main`, checks it
-   * out, and runs harness projection in it.
+   * Idempotent: a second call for the same agent returns the same directory,
+   * and refreshes its idle clock. The first call branches `room/<slug>` off
+   * `main`, checks it out, and runs harness projection in it.
+   *
+   * **Every resolution stamps the directory** (`utimes`), including the ones
+   * that create nothing. That is not bookkeeping, it is the reap's first line
+   * of defence: once the cwd rung lands, this method IS how a room turn learns
+   * where to run, so a turn that only reads its worktree would otherwise leave
+   * no trace on any date source and the sweep would delete the directory it is
+   * standing in. Handing out a path is itself evidence of use, so it is
+   * recorded as such.
+   *
+   * **The in-flight map is consulted before anything touches the disk**, so two
+   * turns resolving at the same moment share one resolution rather than racing.
+   * Reversed — an existence check first — the second caller could look at a
+   * directory the first was halfway through creating and hand a turn a path
+   * that is not a checkout yet.
+   *
+   * **A half-made worktree is healed rather than believed.** A directory
+   * without a `.git` entry is not a checkout, and returning it forever was a
+   * wedge with no way out but manual repair: the reap could not remove it
+   * (unreadable trees are stranded by design) and this method kept answering
+   * with it. An empty one is cleared and rebuilt; a non-empty one is moved
+   * aside as `<slug>.orphaned-<n>` — never deleted, because the reason it has
+   * files in it is exactly what nobody here knows — and a fresh worktree is
+   * built beside it. The moved directory is not a checkout either, so the reap
+   * lists it as stranded work for a person to look at.
    *
    * **Nothing here ever removes a worktree, and neither does leaving the room.**
    * The reap ({@link RoomWorktreeManager.reapRoom}) is the only remover on any
-   * surface, and it removes only what is clean, merged and idle. An agent that
-   * is thrown out of a room mid-thought still has every unsaved edit when it is
-   * let back in — membership decides who is talked to, not who keeps their work
-   * (spec §3.4).
+   * surface, and it removes only what is idle, clean, merged and unclaimed. An
+   * agent that is thrown out of a room mid-thought still has every unsaved edit
+   * when it is let back in — membership decides who is talked to, not who keeps
+   * their work (spec §3.4).
    *
    * @param roomId - The room.
    * @param agentPath - The agent's workspace path — its identity anchor, and
    *   what makes the worktree name collision-safe.
    * @param agentName - The agent's display name, for the readable half of the
    *   directory name.
-   * @returns Where the agent works, and whether this call made it.
+   * @returns Where the agent works, and whether this resolution made it.
    * @throws {RoomError} `NOT_A_PROJECT_ROOM` when the room has no files.
    */
   async ensureWorktree(
@@ -317,19 +426,71 @@ export class RoomWorktreeManager {
     const dir = path.join(this.deps.store.worktreesPath(roomId), slug);
     const branch = roomWorktreeBranch(slug);
 
-    if (await directoryExists(dir)) {
-      return { slug, path: dir, branch, created: false, projection: null };
-    }
-
+    // Registered BEFORE the first `await`, so no second caller can slip between
+    // the lookup and the insert. Every path — reuse, heal, create — runs inside
+    // this one promise.
     const key = `${roomId}/${slug}`;
     const inFlight = this.creating.get(key);
     if (inFlight) return inFlight;
-
-    const creation = this.createWorktree(roomId, dir, slug, branch).finally(() => {
+    const resolution = this.resolveWorktree(roomId, dir, slug, branch).finally(() => {
       this.creating.delete(key);
     });
-    this.creating.set(key, creation);
-    return creation;
+    this.creating.set(key, resolution);
+    return resolution;
+  }
+
+  /**
+   * Reuse the working copy, heal it, or make it — the body of one resolution.
+   *
+   * @param roomId - The room.
+   * @param dir - Where the working copy lives.
+   * @param slug - Its directory name.
+   * @param branch - The branch it checks out.
+   */
+  private async resolveWorktree(
+    roomId: string,
+    dir: string,
+    slug: string,
+    branch: string
+  ): Promise<RoomWorktreeHandle> {
+    if (await isCheckout(dir)) {
+      // Handing the path out is the use. See `ensureWorktree`'s docs.
+      await stampDirectory(dir);
+      return { slug, path: dir, branch, created: false, projection: null };
+    }
+    if (await directoryExists(dir)) await this.setCorpseAside(roomId, dir, slug);
+    return this.createWorktree(roomId, dir, slug, branch);
+  }
+
+  /**
+   * Move a directory that is not a checkout out of the way, keeping everything
+   * in it.
+   *
+   * An empty one is simply removed. Anything else is renamed rather than
+   * deleted: this runs unattended, and "I do not recognize this directory" has
+   * never been a reason to destroy its contents anywhere else in this domain.
+   *
+   * @param roomId - The room, for the log line.
+   * @param dir - The directory in the way.
+   * @param slug - Its name, for the log line.
+   */
+  private async setCorpseAside(roomId: string, dir: string, slug: string): Promise<void> {
+    try {
+      if ((await fs.readdir(dir)).length === 0) {
+        await fs.rm(dir, { recursive: true, force: true });
+        return;
+      }
+    } catch {
+      // Unreadable. Fall through to the rename, which needs no listing.
+    }
+    const moved = `${dir}.orphaned-${Date.now()}`;
+    await fs.rename(dir, moved);
+    logger.warn('[rooms] a room worktree directory was not a checkout; moved it aside', {
+      roomId,
+      worktree: slug,
+      movedTo: moved,
+      note: 'nothing was deleted; the sweep will list it as unfinished work',
+    });
   }
 
   /**
@@ -346,12 +507,18 @@ export class RoomWorktreeManager {
     const dir = path.join(this.deps.store.worktreesPath(roomId), slug);
     if (!(await directoryExists(dir))) return null;
     const ceiling = this.deps.store.homeDir(roomId);
+    // Dated FIRST, for the reason `reapRoom` dates first: `git status` refreshes
+    // the index when its stat cache is out of date, and the index is one of the
+    // sources below. Asked afterwards, every worktree this method looks at
+    // reports "touched just now" — measured, on a tree deliberately aged forty
+    // days.
+    const lastTouchedAt = (await this.lastTouchedAt(dir, ceiling)).toISOString();
     return {
       slug,
       path: dir,
       dirty: await hasUncommittedChanges(dir, ceiling),
       aheadOfMain: await commitsAheadOfMain(dir, ceiling),
-      lastTouchedAt: (await this.lastTouchedAt(dir, ceiling)).toISOString(),
+      lastTouchedAt,
     };
   }
 
@@ -368,7 +535,12 @@ export class RoomWorktreeManager {
    * @returns What was removed, and what was kept and why.
    */
   async reapRoom(roomId: string): Promise<RoomWorktreeSweepResult> {
-    const result: RoomWorktreeSweepResult = { reaped: [], spared: [], stranded: [] };
+    const result: RoomWorktreeSweepResult = {
+      reaped: [],
+      reapedTreeKeptBranch: [],
+      spared: [],
+      stranded: [],
+    };
     if (!this.deps.hasRepo(roomId)) return result;
 
     const root = this.deps.store.worktreesPath(roomId);
@@ -381,14 +553,39 @@ export class RoomWorktreeManager {
     const candidates = entries.filter((e) => e.isDirectory()).map((e) => e.name);
     if (candidates.length === 0) return result;
 
+    const repoDir = this.deps.store.repoPath(roomId);
+    const ceiling = this.deps.store.homeDir(roomId);
+
+    // **Dated BEFORE anything else reads these trees, and the order is a fix.**
+    // `listStrandedWorktrees` runs `git status` in every candidate, and a status
+    // refresh REWRITES that worktree's index — one of the four sources
+    // `lastTouchedAt` reads. Asked afterwards, the sweep would be reading a
+    // timestamp it had just created: every tree would look touched seconds ago
+    // and nothing would ever be reaped. Measured on a tree aged forty days: it
+    // survived a sweep at the shipped fourteen-day default. The idle clock must
+    // not be able to see the sweep that reads it.
+    const dated = new Map<string, Date | null>();
+    for (const slug of candidates) {
+      try {
+        dated.set(slug, await this.lastTouchedAt(path.join(root, slug), ceiling));
+      } catch {
+        // Unreadable. Recorded as such rather than skipped, so the loop below
+        // can be conservative about it without a second probe.
+        dated.set(slug, null);
+      }
+    }
+
     // **The safety gate, asked once and honoured absolutely.** Everything on
     // this list holds uncommitted edits, unmerged commits, or is a directory
     // git could not read — and none of it is removable at any setting of
-    // `worktreeReapDays`. Removing this line is what the module's two
-    // red-before tests re-introduce.
+    // `worktreeReapDays`. Removing this line is what the module's red-before
+    // tests re-introduce.
     const stranded = new Set(await this.deps.listStrandedWorktrees(roomId));
-    const repoDir = this.deps.store.repoPath(roomId);
-    const ceiling = this.deps.store.homeDir(roomId);
+    // Agents that are mid-turn. Their worktree is a live cwd once the cwd rung
+    // lands, and a turn that only reads leaves no mark on any date above.
+    const busy = new Set(
+      this.deps.busyAgentPaths().map((agentPath) => RoomWorktreeManager.digestFor(agentPath))
+    );
     const idleCutoff = Date.now() - this.deps.reapAfterDays() * 24 * 60 * 60 * 1000;
 
     for (const slug of candidates) {
@@ -396,18 +593,22 @@ export class RoomWorktreeManager {
         result.stranded.push(slug);
         continue;
       }
-      const dir = path.join(root, slug);
-      let touched: Date;
-      try {
-        touched = await this.lastTouchedAt(dir, ceiling);
-      } catch (err) {
-        // It read as clean a moment ago and cannot be read now. Whatever
-        // changed, "I no longer understand this directory" is never a reason to
+      if (busy.has(slug.slice(-SLUG_DIGEST_CHARS))) {
+        logger.debug('[rooms] not tidying a room worktree its agent is working in', {
+          roomId,
+          worktree: slug,
+        });
+        result.spared.push(slug);
+        continue;
+      }
+      const touched = dated.get(slug) ?? null;
+      if (touched === null) {
+        // It read as clean a moment ago and could not be dated. Whatever the
+        // reason, "I no longer understand this directory" is never a reason to
         // delete it.
         logger.warn('[rooms] could not date a room worktree; leaving it alone', {
           roomId,
           worktree: slug,
-          err,
         });
         result.stranded.push(slug);
         continue;
@@ -417,9 +618,11 @@ export class RoomWorktreeManager {
         continue;
       }
 
+      const dir = path.join(root, slug);
       try {
-        // No `--force`: git refuses a tree holding modified or untracked files,
-        // which is the second dirty check and the later one. See the module doc.
+        // No `--force`: git refuses a tree holding modified or untracked files.
+        // A DIFFERENT half of the question from `branch -d` below — see the
+        // module doc on why the gates are not interchangeable.
         await removeWorktree(repoDir, dir, ceiling);
       } catch (err) {
         logger.warn('[rooms] git would not remove an idle room worktree; keeping it', {
@@ -430,13 +633,23 @@ export class RoomWorktreeManager {
         result.spared.push(slug);
         continue;
       }
-      // `-d`, never `-D`: git refuses a branch `main` does not contain, so even
-      // a wrong answer above cannot lose a commit here.
-      await deleteMergedBranch(repoDir, roomWorktreeBranch(slug), ceiling);
-      result.reaped.push(slug);
+      // `-d`, never `-D`: git refuses a branch `main` does not contain. When it
+      // refuses, the commits are still there and the outcome is reported as
+      // what it is rather than folded into `reaped`.
+      const branchGone = await deleteMergedBranch(repoDir, roomWorktreeBranch(slug), ceiling);
+      if (branchGone) {
+        result.reaped.push(slug);
+      } else {
+        logger.info('[rooms] tidied a room working copy but kept its branch: main has not got it', {
+          roomId,
+          worktree: slug,
+          branch: roomWorktreeBranch(slug),
+        });
+        result.reapedTreeKeptBranch.push(slug);
+      }
     }
 
-    if (result.reaped.length > 0) {
+    if (result.reaped.length + result.reapedTreeKeptBranch.length > 0) {
       try {
         await pruneWorktrees(repoDir, ceiling);
       } catch (err) {
@@ -518,10 +731,17 @@ export class RoomWorktreeManager {
     // directory"; catching the failure would make every other failure look the
     // same, which is the bug `hasMainBranch` was split out to avoid.
     const branchExists = await hasLocalBranch(repoDir, branch, ceiling);
+    // A worktree that was moved aside leaves git's own record of the path
+    // behind, and `worktree add` refuses a path it still believes in.
+    try {
+      await pruneWorktrees(repoDir, ceiling);
+    } catch {
+      // Nothing to prune, or a repo that cannot be read — `addWorktree` below
+      // gives the caller the real error either way.
+    }
     await addWorktree(repoDir, dir, branch, branchExists ? null : 'main', ceiling);
 
-    const project = this.deps.project ?? projectAgentWorkspace;
-    const projection = project(dir);
+    const projection = projectAgentWorkspace(dir);
     logger.info('[rooms] room worktree created', {
       roomId,
       worktree: slug,
@@ -574,6 +794,40 @@ async function directoryExists(dir: string): Promise<boolean> {
     return (await fs.stat(dir)).isDirectory();
   } catch {
     return false;
+  }
+}
+
+/**
+ * Whether a directory is a git checkout, cheaply.
+ *
+ * A `.git` entry is enough and a git command would be too much: this runs on
+ * the turn path, on every cwd resolution. In a linked worktree `.git` is a file
+ * naming the real gitdir, so `existsSync` rather than a directory check.
+ *
+ * @param dir - The directory to inspect.
+ */
+async function isCheckout(dir: string): Promise<boolean> {
+  if (!(await directoryExists(dir))) return false;
+  return existsSync(path.join(dir, '.git'));
+}
+
+/**
+ * Mark a directory as used, right now.
+ *
+ * `utimes` on the directory itself, which is one of the sources
+ * {@link RoomWorktreeManager.lastTouchedAt} reads and the only one a turn that
+ * merely READS its worktree would otherwise never move. Best-effort: a stamp
+ * that fails costs a tidy-up, and refusing a turn its working directory because
+ * a timestamp would not write would cost the turn.
+ *
+ * @param dir - The directory to stamp.
+ */
+async function stampDirectory(dir: string): Promise<void> {
+  const now = new Date();
+  try {
+    await fs.utimes(dir, now, now);
+  } catch (err) {
+    logger.debug('[rooms] could not refresh a room worktree’s idle clock', { dir, err });
   }
 }
 

@@ -210,7 +210,12 @@ describe('RoomRepoStore', () => {
  * construction rather than merely inactive — `RoomWorktreeManager` has its own
  * suite, where the removal gates are pinned red-before/green-after.
  */
-const NO_WORKTREE_SWEEP = { reaped: 0, spared: 0, stranded: 0 };
+const NO_WORKTREE_SWEEP = {
+  reaped: 0,
+  reapedTreeKeptBranch: 0,
+  spared: 0,
+  stranded: 0,
+};
 
 describe('RoomRepoReconciler', () => {
   let db: Db;

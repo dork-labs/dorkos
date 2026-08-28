@@ -17,7 +17,6 @@ export {
 } from './room-repo-reconciler.js';
 export {
   RoomWorktreeManager,
-  roomWorktreeBranch,
   type RoomWorktreeHandle,
   type RoomWorktreeManagerDeps,
   type RoomWorktreeStatus,

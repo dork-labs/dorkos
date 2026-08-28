@@ -1211,6 +1211,11 @@ async function start() {
     hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
     listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
     reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
+    // The claim map is the only live record that an agent is mid-turn, and once
+    // the cwd rung lands (task 2.2) its worktree IS that turn's working
+    // directory. Without this the sweep can delete the directory a turn is
+    // standing in — a turn that only reads leaves no mark on any timestamp.
+    busyAgentPaths: () => roomService.listBusyAgentPaths(),
   });
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes

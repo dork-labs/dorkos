@@ -22,9 +22,9 @@
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
  *   reap left behind".
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -36,7 +36,13 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomRepoReconciler } from '../room-repo-reconciler.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { commitAll, hasLocalBranch, removeWorktree, runGit } from '../room-repo-git.js';
+import {
+  absoluteGitDir,
+  commitAll,
+  hasLocalBranch,
+  removeWorktree,
+  runGit,
+} from '../room-repo-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -61,6 +67,8 @@ describe('RoomWorktreeManager', () => {
   let manager: RoomWorktreeManager;
   /** `config.rooms.repo.worktreeReapDays`, per test. */
   let reapAfterDays: number;
+  /** The agent workspace paths holding a live room claim, per test. */
+  let busyAgentPaths: string[];
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -76,6 +84,53 @@ describe('RoomWorktreeManager', () => {
   async function worktreeFor(name: string): Promise<string> {
     const handle = await manager.ensureWorktree(ROOM_ID, agentPath(name), name);
     return handle.path;
+  }
+
+  /** Milliseconds in a day, for the ageing helpers. */
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  /**
+   * Push main's tip commit date into the past.
+   *
+   * `lastTouchedAt` reads HEAD's committer date, and a worktree branched from a
+   * repo created seconds ago can never look idle. Amending on MAIN rather than
+   * in the worktree matters: amending in the worktree would leave it holding a
+   * commit main has not got, which the stranded gate catches first and would
+   * make every ageing test pass for the wrong reason.
+   */
+  async function ageRepoMain(days: number): Promise<void> {
+    const when = new Date(Date.now() - days * DAY_MS).toISOString();
+    vi.stubEnv('GIT_COMMITTER_DATE', when);
+    vi.stubEnv('GIT_AUTHOR_DATE', when);
+    try {
+      await git(['commit', '--amend', '--no-edit', '--quiet'], store.repoPath(ROOM_ID));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+
+  /** Backdate every mtime `lastTouchedAt` reads in one worktree. */
+  async function ageWorktree(dir: string, days: number): Promise<void> {
+    const when = new Date(Date.now() - days * DAY_MS);
+    const gitDir = await absoluteGitDir(dir, store.homeDir(ROOM_ID));
+    for (const name of await readdir(dir)) {
+      await utimes(path.join(dir, name), when, when).catch(() => undefined);
+    }
+    await utimes(path.join(gitDir, 'index'), when, when).catch(() => undefined);
+    await utimes(dir, when, when);
+  }
+
+  /**
+   * A worktree that every date source says has sat untouched for `days`.
+   *
+   * The shape the reap is supposed to tidy away — and the shape every gate
+   * above the date has to survive.
+   */
+  async function ancientWorktree(name: string, days = 40): Promise<string> {
+    await ageRepoMain(days);
+    const dir = await worktreeFor(name);
+    await ageWorktree(dir, days);
+    return dir;
   }
 
   beforeEach(async () => {
@@ -103,6 +158,7 @@ describe('RoomWorktreeManager', () => {
     await mkdir(dorkHome, { recursive: true });
     store = new RoomRepoStore(db, dorkHome);
     reapAfterDays = 14;
+    busyAgentPaths = [];
     db.insert(rooms)
       .values({
         id: ROOM_ID,
@@ -126,10 +182,12 @@ describe('RoomWorktreeManager', () => {
       hasRepo: (roomId) => service.hasRepo(roomId),
       listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
       reapAfterDays: () => reapAfterDays,
+      busyAgentPaths: () => busyAgentPaths,
     });
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await rm(scratch, { recursive: true, force: true });
   });
 
@@ -256,6 +314,81 @@ describe('RoomWorktreeManager', () => {
       // "nothing here" from "somebody's unsaved work" and §3.6's merge gate is
       // not blocked by DorkOS's own output.
       expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
+    });
+
+    it('heals a directory that is not a checkout instead of handing it back forever', async () => {
+      // The wedge: a creation that died part-way leaves a directory with no
+      // `.git` in it. Returning it as valid was permanent — the reap lists an
+      // unreadable directory as stranded work and never removes it, so nothing
+      // could ever repair the thing this method kept answering with.
+      await service.enable(ROOM_ID, OPERATOR);
+      const slug = RoomWorktreeManager.slugFor('Ana', agentPath('ana'));
+      const corpse = path.join(store.worktreesPath(ROOM_ID), slug);
+      await mkdir(corpse, { recursive: true });
+      await writeFile(path.join(corpse, 'half-written.md'), 'from the crash', 'utf-8');
+
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+
+      expect(handle.created).toBe(true);
+      expect(handle.path).toBe(corpse);
+      expect(existsSync(path.join(corpse, '.git'))).toBe(true);
+      expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], corpse)).toBe(handle.branch);
+      // And the contents were moved aside, never deleted: nothing here knows
+      // why that directory had files in it.
+      const aside = (await readdir(store.worktreesPath(ROOM_ID))).find((n) =>
+        n.startsWith(`${slug}.orphaned-`)
+      );
+      expect(aside).toBeDefined();
+      expect(
+        await readFile(path.join(store.worktreesPath(ROOM_ID), aside!, 'half-written.md'), 'utf-8')
+      ).toBe('from the crash');
+    });
+
+    it('gives two callers racing on a half-made directory one real checkout each', async () => {
+      // PROBE-B, made deterministic: the directory is already there and is NOT
+      // a checkout, which is exactly what the second caller of a creation still
+      // in flight would see. With the existence check ahead of the in-flight
+      // map, that caller took the early return and handed a turn a path with no
+      // `.git` in it.
+      await service.enable(ROOM_ID, OPERATOR);
+      const slug = RoomWorktreeManager.slugFor('Ana', agentPath('ana'));
+      await mkdir(path.join(store.worktreesPath(ROOM_ID), slug), { recursive: true });
+
+      const [a, b] = await Promise.all([
+        manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana'),
+        manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana'),
+      ]);
+
+      expect(a.path).toBe(b.path);
+      for (const handle of [a, b]) {
+        expect(handle.created).toBe(true);
+        expect(existsSync(path.join(handle.path, '.git'))).toBe(true);
+      }
+      expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], a.path)).toBe(a.branch);
+    });
+
+    it('refreshes the idle clock every time it hands the path out', async () => {
+      // The reap's first line of defence, and the reason it is needed: once the
+      // cwd rung lands this method IS how a turn learns where to run, and a
+      // turn that only READS its worktree moves no timestamp of its own. The
+      // sibling test 'removes a genuinely ancient working copy at the SHIPPED
+      // default' is this one's control — same fixture, same setting, and it is
+      // reaped when nothing hands the path out first.
+      //
+      // Asserted through the REAP rather than through `worktreeStatus`,
+      // deliberately: reading the status runs `git status`, which refreshes the
+      // index and would refresh the clock all by itself. The observable that
+      // matters is whether the directory survives.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      reapAfterDays = 14;
+
+      await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([]);
+      expect(swept.spared).toEqual([path.basename(dir)]);
+      expect(existsSync(dir)).toBe(true);
     });
   });
 
@@ -406,19 +539,111 @@ describe('RoomWorktreeManager', () => {
         hasRepo: () => false,
         listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
         reapAfterDays: () => 0,
+        busyAgentPaths: () => [],
       });
 
       await expect(offManager.reapRoom(ROOM_ID)).resolves.toEqual({
         reaped: [],
+        reapedTreeKeptBranch: [],
         spared: [],
         stranded: [],
       });
       expect(existsSync(handle.path)).toBe(true);
     });
 
+    it('removes a genuinely ancient working copy at the SHIPPED default', async () => {
+      // The control for everything below, and the test the M5 ordering fix is
+      // for: `listStrandedWorktrees` runs `git status` in every candidate, and
+      // a status refresh rewrites that worktree's index — one of the four
+      // sources the idle clock reads. Dated afterwards, this tree looks touched
+      // seconds ago and is spared forever.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      reapAfterDays = 14;
+
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([path.basename(dir)]);
+      expect(existsSync(dir)).toBe(false);
+    });
+
+    it('SPARES AN ANCIENT WORKTREE ITS AGENT IS WORKING IN RIGHT NOW', async () => {
+      // Forty days idle, clean, merged, and the cwd of a live turn. Nothing the
+      // filesystem can say distinguishes this from the test above — a turn that
+      // reads its worktree and has not written yet moves no timestamp — so the
+      // claim map is the only thing standing between the sweep and a running
+      // turn's working directory.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      reapAfterDays = 14;
+      busyAgentPaths = [agentPath('ana')];
+
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([]);
+      expect(swept.spared).toEqual([path.basename(dir)]);
+      expect(existsSync(dir)).toBe(true);
+    });
+
+    it('is not fooled by another agent being busy', async () => {
+      // The busy gate matches on the digest half of the worktree name, which is
+      // the only join available between a directory and an agent path. A
+      // different agent's claim must not spare this one.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      reapAfterDays = 14;
+      busyAgentPaths = [agentPath('somebody-else')];
+
+      await expect(manager.reapRoom(ROOM_ID)).resolves.toMatchObject({
+        reaped: [path.basename(dir)],
+      });
+    });
+
+    it('reports a removal whose branch survived as its own outcome, not as reaped', async () => {
+      // The commit-between-list-and-removal window, forced open by a stranded
+      // list that lies. It cannot happen for real — the idle clock reads HEAD's
+      // committer date AFTER the stranded list, and `worktreeReapDays` is
+      // .min(1) — but if it ever did, "tidied away" would be a false summary of
+      // a branch that is still sitting there.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      const slug = path.basename(dir);
+      await writeFile(path.join(dir, 'late.md'), 'committed after the list', 'utf-8');
+      // Backdated so the tree still reads idle: this is simulating a commit the
+      // stranded list MISSED, not one the idle clock should have caught. A
+      // commit made at the real "now" is spared by gate 3, which is precisely
+      // the by-design closure the module doc describes.
+      vi.stubEnv('GIT_COMMITTER_DATE', new Date(Date.now() - 40 * DAY_MS).toISOString());
+      await commitAll(
+        dir,
+        'late',
+        { name: 'Ana', email: 'ana@dorkos.local' },
+        store.homeDir(ROOM_ID)
+      );
+      vi.unstubAllEnvs();
+      await ageWorktree(dir, 40);
+      const blind = new RoomWorktreeManager({
+        store,
+        hasRepo: (roomId) => service.hasRepo(roomId),
+        listStrandedWorktrees: async () => [],
+        reapAfterDays: () => 14,
+        busyAgentPaths: () => [],
+      });
+
+      const swept = await blind.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([]);
+      expect(swept.reapedTreeKeptBranch).toEqual([slug]);
+      // Nothing was lost: the commits are still on the branch.
+      await expect(
+        hasLocalBranch(store.repoPath(ROOM_ID), `room/${slug}`, store.homeDir(ROOM_ID))
+      ).resolves.toBe(true);
+    });
+
     it('is nothing at all for a room that never had files', async () => {
       await expect(manager.reapRoom(ROOM_ID)).resolves.toEqual({
         reaped: [],
+        reapedTreeKeptBranch: [],
         spared: [],
         stranded: [],
       });
@@ -435,7 +660,12 @@ describe('RoomWorktreeManager', () => {
 
       const result = await new RoomRepoReconciler(store, undefined, manager).reconcile();
 
-      expect(result.worktrees).toEqual({ reaped: 1, spared: 0, stranded: 1 });
+      expect(result.worktrees).toEqual({
+        reaped: 1,
+        reapedTreeKeptBranch: 0,
+        spared: 0,
+        stranded: 1,
+      });
       expect(existsSync(idle.path)).toBe(false);
       expect(existsSync(busy.path)).toBe(true);
     });
@@ -450,7 +680,12 @@ describe('RoomWorktreeManager', () => {
 
       const result = await new RoomRepoReconciler(store, undefined, manager).reconcile();
 
-      expect(result.worktrees).toEqual({ reaped: 0, spared: 0, stranded: 0 });
+      expect(result.worktrees).toEqual({
+        reaped: 0,
+        reapedTreeKeptBranch: 0,
+        spared: 0,
+        stranded: 0,
+      });
       expect(existsSync(handle.path)).toBe(true);
     });
   });

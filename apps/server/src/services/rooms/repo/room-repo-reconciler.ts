@@ -93,9 +93,22 @@ export interface RoomRepoReconcileResult {
 
 /** The worktree reap's totals across one pass (spec `project-rooms` §3.4). */
 export interface RoomWorktreeReapTotals {
-  /** Working copies removed: idle past the cap, clean, and merged. */
+  /** Working copies fully gone: directory removed AND branch retired. */
   reaped: number;
-  /** Working copies kept because something in them moved recently. */
+  /**
+   * Working copies removed whose branch was kept because `main` lacks it.
+   *
+   * Counted apart from `reaped` rather than folded in: something was left
+   * behind on purpose, and a total that hid it would report a tidy-up as
+   * complete when it was not.
+   */
+  reapedTreeKeptBranch: number;
+  /**
+   * Working copies kept because they are in use or moved recently.
+   *
+   * Includes the ones whose agent is mid-turn — the sweep must not delete a
+   * live turn's working directory.
+   */
   spared: number;
   /**
    * Working copies kept because they hold work `main` does not have.
@@ -190,7 +203,7 @@ export class RoomRepoReconciler {
       removed: 0,
       orphaned: 0,
       draftsRemoved: 0,
-      worktrees: { reaped: 0, spared: 0, stranded: 0 },
+      worktrees: { reaped: 0, reapedTreeKeptBranch: 0, spared: 0, stranded: 0 },
     };
     const seen = new Set<string>();
 
@@ -269,12 +282,16 @@ export class RoomRepoReconciler {
       try {
         const swept = await this.worktrees.reapRoom(roomId);
         result.worktrees.reaped += swept.reaped.length;
+        result.worktrees.reapedTreeKeptBranch += swept.reapedTreeKeptBranch.length;
         result.worktrees.spared += swept.spared.length;
         result.worktrees.stranded += swept.stranded.length;
-        if (swept.reaped.length > 0) {
+        if (swept.reaped.length + swept.reapedTreeKeptBranch.length > 0) {
           logger.info('[rooms] tidied away idle room worktrees', {
             roomId,
             reaped: swept.reaped,
+            // Named apart in the log for the same reason it is named apart in
+            // the result: these still have a branch, and somebody may want it.
+            keptBranch: swept.reapedTreeKeptBranch,
             stranded: swept.stranded,
           });
         }

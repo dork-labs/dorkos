@@ -562,15 +562,32 @@ export async function deleteMergedBranch(
  * amended in this tree, which is the question "when was this worktree last
  * worked in" actually asks.
  *
+ * A checkout with no commits yet answers `null` rather than throwing, which the
+ * caller reads as "this tree has no commit date" and moves on to its other
+ * sources. That case is `git log` exiting 128 with "does not have any commits
+ * yet" — caught here, because the alternative was a contract that said `null`
+ * and a function that threw. Every OTHER failure still propagates: an
+ * unreadable tree must not be spelled the same way as an empty one, which is
+ * the mistake {@link commitsAheadOfMain} was fixed for.
+ *
  * @param checkoutDir - The checkout to ask.
  * @param ceilingDir - The room home directory the search may not climb past.
  * @returns The commit time, or `null` when there are no commits yet.
+ * @throws When the checkout cannot be read at all.
  */
 export async function headCommittedAt(
   checkoutDir: string,
   ceilingDir: string
 ): Promise<Date | null> {
-  const iso = await runGit(['log', '-1', '--format=%cI'], checkoutDir, ceilingDir);
+  let iso: string;
+  try {
+    iso = await runGit(['log', '-1', '--format=%cI'], checkoutDir, ceilingDir);
+  } catch (err) {
+    if (err instanceof GitUnavailableError) throw err;
+    const stderr = String((err as { stderr?: unknown })?.stderr ?? '');
+    if (/does not have any commits yet|unknown revision or path/i.test(stderr)) return null;
+    throw err;
+  }
   const at = new Date(iso);
   return Number.isNaN(at.getTime()) ? null : at;
 }
