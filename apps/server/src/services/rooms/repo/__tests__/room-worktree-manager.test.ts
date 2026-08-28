@@ -35,13 +35,11 @@
  * real mtime is ever moved, so nothing the sweep does to a timestamp can change
  * the answer — which is the property the production fix guarantees too.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readdir, readFile, rm, lutimes, writeFile } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { existsSync, promises as nodeFsPromises } from 'node:fs';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { promisify } from 'node:util';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { rooms, type Db } from '@dorkos/db';
 import type { Room } from '@dorkos/shared/room-schemas';
@@ -89,39 +87,6 @@ describe('RoomWorktreeManager', () => {
   /** Where agent `name` keeps its work — the workspace path is its identity. */
   function agentPath(name: string): string {
     return path.join(scratch, 'agents', name);
-  }
-
-  /**
-   * Amend a repo's HEAD to a fixed committer date.
-   *
-   * A plain `execFile`, not `runGit`: the hardened helper deliberately owns its
-   * environment and offers no seam for `GIT_COMMITTER_DATE`, which is exactly
-   * the one thing a test needs here and no production caller ever should. Runs
-   * against a real `.git`, so nothing climbs to the enclosing repo.
-   */
-  async function commitWithDate(repoDir: string, when: Date): Promise<void> {
-    const iso = when.toISOString();
-    await promisify(execFile)('git', ['commit', '--amend', '--no-edit', '-q', '--date', iso], {
-      cwd: repoDir,
-      env: { ...process.env, GIT_COMMITTER_DATE: iso, GIT_AUTHOR_DATE: iso },
-    });
-  }
-
-  /**
-   * Set every mtime `lastTouchedAt` reads in one worktree to `when`.
-   *
-   * Exactly the set the production code stats: the directory itself and each
-   * name its own `readdir(dir)` returns — no more, no less — so a source can
-   * never be aged in the test but read fresh by the reap. `lutimes` matches the
-   * reap's `lstat`: a symlinked child (none today, but the code allows it) is
-   * aged as the link, not its target. Meant to be the LAST write before the
-   * reap; nothing may run between it and `reapRoom`.
-   */
-  async function ageWorktreeMtimes(dir: string, when: Date): Promise<void> {
-    for (const name of await readdir(dir)) {
-      await lutimes(path.join(dir, name), when, when).catch(() => undefined);
-    }
-    await lutimes(dir, when, when);
   }
 
   /** Give `name` its worktree and answer where it is. */
@@ -215,6 +180,7 @@ describe('RoomWorktreeManager', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(scratch, { recursive: true, force: true });
   });
 
@@ -591,46 +557,55 @@ describe('RoomWorktreeManager', () => {
       expect(existsSync(dir)).toBe(false);
     });
 
-    it('ignores a git-status index refresh — the load bug, guarded at the source', async () => {
-      // The production fix, pinned WITHOUT the injected clock so it actually
-      // discriminates. A freshly checked-out worktree already carries a `now`
-      // index mtime (the checkout wrote it), and a sweep's `git status` keeps it
-      // there — so if `lastTouchedAt` read the index, this idle tree would look
-      // fresh and be spared. That was the CI failure. Only the working-tree
-      // mtimes and HEAD's committer date are aged here, all of which no git read
-      // moves; the index stays fresh, and the tree must still be reaped. Re-add
-      // the index as a source and this reddens: touched reads `now`, spared.
+    it('never consults the git index for the idle decision', async () => {
+      // The production fix — the reap's idle clock must not read the git index
+      // mtime, so a sweep's `git status` (which rewrites that mtime to `now`)
+      // cannot spare an idle tree. Proven DETERMINISTICALLY: earlier real-clock
+      // versions of this guard aged the worktree's real mtimes and read them
+      // back, and that coupling flaked on CI's loaded filesystem no matter how
+      // the aging was ordered. So this asks the question a different way, with
+      // no real mtime in the answer at all:
       //
-      // **Aging is the LAST write before the reap, and that ordering is the
-      // robustness.** An earlier version aged first and THEN ran `git status`,
-      // and on a loaded CI runner something git touched after the aging —
-      // whatever it was — landed on top of an aged mtime and the tree read
-      // fresh. Nothing runs here between the aging and `reapRoom`, whose dating
-      // pass reads these mtimes before its own `git status`, so there is nothing
-      // left to settle after the value the reap reads is written.
-      const when = new Date(Date.now() - 40 * DAY_MS);
+      // - idle is driven by the injected clock (`makeAncient`), so the tree is
+      //   reaped without a single backdated mtime;
+      // - discrimination is a stat SPY. The index of a linked worktree lives at
+      //   `<repo>/.git/worktrees/<slug>/index`. The dating path's only stats are
+      //   `lstat`s on the worktree directory and its direct children — never
+      //   anything under `.git`. Re-add the index as a source and the reap must
+      //   `lstat` that path; the spy would catch it and this assertion reddens.
       await service.enable(ROOM_ID, OPERATOR);
-      // Age main's tip BEFORE the worktree exists, so the worktree inherits an
-      // old HEAD committer date rather than the fresh one `enable` just wrote —
-      // otherwise the head-date source alone keeps the tree looking active.
-      await commitWithDate(store.repoPath(ROOM_ID), when);
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      // The sweep-refresh hazard, made real and made FIRST: a `git status`
-      // stamps the index `now`. Anything it might do to a working-tree mtime is
-      // then overwritten by the aging below.
+      // The hazard, made real: stamp the worktree index `now`, the way any sweep
+      // git op does. Its mtime must simply never be looked at.
       await git(['status', '--porcelain=v1'], handle.path);
+      makeAncient();
       reapAfterDays = 14;
 
-      // The final writes before the reap: age the directory and exactly the
-      // entries `lastTouchedAt` stats — its own `readdir` of the same directory.
-      // `lutimes`, not `utimes`, to match the reap's `lstat` on the off chance a
-      // child is ever a symlink.
-      await ageWorktreeMtimes(handle.path, when);
+      const statted: string[] = [];
+      const realLstat = nodeFsPromises.lstat;
+      vi.spyOn(nodeFsPromises, 'lstat').mockImplementation((async (target, opts) => {
+        statted.push(String(target));
+        return realLstat(target, opts);
+      }) as typeof nodeFsPromises.lstat);
 
       const swept = await manager.reapRoom(ROOM_ID);
+      vi.restoreAllMocks();
 
+      // The idle decision still fires — the tree is gone.
       expect(swept.reaped).toEqual([handle.slug]);
       expect(existsSync(handle.path)).toBe(false);
+      // The spy actually saw the dating pass (the worktree dir is statted by
+      // the path ending in its slug) — without this, a production move off
+      // `promises.lstat` would empty `statted` and fail the guard OPEN.
+      expect(statted.some((p) => p.endsWith(handle.slug))).toBe(true);
+      // And it never touched a git-index file to get there. The regex matches
+      // an `index` file anywhere under a `.git` (the worktree's, at
+      // `.git/worktrees/<slug>/index`, or a bare `.git/index`), and is immune to
+      // the `/var` -> `/private/var` symlink that a literal prefix compare is not.
+      const hits = statted.filter((p) => /[/\\]\.git[/\\](?:.*[/\\])?index$/.test(p));
+      if (hits.length)
+        console.error('INDEX-HITS', JSON.stringify(hits), 'TOTAL-STATS', statted.length);
+      expect(hits).toEqual([]);
     });
 
     it('SPARES AN ANCIENT WORKTREE ITS AGENT IS WORKING IN RIGHT NOW', async () => {
