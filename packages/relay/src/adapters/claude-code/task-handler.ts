@@ -178,6 +178,18 @@ export async function handleTasksMessage(
 
   const payload = parsed.data;
   const { taskId, runId, prompt, cwd, permissionMode, systemPromptAppend } = payload;
+  // What this run resolved to run on, decided by the scheduler and carried on
+  // the wire (DOR-1615/DOR-1347). Spread into BOTH agent calls below, exactly as
+  // `agent-handler.ts` spreads its `executionSettings` and for the same reason:
+  // the claude-code runtime reads `session.model` when it LAUNCHES a query, and
+  // that field is written once, at session creation — a model handed over only
+  // at `sendMessage` would reach nothing — while a runtime that does not hold
+  // sessions in memory sees the send and not the create. An absent key means
+  // "the runtime decides", so a payload without them behaves as it always did.
+  const executionSettings = {
+    ...(payload.model !== undefined ? { model: payload.model } : {}),
+    ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
+  };
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
   // The session this run runs on. A STICKY task resolves a resume target on the
   // scheduler side — the REAL SDK id of its previous run — and carries it here;
@@ -250,11 +262,13 @@ export async function handleTasksMessage(
       // `task-scheduler-service.ts` says the same thing; a run must not depend
       // on which path carried it.
       unattended: true,
+      ...executionSettings,
     });
 
     const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
       permissionMode,
       cwd: effectiveCwd,
+      ...executionSettings,
       // Built server-side by `buildTaskAppend` and carried on the wire, because
       // the pieces it is made of (the task's agent, the run's trigger) do not
       // otherwise reach this process. Without it a relay-dispatched run was
