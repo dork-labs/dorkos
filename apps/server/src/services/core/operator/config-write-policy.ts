@@ -352,6 +352,13 @@ export const CONFIG_WRITE_POLICY = {
   'relay.enabled': 'agent-writable',
   // A directory DorkOS writes message history into, resolved without a boundary check.
   'relay.dataDir': 'operator-only',
+  // The two ceilings on turns agent messaging may start. Operator-only for the
+  // same sharpened reason the room spend caps are: they exist precisely BECAUSE
+  // the identity-based bounds can be defeated in the default posture (DOR-505),
+  // so an agent that could raise them would be an agent voting itself a bigger
+  // bill on the one path every messaging surface funnels through.
+  'relay.maxAgentTurnsPerAgentPerHour': 'operator-only',
+  'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
@@ -430,6 +437,7 @@ export const CONFIG_WRITE_POLICY = {
   // the spend the collect mechanism exists to fold together.
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
+  'rooms.responseGate': 'operator-only',
 
   // Whether a room may have files at all. Operator-only in the plainest sense of
   // this list: an agent that turned it back on would be re-opening a surface the
@@ -521,10 +529,11 @@ export const CONFIG_WRITE_POLICY = {
   // `resolveToolConfig` reads `agent.<group> ?? globalConfig.<group>Tools`, so an
   // explicit PER-AGENT value BEATS the global switch — and the per-agent seam has
   // no bar of its own: `PATCH /api/agents/current` validates the boundary and
-  // delegates to `updateAgentManifest`, which refuses `account` and nothing else,
-  // with no caller-identity check at all. An agent can therefore restore its own
-  // context blocks through its manifest after a person turned the global switch
-  // off. Reproduced during review.
+  // delegates to `updateAgentManifest`, which refuses `account` and the one
+  // enforced tool group (`roomsManage`, DOR-1611) and nothing else, with no
+  // caller-identity check at all. **The four keys named below are not among the
+  // refusals**, so an agent can still restore its own context blocks through its
+  // manifest after a person turned the global switch off. Reproduced during review.
   //
   // Two things bound it, neither of which makes it a non-issue: the `update_agent`
   // MCP tool does not expose `enabledToolGroups` (see `UpdateAgentArgs`), so the
@@ -936,10 +945,15 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.maxTurnsPerAgentPerCascade',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
+      // The same stake on the message bus rather than in a room: the two
+      // ceilings on turns agent messaging may start (DOR-791).
+      'relay.maxAgentTurnsPerAgentPerHour',
+      'relay.maxAgentTurnsTotalPerHour',
       'rooms.engagedWindowMinutes',
       'rooms.engagedWindowPosts',
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
+      'rooms.responseGate',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.maxPosts',

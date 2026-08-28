@@ -175,7 +175,38 @@ function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
 }
 
 /**
- * Run one git command in `cwd` and answer its trimmed stdout.
+ * How much output one git command may produce before it is killed.
+ *
+ * Node's own default is 1 MB, which is far too small here for two reasons that
+ * have nothing to do with each other: reading a file out of a commit answers
+ * its whole contents (capped by `config.rooms.repo.maxFileBytes`, 5 MB by
+ * default), and one history walk over a busy directory prints a line per file
+ * per commit. So the default is generous — and it is still a CAP, not a
+ * licence: a command that runs past it is killed rather than allowed to grow
+ * the server's heap without bound, which is exactly what a room full of
+ * member-written content needs. Callers that know their own ceiling (a file
+ * read does) pass a tighter one.
+ */
+const GIT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+
+/** What one git invocation may be tuned with. */
+export interface RunGitOptions {
+  /**
+   * Output ceiling in bytes, defaulting to {@link GIT_MAX_OUTPUT_BYTES}. Past
+   * it the child is killed and the call rejects with
+   * `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`.
+   */
+  maxBuffer?: number;
+}
+
+/**
+ * Run one git command in `cwd` and answer its stdout as raw BYTES.
+ *
+ * The primitive {@link runGit} is built on, and the one to reach for whenever
+ * the output is content rather than a value: `git cat-file blob` answers a
+ * file, and a file is bytes — decoding it as UTF-8 would corrupt anything that
+ * is not text, and trimming it would silently drop a trailing newline the
+ * person actually wrote.
  *
  * @param args - Arguments after `git`, without the shared config prefix.
  * @param cwd - The directory to run in. Must exist.
@@ -183,24 +214,60 @@ function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
  *   climb past. Required rather than defaulted: a caller that forgets it is a
  *   caller reading somebody else's repository, which is the bug this exists to
  *   prevent.
- * @returns Trimmed stdout.
+ * @param options - Per-call tuning. See {@link RunGitOptions}.
+ * @returns Raw stdout.
  * @throws {GitUnavailableError} When there is no `git` on this machine.
- * @throws When git exits non-zero or the timeout elapses.
+ * @throws When git exits non-zero, the timeout elapses, or the output cap is hit.
  */
-export async function runGit(args: string[], cwd: string, ceilingDir: string): Promise<string> {
+export async function runGitRaw(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  options: RunGitOptions = {}
+): Promise<Buffer> {
   try {
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
       timeout: GIT_TIMEOUT_MS,
       env: gitEnv(ceilingDir),
+      maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
+      // Bytes, not characters: this function's whole purpose is to answer what
+      // git wrote rather than what a decoder made of it.
+      encoding: 'buffer',
     });
-    return stdout.trim();
+    return stdout;
   } catch (err) {
     // `ENOENT` from `execFile` is the BINARY, not a missing path: the cwd is
     // checked by the caller and a missing repo exits 128 with a message.
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
     throw err;
   }
+}
+
+/**
+ * Run one git command in `cwd` and answer its trimmed stdout.
+ *
+ * The reader for VALUES — a sha, a branch name, a porcelain status. For file
+ * contents use {@link runGitRaw}, whose output this one trims and decodes.
+ *
+ * @param args - Arguments after `git`, without the shared config prefix.
+ * @param cwd - The directory to run in. Must exist.
+ * @param ceilingDir - The room home directory git's repository search may not
+ *   climb past. Required rather than defaulted: a caller that forgets it is a
+ *   caller reading somebody else's repository, which is the bug this exists to
+ *   prevent.
+ * @param options - Per-call tuning. See {@link RunGitOptions}.
+ * @returns Trimmed stdout.
+ * @throws {GitUnavailableError} When there is no `git` on this machine.
+ * @throws When git exits non-zero or the timeout elapses.
+ */
+export async function runGit(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  options: RunGitOptions = {}
+): Promise<string> {
+  return (await runGitRaw(args, cwd, ceilingDir, options)).toString('utf-8').trim();
 }
 
 /**
@@ -246,6 +313,42 @@ export async function hasMainBranch(checkoutDir: string, ceilingDir: string): Pr
 }
 
 /**
+ * Strip the control characters out of a name or an address a commit will carry.
+ *
+ * **A commit's author is not DorkOS's own text.** It is a person's profile name
+ * or an agent's, and both are member-writable; `config_patch` can set the
+ * first mid-conversation, and an agent's own worktree can be given any
+ * `user.name` at all. What comes out the other end is `git log` output, which
+ * DorkOS then PARSES — the room files API separates a commit's fields with
+ * `U+001F`, so a name holding one shifts every field after it and a reader is
+ * shown an author and a subject that were never committed together (measured:
+ * display corruption, in the room's own file explorer).
+ *
+ * So the fix is at the source, where the ambiguity is created rather than where
+ * it is discovered: nothing that is not printable text reaches a commit header.
+ * The parser checks the shape of what it reads as well, because two closures on
+ * a trust boundary is the right number, but this is the one that means no
+ * DorkOS-written commit can ever be ambiguous.
+ *
+ * C0 (`U+0000`–`U+001F`), `DEL` and C1 (`U+0080`–`U+009F`) all go: git itself
+ * rejects a newline in `user.name`, and the rest are invisible to a reader and
+ * meaningful to a parser, which is the whole hazard. Everything printable —
+ * accents, ideographs, emoji — is untouched, because a person's name is theirs.
+ *
+ * Module-private on purpose: it is not a sanitiser for general use, it is
+ * what {@link commitAll} does to an identity on its way into a commit header.
+ * A second caller would be a second policy. Tested through `commitAll`, which
+ * is the path that matters.
+ *
+ * @param value - The name or address as it was configured.
+ * @returns The same string with its control characters removed.
+ */
+function stripControlCharacters(value: string): string {
+  // eslint-disable-next-line no-control-regex -- removing control characters is the entire purpose.
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+}
+
+/**
  * Stage everything in the tree and commit it under `identity`.
  *
  * The identity is passed per command rather than written into the repo's
@@ -253,6 +356,11 @@ export async function hasMainBranch(checkoutDir: string, ceilingDir: string): Pr
  * as the agent that asked for it, a `ROOM.md` save as the person who typed it —
  * and a config value would make the LAST writer's name the default for the
  * next one.
+ *
+ * The identity's control characters are stripped on the way in
+ * ({@link stripControlCharacters}) — a commit header DorkOS writes is parsed
+ * again later, and a name carrying a field separator is a name that rewrites
+ * somebody else's row.
  *
  * @param repoDir - The checkout to commit in.
  * @param message - The commit subject.
@@ -270,9 +378,11 @@ export async function commitAll(
   await runGit(
     [
       '-c',
-      `user.name=${identity.name}`,
+      // Stripped, not trusted: see {@link stripControlCharacters} for the
+      // parser this protects and the measurement behind it.
+      `user.name=${stripControlCharacters(identity.name)}`,
       '-c',
-      `user.email=${identity.email}`,
+      `user.email=${stripControlCharacters(identity.email)}`,
       'commit',
       // The second line, not the first: `core.hooksPath` above is what actually
       // stops a hook. See the module doc — this skips `pre-commit` and

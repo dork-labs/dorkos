@@ -158,6 +158,23 @@ export interface SerializedCapability {
   outputSchema: JsonSchema;
   /** The surfaces this capability projects onto. */
   surfaces: CapabilitySurfaces;
+  /**
+   * The per-agent grant this capability requires, when it declares one.
+   *
+   * Absent for the ungated majority. Present means the call is REFUSED for an
+   * agent that does not hold this grant on its manifest — a real boundary,
+   * unlike the four documentation keys that share the `enabledToolGroups`
+   * object (see `mcp-tool-groups.ts`).
+   *
+   * It rides the catalog so the one declaration on the capability has one
+   * answer everywhere: the server enforces it, the cockpit's per-agent Tools
+   * tab reads it off the live catalog rather than a static list that could
+   * drift, and the docs projection reports it from the same place.
+   *
+   * A bare string rather than the server's `CapabilityToolGroup` union: this
+   * package is the wire contract and must not narrow ahead of the server.
+   */
+  toolGroup?: string;
 }
 
 /**

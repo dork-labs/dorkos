@@ -51,6 +51,16 @@ export interface CapabilityDeps {
 }
 
 /**
+ * A per-agent grant a capability may require, keyed by the name it carries in an
+ * agent manifest's `enabledToolGroups` (`packages/shared/src/mesh-schemas.ts`).
+ *
+ * One member today. These are the HARD keys of that object: unlike the four
+ * documentation keys beside them, a capability naming one here is refused for an
+ * agent that does not hold it. See {@link CapabilityDefinition.toolGroup}.
+ */
+export type CapabilityToolGroup = 'roomsManage';
+
+/**
  * A capability declared by a service domain: the single source of truth every
  * agent-facing surface is generated from.
  *
@@ -144,6 +154,26 @@ export interface CapabilityDefinition<
    * afford.
    */
   inSessionCard?: InSessionCardKind;
+  /**
+   * The per-agent grant this capability requires, if any.
+   *
+   * Declaring it makes the capability HARD-GATED: `registry.invoke` refuses the
+   * call unless the resolved caller is an identified agent holding the grant.
+   * Undeclared (the default, and every capability today) means ungated — the tier
+   * gate is the only gate.
+   *
+   * Unlike the four `enabledToolGroups` keys in `mcp-tool-groups.ts`, which shape
+   * documentation only (ADR 260726-171347), this field is a real boundary. Do not
+   * add one without reading that ADR's condition on agent-writable grants: a
+   * grant the governed agent can set for itself is not a grant, which is why
+   * `updateAgentManifest` refuses the field on the agent-reachable write path.
+   *
+   * Declarative for the same reason `inSessionCard` is: the capability states
+   * WHICH grant it needs and a seam elsewhere decides what to do about it
+   * (`tool-group-enforcement.ts`). The handler never learns the answer, because a
+   * refused call has no handler run.
+   */
+  toolGroup?: CapabilityToolGroup;
   /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport

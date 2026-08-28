@@ -19,7 +19,13 @@ import {
   selectTriggerTargets,
   standDownFallbackSeat,
   type AddressingMember,
+  type TriggerReason,
+  type TriggerSelection,
 } from '../addressing.js';
+
+/** The author ids out of a selection, in order — for the cases about WHO. */
+const names = (selections: readonly TriggerSelection[]): string[] =>
+  selections.map((selection) => selection.authorId);
 
 const MODES: ResponseMode[] = ['always', 'engaged', 'direct-only', 'mention-only', 'silent'];
 const KINDS: RoomKind[] = ['channel', 'dm'];
@@ -127,7 +133,7 @@ describe('selectTriggerTargets', () => {
       entry: { authorId: 'ana', mentions: ['ana'] },
       members: [ana, bo],
     });
-    expect(targets).not.toContain('ana');
+    expect(names(targets)).not.toContain('ana');
   });
 
   it('never triggers a human or the system author', () => {
@@ -137,7 +143,7 @@ describe('selectTriggerTargets', () => {
       entry: { authorId: 'ana', mentions: ['dorian', 'system'] },
       members: [ana, human, system],
     });
-    expect(targets).toEqual([]);
+    expect(names(targets)).toEqual([]);
   });
 
   it('triggers all three agents when all three were addressed', () => {
@@ -153,7 +159,7 @@ describe('selectTriggerTargets', () => {
       ],
     });
     // Three answers to one question is the intended outcome, not a pathology.
-    expect(targets).toEqual(['ana', 'bo', 'cy']);
+    expect(names(targets)).toEqual(['ana', 'bo', 'cy']);
   });
 
   it('leaves a mention-only agent alone in a busy channel', () => {
@@ -163,7 +169,7 @@ describe('selectTriggerTargets', () => {
       entry: { authorId: 'dorian', mentions: [] },
       members: [ana, bo, human],
     });
-    expect(targets).toEqual(['ana']);
+    expect(names(targets)).toEqual(['ana']);
   });
 
   it('returns targets in roster order, so the trigger order is stable', () => {
@@ -177,7 +183,7 @@ describe('selectTriggerTargets', () => {
         { authorId: 'cy', kind: 'agent', responseMode: 'direct-only', isEngaged: false },
       ],
     });
-    expect(targets).toEqual(['ana', 'cy']);
+    expect(names(targets)).toEqual(['ana', 'cy']);
   });
 
   it('triggers an engaged agent nobody named, and leaves the one whose window closed', () => {
@@ -199,7 +205,100 @@ describe('selectTriggerTargets', () => {
       entry: { authorId: 'dorian', mentions: [] },
       members: [inside, outside, human],
     });
-    expect(targets).toEqual(['ana']);
+    expect(names(targets)).toEqual(['ana']);
+  });
+});
+
+/**
+ * WHY each selection happened — the response gate's only scoping input, and
+ * therefore the thing that decides whether a message a person is waiting on can
+ * be routed to silence (spec `engaged-response-gate` §3.2).
+ *
+ * The ordering cases are the load-bearing ones. `'mention'` resolves before
+ * every other reason, so a named agent can never be labelled ambient by a later
+ * rule whatever its mode or window says.
+ */
+describe('selectTriggerTargets — why each member was picked', () => {
+  const engaged: AddressingMember = {
+    authorId: 'ana',
+    kind: 'agent',
+    responseMode: 'engaged',
+    isEngaged: true,
+  };
+  const person: AddressingMember = {
+    authorId: 'dorian',
+    kind: 'human',
+    responseMode: 'always',
+    isEngaged: false,
+  };
+
+  /** The one reason a lone member was picked for, in one kind of room. */
+  function reasonOf(
+    roomKind: RoomKind,
+    member: AddressingMember,
+    mentions: string[] = []
+  ): TriggerReason | undefined {
+    return selectTriggerTargets({
+      roomKind,
+      authorKind: 'human',
+      entry: { authorId: 'dorian', mentions },
+      members: [member, person],
+    })[0]?.reason;
+  }
+
+  it('labels an engaged agent nobody named `window` — the only gatable reason', () => {
+    expect(reasonOf('channel', engaged)).toBe('window');
+  });
+
+  it('labels a mention `mention`, even when the window is also open', () => {
+    // Both terms of `respondsTo`'s engaged row are true here. If the window won,
+    // a direct question would become ambient and the response gate could silence
+    // it — which is the one thing invariant I-G3 forbids.
+    expect(reasonOf('channel', engaged, ['ana'])).toBe('mention');
+  });
+
+  it('labels an unnamed engaged agent in a DM `dm`, never `window`', () => {
+    // Outside a channel a person's message addresses whoever is there, so this
+    // is an addressed trigger with no `@` in it.
+    expect(reasonOf('dm', engaged)).toBe('dm');
+  });
+
+  it('labels an `always` member `always`', () => {
+    expect(reasonOf('channel', { ...engaged, responseMode: 'always', isEngaged: false })).toBe(
+      'always'
+    );
+  });
+
+  it('labels a mention-only member `mention`, because that is the only way it fires', () => {
+    expect(
+      reasonOf('channel', { ...engaged, responseMode: 'mention-only', isEngaged: false }, ['ana'])
+    ).toBe('mention');
+  });
+
+  it('gives each member of a mixed roster its own reason', () => {
+    const bo: AddressingMember = {
+      authorId: 'bo',
+      kind: 'agent',
+      responseMode: 'always',
+      isEngaged: false,
+    };
+    const cy: AddressingMember = {
+      authorId: 'cy',
+      kind: 'agent',
+      responseMode: 'engaged',
+      isEngaged: true,
+    };
+    const targets = selectTriggerTargets({
+      roomKind: 'channel',
+      authorKind: 'human',
+      entry: { authorId: 'dorian', mentions: ['ana'] },
+      members: [engaged, bo, cy, person],
+    });
+    expect(targets).toEqual([
+      { authorId: 'ana', reason: 'mention' },
+      { authorId: 'bo', reason: 'always' },
+      { authorId: 'cy', reason: 'window' },
+    ]);
   });
 });
 
@@ -209,6 +308,17 @@ describe('selectTriggerTargets', () => {
  * matrix is the generic contract and this filter runs after it.
  */
 describe('standDownFallbackSeat', () => {
+  /**
+   * Author ids as a selection, for the cases whose subject is WHO stands down
+   * rather than why they were picked.
+   *
+   * `'always'` throughout because that is what a seat's selection carries — the
+   * `'seat'` label is applied by the function under test, and the reason-level
+   * cases below assert it directly rather than through this helper.
+   */
+  const picks = (authorIds: string[]): TriggerSelection[] =>
+    authorIds.map((authorId) => ({ authorId, reason: 'always' as const }));
+
   /** The default agent: the `always` seat that catches unaddressed posts. */
   const seat: AddressingMember = {
     authorId: 'dorkbot',
@@ -233,13 +343,15 @@ describe('standDownFallbackSeat', () => {
 
   /** Run the rule over a post by the PERSON, on a fixed roster. */
   function stand(mentions: string[], selected: string[], members = [seat, nova, ace, human]) {
-    return standDownFallbackSeat({
-      entry: { authorId: 'dorian', mentions },
-      authorKind: 'human',
-      seatAuthorId: 'dorkbot',
-      members,
-      selected,
-    });
+    return names(
+      standDownFallbackSeat({
+        entry: { authorId: 'dorian', mentions },
+        authorKind: 'human',
+        seatAuthorId: 'dorkbot',
+        members,
+        selected: picks(selected),
+      })
+    );
   }
 
   /** The same, for a post written by an AGENT — a reply, or an update. */
@@ -249,17 +361,43 @@ describe('standDownFallbackSeat', () => {
     selected: string[],
     members = [seat, nova, ace, human]
   ) {
-    return standDownFallbackSeat({
-      entry: { authorId, mentions },
-      authorKind: 'agent',
-      seatAuthorId: 'dorkbot',
-      members,
-      selected,
-    });
+    return names(
+      standDownFallbackSeat({
+        entry: { authorId, mentions },
+        authorKind: 'agent',
+        seatAuthorId: 'dorkbot',
+        members,
+        selected: picks(selected),
+      })
+    );
   }
 
   it('leaves an unaddressed post alone — the seat is what answers it', () => {
     expect(stand([], ['dorkbot'])).toEqual(['dorkbot']);
+  });
+
+  it('relabels the standing seat `seat`, so the gate can tell it from any other always member', () => {
+    const targets = standDownFallbackSeat({
+      entry: { authorId: 'dorian', mentions: [] },
+      authorKind: 'human',
+      seatAuthorId: 'dorkbot',
+      members: [seat, nova, human],
+      selected: picks(['dorkbot']),
+    });
+    expect(targets).toEqual([{ authorId: 'dorkbot', reason: 'seat' }]);
+  });
+
+  it('leaves a MENTIONED seat labelled `mention` — it is answering as itself', () => {
+    const targets = standDownFallbackSeat({
+      entry: { authorId: 'dorian', mentions: ['dorkbot'] },
+      authorKind: 'human',
+      seatAuthorId: 'dorkbot',
+      members: [seat, nova, human],
+      selected: [{ authorId: 'dorkbot', reason: 'mention' }],
+    });
+    // Not `seat`, and the difference is invariant I-G3: a seat somebody named is
+    // an addressed trigger and must stay one.
+    expect(targets).toEqual([{ authorId: 'dorkbot', reason: 'mention' }]);
   });
 
   it('drops the seat when the post named another agent', () => {
@@ -314,11 +452,11 @@ describe('standDownFallbackSeat', () => {
       authorKind: 'agent',
       seatAuthorId: 'dorkbot',
       members: [seat, nova, human],
-      selected: ['dorkbot'],
+      selected: picks(['dorkbot']),
     });
     // Nova wrote it, so the seat stands down on the agent-authored rule — the
     // self-mention is not what decided it.
-    expect(byNova).toEqual([]);
+    expect(names(byNova)).toEqual([]);
   });
 
   describe('a post written by an agent', () => {
@@ -358,11 +496,11 @@ describe('standDownFallbackSeat', () => {
         authorKind: 'human',
         seatAuthorId: 'dorkbot',
         members: [seat, novaAlways, ace, human],
-        selected: ['dorkbot', 'nova', 'ace'],
+        selected: picks(['dorkbot', 'nova', 'ace']),
       });
       // The seat steps back; Nova does not, because `always` still means always
       // for a membership the person set themselves.
-      expect(targets).toEqual(['nova', 'ace']);
+      expect(names(targets)).toEqual(['nova', 'ace']);
     });
 
     it("leaves a person's own always member answering an agent's reply", () => {
@@ -377,9 +515,9 @@ describe('standDownFallbackSeat', () => {
         authorKind: 'human',
         seatAuthorId: null,
         members: [seat, novaAlways, ace, human],
-        selected: ['dorkbot', 'nova', 'ace'],
+        selected: picks(['dorkbot', 'nova', 'ace']),
       });
-      expect(targets).toEqual(['dorkbot', 'nova', 'ace']);
+      expect(names(targets)).toEqual(['dorkbot', 'nova', 'ace']);
     });
 
     it('does nothing when the seat was not selected in the first place', () => {

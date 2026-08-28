@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -28,6 +28,7 @@ import {
 } from '../../model/use-sidebar-dnd';
 import { DragLiftChip } from '../motion/DragLiftChip';
 import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
+import { useLatest } from '@/layers/shared/lib';
 
 interface SidebarDndProps {
   children: ReactNode;
@@ -88,16 +89,13 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
 
   // Keep the latest prefs/names for the event handlers + announcements without
   // re-creating sensors or the DndContext on every optimistic write.
-  const prefsRef = useRef<SidebarPrefs>(prefs);
-  prefsRef.current = prefs;
-  const namesRef = useRef(displayNames);
-  namesRef.current = displayNames;
+  const latestPrefs = useLatest<SidebarPrefs>(prefs);
+  const latestNames = useLatest(displayNames);
   const roomTitles = useMemo(
     () => Object.fromEntries(rooms.map((room) => [room.id, room.slug ?? room.title])),
     [rooms]
   );
-  const roomTitlesRef = useRef(roomTitles);
-  roomTitlesRef.current = roomTitles;
+  const latestRoomTitles = useLatest(roomTitles);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -107,14 +105,14 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
   if (isMobile) return <>{children}</>;
 
   const groupName = (id: string): string =>
-    prefsRef.current.groups.find((g) => g.id === id)?.name ?? 'group';
+    latestPrefs.read().groups.find((g) => g.id === id)?.name ?? 'group';
   const itemName = (ref: SidebarItemRef): string =>
     ref.kind === 'agent'
-      ? (namesRef.current[ref.path] ?? ref.path.split('/').pop() ?? 'Agent')
-      : (roomTitlesRef.current[ref.roomId] ?? 'room');
+      ? (latestNames.read()[ref.path] ?? ref.path.split('/').pop() ?? 'Agent')
+      : (latestRoomTitles.read()[ref.roomId] ?? 'room');
 
   const announcements = buildSidebarAnnouncements(() => ({
-    prefs: prefsRef.current,
+    prefs: latestPrefs.read(),
     itemName,
     groupName,
   }));
@@ -130,7 +128,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     const drop = toDropDescriptor(readSidebarDndData(event.over?.data.current));
     // Smart groups (DOR-338) are never a valid drop target — classify first
     // so a rejected drop surfaces a hint instead of silently doing nothing.
-    const op = classifySidebarDrop(prefsRef.current, drag, drop);
+    const op = classifySidebarDrop(latestPrefs.read(), drag, drop);
     if (op.kind === 'reject-smart-group') {
       toast.info('Membership is rule-based — edit rules instead.', {
         description: groupName(op.groupId),

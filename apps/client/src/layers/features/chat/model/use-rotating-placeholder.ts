@@ -88,7 +88,6 @@ export function useRotatingPlaceholder({
   const hintsShownRef = useRef(0);
   const showingHintRef = useRef(false);
 
-  /* eslint-disable react-hooks/set-state-in-effect -- intentional reset when disabled */
   useEffect(() => {
     if (settled || !enabled || hints.length === 0) {
       // Snap back to the default text; leave the hint cursor where it is.
@@ -115,7 +114,6 @@ export function useRotatingPlaceholder({
     }, intervalMs);
     return () => clearInterval(id);
   }, [enabled, hints.length, intervalMs, settled]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const text = frame.hintIndex >= 0 ? (shuffled[frame.hintIndex] ?? defaultText) : defaultText;
 

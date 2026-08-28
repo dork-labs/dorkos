@@ -131,11 +131,15 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * somebody's conversations. Membership still gates them on every surface — this
  * decides only whether an unauthenticated local caller may ask at all.
  *
- * **`list_member_rooms` returns no message at all, and is here anyway.** What it
- * returns is the shape of somebody's install — which channels exist, who is in
- * them, when they were last used — and on the login-off surface a tokenless
+ * **Three of them return no message at all, and are here anyway.** What
+ * `list_member_rooms`, `get_room` and `find_room` return is the shape of
+ * somebody's install — which channels exist, who is in them, what they are
+ * about, when they were last used — and on the login-off surface a tokenless
  * caller resolves to the install owner, so "the rooms you are in" would answer
- * for the operator. A room list is not a health check.
+ * for the operator. A room list is not a health check, and neither is a roster.
+ * `find_room` is the sharpest of the three: it needs no room id at all, so a
+ * tokenless caller could ask which rooms hold a named person and get the answer
+ * in one hop.
  *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
@@ -146,6 +150,8 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   'search_room_history',
   'list_member_rooms',
   'search_member_rooms',
+  'get_room',
+  'find_room',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
@@ -156,9 +162,9 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     ...connectorDomain.capabilities,
     ...mcpDomain.capabilities,
     // The rooms domain contributes NOTHING today, and is listed anyway. All
-    // FOUR of its reads are `observe` and deliberately withhold
+    // SIX of its reads are `observe` and deliberately withhold
     // `readOnlyCarveOut`, because what they return is other people's messages —
-    // or, for `list_member_rooms`, the shape of somebody's install; naming the
+    // or, for the three lookups, the shape of somebody's install; naming the
     // domain here is what puts them under the drift guard, so a later edit that
     // adds the flag has to move this set — and be argued for — rather than
     // widening the tokenless surface in silence. A domain nobody lists is a

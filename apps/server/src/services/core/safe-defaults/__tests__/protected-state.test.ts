@@ -294,6 +294,7 @@ describe('applyProtectedState', () => {
       engagedWindowPosts: 5,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
+      responseGate: 'routing',
       repo: {
         enabled: true,
         worktreeReapDays: 14,

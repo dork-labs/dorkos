@@ -18,7 +18,9 @@ import { ReadCursorService } from '../../core/read-cursor-service.js';
 import { ReadCursorStore } from '../../core/read-cursor-store.js';
 import { indexRoomEntry, roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
 import { AuthorRegistry, isOwnerRecord } from '../author-registry.js';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { EngagedWindow } from '../engagement.js';
+import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { CollectWindow } from '../room-collect.js';
 import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
@@ -475,6 +477,12 @@ export function createRoomHarness(opts: {
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
+  /**
+   * `rooms.responseGate`. Defaults to the SHIPPED value, so a test that says
+   * nothing measures what an install does — a harness pinned to `'off'` would
+   * make every room test a test of a configuration nobody runs.
+   */
+  responseGate?: ResponseGateMode;
   collect?: CollectWindow;
   holdCeilingMs?: number;
   maxAttachmentsPerEntry?: number;
@@ -520,6 +528,7 @@ export function createRoomHarness(opts: {
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
+  const responseGate = opts.responseGate ?? USER_CONFIG_DEFAULTS.rooms.responseGate;
   const collect = opts.collect ?? { debounceMs: 0, maxEntries: 20 };
   const holdCeilingMs = opts.holdCeilingMs ?? 60 * 60_000;
   const maxAttachmentsPerEntry = opts.maxAttachmentsPerEntry ?? 10;
@@ -604,6 +613,7 @@ export function createRoomHarness(opts: {
     indexEntry: opts.indexEntry ?? (({ roomId, seq }) => indexRoomEntry(db, roomId, seq)),
     limitsFor,
     engagedWindow: () => engagedWindow,
+    responseGate: () => responseGate,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,

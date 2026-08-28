@@ -82,20 +82,21 @@ effort?} }` by the ladder in `01-ideation.md` §2.4. Compose from
   spreads them into `ensureSession`/`sendMessage` (mirror how
   `agent-handler.ts` spreads `executionSettings`). Conformance/relay tests.
 
-> **Handshake with PR3 (DOR-1614), which landed first.** PR3 shipped the
-> receiving half and deliberately built no task-runtime resolution, so two lines
-> are PR1's to close and nothing else in the repo will fail without them:
+> **Handshake with PR3 (DOR-1614) — CLOSED in PR3, which merged second.** PR1
+> shipped first and left the relay leg at its v1 reading on purpose. PR3 then
+> landed both halves, so nothing here is outstanding; kept as the record of what
+> moved and where to look if either half is ever revisited:
 >
-> 1. **`apps/server/src/services/tasks/relay-dispatch.ts` must set
->    `payload.runtime`** to the runtime the scheduler resolved for the task.
->    `TaskDispatchPayloadSchema` already carries the optional field, and
->    `ClaudeCodeAdapter` already routes on it; absent, every dispatch keeps
->    running on the relay's default runtime.
-> 2. **Widen the `viaRelay` guard** above from "resolved runtime is claude-code"
->    to "resolved runtime is present in the relay adapter map" — the map the
->    composition root now fills from `runtimeRegistry.listRuntimes()`. A runtime
->    the relay does not hold is refused by name at the adapter, so the guard is
->    what keeps such a task on the direct path instead.
+> 1. **`apps/server/src/services/tasks/relay-dispatch.ts` sets `payload.runtime`**
+>    to the runtime the run resolved to, unconditionally. Unlike `model`/`effort`,
+>    silence is not "the runtime decides" — the receiver's fallback is its OWN
+>    default, so an absent field runs a codex task on claude-code.
+> 2. **The `viaRelay` guard is now "the relay holds this runtime"**, asked per
+>    run through `SchedulerDeps.relayHoldsRuntime` and answered in production by
+>    `AdapterManager.hasAgentRuntime`. A caller that omits the predicate keeps the
+>    v1 reading (claude-code only), so every pre-existing relay caller routes
+>    unchanged. A runtime the relay does not hold stays on the direct path, and
+>    would be refused by name at the adapter if it ever got there.
 
 ### 5. Doors: MCP + CLI
 

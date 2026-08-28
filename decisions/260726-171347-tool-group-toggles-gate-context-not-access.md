@@ -116,3 +116,24 @@ build if DorkOS ever wants a hard per-agent tool boundary. Reaching for
 `disallowedTools` instead looks shorter and is worse: it re-centralizes the same
 fragile list of tool names in a second SDK option, which is the failure mode
 ADR-0070 already paid for. No ticket is open; this is a note for whoever needs it.
+
+### Amendment, 2026-08-28 (DOR-1611)
+
+The Follow-up above now has an answer, and it is not the one it proposed.
+
+ADR `260828-123331` builds the hard per-agent boundary at **invoke time**, inside
+`registry.invoke`, rather than by leaving a group's tools out at MCP registration
+time. Registration-time omission was the right instinct and the wrong seam: the
+external `/mcp` server is stateless and builds its tool list per request with no
+per-agent session to omit anything from, so a registration-time filter would have
+protected the in-session server and left the other door open. Enforcement inside
+`invoke` reaches both, because both converge on it.
+
+**This ADR is otherwise unchanged and still exactly right.** The four keys named
+here — `tasks`, `relay`, `mesh`, `adapter` — still shape context and nothing else,
+and no edit to `mcp-tool-groups.ts` can make one of them a boundary. What changed
+is that one NEW key beside them, `roomsManage`, is a different kind of thing: a
+per-agent grant the choke point enforces, absent means off with no global default,
+and the agent-reachable manifest write path refuses to set it. If you are reasoning
+about the four, read this ADR. If you are adding a fifth, read that one first — it
+records the condition on agent-writable grants that makes the difference real.

@@ -26,17 +26,20 @@ async function emitBeforeQuit(preventDefault = vi.fn()): Promise<void> {
 function arm(overrides: Partial<QuitGuardOptions> = {}): {
   shutdown: ReturnType<typeof vi.fn>;
   countActiveAgents: ReturnType<typeof vi.fn>;
+  recordUpdateInstallIntent: ReturnType<typeof vi.fn>;
 } {
   const shutdown = vi.fn(() => Promise.resolve());
   const countActiveAgents = vi.fn(() => 0);
+  const recordUpdateInstallIntent = vi.fn();
   armQuitGuard({
     countActiveAgents,
     getWindow: () => null,
     shutdown,
     consumeUpdateRestart: () => false,
+    recordUpdateInstallIntent,
     ...overrides,
   });
-  return { shutdown, countActiveAgents };
+  return { shutdown, countActiveAgents, recordUpdateInstallIntent };
 }
 
 beforeEach(() => {
@@ -200,5 +203,49 @@ describe('confirming a quit while agents are working', () => {
 
     const [first] = vi.mocked(dialog.showMessageBox).mock.calls[0];
     expect(first).toBe(win);
+  });
+});
+
+/**
+ * The quit sequence writes down what it is about to install (DOR-1454).
+ *
+ * An ORDINARY quit installs updates too (`autoInstallOnAppQuit`) and never
+ * touches the restart button — it is how the reporting user's one successful
+ * install finally happened, unannounced. The guard is the only place that path
+ * passes through, so the record is taken here.
+ */
+describe('recording what a quit is about to install', () => {
+  it('records the intent on the way out', async () => {
+    const { recordUpdateInstallIntent } = arm();
+
+    await emitBeforeQuit();
+
+    expect(recordUpdateInstallIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('records BEFORE the shutdown, so a server that hangs cannot lose it', async () => {
+    const order: string[] = [];
+    const recordUpdateInstallIntent = vi.fn(() => order.push('record'));
+    arm({
+      recordUpdateInstallIntent,
+      shutdown: () => {
+        order.push('shutdown');
+        return Promise.resolve();
+      },
+    });
+
+    await emitBeforeQuit();
+
+    expect(order).toEqual(['record', 'shutdown']);
+  });
+
+  it('records nothing for a quit the person cancelled', async () => {
+    answerWith(0);
+    const { recordUpdateInstallIntent } = arm({ countActiveAgents: () => 2 });
+
+    await emitBeforeQuit();
+
+    // Nothing is being installed: the app is still running.
+    expect(recordUpdateInstallIntent).not.toHaveBeenCalled();
   });
 });

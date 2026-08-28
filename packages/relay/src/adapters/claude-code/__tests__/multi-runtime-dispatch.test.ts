@@ -240,6 +240,36 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(claude.sendMessage).not.toHaveBeenCalled();
       expect(codex.sendMessage).not.toHaveBeenCalled();
     });
+
+    it('runs an opencode task on opencode when this build registered it', async () => {
+      // The receiving half of the scheduler handshake, and not codex-shaped: the
+      // scheduler sets `payload.runtime` to whatever the run resolved to, and
+      // routing here is by name, so a third runtime needs no code of its own.
+      const opencode = mockRuntime('opencode');
+      const wide = new ClaudeCodeAdapter(
+        'claude-code',
+        {},
+        {
+          ...deps,
+          agentRuntimes: new Map([
+            ['claude-code', claude],
+            ['opencode', opencode],
+          ]),
+        }
+      );
+      await wide.start(mockRelay());
+      const envelope = taskEnvelope(taskPayload({ runtime: 'opencode', runId: 'run-f' }));
+
+      const result = await wide.deliver(envelope.subject, envelope);
+
+      expect(result.success).toBe(true);
+      expect(opencode.sendMessage).toHaveBeenCalledOnce();
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+      expect(taskStore.updateRun).toHaveBeenCalledWith(
+        'run-f',
+        expect.objectContaining({ status: 'completed' })
+      );
+    });
   });
 
   describe('what the adapter claims', () => {

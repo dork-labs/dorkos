@@ -106,6 +106,8 @@ function makeRun(overrides: Partial<TaskRun> = {}): TaskRun {
     error: null,
     sessionId: null,
     trigger: 'scheduled',
+    resolvedRuntime: null,
+    resolvedModel: null,
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     ...overrides,
   };

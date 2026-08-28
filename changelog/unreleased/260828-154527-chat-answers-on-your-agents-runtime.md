@@ -9,6 +9,7 @@ covers:
   - "docs(server): say what the relay's default runtime entry actually guarantees (DOR-1614)"
   - 'docs(adr): the shipped relay shape is one adapter with a runtime map (260828-175910)'
   - 'docs(spec): name the two lines PR1 owes the relay leg (DOR-1615, DOR-1614)'
+  - 'feat(server): a scheduled task rides the bus when the relay holds its runtime (DOR-1614)'
 ---
 
 ### Fixed
@@ -30,3 +31,8 @@ covers:
   quietly handed to a different one (DOR-1614)
 - Approving or denying a tool from a chat now reaches whichever program is
   waiting on the answer, not only Claude Code (DOR-1614)
+- A scheduled task set to run on Codex or OpenCode is no longer forced off the
+  shared path that Claude Code tasks use. It takes the same route, carrying the
+  name of the program it should run on, whenever DorkOS has that program running.
+  When it does not, the task runs the way it always has and nothing about it
+  changes (DOR-1614)

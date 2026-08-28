@@ -1,20 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { realpath } from 'node:fs/promises';
+import { mkdir, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { initBoundary } from '../../../lib/boundary.js';
 import {
   TaskSchedulerService,
   scheduledTickKey,
+  singleRuntimeSource,
   type SchedulerAgentManager,
+  type SchedulerRuntimes,
 } from '../task-scheduler-service.js';
 import { buildTaskAppend } from '../task-append.js';
-import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import { isTerminalRunStatus, TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
+import { writeManifest } from '@dorkos/shared/manifest';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 
@@ -366,7 +370,7 @@ describe('TaskSchedulerService', () => {
       );
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG },
         leaderLock: followerLock,
       });
@@ -386,7 +390,7 @@ describe('TaskSchedulerService', () => {
       );
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG },
         leaderLock,
       });
@@ -467,13 +471,13 @@ describe('TaskSchedulerService', () => {
       };
       const s1 = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG },
         leaderLock: bothLeader,
       });
       const s2 = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG },
         leaderLock: bothLeader,
       });
@@ -697,7 +701,7 @@ describe('TaskSchedulerService', () => {
       );
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         activityService: activityService as unknown as ActivityService,
       });
@@ -784,10 +788,32 @@ describe('TaskSchedulerService', () => {
     function relayScheduler(maxConcurrentRuns = 1): TaskSchedulerService {
       return new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG, maxConcurrentRuns },
         relay: mockRelay as unknown as RelayCore,
       });
+    }
+
+    /**
+     * Trigger a manual run and wait for it to actually reach the bus.
+     *
+     * `triggerManualRun` is fire-and-forget by contract, and a dispatch now
+     * RESOLVES its runtime, model and effort before it routes (DOR-1615) —
+     * real awaited work. So "the trigger returned" never meant "the run was
+     * dispatched"; on this path it merely used to be true by accident. Waiting
+     * on the observable each case is actually about keeps it honest either way.
+     *
+     * @param service - The scheduler under test.
+     * @param taskId - The task to fire.
+     */
+    async function triggerAndPublish(
+      service: TaskSchedulerService,
+      taskId: string
+    ): Promise<TaskRun | null> {
+      const before = mockRelay.publish.mock.calls.length;
+      const run = await service.triggerManualRun(taskId);
+      await vi.waitFor(() => expect(mockRelay.publish.mock.calls.length).toBeGreaterThan(before));
+      return run;
     }
 
     it('a relay-dispatched run is counted as active', async () => {
@@ -797,7 +823,7 @@ describe('TaskSchedulerService', () => {
       const task = store.createTask(taskInput({ name: 'Busy relay', cron: '0 * * * *' }));
       const service = relayScheduler();
 
-      await service.triggerManualRun(task.id);
+      await triggerAndPublish(service, task.id);
 
       expect(service.getActiveRunCount()).toBe(1);
       await service.stop();
@@ -810,7 +836,7 @@ describe('TaskSchedulerService', () => {
       const second = store.createTask(taskInput({ name: 'Second', cron: '0 * * * *' }));
       const service = relayScheduler(1);
 
-      await service.triggerManualRun(first.id); // takes the only slot
+      await triggerAndPublish(service, first.id); // takes the only slot
       await (service as unknown as Dispatchable).dispatch(second, new Date(1_700_000_040_000));
 
       // The second task was NOT published — it never ran.
@@ -825,7 +851,7 @@ describe('TaskSchedulerService', () => {
       const second = store.createTask(taskInput({ name: 'Then runs', cron: '0 * * * *' }));
       const service = relayScheduler(1);
 
-      const held = await service.triggerManualRun(first.id);
+      const held = await triggerAndPublish(service, first.id);
       expect(service.getActiveRunCount()).toBe(1);
 
       // The receiver finishes it — the row is the only thing that says so.
@@ -841,7 +867,7 @@ describe('TaskSchedulerService', () => {
     it('a non-sticky relay dispatch carries no session on the wire (DOR-1571)', async () => {
       const task = store.createTask(taskInput({ name: 'Plain relay', cron: '0 * * * *' }));
       const service = relayScheduler();
-      await service.triggerManualRun(task.id);
+      await triggerAndPublish(service, task.id);
 
       const [, payload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload.sessionId).toBeUndefined();
@@ -856,7 +882,7 @@ describe('TaskSchedulerService', () => {
       const service = relayScheduler();
 
       // First fire: no prior run, so it starts fresh under the run's own id.
-      const first = await service.triggerManualRun(task.id);
+      const first = await triggerAndPublish(service, task.id);
       const [, firstPayload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(firstPayload.sessionId).toBe(first!.id);
       expect(firstPayload.resumeSession).toBe(false);
@@ -883,7 +909,7 @@ describe('TaskSchedulerService', () => {
     it('shutdown asks the bus to stop the relay runs it cannot abort itself', async () => {
       const task = store.createTask(taskInput({ name: 'Left running', cron: '0 * * * *' }));
       const service = relayScheduler();
-      const run = await service.triggerManualRun(task.id);
+      const run = await triggerAndPublish(service, task.id);
 
       await service.stop();
 
@@ -943,13 +969,13 @@ describe('TaskSchedulerService', () => {
       };
       const s1 = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: capped,
         leaderLock: bothLeader,
       });
       const s2 = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: capped,
         leaderLock: bothLeader,
       });
@@ -1097,6 +1123,15 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, {
         ...DEFAULT_CONFIG,
         retentionCount: 2,
+        // Firing OFF, so the hour this test fast-forwards through adds no runs
+        // of its own. The cron still registers — this case is about the
+        // retention timer, and the sixty ticks a per-minute task would fire
+        // under a fake clock only make the count it asserts unreadable. (They
+        // used to land as already-finished rows because a dispatch completed
+        // inside one microtask flush; a dispatch now resolves its runtime off
+        // disk first, which a fake clock cannot advance, so they would sit
+        // `running` — and a running run is deliberately never pruned.)
+        mayFire: false,
       });
       await service.start();
 
@@ -1122,6 +1157,9 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, {
         ...DEFAULT_CONFIG,
         retentionCount: 2,
+        // The one long run this case is about is created by hand below; firing
+        // is off so the fake hour adds no others. See the sibling case above.
+        mayFire: false,
       });
       await service.start();
 
@@ -1185,7 +1223,7 @@ describe('TaskSchedulerService', () => {
       };
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG },
         leaderLock: flakyLock,
       });
@@ -1228,7 +1266,7 @@ describe('TaskSchedulerService', () => {
 
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: { ...DEFAULT_CONFIG },
         leaderLock: {
           tryAcquire: () => false,
@@ -1437,7 +1475,7 @@ describe('TaskSchedulerService', () => {
 
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1464,7 +1502,7 @@ describe('TaskSchedulerService', () => {
 
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1515,7 +1553,7 @@ describe('TaskSchedulerService', () => {
 
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1543,7 +1581,7 @@ describe('TaskSchedulerService', () => {
 
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1582,7 +1620,7 @@ describe('TaskSchedulerService', () => {
 
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1612,7 +1650,7 @@ describe('TaskSchedulerService', () => {
       const now = Date.now();
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1640,7 +1678,7 @@ describe('TaskSchedulerService', () => {
       const now = Date.now();
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1679,7 +1717,7 @@ describe('TaskSchedulerService', () => {
       );
       const service = new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
         activityService: activityService as unknown as ActivityService,
@@ -1707,7 +1745,7 @@ describe('TaskSchedulerService', () => {
     function schedulerWithRelay() {
       return new TaskSchedulerService({
         store,
-        agentManager: mockAgent,
+        runtimes: singleRuntimeSource(mockAgent),
         config: DEFAULT_CONFIG,
         relay: mockRelay as unknown as RelayCore,
       });
@@ -1890,7 +1928,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const mockMesh = createMockMeshCore({});
     const service = new TaskSchedulerService({
       store,
-      agentManager: mockAgent,
+      runtimes: singleRuntimeSource(mockAgent),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
@@ -1948,7 +1986,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const mockMesh = createMockMeshCore({ 'agent-123': agentDir });
     const service = new TaskSchedulerService({
       store,
-      agentManager: mockAgent,
+      runtimes: singleRuntimeSource(mockAgent),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
@@ -1993,7 +2031,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const tasks = store.getTasks();
     const service = new TaskSchedulerService({
       store,
-      agentManager: mockAgent,
+      runtimes: singleRuntimeSource(mockAgent),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
@@ -2004,11 +2042,11 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     await service.triggerManualRun(tasks[0].id);
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ cwd: process.cwd() })
+    await vi.waitFor(() =>
+      expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cwd: process.cwd() })
+      )
     );
 
     await service.stop();
@@ -2027,7 +2065,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const tasks = store.getTasks();
     const service = new TaskSchedulerService({
       store,
-      agentManager: mockAgent,
+      runtimes: singleRuntimeSource(mockAgent),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
@@ -2038,14 +2076,456 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     await service.triggerManualRun(tasks[0].id);
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ cwd: process.cwd() })
+    await vi.waitFor(() =>
+      expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cwd: process.cwd() })
+      )
     );
 
     await service.stop();
+  });
+});
+
+/**
+ * A scheduled run executes on the runtime, model and effort the TASK resolves to
+ * (DOR-1615, DOR-1347).
+ *
+ * Before this, the scheduler held one agent manager bound at boot, so every
+ * scheduled run was a Claude Code run whatever the task or its agent said, and
+ * the SDK picked the model. These cases cross the seams that changed: which
+ * manager gets the work, what the run row records about it, which dispatch path
+ * is eligible, and what the turn is actually started with.
+ */
+describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)', () => {
+  let store: TaskStore;
+  let db: Db;
+  let managers: Record<string, SchedulerAgentManager>;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    managers = {};
+    await initBoundary('/');
+  });
+
+  /**
+   * A registry stand-in with one manager per registered runtime.
+   *
+   * Each manager is its own mock, which is the point: "the run went to the right
+   * backend" is only checkable when the wrong backend would have been a
+   * different object.
+   *
+   * @param registered - The runtime types that are turned on, first is default.
+   */
+  function runtimesWith(registered: string[]): SchedulerRuntimes {
+    for (const type of registered) managers[type] ??= createMockAgentManager();
+    return {
+      has: (type) => registered.includes(type),
+      getDefaultType: () => registered[0]!,
+      // Deliberately empty: a capability profile is not what decides
+      // availability, and leaving it out keeps these cases about routing.
+      getAllCapabilities: () => ({}),
+      get: (type) => managers[type]!,
+    };
+  }
+
+  /**
+   * A scheduler over a given set of runtimes.
+   *
+   * @param registered - The runtime types that are turned on.
+   * @param relay - A relay to enable the bus path, or null for direct-only.
+   */
+  function scheduler(
+    registered: string[],
+    relay: RelayCore | null = null,
+    relayHoldsRuntime?: (runtimeType: string) => boolean
+  ): TaskSchedulerService {
+    return new TaskSchedulerService({
+      store,
+      runtimes: runtimesWith(registered),
+      config: { ...DEFAULT_CONFIG },
+      relay,
+      // Omitted by every caller that predates DOR-1614, which is what pins the
+      // v1 default: claude-code on the bus, everything else direct.
+      ...(relayHoldsRuntime ? { relayHoldsRuntime } : {}),
+    });
+  }
+
+  /**
+   * Fire a manual run and wait for it to reach a terminal row.
+   *
+   * `triggerManualRun` is fire-and-forget and the dispatch now resolves an
+   * execution before it routes, so the row is the only honest signal that the
+   * run is over.
+   *
+   * @param service - The scheduler under test.
+   * @param taskId - The task to fire.
+   */
+  async function runToCompletion(service: TaskSchedulerService, taskId: string): Promise<TaskRun> {
+    const run = await service.triggerManualRun(taskId);
+    await vi.waitFor(() => {
+      const row = store.getRun(run!.id)!;
+      expect(isTerminalRunStatus(row.status)).toBe(true);
+    });
+    return store.getRun(run!.id)!;
+  }
+
+  /**
+   * Write an agent whose manifest names a runtime and a model, under a chosen
+   * workspace binding.
+   *
+   * @param workspace - The binding the manifest declares.
+   */
+  async function agentDir(workspace: AgentManifest['workspace']): Promise<string> {
+    const dir = path.join(
+      await realpath(tmpdir()),
+      `sched-agent-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(dir, { recursive: true });
+    await writeManifest(dir, {
+      workspace,
+      id: 'scheduler-fixture',
+      name: 'scheduler-fixture',
+      description: '',
+      runtime: 'codex',
+      model: 'gpt-5.5',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      registeredAt: new Date().toISOString(),
+      registeredBy: 'test',
+      personaEnabled: true,
+      enabledToolGroups: {},
+      mcpServers: [],
+    } as AgentManifest);
+    return dir;
+  }
+
+  /** A mesh that resolves every agent id to one directory. */
+  function meshAt(dir: string): MeshCore {
+    return { getProjectPath: () => dir } as unknown as MeshCore;
+  }
+
+  /**
+   * The agent tier reads the agent's PROJECT directory, not the run's working
+   * directory — for every workspace binding, not just the one where they happen
+   * to be the same folder (DOR-1615 review).
+   *
+   * `home` is the coincidence: the cwd chain answers with the agent's own
+   * folder, so reading either one found the manifest. `none` is the proof: the
+   * chain falls through to `DEFAULT_CWD`, which holds no manifest for this agent
+   * and may hold a different agent's entirely — so a ladder reading the cwd
+   * silently lost the agent's runtime and model, and this pair is what tells the
+   * two readings apart.
+   */
+  it.each([
+    ['home', { mode: 'home' } as const],
+    ['none', { mode: 'none' } as const],
+  ])("reads the agent's manifest under workspace mode %s", async (_label, workspace) => {
+    const dir = await agentDir(workspace);
+    const task = store.createTask(taskInput({ name: `Agent ${_label}`, agentId: 'a-1' }));
+    const service = new TaskSchedulerService({
+      store,
+      runtimes: runtimesWith(['claude-code', 'codex']),
+      config: { ...DEFAULT_CONFIG },
+      meshCore: meshAt(dir),
+    });
+
+    const row = await runToCompletion(service, task.id);
+
+    expect(row.resolvedRuntime).toBe('codex');
+    expect(row.resolvedModel).toBe('gpt-5.5');
+    await service.stop();
+  });
+
+  it('a sticky task moved to another runtime mints a FRESH session, across the real store', async () => {
+    // No injected lookup: the first run's `resolved_runtime` is written by the
+    // scheduler and read back by `resolveRunSession` through the same store the
+    // production code uses. The rule's first version passed six tests against a
+    // stub while doing nothing at all in production, because the table it read
+    // is only ever written by interactive sessions (DOR-1615 review).
+    const task = store.createTask(
+      taskInput({ name: 'Sticky move', sticky: true, runtime: 'claude-code' })
+    );
+    const service = scheduler(['claude-code', 'codex']);
+
+    const first = await runToCompletion(service, task.id);
+    expect(first.resolvedRuntime).toBe('claude-code');
+    expect(store.latestStickyRun(task.id)).toEqual({
+      sessionId: first.id,
+      runtime: 'claude-code',
+    });
+
+    // A second fire on the SAME runtime resumes that session — the control that
+    // makes the next assertion mean something.
+    const second = await runToCompletion(service, task.id);
+    expect(vi.mocked(managers['claude-code']!.ensureSession).mock.calls.at(-1)![1]).toMatchObject({
+      hasStarted: true,
+    });
+    expect(second.resolvedRuntime).toBe('claude-code');
+
+    // Now move it. The prior session belongs to Claude Code and there is nothing
+    // for Codex to resume, so the run starts fresh under its own id.
+    store.updateTask(task.id, { runtime: 'codex' });
+    const third = await runToCompletion(service, task.id);
+
+    const [sessionId, opts] = vi.mocked(managers['codex']!.ensureSession).mock.calls.at(-1)!;
+    expect(opts).toMatchObject({ hasStarted: false });
+    expect(sessionId).toBe(third.id);
+    expect(third.resolvedRuntime).toBe('codex');
+    await service.stop();
+  });
+
+  it('runs the task on the runtime IT names, not the registry default', async () => {
+    const task = store.createTask(taskInput({ name: 'On codex', runtime: 'codex' }));
+    const service = scheduler(['claude-code', 'codex']);
+
+    await runToCompletion(service, task.id);
+
+    expect(managers['codex']!.sendMessage).toHaveBeenCalledOnce();
+    expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
+    await service.stop();
+  });
+
+  it('fails the run loudly when the named runtime is not turned on, and starts no turn', async () => {
+    // Decision 9. The failure has to be visible on the row a person reads, and
+    // — the discriminating half — nothing may run anywhere while it happens.
+    const task = store.createTask(taskInput({ name: 'On nothing', runtime: 'codex' }));
+    const service = scheduler(['claude-code']);
+
+    const row = await runToCompletion(service, task.id);
+
+    expect(row.status).toBe('failed');
+    expect(row.error).toContain('codex');
+    expect(row.error).toContain('not turned on');
+    expect(managers['claude-code']!.ensureSession).not.toHaveBeenCalled();
+    expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
+    await service.stop();
+  });
+
+  it('stamps the RESOLVED runtime and model on the run row', async () => {
+    const task = store.createTask(
+      taskInput({ name: 'Stamped', runtime: 'codex', model: 'gpt-5.5' })
+    );
+    const service = scheduler(['claude-code', 'codex']);
+
+    const row = await runToCompletion(service, task.id);
+
+    expect(row.resolvedRuntime).toBe('codex');
+    expect(row.resolvedModel).toBe('gpt-5.5');
+    await service.stop();
+  });
+
+  it('stamps the runtime a task that names NONE resolved to, so history is not a re-read', async () => {
+    // The row must say what happened, not what is configured now — a task whose
+    // agent moves to another runtime next week must not rewrite its own past.
+    const task = store.createTask(taskInput({ name: 'Unnamed' }));
+    const service = scheduler(['opencode', 'claude-code']);
+
+    const row = await runToCompletion(service, task.id);
+
+    expect(row.resolvedRuntime).toBe('opencode');
+    expect(row.resolvedModel).toBeNull();
+    await service.stop();
+  });
+
+  it('starts the turn with the resolved model and effort on BOTH agent calls', async () => {
+    // Both, and not by accident: claude-code reads the model off the session
+    // record when it launches a query, while a runtime that does not hold
+    // sessions in memory only ever sees the send.
+    const task = store.createTask(
+      taskInput({ name: 'Settings', model: 'claude-opus-4-6', effort: 'xhigh' })
+    );
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ model: 'claude-opus-4-6', effort: 'xhigh' })
+    );
+    expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ model: 'claude-opus-4-6', effort: 'xhigh' })
+    );
+    await service.stop();
+  });
+
+  it('passes NO model or effort keys when nothing resolved one', async () => {
+    // Absent must stay absent: a `model: undefined` handed to a runtime is not
+    // the same as never mentioning it, and "the runtime decides" is what every
+    // scheduled run meant before these fields existed.
+    const task = store.createTask(taskInput({ name: 'Unset' }));
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    const [, opts] = vi.mocked(managers['claude-code']!.ensureSession).mock.calls[0]!;
+    expect(opts).not.toHaveProperty('model');
+    expect(opts).not.toHaveProperty('effort');
+    await service.stop();
+  });
+
+  describe('v1 dispatch routing — the bus can only carry claude-code (decision 7)', () => {
+    let relay: { publish: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(true);
+      relay = { publish: vi.fn().mockResolvedValue({ messageId: 'm-1', deliveredTo: 1 }) };
+    });
+
+    afterEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(false);
+    });
+
+    it('sends a claude-code run over the bus', async () => {
+      const task = store.createTask(taskInput({ name: 'Bus', runtime: 'claude-code' }));
+      const service = scheduler(['claude-code', 'codex'], relay as unknown as RelayCore);
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('runs a codex task DIRECT even with the bus enabled', async () => {
+      // With no `relayHoldsRuntime` wired, the scheduler takes the v1 reading —
+      // claude-code and nothing else — so a codex run goes direct. DOR-1614
+      // widens this for a caller that says which runtimes the relay holds; the
+      // describe block below is that caller.
+      const task = store.createTask(taskInput({ name: 'Not on the bus', runtime: 'codex' }));
+      const service = scheduler(['claude-code', 'codex'], relay as unknown as RelayCore);
+
+      await runToCompletion(service, task.id);
+
+      expect(managers['codex']!.sendMessage).toHaveBeenCalledOnce();
+      expect(relay.publish).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('carries the resolved model and effort in the dispatch envelope', async () => {
+      // Resolved on THIS side because only it has the task row, the agent
+      // manifest and the server config; the receiver could rebuild none of it.
+      const task = store.createTask(
+        taskInput({ name: 'Wire', runtime: 'claude-code', model: 'haiku', effort: 'low' })
+      );
+      const service = scheduler(['claude-code'], relay as unknown as RelayCore);
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.model).toBe('haiku');
+      expect(payload.effort).toBe('low');
+      await service.stop();
+    });
+
+    it('leaves both keys OFF the envelope when nothing resolved them', async () => {
+      // Byte-for-byte what every task envelope carried before this field, so a
+      // dead-letter replay written by an older build still parses and still runs.
+      const task = store.createTask(taskInput({ name: 'Plain wire' }));
+      const service = scheduler(['claude-code'], relay as unknown as RelayCore);
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload).not.toHaveProperty('model');
+      expect(payload).not.toHaveProperty('effort');
+      await service.stop();
+    });
+  });
+
+  describe('routing asks the relay which runtimes it holds (DOR-1614)', () => {
+    let relay: { publish: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(true);
+      relay = { publish: vi.fn().mockResolvedValue({ messageId: 'm-1', deliveredTo: 1 }) };
+    });
+
+    afterEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(false);
+    });
+
+    it('sends a codex run over the bus when the relay holds codex', async () => {
+      // The half of the handshake this branch owns. The far side now drives
+      // every runtime it holds, so "is it claude-code" stopped being the
+      // question and "does the relay have it" became it.
+      const task = store.createTask(taskInput({ name: 'Codex on the bus', runtime: 'codex' }));
+      const service = scheduler(
+        ['claude-code', 'codex'],
+        relay as unknown as RelayCore,
+        () => true
+      );
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      expect(managers['codex']!.sendMessage).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('names the resolved runtime on the wire', async () => {
+      // Without this the receiver falls back to ITS default and a codex task
+      // runs on claude-code — the exact failure the routing change exists to
+      // remove. Unconditional, unlike model/effort: silence here is not "the
+      // runtime decides", it is "some other runtime decides".
+      const task = store.createTask(taskInput({ name: 'Named', runtime: 'codex' }));
+      const service = scheduler(
+        ['claude-code', 'codex'],
+        relay as unknown as RelayCore,
+        () => true
+      );
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.runtime).toBe('codex');
+      await service.stop();
+    });
+
+    it('keeps a run DIRECT when the relay does not hold its runtime', async () => {
+      // A false negative costs nothing — the run still happens, in this process
+      // — while a false positive strands it on a bus that would refuse it. So
+      // the predicate is asked, and believed, in both directions.
+      const task = store.createTask(taskInput({ name: 'Not held', runtime: 'codex' }));
+      const service = scheduler(
+        ['claude-code', 'codex'],
+        relay as unknown as RelayCore,
+        (runtimeType) => runtimeType === 'claude-code'
+      );
+
+      await runToCompletion(service, task.id);
+
+      expect(managers['codex']!.sendMessage).toHaveBeenCalledOnce();
+      expect(relay.publish).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('puts a test-mode run on the bus when the relay holds test-mode', async () => {
+      // A DELIBERATE consequence, pinned because it is a real behaviour change
+      // and a surprising one. Under `DORKOS_TEST_RUNTIME` the registry default
+      // is `test-mode`, and the composition root fills the relay's map from
+      // `runtimeRegistry.listRuntimes()` — so the relay genuinely holds it, and
+      // a scheduled run that used to go direct (the predicate was the literal
+      // `'claude-code'`) now rides the bus. That is correct rather than
+      // incidental: TestModeRuntime is the very object the relay is wired to in
+      // test mode, so there IS something on the far side to run the turn. If
+      // this test ever has to change, the e2e/capture path changed with it.
+      const task = store.createTask(taskInput({ name: 'Test mode', runtime: 'test-mode' }));
+      const service = scheduler(['test-mode'], relay as unknown as RelayCore, () => true);
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.runtime).toBe('test-mode');
+      await service.stop();
+    });
   });
 });
 
@@ -2064,6 +2544,9 @@ describe('buildTaskAppend', () => {
       sticky: false,
       maxRuntime: null,
       permissionMode: 'acceptEdits',
+      runtime: null,
+      model: null,
+      effort: null,
       status: 'active',
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
@@ -2089,6 +2572,8 @@ describe('buildTaskAppend', () => {
       error: null,
       sessionId: null,
       trigger: 'scheduled',
+      resolvedRuntime: null,
+      resolvedModel: null,
       createdAt: '2026-01-01T02:00:00Z',
     };
 

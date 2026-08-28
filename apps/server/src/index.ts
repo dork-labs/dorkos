@@ -81,10 +81,7 @@ import { watchShiftReport } from './services/notifications/emitters/shift-report
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
-import {
-  TaskSchedulerService,
-  type SchedulerAgentManager,
-} from './services/tasks/task-scheduler-service.js';
+import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
@@ -235,6 +232,8 @@ import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.j
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
+  initToolGroupGate,
+  manifestToolGroupGrants,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
@@ -267,9 +266,11 @@ import {
   setWelcomeBackGreeter,
   setRoomAttachmentStores,
   setRoomRepoService,
+  setRoomFilesService,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
+  RoomFilesService,
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
@@ -346,13 +347,6 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
-// The runtime the Tasks scheduler drives. ClaudeCodeRuntime in production; in
-// test mode (DORKOS_TEST_RUNTIME) the registered TestModeRuntime stands in so
-// the Tasks surface is reachable for e2e and the marketing capture pipeline
-// (SchedulerAgentManager needs ensureSession, sendMessage and interruptQuery,
-// all of which TestModeRuntime implements). Never a real agent binary in test
-// mode.
-let schedulerAgentManager: SchedulerAgentManager | null = null;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -925,8 +919,6 @@ async function start() {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
     const testRuntime = new TestModeRuntime();
     runtimeRegistry.register(testRuntime);
-    // Let the Tasks scheduler drive the test-mode runtime (see declaration).
-    schedulerAgentManager = testRuntime;
     relayAgentRuntime = testRuntime;
     // Optional SECOND instance under a distinct type — gives e2e a server with
     // more than one registered runtime (status-bar picker, ?runtime= launch
@@ -957,7 +949,6 @@ async function start() {
     initCloudLinkManager({ fetchImpl: createFakeCloudLinkFetch() });
   } else {
     claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
-    schedulerAgentManager = claudeRuntime;
     relayAgentRuntime = claudeRuntime;
     runtimeRegistry.register(claudeRuntime);
     // Inject the core session-settings store (ADR-0260). The registry implements
@@ -1170,28 +1161,38 @@ async function start() {
   // turning the feature on or changing a cap binds the next request rather
   // than the next server start.
   const roomRepoStore = new RoomRepoStore(db, dorkHome);
-  setRoomRepoService(
-    new RoomRepoService({
+  const roomRepoService = new RoomRepoService({
+    store: roomRepoStore,
+    enabled: () => readRoomRepoConfig().enabled,
+    getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
+    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // The person's own name from their profile, which is the only place a
+    // real human name is stored on this machine — never the room registry's
+    // label for them, which `bindOwner` fixes at 'You' forever (right in
+    // their own window, bizarre in `git log`).
+    operatorGitName: resolveOperatorDisplayName,
+    caps: () => {
+      const repo = readRoomRepoConfig();
+      return {
+        maxFileBytes: repo.maxFileBytes,
+        maxRepoBytes: repo.maxRepoBytes,
+        maxRoomMdBytes: repo.maxRoomMdBytes,
+      };
+    },
+    // What may be SENT, as against what `caps` froze onto a room's sidecar
+    // for what may be merged IN. Read per turn, like every other value here.
+    maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+  });
+  setRoomRepoService(roomRepoService);
+  // Reading those files back (spec §3.9). It shares the store and nothing
+  // else: `hasRepo` already folds the feature flag in, so a room whose files
+  // are switched off reads exactly as a room that never had any, and the size
+  // ceiling is read per call so lowering it binds the next request.
+  setRoomFilesService(
+    new RoomFilesService({
       store: roomRepoStore,
-      enabled: () => readRoomRepoConfig().enabled,
-      getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
-      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-      // The person's own name from their profile, which is the only place a
-      // real human name is stored on this machine — never the room registry's
-      // label for them, which `bindOwner` fixes at 'You' forever (right in
-      // their own window, bizarre in `git log`).
-      operatorGitName: resolveOperatorDisplayName,
-      caps: () => {
-        const repo = readRoomRepoConfig();
-        return {
-          maxFileBytes: repo.maxFileBytes,
-          maxRepoBytes: repo.maxRepoBytes,
-          maxRoomMdBytes: repo.maxRoomMdBytes,
-        };
-      },
-      // What may be SENT, as against what `caps` froze onto a room's sidecar
-      // for what may be merged IN. Read per turn, like every other value here.
-      maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+      hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+      maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
@@ -1370,6 +1371,15 @@ async function start() {
           db,
           traceStore,
           logger,
+          // The hourly ceiling on turns agent messaging may start (DOR-791),
+          // enforced at the adapter dispatch every surface funnels through.
+          // Read from config PER DISPATCH, not captured here, so a change in
+          // Settings takes effect at once rather than at the next restart —
+          // the same contract the room ceilings have.
+          turnCeiling: {
+            perAgent: () => configManager.get('relay').maxAgentTurnsPerAgentPerHour,
+            global: () => configManager.get('relay').maxAgentTurnsTotalPerHour,
+          },
           // Tick the Pulse attention badge the instant a message is dead-lettered
           // (DOR-403) instead of waiting for the 30s dead-letters poll, and
           // leave a quiet row in the inbox so it is still findable tomorrow.
@@ -2257,12 +2267,16 @@ async function start() {
   );
   logger.info('[MCP] Scoped Codex UI MCP server mounted at /codex-ui-mcp (control_ui only)');
 
-  // Mount Tasks routes if enabled. The scheduler's agent manager is
-  // ClaudeCodeRuntime in production and the TestModeRuntime in test mode.
-  if (tasksEnabled && taskStore && schedulerAgentManager) {
+  // Mount Tasks routes if enabled. The scheduler resolves a runtime PER RUN off
+  // the registry (DOR-1615) — it no longer holds one agent manager bound at
+  // boot, which is what made every scheduled run a Claude Code run whatever the
+  // task or its agent said. A test-mode boot needs nothing special: `test-mode`
+  // is registered and set as the default above, so that is what a task with no
+  // runtime of its own resolves to.
+  if (tasksEnabled && taskStore) {
     schedulerService = new TaskSchedulerService({
       store: taskStore,
-      agentManager: schedulerAgentManager,
+      runtimes: runtimeRegistry,
       config: {
         maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
         retentionCount: schedulerConfig.retentionCount,
@@ -2270,6 +2284,13 @@ async function start() {
         firingReason: firing.reason,
       },
       relay: relayCore,
+      // Which runtimes the bus can actually run a turn on (DOR-1614). Read
+      // through the live `adapterManager` rather than captured: it is built in
+      // Phase C — which may be BEFORE or after this line depending on whether
+      // the relay is enabled at all — and a build where it never appears must
+      // answer "no", which is exactly what the `?? false` says. Then every run
+      // executes in this process, as it always did with the relay off.
+      relayHoldsRuntime: (runtimeType) => adapterManager?.hasAgentRuntime(runtimeType) ?? false,
       meshCore,
       activityService,
       dorkHome,
@@ -3221,7 +3242,7 @@ async function start() {
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),
-      // The rooms domain (room-participation spec §10.2, §10.3): the four verbs
+      // The rooms domain (room-participation spec §10.2, §10.3): the eight verbs
       // an agent has in the rooms it belongs to. The SAME service instance the
       // REST routes and the trigger dispatcher hold — one set of membership
       // rules, one cascade guard, one budget, whichever surface reaches them.
@@ -3253,6 +3274,17 @@ async function start() {
       enabled: () => readStandingGrantSettings().enabled,
       findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
     },
+  });
+  // Arm the per-agent tool-group gate beside it (spec `rooms-management-tools`,
+  // DOR-1611). It runs in the same choke point, one step earlier, and answers a
+  // different question: not "is this caller restricted" but "does this caller hold
+  // this grant". Unwired it refuses every capability that declares a group, so an
+  // omission here fails closed. The audit hook is the SAME observer the tier gate
+  // uses, so a refusal shows up in the Activity feed as `capability.denied` — the
+  // operator sees what an agent tried and did not get.
+  initToolGroupGate({
+    grants: manifestToolGroupGrants(),
+    onAttempt: createCapabilityGateAuditObserver(activityService),
   });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a

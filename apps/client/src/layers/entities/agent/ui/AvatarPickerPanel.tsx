@@ -29,7 +29,9 @@ const fadeIn = {
 // ---------------------------------------------------------------------------
 
 function SparkleBurst() {
-  const particles = useMemo(() => {
+  // A lazy `useState` initializer, not a memo: the burst is randomised once per
+  // mount and never recomputed, and render itself may not roll dice.
+  const [particles] = useState(() => {
     const count = 14;
     return Array.from({ length: count }, (_, i) => {
       const angle = (Math.PI * 2 * i) / count;
@@ -43,7 +45,7 @@ function SparkleBurst() {
         delay: i * 0.02,
       };
     });
-  }, []);
+  });
 
   return (
     <div className="pointer-events-none absolute inset-0 z-50 overflow-visible" aria-hidden>

@@ -231,6 +231,14 @@ export interface ClaudeCodeAdapterDeps {
    * default here would be an allow for whatever publisher is added next.
    */
   approvalAuthorizer: ApprovalAuthorizer;
+  /**
+   * Where a running turn records the envelope it is answering, so the agent's
+   * own `relay_send*` calls continue that budget instead of minting a fresh one
+   * (DOR-791). The host passes the SAME instance it gives its tool surface —
+   * `RelayCore.inboundBudgets` — or none, in which case nothing is threaded and
+   * the adapter behaves exactly as it did before.
+   */
+  inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 

@@ -90,6 +90,9 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     timezone: null,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
+    runtime: null,
+    model: null,
+    effort: null,
     filePath: '/tmp/tasks/daily-review/SKILL.md',
     nextRun: new Date(Date.now() + 86400000).toISOString(),
     nextRuns: [],
@@ -118,6 +121,8 @@ export function createMockRun(overrides: Partial<TaskRun> = {}): TaskRun {
     durationMs: 60000,
     outputSummary: null,
     error: null,
+    resolvedRuntime: null,
+    resolvedModel: null,
     createdAt: new Date().toISOString(),
     ...overrides,
   };

@@ -9,6 +9,23 @@
  */
 import type { pulseSchedules, pulseRuns } from '@dorkos/db';
 import type { Task, TaskRun, TaskRunStatus, TaskRunTrigger } from '@dorkos/shared/types';
+import { EffortLevelSchema } from '@dorkos/shared/schemas';
+
+/**
+ * Read a stored effort rung, or `null` for one this build cannot read.
+ *
+ * `pulse_schedules.effort` is free-form TEXT filled from a SKILL.md, so it can
+ * hold a rung a later release removed from the ladder or anything a person typed
+ * by hand. Dropping it here — once — is what keeps an unmappable string from
+ * reaching a runtime adapter as an `EffortLevel` it then silently ignores.
+ *
+ * @param stored - The column's value.
+ */
+function readEffort(stored: string | null): Task['effort'] {
+  if (stored == null) return null;
+  const parsed = EffortLevelSchema.safeParse(stored);
+  return parsed.success ? parsed.data : null;
+}
 
 /**
  * Convert a Drizzle schedule row to a Task object.
@@ -33,6 +50,15 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     sticky: row.sticky,
     maxRuntime: row.maxRuntime,
     permissionMode: row.permissionMode,
+    runtime: row.runtime ?? null,
+    model: row.model ?? null,
+    // The one column parsed rather than cast, for the reason `rowToSettings`
+    // (`core/runtime-registry.ts`) parses the session one: this is free-form
+    // TEXT, so what comes back is whatever a SKILL.md put there — including a
+    // rung a later release dropped. An unreadable value means "no preference",
+    // which is what NULL already means, so it is dropped here rather than
+    // travelling as an `EffortLevel` into an adapter that cannot map it.
+    effort: readEffort(row.effort),
     status: row.status as Task['status'],
     filePath: row.filePath,
     createdAt: row.createdAt,
@@ -61,6 +87,8 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     error: row.error,
     sessionId: row.sessionId,
     trigger: row.trigger as TaskRunTrigger,
+    resolvedRuntime: row.resolvedRuntime ?? null,
+    resolvedModel: row.resolvedModel ?? null,
     createdAt: row.createdAt,
   };
 }

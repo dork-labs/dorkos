@@ -30,6 +30,7 @@ import { useRooms, useThreads } from '@/layers/entities/room';
 import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '@/layers/entities/session';
 import { useTeamRoster } from '@/layers/entities/team';
 import { bootGateOpen, fleetKnown, BOOT_GATE_TIMEOUT_MS, type BootQueryFacts } from './boot-gate';
+import { useRenderSlot } from '@/layers/shared/lib';
 
 /**
  * How the panel came up.
@@ -170,23 +171,19 @@ export function useBootState(): BootState {
   // render the gate opens, and the state below only preserves it, so nothing
   // waits a frame for an effect.
   const open = bootGateOpen(facts) || timedOut;
-  const [everOpen, setEverOpen] = useState(false);
-  useEffect(() => {
-    if (open && !everOpen) setEverOpen(true);
-  }, [open, everOpen]);
-  const settled = open || everOpen;
+  const everOpen = useRenderSlot(false);
+  if (open) everOpen.write(true);
+  const settled = open || everOpen.read();
 
   // Same latch, same reason: manifests answering is permanent, and a refetch
   // must not withdraw the fleet from a panel that has already drawn it.
   const fleet = fleetKnown(facts);
-  const [everFleet, setEverFleet] = useState(false);
-  useEffect(() => {
-    if (fleet && !everFleet) setEverFleet(true);
-  }, [fleet, everFleet]);
+  const everFleet = useRenderSlot(false);
+  if (fleet) everFleet.write(true);
 
   let phase: BootPhase = 'cold';
   if (settled) phase = 'settled';
   else if (startedWarm) phase = 'warm';
 
-  return { phase, settled, fleetKnown: fleet || everFleet, startedWarm };
+  return { phase, settled, fleetKnown: fleet || everFleet.read(), startedWarm };
 }

@@ -333,7 +333,7 @@ Agent-linked schedules automatically resolve the agent's project path at run tim
  * configuration (spec §10.2.1).
  */
 const ROOM_TOOLS_CONTEXT = `<room_tools>
-In a room you are a member of, you can do four things besides replying.
+In a room you are a member of, you have these four tools besides replying.
 
 All four take ids, and your <room_context> block for the turn is where they are: it
 names this room's id, names the id of the message you are answering, and labels every

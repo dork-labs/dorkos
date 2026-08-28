@@ -67,8 +67,10 @@ export function useCountUp(
 
   useEffect(() => {
     if (!enabled) {
+      // Nothing to animate — the snap is the return below, which reads `target`
+      // directly. The ref still tracks it so a later flip to enabled starts the
+      // count from where the number is actually sitting.
       current.current = target;
-      setDisplay(target);
       return;
     }
     const controls = animate(current.current, target, {
@@ -82,5 +84,5 @@ export function useCountUp(
     return () => controls.stop();
   }, [target, enabled, durationMs]);
 
-  return display;
+  return enabled ? display : target;
 }

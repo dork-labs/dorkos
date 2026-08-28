@@ -1,15 +1,37 @@
 {
-  // Build/QA scripts (esbuild bundling, native rebuild, packaged smoke) are
-  // ~1000 lines of TypeScript that tsconfig.json cannot cover: it sets
+  // Everything in this package that is TypeScript but is not the app: the
+  // build/QA scripts (esbuild bundling, native rebuild, packaged smoke) and the
+  // root-level build configs. tsconfig.json cannot cover either — it sets
   // `rootDir: "src"` for the app's own compile, and anything outside that is a
-  // TS6059. They are also the enforcement machinery for everything else in this
-  // package, so leaving them unchecked meant the gates themselves were the only
-  // unguarded code here — ESLint sees syntax, not types.
+  // TS6059.
+  //
+  // This is the enforcement machinery for everything else in this package, so
+  // leaving it unchecked meant the gates themselves were the only unguarded
+  // code here — ESLint sees syntax, not types.
   //
   // A sibling config rather than a widened `include` on tsconfig.json: this
   // needs no `rootDir` (nothing is emitted), and keeping the app's compile
   // settings untouched avoids changing what electron-vite and editors resolve.
   // The `typecheck` script runs both.
+  //
+  // `"*.ts"` — the package root, non-recursively — rather than naming
+  // `electron.vite.config.ts` and `vitest.config.ts`, so the next config added
+  // here is covered the day it lands instead of the day someone remembers this
+  // file. Both were checked by NOTHING until DOR-1471, which mattered because
+  // electron.vite.config.ts had just grown an import that reaches OUT of this
+  // package (`../client/vite-define`): the fix for the black-window release
+  // (DOR-1448) put the renderer's `define` map behind a cross-package
+  // specifier, and a broken one there is a bare identifier in the shipped
+  // bundle, not a build error. Pulling the config in pulls that import's target
+  // into the program too, so the seam is checked from this side.
+  //
+  // CONSEQUENCE, WHEN A RED LANDS SOMEWHERE CONFUSING: apps/client/vite-define.ts
+  // is now typechecked HERE — inside apps/desktop's program, under this file's
+  // `types: ["electron"]` — so editing that CLIENT file can fail
+  // `pnpm --filter @dorkos/desktop typecheck` while apps/client's own typecheck
+  // stays green. That is the seam working (it is the one file both bundlers'
+  // `define` maps come from), but the failure names a package the author was
+  // never in.
   "extends": "@dorkos/typescript-config/base.json",
   "compilerOptions": {
     "noEmit": true,
@@ -17,8 +39,9 @@
     "moduleResolution": "bundler",
     // Scripts run under tsx (Node), not Electron — but `electron` is the only
     // types package resolvable from here, and it pulls in @types/node, which is
-    // what these files actually need.
+    // what these files actually need. The configs need it too: both are loaded
+    // by a bundler that injects a per-file `__dirname`.
     "types": ["electron"]
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts", "*.ts"]
 }

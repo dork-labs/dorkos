@@ -42,6 +42,9 @@ function proposal(overrides: Partial<Task> = {}): Task {
     sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
+    runtime: null,
+    model: null,
+    effort: null,
     status: 'pending_approval',
     filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
     createdAt: minutesFromLoad(-26),
@@ -86,6 +89,8 @@ function testRunTransport(outcome: TaskRunStatus): Transport {
     error: outcome === 'failed' ? 'Command not found: sweep' : null,
     sessionId: outcome === 'completed' ? `${scheduleId}-session` : null,
     trigger: 'manual',
+    resolvedRuntime: null,
+    resolvedModel: null,
     createdAt: minutesFromLoad(-2),
   });
 

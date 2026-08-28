@@ -11,6 +11,7 @@ import {
   getLastUpdateStatus,
   isRestartingToUpdate,
   consumeUpdateRestart,
+  recordUpdateInstallIntent,
 } from './auto-updater';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
@@ -207,6 +208,7 @@ if (!gotTheLock) {
     getWindow: getMainWindow,
     shutdown: stopServer,
     consumeUpdateRestart,
+    recordUpdateInstallIntent,
   });
 
   // Register IPC handlers for the preload bridge.

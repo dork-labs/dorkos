@@ -203,8 +203,11 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
     // Named rather than left to the general rule, because this is the security
     // decision the general rule exists to protect: an unauthenticated local
     // caller may run a health check, and may not read somebody's conversations
-    // — nor find out which rooms they have (DOR-1532).
+    // — nor find out which rooms they have (DOR-1532), who is in them, or which
+    // of them hold a named person (DOR-1610).
     const wanted = [
+      'find_room',
+      'get_room',
       'list_member_rooms',
       'read_room_history',
       'search_member_rooms',
@@ -216,7 +219,7 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
       .map((t) => t.name)
       .sort();
 
-    expect(roomReads, 'all four reads are live on the external server').toEqual(wanted);
+    expect(roomReads, 'all six reads are live on the external server').toEqual(wanted);
     for (const name of roomReads) {
       expect(READ_ONLY_MCP_TOOL_NAMES.has(name)).toBe(false);
     }

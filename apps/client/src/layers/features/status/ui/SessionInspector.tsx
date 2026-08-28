@@ -401,8 +401,11 @@ function useAgeSince(timestamp: number | null, live: boolean): number | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (timestamp === null || !live) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
+    const sample = () => setNow(Date.now());
+    // Read once on becoming visible, so the first render after reopening is not
+    // a whole tick stale.
+    sample();
+    const id = setInterval(sample, AGE_TICK_MS);
     return () => clearInterval(id);
   }, [timestamp, live]);
   if (timestamp === null) return null;

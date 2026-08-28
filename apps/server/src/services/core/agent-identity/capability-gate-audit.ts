@@ -60,14 +60,22 @@ import type { ActivityService } from '../../activity/activity-service.js';
 import type { TierEnforcementAttempt } from '../capabilities/index.js';
 
 /**
- * Build the audit hook `initCapabilityTierGate` calls for every attempt the tier
- * gate did not allow.
+ * Build the audit hook the pre-invoke gates call for every attempt they did not
+ * allow.
  *
- * `emit` is fire-and-forget and never throws, and the gate swallows anything this
- * hook throws anyway, so a broken feed can never turn into a broken gate.
+ * **Boot wires the same observer to BOTH gates** — `initCapabilityTierGate` for
+ * the tier answer, and `initToolGroupGate` for the per-agent tool-group grant
+ * (DOR-1611). One hook rather than two because the operator's question is one
+ * question: what did something try to do and not get. A `tool_group_disabled`
+ * denial arrives here in the same `TierEnforcementAttempt` shape as a ceiling
+ * refusal, and takes the same `capability.denied` branch below with no special
+ * case.
+ *
+ * `emit` is fire-and-forget and never throws, and both gates swallow anything
+ * this hook throws anyway, so a broken feed can never turn into a broken gate.
  *
  * @param activityService - The Activity feed writer.
- * @returns The gate's `onAttempt` hook.
+ * @returns The `onAttempt` hook both gates call.
  */
 export function createCapabilityGateAuditObserver(
   activityService: ActivityService

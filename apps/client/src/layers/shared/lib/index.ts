@@ -212,6 +212,7 @@ export type {
   IdentityRecord,
 } from './identity-face';
 export { useCopyFeedback } from './use-copy-feedback';
+export { useRenderSlot, useLatest, type RenderSlot } from './use-render-slot';
 export {
   executeUiCommand,
   revealCanvas,

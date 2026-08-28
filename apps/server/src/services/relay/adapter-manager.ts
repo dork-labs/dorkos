@@ -259,6 +259,28 @@ export class AdapterManager {
     this.agentRuntimes = normalizeAgentRuntimes(deps);
   }
 
+  /**
+   * Whether the relay can actually run a turn on this runtime.
+   *
+   * The one question a caller OUTSIDE the relay legitimately has about this
+   * map, and the Tasks scheduler is that caller: it decides per run whether to
+   * hand the run to the bus or execute it in this process, and the bus is only
+   * an option for a runtime something on the far side can drive (DOR-1614).
+   * Before this existed the scheduler answered it with the literal
+   * `'claude-code'`, which was true while the relay held exactly one runtime and
+   * silently wrong the moment it held more.
+   *
+   * Deliberately narrower than handing out the map or its keys: a caller may ask
+   * about a runtime it names, and may not enumerate or reach the runtimes
+   * themselves. Nothing outside the relay should be calling into a runtime this
+   * map holds — that is what the registry is for.
+   *
+   * @param runtimeType - The runtime type to ask about.
+   */
+  hasAgentRuntime(runtimeType: string): boolean {
+    return this.agentRuntimes.has(runtimeType);
+  }
+
   /** Credential store + manifests used to materialize adapter secrets (DOR-280). */
   private get secretsCtx(): MaterializeSecretsContext {
     return {
@@ -1260,6 +1282,13 @@ export class AdapterManager {
         taskStore: this.deps.taskStore,
         agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
         approvalAuthorizer: (decision) => this.authorizeBridgedApproval(decision),
+        // The one map both sides of the inbound-budget thread read (DOR-791):
+        // the adapter binds a turn here, the in-session `relay_send*` tools read
+        // it back. Taken off the relay rather than constructed, so there is
+        // exactly one per process.
+        ...(this.deps.relayCore?.inboundBudgets && {
+          inboundBudgets: this.deps.relayCore.inboundBudgets,
+        }),
       },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)

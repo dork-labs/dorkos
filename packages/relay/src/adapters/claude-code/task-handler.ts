@@ -109,6 +109,13 @@ export interface TasksHandlerDeps {
    * this registry exists to close.
    */
   runningTasks: AbortRegistry;
+  /**
+   * Where this run records the envelope it is answering, so its own
+   * `relay_send*` calls continue that budget rather than minting a fresh one
+   * (DOR-791). A scheduled run is an agent turn like any other and can message
+   * peers from inside it; without this it started every chain over.
+   */
+  inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -178,6 +185,18 @@ export async function handleTasksMessage(
 
   const payload = parsed.data;
   const { taskId, runId, prompt, cwd, permissionMode, systemPromptAppend } = payload;
+  // What this run resolved to run on, decided by the scheduler and carried on
+  // the wire (DOR-1615/DOR-1347). Spread into BOTH agent calls below, exactly as
+  // `agent-handler.ts` spreads its `executionSettings` and for the same reason:
+  // the claude-code runtime reads `session.model` when it LAUNCHES a query, and
+  // that field is written once, at session creation — a model handed over only
+  // at `sendMessage` would reach nothing — while a runtime that does not hold
+  // sessions in memory sees the send and not the create. An absent key means
+  // "the runtime decides", so a payload without them behaves as it always did.
+  const executionSettings = {
+    ...(payload.model !== undefined ? { model: payload.model } : {}),
+    ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
+  };
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
   // The session this run runs on. A STICKY task resolves a resume target on the
   // scheduler side — the REAL SDK id of its previous run — and carries it here;
@@ -234,6 +253,7 @@ export async function handleTasksMessage(
   deps.runningTasks.register(runId, controller);
 
   let outputSummary = '';
+  let releaseInboundBudget: (() => void) | undefined;
 
   try {
     if (controller.signal.aborted) {
@@ -254,11 +274,22 @@ export async function handleTasksMessage(
       // `task-scheduler-service.ts` says the same thing; a run must not depend
       // on which path carried it.
       unattended: true,
+      ...executionSettings,
     });
+
+    // Tie this run to the envelope that dispatched it, for as long as it runs
+    // (DOR-791). `sessionId` — not `runId` — is the key the turn executes under,
+    // which is what the host's tool surface is handed, so anything this run
+    // sends with `relay_send*` continues THIS budget instead of starting a fresh
+    // chain. A sticky task resumes a real SDK session, and its key is that one.
+    // Released in the `finally` below — except on a stop, which holds it for the
+    // reason the agent turn does; see there.
+    releaseInboundBudget = deps.inboundBudgets?.bind(sessionId, envelope.budget);
 
     const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
       permissionMode,
       cwd: effectiveCwd,
+      ...executionSettings,
       // Built server-side by `buildTaskAppend` and carried on the wire, because
       // the pieces it is made of (the task's agent, the run's trigger) do not
       // otherwise reach this process. Without it a relay-dispatched run was
@@ -349,6 +380,26 @@ export async function handleTasksMessage(
     };
   } finally {
     if (timeout) clearTimeout(timeout);
+    // Released when the QUERY is over, which is not the same instant this
+    // function returns (DOR-791) — the same rule, for the same reason, as the
+    // agent turn's binding in `agent-handler.ts`.
+    //
+    // A run that ended on its own, or threw, is done. A STOPPED run — its TTL,
+    // or the operator's Stop — is not known to be: `consumeRunStream` ABANDONS
+    // the stream rather than awaiting it. Both of the things it does on a stop
+    // are unawaited (`void interruptTurn(...)` through `onStop`, and
+    // `void iterator.return()`), and `interruptTurn` is itself bounded and
+    // best-effort, so all this path guarantees is that the interrupt was
+    // REQUESTED. It cannot prove the model stopped producing.
+    //
+    // A `relay_send` from that orphan, inheriting nothing, would mint a FRESH
+    // full budget — hop zero, ten calls, another hour — the chain escaping on
+    // exactly the stop meant to end it. So a stopped run KEEPS its binding
+    // exactly as it stood: a TTL death leaves an expired budget the publish gate
+    // refuses as `ttl_expired`, an operator Stop leaves a live one that is still
+    // the chain's own and still decrements. One entry per session, replaced by
+    // that session's next dispatch, bounded by the registry's LRU cap.
+    if (!controller.signal.aborted) releaseInboundBudget?.();
     // Nothing awaits between the run's terminal write above and this line, so
     // a stop request either reached a run that was genuinely still going or
     // finds it gone — never a half-finalized run it could stop twice.

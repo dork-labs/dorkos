@@ -265,6 +265,16 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     reason: 'Install-wide automatic-turn spend cap.',
   },
   {
+    path: 'relay.maxAgentTurnsPerAgentPerHour',
+    direction: 'lower',
+    reason: 'Per-agent ceiling on turns agent messaging may start.',
+  },
+  {
+    path: 'relay.maxAgentTurnsTotalPerHour',
+    direction: 'lower',
+    reason: 'Install-wide ceiling on turns agent messaging may start.',
+  },
+  {
     path: 'rooms.engagedWindowMinutes',
     direction: 'lower',
     reason:

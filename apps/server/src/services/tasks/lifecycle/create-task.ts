@@ -37,7 +37,11 @@ import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from '../skills-ro
 import { readScheduleFromSkill } from '../skills-root-discovery.js';
 import { describeScheduleProblem } from '../cron-validation.js';
 import { clampSchedulePermissionMode } from '../schedule-permission-clamp.js';
-import { resolveScheduledRunPermissionMode } from '../scheduled-run-power.js';
+import {
+  capabilitiesForTaskRuntime,
+  resolveScheduledRunPermissionMode,
+} from '../scheduled-run-power.js';
+import { readAgentExecutionDefaults } from '../../session/resolve-session-defaults.js';
 import { planTaskFileCreate } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
 import type { TaskStore } from '../task-store.js';
@@ -164,6 +168,40 @@ function resolveTaskHome(
 }
 
 /**
+ * Which runtime the schedule being created will run on, for the one question
+ * that has to be answered at CREATE time: whose permission-mode vocabulary the
+ * operator's trust stop is read in (DOR-1615).
+ *
+ * The same first two rungs `resolve-run-execution.ts` walks at fire time — what
+ * the request named, then the target agent's manifest — and then nothing, so the
+ * caller falls through to the registry default.
+ *
+ * **The agent rung is not optional here.** The mode this resolves is STORED on
+ * the row and is what actually executes; a task filed under a Codex-pinned agent
+ * whose stop was mapped through Claude Code's ids would run at a level nobody
+ * chose, and no later resolution corrects it (DOR-1615 review).
+ *
+ * Tolerant like every other read of a manifest: no mesh, an unregistered agent,
+ * or an unreadable file all mean "no opinion", never a refused create. An agent
+ * that is genuinely missing is refused a few lines later by
+ * {@link resolveTaskHome}, with its own message.
+ *
+ * @param data - The create request.
+ * @param deps - The lifecycle collaborators.
+ * @returns The runtime to read the stop in, or undefined for the default.
+ */
+async function resolveCreateRuntime(
+  data: z.infer<typeof CreateTaskRequestSchema>,
+  deps: TaskLifecycleDeps
+): Promise<string | undefined> {
+  if (data.runtime) return data.runtime;
+  if (data.target === 'global' || !deps.meshCore) return undefined;
+  const projectPath = deps.meshCore.getProjectPath(data.target);
+  if (!projectPath) return undefined;
+  return (await readAgentExecutionDefaults(projectPath)).runtime;
+}
+
+/**
  * Create a scheduled task: validate it, write its SKILL.md, derive its row, park
  * it if the caller cannot arm it, and put it on the clock.
  *
@@ -203,7 +241,17 @@ export async function createScheduledTask(
   // `full-power-defaults`, D6). A caller that named a mode keeps it verbatim; one
   // that named none gets the operator's own trust stop, mapped through the runtime
   // the scheduler drives, and `acceptEdits` when no stop is configured.
-  const permissionMode = data.permissionMode ?? resolveScheduledRunPermissionMode();
+  // The runtime whose vocabulary the stop is read in is the one this schedule
+  // will run on: what the caller named, then the TARGET AGENT's own runtime,
+  // then the registry default (DOR-1615). A schedule created for Codex — or
+  // filed under an agent pinned to it — must not have its trust stop mapped
+  // through Claude Code's mode ids, because the mode this resolves is the one
+  // stored on the row and the one that actually executes.
+  const permissionMode =
+    data.permissionMode ??
+    resolveScheduledRunPermissionMode({
+      capabilities: capabilitiesForTaskRuntime(await resolveCreateRuntime(data, deps)),
+    });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is
   // the value written to the file AND inserted into the row; the explicit un-clamp
@@ -277,6 +325,13 @@ export async function createScheduledTask(
       // and `scheduleToFrontmatter` drops a `false` back out anyway (DOR-1571).
       sticky: data.sticky === true ? true : undefined,
       maxRuntime: data.maxRuntime || undefined,
+      // Only an OVERRIDE says so in the file. Absent is "whatever this task's
+      // agent runs on", which is what a schedule that names nothing means, so
+      // writing a resolved value here would freeze today's answer into the file
+      // and stop the task following its agent (DOR-1615/DOR-1347).
+      runtime: data.runtime || undefined,
+      model: data.model || undefined,
+      effort: data.effort || undefined,
       // The CLAMPED mode, so the file and the row agree. A SKILL.md declaring more
       // power than its row holds is a standing request from disk that nobody made
       // and no screen shows.
@@ -332,6 +387,9 @@ export async function createScheduledTask(
       ...(data.sticky !== undefined && { sticky: data.sticky }),
       maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
       permissionMode: effectivePermissionMode,
+      ...(data.runtime !== undefined && { runtime: data.runtime }),
+      ...(data.model !== undefined && { model: data.model }),
+      ...(data.effort !== undefined && { effort: data.effort }),
       filePath,
     });
   }

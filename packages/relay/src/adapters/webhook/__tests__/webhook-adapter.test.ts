@@ -342,6 +342,10 @@ describe('WebhookAdapter', () => {
       ];
       expect(options.headers['X-Relay-Hop-Count']).toBe('2');
       expect(options.headers['X-Relay-Max-Hops']).toBe('5');
+      // The other two dimensions travel too (DOR-791). Hops alone left the call
+      // budget and the deadline resetting on every lap.
+      expect(options.headers['X-Relay-Call-Budget']).toBe('10');
+      expect(Number(options.headers['X-Relay-Expires-At'])).toBeGreaterThan(Date.now());
 
       vi.unstubAllGlobals();
     });
@@ -399,6 +403,64 @@ describe('WebhookAdapter', () => {
 
       const [, , options] = vi.mocked(relay.publish).mock.calls[0]!;
       expect(options.budget).toEqual({ hopCount: 1, maxHops: 2 });
+    });
+
+    it('carries a DECREMENTED call budget and the original deadline back in (DOR-791)', async () => {
+      // The lap that just happened cost a turn, so the republish carries one
+      // less — a webhook pointed back at DorkOS now runs down a real budget
+      // instead of getting a fresh ten every time round.
+      const deadline = Date.now() + 120_000;
+      const body = '{"event":"echo"}';
+      const headers = {
+        ...buildHeaders(body, SECRET),
+        'x-relay-hop-count': '1',
+        'x-relay-max-hops': '5',
+        'x-relay-call-budget': '4',
+        'x-relay-expires-at': String(deadline),
+      };
+
+      await adapter.handleInbound(Buffer.from(body), headers);
+
+      const [, , options] = vi.mocked(relay.publish).mock.calls[0]!;
+      expect(options.budget).toEqual({
+        hopCount: 2,
+        maxHops: 5,
+        callBudgetRemaining: 3,
+        ttl: deadline,
+      });
+    });
+
+    it('floors a spent call budget at zero, which is what the publish gate refuses', async () => {
+      const body = '{"event":"spent"}';
+      const headers = {
+        ...buildHeaders(body, SECRET),
+        'x-relay-hop-count': '1',
+        'x-relay-call-budget': '0',
+      };
+
+      await adapter.handleInbound(Buffer.from(body), headers);
+
+      const [, , options] = vi.mocked(relay.publish).mock.calls[0]!;
+      expect((options.budget as { callBudgetRemaining: number }).callBudgetRemaining).toBe(0);
+    });
+
+    it('clamps a declared call budget and deadline instead of trusting them', async () => {
+      // The mirror of the maxHops clamp: a caller cannot vote itself a bigger
+      // allowance or a longer life by echoing bigger numbers.
+      const body = '{"event":"greedy"}';
+      const headers = {
+        ...buildHeaders(body, SECRET),
+        'x-relay-hop-count': '1',
+        'x-relay-call-budget': '9999',
+        'x-relay-expires-at': String(Date.now() + 999_999_999),
+      };
+
+      await adapter.handleInbound(Buffer.from(body), headers);
+
+      const [, , options] = vi.mocked(relay.publish).mock.calls[0]!;
+      const budget = options.budget as { callBudgetRemaining: number; ttl: number };
+      expect(budget.callBudgetRemaining).toBe(9);
+      expect(budget.ttl).toBeLessThanOrEqual(Date.now() + 3_600_000);
     });
 
     it('ignores an unreadable hop count rather than trusting it', async () => {

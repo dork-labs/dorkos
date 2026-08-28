@@ -205,7 +205,6 @@ function makeMotionComponent(
       }
     }, [onAnimationComplete]);
 
-    // eslint-disable-next-line react-hooks/refs -- test mock: ref forwarding is intentional
     return React.createElement(target, { ...filtered, ref }, children as React.ReactNode);
   }) as unknown as React.FC<Record<string, unknown>>;
 }

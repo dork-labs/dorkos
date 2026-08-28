@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { AttentionState } from '@/layers/entities/session';
 import {
@@ -105,9 +105,17 @@ export function SmartGroupRuleDialog({
 
   // Re-seed local state whenever the dialog opens with a (possibly different)
   // initial group — otherwise a second "Edit rules" open would show stale
-  // state from whichever group was edited first.
+  // state from whichever group was edited first. The ref is what makes it ONCE
+  // per opening: the seeds must not land again on a re-render that happens to
+  // hand over a fresh `initialRules` object mid-edit.
+  const seeded = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      seeded.current = false;
+      return;
+    }
+    if (seeded.current) return;
+    seeded.current = true;
     setName(initialName ?? '');
     setRuntimes(new Set(initialRules?.runtimes));
     setNamespaces(new Set(initialRules?.namespaces));

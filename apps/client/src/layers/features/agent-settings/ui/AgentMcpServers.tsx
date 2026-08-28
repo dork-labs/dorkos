@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Button, FieldCard, FieldCardContent, Skeleton } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
@@ -14,7 +14,7 @@ import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
 import type { StampedTestResult } from '../lib/mcp-server-state';
-import { initialCardOrder, replayFrozenOrder } from '../lib/mcp-card-order';
+import { useFrozenCardOrder } from '../model/use-frozen-card-order';
 import { ManagedMcpServerCard } from './ManagedMcpServerCard';
 import { DiscoveredMcpServerCard } from './DiscoveredMcpServerCard';
 
@@ -99,6 +99,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   // The most recently added server, so the unattended probe below can tell the
   // add form whether THAT server turned out to need a sign-in (DOR-1004).
   const [lastAdded, setLastAdded] = useState<string | null>(null);
+  const resolveCardOrder = useFrozenCardOrder();
 
   const handleToggle = useCallback(
     (name: string, enabled: boolean) => {
@@ -156,37 +157,18 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const busy = enableServer.isPending || disableServer.isPending || removeServer.isPending;
 
   // The freeze itself: the first render where BOTH queries have settled captures
-  // the order, and every render after replays it. A ref, not state — capturing an
-  // order must not itself cause a render, and the value is read during the same
-  // render that writes it. Servers that appear later are APPENDED, never
-  // inserted, so nothing already on screen moves.
-  //
-  // Waiting for both is the whole correctness of the sort, not politeness. The
-  // two sources land independently — the manifest is a file read, the runtime's
-  // status goes through the runtime — and freezing on whichever arrived first
-  // sorted only that half. Managed-first (the likely race) meant no runtime-only
-  // state could ever reach the attention band: a server the runtime reports as
-  // failed was appended AFTER the freeze, below every working card, which is
-  // precisely the card the sort exists to lift.
-  const frozenOrder = useRef<string[] | null>(null);
-  const bothSettled = !managed.isPending && !live.isPending;
+  // the order, and every render after replays it. See `useFrozenCardOrder`.
   const byName = new Map<string, { kind: 'managed' | 'discovered'; index: number }>();
   managedServers.forEach((server, index) => byName.set(server.name, { kind: 'managed', index }));
   discovered.forEach((entry, index) => byName.set(entry.name, { kind: 'discovered', index }));
 
-  if (frozenOrder.current === null && bothSettled && byName.size > 0) {
-    frozenOrder.current = initialCardOrder({
-      managed: managedServers,
-      live: liveByName,
-      discovered,
-    });
-  }
-  const present = [...managedServers.map((s) => s.name), ...discovered.map((s) => s.name)];
-  const { ordered, added } = replayFrozenOrder({ frozen: frozenOrder.current ?? [], present });
-  if (added.length > 0 && frozenOrder.current !== null) {
-    frozenOrder.current = [...ordered, ...added];
-  }
-  const cardOrder = [...ordered, ...added];
+  const cardOrder = resolveCardOrder({
+    bothSettled: !managed.isPending && !live.isPending,
+    managed: managedServers,
+    live: liveByName,
+    discovered,
+    present: [...managedServers.map((s) => s.name), ...discovered.map((s) => s.name)],
+  });
 
   /** Render one card by name, in whichever kind it currently is. */
   function renderCard(name: string) {

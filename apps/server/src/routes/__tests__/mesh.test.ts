@@ -538,6 +538,28 @@ describe('Mesh routes', () => {
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { name: 'Updated Agent' });
     });
 
+    it('is the ONE way the rooms-management grant is set (DOR-1611, spec §D6)', async () => {
+      // The other half of the asymmetry. `updateAgentManifest` — the
+      // agent-reachable path behind `PATCH /api/agents/current` and the
+      // `update_agent` MCP tool — refuses a patch that names `roomsManage`,
+      // because a grant the governed agent can set for itself is not a grant.
+      // The operator's route does not come through there, and must keep working:
+      // otherwise the switch has no way in at all.
+      meshCore.update.mockReturnValue({
+        ...MOCK_MANIFEST,
+        enabledToolGroups: { roomsManage: true },
+      });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ enabledToolGroups: { roomsManage: true } });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', {
+        enabledToolGroups: { roomsManage: true },
+      });
+    });
+
     it("carries an agent's model and effort through to the manifest write", async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });
 

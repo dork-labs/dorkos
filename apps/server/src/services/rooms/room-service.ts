@@ -123,6 +123,7 @@ import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './aut
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
+import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
 import { resolveAddressing } from './mentions.js';
 import type { ReactionBudget } from './reactions/reaction-budget.js';
@@ -264,6 +265,8 @@ export interface RoomServiceDeps {
   engagedWindow(): EngagedWindow;
   /** The live `rooms.collect*` ceilings, injected for the same reason. */
   collect(): CollectWindow;
+  /** The live `rooms.responseGate` setting, injected for the same reason. */
+  responseGate(): ResponseGateMode;
   /**
    * The live `rooms.lateReplyCeilingMinutes` in milliseconds — how long a room
    * waits on an agent busy elsewhere before it gives up. Injected for the same
@@ -413,6 +416,105 @@ export interface MemberRoomMatch {
   name: string;
   /** The message itself, resolved through the room's own store. */
   entry: RoomEntry;
+}
+
+/**
+ * The most rooms {@link RoomService.findMemberRooms} answers with.
+ *
+ * Smaller than {@link MEMBER_ROOMS_PAGE_MAX} because a find carries every match
+ * WITH its roster: ten rooms of members is already a screenful of context, and a
+ * filter that matches more than ten rooms is a filter that has not narrowed
+ * anything — the honest answer to it is "narrow the filter", which the tool's
+ * description says, not a longer page.
+ */
+export const FIND_ROOMS_MAX = 10;
+
+/**
+ * One member of a room, as {@link RoomService.describeRoom} reports them.
+ *
+ * Deliberately not the roster row: response modes and read cursors are the
+ * operator's configuration surface, and a model handed them can act on none of
+ * it. What an agent needs is who is here, how to address them, and whether each
+ * is a person or a machine — the three facts `meta/agent-etiquette.md` says a
+ * well-behaved participant must know.
+ */
+export interface RoomMemberSummary {
+  /** The opaque author id — the one room entries carry as `authorId`. */
+  authorId: string;
+  /** Display name, or `Unknown` for an author whose record has vanished. */
+  name: string;
+  /** What an `@` reaches them by, or `null` when they cannot be addressed. */
+  handle: string | null;
+  /** `human`, `agent`, or `system` — the room's own voice. */
+  kind: AuthorRecord['kind'];
+}
+
+/**
+ * One room in full: the {@link MemberRoomSummary} facts plus its topic and its
+ * whole roster. What `get_room` returns for one room and `find_room` returns
+ * per match.
+ */
+export interface RoomDetail extends MemberRoomSummary {
+  /** The room's topic, or `null` when nobody has set one. */
+  topic: string | null;
+  /** Everyone who can post, in the roster's own order. */
+  members: RoomMemberSummary[];
+}
+
+/**
+ * A find_room filter. Both fields optional at this layer, and a filter that
+ * narrows nothing is answered with the capped list rather than with an error:
+ * the refusal belongs to the TOOL, which is where a person typed the empty
+ * filter, and a service that threw as well would put the same rule in two
+ * places for a caller that has not gone wrong.
+ */
+export interface FindMemberRoomsFilter {
+  /** Matches a channel's `#slug` exactly, or any room title as a substring. */
+  name?: string;
+  /** Handles (with or without `@`) that must ALL be on the roster. */
+  memberHandles?: string[];
+}
+
+/**
+ * What a `find_room` name filter MEANS, decided in one place.
+ *
+ * Trim, drop every leading `#`, lowercase. Both callers ask this rather than
+ * spelling it themselves, and that is the whole point: the guard in
+ * `room-capabilities.ts` has to refuse a filter that narrows nothing, and it can
+ * only do that if it computes the same needle {@link RoomService.findMemberRooms}
+ * will match on. Two hand-rolled copies is exactly how `"##"` got through — each
+ * side stripped ONE `#`, so the guard saw a non-empty `"#"`, the matcher saw an
+ * empty string, and an empty needle matches every room the caller is in.
+ *
+ * **Every leading `#`, not one**, which also makes this idempotent: normalizing
+ * an already-normalized needle is a no-op, so the guard may hand its own result
+ * to the service without the second pass changing it again.
+ *
+ * @param name - What the caller typed.
+ * @returns The needle to match on. Empty means the filter narrows nothing.
+ */
+export function normalizeRoomNameNeedle(name: string): string {
+  return name.trim().replace(/^#+/, '').trim().toLowerCase();
+}
+
+/**
+ * What a `find_room` member filter MEANS, decided in one place.
+ *
+ * The `@` twin of {@link normalizeRoomNameNeedle}, and it had the same defect
+ * for the same reason: `["@@"]` survived a guard that stripped one `@` and then
+ * emptied out in the service, leaving `wanted` empty — which
+ * {@link RoomService.holdsEveryHandle} reads as "no handle filter at all", so a
+ * caller asking for an impossible roster got every room instead of none.
+ *
+ * Also used on the handles read back OFF a roster, so both sides of the
+ * comparison are normalized by the same function rather than by two rules that
+ * agree today.
+ *
+ * @param handle - A handle as typed, with or without its sigil.
+ * @returns The handle to compare on. Empty means it names nobody.
+ */
+export function normalizeMemberHandle(handle: string): string {
+  return handle.trim().replace(/^@+/, '').trim().toLowerCase();
 }
 
 /**
@@ -685,6 +787,7 @@ export class RoomService {
       limitsFor: deps.limitsFor,
       engagedWindow: deps.engagedWindow,
       collect: deps.collect,
+      responseGate: deps.responseGate,
       holdCeilingMs: deps.holdCeilingMs,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
@@ -2688,6 +2791,117 @@ export class RoomService {
   }
 
   /**
+   * One room in full — `get_room`: the listing facts plus the topic and the
+   * whole roster, each member with their handle and their kind.
+   *
+   * The same gate the history reads use, through the same method
+   * ({@link RoomService.requireMemberRoom}): a caller that is not a member gets
+   * the `ROOM_NOT_FOUND` a missing room gets, so a room id is never a
+   * capability, and the owner is not exempt. The one thing this returns that the
+   * listing does not is WHO — and who is in a room is exactly what membership
+   * already grants: the roster panel shows it to every member, and the room
+   * context block hands it to every triggered agent.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - Who is asking; must be on the roster.
+   * @returns The room's detail, roster included.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a missing room and a non-member
+   *   alike.
+   */
+  describeRoom(roomId: string, viewerAuthorId: string): RoomDetail {
+    const { room, member } = this.requireMemberRoom(roomId, viewerAuthorId);
+    return this.detailOf(room, member.joinedAt);
+  }
+
+  /**
+   * The caller's member rooms that match a filter, each in full — `find_room`.
+   *
+   * Scoped to membership by construction: the candidate set IS
+   * {@link RoomStore.listRoomsForMember}, so a room the caller is not in is not
+   * findable, which keeps this the same answer the reads give without a second
+   * membership check to forget. Archived rooms stay out for the same reason they
+   * stay out of the listing: a find is for rooms a message could still land in.
+   *
+   * Name matching is a channel's `#slug` exactly (the `#` optional, the case
+   * not held against anyone) or any title as a case-insensitive substring — a DM
+   * has no slug, and its title is who it is with, so "find my DM with Ana"
+   * lands on the substring branch. Member matching requires EVERY named handle
+   * on the roster, which is what makes "is there already a DM for this pair?"
+   * one call. The name filter runs first because it is a column read; rosters
+   * are only pulled for rooms that survive it.
+   *
+   * @param viewerAuthorId - Who is asking; only their rooms are searched.
+   * @param filter - What to match; see {@link FindMemberRoomsFilter}.
+   * @returns At most {@link FIND_ROOMS_MAX} matches, newest activity first.
+   */
+  findMemberRooms(viewerAuthorId: string, filter: FindMemberRoomsFilter): RoomDetail[] {
+    const needle = filter.name === undefined ? undefined : normalizeRoomNameNeedle(filter.name);
+    const wanted = (filter.memberHandles ?? [])
+      .map(normalizeMemberHandle)
+      .filter((handle) => handle.length > 0);
+    const joinedAt = new Map(
+      this.store
+        .listMembershipsFor(viewerAuthorId)
+        .map((member) => [member.roomId, member.joinedAt])
+    );
+    return this.store
+      .listRoomsForMember(viewerAuthorId)
+      .filter((room) => this.matchesName(room, needle))
+      .filter((room) => this.holdsEveryHandle(room, wanted))
+      .slice(0, FIND_ROOMS_MAX)
+      .map((room) => this.detailOf(room, joinedAt.get(room.id) ?? room.createdAt));
+  }
+
+  /**
+   * Whether a room answers to a name — its `#slug` exactly, or its title as a
+   * substring. An empty or absent needle matches everything, so the two
+   * `findMemberRooms` filters compose by plain chaining.
+   */
+  private matchesName(room: Room, needle: string | undefined): boolean {
+    if (!needle) return true;
+    if (room.slug && room.slug.toLowerCase() === needle) return true;
+    return room.title.toLowerCase().includes(needle);
+  }
+
+  /** Whether every wanted handle is on a room's roster. Empty wants everything. */
+  private holdsEveryHandle(room: Room, wanted: string[]): boolean {
+    if (wanted.length === 0) return true;
+    const held = new Set<string>();
+    for (const member of this.store.listMembers(room.id)) {
+      const handle = this.authorRegistry.getById(member.authorId)?.handle;
+      if (handle) held.add(normalizeMemberHandle(handle));
+    }
+    return wanted.every((handle) => held.has(handle));
+  }
+
+  /**
+   * Project one room and its roster into a {@link RoomDetail}.
+   *
+   * `Unknown` for a vanished author is the same word the roster panel and the
+   * room context block use for the same state, so one absent author does not
+   * read as three different people on three surfaces.
+   */
+  private detailOf(room: Room, joinedAt: string): RoomDetail {
+    return {
+      roomId: room.id,
+      kind: room.kind,
+      name: memberRoomName(room),
+      topic: room.topic,
+      joinedAt,
+      lastActivityAt: room.lastActivityAt,
+      members: this.store.listMembers(room.id).map((member) => {
+        const author = this.authorRegistry.getById(member.authorId);
+        return {
+          authorId: member.authorId,
+          name: author?.displayName ?? 'Unknown',
+          handle: author?.handle ?? null,
+          kind: author?.kind ?? 'system',
+        };
+      }),
+    };
+  }
+
+  /**
    * The messages that match some words across EVERY room this member belongs to,
    * best first — `search_member_rooms` (agent-memory spec D6).
    *
@@ -2836,13 +3050,39 @@ export class RoomService {
     roomId: string,
     viewerAuthorId: string
   ): { room: Room; floor: number } {
+    const { room, member } = this.requireMemberRoom(roomId, viewerAuthorId);
+    return { room, floor: member.joinedSeq };
+  }
+
+  /**
+   * A room the caller is genuinely ON THE ROSTER of, or the not-found every
+   * other refusal in this file uses — the gate under `read_room_history`,
+   * `search_room_history`, `exportRoom` and `get_room`.
+   *
+   * One method rather than the same four lines in each of them, because the
+   * rule they share is subtle in exactly the way a second copy gets wrong:
+   * visibility is NOT membership. {@link RoomService.requireVisibleRoom} passes
+   * the install's owner for every room on the machine, so a read that stopped
+   * there would hand the owner a room they never joined; the explicit member row
+   * is what makes reading a room's log a membership. And the refusal is the
+   * same `ROOM_NOT_FOUND` a missing room gets, deliberately: a room id is not a
+   * capability, and a distinct code here would let a caller holding an id tell
+   * "exists, not yours" from "does not exist".
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller.
+   * @returns The room and the caller's own membership row.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a missing room and for a room the
+   *   caller is not a member of, alike.
+   */
+  private requireMemberRoom(
+    roomId: string,
+    viewerAuthorId: string
+  ): { room: Room; member: RoomMember } {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const member = this.store.getMember(roomId, viewerAuthorId);
-    // The same `ROOM_NOT_FOUND` a missing room gets, deliberately: a room id is
-    // not a capability, and a distinct code here would let a caller holding an id
-    // tell "exists, not yours" from "does not exist".
     if (!member) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
-    return { room, floor: member.joinedSeq };
+    return { room, member };
   }
 
   /**
@@ -2923,6 +3163,46 @@ export class RoomService {
     if (!this.store.getMember(roomId, authorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
+  }
+
+  /**
+   * Refuse anyone who may not read this room's own files (spec `project-rooms`
+   * §3.9).
+   *
+   * **Exactly the history gate, and deliberately not a new one.** It goes
+   * through the same {@link RoomService.requireHistoryFloor} the room's log,
+   * its search and its export go through, so "not a member" answers as "no such
+   * room" and a room id is never a capability. An agent that is a member may
+   * read, the same way it may read history — a room's files are what its
+   * members are working on together, and an agent member is one of them.
+   *
+   * Three deliberate differences from the neighbours:
+   *
+   * - **The `joinedSeq` floor is discarded.** It is a rule about a
+   *   CONVERSATION: what was said before you arrived is not yours to read back.
+   *   Files have no `seq` and carry no such rule — a repo is the state of the
+   *   work, not a record of who said what when, and a member who could see only
+   *   the files added since they joined would be looking at a tree with holes
+   *   in it. The membership half of that gate is what this borrows, and the
+   *   membership half is the part that protects anything.
+   * - **An archived room still reads.** Archiving stops a room, and
+   *   `RoomRepoService` keeps every byte on disk on purpose; refusing to show
+   *   an archived room's files would hide work nobody agreed to delete.
+   * - **It says nothing about whether the room HAS files.** That question is
+   *   `RoomRepoService.hasRepo`'s and is asked afterwards, so that a non-member
+   *   cannot tell a project room from any other.
+   *
+   * Exposed rather than duplicated in the route, for the reason
+   * {@link RoomService.assertCanAttach} is: a second copy of a visibility
+   * predicate is the copy that gets it wrong.
+   *
+   * @param roomId - The room whose files are being read.
+   * @param authorId - Who is asking.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a room this caller may not see AND
+   *   for one they are not on the roster of — the same answer, on purpose.
+   */
+  assertCanReadFiles(roomId: string, authorId: string): void {
+    this.requireHistoryFloor(roomId, authorId);
   }
 
   /**
@@ -3949,6 +4229,21 @@ export class RoomService {
    * while an install minted exactly one human author. A second one — an invited
    * person — would have passed it and read every room on the install, the
    * owner's DMs with agents included.
+   *
+   * The grant is by OWNERSHIP of the install, not by membership in a room: it
+   * covers every room the agents she manages hold, agent-to-agent DMs
+   * included, whether or not she is on the roster — `listRooms` and `canSee`
+   * both read it before checking `room_members` at all. A second human never
+   * inherits this: `requireOperator` and this method answer the same author id
+   * and no other, so an invited person sees exactly the rooms she is in, same
+   * as an agent.
+   *
+   * It also does not reach past this install. When a room's truth lives in a
+   * remote community, that community lists its own rooms per-caller through
+   * the `CommunityAdapter` port (`GET /api/rooms` aggregates every OTHER
+   * configured community alongside this one) — this machine's owner power is
+   * scoped to the rooms `RoomService` itself owns, and grants nothing on a
+   * community that answers for itself.
    */
   private seesEveryRoom(viewerAuthorId: string): boolean {
     return this.isOwnerAuthor(viewerAuthorId);

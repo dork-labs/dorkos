@@ -12,8 +12,8 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { TaskNameSchema, TASK_DURATION_PATTERN } from '@dorkos/shared/schemas';
-import type { UpdateTaskRequest } from '@dorkos/shared/types';
+import { EffortLevelSchema, TaskNameSchema, TASK_DURATION_PATTERN } from '@dorkos/shared/schemas';
+import type { EffortLevel, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify, validateSlug } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
@@ -151,6 +151,37 @@ export const STICKY_DESCRIPTION =
   'Whether every run picks up the SAME session instead of starting fresh. Off by default: each ' +
   'run is its own conversation and remembers nothing from last time. Turn it on for a task that ' +
   'should build on the run before it — "since I last ran, here is what changed".';
+
+/**
+ * The description both tools give the `runtime` argument (DOR-1615).
+ *
+ * Agent-writable: it chooses WHICH backend does the work, not how much power the
+ * run has — and a caller that can already write the `prompt` can do far more
+ * than pick a runtime. Omitting it is the ordinary case and the better default.
+ */
+export const RUNTIME_DESCRIPTION =
+  'Which agent runtime the scheduled task runs on — "claude-code", "codex" or "opencode". ' +
+  "Leave it out and it runs on whatever the task's agent runs on, which is almost always " +
+  'what you want. A runtime that is not turned on here fails the run rather than quietly ' +
+  'running somewhere else.';
+
+/**
+ * The description both tools give the `model` argument (DOR-1347).
+ *
+ * Deliberately unvalidated at write, exactly as an agent's own manifest model
+ * is: the catalog is remote, a runtime can be disconnected while somebody edits,
+ * and a name nothing offers is reported when the run happens.
+ */
+export const MODEL_DESCRIPTION =
+  'Which model the scheduled task runs on, written the way the chosen runtime names it ' +
+  '("sonnet", "gpt-5.5", "anthropic/claude-sonnet-4-5"). Leave it out to use the agent\'s own ' +
+  "model, then this DorkOS's default. A name the runtime does not offer is reported when the " +
+  'task runs, not now.';
+
+/** The description both tools give the `effort` argument — how hard the model thinks. */
+export const EFFORT_DESCRIPTION =
+  "How hard the model thinks during each run. Leave it out to use the agent's own setting, " +
+  "then this DorkOS's default. A runtime that has no such setting ignores it.";
 
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =
@@ -290,6 +321,12 @@ export function createCreateScheduleHandler(
     maxRuntime?: string;
     /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
     sticky?: boolean;
+    /** Which runtime the runs execute on; see {@link RUNTIME_DESCRIPTION}. */
+    runtime?: string;
+    /** Which model the runs execute on; see {@link MODEL_DESCRIPTION}. */
+    model?: string;
+    /** How hard the model thinks; see {@link EFFORT_DESCRIPTION}. */
+    effort?: EffortLevel;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -344,6 +381,9 @@ export function createCreateScheduleHandler(
           target: args.target,
           reason: args.reason,
           ...(args.sticky !== undefined && { sticky: args.sticky }),
+          ...(args.runtime !== undefined && { runtime: args.runtime }),
+          ...(args.model !== undefined && { model: args.model }),
+          ...(args.effort !== undefined && { effort: args.effort }),
         },
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
@@ -416,6 +456,12 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     maxRuntime?: string;
     /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
     sticky?: boolean;
+    /** Which runtime the runs execute on, or `null` to clear the override. */
+    runtime?: string | null;
+    /** Which model the runs execute on, or `null` to clear the override. */
+    model?: string | null;
+    /** How hard the model thinks, or `null` to clear the override. */
+    effort?: EffortLevel | null;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -460,6 +506,9 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
       ...(args.timezone !== undefined && { timezone: args.timezone }),
       ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
       ...(args.sticky !== undefined && { sticky: args.sticky }),
+      ...(args.runtime !== undefined && { runtime: args.runtime }),
+      ...(args.model !== undefined && { model: args.model }),
+      ...(args.effort !== undefined && { effort: args.effort }),
     };
 
     // A non-trusted caller cannot KEEP an approved task's `bypassPermissions` by
@@ -586,6 +635,9 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
         sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
+        runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),
+        model: z.string().min(1).optional().describe(MODEL_DESCRIPTION),
+        effort: EffortLevelSchema.optional().describe(EFFORT_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
@@ -612,6 +664,12 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         timezone: z.string().optional().describe('New timezone'),
         maxRuntime: DURATION_ARG.describe('New max runtime (e.g., "5m", "1h")'),
         sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
+        // Nullable on the UPDATE side alone: clearing an override is a state a
+        // person (or an agent that set one) can want, and `null` is how every
+        // other clearable field on this tool spells it.
+        runtime: z.string().min(1).nullable().optional().describe(RUNTIME_DESCRIPTION),
+        model: z.string().min(1).nullable().optional().describe(MODEL_DESCRIPTION),
+        effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),

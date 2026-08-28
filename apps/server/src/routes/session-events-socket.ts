@@ -24,7 +24,11 @@
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { resolveSettingsKey } from '../services/session/index.js';
+import {
+  callerNamedCwd,
+  resolveSessionCwdOrDefault,
+  resolveSettingsKey,
+} from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
@@ -32,10 +36,7 @@ import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upg
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { parseSessionId } from '../lib/route-utils.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
-import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
-
-const vaultRoot = DEFAULT_CWD;
 
 /** Matches `/api/sessions/:id/events`, capturing the session id. */
 const SESSION_EVENTS_PATH = /^\/api\/sessions\/([^/]+)\/events$/;
@@ -72,28 +73,44 @@ export const sessionEventsRoute: UpgradeRoute = {
     const sessionId = parseSessionId(decodeURIComponent(match[1]!));
     if (!sessionId) return refuse(400, 'Invalid session ID');
 
-    const cwd = url.searchParams.get('cwd') || vaultRoot;
+    const cwdParam = url.searchParams.get('cwd') || undefined;
+    /** Judge one directory against the boundary; a refusal is the decision. */
+    const denyIfOutsideBoundary = async (dir: string): Promise<UpgradeDecision | undefined> => {
+      try {
+        await validateBoundaryOrDorkHome(dir);
+        return undefined;
+      } catch (err) {
+        if (err instanceof BoundaryError) return refuse(403, 'Forbidden');
+        throw err;
+      }
+    };
+
+    // A directory the caller NAMED is judged before anything else is consulted.
     // Agent-home session cwds ({dorkHome}/agents/*) must stream under a narrow
     // boundary — this is the landing path for onboarding's DorkBot session.
-    try {
-      await validateBoundaryOrDorkHome(cwd);
-    } catch (err) {
-      if (err instanceof BoundaryError) return refuse(403, 'Forbidden');
-      throw err;
+    if (callerNamedCwd(cwdParam)) {
+      const denied = await denyIfOutsideBoundary(cwdParam);
+      if (denied) return denied;
     }
 
     // Resolve the runtime that owns this session, and build the SessionOpts
-    // context the way the SSE handler derives it: the boundary-validated cwd
-    // plus the effective permission mode. The key goes through the shared
-    // resolver — the raw request id is an ALIAS once the runtime binds a
-    // canonical one, and the store is keyed canonically (DOR-463).
+    // context the way the SSE handler derives it: the resolved cwd plus the
+    // effective permission mode. The key goes through the shared resolver — the
+    // raw request id is an ALIAS once the runtime binds a canonical one, and the
+    // store is keyed canonically (DOR-463).
     let runtime: AgentRuntime;
     let ctx: SessionOpts;
+    let cwd: string;
     try {
       runtime = await runtimeRegistry.resolveForSession(sessionId);
       const stored = await runtimeRegistry.getSessionSettings(
         resolveSettingsKey(sessionId, runtime)
       );
+      // No `?cwd=` is required for a session the runtime can already place
+      // (DOR-1444) — the same ladder the SSE handler climbs. This is the path
+      // the cockpit uses, so it is the one a second window opened without
+      // `&dir=` was refused on while a turn was streaming into the first.
+      cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
       ctx = { cwd, permissionMode: stored?.permissionMode ?? 'default' };
     } catch (err) {
       logger.warn('[ws session] runtime resolve failed', {
@@ -101,6 +118,13 @@ export const sessionEventsRoute: UpgradeRoute = {
         error: err instanceof Error ? err.message : String(err),
       });
       return refuse(500, 'Internal Server Error');
+    }
+
+    // The directory nobody named still has to be judged, and only the
+    // resolution above knows which one that is.
+    if (!callerNamedCwd(cwdParam)) {
+      const denied = await denyIfOutsideBoundary(cwd);
+      if (denied) return denied;
     }
 
     const sinceCursor = parseResumeCursor(
