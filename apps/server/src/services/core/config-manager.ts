@@ -2907,6 +2907,47 @@ export function seedRoomRepoDefaults(store: {
 }
 
 /**
+ * Seed `runtimes.dorkosTools` — whether Codex and OpenCode agents get the DorkOS
+ * tools Claude Code agents already have (spec `tool-only-room-replies` §D5;
+ * DOR-1613).
+ *
+ * **This body is the mechanism, not an anchor.** `runtimes.dorkosTools` is a
+ * nested leaf inside a section every stored config already carries, and conf's
+ * pre-migration `Object.assign({}, defaults, fileStore)` is SHALLOW: a stored
+ * `runtimes` object wins wholesale and never gains a member. Ajv's `useDefaults`
+ * does fill it — but only into the copy conf's `store` getter just built and is
+ * about to discard. So nothing else writes this leaf to the file, and deleting
+ * this body leaves `runtimes.dorkosTools` absent from disk on every upgraded
+ * install. See "Which of these bodies is a real no-op, and which only looks like
+ * one" above {@link CONFIG_MIGRATIONS}.
+ *
+ * Safety-neutral: it seeds `false`, which is the behaviour every existing
+ * install already has. Nothing an agent could not already reach becomes
+ * reachable, and the switch stays where the operator finds it (Experiments).
+ *
+ * Additive + idempotent: the leaf is written only when absent, so a re-run after
+ * corrupt recovery leaves an operator's own choice alone. Reads
+ * {@link USER_CONFIG_DEFAULTS} rather than a literal, so it cannot drift from
+ * the schema.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedDorkosToolsDefault(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const current = runtimes as Record<string, unknown>;
+  if (current.dorkosTools != null) return;
+  store.set('runtimes', {
+    ...current,
+    dorkosTools: USER_CONFIG_DEFAULTS.runtimes.dorkosTools,
+  });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3540,6 +3581,24 @@ export const CONFIG_MIGRATIONS = {
     // on them (spec `project-rooms` §3.12). A nested leaf, so this body is the
     // only thing that writes it; see `seedRoomRepoDefaults`.
     seedRoomRepoDefaults(store);
+  },
+  // 0.70.0 has merged (the room repo), so 0.71.0 is the next key. Frozen from
+  // merge, not from the release bump, for the reason `'0.60.0'` above states;
+  // anything further opens `'0.72.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `runtimes` that no other key names. `'0.65.0'` and `'0.67.0'` also touch
+  // that section, but the first rewrites `claudeCode.defaultAccount` and the
+  // second `claudeCode.persistentSession` — different members, so sequencing
+  // them any way round lands the same config.
+  '0.71.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.dorkosTools` — whether Codex and OpenCode agents get the DorkOS
+    // tools (spec `tool-only-room-replies` §D5). A nested leaf, so this body is
+    // the only thing that writes it; see `seedDorkosToolsDefault`.
+    seedDorkosToolsDefault(store);
   },
 } as const;
 

@@ -165,6 +165,10 @@ function fullyPopulatedConfig(): Record<string, unknown> {
     },
     runtimes: {
       default: 'claude-code',
+      // Deliberately NOT the shipped default, so the projection is shown to
+      // carry the stored value rather than a schema default that would look
+      // identical either way.
+      dorkosTools: true,
       // A global stop with one runtime overriding it, so the projection is
       // exercised on both halves of the override rather than on one.
       defaultTrustStop: 'act',
