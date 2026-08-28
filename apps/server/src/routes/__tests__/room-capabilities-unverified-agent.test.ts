@@ -87,8 +87,14 @@ vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
   },
 }));
 
+import { z } from 'zod';
+import { readManifest } from '@dorkos/shared/manifest';
 import {
   composeRegistry,
+  defineCapability,
+  initToolGroupGate,
+  manifestToolGroupGrants,
+  resetToolGroupGate,
   type CapabilityRegistry,
 } from '../../services/core/capabilities/index.js';
 import { roomsDomain } from '../../services/rooms/room-capabilities.js';
@@ -327,6 +333,257 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       const anaAuthorId = harness.authors.resolveAgent(ANA_PATH, 'Ana').id;
       const posted = harness.service.readHistory(roomId, ownerAuthorId, { limit: 5 });
       expect(posted.find((entry) => entry.body.text === 'on it')?.authorId).toBe(anaAuthorId);
+    });
+  });
+});
+
+/**
+ * The per-agent tool-group grant, over the SAME two real surfaces (DOR-1611,
+ * spec `rooms-management-tools` §D1 and Acceptance 1–4).
+ *
+ * It lives in this file for the reason the header above gives about the rooms
+ * refusal: the registry-level tests hand `identity` straight in, and the defect
+ * class that matters is in the WIRING. A grant proved only at `registry.invoke`
+ * would say nothing about whether the external `/mcp` server reaches that gate,
+ * or about what a refusal looks like once it has been through the MCP envelope.
+ *
+ * No rooms verb declares a `toolGroup` until PR2 ships the five management verbs,
+ * so the subject here is a probe capability that declares one and is composed
+ * beside the rooms domain, onto the same server, through the same adapters. That
+ * is deliberate rather than a shortcut: the boundary is a property of
+ * `registry.invoke` and its adapters, not of the rooms domain, and proving it
+ * against a fixture is what lets PR2 add the verbs without re-proving it.
+ *
+ * The grant is read by the REAL production lookup (`manifestToolGroupGrants`)
+ * through the module mock at the top of this file, so the manifest shape it reads
+ * is the manifest shape it will read in production.
+ */
+describe('a capability behind the rooms-management grant, on the real surfaces', () => {
+  let harness: RoomHarness;
+  let registry: CapabilityRegistry;
+  /** Set by the probe's handler. Must stay false for every refused row. */
+  let probeRan = false;
+
+  /** The probe's MCP tool name, as the external adapter registers it. */
+  const PROBE_TOOL = 'grant_probe';
+
+  /** A capability that declares the hard group and nothing else remarkable. */
+  const probeDomain = {
+    name: 'grantprobe',
+    capabilities: [
+      defineCapability({
+        id: 'grantprobe.run',
+        title: 'Grant probe',
+        description: 'A fixture capability standing in for the five rooms-management verbs.',
+        tier: 'act' as const,
+        input: z.object({}),
+        output: z.unknown(),
+        surfaces: { mcp: { toolName: PROBE_TOOL, servers: ['external' as const] } },
+        toolGroup: 'roomsManage' as const,
+        invoke: async () => {
+          probeRan = true;
+          return { ok: true };
+        },
+      }),
+    ],
+  };
+
+  /** The manifest `readManifest` answers with, for the given grant state. */
+  function manifestGranting(roomsManage?: boolean) {
+    return {
+      id: '01M054RMQAMZPXHWHRKPGY9Z87',
+      name: 'ana',
+      description: '',
+      runtime: 'claude-code',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      registeredAt: '2026-08-16T00:00:00.000Z',
+      registeredBy: 'test',
+      personaEnabled: true,
+      enabledToolGroups: roomsManage === undefined ? {} : { roomsManage },
+      mcpServers: [],
+    };
+  }
+
+  /** Point the mocked manifest reader at a grant state for the next call. */
+  function grantIs(roomsManage?: boolean): void {
+    vi.mocked(readManifest).mockResolvedValue(
+      manifestGranting(roomsManage) as unknown as Awaited<ReturnType<typeof readManifest>>
+    );
+  }
+
+  beforeEach(() => {
+    probeRan = false;
+    installState.ownerId = null;
+    installState.loginEnabled = false;
+    resetAgentIdentityService();
+    resetToolGroupGate();
+    harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
+    initAgentIdentityService(harness.db);
+    registry = composeRegistry([roomsDomain, probeDomain], {
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      roomDeps: { rooms: harness.service },
+    });
+    // The REAL production lookup, over the mocked manifest reader.
+    initToolGroupGate({ grants: manifestToolGroupGrants() });
+    vi.mocked(readManifest).mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    resetAgentIdentityService();
+    resetToolGroupGate();
+    vi.mocked(readManifest).mockResolvedValue(null);
+  });
+
+  /** A token that really does resolve to Ana. */
+  function anaToken(): Promise<string> {
+    return initAgentIdentityService(harness.db).mint({
+      agentPath: ANA_PATH,
+      displayName: 'Ana',
+    });
+  }
+
+  describe('the external /mcp server', () => {
+    /** The real MCP router over the real external server, as `index.ts` wires it. */
+    function app(): express.Express {
+      const server = express();
+      server.use(express.json());
+      server.use(resolveAgentIdentity);
+      server.use(
+        '/mcp',
+        createMcpRouter((caller) =>
+          createExternalMcpServer(
+            minimalMcpDeps(),
+            undefined,
+            registry,
+            caller.identity,
+            caller.userId,
+            caller.agentIdentityPresented
+          )
+        )
+      );
+      return server;
+    }
+
+    /** Post one JSON-RPC message, headers before body (see the note above). */
+    function rpc(body: Record<string, unknown>, token?: string): request.Test {
+      const req = request(app())
+        .post('/mcp')
+        .set('Content-Type', 'application/json')
+        .set('Accept', 'application/json, text/event-stream');
+      if (token) req.set('X-DorkOS-Agent', token);
+      return req.send(body);
+    }
+
+    /** The gate's structured payload, read out of the MCP envelope. */
+    function refusalPayload(res: request.Response): Record<string, unknown> {
+      const body = jsonRpc(res);
+      // NOT `isError`. A refusal is a step in a protocol, not a crash, and the
+      // model has to read the sentence rather than treat it as a tool failure.
+      expect(body.result?.isError).toBeFalsy();
+      return JSON.parse(body.result!.content![0]!.text!);
+    }
+
+    it('refuses an identified agent whose manifest does not carry the grant', async () => {
+      grantIs(undefined);
+      const token = await anaToken();
+
+      const payload = refusalPayload(await rpc(toolCall(PROBE_TOOL, {}), token));
+
+      expect(payload).toMatchObject({
+        status: 'denied',
+        capabilityId: 'grantprobe.run',
+        reason: 'tool_group_disabled',
+        // No approval can ever unlock this, so the model must not loop asking.
+        approvable: false,
+      });
+      expect(String(payload.message)).toContain('Manage rooms');
+      expect(probeRan).toBe(false);
+    });
+
+    it('runs the same call for the same agent once the grant is on', async () => {
+      // The discrimination pair. The ONLY difference between this row and the one
+      // above is the value in the manifest — without it, a refusal would also pass
+      // for a tool that was simply broken.
+      grantIs(true);
+      const token = await anaToken();
+
+      const res = await rpc(toolCall(PROBE_TOOL, {}), token);
+
+      expect(jsonRpc(res).result?.isError).toBeFalsy();
+      expect(probeRan).toBe(true);
+    });
+
+    it('refuses `roomsManage: false` as firmly as an absent key', async () => {
+      grantIs(false);
+      const token = await anaToken();
+
+      expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {}), token))).toMatchObject({
+        reason: 'tool_group_disabled',
+      });
+      expect(probeRan).toBe(false);
+    });
+
+    it('refuses a caller that presented no agent header at all', async () => {
+      // Dropping the header is the cheapest attack there is, and it must narrow
+      // rather than widen: an unidentified caller holds no grant.
+      grantIs(true);
+
+      expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {})))).toMatchObject({
+        reason: 'tool_group_disabled',
+      });
+      expect(probeRan).toBe(false);
+    });
+
+    it('refuses when the manifest read THROWS, rather than reading a broken disk as a yes', async () => {
+      vi.mocked(readManifest).mockRejectedValue(new Error('EIO'));
+      const token = await anaToken();
+
+      expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {}), token))).toMatchObject({
+        reason: 'tool_group_disabled',
+      });
+      expect(probeRan).toBe(false);
+    });
+  });
+
+  describe('POST /api/capabilities/:id/invoke', () => {
+    /** The invoke route behind the identity middleware, as `index.ts` mounts it. */
+    function app(): express.Express {
+      const server = express();
+      server.use(express.json());
+      server.use(resolveAgentIdentity);
+      server.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+      return server;
+    }
+
+    it('answers 403 — refused, and no retry will change that', async () => {
+      grantIs(undefined);
+      const token = await anaToken();
+
+      const res = await request(app())
+        .post('/api/capabilities/grantprobe.run/invoke')
+        .set('X-DorkOS-Agent', token)
+        .send({});
+
+      // 403, not 202: a 202 would tell the caller to come back after a person
+      // decided something, and there is nothing here for a person to decide.
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('tool_group_disabled');
+      expect(res.body.approvable).toBe(false);
+      expect(probeRan).toBe(false);
+    });
+
+    it('answers 200 for the same agent once the grant is on', async () => {
+      grantIs(true);
+      const token = await anaToken();
+
+      const res = await request(app())
+        .post('/api/capabilities/grantprobe.run/invoke')
+        .set('X-DorkOS-Agent', token)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(probeRan).toBe(true);
     });
   });
 });

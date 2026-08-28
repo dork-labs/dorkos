@@ -68,6 +68,23 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: async () => null,
   writeManifest: async () => {},
 }));
+// The rooms domain resolves its caller against two INSTALL facts that live
+// outside it — who owns this install, and whether login is on. Both read the real
+// singletons, which would make this suite depend on the machine it runs on; the
+// stubs pin the default posture (no owner, login off), which is the posture every
+// other rooms test drives. Same shape, same reason as
+// `routes/__tests__/room-capabilities-unverified-agent.test.ts`.
+vi.mock('../../auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../auth/index.js')>()),
+  readOwnerAccount: () => null,
+}));
+vi.mock('../../config-manager.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../config-manager.js')>()),
+  configManager: {
+    get: (section: string) => (section === 'auth' ? { enabled: false } : undefined),
+    set: () => {},
+  },
+}));
 
 const { composeDorkOsCapabilityRegistry, composeCapabilityRegistryForDocs } =
   await import('../../self-description/dorkos-registry.js');
@@ -194,12 +211,41 @@ const mcpDeps = {
   agents: new AgentRegistry(createTestDb()),
 };
 
+// The rooms domain, over the same harness every rooms test uses: a real
+// `RoomService` on a throwaway database, with one channel the conformance caller
+// is a member of. It is here because `dorkos-registry.ts` gates the domain on
+// `roomDeps`, so a fixture without it left the rooms verbs OUTSIDE the shared
+// drift gate entirely — their surfaces, tiers and carve-out state were checked by
+// nothing. That is a prerequisite for the tool-group check below, not an extra:
+// the check derives its subjects from the registry, and a domain the registry
+// does not carry has no subjects to derive.
+const { createRoomHarness, agentLookupFor, scriptedRunner } =
+  await import('../../../rooms/__tests__/room-test-harness.js');
+
+const roomHarness = createRoomHarness({
+  agents: agentLookupFor({
+    '/agents/conformance': {
+      name: 'conformance',
+      displayName: 'Conformance',
+      responseMode: 'always',
+    },
+  }),
+  runner: scriptedRunner(() => null),
+});
+
+/** A channel the conformance caller (the operator, login off) belongs to. */
+const CONFORMANCE_ROOM_ID = roomHarness.service.createRoom(
+  { kind: 'channel', title: 'Conformance', members: [], agentPaths: [] },
+  roomHarness.human
+).id;
+
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
   operatorDeps,
   marketplaceDeps,
   connectorDeps,
   mcpDeps,
+  roomDeps: { rooms: roomHarness.service },
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */
@@ -442,6 +488,18 @@ capabilityConformance(registry, {
       name: 'conformance-srv',
       clientId: 'conformance-client',
     },
+    // The rooms verbs, against the harness room above. No identity travels in a
+    // conformance invocation and login is off, so `callerAuthor` resolves the
+    // operator — who is a member of that room — and each verb reaches its handler
+    // and really runs. A verb that stopped being wired would raise an
+    // unstructured throw here rather than a `RoomError`, which is the failure
+    // this suite is asking about.
+    'rooms.post': { roomId: CONFORMANCE_ROOM_ID, text: 'a conformance message' },
+    'rooms.react': { roomId: CONFORMANCE_ROOM_ID, entryId: 'conformance-entry', emoji: '👍' },
+    'rooms.read_history': { roomId: CONFORMANCE_ROOM_ID, limit: 5 },
+    'rooms.search_history': { roomId: CONFORMANCE_ROOM_ID, query: 'conformance' },
+    'rooms.list_member_rooms': {},
+    'rooms.search_member_rooms': { query: 'conformance' },
   },
 });
 
