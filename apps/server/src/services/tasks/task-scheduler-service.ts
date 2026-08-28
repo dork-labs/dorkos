@@ -30,13 +30,13 @@ import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
-import { boundRuntimeOf, resolveRunSession } from './session/sticky-session.js';
+import { resolveRunSession } from './session/sticky-session.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import {
   resolveRunExecution,
   type RunExecution,
   type RunExecutionRuntimes,
-} from './resolve-run-execution.js';
+} from './execution/resolve-run-execution.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 
 /**
@@ -205,6 +205,23 @@ export function singleRuntimeSource(agentManager: SchedulerAgentManager): Schedu
     getDefaultType: () => runtimeRegistry.getDefaultType(),
     getAllCapabilities: () => runtimeRegistry.getAllCapabilities(),
   };
+}
+
+/**
+ * Where one scheduled run happens — resolved once, used by everything
+ * (DOR-1615 review).
+ *
+ * See {@link TaskSchedulerService.resolveRunPlacement} for why the working
+ * directory and the agent's manifest directory are two separate answers.
+ */
+interface RunPlacement {
+  /** The directory the turn runs in, after the shared cwd precedence chain. */
+  cwd: string;
+  /**
+   * The agent's own project directory — the one holding `.dork/agent.json` —
+   * or absent for a task with no agent. NEVER the resolved `cwd`.
+   */
+  agentPath?: string;
 }
 
 /** Configuration for the task scheduler service. */
@@ -749,15 +766,27 @@ export class TaskSchedulerService {
   }
 
   /**
-   * Resolve the effective working directory for a task.
+   * Resolve, ONCE per run, the two directories a scheduled run needs.
    *
-   * When the task is linked to an agent (via agentId), MeshCore turns the agent
-   * id into a directory and the shared precedence chain
-   * (`services/workspace/resolve-session-cwd.ts`) turns that into the directory
-   * the run actually gets — the agent's own folder for the default `home`
-   * binding, its private checkout for `managed`. Before that chain existed this
-   * method WAS the derivation, and it would have kept answering `projectPath`
-   * for an agent that had asked for a checkout of its own.
+   * They are genuinely two different questions and conflating them was a bug
+   * (DOR-1615 review):
+   *
+   * - **`cwd` — where the run WORKS.** MeshCore turns the agent id into a
+   *   directory and the shared precedence chain
+   *   (`services/workspace/resolve-session-cwd.ts`) turns that into the
+   *   directory the run actually gets — the agent's own folder for the default
+   *   `home` binding, its private checkout for `managed`, and `DEFAULT_CWD` for
+   *   `none` or a binding the boundary refuses.
+   * - **`agentPath` — where the agent's `.dork/agent.json` LIVES.** That is the
+   *   pre-chain `projectPath`, always. A `managed` agent's provisioned checkout
+   *   has no manifest in it, and a `none` binding lands on `DEFAULT_CWD`, which
+   *   may hold a DIFFERENT agent's manifest entirely — so reading the execution
+   *   ladder's agent tier out of `cwd` silently lost the agent's own
+   *   model/runtime, or picked up a stranger's.
+   *
+   * Resolved once and threaded to both consumers because the chain is not free:
+   * in `managed` mode it provisions (a git checkout and a port allocation), and
+   * its rungs degrade independently, so asking twice could also answer twice.
    *
    * Two failures, told apart on purpose:
    *
@@ -775,10 +804,10 @@ export class TaskSchedulerService {
    * the other only says WHERE.
    *
    * @param task - The task to resolve CWD for
-   * @returns The absolute path to use as CWD for this run
+   * @returns Where the run works, and where its agent's manifest lives
    * @throws When agentId is set but the agent is not found in the Mesh registry
    */
-  private async resolveEffectiveCwd(task: Task): Promise<string> {
+  private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
     if (task.agentId && this.meshCore) {
       const projectPath = this.meshCore.getProjectPath(task.agentId);
       if (!projectPath) {
@@ -787,13 +816,13 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return (await resolveSessionCwd({ agentPath: projectPath })).cwd;
+      return { cwd: (await resolveSessionCwd({ agentPath: projectPath })).cwd, agentPath: projectPath };
     }
     // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
     // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
     // agent-less task through the chain's default rung would quietly move the
     // ones where they differ.
-    return process.cwd();
+    return { cwd: process.cwd() };
   }
 
   /**
@@ -933,12 +962,18 @@ export class TaskSchedulerService {
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
       withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
-        // Resolved FIRST, before either dispatch path, because it decides which
-        // path is even eligible — and because a run that cannot resolve a
+        // Both resolved FIRST, before either dispatch path. The execution
+        // decides which path is even eligible, and a run that cannot resolve a
         // runtime must fail without a turn being started anywhere (DOR-1615).
+        // The placement comes first because the execution ladder's agent tier
+        // reads out of it, and because resolving it once is what stops the cwd
+        // chain running (and, in `managed` mode, PROVISIONING) two or three
+        // times per run with independently degradable answers.
+        let placement: RunPlacement;
         let execution: RunExecution;
         try {
-          execution = await this.resolveExecution(task);
+          placement = await this.resolveRunPlacement(task);
+          execution = await this.resolveExecution(task, placement);
         } catch (err) {
           this.failRun(run, err);
           recordDispatchEnd(dispatchId, 'failed');
@@ -968,13 +1003,14 @@ export class TaskSchedulerService {
                   store: this.store,
                   relay: this.relay!,
                   runs: this.runs,
-                  resolveCwd: (t) => this.resolveEffectiveCwd(t),
+                  // Already resolved, once, above — see `resolveRunPlacement`.
+                  resolveCwd: () => Promise.resolve(placement.cwd),
                 },
                 task,
                 run,
                 execution
               )
-            : await this.executeRunDirect(task, run, execution);
+            : await this.executeRunDirect(task, run, execution, placement.cwd);
           recordDispatchEnd(dispatchId, 'answered');
           return result;
         } catch (err) {
@@ -989,32 +1025,26 @@ export class TaskSchedulerService {
    * Which runtime, model and effort this task's run executes on.
    *
    * A thin wrapper so the scheduler's two dispatch paths ask the same question
-   * of the same resolver, and so the agent-directory argument — which is the
-   * agent tier of the whole ladder — is derived in one place.
+   * of the same resolver.
    *
-   * The agent path is passed ONLY for a task that has an agent. A task with none
-   * runs in the server's own working directory, and reading a `.dork/agent.json`
-   * that happens to sit there would hand a global schedule some unrelated
-   * agent's model.
+   * The agent tier reads {@link RunPlacement.agentPath} — the agent's own
+   * project directory — and NOT the run's working directory. Those are the same
+   * folder only for the default `home` binding; a `managed` agent works in a
+   * provisioned checkout with no manifest in it, and a `none` binding works in
+   * `DEFAULT_CWD`, which may hold an unrelated agent's manifest. Passing the cwd
+   * here therefore lost the agent's own runtime and model for every binding but
+   * one, and could read a stranger's (DOR-1615 review).
+   *
+   * Absent for a task with no agent, and then the agent tiers simply drop out.
    *
    * @param task - The task being dispatched.
+   * @param placement - Where this run happens, already resolved.
    * @throws {TaskRuntimeUnavailableError} When the resolved runtime is off.
    */
-  private async resolveExecution(task: Task): Promise<RunExecution> {
-    let agentPath: string | undefined;
-    if (task.agentId) {
-      // A missing agent is `resolveEffectiveCwd`'s error to raise, with its own
-      // "re-link the task" message, and it raises it a moment later on both
-      // paths. Here it is simply no agent tier.
-      try {
-        agentPath = await this.resolveEffectiveCwd(task);
-      } catch {
-        agentPath = undefined;
-      }
-    }
+  private async resolveExecution(task: Task, placement: RunPlacement): Promise<RunExecution> {
     return resolveRunExecution(task, {
       runtimes: this.runtimes,
-      ...(agentPath !== undefined ? { agentPath } : {}),
+      ...(placement.agentPath !== undefined ? { agentPath: placement.agentPath } : {}),
     });
   }
 
@@ -1046,33 +1076,20 @@ export class TaskSchedulerService {
    * @param task - The task being run.
    * @param run - Its run row, already opened.
    * @param execution - What this run resolved to run on (DOR-1615).
+   * @param effectiveCwd - Where it runs, resolved once by
+   *   {@link TaskSchedulerService.resolveRunPlacement}. A broken agent link has
+   *   already failed the run there, with the same message it used to raise here.
    */
   private async executeRunDirect(
     task: Task,
     run: TaskRun,
-    execution: RunExecution
+    execution: RunExecution,
+    effectiveCwd: string
   ): Promise<void> {
     // The manager for the runtime this run RESOLVED to, not one bound at boot.
     // Safe to `get` unconditionally: `resolveRunExecution` has already refused an
     // unregistered type, so a throw here would be a bug rather than a state.
     const agentManager = this.runtimes.get(execution.runtimeType);
-
-    let effectiveCwd: string | undefined;
-    try {
-      effectiveCwd = await this.resolveEffectiveCwd(task);
-    } catch (err) {
-      this.store.updateRun(run.id, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        durationMs: 0,
-        error: (err as Error).message,
-      });
-      logger.error(`run ${run.id} failed: ${(err as Error).message}`);
-      // The activity-feed event for this failure rides the TaskStore run-terminal
-      // hook (DOR-1573), fired by the `updateRun('failed')` above — the one funnel
-      // both dispatch paths share. See `createRunTerminalListener`.
-      return;
-    }
 
     const controller = new AbortController();
     this.runs.addDirect(run.id, controller);
@@ -1093,12 +1110,11 @@ export class TaskSchedulerService {
     // own id, exactly as before; a sticky run resumes the real SDK session of the
     // task's previous run, so context carries across runs (DOR-1571). Declared out
     // here, not inside the `try`, because the failure finalizer needs it too.
-    // A sticky task whose resolved runtime differs from the one its previous
-    // session was bound to starts FRESH — sessions are runtime-bound and never
-    // revised (ADR-0255), so there is nothing there to resume (DOR-1615).
+    // A sticky task whose resolved runtime differs from the one its previous RUN
+    // used starts FRESH — sessions are runtime-bound and never revised
+    // (ADR-0255), so there is nothing there to resume (DOR-1615).
     const { sessionId, hasStarted } = resolveRunSession(this.store, task, run, {
       runtimeType: execution.runtimeType,
-      boundRuntimeOf,
     });
 
     // What to write as this run's `sessionId`. For a sticky run it is the RUNTIME's

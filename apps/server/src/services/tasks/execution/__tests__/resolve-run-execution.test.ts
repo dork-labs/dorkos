@@ -22,9 +22,9 @@ import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Task } from '@dorkos/shared/types';
 import { createMockSchedule } from '@dorkos/test-utils/mock-factories';
-import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
-import { CODEX_CAPABILITIES } from '../../runtimes/codex/runtime-constants.js';
-import { OPENCODE_CAPABILITIES } from '../../runtimes/opencode/runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
+import { OPENCODE_CAPABILITIES } from '../../../runtimes/opencode/runtime-constants.js';
 import {
   resolveRunExecution,
   TaskRuntimeUnavailableError,
@@ -36,7 +36,7 @@ import {
 // be given a value on purpose — an unmocked test would silently never exercise
 // it and would still pass.
 const storedRuntimes = vi.hoisted(() => ({ current: undefined as UserConfig['runtimes'] | undefined }));
-vi.mock('../../core/config-manager.js', () => ({
+vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'runtimes' ? storedRuntimes.current : undefined),
   },
@@ -265,6 +265,59 @@ describe('resolveRunExecution — which model and effort', () => {
       runtimes: registry(['claude-code']),
     });
     expect(resolved.settings.model).toBe('haiku');
+  });
+
+  it("honours the skill file's TOP-LEVEL effort on claude-code (tier 2)", async () => {
+    const filePath = await skillFile('effort: high\n');
+    const resolved = await resolveRunExecution(task({ filePath }), {
+      runtimes: registry(['claude-code']),
+    });
+    expect(resolved.settings.effort).toBe('high');
+  });
+
+  it("the skill file's model and effort BEAT the agent manifest's (tier 2 over 3)", async () => {
+    // The discriminating pair. Without it, "tier 2 works" is satisfied by a
+    // ladder that reads the file only when the agent says nothing — which is a
+    // different rule, and the wrong one.
+    const agentPath = await agentDir({ runtime: 'claude-code', model: 'haiku', effort: 'low' });
+    const filePath = await skillFile('model: sonnet\neffort: high\n');
+
+    const resolved = await resolveRunExecution(task({ filePath }), {
+      runtimes: registry(['claude-code']),
+      agentPath,
+    });
+    expect(resolved.settings).toEqual({ model: 'sonnet', effort: 'high' });
+  });
+
+  it('DROPS a top-level effort outside the Claude Code dialect, falling through to the agent', async () => {
+    // `SkillFrontmatterSchema` types `effort:` as low|medium|high|max — narrower
+    // than the shared ladder, which also carries none, minimal and xhigh. That is
+    // deliberate: those keys mirror another program's file format verbatim and
+    // DorkOS does not get to invent entries in it. So `xhigh` at the TOP level
+    // contributes nothing and the next tier answers, while the same word in the
+    // `schedule:` block — the field that takes the full ladder — is honoured.
+    const agentPath = await agentDir({ runtime: 'claude-code', effort: 'low' });
+    const filePath = await skillFile('effort: xhigh\n');
+
+    const fromFile = await resolveRunExecution(task({ filePath }), {
+      runtimes: registry(['claude-code']),
+      agentPath,
+    });
+    expect(fromFile.settings.effort).toBe('low');
+
+    const fromBlock = await resolveRunExecution(task({ filePath, effort: 'xhigh' }), {
+      runtimes: registry(['claude-code']),
+      agentPath,
+    });
+    expect(fromBlock.settings.effort).toBe('xhigh');
+  });
+
+  it('IGNORES the top-level effort when the run resolves onto another runtime', async () => {
+    const filePath = await skillFile('effort: high\n');
+    const resolved = await resolveRunExecution(task({ runtime: 'codex', filePath }), {
+      runtimes: registry(['claude-code', 'codex']),
+    });
+    expect(resolved.settings.effort).toBeUndefined();
   });
 
   it('IGNORES that top-level model when the run resolves onto another runtime', async () => {

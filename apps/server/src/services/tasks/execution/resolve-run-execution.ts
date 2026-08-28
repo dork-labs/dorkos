@@ -34,6 +34,17 @@
  *    on a scheduled fire keeps "this skill runs on haiku" true whichever way it
  *    was started. Handing a `claude-sonnet-4-5` to Codex would not be honoring
  *    the author's intent, it would be a different provider's id.
+ *
+ *    **That `effort:` reads a NARROWER ladder than the rest of DorkOS.**
+ *    `SkillFrontmatterSchema` types it as `low | medium | high | max`, mirroring
+ *    the Claude Code dialect verbatim, while the shared `EFFORT_LEVELS` also
+ *    carries `none`, `minimal` and `xhigh`. So a skill whose top-level frontmatter
+ *    says `effort: xhigh` contributes NOTHING at this tier — the skills schema
+ *    `.catch`es it to undefined and the ladder falls through to the agent. That
+ *    is deliberate and is not fixed by widening the skills enum: it mirrors
+ *    another program's file format, and DorkOS does not get to invent keys in it.
+ *    The `schedule:` block's own `effort:` is the field that takes the full
+ *    ladder, and it outranks this tier anyway.
  * 3. The agent's manifest, then the server's per-runtime default, then nothing —
  *    which is {@link resolveUnattendedSessionDefaults}, reused rather than
  *    re-derived. It owns the two rules that are easy to get wrong: a model only
@@ -44,7 +55,7 @@
  * effort and resolves onto OpenCode gets none — "OpenCode has no such setting"
  * is only true if nothing here quietly supplies one anyway.
  *
- * @module services/tasks/resolve-run-execution
+ * @module services/tasks/execution/resolve-run-execution
  */
 import fs from 'node:fs/promises';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
@@ -54,8 +65,8 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   readAgentExecutionDefaults,
   resolveUnattendedSessionDefaults,
-} from '../session/resolve-session-defaults.js';
-import { createTaggedLogger } from '../../lib/logger.js';
+} from '../../session/resolve-session-defaults.js';
+import { createTaggedLogger } from '../../../lib/logger.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -147,6 +158,10 @@ export class TaskRuntimeUnavailableError extends Error {
  * runtime and a machine with nothing registered are different problems with
  * different fixes.
  *
+ * The tier is reported accurately, `agent` included — it used to report the
+ * agent tier as `default`, which was simply wrong about where the answer came
+ * from (DOR-1615 review).
+ *
  * @param task - The task about to fire.
  * @param runtimes - The registry.
  * @param agentRuntime - The runtime the task's agent manifest names, if any.
@@ -155,14 +170,14 @@ function resolveRuntimeType(
   task: Task,
   runtimes: RunExecutionRuntimes,
   agentRuntime: string | undefined
-): { type: string; source: 'task' | 'default' } {
-  if (task.runtime) return { type: task.runtime, source: 'task' };
+): { type: string; tier: 'task' | 'agent' | 'default' } {
+  if (task.runtime) return { type: task.runtime, tier: 'task' };
   // The agent's runtime only when this build can actually run it. An agent
   // pinned to a runtime with no adapter here — the packaged desktop app bundles
   // only the claude-code SDK — falls through to the default rather than failing
   // a run nobody asked it to own. The same tolerance `resolveForAgent` applies.
-  if (agentRuntime && runtimes.has(agentRuntime)) return { type: agentRuntime, source: 'default' };
-  return { type: runtimes.getDefaultType(), source: 'default' };
+  if (agentRuntime && runtimes.has(agentRuntime)) return { type: agentRuntime, tier: 'agent' };
+  return { type: runtimes.getDefaultType(), tier: 'default' };
 }
 
 /**
@@ -219,10 +234,16 @@ export async function resolveRunExecution(
   // opinion" here as it does there.
   const agent = await readAgentExecutionDefaults(agentPath);
 
-  const { type, source } = resolveRuntimeType(task, runtimes, agent.runtime);
+  const { type, tier } = resolveRuntimeType(task, runtimes, agent.runtime);
   // REGISTRATION is the whole availability question — see {@link
   // RunExecution.capabilities} for why a missing profile is not a second one.
-  if (!runtimes.has(type)) throw new TaskRuntimeUnavailableError(type, source);
+  //
+  // `tier` is never `'agent'` here: that tier is only taken for a type `has()`
+  // has already answered true for, which is why the error's `source` needs only
+  // the two values a person can actually be sent to go and change.
+  if (!runtimes.has(type)) {
+    throw new TaskRuntimeUnavailableError(type, tier === 'task' ? 'task' : 'default');
+  }
 
   const capabilities = runtimes.getAllCapabilities()[type];
   const declared = capabilities?.settings;
@@ -266,7 +287,7 @@ export async function resolveRunExecution(
   if (declared?.supportsEffort === false) delete settings.effort;
 
   logger.debug(
-    `run of "${task.name}" resolved to runtime=${type} ` +
+    `run of "${task.name}" resolved to runtime=${type} (from ${tier}) ` +
       `model=${settings.model ?? '(runtime default)'} effort=${settings.effort ?? '(unset)'}`
   );
 

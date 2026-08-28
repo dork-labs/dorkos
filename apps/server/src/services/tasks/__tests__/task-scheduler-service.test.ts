@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { realpath } from 'node:fs/promises';
+import { mkdir, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { initBoundary } from '../../../lib/boundary.js';
 import {
@@ -17,6 +17,8 @@ import type { Db } from '@dorkos/db';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
+import { writeManifest } from '@dorkos/shared/manifest';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 
@@ -2163,6 +2165,111 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     });
     return store.getRun(run!.id)!;
   }
+
+  /**
+   * Write an agent whose manifest names a runtime and a model, under a chosen
+   * workspace binding.
+   *
+   * @param workspace - The binding the manifest declares.
+   */
+  async function agentDir(workspace: AgentManifest['workspace']): Promise<string> {
+    const dir = path.join(
+      await realpath(tmpdir()),
+      `sched-agent-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(dir, { recursive: true });
+    await writeManifest(dir, {
+      workspace,
+      id: 'scheduler-fixture',
+      name: 'scheduler-fixture',
+      description: '',
+      runtime: 'codex',
+      model: 'gpt-5.5',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      registeredAt: new Date().toISOString(),
+      registeredBy: 'test',
+      personaEnabled: true,
+      enabledToolGroups: {},
+      mcpServers: [],
+    } as AgentManifest);
+    return dir;
+  }
+
+  /** A mesh that resolves every agent id to one directory. */
+  function meshAt(dir: string): MeshCore {
+    return { getProjectPath: () => dir } as unknown as MeshCore;
+  }
+
+  /**
+   * The agent tier reads the agent's PROJECT directory, not the run's working
+   * directory — for every workspace binding, not just the one where they happen
+   * to be the same folder (DOR-1615 review).
+   *
+   * `home` is the coincidence: the cwd chain answers with the agent's own
+   * folder, so reading either one found the manifest. `none` is the proof: the
+   * chain falls through to `DEFAULT_CWD`, which holds no manifest for this agent
+   * and may hold a different agent's entirely — so a ladder reading the cwd
+   * silently lost the agent's runtime and model, and this pair is what tells the
+   * two readings apart.
+   */
+  it.each([
+    ['home', { mode: 'home' } as const],
+    ['none', { mode: 'none' } as const],
+  ])("reads the agent's manifest under workspace mode %s", async (_label, workspace) => {
+    const dir = await agentDir(workspace);
+    const task = store.createTask(taskInput({ name: `Agent ${_label}`, agentId: 'a-1' }));
+    const service = new TaskSchedulerService({
+      store,
+      runtimes: runtimesWith(['claude-code', 'codex']),
+      config: { ...DEFAULT_CONFIG },
+      meshCore: meshAt(dir),
+    });
+
+    const row = await runToCompletion(service, task.id);
+
+    expect(row.resolvedRuntime).toBe('codex');
+    expect(row.resolvedModel).toBe('gpt-5.5');
+    await service.stop();
+  });
+
+  it('a sticky task moved to another runtime mints a FRESH session, across the real store', async () => {
+    // No injected lookup: the first run's `resolved_runtime` is written by the
+    // scheduler and read back by `resolveRunSession` through the same store the
+    // production code uses. The rule's first version passed six tests against a
+    // stub while doing nothing at all in production, because the table it read
+    // is only ever written by interactive sessions (DOR-1615 review).
+    const task = store.createTask(
+      taskInput({ name: 'Sticky move', sticky: true, runtime: 'claude-code' })
+    );
+    const service = scheduler(['claude-code', 'codex']);
+
+    const first = await runToCompletion(service, task.id);
+    expect(first.resolvedRuntime).toBe('claude-code');
+    expect(store.latestStickyRun(task.id)).toEqual({
+      sessionId: first.id,
+      runtime: 'claude-code',
+    });
+
+    // A second fire on the SAME runtime resumes that session — the control that
+    // makes the next assertion mean something.
+    const second = await runToCompletion(service, task.id);
+    expect(
+      vi.mocked(managers['claude-code']!.ensureSession).mock.calls.at(-1)![1]
+    ).toMatchObject({ hasStarted: true });
+    expect(second.resolvedRuntime).toBe('claude-code');
+
+    // Now move it. The prior session belongs to Claude Code and there is nothing
+    // for Codex to resume, so the run starts fresh under its own id.
+    store.updateTask(task.id, { runtime: 'codex' });
+    const third = await runToCompletion(service, task.id);
+
+    const [sessionId, opts] = vi.mocked(managers['codex']!.ensureSession).mock.calls.at(-1)!;
+    expect(opts).toMatchObject({ hasStarted: false });
+    expect(sessionId).toBe(third.id);
+    expect(third.resolvedRuntime).toBe('codex');
+    await service.stop();
+  });
 
   it('runs the task on the runtime IT names, not the registry default', async () => {
     const task = store.createTask(taskInput({ name: 'On codex', runtime: 'codex' }));
