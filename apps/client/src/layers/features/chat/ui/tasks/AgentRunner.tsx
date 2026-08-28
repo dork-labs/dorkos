@@ -111,7 +111,6 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
   // appeared (DOR-1119).
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* eslint-disable react-hooks/set-state-in-effect -- phase transition on agent completion */
   useEffect(() => {
     const prevStatus = prevStatusRef.current;
     prevStatusRef.current = agent.status;
@@ -129,7 +128,6 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
       setPhase('running');
     }
   }, [agent.status]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Unmount is the only place the settle timer may be cancelled — see above.
   useEffect(

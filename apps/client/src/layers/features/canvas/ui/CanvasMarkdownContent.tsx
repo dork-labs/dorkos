@@ -139,7 +139,7 @@ export function CanvasMarkdownContent({
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: drop edit mode when the active canvas session changes (mirrors use-debounced-input's reset-on-key-change)
+
       setIsEditing(false);
       setDocumentEditing(documentId, false);
     }
