@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'feat(client): one file explorer for sessions and rooms, with provenance and pinning (DOR-1595)'
+  - 'feat(client): one file explorer for sessions and rooms (DOR-1595)'
+  - 'fix(client): a room with no files is an answer, not a failure (DOR-1595)'
 ---
 
 ### Added
