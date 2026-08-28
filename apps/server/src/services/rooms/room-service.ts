@@ -141,7 +141,11 @@ import { dmTitleNames, RoomRoster, type AddMemberInput } from './room-roster.js'
 import { parseEntryBody, type NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
-import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
+import {
+  RoomTriggerDispatcher,
+  type RoomDispatchSummary,
+  type RoomTurnRunner,
+} from './room-trigger.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import type { RoomTurnBudget } from './limits/turn-budget.js';
 
@@ -603,6 +607,33 @@ export interface PostTrigger {
 export type OpenedRoom = RoomWithRoster & {
   /** `false` when an existing direct message was returned instead of a new room. */
   created: boolean;
+};
+
+/**
+ * A committed entry, plus what writing it asked of the room.
+ *
+ * The same intersection {@link OpenedRoom} is, for the same reason: it is
+ * structurally a `RoomEntry` everywhere one is expected, so none of the ten
+ * callers that only want the entry has to reach through a field for it, and the
+ * route strips the extra before serializing.
+ *
+ * `dispatch` is the room's answer to "who did this reach", assembled
+ * synchronously by {@link RoomTriggerDispatcher.dispatch} while the post was
+ * written. A message that addresses nobody carries an EMPTY summary rather than
+ * `null`, because "nothing was asked of anybody" is an answer. `null` is the
+ * other thing entirely: dispatching threw, the entry is committed and published
+ * regardless, and nothing here knows who it reached. The route drops the fields
+ * in that case rather than reporting an empty room, which is what
+ * `PostToRoomResponse` means by "absent is not nobody".
+ *
+ * Only the paths that go through `writePost` carry one, which is every path a
+ * person or an agent writes through. {@link RoomService.postNotice} is the room
+ * speaking about itself: it dispatches from nothing and answers with a plain
+ * `RoomEntry`, because there is no writer waiting to be told who it reached.
+ */
+export type PostedEntry = RoomEntry & {
+  /** Who this write triggered and who it could not, or `null` when dispatch threw. */
+  dispatch: RoomDispatchSummary | null;
 };
 
 /**
@@ -2433,7 +2464,8 @@ export class RoomService {
    *   dispatcher on every agent-authored reply. Distinct from `replyTo`, which
    *   picks a THREAD: a channel post has no thread and still answers something,
    *   and a room posts in arrival order whatever a message responds to.
-   * @returns The committed entry.
+   * @returns The committed entry, carrying what writing it asked of the room —
+   *   see {@link PostedEntry}.
    */
   post(
     roomId: string,
@@ -2447,7 +2479,7 @@ export class RoomService {
       moment?: RoomMoment;
       answersEntryId?: string;
     }
-  ): RoomEntry {
+  ): PostedEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still
@@ -2523,12 +2555,13 @@ export class RoomService {
    *   capability — never read off the tool's arguments.
    * @param input.text - What to say.
    * @param input.replyTo - The entry this answers, to land it in that thread.
-   * @returns The committed entry.
+   * @returns The committed entry, carrying what writing it asked of the room —
+   *   see {@link PostedEntry}.
    */
   postFromTool(
     roomId: string,
     input: { authorId: string; text: string; replyTo?: string }
-  ): RoomEntry {
+  ): PostedEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
     // `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a text column narrowed by
     // an unchecked cast, so an unrecognized kind takes the narrower branch
@@ -3428,7 +3461,7 @@ export class RoomService {
       bind?: (entryId: string, tx: DbTransaction) => void;
       attachments?: RoomAttachment[];
     }
-  ): RoomEntry {
+  ): PostedEntry {
     const roomId = room.id;
 
     // Provenance follows the TURN, not the call — and where there is no turn,
@@ -3543,8 +3576,14 @@ export class RoomService {
     // that is sitting in the log. The poster saw their own successful message
     // fail. Losing the replies to it is bad and visible in the room; losing the
     // message is worse and looks like a broken product.
+    //
+    // What it hands back is the same synchronous decision it has always made,
+    // now said out loud: who the message reached, and who it reached and will not
+    // be answered by. A throw leaves that unanswerable, so the caller is told
+    // nothing rather than told "nobody" — the post stands either way.
+    let dispatch: RoomDispatchSummary | null = null;
     try {
-      this.triggers.dispatch(room, entry, addressed.unreachable);
+      dispatch = this.triggers.dispatch(room, entry, addressed.unreachable);
     } catch (err) {
       logger.error('[rooms] a committed post could not be dispatched from', {
         roomId,
@@ -3553,7 +3592,7 @@ export class RoomService {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    return entry;
+    return { ...entry, dispatch };
   }
 
   /**
@@ -4623,6 +4662,14 @@ export class RoomService {
       // read, the create response, and the stream's hydration snapshot — and the
       // reader it belongs to is the id this call was already scoped by.
       reactionFrequents: this.reactions.frequents(viewerAuthorId),
+      // Here for the same reason `reactionFrequents` is, and it buys more: this
+      // one method feeds the room read, the create response AND the stream's
+      // hydration snapshot, so every way of arriving at a room arrives with its
+      // working rows already drawn. Presence was ephemeral-only before, which
+      // meant a room opened mid-turn showed nothing until the dispatcher's next
+      // republish — up to ten seconds of a room that looked idle while an agent
+      // was working in it. A live read of the claim map, so it costs no query.
+      workingAgents: this.triggers.workingIn(room.id),
       ...(bridge ? { deliverNotices: bridge.deliverNotices } : {}),
       bridge: bridgeInfo(bridge),
     };

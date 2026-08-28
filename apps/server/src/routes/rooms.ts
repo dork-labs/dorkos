@@ -40,6 +40,7 @@ import {
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
+  type PostToRoomResponse,
   type RoomAttachment,
 } from '@dorkos/shared/room-schemas';
 import { RoomFileContentQuerySchema, RoomFilesQuerySchema } from '@dorkos/shared/room-files';
@@ -51,6 +52,7 @@ import {
   getRoomService,
   RoomError,
   toAuthorRef,
+  type PostedEntry,
 } from '../services/rooms/index.js';
 import { ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
@@ -319,8 +321,32 @@ router.get('/:id/export', (req, res) => {
 });
 
 /**
+ * The 202 body for a write: the entry's identity, plus who the write reached.
+ *
+ * Shared by both posting routes, because a thread reply asks a room exactly what
+ * a top-level message asks it. `triggered` and `skipped` are omitted — not
+ * emptied — when dispatch threw, which is the one case where nothing knows who
+ * the message reached; `PostToRoomResponse` reads an absent field as "this source
+ * cannot say" precisely so that case is not reported as "nobody".
+ *
+ * @param entry - The committed entry, as `RoomService.post` handed it back.
+ * @returns The response body, exactly `PostToRoomResponseSchema`.
+ */
+function accepted(entry: PostedEntry): PostToRoomResponse {
+  return {
+    accepted: true,
+    entryId: entry.id,
+    seq: entry.seq,
+    ...(entry.dispatch
+      ? { triggered: entry.dispatch.triggered, skipped: entry.dispatch.skipped }
+      : {}),
+  };
+}
+
+/**
  * POST /:id/entries — post. Trigger-only: 202 with the entry's identity, while
- * the entry itself rides the SSE stream to every reader including this one.
+ * the entry itself rides the SSE stream to every reader including this one. The
+ * body also says who it reached — see {@link accepted}.
  */
 router.post('/:id/entries', (req, res) => {
   const body = parseBody(PostToRoomRequestSchema, req.body, res);
@@ -333,7 +359,7 @@ router.post('/:id/entries', (req, res) => {
       sessionId: body.sessionId,
       attachmentIds: body.attachmentIds,
     });
-    res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
+    res.status(202).json(accepted(entry));
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/entries');
   }
@@ -741,7 +767,7 @@ router.post('/:id/threads', (req, res) => {
       replyTo: body.rootEntryId,
       attachmentIds: body.attachmentIds,
     });
-    res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
+    res.status(202).json(accepted(entry));
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/threads');
   }

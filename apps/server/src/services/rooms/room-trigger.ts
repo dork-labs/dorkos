@@ -127,12 +127,15 @@
 import { randomUUID } from 'node:crypto';
 import type {
   AuthorKind,
+  AuthorRef,
   Room,
   RoomAttachment,
   RoomEntry,
   RoomHeldBehind,
   RoomPresencePayload,
   RoomPresenceState,
+  RoomWorkingClaim,
+  SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
@@ -171,7 +174,7 @@ import {
   type TriggerTarget,
 } from './room-claims.js';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
-import type { AuthorRegistry } from './author-registry.js';
+import { toAuthorRef, type AuthorRegistry } from './author-registry.js';
 import { isLiveAuthor } from './handles/author-handles.js';
 import {
   evaluateCascade,
@@ -256,12 +259,104 @@ interface TriggerCandidate {
   authorId: string;
   agentPath: string;
   displayName: string;
+  /**
+   * This agent as a room member sees it — the projection {@link dispatch}
+   * reports back to the poster.
+   *
+   * Built from the record `selectCandidates` already holds rather than looked up
+   * again: a candidate has survived the liveness check by the time one is made,
+   * so its row's own handle is the one that reaches it and `toAuthorRef` needs no
+   * override (`room-roster.ts` passes `null` precisely for the agents that do not
+   * get this far).
+   */
+  author: AuthorRef;
   /** The depth the guard allowed this trigger at. */
   depth: number;
   /** Its open engaged window when this message landed, or `null`. */
   engaged: EngagementWindow | null;
   /** Why the matrix picked it — the response gate's only scoping input. */
   reason: TriggerReason;
+}
+
+/**
+ * What one post asked of a room, as far as the write itself can say.
+ *
+ * **Everything here is decided synchronously**, inside `RoomService.post` and so
+ * inside the HTTP request that wrote the entry — which is exactly why it can ride
+ * the 202. Selection, the cascade guard and the liveness check all answer facts
+ * about THIS MESSAGE (see {@link RoomTriggerDispatcher.selectCandidates}); the
+ * turn budget does not, and is deliberately absent — it is charged when the
+ * collect window closes, long after this has been sent, and a refusal it has not
+ * made yet is not one to report.
+ *
+ * **`triggered` is what the room ASKED FOR, not what it guarantees**, and the
+ * distinction is not academic. A collected batch is judged again when its window
+ * closes, in two separate places, so an agent named here can still end up not
+ * answering:
+ *
+ * - {@link RoomTriggerDispatcher.chooseTrigger} re-asks the cascade guard per
+ *   message — asking it once at accept-time was a real defect — and
+ *   `claimCollected` then asks the turn budget and the roster. A ceiling reached
+ *   by a reply that landed while the batch waited, an exhausted budget, a member
+ *   that left: each of those reaches the reader as the room's own durable notice.
+ * - {@link RoomTriggerDispatcher.gateBatch} can route an AMBIENT burst to silence
+ *   (DOR-1203). That one writes no notice on purpose — a line every time an agent
+ *   tactfully says nothing is the over-participation the gate exists to prevent —
+ *   and it cannot touch an addressed message: one `mention` or `dm` anywhere in a
+ *   burst passes the whole burst through.
+ *
+ * So this field is the accept-time answer; the room's log is the settled one for
+ * everything that announces itself, and deliberate silence is the one outcome
+ * neither says out loud.
+ *
+ * `skipped` is narrower and firmer: nearly every entry in it also carries a
+ * notice written on the same pass, and the one exception is the refusal the room
+ * deliberately stays quiet about — see
+ * {@link RoomTriggerDispatcher.announceCascade}.
+ */
+export interface RoomDispatchSummary {
+  /** The agents a turn is now owed from, in the order the roster listed them. */
+  triggered: AuthorRef[];
+  /** The agents this message reached that will not answer it, and why. */
+  skipped: SkippedTrigger[];
+}
+
+/**
+ * The answer for a post that asked nothing of anybody — a notice, which never
+ * addresses a member.
+ *
+ * A fresh object each call rather than one shared constant: the arrays reach a
+ * response body, and a caller that appended to a shared empty one would be
+ * making a claim about every other message this process ever wrote.
+ *
+ * @returns An empty summary — triggered nobody, skipped nobody.
+ */
+function nothingDispatched(): RoomDispatchSummary {
+  return { triggered: [], skipped: [] };
+}
+
+/**
+ * Append the agents that could not be reached at all to the guard's own
+ * refusals, one row per agent.
+ *
+ * **The two sets are disjoint by construction, not by filtering**, and that is
+ * worth stating because it is easy to add a branch that breaks it. An author can
+ * genuinely arrive from both directions — named by the message AND selected as a
+ * target — and {@link RoomTriggerDispatcher.selectCandidates} resolves it at the
+ * only place it can: a member already in `gone` is passed over by the guard's
+ * refusal branch entirely, so it is reported once, as `gone`, and the room writes
+ * it one notice. A de-duplication pass here would be a second answer to a
+ * question already settled, and one nothing could ever exercise.
+ *
+ * @param refused - What the cascade guard stopped, in the order it stopped it.
+ * @param gone - Every author whose agent its directory no longer holds.
+ * @returns One row per author, guard refusals first.
+ */
+function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>): SkippedTrigger[] {
+  return [
+    ...refused,
+    ...[...gone].map((authorId): SkippedTrigger => ({ authorId, reason: 'gone' })),
+  ];
 }
 
 /** Everything {@link RoomTriggerDispatcher} is constructed from. */
@@ -585,10 +680,14 @@ export class RoomTriggerDispatcher {
    *   resolve once, and a second reading of the text here would be a second
    *   answer to who a name addresses.
    */
-  dispatch(room: Room, entry: RoomEntry, namedUnreachable: readonly string[] = []): void {
+  dispatch(
+    room: Room,
+    entry: RoomEntry,
+    namedUnreachable: readonly string[] = []
+  ): RoomDispatchSummary {
     // A notice is the room talking about itself. Letting it address anyone would
     // make "Ana stopped replying" a reason for Bo to start.
-    if (entry.kind !== 'post') return;
+    if (entry.kind !== 'post') return nothingDispatched();
 
     // Addressing and the guard answer PER MESSAGE and answer now, because both
     // are about this message: who it named, and how deep the exchange it belongs
@@ -600,9 +699,14 @@ export class RoomTriggerDispatcher {
     // two agents would then be answered by them in two different sweeps — the
     // second triggered by the first's reply rather than by the message itself.
     const arrivedAt = Date.now();
-    for (const candidate of this.selectCandidates(room, entry, namedUnreachable)) {
+    const selection = this.selectCandidates(room, entry, namedUnreachable);
+    for (const candidate of selection.candidates) {
       this.collectOne(room, entry, candidate, arrivedAt);
     }
+    return {
+      triggered: selection.candidates.map((candidate) => candidate.author),
+      skipped: selection.skipped,
+    };
   }
 
   /**
@@ -698,12 +802,23 @@ export class RoomTriggerDispatcher {
    * reached nobody are all facts about the message; answering them half a second
    * later would let a room's roster change under a refusal, and would delay
    * every notice a person is owed.
+   *
+   * **It reports its refusals as well as its choices**, which is what lets the
+   * 202 be honest (`PostToRoomResponse.skipped`). The set is exactly the one this
+   * pass decides — a guard refusal, or an agent whose directory no longer holds
+   * it — and it is assembled from the same two places that write the notices, so
+   * what this pass decides and what it says cannot disagree.
+   *
+   * That is a claim about THIS PASS and nothing later. A candidate returned here
+   * is judged again when its batch runs, and can be refused then; see
+   * {@link RoomDispatchSummary} for what the accept-time answer does and does not
+   * promise.
    */
   private selectCandidates(
     room: Room,
     entry: RoomEntry,
     namedUnreachable: readonly string[]
-  ): TriggerCandidate[] {
+  ): { candidates: TriggerCandidate[]; skipped: SkippedTrigger[] } {
     const members = this.deps.store.listMembers(room.id);
     const records = this.deps.authors.getMany(members.map((m) => m.authorId));
     // ONCE PER ENTRY, not once per turn. The engaged window is per member, but
@@ -798,7 +913,10 @@ export class RoomTriggerDispatcher {
       // for. Announcing it would also spray: nothing damps a line that could
       // land on every message in a busy room.
       this.reportGone(room, entry, new Set(namedUnreachable), namedUnreachable);
-      return [];
+      // A stand-down or an unaddressed post skipped nobody: those members were
+      // never asked, and listing them would turn "this message was not for you"
+      // into a refusal. Only the names that reached nobody are reported.
+      return { candidates: [], skipped: withGone([], new Set(namedUnreachable)) };
     }
 
     // **The whole of "limits off", for the guard half**, now asked of THIS
@@ -820,6 +938,9 @@ export class RoomTriggerDispatcher {
       : null;
 
     const allowed: TriggerCandidate[] = [];
+    // The guard's refusals, in the order they were made. `gone` is folded in at
+    // the end, from the same set the notices are written from.
+    const refused: SkippedTrigger[] = [];
     // Collected rather than reported inline, so a member that is BOTH a selected
     // target and a name this message typed gets one notice, not two.
     const gone = new Set<string>(namedUnreachable);
@@ -873,7 +994,30 @@ export class RoomTriggerDispatcher {
         // system notices), so the target's count in it is zero. Kept because
         // that is a property of `deriveCascade` in another module, not of
         // anything here, and it costs one comparison to not depend on it.
+        //
+        // **An agent the room already knows is GONE is left to `reportGone`,
+        // both here and on the wire.** It reads like a missing branch and it is
+        // the opposite: this member was named by a message and its directory no
+        // longer holds it, so `agent_gone` is about to be written — with the
+        // remedy, which is to register it again. Adding "this back-and-forth hit
+        // its automatic-reply limit" beside that is two lines about one member
+        // for one message, and the second one is advice that does nothing. The
+        // same reasoning decides the wire: `skipped` reports it once, as `gone`,
+        // which is both the deeper fact (an agent that is not there cannot
+        // answer whatever the guard thought) and the one the log agrees with.
+        //
+        // It is also what keeps `refused` and `gone` DISJOINT, which is the
+        // invariant the two `continue`s below rest on: a guard-refused author
+        // never reaches the liveness check, and a liveness-failed author was
+        // never guard-refused.
+        if (gone.has(authorId)) continue;
         this.announceCascade(room, entry, authorId, record?.displayName, decision.reason);
+        // Reported to the POSTER even in the one case the room stays quiet
+        // about. The three reasons for that silence are all reasons not to write
+        // a durable line at every room-mate; none of them is a reason to leave
+        // the writer itself guessing about why its own message went unanswered,
+        // and this answer is private, unduplicated and impossible to spray.
+        refused.push({ authorId, reason: decision.reason });
         continue;
       }
       // `naturalKey` is the agentPath — the only handle the turn machinery needs
@@ -898,6 +1042,7 @@ export class RoomTriggerDispatcher {
         // needs and the one thing that survives a mesh reconciler rebuild.
         agentPath: record.naturalKey,
         displayName: record.displayName,
+        author: toAuthorRef(record),
         depth: decision.depth,
         engaged: engaged.get(authorId) ?? null,
         reason,
@@ -905,7 +1050,10 @@ export class RoomTriggerDispatcher {
     }
 
     this.reportGone(room, entry, gone, namedUnreachable);
-    return allowed;
+    // After the guard's own refusals, and from the SAME set the notices were
+    // written from — so a member that was both a selected target and a name this
+    // message typed is reported once, exactly as it is noticed once.
+    return { candidates: allowed, skipped: withGone(refused, gone) };
   }
 
   /**
@@ -930,7 +1078,7 @@ export class RoomTriggerDispatcher {
     entry: RoomEntry,
     authorId: string,
     displayName: string | undefined,
-    reason: CascadeRefusalReason | undefined
+    reason: CascadeRefusalReason
   ): void {
     // On the two terms: `fromRealChain` is the load-bearing one, and the
     // `repeat` term is a guard rather than a discriminator. Every reachable
@@ -1431,6 +1579,34 @@ export class RoomTriggerDispatcher {
         authorId,
         archived: room.archived,
       });
+      // **And the room says so** (DOR-786), through the same seam
+      // {@link RoomTriggerDispatcher.abandonHolds} uses — because this is the
+      // same event, reached from the other direction. That one runs inside the
+      // operator's own `removeMember` call and handles almost every real case;
+      // this is the second gate, for a roster that changed WITHOUT going through
+      // the service (a direct write, a reconciler), where there is no act at all
+      // for a reader to connect the silence to. One helper, so the two gates
+      // cannot drift into saying different things about one event.
+      //
+      // **THIS BRANCH IS DEFENSIVE, and no test reaches it** — said plainly for
+      // the reason `routeCollection`'s own TSDoc says the same thing about its
+      // busy and gone skips, rather than leaving the next reader to infer
+      // coverage from the tests around it. Removing a member through the service
+      // calls `abandonHolds`, which drops every pending collection before this
+      // gate is ever asked, and archiving does the same. What is left is a
+      // roster changed underneath the service, which nothing in the suite does.
+      // The `agent_left` tests therefore exercise the OTHER call site; this one
+      // exists so that a direct write cannot produce the silent drop DOR-786 is
+      // about, and deleting it would leave every test green.
+      //
+      // **Read fresh, not from `collection.room`.** The room destructured at the
+      // top of this method is the room as it stood when the message was POSTED,
+      // and a batch can wait here the best part of an hour — so the archive that
+      // matters may have happened during the wait. `reportLeft` promises to take
+      // the room as it stands NOW, because that is the value its archived check
+      // turns on, and handing it a stale one would have it attempt a notice the
+      // store then refuses.
+      this.reportLeft(this.deps.store.getRoom(room.id), collection);
       this.settleCollection(collection, 'left');
       return null;
     }
@@ -3135,12 +3311,23 @@ export class RoomTriggerDispatcher {
    * of the room, or to put the room away, while the lane goes on promising an
    * answer that can no longer come.
    *
-   * **No notice, and that is the deliberate half.** The act that reached here is
-   * operator-only and already visible — the agent is off the roster, or the room
-   * is archived — so this is not a room going quiet for no reason, which is the
-   * shape `.claude/rules/room-conduct.md` forbids. A busy line would also be
-   * false: the agent was not busy, it is gone. The held indicator's `done` is
-   * what withdraws the promise, published by `releaseHold` on the way through.
+   * **It used to write no notice, and DOR-786 changed that for one half of it.**
+   * The old reasoning was that the act reaching here is operator-only and already
+   * visible — the agent is off the roster, or the room is archived — so the room
+   * was not going quiet for no reason. That held while a post promised nothing.
+   * It does not now: `POST /api/rooms/:id/entries` answers with the agents it
+   * asked to reply (`PostToRoomResponse.triggered`), and the person who sent the
+   * message is not necessarily the person who changed the roster. A promise the
+   * room makes and then drops in silence is exactly the shape
+   * `.claude/rules/room-conduct.md` forbids, so the room now says the member
+   * left. The held indicator's `done` still withdraws the live indicator; this is
+   * the durable half, which survives a reader who was not watching.
+   *
+   * **Archiving still writes nothing, and cannot.** `postNotice` refuses an
+   * archived room, because archiving promises the room stops gaining entries —
+   * so there is nowhere to put the line, and forcing one in would be either an
+   * entry after the archive or a swallowed failure dressed up as a notice. The
+   * archive is its own announcement, and the room is closed to the reader anyway.
    *
    * @param roomId - The room whose waits are over.
    * @param authorId - One agent, or omitted for every agent in the room —
@@ -3151,12 +3338,17 @@ export class RoomTriggerDispatcher {
       authorId === undefined
         ? this.collector.drop(roomId)
         : this.collector.dropOne(roomId, authorId);
+    // Read fresh rather than taken from `collection.room`, which is the room as
+    // it stood when the message was posted: the whole reason this method runs is
+    // that something about the room has just changed.
+    const room = this.deps.store.getRoom(roomId);
     for (const collection of dropped) {
       logger.info('[rooms] a waiting message was given up on: the agent is no longer in the room', {
         roomId,
         authorId: collection.authorId,
         waiting: collection.entries.length,
       });
+      this.reportLeft(room, collection);
       this.settleCollection(collection, 'left');
     }
     // A hold with no collection behind it should not exist — but if one ever
@@ -3177,6 +3369,49 @@ export class RoomTriggerDispatcher {
       if (authorId !== undefined && stopped.authorId !== authorId) continue;
       this.stoppedHere.delete(key);
     }
+  }
+
+  /**
+   * Say that a member left before the turn it was owed ever ran.
+   *
+   * The one place the two abandonment gates agree — {@link
+   * RoomTriggerDispatcher.abandonHolds}, which runs inside the operator's own
+   * roster write, and the last-moment re-check in `claimCollected` for a roster
+   * that changed without going through the service. One event, one sentence,
+   * whichever path notices it.
+   *
+   * **Silent for an archived room, and that is structural rather than a
+   * choice.** `postNotice` refuses one, because archiving promises the room stops
+   * gaining entries. Checked here rather than left to fail inside the writer, so
+   * the reason is written down where somebody looking for the missing line will
+   * find it.
+   *
+   * The notice is ABOUT the oldest message in the batch, which is the one the
+   * person has been waiting on longest and the id the hold was keyed to.
+   *
+   * @param room - The room as it stands NOW, or `null` if it has been deleted
+   *   out from under this call.
+   * @param collection - The batch that will never become a turn.
+   */
+  private reportLeft(room: Room | null, collection: RoomCollection): void {
+    if (room === null || room.archived) return;
+    const entry = collection.entries[0]?.entry;
+    if (entry === undefined) return;
+    this.notices.reportSilence(
+      room,
+      entry,
+      {
+        authorId: collection.authorId,
+        displayName:
+          this.deps.authors.getById(collection.authorId)?.displayName ?? collection.displayName,
+      },
+      'left',
+      // No dispatch id: this batch never reached the half of `claimCollected`
+      // that mints one. Left null rather than borrowed from the ambient scope,
+      // which would file a drop about this agent under whichever turn happened
+      // to be running when the roster changed.
+      null
+    );
   }
 
   /**
@@ -3359,8 +3594,23 @@ export class RoomTriggerDispatcher {
    * right now: Ana, Ana" — a symptom of the real fault, which was that Ana was
    * running two turns. The collapse that hid it is gone with the cause.
    *
+   * **Public, and narrowly so.** Two readers outside this class want it: the room
+   * context an agent's turn is handed, and `RoomWithRoster.workingAgents` — the room
+   * read a person's app does when it opens a room. Both are answering the
+   * same question a member is entitled to ask about a room they are in, and the
+   * row carries an author id and a start time and nothing else. What a claim also
+   * knows — its cascade, its dispatch id, the entry it answers, the checkout it
+   * runs in — stays inside, exactly as {@link RoomTriggerDispatcher.workingCount}
+   * describes.
+   *
    * @param roomId - The room being described.
+   * @returns One row per agent mid-turn there, oldest claim first. Empty when the
+   *   room is idle.
    */
+  workingIn(roomId: string): RoomWorkingClaim[] {
+    return claimsWorkingIn(this.claimed, roomId);
+  }
+
   /**
    * Every claim held right now, for the diagnostic read surface.
    *
@@ -3373,10 +3623,6 @@ export class RoomTriggerDispatcher {
    */
   listClaims(): ActiveClaimView[] {
     return describeClaims(this.claimed);
-  }
-
-  private workingIn(roomId: string): Array<{ authorId: string; since: string }> {
-    return claimsWorkingIn(this.claimed, roomId);
   }
 
   /**
