@@ -11,7 +11,10 @@ import { useAgentCreationStore, useIsTouchOnly, useProfileDeepLink } from '@/lay
 import { RoomLoudnessLine, roomDisplayTitle, type LoudnessPreview } from '@/layers/entities/room';
 import { useRoomDetailsView } from '../model/use-room-details-view';
 import { useRoomDetailsWrites } from '../model/use-room-details-writes';
-import { useRoomPanelFocusStore } from '../model/room-panel-focus';
+import {
+  useRoomPanelFocusStore,
+  type RoomPanelFocusRequest,
+} from '../model/room-panel-focus';
 import { AddMembersRow } from './AddMembersRow';
 import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
@@ -174,31 +177,40 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
    *
    * The request is taken as it is answered, so a remount — switching rooms and
    * back — does not act on a press from five minutes ago.
+   *
+   * Subscribed to rather than selected into a render: the panel never DRAWS a
+   * request, it acts on one, and an external system's events belong in a
+   * subscription. The value present at mount is answered too, since a press
+   * usually lands before the panel it names has mounted.
    */
-  const request = useRoomPanelFocusStore((s) => s.request);
+  const wantRosterFocus = useRef(false);
   useEffect(() => {
-    // A request names its room, so the panel a sidebar press is navigating AWAY
-    // from leaves it alone and the one arriving answers it.
-    if (request === null || request.roomId !== roomId) return;
-    useRoomPanelFocusStore.getState().consume();
-    if (request.focus === 'add') {
-      setAddExpanded(true);
-      // Asked for, so it outranks whatever holds the cursor — the press came
-      // from a menu that is about to restore focus to its own trigger.
-      wantSearchFocus.current = 'asked';
-      return;
-    }
-    if (request.focus === 'topic') {
-      setTopicEdits((edits) => edits + 1);
-      return;
-    }
-    // **"Members" moves the keyboard, not only the eye.** The press is often a
-    // keyboard one — the chip is in the bar's tab order — and a panel that
-    // opens off to the right with focus left behind on the chip is a door only
-    // a mouse can walk through. Answered below, once there is something to land
-    // on: the press usually arrives before the roster has been read.
-    wantRosterFocus.current = true;
-  }, [request, roomId]);
+    const answer = (request: RoomPanelFocusRequest | null) => {
+      // A request names its room, so the panel a sidebar press is navigating AWAY
+      // from leaves it alone and the one arriving answers it.
+      if (request === null || request.roomId !== roomId) return;
+      useRoomPanelFocusStore.getState().consume();
+      if (request.focus === 'add') {
+        setAddExpanded(true);
+        // Asked for, so it outranks whatever holds the cursor — the press came
+        // from a menu that is about to restore focus to its own trigger.
+        wantSearchFocus.current = 'asked';
+        return;
+      }
+      if (request.focus === 'topic') {
+        setTopicEdits((edits) => edits + 1);
+        return;
+      }
+      // **"Members" moves the keyboard, not only the eye.** The press is often a
+      // keyboard one — the chip is in the bar's tab order — and a panel that
+      // opens off to the right with focus left behind on the chip is a door only
+      // a mouse can walk through. Answered below, once there is something to land
+      // on: the press usually arrives before the roster has been read.
+      wantRosterFocus.current = true;
+    };
+    answer(useRoomPanelFocusStore.getState().request);
+    return useRoomPanelFocusStore.subscribe((state) => answer(state.request));
+  }, [roomId]);
 
   /**
    * Put the keyboard in the roster for the press that asked for it.
@@ -216,7 +228,6 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
    * control this waits for is mounted by a read landing, not by a prop here
    * changing.
    */
-  const wantRosterFocus = useRef(false);
   useEffect(() => {
     if (!wantRosterFocus.current) return;
     const roster = rosterRef.current;

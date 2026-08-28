@@ -11,6 +11,7 @@ import { sessionContextKey } from '../lib/session-context-key';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import type { ComposerInputHandle } from '@/layers/features/composer';
+import { useLatest } from '@/layers/shared/lib';
 
 interface UseChatQueueOptions {
   input: string;
@@ -209,24 +210,22 @@ export function useChatQueue({
   // Keyed on `contextKey`, so a cwd-only change — which resets the cursor just
   // the same — gets the identical handoff rather than leaving the item's body
   // behind.
-  // Latest-value refs: the cleanup below runs AFTER the switch render, when this
-  // state still holds the OUTGOING context's cursor.
-  const editingIdRef = useRef<string | null>(null);
-  editingIdRef.current = messageQueue.editingId;
-  const commitOutgoingRef = useRef(messageQueue.updateQueued);
-  commitOutgoingRef.current = messageQueue.updateQueued;
+  // Held latest values: the cleanup below runs AFTER the switch render, when
+  // this state still holds the OUTGOING context's cursor.
+  const latestEditingId = useLatest(messageQueue.editingId);
+  const latestCommitOutgoing = useLatest(messageQueue.updateQueued);
 
   useEffect(() => {
     const outgoingSessionId = sessionId;
     return () => {
-      const editingId = editingIdRef.current;
+      const editingId = latestEditingId.read();
       if (editingId === null || !outgoingSessionId) return;
       // Read the outgoing session's own composer text from the store — `input`
       // in this closure is already the INCOMING session's, because both come
       // from the same session-keyed store re-read under the new key.
       const chatStore = useSessionChatStore.getState();
       const composed = chatStore.getSession(outgoingSessionId).input.trim();
-      if (composed) commitOutgoingRef.current(editingId, composed);
+      if (composed) latestCommitOutgoing.read()(editingId, composed);
       chatStore.updateSession(outgoingSessionId, { input: draftRef.current });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `contextKey` IS (sessionId, cwd); listing sessionId too would re-run this on nothing new

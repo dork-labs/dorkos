@@ -16,6 +16,7 @@ import { useProfileStore } from '../model/profile-store';
 import { useSessionAgent } from '../model/use-docked-agent';
 import { asProfilePageId, profileStack, type ProfileStackEntry } from '../model/profile-stack';
 import { ProfileSheet } from './ProfileSheet';
+import { useLatest } from '@/layers/shared/lib';
 
 /** Open state, as `DialogHost` hands it to every registered dialog. */
 export interface ProfileSheetContainerProps {
@@ -69,8 +70,7 @@ export function ProfileSheetContainer({ open, onOpenChange }: ProfileSheetContai
   // The chain as of this render, readable from the reconcile below without
   // making it re-run every time the chain moves — which is the whole point of
   // that effect only reacting to the URL.
-  const chainRef = useRef(chain);
-  chainRef.current = chain;
+  const latestChain = useLatest(chain);
   /**
    * The subject the last change here was already accounted for. Starts at
    * `null` rather than at the first subject, so a chain left over from a sheet
@@ -99,8 +99,8 @@ export function ProfileSheetContainer({ open, onOpenChange }: ProfileSheetContai
       expected.current = null;
       return;
     }
-    if (chainRef.current.at(-1) === memberId) popSheetChain();
-    else if (chainRef.current.length > 0) clearSheetChain();
+    if (latestChain.read().at(-1) === memberId) popSheetChain();
+    else if (latestChain.read().length > 0) clearSheetChain();
   }, [memberId, popSheetChain, clearSheetChain]);
 
   const stack = useMemo(() => {

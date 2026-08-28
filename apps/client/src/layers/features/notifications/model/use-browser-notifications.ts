@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { NotificationEventSchema, type NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { notificationLink } from '@/layers/entities/notifications';
 import { useNotificationPrefs } from '@/layers/entities/config';
-import { isDesktopShell } from '@/layers/shared/lib';
+import { isDesktopShell, useLatest } from '@/layers/shared/lib';
 import {
   useBrowserNotificationPermission,
   useEventSubscription,
@@ -81,8 +81,7 @@ export function useBrowserNotifications(): void {
   /** Everything currently on screen, so it can be closed when it is answered. */
   const openRef = useRef(new Map<string, OpenNotification>());
 
-  const navigateRef = useRef(navigate);
-  navigateRef.current = navigate;
+  const latestNavigate = useLatest(navigate);
 
   const canShow = useCallback((): boolean => {
     if (inDesktopShell) return false;
@@ -113,7 +112,7 @@ export function useBrowserNotifications(): void {
       window.focus();
       notification.close();
       openRef.current.delete(key);
-      if (href !== null) void navigateRef.current?.({ href });
+      if (href !== null) void latestNavigate.read()?.({ href });
     };
     notification.onclose = () => {
       openRef.current.delete(key);

@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef, useMemo, useImperativeHandle, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+  useImperativeHandle,
+  useCallback,
+} from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
@@ -143,9 +151,25 @@ export function ApprovalPrompt({
   const [reasonFocused, setReasonFocused] = useState(false);
   const showKeyHints = isActive && !reasonFocused;
 
-  // Countdown state
-  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  // The clock this card anchors its deadline to, read once when the card mounts
+  // and again only when the inputs that DEFINE the deadline change. Reading the
+  // clock while rendering would re-anchor a countdown already running, since a
+  // render can run more than once for the same state.
+  const [anchor, setAnchor] = useState(() => Date.now());
+  const anchored = useRef(false);
+  useLayoutEffect(() => {
+    if (!anchored.current) {
+      // The mount's anchor is the `useState` initializer above.
+      anchored.current = true;
+      return;
+    }
+    setAnchor(Date.now());
+  }, [timeoutMs, approvalStartedAt, approvalRemainingMs]);
+
+  // What the interval below has counted down to, stamped with the deadline it
+  // was counting to. The first value is derived rather than set from the effect,
+  // so the card never paints a blank clock for a frame.
+  const [tick, setTick] = useState<{ expiresAt: number; seconds: number } | null>(null);
 
   // ONE deadline for the whole card — the ticking text and the draining bar
   // both read it, so they cannot disagree. Priority:
@@ -162,26 +186,35 @@ export function ApprovalPrompt({
     if (!timeoutMs || approvalParked === true) return null;
     const expiresAt =
       approvalRemainingMs !== undefined
-        ? Date.now() + approvalRemainingMs
+        ? anchor + approvalRemainingMs
         : approvalStartedAt
           ? approvalStartedAt + timeoutMs
-          : Date.now() + timeoutMs;
+          : anchor + timeoutMs;
     // How much of the budget is already gone. The bar is a CSS animation over
     // the FULL budget, so a card mounted mid-wait — a reload, a second window,
     // a card scrolled back into view — has to seek the animation forward by
     // this much or it draws a nearly-full bar over an ask with a minute left.
-    const elapsedMs = Math.min(timeoutMs, Math.max(0, timeoutMs - (expiresAt - Date.now())));
+    const elapsedMs = Math.min(timeoutMs, Math.max(0, timeoutMs - (expiresAt - anchor)));
     return { expiresAt, elapsedMs };
-  }, [timeoutMs, approvalStartedAt, approvalRemainingMs, approvalParked]);
+  }, [anchor, timeoutMs, approvalStartedAt, approvalRemainingMs, approvalParked]);
+
+  // The countdown itself: derived from the deadline, and re-derived every second
+  // by the interval below. A tick stamped with a different deadline is stale, so
+  // a re-anchored card falls straight back to the derived value.
+  const secondsRemaining =
+    decided || !timeoutMs || !deadline
+      ? null
+      : tick !== null && tick.expiresAt === deadline.expiresAt
+        ? tick.seconds
+        : Math.max(0, Math.ceil((deadline.expiresAt - anchor) / 1000));
 
   useEffect(() => {
     if (decided || !timeoutMs || !deadline) return;
     const { expiresAt } = deadline;
-    setSecondsRemaining(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
 
     const interval = setInterval(() => {
       const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
-      setSecondsRemaining(remaining);
+      setTick({ expiresAt, seconds: remaining });
 
       if (remaining <= 0) {
         clearInterval(interval);
@@ -206,19 +239,13 @@ export function ApprovalPrompt({
   // nothing left to warn about, so the region empties the moment it settles —
   // which also keeps it empty at rest, the state a live region has to be in for
   // its next change to be heard as news.
-  useEffect(() => {
-    if (decided) {
-      setAnnouncement('');
-      return;
-    }
-    if (secondsRemaining === WARN_AT_S) {
-      setAnnouncement('Tool approval required. 2 minutes remaining.');
-    } else if (secondsRemaining === URGENT_AT_S) {
-      setAnnouncement('Urgent: 1 minute to approve or deny.');
-    } else if (secondsRemaining === 0) {
-      setAnnouncement('Nobody answered. The agent is waiting for you.');
-    }
-  }, [secondsRemaining, decided]);
+  const announcement = (() => {
+    if (decided) return '';
+    if (secondsRemaining === WARN_AT_S) return 'Tool approval required. 2 minutes remaining.';
+    if (secondsRemaining === URGENT_AT_S) return 'Urgent: 1 minute to approve or deny.';
+    if (secondsRemaining === 0) return 'Nobody answered. The agent is waiting for you.';
+    return '';
+  })();
 
   // NOTE: the RESOLUTION is deliberately not announced from here. Answering
   // resolves the interaction, which clears the input zone and unmounts this

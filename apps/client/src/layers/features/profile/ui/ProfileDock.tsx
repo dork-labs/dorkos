@@ -28,6 +28,7 @@ import type { ProfileScopeValue } from '../model/profile-scope';
 import { DiscardChangesDialog } from './DiscardChangesDialog';
 import { AgentNotFound, NoAgentSelected, ProfileDockSkeleton } from './ProfileDockStates';
 import { ProfileView } from './ProfileView';
+import { useLatest } from '@/layers/shared/lib';
 
 /**
  * Draw the docked profile for whichever agent the panel is pointed at.
@@ -141,16 +142,18 @@ export function ProfileDock() {
   // panel is the same discard the page's ‹ Profile and the sheet's close both
   // stop to ask about — the toggle, Escape, a drag to the edge and ⌘⇧A all
   // arrive here as one closed panel, so one question covers them.
-  // Read from a ref inside the teardown: the panel it belongs to is whichever
-  // identity was on screen when the close happened, not whatever renders next.
-  const scopeRef = useRef<ProfileScopeValue | null>(null);
-  scopeRef.current = subject === null ? null : { home: 'docked', memberId: subject.id };
+  // Read the held value inside the teardown: the panel it belongs to is
+  // whichever identity was on screen when the close happened, not whatever
+  // renders next.
+  const latestScope = useLatest<ProfileScopeValue | null>(
+    subject === null ? null : { home: 'docked', memberId: subject.id }
+  );
 
   useEffect(() => {
     if (!rightPanelOpen) return;
     return () => {
       if (useAppStore.getState().rightPanelOpen) return;
-      if (hasUnsavedProfileEdits(scopeRef.current)) return setConfirmingClose(true);
+      if (hasUnsavedProfileEdits(latestScope.read())) return setConfirmingClose(true);
       clearDockedStacks();
     };
   }, [rightPanelOpen, clearDockedStacks]);

@@ -21,12 +21,16 @@ const ResponsiveContextMenuContext = React.createContext<{
    * Set by a `movesFocus` item: its action is placing focus itself, so the menu
    * must not take focus back on its way out. Cleared by the content.
    */
-  keepsFocus: React.RefObject<boolean>;
+  /** Remember (or forget) that an item's action placed the caret itself. */
+  setKeepsFocus: (value: boolean) => void;
+  /** Take that memory: returns whether it was set, and clears it either way. */
+  takeKeepsFocus: () => boolean;
 }>({
   isDesktop: true,
   close: () => {},
   open: () => {},
-  keepsFocus: { current: false },
+  setKeepsFocus: () => {},
+  takeKeepsFocus: () => false,
 });
 
 // ── Root ──
@@ -40,20 +44,31 @@ function ResponsiveContextMenu({ children }: ResponsiveContextMenuProps) {
   const isDesktop = !useIsMobile();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const keepsFocus = React.useRef(false);
+  // Handed out as two functions rather than the ref itself: a value read off a
+  // context is not this component's to mutate, and the two things callers do
+  // with it — remember, and take — say more than `.current` does.
+  const setKeepsFocus = React.useCallback((value: boolean) => {
+    keepsFocus.current = value;
+  }, []);
+  const takeKeepsFocus = React.useCallback(() => {
+    const held = keepsFocus.current;
+    keepsFocus.current = false;
+    return held;
+  }, []);
 
   const close = React.useCallback(() => setDrawerOpen(false), []);
   const open = React.useCallback(() => setDrawerOpen(true), []);
 
   if (isDesktop) {
     return (
-      <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, keepsFocus }}>
+      <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, setKeepsFocus, takeKeepsFocus }}>
         <ContextMenu>{children}</ContextMenu>
       </ResponsiveContextMenuContext.Provider>
     );
   }
 
   return (
-    <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, keepsFocus }}>
+    <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, setKeepsFocus, takeKeepsFocus }}>
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
         {children}
       </Drawer>
@@ -157,7 +172,7 @@ function ResponsiveContextMenuContent({
   onCloseAutoFocus,
   ...props
 }: React.ComponentPropsWithoutRef<typeof ContextMenuContent>) {
-  const { isDesktop, keepsFocus } = React.useContext(ResponsiveContextMenuContext);
+  const { isDesktop, takeKeepsFocus } = React.useContext(ResponsiveContextMenuContext);
 
   // The second half of what a `movesFocus` item asked for: as the surface
   // finally goes, it hands focus back to whatever was focused when it opened —
@@ -167,8 +182,7 @@ function ResponsiveContextMenuContent({
   // item, still hand focus back to the row a keyboard user came from.
   const handleCloseAutoFocus = (event: Event) => {
     onCloseAutoFocus?.(event);
-    if (!keepsFocus.current) return;
-    keepsFocus.current = false;
+    if (!takeKeepsFocus()) return;
     event.preventDefault();
   };
 
@@ -218,7 +232,7 @@ function ResponsiveContextMenuItem({
   movesFocus = false,
   ...props
 }: ResponsiveContextMenuItemProps) {
-  const { isDesktop, close, keepsFocus } = React.useContext(ResponsiveContextMenuContext);
+  const { isDesktop, close, setKeepsFocus } = React.useContext(ResponsiveContextMenuContext);
 
   const runAction = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!movesFocus) {
@@ -229,7 +243,7 @@ function ResponsiveContextMenuItem({
     // turn of the event loop from here — so this is the first instant an action
     // can put the caret somewhere else and have it stay. `keepsFocus` covers the
     // other end: the menu's own focus restore, which lands later still.
-    keepsFocus.current = true;
+    setKeepsFocus(true);
     setTimeout(() => {
       const before = document.activeElement;
       onClick?.(event);
@@ -238,7 +252,7 @@ function ResponsiveContextMenuItem({
       // does from every other item. Cheaper to ask than to promise.
       const after = document.activeElement;
       if (after === before || after === null || after === document.body) {
-        keepsFocus.current = false;
+        setKeepsFocus(false);
       }
     }, 0);
   };

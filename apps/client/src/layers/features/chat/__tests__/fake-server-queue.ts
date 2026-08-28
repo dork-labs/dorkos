@@ -13,7 +13,7 @@
  *
  * @module features/chat/__tests__/fake-server-queue
  */
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { vi } from 'vitest';
 import type {
   MessageDeliveryOutcome,
@@ -23,6 +23,7 @@ import type {
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useSessionQueue, useSessionStreamStore } from '@/layers/entities/session';
+import { useRenderSlot } from '@/layers/shared/lib';
 
 /** The error shape the HTTP transport surfaces for a `404` on a queue route. */
 export function notFound(): Error & { code: string } {
@@ -71,39 +72,42 @@ export function useFakeServerQueue(
   clientId = 'window-a',
   sessionId = 'test-session'
 ): FakeServerQueue {
-  const held = useRef<QueuedMessage[]>([]);
-  const seq = useRef(0);
-  const nextId = useRef(0);
-  const enqueued = useRef<string[]>([]);
-  const failNext = useRef(false);
+  // Render slots rather than refs: the fake's own state is read while the test
+  // renders (the transport is built in a memo, and `enqueued` is returned), and
+  // render may not read refs.
+  const held = useRenderSlot<QueuedMessage[]>([]);
+  const seq = useRenderSlot(0);
+  const nextId = useRenderSlot(0);
+  const enqueued = useRenderSlot<string[]>([]);
+  const failNext = useRenderSlot(false);
   const waiting = useSessionQueue(sessionId);
 
   const set = useCallback(
     (next: QueuedMessage[], outcome?: MessageDeliveryOutcome) => {
-      held.current = next;
-      seq.current += 1;
+      held.write(next);
+      seq.write(seq.read() + 1);
       useSessionStreamStore.getState().applyEvent(sessionId, {
         type: 'queue_update',
-        seq: seq.current,
+        seq: seq.read(),
         queue: next,
         ...(outcome ? { outcome } : {}),
       });
     },
-    [sessionId]
+    [sessionId, held, seq]
   );
 
   const enqueue = useCallback(
     async (content: string): Promise<boolean> => {
-      enqueued.current = [...enqueued.current, content];
-      if (failNext.current) {
-        failNext.current = false;
+      enqueued.write([...enqueued.read(), content]);
+      if (failNext.read()) {
+        failNext.write(false);
         return false;
       }
-      nextId.current += 1;
-      set([...held.current, queued(`q${nextId.current}`, content, clientId)]);
+      nextId.write(nextId.read() + 1);
+      set([...held.read(), queued(`q${nextId.read()}`, content, clientId)]);
       return true;
     },
-    [clientId, set]
+    [clientId, set, enqueued, failNext, held, nextId]
   );
 
   const transport = useMemo(
@@ -116,7 +120,7 @@ export function useFakeServerQueue(
             messageId: string,
             edit: { content?: string; move?: QueueMoveTarget }
           ) => {
-            const current = held.current;
+            const current = held.read();
             const index = current.findIndex((m) => m.id === messageId);
             if (index === -1) throw notFound();
             let next = [...current];
@@ -138,14 +142,14 @@ export function useFakeServerQueue(
           }
         ),
         removeQueuedMessage: vi.fn(async (_sessionId: string, messageId: string) => {
-          const current = held.current;
+          const current = held.read();
           if (!current.some((m) => m.id === messageId)) throw notFound();
           const next = current.filter((m) => m.id !== messageId);
           set(next);
           return { queue: next };
         }),
       }),
-    [clientId, set]
+    [clientId, set, held]
   );
 
   return {
@@ -153,11 +157,11 @@ export function useFakeServerQueue(
     transport,
     enqueue,
     failNextEnqueue: () => {
-      failNext.current = true;
+      failNext.write(true);
     },
-    seed: (...messages: QueuedMessage[]) => set([...held.current, ...messages]),
-    dispatchHead: () => set(held.current.slice(1)),
-    announceOutcome: (outcome: MessageDeliveryOutcome) => set([...held.current], outcome),
-    enqueued: enqueued.current,
+    seed: (...messages: QueuedMessage[]) => set([...held.read(), ...messages]),
+    dispatchHead: () => set(held.read().slice(1)),
+    announceOutcome: (outcome: MessageDeliveryOutcome) => set([...held.read()], outcome),
+    enqueued: enqueued.read(),
   };
 }

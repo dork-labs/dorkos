@@ -4,7 +4,7 @@
  *
  * @module features/mentions/model/use-mention-autocomplete
  */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import type { AuthorRef } from '@/layers/entities/room';
 import {
   buildMentionRows,
@@ -16,6 +16,7 @@ import {
   type MentionRow,
   type MentionSection,
 } from '../lib/mention-rows';
+import { useLatest } from '@/layers/shared/lib';
 
 /**
  * An `@` that opens the picker: at the start of the text or after whitespace,
@@ -104,16 +105,15 @@ export function useMentionAutocomplete({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [triggerPos, setTriggerPos] = useState(-1);
-  const [selectedIndex, setSelectedIndex] = useState(0);
 
   // The composer reports a change and a caret move as two calls in one event:
   // `onChange` first with the new text, then `onCursorChange` with the true
   // caret. Between them the `text` prop is a render behind, so the caret call
   // would re-detect against the PREVIOUS text and reopen — or fail to open —
   // the picker on a stale string. Typing an `@` anywhere but the very end is
-  // enough to see it. The ref is what both calls read, so both are current.
-  const textRef = useRef(text);
-  textRef.current = text;
+  // enough to see it. The held value is what both calls read, so both are
+  // current.
+  const latestText = useLatest(text);
 
   /**
    * The picker was closed on purpose and must stay closed until something the
@@ -138,26 +138,29 @@ export function useMentionAutocomplete({
     [allRows, query, isOpen, sectionOrder]
   );
 
-  // Land on the first row somebody can actually pick whenever the list is
-  // rebuilt — a query change, or the panel opening.
-  useEffect(() => {
-    setSelectedIndex(findSelectableIndex(rows, 0, 1));
-    // Keyed off the query and openness rather than `rows`, so the reset tracks
-    // typing rather than every recompute of the same list.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, isOpen]);
+  // Where the arrow keys last put the highlight, stamped with the list it was
+  // moved in. A cursor chosen under a different query — or before the panel
+  // reopened — belongs to a list that no longer exists, so the derivation below
+  // lands on the first row somebody can actually pick instead. Stamped rather
+  // than reset from an effect, so the highlight is never a render behind the
+  // list it points into.
+  const [cursor, setCursor] = useState<{ query: string; open: boolean; index: number } | null>(
+    null
+  );
+  const proposedIndex =
+    cursor !== null && cursor.query === query && cursor.open === isOpen
+      ? cursor.index
+      : findSelectableIndex(rows, 0, 1);
 
   // Keep the cursor on a row that exists and can be picked. The roster is live —
   // a member removed mid-type shrinks the list under the highlight, and a stale
   // index is exactly how `aria-activedescendant` starts naming a row that Enter
   // no longer inserts.
-  useEffect(() => {
-    if (rows.length === 0) return;
-    const current = rows[selectedIndex];
-    if (!current || current.disabled) {
-      setSelectedIndex(findSelectableIndex(rows, 0, 1));
-    }
-  }, [rows, selectedIndex]);
+  const proposedRow = rows[proposedIndex];
+  const selectedIndex =
+    rows.length === 0 || (proposedRow !== undefined && !proposedRow.disabled)
+      ? proposedIndex
+      : findSelectableIndex(rows, 0, 1);
 
   const detect = useCallback((value: string, cursorPos: number) => {
     const match = value.slice(0, cursorPos).match(MENTION_TRIGGER);
@@ -171,26 +174,26 @@ export function useMentionAutocomplete({
   }, []);
 
   const noteTextChange = useCallback((value: string) => {
-    textRef.current = value;
+    latestText.write(value);
     // Typing is new intent: whatever was dismissed is no longer what is there.
     suppressedRef.current = false;
-  }, []);
+  }, [latestText]);
 
   const handleCursorChange = useCallback(
     (cursorPos: number) => {
       if (suppressedRef.current) return;
-      detect(textRef.current, cursorPos);
+      detect(latestText.read(), cursorPos);
     },
-    [detect]
+    [detect, latestText]
   );
 
   const moveDown = useCallback(() => {
-    setSelectedIndex((prev) => findSelectableIndex(rows, prev + 1, 1));
-  }, [rows]);
+    setCursor({ query, open: isOpen, index: findSelectableIndex(rows, selectedIndex + 1, 1) });
+  }, [rows, selectedIndex, query, isOpen]);
 
   const moveUp = useCallback(() => {
-    setSelectedIndex((prev) => findSelectableIndex(rows, prev - 1, -1));
-  }, [rows]);
+    setCursor({ query, open: isOpen, index: findSelectableIndex(rows, selectedIndex - 1, -1) });
+  }, [rows, selectedIndex, query, isOpen]);
 
   const selectRow = useCallback(
     (row: MentionRow): MentionInsert | null => {
@@ -200,9 +203,9 @@ export function useMentionAutocomplete({
       // cannot reopen the panel that was just used.
       suppressedRef.current = true;
       setIsOpen(false);
-      return insertMention(textRef.current, triggerPos, query, row.handle);
+      return insertMention(latestText.read(), triggerPos, query, row.handle);
     },
-    [triggerPos, query]
+    [triggerPos, query, latestText]
   );
 
   const selectHighlighted = useCallback((): MentionInsert | null => {

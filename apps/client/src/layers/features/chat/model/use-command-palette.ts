@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { CommandEntry } from '@dorkos/shared/types';
 import {
   rankCommand,
@@ -57,7 +57,6 @@ export function useCommandPalette({
 }: UseCommandPaletteOptions): UseCommandPaletteReturn {
   const [showCommands, setShowCommands] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [slashTriggerPos, setSlashTriggerPos] = useState(-1);
 
   const filteredCommands = useMemo<RankedCommandEntry[]>(() => {
@@ -72,25 +71,26 @@ export function useCommandPalette({
       .map(({ cmd, rank }) => ({ ...cmd, matchedAlias: rank.matchedAlias }));
   }, [commands, commandQuery]);
 
-  // Reset selectedIndex to the first selectable row when the filter changes or
-  // the palette opens/closes.
-  useEffect(() => {
-    setSelectedIndex(findSelectableIndex(filteredCommands, 0, 1));
-    // filteredCommands is derived from commandQuery; keying off the query keeps
-    // the reset tied to user typing / open-close, not every list recompute.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commandQuery, showCommands]);
+  // Where the arrow keys last put the highlight, stamped with the filter and the
+  // open state it was moved under. A cursor from a different list is stale, so
+  // the derivation below falls back to the first selectable row — the reset that
+  // used to be an effect, now a render behind nothing.
+  const [cursor, setCursor] = useState<{ query: string; open: boolean; index: number } | null>(
+    null
+  );
+  const proposedIndex =
+    cursor !== null && cursor.query === commandQuery && cursor.open === showCommands
+      ? cursor.index
+      : findSelectableIndex(filteredCommands, 0, 1);
 
   // Keep the selection on a selectable row: snap to the first enabled entry when
   // the current index falls out of range (list shrank) or points at a disabled
   // row (e.g. capabilities loaded and disabled the runtime-fulfilled intent).
-  useEffect(() => {
-    if (filteredCommands.length === 0) return;
-    const current = filteredCommands[selectedIndex];
-    if (!current || current.disabled) {
-      setSelectedIndex(findSelectableIndex(filteredCommands, 0, 1));
-    }
-  }, [filteredCommands, selectedIndex]);
+  const proposedCommand = filteredCommands[proposedIndex];
+  const selectedIndex =
+    filteredCommands.length === 0 || (proposedCommand !== undefined && !proposedCommand.disabled)
+      ? proposedIndex
+      : findSelectableIndex(filteredCommands, 0, 1);
 
   /** Returns true if a command trigger was detected. */
   const detectCommandTrigger = useCallback((value: string, cursor: number): boolean => {
@@ -130,12 +130,20 @@ export function useCommandPalette({
   );
 
   const handleArrowDown = useCallback(() => {
-    setSelectedIndex((prev) => findSelectableIndex(filteredCommands, prev + 1, 1));
-  }, [filteredCommands]);
+    setCursor({
+      query: commandQuery,
+      open: showCommands,
+      index: findSelectableIndex(filteredCommands, selectedIndex + 1, 1),
+    });
+  }, [filteredCommands, selectedIndex, commandQuery, showCommands]);
 
   const handleArrowUp = useCallback(() => {
-    setSelectedIndex((prev) => findSelectableIndex(filteredCommands, prev - 1, -1));
-  }, [filteredCommands]);
+    setCursor({
+      query: commandQuery,
+      open: showCommands,
+      index: findSelectableIndex(filteredCommands, selectedIndex - 1, -1),
+    });
+  }, [filteredCommands, selectedIndex, commandQuery, showCommands]);
 
   /** Returns the new input value if a command was selected, or null. */
   const handleKeyboardSelect = useCallback((): string | null => {

@@ -15,6 +15,7 @@ import {
   useAttentionSignalsLoading,
   type AttentionSignal,
 } from '@/layers/entities/attention';
+import { useLatest } from '@/layers/shared/lib';
 
 /**
  * One thing waiting on the operator, in the shape an interruption needs.
@@ -115,8 +116,7 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
   const signals = useAttentionSignals();
   const loading = useAttentionSignalsLoading();
 
-  const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
+  const latestHandlers = useLatest(handlers);
 
   const knownRef = useRef<Set<string> | null>(null);
 
@@ -145,7 +145,7 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
     const arrived = [...current.values()].filter((item) => !known.has(item.id));
     const departed = [...known].filter((id) => !current.has(id));
 
-    if (arrived.length > 0) handlersRef.current.onArrive?.(arrived);
-    if (departed.length > 0) handlersRef.current.onDepart?.(departed, current.size);
+    if (arrived.length > 0) latestHandlers.read().onArrive?.(arrived);
+    if (departed.length > 0) latestHandlers.read().onDepart?.(departed, current.size);
   }, [loading, signals]);
 }
