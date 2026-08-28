@@ -697,7 +697,7 @@ packages/
     subject-matcher.ts      -- NATS-style subject and wildcard matching
     endpoint-registry.ts    -- Maildir endpoint registration + hash computation
     adapters/
-      claude-code/          -- Routes relay.agent.> and relay.system.tasks.> to ClaudeCodeRuntime
+      claude-code/          -- Routes relay.agent.> and relay.system.tasks.> to whichever runtime the message names
                                (modular: claude-code-adapter.ts, agent-handler.ts, tasks-handler.ts, queue.ts, publish.ts)
       telegram/             -- Telegram Bot API via grammY (modular: telegram-adapter.ts, inbound.ts, outbound.ts, webhook.ts)
       webhook-adapter.ts    -- Generic HTTP POST with HMAC-SHA256 verification
@@ -1192,15 +1192,17 @@ Outbound: RelayCore.publish() → AdapterRegistry.deliver() → Adapter.deliver(
 
 **Built-in adapters:**
 
-| Adapter             | Library          | Transport               | Subject Prefix                          |
-| ------------------- | ---------------- | ----------------------- | --------------------------------------- |
-| `TelegramAdapter`   | grammY           | Long polling / webhook  | `relay.human.telegram.*`                |
-| `WebhookAdapter`    | Native HTTP      | HTTP POST + HMAC-SHA256 | `relay.webhook.*`                       |
-| `ClaudeCodeAdapter` | Claude Agent SDK | In-process              | `relay.agent.>`, `relay.system.tasks.>` |
+| Adapter             | Library                  | Transport               | Subject Prefix                          |
+| ------------------- | ------------------------ | ----------------------- | --------------------------------------- |
+| `TelegramAdapter`   | grammY                   | Long polling / webhook  | `relay.human.telegram.*`                |
+| `WebhookAdapter`    | Native HTTP              | HTTP POST + HMAC-SHA256 | `relay.webhook.*`                       |
+| `ClaudeCodeAdapter` | Every registered runtime | In-process              | `relay.agent.>`, `relay.system.tasks.>` |
 
 ### ClaudeCodeAdapter
 
-`ClaudeCodeAdapter` (`packages/relay/src/adapters/claude-code-adapter.ts`) is the runtime adapter that bridges Relay to Claude Agent SDK sessions. It replaces the earlier `MessageReceiver` bridge and plugs into `AdapterRegistry` alongside external adapters.
+`ClaudeCodeAdapter` (`packages/relay/src/adapters/claude-code/claude-code-adapter.ts`) is the runtime adapter that bridges Relay to agent sessions. It replaces the earlier `MessageReceiver` bridge and plugs into `AdapterRegistry` alongside external adapters.
+
+**The name is historical; it drives every runtime** (DOR-1614). `claude-code` is the id of the built-in entry in every install's `adapters.json`, so renaming the class would leave a class and a persisted config type disagreeing. Everything below it — `agent-handler.ts`, `task-handler.ts`, `approval-handler.ts` — speaks only `AgentRuntimeLike` and `StreamEvent`, so the adapter holds a runtime-type → runtime map and picks one PER MESSAGE from what the message names: the runtime segment of a `relay.agent.<runtimeType>.<sessionId>` subject, or a task dispatch's own `runtime` field. A message naming a runtime this build did not register is refused with a message saying so, never quietly run on another one.
 
 It handles two subject prefixes:
 
