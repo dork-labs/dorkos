@@ -10,7 +10,18 @@ export {
   type CapabilityDefinition,
   type CapabilityDeps,
   type CapabilityDomain,
+  type CapabilityToolGroup,
 } from './capability-definition.js';
+export {
+  // `enforceToolGroupGrant` is deliberately NOT re-exported, for the same reason
+  // `enforceCapabilityTier` is not: the gate is reached through `registry.invoke`
+  // and there is no second supported caller.
+  initToolGroupGate,
+  resetToolGroupGate,
+  type ToolGroupGateOptions,
+  type ToolGroupGrantLookup,
+} from './tool-group-enforcement.js';
+export { manifestToolGroupGrants } from './tool-group-grants.js';
 export {
   composeRegistry,
   serializeCapability,

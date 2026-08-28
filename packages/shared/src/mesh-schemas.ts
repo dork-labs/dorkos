@@ -110,14 +110,21 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
 // === Agent Tool Groups ===
 
 /**
- * Per-domain MCP tool group overrides for an individual agent.
+ * Per-agent tool group settings.
  *
- * `undefined` means "inherit global default". Explicit `true`/`false` overrides the global setting.
+ * **This object now holds two kinds of key, and they do different things.** Read
+ * which kind you are looking at before reasoning about what a value means.
  *
- * Turning a group off leaves its tool block out of the agent's context, so the agent
- * is never told those tools exist. It does not remove them: the tools stay registered
- * on the session and an agent that names one anyway still gets the normal approval
- * prompt. This steers an agent rather than restricting it (DOR-519).
+ * ## The four documentation keys — `tasks`, `relay`, `mesh`, `adapter`
+ *
+ * `undefined` means "inherit global default". Explicit `true`/`false` overrides
+ * the global setting.
+ *
+ * Turning one of these off leaves its tool block out of the agent's context, so
+ * the agent is never told those tools exist. It does not remove them: the tools
+ * stay registered on the session and an agent that names one anyway still gets
+ * the normal approval prompt. This steers an agent rather than restricting it
+ * (DOR-519).
  *
  * Implicit grouping rules:
  * - `adapter: false` also turns off the chat-route tools
@@ -128,6 +135,24 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
  * from there by both the server and the cockpit. It is deliberately not listed
  * again here: the copies of it that used to live in three other files all drifted
  * (DOR-499). Call `toolNamesForDomain` for the current answer.
+ *
+ * ## The grant key — `roomsManage`
+ *
+ * A different mechanism wearing the same object. It is a per-agent grant the
+ * server's capability choke point reads on every call: a capability that declares
+ * this group is REFUSED unless the calling agent holds it, and the agent is told
+ * to ask the person who runs the install.
+ *
+ * Two consequences follow, and both differ from the four keys above:
+ *
+ * - `undefined` means OFF, never "inherit". There is no global twin, on purpose —
+ *   a second, weaker path to the same grant would be a way around the first.
+ * - Only a person may set it. The agent-reachable manifest write path
+ *   (`updateAgentManifest`) refuses a patch that names this key at all; the
+ *   operator's own `PATCH /api/mesh/agents/:id` is the one way in.
+ *
+ * A new key here belongs with the four unless a capability declares it as a
+ * `toolGroup`; see the server's `capability-definition.ts` before adding one.
  */
 export const EnabledToolGroupsSchema = z
   .object({
@@ -135,13 +160,24 @@ export const EnabledToolGroupsSchema = z
     relay: z.boolean().optional(),
     mesh: z.boolean().optional(),
     adapter: z.boolean().optional(),
+    /**
+     * Whether this agent may manage rooms — create them, change who is in them,
+     * rename them, leave them.
+     *
+     * The grant key, not a documentation key: absent means off, and the capability
+     * gate refuses the call rather than merely leaving it undescribed.
+     */
+    roomsManage: z.boolean().optional(),
   })
   .default({})
   .openapi('EnabledToolGroups', {
     description:
-      'Per-domain tool groups. undefined = inherit global default. Off means the agent ' +
+      'Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are ' +
+      'documentation settings: undefined = inherit global default, and off means the agent ' +
       'is not told about the group, not that the tools are blocked. ' +
-      'Binding tools follow adapter toggle. Trace tools follow relay toggle.',
+      'Binding tools follow adapter toggle. Trace tools follow relay toggle. ' +
+      'roomsManage is different: it is a per-agent grant the server enforces, absent ' +
+      'means off with no global default, and only a person may set it.',
   });
 
 export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;

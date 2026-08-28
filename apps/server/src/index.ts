@@ -240,6 +240,8 @@ import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.j
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
+  initToolGroupGate,
+  manifestToolGroupGrants,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
@@ -272,9 +274,11 @@ import {
   setWelcomeBackGreeter,
   setRoomAttachmentStores,
   setRoomRepoService,
+  setRoomFilesService,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
+  RoomFilesService,
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
@@ -1174,28 +1178,38 @@ async function start() {
   // turning the feature on or changing a cap binds the next request rather
   // than the next server start.
   const roomRepoStore = new RoomRepoStore(db, dorkHome);
-  setRoomRepoService(
-    new RoomRepoService({
+  const roomRepoService = new RoomRepoService({
+    store: roomRepoStore,
+    enabled: () => readRoomRepoConfig().enabled,
+    getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
+    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // The person's own name from their profile, which is the only place a
+    // real human name is stored on this machine — never the room registry's
+    // label for them, which `bindOwner` fixes at 'You' forever (right in
+    // their own window, bizarre in `git log`).
+    operatorGitName: resolveOperatorDisplayName,
+    caps: () => {
+      const repo = readRoomRepoConfig();
+      return {
+        maxFileBytes: repo.maxFileBytes,
+        maxRepoBytes: repo.maxRepoBytes,
+        maxRoomMdBytes: repo.maxRoomMdBytes,
+      };
+    },
+    // What may be SENT, as against what `caps` froze onto a room's sidecar
+    // for what may be merged IN. Read per turn, like every other value here.
+    maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+  });
+  setRoomRepoService(roomRepoService);
+  // Reading those files back (spec §3.9). It shares the store and nothing
+  // else: `hasRepo` already folds the feature flag in, so a room whose files
+  // are switched off reads exactly as a room that never had any, and the size
+  // ceiling is read per call so lowering it binds the next request.
+  setRoomFilesService(
+    new RoomFilesService({
       store: roomRepoStore,
-      enabled: () => readRoomRepoConfig().enabled,
-      getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
-      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-      // The person's own name from their profile, which is the only place a
-      // real human name is stored on this machine — never the room registry's
-      // label for them, which `bindOwner` fixes at 'You' forever (right in
-      // their own window, bizarre in `git log`).
-      operatorGitName: resolveOperatorDisplayName,
-      caps: () => {
-        const repo = readRoomRepoConfig();
-        return {
-          maxFileBytes: repo.maxFileBytes,
-          maxRepoBytes: repo.maxRepoBytes,
-          maxRoomMdBytes: repo.maxRoomMdBytes,
-        };
-      },
-      // What may be SENT, as against what `caps` froze onto a room's sidecar
-      // for what may be merged IN. Read per turn, like every other value here.
-      maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+      hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+      maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
@@ -3240,6 +3254,17 @@ async function start() {
       enabled: () => readStandingGrantSettings().enabled,
       findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
     },
+  });
+  // Arm the per-agent tool-group gate beside it (spec `rooms-management-tools`,
+  // DOR-1611). It runs in the same choke point, one step earlier, and answers a
+  // different question: not "is this caller restricted" but "does this caller hold
+  // this grant". Unwired it refuses every capability that declares a group, so an
+  // omission here fails closed. The audit hook is the SAME observer the tier gate
+  // uses, so a refusal shows up in the Activity feed as `capability.denied` — the
+  // operator sees what an agent tried and did not get.
+  initToolGroupGate({
+    grants: manifestToolGroupGrants(),
+    onAttempt: createCapabilityGateAuditObserver(activityService),
   });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a

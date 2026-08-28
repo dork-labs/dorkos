@@ -233,6 +233,10 @@
       "types": "./src/room-repo.ts",
       "default": "./dist/room-repo.js"
     },
+    "./room-files": {
+      "types": "./src/room-files.ts",
+      "default": "./dist/room-files.js"
+    },
     "./read-cursor-schemas": {
       "types": "./src/read-cursor-schemas.ts",
       "default": "./dist/read-cursor-schemas.js"

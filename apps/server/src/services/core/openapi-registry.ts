@@ -121,6 +121,12 @@ import {
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
 import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/room-export-schemas';
+import {
+  RoomFileContentQuerySchema,
+  RoomFileContentResponseSchema,
+  RoomFileListResponseSchema,
+  RoomFilesQuerySchema,
+} from '@dorkos/shared/room-files';
 import { PendingInteractionsResponseSchema } from '@dorkos/shared/interaction-events';
 import {
   ReadCursorParamsSchema,
@@ -4017,6 +4023,70 @@ registry.registerPath({
           }),
         },
       },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/files',
+  tags: ['Rooms'],
+  summary: "List one directory of a room's own files",
+  description:
+    "Serves the room's git repo, **as of the commit `main` points at** — never the checkout on disk, so a half-written edit or a merge in flight is not something a reader can see, and `.git` is not a path anybody can name because it is not in the tree. `commit` says exactly which snapshot this listing is. `path` is a directory relative to the repo root and defaults to it; `..`, an absolute path, a backslash, a control character, a doubled slash and leading or trailing whitespace are all refused (400) before git is asked anything — the whitespace rule is a refusal rather than a repair, because a filename may legitimately end in a space and trimming the request would answer with a different file. **The server never rewrites a path**, so every `path` in a listing can be handed straight to the content route. Entries come back directories first, then files, each group in code-unit order — byte order rather than the machine's locale, so one room lists identically everywhere. **Membership gates it exactly as reading the room's history does** — a caller who is not on the roster gets the same 404 an unknown room gets, so a room id is never a capability, and an agent that IS a member may read, because a room's files are what its members are working on together. A member of a room that has no files of its own gets 409 `ROOM_HAS_NO_REPO`, and that question is asked strictly AFTER membership so that nobody can learn which rooms are project rooms by probing ids. Each entry carries the last commit that touched it — author, time and subject — from one bounded walk of the room's history, so a directory of five hundred files costs the same handful of git commands as a directory of five; an entry nobody touched inside that window answers `lastCommit: null`, which means \"not known here\" rather than \"never changed\". A symlink is listed as a `symlink` and is never followed. Everything here — filenames, commit subjects, author names — is written by the room's members: render it as untrusted text.",
+  request: { params: RoomIdParams, query: RoomFilesQuerySchema },
+  responses: {
+    200: {
+      description: 'The directory, with per-entry provenance',
+      content: { 'application/json': { schema: RoomFileListResponseSchema } },
+    },
+    400: {
+      description:
+        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names something that is not a directory (`ROOM_FILE_NOT_READABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such directory in the commit (`ROOM_FILE_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/files/content',
+  tags: ['Rooms'],
+  summary: "Read one file from a room's files",
+  description:
+    "Gated identically to `GET /api/rooms/{id}/files`, and read from the same commit. The file is named by the `path` QUERY parameter rather than by a path segment, because a repo path holds slashes and a segment would mean encoding them on the way out and decoding them on the way in. **Three honest answers, not one plus two errors**: `text` carries the contents exactly as committed; `binary` is a file with a `NUL` byte in it — git's own test — whose bytes are never decoded into a string; `too-large` is a file over `rooms.repo.maxFileBytes`, checked against the size git already knows so an enormous file costs nothing to refuse. `size` is always the real size, whichever answer came back. A directory, a symlink and a submodule are each refused 400 `ROOM_FILE_NOT_READABLE` — **a link is listed but never followed**, so a symlink in the tree naming a path outside the room cannot be read through this. The contents are member-written: render them as untrusted text, never as a document with an origin.",
+  request: { params: RoomIdParams, query: RoomFileContentQuerySchema },
+  responses: {
+    200: {
+      description: 'The file, or why its bytes are not here',
+      content: { 'application/json': { schema: RoomFileContentResponseSchema } },
+    },
+    400: {
+      description:
+        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names a folder, a link or another repository (`ROOM_FILE_NOT_READABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file in the commit (`ROOM_FILE_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
