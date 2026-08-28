@@ -27,6 +27,25 @@ function renderFrame(
   return { transport, ...utils };
 }
 
+/**
+ * The frame once its document has been handed over.
+ *
+ * `McpAppFrame` commits the iframe with no `srcdoc` and only attaches the
+ * document in an effect, after the bridge listener is live — so an iframe in the
+ * DOM is one commit short of the frame these cases are about. Waiting on the
+ * element alone leaves the passive effect racing the wait's own macrotask, and
+ * the assertions below then read a frame with no `srcdoc` and no bridge behind
+ * it (DOR-1476). The document is what says both have landed.
+ */
+async function attachedFrame(container: HTMLElement): Promise<HTMLIFrameElement> {
+  return waitFor(() => {
+    const el = container.querySelector('iframe');
+    expect(el).not.toBeNull();
+    expect(el!.getAttribute('srcdoc')).not.toBeNull();
+    return el as HTMLIFrameElement;
+  });
+}
+
 /** Dispatch a JSON-RPC message as if it came from the app iframe's window. */
 function dispatchFromApp(source: Window | null, data: unknown): void {
   const event = new MessageEvent('message', { data });
@@ -47,11 +66,7 @@ describe('McpAppFrame sandbox attributes', () => {
       permissions: [],
     });
 
-    const iframe = await waitFor(() => {
-      const el = container.querySelector('iframe');
-      expect(el).not.toBeNull();
-      return el as HTMLIFrameElement;
-    });
+    const iframe = await attachedFrame(container);
     expect(iframe.getAttribute('sandbox')).toBe('allow-scripts');
     expect(iframe.getAttribute('sandbox')).not.toContain('allow-same-origin');
     // No permissions declared → no allow attribute at all.
@@ -67,11 +82,7 @@ describe('McpAppFrame sandbox attributes', () => {
       permissions: ['camera', 'clipboard-write'],
     });
 
-    const iframe = await waitFor(() => {
-      const el = container.querySelector('iframe');
-      expect(el).not.toBeNull();
-      return el as HTMLIFrameElement;
-    });
+    const iframe = await attachedFrame(container);
     expect(iframe.getAttribute('allow')).toBe("camera 'self'; clipboard-write 'self'");
   });
 });
@@ -86,11 +97,7 @@ describe('McpAppFrame display-mode requests', () => {
       { onRequestPip }
     );
 
-    const iframe = await waitFor(() => {
-      const el = container.querySelector('iframe');
-      expect(el).not.toBeNull();
-      return el as HTMLIFrameElement;
-    });
+    const iframe = await attachedFrame(container);
 
     dispatchFromApp(iframe.contentWindow, {
       jsonrpc: '2.0',
