@@ -59,7 +59,11 @@ interface NavigationLayoutProps {
  */
 function NavigationLayout({ children, value, onValueChange, className }: NavigationLayoutProps) {
   const isMobile = useIsMobile();
-  const [isDrilledIn, setIsDrilledIn] = React.useState(false);
+  const [drilledIn, setIsDrilledIn] = React.useState(false);
+  // Drill-in is a mobile idea, so a desktop viewport simply is not drilled in —
+  // derived rather than reset from an effect, which used to leave one render
+  // showing a drilled-in desktop sidebar.
+  const isDrilledIn = isMobile && drilledIn;
   const [direction, setDirection] = React.useState<'forward' | 'backward'>('forward');
   const [hasDialogHeader, setHasDialogHeader] = React.useState(false);
   // Use a ref for the items registry so labels persist even when sidebar
@@ -88,11 +92,6 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
 
   // eslint-disable-next-line react-hooks/refs -- itemsRef is synchronized via itemVersion state counter
   const activeLabel = itemsRef.current.get(value) ?? '';
-
-  // Reset drill-in when viewport switches to desktop
-  React.useEffect(() => {
-    if (!isMobile) setIsDrilledIn(false);
-  }, [isMobile]);
 
   const handleValueChange = React.useCallback(
     (newValue: string) => {

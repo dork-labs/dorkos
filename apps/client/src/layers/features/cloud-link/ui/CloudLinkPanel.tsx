@@ -9,7 +9,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +27,13 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-import { cn, formatRelativeTime, openLink, useCopyFeedback } from '@/layers/shared/lib';
+import {
+  cn,
+  formatRelativeTime,
+  openLink,
+  useCopyFeedback,
+  useRenderSlot,
+} from '@/layers/shared/lib';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
 
 /**
@@ -136,13 +142,29 @@ function IdleState({
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
   const persisted = config?.telemetry?.linkAnalyticsToAccount ?? false;
-  const [linkAnalytics, setLinkAnalytics] = useState(persisted);
+  // The box follows the persisted flag until the operator touches it, so a
+  // re-linking operator sees their prior choice pre-selected, and a config that
+  // loads (or changes elsewhere) afterwards wins again — which is what the
+  // effect this replaces did, without the extra render.
+  //
+  // The tick is stamped against a GENERATION rather than the persisted value
+  // itself. A flag has two values, so it comes back to the one a tick was made
+  // over almost immediately, and a stamp made of the value cannot tell that new
+  // reading from the old one — the stale tick would then win over the change.
+  const persistedReading = useRenderSlot({ value: persisted, generation: 0 });
+  if (persistedReading.read().value !== persisted) {
+    persistedReading.write({
+      value: persisted,
+      generation: persistedReading.read().generation + 1,
+    });
+  }
+  const persistedGeneration = persistedReading.read().generation;
 
-  // Mirror the persisted flag once config loads (or if it changes elsewhere), so
-  // a re-linking operator sees their prior choice pre-selected.
-  useEffect(() => {
-    setLinkAnalytics(persisted);
-  }, [persisted]);
+  const [ticked, setTicked] = useState<{ generation: number; value: boolean } | null>(null);
+  const linkAnalytics =
+    ticked !== null && ticked.generation === persistedGeneration ? ticked.value : persisted;
+  const setLinkAnalytics = (value: boolean) =>
+    setTicked({ generation: persistedGeneration, value });
 
   const [consentError, setConsentError] = useState<string | null>(null);
 

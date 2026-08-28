@@ -7,7 +7,7 @@
  *
  * @module features/mesh/ui/TopologyGraph
  */
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -40,7 +40,7 @@ import {
   useDeleteBinding,
 } from '@/layers/entities/binding';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
-import { cn } from '@/layers/shared/lib';
+import { cn, useLatest, useRenderSlot } from '@/layers/shared/lib';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -120,16 +120,12 @@ function TopologyGraphInner({
     };
   }, []);
 
-  // Stable refs for callback props prevent useMemo re-creation on each render,
-  // which would trigger ELK layout unnecessarily and risk infinite re-render loops.
-  const onViewProfileRef = useRef(onViewProfile);
-  onViewProfileRef.current = onViewProfile;
-  const onSelectAgentRef = useRef(onSelectAgent);
-  onSelectAgentRef.current = onSelectAgent;
-  const onOpenChatRef = useRef(onOpenChat);
-  onOpenChatRef.current = onOpenChat;
-  const onOpenAdapterCatalogRef = useRef(onOpenAdapterCatalog);
-  onOpenAdapterCatalogRef.current = onOpenAdapterCatalog;
+  // Held callback props prevent useMemo re-creation on each render, which would
+  // trigger ELK layout unnecessarily and risk infinite re-render loops.
+  const latestOnViewProfile = useLatest(onViewProfile);
+  const latestOnSelectAgent = useLatest(onSelectAgent);
+  const latestOnOpenChat = useLatest(onOpenChat);
+  const latestOnOpenAdapterCatalog = useLatest(onOpenAdapterCatalog);
 
   /** Pre-compute binding counts per adapter for O(1) lookup in buildTopologyElements. */
   const bindingCountByAdapter = useMemo(() => {
@@ -140,10 +136,10 @@ function TopologyGraphInner({
     return counts;
   }, [bindings]);
 
-  // Stable ref forwarding for handleDeleteBinding — declared before useMemo so
-  // the closure below can call it without adding a changing value to dep array.
+  // Stable forwarding for handleDeleteBinding — declared before useMemo so the
+  // closure below can call it without adding a changing value to the dep array.
   // Initialized to a no-op; updated after the hook provides the real function.
-  const handleDeleteBindingRef = useRef<(edgeId: string) => void>(() => undefined);
+  const heldDeleteBinding = useRenderSlot<(edgeId: string) => void>(() => undefined);
 
   const { rawNodes, rawEdges, legendEntries, useGroups } = useMemo(() => {
     return buildTopologyElements(
@@ -153,17 +149,31 @@ function TopologyGraphInner({
       adapters,
       bindings,
       bindingCountByAdapter,
-      // Calls via ref so this useMemo doesn't take handleDeleteBinding as a dep
-      // (which would recompute nodes/edges on every layout pass).
-      (edgeId) => handleDeleteBindingRef.current(edgeId),
+      // Reads the held value so this useMemo doesn't take handleDeleteBinding as
+      // a dep (which would recompute nodes/edges on every layout pass).
+      (edgeId) => heldDeleteBinding.read()(edgeId),
       {
-        onViewProfile: (id, path) => onViewProfileRef.current?.(id, path),
-        onSelectAgent: (id, path) => onSelectAgentRef.current?.(id, path),
-        onOpenChat: (path) => onOpenChatRef.current?.(path),
-        onGhostClick: () => onOpenAdapterCatalogRef.current?.(),
+        onViewProfile: (id, path) => latestOnViewProfile.read()?.(id, path),
+        onSelectAgent: (id, path) => latestOnSelectAgent.read()?.(id, path),
+        onOpenChat: (path) => latestOnOpenChat.read()?.(path),
+        onGhostClick: () => latestOnOpenAdapterCatalog.read()?.(),
       }
     );
-  }, [namespaces, accessRules, relayEnabled, adapters, bindings, bindingCountByAdapter]);
+    // The five held slots below never change identity — they are listed only
+    // because the linter cannot tell that on its own.
+  }, [
+    namespaces,
+    accessRules,
+    relayEnabled,
+    adapters,
+    bindings,
+    bindingCountByAdapter,
+    heldDeleteBinding,
+    latestOnViewProfile,
+    latestOnSelectAgent,
+    latestOnOpenChat,
+    latestOnOpenAdapterCatalog,
+  ]);
 
   const {
     layoutedNodes,
@@ -195,9 +205,9 @@ function TopologyGraphInner({
     handleConnectEnd,
   } = useTopologyHandlers({ rawNodes, deleteBindingMutate, createBindingMutate });
 
-  // Keep the ref current so the useMemo closure (above) always dispatches to
-  // the latest stable version of handleDeleteBinding from the hook.
-  handleDeleteBindingRef.current = handleDeleteBinding;
+  // Keep the held value current so the useMemo closure (above) always dispatches
+  // to the latest stable version of handleDeleteBinding from the hook.
+  heldDeleteBinding.write(handleDeleteBinding);
 
   // Stable fingerprint so ELK only re-runs when the graph structure actually
   // changes, not when useTopology refetch creates new object references.

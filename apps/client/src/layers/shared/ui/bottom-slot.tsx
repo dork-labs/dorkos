@@ -17,7 +17,7 @@
  *
  * @module shared/ui/bottom-slot
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
@@ -117,10 +117,16 @@ export function BottomSlot({ candidates, ready, className }: BottomSlotProps) {
   // harmless with the real library, which reads `initial` only at mount, but
   // only by accident. Comparing ids makes the rule say what it means: a card
   // animates when it is not the one boot painted.
+  //
+  // The "already latched" bit is a ref as well as the state, because it is the
+  // one reading that stays true through StrictMode's second run of this effect.
   const [bootWinnerId, setBootWinnerId] = useState<string | null | undefined>(undefined);
+  const latched = useRef(false);
   useEffect(() => {
-    if (ready && bootWinnerId === undefined) setBootWinnerId(winner?.id ?? null);
-  }, [ready, bootWinnerId, winner]);
+    if (!ready || latched.current) return;
+    latched.current = true;
+    setBootWinnerId(winner?.id ?? null);
+  }, [ready, winner]);
 
   const animates = bootWinnerId !== undefined && winner?.id !== bootWinnerId && !shouldReduceMotion;
 

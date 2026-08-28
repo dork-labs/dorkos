@@ -34,7 +34,7 @@ export function ThinkingBlock({ text, isStreaming, elapsedMs }: ThinkingBlockPro
   // Auto-collapse when streaming completes
   useEffect(() => {
     if (wasStreamingRef.current && !isStreaming) {
-      setExpanded(false); // eslint-disable-line react-hooks/set-state-in-effect -- Intentional: collapse once on streaming→done transition
+      setExpanded(false);
     }
     wasStreamingRef.current = isStreaming;
   }, [isStreaming]);

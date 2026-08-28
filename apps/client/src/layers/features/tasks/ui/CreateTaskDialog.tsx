@@ -106,7 +106,7 @@ export function CreateTaskDialog({
   }
 
   // Reset when dialog opens/closes or edit target changes.
-  /* eslint-disable react-hooks/set-state-in-effect -- necessary to sync form with external state changes */
+
   useEffect(() => {
     if (!open) {
       applyFormValues(buildFormValues(editTask, undefined, initialAgentId, defaultModeRef.current));
@@ -146,7 +146,6 @@ export function CreateTaskDialog({
       clear();
     }
   }, [externalTrigger, pendingTemplate, clear, initialAgentId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleSelectPreset(preset: TaskTemplate) {
     applyFormValues(buildFormValues(undefined, preset, initialAgentId, defaultModeRef.current));

@@ -33,7 +33,7 @@ export function MemoryRecallBlock({ mode, memories, isStreaming }: MemoryRecallB
   // Auto-collapse when streaming completes — mirrors ThinkingBlock exactly
   useEffect(() => {
     if (wasStreamingRef.current && !isStreaming) {
-      setExpanded(false); // eslint-disable-line react-hooks/set-state-in-effect -- Intentional: collapse once on streaming→done transition
+      setExpanded(false);
     }
     wasStreamingRef.current = isStreaming;
   }, [isStreaming]);

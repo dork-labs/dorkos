@@ -190,6 +190,7 @@ function Panel() {
   const onRequestNewGroup = useCallback(() => {}, []);
   const openTarget = useCallback(() => {}, []);
   const roomVisualOf = useCallback((room: RoomSummary) => SIGIL_FOR[room.id]!, []);
+  // eslint-disable-next-line react-hooks/immutability -- test harness: the mocked `useSidebarChrome` reads this box, so the value has to be published during the same render the children read it in
   chromeBox.current = useMemo(
     () => ({
       roomsById: ROOMS_BY_ID,
