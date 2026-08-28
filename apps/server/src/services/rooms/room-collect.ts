@@ -77,6 +77,7 @@
  * @module server/services/rooms/room-collect
  */
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
+import type { TriggerReason } from './addressing.js';
 import type { EngagementWindow } from './engagement.js';
 import { agentKey } from './room-claims.js';
 
@@ -97,6 +98,17 @@ export interface CollectedTrigger {
    * `RoomContextEntry.arrivedDuringPrevTurn` renders.
    */
   arrivedDuringTurn: boolean;
+  /**
+   * WHY the addressing matrix picked this agent for this message.
+   *
+   * Carried rather than re-derived for the same reason
+   * {@link CollectedTrigger.engaged} is: one reading of the roster, one answer.
+   * Its one reader is the response gate, which may only act on a burst where
+   * EVERY message says `'window'` — see
+   * {@link import('./room-trigger.js').RoomTriggerDispatcher} — so a mixed burst
+   * is addressed and runs a turn whatever the rest of it says.
+   */
+  reason: TriggerReason;
 }
 
 /** Everything one agent has been asked, in one room, that no turn has answered. */
@@ -153,6 +165,8 @@ export interface CollectInput {
   entry: RoomEntry;
   depth: number;
   engaged: EngagementWindow | null;
+  /** Why the matrix picked this agent — see {@link CollectedTrigger.reason}. */
+  reason: TriggerReason;
   /**
    * True when this agent already holds a claim IN THIS ROOM — what
    * `RoomContextEntry.arrivedDuringPrevTurn` renders.
@@ -264,6 +278,7 @@ export class RoomCollector {
       depth: input.depth,
       engaged: input.engaged,
       arrivedDuringTurn: input.duringTurnHere,
+      reason: input.reason,
     };
     const open = this.collections.get(key);
     if (open) {

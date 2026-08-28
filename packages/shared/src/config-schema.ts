@@ -1722,6 +1722,28 @@ export const UserConfigSchema = z.object({
        */
       collectMaxEntries: z.number().int().min(1).max(200).default(20),
       /**
+       * Whether an agent may skip messages that were clearly meant for somebody
+       * else, instead of reading each one properly before deciding to say
+       * nothing.
+       *
+       * Agents in a channel keep listening for a while after you talk to them,
+       * so they can follow the conversation without being named every time. The
+       * cost of that is real: today an agent thinks about every message it
+       * overhears, even one that starts with somebody else's name. Listening
+       * should be close to free.
+       *
+       * - `routing` — skip a message that named a different agent, and skip the
+       *   replies in an exchange this agent is not part of. Nothing else. This
+       *   is the default.
+       * - `off` — think about every overheard message, as before.
+       *
+       * A skipped message is not lost: the agent still sees it as background the
+       * next time it does reply. And nothing here touches a message that names
+       * the agent, or anything said in a direct message — those always get an
+       * answer.
+       */
+      responseGate: z.enum(['off', 'routing']).default('routing'),
+      /**
        * A room's own files — its git repo, the standing worktree each agent
        * works in, and the merges that bring that work back (spec
        * `project-rooms`).
@@ -1807,6 +1829,7 @@ export const UserConfigSchema = z.object({
       engagedWindowPosts: 5,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
+      responseGate: 'routing' as const,
       repo: {
         enabled: true,
         worktreeReapDays: 14,

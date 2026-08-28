@@ -20,8 +20,12 @@ import { describe, it, expect } from 'vitest';
 import { eq, rooms, type Db } from '@dorkos/db';
 import { CreateRoomRequestSchema } from '@dorkos/shared/room-schemas';
 import type { AuthorKind, RoomKind } from '@dorkos/shared/room-schemas';
-import { selectTriggerTargets } from '../addressing.js';
+import { selectTriggerTargets, type TriggerSelection } from '../addressing.js';
 import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';
+
+/** The author ids out of a selection — these cases are about WHO, not why. */
+const ids = (selections: readonly TriggerSelection[]): string[] =>
+  selections.map((selection) => selection.authorId);
 
 const AGENTS = agentLookupFor({
   '/agents/ana': { name: 'ana' },
@@ -300,7 +304,7 @@ describe('the addressing matrix a DM member addition must not move', () => {
       authorKind,
       entry: { authorId: 'ana', mentions: [] },
       members: [always],
-    });
+    }).map((selection) => selection.authorId);
   }
 
   it('leaves a channel exactly as it was — an agent still reaches an always room-mate', () => {
@@ -315,12 +319,14 @@ describe('the addressing matrix a DM member addition must not move', () => {
 
   it('reaches a named member in a DM whatever wrote the message', () => {
     expect(
-      selectTriggerTargets({
-        roomKind: 'dm',
-        authorKind: 'agent',
-        entry: { authorId: 'ana', mentions: ['bo'] },
-        members: [always],
-      })
+      ids(
+        selectTriggerTargets({
+          roomKind: 'dm',
+          authorKind: 'agent',
+          entry: { authorId: 'ana', mentions: ['bo'] },
+          members: [always],
+        })
+      )
     ).toEqual(['bo']);
   });
 
@@ -344,15 +350,19 @@ describe('the addressing matrix a DM member addition must not move', () => {
     } as const;
     const entry = { authorId: 'dorian', mentions: [] };
     expect(
-      selectTriggerTargets({ roomKind: 'dm', authorKind: 'human', entry, members: [directOnly] })
+      ids(
+        selectTriggerTargets({ roomKind: 'dm', authorKind: 'human', entry, members: [directOnly] })
+      )
     ).toEqual(['bo']);
     expect(
-      selectTriggerTargets({
-        roomKind: 'huddle' as never,
-        authorKind: 'human',
-        entry,
-        members: [directOnly],
-      })
+      ids(
+        selectTriggerTargets({
+          roomKind: 'huddle' as never,
+          authorKind: 'human',
+          entry,
+          members: [directOnly],
+        })
+      )
     ).toEqual([]);
   });
 });

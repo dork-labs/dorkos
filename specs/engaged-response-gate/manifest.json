@@ -1,0 +1,12 @@
+{
+  "id": "260814-113503",
+  "slug": "engaged-response-gate",
+  "title": "The engaged response gate: making silence nearly free",
+  "created": "2026-08-14",
+  "status": "specified",
+  "linearIssue": "DOR-1203",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md"
+  }
+}

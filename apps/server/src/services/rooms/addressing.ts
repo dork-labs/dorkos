@@ -35,6 +35,46 @@ export interface AddressingMember {
   isEngaged: boolean;
 }
 
+/**
+ * WHY the matrix picked a member — the one thing a caller needs to know about a
+ * selection beyond the fact that it happened.
+ *
+ * The matrix has always answered "who", and every caller has always had to
+ * re-derive "why" if it wanted it. The response gate
+ * (`response-gate/routing-rules.ts`) needs it and must not re-derive it: it
+ * decides whether a turn is worth running at all, and a second reading of the
+ * same roster half a second later could disagree with the first — an agent
+ * routed to silence on the grounds that nobody addressed it, by a reading taken
+ * after the reading that said somebody had.
+ *
+ * **`mention` is resolved before every other reason, and that ordering is the
+ * safety property.** A named agent can never be classified as ambient by a later
+ * rule, whatever its mode or window says, which is what keeps invariant I3
+ * ("being asked creates an obligation") out of the gate's reach.
+ */
+export type TriggerReason =
+  /** This entry named them. */
+  | 'mention'
+  /** Outside a channel, where a person's message addresses whoever is there. */
+  | 'dm'
+  /**
+   * `engaged`, inside an open window, unnamed — somebody was talking to them
+   * recently and has not said their name this time.
+   *
+   * The only reason the response gate may act on.
+   */
+  | 'window'
+  /** `always`, which fires on everything. */
+  | 'always'
+  /** The room's fallback seat, standing up for a post nobody addressed. */
+  | 'seat';
+
+/** One member the matrix picked, and why. */
+export interface TriggerSelection {
+  authorId: string;
+  reason: TriggerReason;
+}
+
 /** The entry being addressed. */
 export interface AddressingEntry {
   authorId: string;
@@ -112,14 +152,15 @@ export function respondsTo(
  *   DM's implicit address.
  * @param opts.entry - The committed entry.
  * @param opts.members - The room's roster.
- * @returns Author ids to trigger, before the cascade guard has its say.
+ * @returns Author ids to trigger with the reason each was picked, before the
+ *   cascade guard has its say.
  */
 export function selectTriggerTargets(opts: {
   roomKind: RoomKind;
   authorKind: AuthorKind;
   entry: AddressingEntry;
   members: readonly AddressingMember[];
-}): string[] {
+}): TriggerSelection[] {
   const mentioned = new Set(opts.entry.mentions);
   const impliesEveryone = opts.roomKind === 'channel' || opts.authorKind === 'human';
   return opts.members
@@ -132,7 +173,45 @@ export function selectTriggerTargets(opts: {
         isEngaged: member.isEngaged,
       })
     )
-    .map((member) => member.authorId);
+    .map((member) => ({
+      authorId: member.authorId,
+      reason: reasonFor(opts.roomKind, member, mentioned.has(member.authorId)),
+    }));
+}
+
+/**
+ * Why one selected member was selected.
+ *
+ * Only reached for members {@link selectTriggerTargets} has already decided to
+ * trigger, so this answers "which of the reasons that could have picked you did"
+ * rather than "should you be picked" — and the order is the answer.
+ *
+ * 1. **Named**, whatever the mode. A mention beats everything, because being
+ *    named is what creates the obligation the gate must never touch.
+ * 2. **Not a channel**, where a person's message addresses whoever is there
+ *    without typing a name (ADR 260814-025326). Tested as `!== 'channel'` rather
+ *    than `=== 'dm'` for the same reason {@link selectTriggerTargets} tests it
+ *    that way: a stored kind that is neither takes the restrained side, and here
+ *    "restrained" means "treated as addressed and never gated".
+ * 3. **`engaged`**, which is the one reason that means nobody addressed this
+ *    agent at all — it is here because it was talking a moment ago.
+ * 4. Everything left is `always`, on its own or as the room's fallback seat.
+ *    {@link standDownFallbackSeat} tells those two apart, because the seat is
+ *    named by the room and nothing here knows the room.
+ *
+ * @param roomKind - The room's kind.
+ * @param member - The selected member.
+ * @param mentioned - Whether this entry named them.
+ */
+function reasonFor(
+  roomKind: RoomKind,
+  member: AddressingMember,
+  mentioned: boolean
+): TriggerReason {
+  if (mentioned) return 'mention';
+  if (roomKind !== 'channel') return 'dm';
+  if (member.responseMode === 'engaged') return 'window';
+  return 'always';
 }
 
 /**
@@ -196,23 +275,39 @@ export function selectTriggerTargets(opts: {
  *   including for the seat, which the caller must compute rather than assume, or
  *   the second escape silently never fires.
  * @param opts.selected - What {@link selectTriggerTargets} chose.
- * @returns `selected`, without the seat when it has stood down. May be empty: a
- *   post that named only a silenced agent reaches nobody, which is what
- *   silencing that agent asked for.
+ * @returns `selected`, without the seat when it has stood down and with the
+ *   seat's reason relabelled `'seat'` when it has not. May be empty: a post that
+ *   named only a silenced agent reaches nobody, which is what silencing that
+ *   agent asked for.
  */
 export function standDownFallbackSeat(opts: {
   entry: AddressingEntry;
   authorKind: AuthorKind;
   seatAuthorId: string | null;
   members: readonly AddressingMember[];
-  selected: readonly string[];
-}): string[] {
+  selected: readonly TriggerSelection[];
+}): TriggerSelection[] {
   const { seatAuthorId } = opts;
-  if (seatAuthorId === null || !opts.selected.includes(seatAuthorId)) return [...opts.selected];
+  if (seatAuthorId === null) return [...opts.selected];
+  const held = opts.selected.find((selection) => selection.authorId === seatAuthorId);
+  if (!held) return [...opts.selected];
+
+  // The seat's own reason, named now that somebody knows which member holds the
+  // seat. Only an `always` selection becomes `'seat'`: a seat that was MENTIONED
+  // keeps `'mention'`, because it is then answering as itself rather than as the
+  // fallback — the same distinction the two escapes below are drawn along.
+  const labelled: TriggerSelection[] =
+    held.reason === 'always'
+      ? opts.selected.map((selection) =>
+          selection.authorId === seatAuthorId
+            ? { ...selection, reason: 'seat' as const }
+            : selection
+        )
+      : [...opts.selected];
 
   const mentioned = new Set(opts.entry.mentions);
   const seat = opts.members.find((member) => member.authorId === seatAuthorId);
-  if (mentioned.has(seatAuthorId) || seat?.isEngaged) return [...opts.selected];
+  if (mentioned.has(seatAuthorId) || seat?.isEngaged) return labelled;
 
   // A mention of a PERSON is not delegating the question to an agent, so it
   // leaves the seat exactly where it was — and neither does naming the seat's
@@ -224,7 +319,7 @@ export function standDownFallbackSeat(opts: {
       member.authorId !== seatAuthorId &&
       mentioned.has(member.authorId)
   );
-  if (!addressedAnotherAgent && opts.authorKind !== 'agent') return [...opts.selected];
+  if (!addressedAnotherAgent && opts.authorKind !== 'agent') return labelled;
 
-  return opts.selected.filter((authorId) => authorId !== seatAuthorId);
+  return labelled.filter((selection) => selection.authorId !== seatAuthorId);
 }

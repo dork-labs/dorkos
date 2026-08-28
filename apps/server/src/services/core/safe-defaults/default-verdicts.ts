@@ -274,6 +274,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // bounded side, and the protective direction for both is HIGHER.
   'rooms.collectDebounceMs': 500,
   'rooms.collectMaxEntries': 20,
+  'rooms.responseGate': 'routing',
   // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
   // noise a return can produce: four hours before an absence counts at all, and
   // at most three posts when it does. Both carry across a wipe, in opposite
