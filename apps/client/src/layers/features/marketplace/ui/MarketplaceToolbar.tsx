@@ -108,7 +108,12 @@ export function MarketplaceToolbar() {
 function MarketplaceSearchInput() {
   const { search: committedSearch, setSearch } = useMarketplaceParams();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [localSearch, setLocalSearch] = useState(committedSearch);
+  // What has been typed but not yet committed, stamped with the committed value
+  // it was typed over. A committed search that changes elsewhere (reset filters,
+  // a link) therefore wins on its own, without an effect writing the field back.
+  const [typed, setTyped] = useState<{ over: string; value: string } | null>(null);
+  const localSearch = typed !== null && typed.over === committedSearch ? typed.value : committedSearch;
+  const setLocalSearch = (value: string) => setTyped({ over: committedSearch, value });
 
   // Debounce the local input before committing it to the URL.
   useEffect(() => {
@@ -116,11 +121,6 @@ function MarketplaceSearchInput() {
     const timer = setTimeout(() => setSearch(localSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [localSearch, committedSearch, setSearch]);
-
-  // Resync the input when the committed search changes externally (e.g. reset filters).
-  useEffect(() => {
-    setLocalSearch(committedSearch);
-  }, [committedSearch]);
 
   // "/" keyboard shortcut to focus search (standard marketplace convention).
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

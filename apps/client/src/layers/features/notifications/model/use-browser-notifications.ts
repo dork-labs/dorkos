@@ -119,7 +119,7 @@ export function useBrowserNotifications(): void {
     };
 
     openRef.current.set(key, { notification, href });
-  }, []);
+  }, [latestNavigate]);
 
   const onArrive = useCallback(
     (items: readonly BlockingItem[]) => {

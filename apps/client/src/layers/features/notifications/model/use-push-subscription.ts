@@ -98,7 +98,7 @@ export function usePushSubscription(): PushSubscriptionState {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [localDeviceId, setLocalDeviceId] = useState<string | null>(readLocalDeviceId);
+  const [storedDeviceId, setStoredDeviceId] = useState<string | null>(readLocalDeviceId);
 
   const platform = platformAvailability();
 
@@ -124,7 +124,7 @@ export function usePushSubscription(): PushSubscriptionState {
     },
     onSuccess: (result) => {
       writeLocalDeviceId(result.subscription.id);
-      setLocalDeviceId(result.subscription.id);
+      setStoredDeviceId(result.subscription.id);
       void queryClient.invalidateQueries({ queryKey: [...PUSH_DEVICES_QUERY_KEY] });
     },
     meta: { suppressErrorToast: true },
@@ -135,7 +135,7 @@ export function usePushSubscription(): PushSubscriptionState {
     onSuccess: (_result, id) => {
       if (readLocalDeviceId() === id) {
         clearLocalDeviceId();
-        setLocalDeviceId(null);
+        setStoredDeviceId(null);
         void unsubscribeThisBrowser();
       }
       void queryClient.invalidateQueries({ queryKey: [...PUSH_DEVICES_QUERY_KEY] });
@@ -145,14 +145,19 @@ export function usePushSubscription(): PushSubscriptionState {
 
   // A row this browser thinks is its own but the server no longer lists was
   // removed from somewhere else — another window, another device's list. Keeping
-  // the stale id would draw "This device" against a row that is not there.
+  // the stale id would draw "This device" against a row that is not there, so the
+  // id READ below is the reconciled one, and the effect only forgets the copy on
+  // disk. Derived rather than corrected from an effect: the row must never paint
+  // as this device, not even for the frame before the effect runs.
   const listed = devices.data?.subscriptions;
+  const orphaned =
+    listed !== undefined &&
+    storedDeviceId !== null &&
+    !listed.some((device) => device.id === storedDeviceId);
+  const localDeviceId = orphaned ? null : storedDeviceId;
   useEffect(() => {
-    if (!listed || localDeviceId === null) return;
-    if (listed.some((device) => device.id === localDeviceId)) return;
-    clearLocalDeviceId();
-    setLocalDeviceId(null);
-  }, [listed, localDeviceId]);
+    if (orphaned) clearLocalDeviceId();
+  }, [orphaned]);
 
   const vapidKey = vapid.data?.key ?? null;
 

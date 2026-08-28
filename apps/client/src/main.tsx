@@ -74,20 +74,28 @@ const MIN_PANEL_HEIGHT = 150;
 function DevToolsPanel() {
   const devtoolsOpen = useAppStore((s) => s.devtoolsOpen);
   const routerDevtoolsOpen = useAppStore((s) => s.routerDevtoolsOpen);
-  const [activeTab, setActiveTab] = React.useState<'query' | 'router'>('query');
+  // The tab, chosen for whichever pair of panels is open. Toggling one on
+  // changes that pair, which drops an older pick and lands on the panel that was
+  // just opened — the auto-switch, derived rather than set from two effects.
+  const [picked, setPicked] = React.useState<{
+    forQuery: boolean;
+    forRouter: boolean;
+    tab: 'query' | 'router';
+  } | null>(null);
   const [panelHeight, setPanelHeight] = React.useState(DEFAULT_PANEL_HEIGHT);
   const [isMaximized, setIsMaximized] = React.useState(false);
   const preMaxHeightRef = React.useRef(DEFAULT_PANEL_HEIGHT);
 
   const isOpen = devtoolsOpen || routerDevtoolsOpen;
 
-  // Auto-switch to the tab that was just toggled on
-  React.useEffect(() => {
-    if (devtoolsOpen) setActiveTab('query');
-  }, [devtoolsOpen]);
-  React.useEffect(() => {
-    if (routerDevtoolsOpen) setActiveTab('router');
-  }, [routerDevtoolsOpen]);
+  const activeTab =
+    picked !== null && picked.forQuery === devtoolsOpen && picked.forRouter === routerDevtoolsOpen
+      ? picked.tab
+      : routerDevtoolsOpen
+        ? 'router'
+        : 'query';
+  const setActiveTab = (tab: 'query' | 'router') =>
+    setPicked({ forQuery: devtoolsOpen, forRouter: routerDevtoolsOpen, tab });
 
   // Drag-to-resize handler
   const handleDragStart = React.useCallback(

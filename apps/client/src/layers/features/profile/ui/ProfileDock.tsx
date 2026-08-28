@@ -10,7 +10,7 @@
  *
  * @module features/profile/ui/ProfileDock
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '@/layers/shared/model';
 import { useMeshAgentPaths, useMeshMemberId } from '@/layers/entities/mesh';
 import { useTeamRoster } from '@/layers/entities/team';
@@ -156,7 +156,7 @@ export function ProfileDock() {
       if (hasUnsavedProfileEdits(latestScope.read())) return setConfirmingClose(true);
       clearDockedStacks();
     };
-  }, [rightPanelOpen, clearDockedStacks]);
+  }, [rightPanelOpen, clearDockedStacks, latestScope]);
 
   if (!agentPath) return <NoAgentSelected />;
 

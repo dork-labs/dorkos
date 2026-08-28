@@ -101,7 +101,7 @@ export function ProfileSheetContainer({ open, onOpenChange }: ProfileSheetContai
     }
     if (latestChain.read().at(-1) === memberId) popSheetChain();
     else if (latestChain.read().length > 0) clearSheetChain();
-  }, [memberId, popSheetChain, clearSheetChain]);
+  }, [memberId, popSheetChain, clearSheetChain, latestChain]);
 
   const stack = useMemo(() => {
     if (memberId === null) return null;

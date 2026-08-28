@@ -9,7 +9,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -136,13 +136,14 @@ function IdleState({
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
   const persisted = config?.telemetry?.linkAnalyticsToAccount ?? false;
-  const [linkAnalytics, setLinkAnalytics] = useState(persisted);
-
-  // Mirror the persisted flag once config loads (or if it changes elsewhere), so
-  // a re-linking operator sees their prior choice pre-selected.
-  useEffect(() => {
-    setLinkAnalytics(persisted);
-  }, [persisted]);
+  // The box follows the persisted flag until the operator touches it, so a
+  // re-linking operator sees their prior choice pre-selected. Their tick is
+  // stamped with the persisted value it was made over, so a config that loads
+  // (or changes elsewhere) afterwards still wins — which is what the effect this
+  // replaces did, without the extra render.
+  const [ticked, setTicked] = useState<{ over: boolean; value: boolean } | null>(null);
+  const linkAnalytics = ticked !== null && ticked.over === persisted ? ticked.value : persisted;
+  const setLinkAnalytics = (value: boolean) => setTicked({ over: persisted, value });
 
   const [consentError, setConsentError] = useState<string | null>(null);
 

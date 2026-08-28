@@ -39,7 +39,7 @@
  *
  * @module shared/model/use-inline-editor-settle
  */
-import { useCallback, useRef, type FocusEvent } from 'react';
+import { useCallback, useRef, useState, type FocusEvent } from 'react';
 
 /**
  * How long after opening a blur can still belong to the menu.
@@ -80,7 +80,9 @@ export interface InlineEditorSettle {
 export function useInlineEditorSettle(elementRef: {
   current: HTMLElement | null;
 }): InlineEditorSettle {
-  const openedAtRef = useRef(Date.now());
+  // A lazy state initializer, not a ref initializer: the clock is read once when
+  // the editor opens, and render itself may not read it.
+  const [openedAt] = useState(() => Date.now());
   const reclaimedRef = useRef(false);
 
   const shouldHandleBlur = useCallback(
@@ -92,14 +94,14 @@ export function useInlineEditorSettle(elementRef: {
         next === null || (next instanceof Element && next.closest(MENU_SURFACE) !== null);
       if (!wentToMenu) return true;
       if (reclaimedRef.current) return true;
-      if (Date.now() - openedAtRef.current > SETTLE_MS) return true;
+      if (Date.now() - openedAt > SETTLE_MS) return true;
       reclaimedRef.current = true;
       // After the current task, so the menu finishes unmounting first —
       // reclaiming inside its own restore just loses the race again.
       setTimeout(() => elementRef.current?.focus(), 0);
       return false;
     },
-    [elementRef]
+    [elementRef, openedAt]
   );
 
   return { shouldHandleBlur };

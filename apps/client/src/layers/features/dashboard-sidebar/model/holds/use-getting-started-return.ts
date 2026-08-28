@@ -75,17 +75,22 @@ export function useGettingStartedReturn(model: SidebarModel): GettingStartedRetu
   // waits on the pointer resumes the same clock instead of restarting one.
   const yieldedAt = useRef<number | null>(null);
 
+  // Whether the zone is stood aside right now. It mirrors `!showing`, and it is
+  // this reading rather than the state that the yield below tests: the clock
+  // must be stamped once per stand-aside, and re-stamping it for a second signal
+  // that arrives while the zone is already away would push the return out again
+  // — the flap this hook exists to kill.
+  const standAside = useRef(!wanted);
+
   useEffect(() => {
     if (!wanted) {
       // **The yield, and it is unconditional.** No floor, no pointer check, no
       // timer: a permission prompt or a streaming turn takes this slot on the
       // frame it exists, which is the precedence the zone system is built on.
       //
-      // The synchronous `setState` here is the same shape `use-all-clear-beat`
-      // uses for the same reason — a flag whose value is a fact about a
-      // transition between two models, which a component handed one model
-      // cannot see. It runs only on the transition, never on the steady state.
-      if (showing) {
+      // It runs only on the transition, never on the steady state.
+      if (!standAside.current) {
+        standAside.current = true;
         yieldedAt.current = Date.now();
         setShowing(false);
       }
@@ -105,6 +110,7 @@ export function useGettingStartedReturn(model: SidebarModel): GettingStartedRetu
     // is not a return and there is nothing to damp. Day one must not open onto
     // five seconds of empty sidebar.
     if (waited >= GETTING_STARTED_RETURN_FLOOR_MS) {
+      standAside.current = false;
       setShowing(true);
       return;
     }
@@ -114,7 +120,10 @@ export function useGettingStartedReturn(model: SidebarModel): GettingStartedRetu
     // this and cannot keep pushing the return away; but if one of them does
     // change, the reschedule below starts from the timestamp rather than from
     // zero, and the deadline stays where it was.
-    const timer = setTimeout(() => setShowing(true), GETTING_STARTED_RETURN_FLOOR_MS - waited);
+    const timer = setTimeout(() => {
+      standAside.current = false;
+      setShowing(true);
+    }, GETTING_STARTED_RETURN_FLOOR_MS - waited);
     return () => clearTimeout(timer);
   }, [wanted, showing, inside]);
 

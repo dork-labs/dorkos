@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Users } from 'lucide-react';
 import { Badge, Separator } from '@/layers/shared/ui';
 import { cn, formatDuration } from '@/layers/shared/lib';
@@ -398,11 +398,20 @@ function gitLabel(git: GitDiagnostics): string {
  * @param live - Whether the readout is on screen.
  */
 function useAgeSince(timestamp: number | null, live: boolean): number | null {
+  // The reading this hook last took. The ref is where it is taken — render may
+  // not read the clock — and the state is the copy render can see.
+  const reading = useRef(0);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (timestamp === null || !live) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
+    const sample = () => {
+      reading.current = Date.now();
+      setNow(reading.current);
+    };
+    // Read once on becoming visible, so the first render after reopening is not
+    // a whole tick stale.
+    sample();
+    const id = setInterval(sample, AGE_TICK_MS);
     return () => clearInterval(id);
   }, [timestamp, live]);
   if (timestamp === null) return null;

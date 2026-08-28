@@ -15,7 +15,14 @@
  *
  * @module shared/model/event-stream-context
  */
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useCallback,
+  useSyncExternalStore,
+} from 'react';
 
 import type { ConnectionState } from '@dorkos/shared/types';
 
@@ -98,6 +105,11 @@ function installReconnectInvalidation(): void {
 
 const EventStreamContext = createContext<EventStreamContextValue | null>(null);
 
+/** Module-level so its identity is stable — `useSyncExternalStore` resubscribes whenever this changes. */
+function subscribeListConnection(onStoreChange: () => void): () => void {
+  return streamManager.subscribeListConnectionState(() => onStoreChange());
+}
+
 /**
  * Provide the shared `/api/events` subscription API to the component tree.
  *
@@ -109,23 +121,21 @@ const EventStreamContext = createContext<EventStreamContextValue | null>(null);
  * Consumers subscribe via {@link useEventStream} or {@link useEventSubscription}.
  */
 export function EventStreamProvider({ children }: { children: React.ReactNode }) {
-  const [connectionState, setConnectionState] = useState<ConnectionState>(
+  // Read straight off the StreamManager rather than mirrored into state: the
+  // connection is an external system, and `connectList` below can move it
+  // between a render's snapshot and the subscription that follows. Two reads
+  // because both snapshots must be primitives — `useSyncExternalStore` compares
+  // them by identity every render.
+  const connectionState = useSyncExternalStore(subscribeListConnection, () =>
     streamManager.getListConnectionState()
   );
-  const [failedAttempts, setFailedAttempts] = useState(streamManager.getListFailedAttempts());
+  const failedAttempts = useSyncExternalStore(subscribeListConnection, () =>
+    streamManager.getListFailedAttempts()
+  );
 
   useEffect(() => {
     installReconnectInvalidation();
     streamManager.connectList();
-
-    // Re-read after connect — connectList may have transitioned the state
-    // synchronously between the render snapshot and this subscription.
-    setConnectionState(streamManager.getListConnectionState());
-    setFailedAttempts(streamManager.getListFailedAttempts());
-    return streamManager.subscribeListConnectionState((state, attempts) => {
-      setConnectionState(state);
-      setFailedAttempts(attempts);
-    });
   }, []);
 
   const subscribe: SubscribeFn = useCallback(

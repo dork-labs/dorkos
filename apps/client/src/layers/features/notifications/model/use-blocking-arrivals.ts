@@ -147,5 +147,5 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
 
     if (arrived.length > 0) latestHandlers.read().onArrive?.(arrived);
     if (departed.length > 0) latestHandlers.read().onDepart?.(departed, current.size);
-  }, [loading, signals]);
+  }, [loading, signals, latestHandlers]);
 }

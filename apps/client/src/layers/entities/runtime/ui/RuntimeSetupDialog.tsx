@@ -663,8 +663,14 @@ export function RuntimeSetupDialog({
   // handoff), so it renders the instant the connect succeeds. Only wired when the
   // opener asked for it (`showConnectSuccess`); reset whenever the dialog closes.
   const [success, setSuccess] = useState<RuntimeConnectSuccess | null>(null);
+  // Cleared on the CLOSE transition, which the ref is what identifies: a dialog
+  // that merely re-renders while shut has nothing to reset.
+  const wasOpen = useRef(open);
   useEffect(() => {
-    if (!open) setSuccess(null);
+    if (wasOpen.current && !open) {
+      setSuccess(null);
+    }
+    wasOpen.current = open;
   }, [open]);
   // Compose, never clobber: a slot caller may pass its own `onConnected` (the
   // ready-state Change flow uses it to collapse its UI). When the opener asked

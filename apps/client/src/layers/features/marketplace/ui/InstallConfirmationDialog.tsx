@@ -6,7 +6,7 @@
  *
  * @module features/marketplace/ui/InstallConfirmationDialog
  */
-import { useState, useEffect } from 'react';
+import {useState} from 'react';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -98,23 +98,28 @@ export function InstallConfirmationDialog() {
   const isShape = pkg?.type === 'shape';
 
   // Context-aware scope default: agent-local when opened from an agent's profile,
-  // global otherwise.
-  const [installScope, setInstallScope] = useState<InstallScope>(
-    installContext ? 'agent-local' : 'global'
-  );
-  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
-
-  // Reset scope and pre-select agent when dialog opens with new context.
-  useEffect(() => {
-    if (installContext) {
-      setInstallScope('agent-local');
-      const match = agents.find((a) => a.projectPath === installContext.agentPath);
-      setSelectedAgentId(match?.id);
-    } else {
-      setInstallScope('global');
-      setSelectedAgentId(undefined);
-    }
-  }, [installContext, agents]);
+  // global otherwise, with the agent pre-selected as soon as the roster answers.
+  // An explicit pick is stamped with the context it was made in, so opening the
+  // dialog from somewhere else falls straight back to that place's default —
+  // which is what the reset effect this replaces did, a render later.
+  const defaultScope: InstallScope = installContext ? 'agent-local' : 'global';
+  const defaultAgentId = installContext
+    ? agents.find((a) => a.projectPath === installContext.agentPath)?.id
+    : undefined;
+  const [picked, setPicked] = useState<{
+    forContext: typeof installContext;
+    scope: InstallScope;
+    agentId: string | undefined;
+  } | null>(null);
+  const inForce = picked !== null && picked.forContext === installContext ? picked : null;
+  const installScope = inForce?.scope ?? defaultScope;
+  const selectedAgentId = inForce === null ? defaultAgentId : inForce.agentId;
+  const pick = (next: { scope?: InstallScope; agentId?: string | undefined }) =>
+    setPicked({
+      forContext: installContext,
+      scope: next.scope ?? installScope,
+      agentId: 'agentId' in next ? next.agentId : selectedAgentId,
+    });
 
   // The scope actually in effect. Shapes are pinned to 'global' regardless of
   // `installScope` state — which may carry a stale 'agent-local' selection
@@ -226,8 +231,8 @@ export function InstallConfirmationDialog() {
                   <RadioGroup
                     value={installScope}
                     onValueChange={(v) => {
-                      setInstallScope(v as InstallScope);
-                      if (v === 'global') setSelectedAgentId(undefined);
+                      const scope = v as InstallScope;
+                      pick(scope === 'global' ? { scope, agentId: undefined } : { scope });
                     }}
                     className="gap-2"
                   >
@@ -250,7 +255,7 @@ export function InstallConfirmationDialog() {
                       <AgentPicker
                         agents={agents}
                         value={selectedAgentId}
-                        onValueChange={setSelectedAgentId}
+                        onValueChange={(agentId) => pick({ agentId })}
                       />
                     </div>
                   )}
