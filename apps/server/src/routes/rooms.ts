@@ -37,6 +37,7 @@ import {
   PostToRoomRequestSchema,
   SetAuthorHandleRequestSchema,
   ROOM_ATTACHMENT_NAME_MAX,
+  MergeRoomRepoRequestSchema,
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
@@ -48,6 +49,7 @@ import {
   getAttachmentRowStore,
   getRoomAttachmentStore,
   getRoomFilesService,
+  getRoomMergeService,
   getRoomRepoService,
   getRoomService,
   RoomError,
@@ -941,6 +943,34 @@ router.get('/:id/files', (req, res) => {
 });
 
 /**
+ * GET /:id/repo/status — what this room's files hold right now (spec §3.6).
+ *
+ * **Membership-gated exactly like a history read**, and answering "not a member"
+ * as "no such room" for the same reason: what it reports is who in this room has
+ * unmerged work, which is a fact about the room's members. The owner sees every
+ * room on the install and is still not a member of all of them — the membership
+ * check is the gate, not the visibility (`RoomService.requireMembership`).
+ *
+ * It reports SLUGS and display names, never the workspace path an agent lives
+ * at: an agent reads its own rooms' status, and `/Users/…` is not something to
+ * hand every member.
+ *
+ * The same answer the `room_repo_status` tool gives, from the same service — the
+ * client needs it for the explorer's pending-work badges, and a second
+ * computation of "how far behind is Ana" is a second answer that can disagree.
+ */
+router.get('/:id/repo/status', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      res.json(await getRoomMergeService().status(req.params.id, caller.id));
+    } catch (err) {
+      sendRoomError(res, err, 'GET /:id/repo/status');
+    }
+  })();
+});
+
+/**
  * GET /:id/files/content — one file out of this room's `main`.
  *
  * **A query parameter rather than a path suffix**, which is the shape
@@ -972,6 +1002,37 @@ router.get('/:id/files/content', (req, res) => {
       res.json(await getRoomFilesService().read(req.params.id, query.path));
     } catch (err) {
       sendRoomError(res, err, 'GET /:id/files/content');
+    }
+  })();
+});
+
+/**
+ * POST /:id/repo/merge — bring an agent's work into the room's `main`
+ * (spec §3.6).
+ *
+ * The HTTP half of `merge_to_room_main`, over the same service and therefore the
+ * same queue, the same refusals and the same one merge entry. It exists because
+ * the tool cannot serve the person: spec §5 Q2 puts the OWNER on the list of who
+ * may merge, and the owner has no branch of their own — so they name one
+ * (`worktree`), which is refused `OPERATOR_ONLY` for anybody else.
+ *
+ * Every refusal is a 409 except `MERGE_IN_FLIGHT`, which is the canonical 429:
+ * the caller waited its turn in the room's merge queue and the room is still
+ * busy, so asking again is genuinely the remedy.
+ */
+router.post('/:id/repo/merge', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const body = parseBody(MergeRoomRepoRequestSchema, req.body, res);
+      if (!body) return;
+      const result = await getRoomMergeService().merge(req.params.id, caller.id, {
+        summary: body.summary,
+        ...(body.worktree !== undefined ? { worktree: body.worktree } : {}),
+      });
+      res.status(200).json(result);
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/repo/merge');
     }
   })();
 });

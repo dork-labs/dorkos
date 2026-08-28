@@ -85,6 +85,7 @@ import type {
   RoomKind,
   RoomBridgeInfo,
   RoomMember,
+  RoomMergeEvent,
   RoomMoment,
   RoomPresencePayload,
   RoomReactionEvent,
@@ -895,6 +896,41 @@ export class RoomService {
    */
   listBusyAgentPaths(): string[] {
     return this.triggers.busyAgentPaths();
+  }
+
+  /**
+   * The agent members of one room, with the workspace path each is identified
+   * by.
+   *
+   * **In-process only, exactly like {@link RoomService.listBusyAgentPaths}, and
+   * for the same reason**: `/Users/dorian/…` is not something to hand every
+   * member of a room. `RoomRoster.list` drops the natural key on purpose, so
+   * this is the deliberate second door — narrow, unexported over any surface,
+   * and used by one caller: the room-repo verbs, which need the path to work out
+   * which standing worktree belongs to whom (`RoomWorktreeManager.slugFor`).
+   * Anything derived from it that a caller sees is the SLUG, never the path.
+   *
+   * A ghost — an agent whose directory no longer holds one — is included, and
+   * has to be: its worktree may still hold work nobody merged, and a status
+   * report that quietly dropped it would be the reason somebody lost it.
+   *
+   * @param roomId - The room.
+   * @returns One row per agent on the roster, in roster order.
+   */
+  listAgentMembers(roomId: string): { authorId: string; agentPath: string; displayName: string }[] {
+    const members = this.store.listMembers(roomId);
+    const authors = this.authors.getMany(members.map((member) => member.authorId));
+    const agents: { authorId: string; agentPath: string; displayName: string }[] = [];
+    for (const member of members) {
+      const author = authors.get(member.authorId);
+      if (!author || author.kind !== 'agent') continue;
+      agents.push({
+        authorId: author.id,
+        agentPath: author.naturalKey,
+        displayName: author.displayName,
+      });
+    }
+    return agents;
   }
 
   /**
@@ -3395,6 +3431,30 @@ export class RoomService {
   }
 
   /**
+   * Refuse anyone who is not on this room's roster, and answer with the room.
+   *
+   * The public face of {@link RoomService.requireHistoryFloor}'s first half, for
+   * the surfaces that need the membership rule without a read floor — today the
+   * room-repo verbs (spec `project-rooms` §3.6), which are membership-gated for
+   * exactly the reason the history reads are: a room id is not a capability, and
+   * seeing a room is not being in it.
+   *
+   * The floor is dropped rather than exposed because there is nothing to floor:
+   * a room's repo is one tree with one history, not a per-member view, and a
+   * member who joined yesterday merges into the same `main` as one who was there
+   * from the start.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller.
+   * @returns The room.
+   * @throws {RoomError} `ROOM_NOT_FOUND` when the caller cannot see the room OR
+   *   is not a member of it — deliberately the same answer for both.
+   */
+  requireMembership(roomId: string, viewerAuthorId: string): Room {
+    return this.requireHistoryFloor(roomId, viewerAuthorId).room;
+  }
+
+  /**
    * The floor a member may read from in a room, refusing anyone who may not read
    * it at all.
    *
@@ -4147,6 +4207,78 @@ export class RoomService {
       ...this.threadPointers(roomId, undefined),
       // The shipped rule rather than a hand-stamped number: a non-human write
       // with no trigger behind it starts a cascade that is already spent.
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publishEntry(entry);
+    return entry;
+  }
+
+  /**
+   * Announce work an agent merged into the room's repo (spec `project-rooms`
+   * §3.6).
+   *
+   * **The room's own voice, and it wakes nobody.** Every property that matters
+   * here is the same one {@link RoomService.postMoment}'s system path has, and
+   * for the same reasons — this is deliberately that shape rather than a new
+   * one:
+   *
+   * - It is a **post**, so the history page, the stream, a thread and a bridge
+   *   all carry it with no new branch. It is **not a notice**: notices are
+   *   refusal-shaped and damped on `(room, agent, reason)`, and merges are
+   *   per-event content that must never collapse into one line (spec §5 Q3).
+   * - It **addresses nobody**. `mentions` is empty because nothing here was
+   *   written to reach anyone; the agent's name is in the sentence as a fact,
+   *   not as an address, and mentions resolve at write time so nothing will
+   *   re-read the text later and decide otherwise.
+   * - Its cascade is **spent at the ceiling** (`deriveCascade` with
+   *   `authorKind: 'system'`), so even a future path that did dispatch from an
+   *   entry like this one could not open a fresh reply budget with it.
+   * - It is **never dispatched**: it goes straight to the store and the stream,
+   *   the way a system moment does. A merge is news about files, and a room
+   *   where landing a commit set three agents talking is the over-participation
+   *   `meta/agent-etiquette.md` exists to damp.
+   *
+   * `subjectAuthorId` names the agent whose work landed, so the feed draws its
+   * face beside a sentence the room wrote — the same job the field does for a
+   * notice and for a moment.
+   *
+   * @param roomId - The room whose repo gained the work.
+   * @param input.text - The sentence a person reads. Composed by the caller,
+   *   which is the only thing that knows the real numbers.
+   * @param input.merge - The machine-readable half, for the file explorer.
+   * @param input.subjectAuthorId - The agent whose branch was merged.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries, in
+   *   its own voice least of all.
+   */
+  postMergeEvent(
+    roomId: string,
+    input: { text: string; merge: RoomMergeEvent; subjectAuthorId: string }
+  ): RoomEntry {
+    const room = this.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        merge: input.merge,
+        subjectAuthorId: input.subjectAuthorId,
+      },
+      // Addresses nobody. See the TSDoc — this is the whole no-cascade claim,
+      // and the emptiness is the mechanism rather than a consequence of the
+      // text happening not to contain an `@`.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...this.threadPointers(roomId, undefined),
       ...deriveCascade(id, {
         authorKind: 'system',
         maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,

@@ -384,7 +384,105 @@ export type RoomErrorCode =
    * tools will answer with. A code an agent may be told to expect is not one to
    * rename for tidiness.
    */
-  | 'NOT_A_PROJECT_ROOM';
+  | 'NOT_A_PROJECT_ROOM'
+  /**
+   * `merge_to_room_main` was called with unsaved changes in the agent's own
+   * working copy (spec `project-rooms` §3.6, refusal 2).
+   *
+   * The whole merge model is "commit in your tree, merge the commits", so an
+   * uncommitted edit is work the merge would silently leave behind. The remedy
+   * is entirely in the agent's own hands and its own tree — commit it, or throw
+   * it away — which is why this is a refusal and not something the server
+   * offers to tidy up.
+   */
+  | 'UNCOMMITTED_WORK'
+  /**
+   * The branch being merged does not contain `main`'s tip (spec §3.6, refusal
+   * 3), so the merge would not be a clean replay of somebody else's work on top
+   * of the agent's.
+   *
+   * **This is what makes every merge conflict-free**, and therefore what makes
+   * "main is never left in a conflicted state" a property of the code rather
+   * than a hope: a branch that already contains `main` merges by definition.
+   * The refusal carries how far apart the two are, because the number decides
+   * what the agent does next — sync, resolve in its OWN tree, and try again.
+   * Resolving in the integration tree is what one-writer forbids.
+   */
+  | 'BEHIND_MAIN'
+  /**
+   * A room's `main` checkout has changes the server did not make (spec §3.10's
+   * dirty-main detection, applied here to merges).
+   *
+   * The integration tree has exactly one writer and it is DorkOS. Something
+   * else wrote in it — an operator with a terminal, most likely — and merging
+   * on top would mix their work into somebody else's merge commit or lose it.
+   * Loud degradation rather than quiet corruption: everything stops until a
+   * person deals with it.
+   */
+  | 'MAIN_CHECKOUT_DIRTY'
+  /**
+   * The work being merged carries a symlink pointing outside the room's files
+   * (spec §3.6, refusal 5).
+   *
+   * A room's repo is shared with other people's agents, and a link out of it is
+   * a way to publish — or to overwrite — whatever the reader can reach on the
+   * machine it is checked out on. The rule is publish-on-change: copy the file
+   * in, do not point at it. A link into the repository's own `.git` counts as
+   * outside for the same reason: it is not one of the room's files.
+   */
+  | 'SYMLINK_ESCAPES_REPO'
+  /**
+   * One file in the incoming work is larger than the room's `maxFileBytes`
+   * (spec §3.6, refusal 5).
+   *
+   * The cap comes from the sidecar, frozen when the repo was enabled, so a
+   * config change today cannot make yesterday's contents illegal. Big files
+   * belong in the room's attachments, which is what they are for.
+   */
+  | 'FILE_TOO_LARGE'
+  /**
+   * The merge would take the room's files past `maxRepoBytes` (spec §3.6).
+   *
+   * Measured on the resulting tree rather than on the delta, because the cap is
+   * a statement about how large a room's files may be and not about how fast
+   * they grow.
+   */
+  | 'REPO_CAP_EXCEEDED'
+  /**
+   * Another merge holds the room's merge queue and this caller waited longer
+   * than `config.rooms.repo.mergeQueueWaitMs` for its turn — or the queue was
+   * already full when it arrived (spec §3.6, refusal 4).
+   *
+   * **The ordinary case is not this code.** Merges into one room run one at a
+   * time and a second caller QUEUES; this is only what is left when the wait is
+   * spent, and it means the room is busier than the wait cap allows for rather
+   * than that anything is broken.
+   */
+  | 'MERGE_IN_FLIGHT'
+  /**
+   * A merge did not complete and was rolled back — `main` is exactly where it
+   * was.
+   *
+   * Unreachable through the ordinary path, and kept anyway: `BEHIND_MAIN`
+   * guarantees the branch already contains `main`, so nothing is left to
+   * conflict. It stands for the window that guarantee does not cover — somebody
+   * committing into the integration tree by hand between the check and the
+   * merge — and the code exists so that case is reported as a refusal with a
+   * clean tree behind it rather than as a server error over a half-merged
+   * checkout.
+   */
+  | 'MERGE_CONFLICT'
+  /**
+   * There is nothing to merge: the agent has no working copy in this room yet,
+   * or its branch holds nothing `main` has not already got.
+   *
+   * **Not in the spec's list, and it earns its place** — without it the two
+   * empty cases would either fail obscurely inside git or produce an empty
+   * merge commit and a room entry announcing that somebody merged nothing. A
+   * refusal is visible; an announcement of nothing is noise the whole room
+   * pays for.
+   */
+  | 'NOTHING_TO_MERGE';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

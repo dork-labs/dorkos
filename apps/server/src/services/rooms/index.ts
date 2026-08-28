@@ -35,6 +35,7 @@ import type { RoomAttachmentStore } from './attachments/room-attachment-store.js
 import type { RoomRepoService } from './repo/room-repo-service.js';
 import type { RoomFilesService } from './repo/room-files.js';
 import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
+import type { RoomMergeService } from './repo/room-merge-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
@@ -648,6 +649,30 @@ export function setRoomWorktreeManager(manager: RoomWorktreeManager): void {
  */
 export function tryGetRoomWorktreeManager(): RoomWorktreeManager | null {
   return activeWorktrees;
+}
+
+let activeMerges: RoomMergeService | null = null;
+
+/**
+ * Register the room merge service at bootstrap, beside
+ * {@link setRoomRepoService}.
+ *
+ * Its own singleton rather than a field on the repo service, because the two
+ * answer different questions with different dependencies — one owns the binding
+ * on disk, the other owns the integration tree and the room's log — and folding
+ * them together would give the enable path a reason to know about the room
+ * service.
+ *
+ * @param service - The wired service.
+ */
+export function setRoomMergeService(service: RoomMergeService): void {
+  activeMerges = service;
+}
+
+/** The active room merge service (throws if bootstrap has not run). */
+export function getRoomMergeService(): RoomMergeService {
+  if (!activeMerges) throw new Error('RoomMergeService not initialized');
+  return activeMerges;
 }
 
 let activeBridges: BridgeStore | null = null;

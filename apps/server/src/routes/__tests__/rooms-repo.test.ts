@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -63,10 +63,17 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import { createApp, finalizeApp } from '../../app.js';
 import {
   createRoomSubsystem,
+  setRoomMergeService,
   setRoomRepoService,
   setRoomService,
 } from '../../services/rooms/index.js';
-import { RoomRepoService, RoomRepoStore } from '../../services/rooms/repo/index.js';
+import {
+  RoomMergeService,
+  RoomRepoMutex,
+  RoomRepoService,
+  RoomRepoStore,
+  RoomWorktreeManager,
+} from '../../services/rooms/repo/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import { readOwnerAccount } from '../../services/core/auth/index.js';
 import {
@@ -123,6 +130,8 @@ describe('POST /api/rooms/:id/repo', () => {
     setRoomRepoService(
       new RoomRepoService({
         store,
+        mutex: new RoomRepoMutex(),
+        queueWaitMs: () => 5000,
         enabled: () => enabled,
         getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
         isOwnerAuthor: (authorId) =>
@@ -275,5 +284,178 @@ describe('POST /api/rooms/:id/repo', () => {
       expect(read.status).toBe(200);
       expect(read.body).not.toHaveProperty('repo');
     }
+  });
+});
+
+/**
+ * `GET /api/rooms/:id/repo/status` and `POST /api/rooms/:id/repo/merge` — the
+ * HTTP half of spec §3.6.
+ *
+ * The tool is the agent's door and these two are the person's. They exist
+ * because the tool cannot serve her: spec §5 Q2 puts the OWNER on the list of
+ * who may merge, and the owner has no branch of her own, so she names one — and
+ * the explorer's pending-work badges need the status over HTTP rather than over
+ * MCP.
+ *
+ * Both go through the SAME service the tools do, which is what these tests are
+ * really pinning: one queue, one set of refusals, one merge entry, whichever
+ * door the request came through.
+ */
+describe('the room repo routes', () => {
+  let db: Db;
+  let dorkHome: string;
+  let store: RoomRepoStore;
+  let rooms: ReturnType<typeof createRoomSubsystem>;
+  /** The SAME manager the merge service holds, so a test works where a turn would. */
+  let roomWorktrees: RoomWorktreeManager;
+
+  beforeEach(async () => {
+    fakeRuntime = new FakeAgentRuntime();
+    vi.clearAllMocks();
+    resetAgentIdentityService();
+    db = createTestDb();
+    dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-rooms-merge-route-'));
+    registerAgent(db, 'ana', ANA_PATH);
+    rooms = createRoomSubsystem({ db });
+    setRoomService(rooms.service);
+    setReadCursorService(rooms.readCursors);
+    store = new RoomRepoStore(db, dorkHome);
+    const mutex = new RoomRepoMutex();
+    const repoService = new RoomRepoService({
+      store,
+      mutex,
+      queueWaitMs: () => 5000,
+      enabled: () => true,
+      getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
+      isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+      operatorGitName: () => 'Dorian',
+      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+    });
+    setRoomRepoService(repoService);
+    roomWorktrees = new RoomWorktreeManager({
+      store,
+      hasRepo: (roomId) => repoService.hasRepo(roomId),
+      listStrandedWorktrees: (roomId) => repoService.listStrandedWorktrees(roomId),
+      reapAfterDays: () => 14,
+      busyAgentPaths: () => rooms.service.listBusyAgentPaths(),
+    });
+    setRoomMergeService(
+      new RoomMergeService({
+        store,
+        worktrees: roomWorktrees,
+        mutex,
+        enabled: () => true,
+        mergeQueueWaitMs: () => 5000,
+        requireMembership: (roomId, authorId) => rooms.service.requireMembership(roomId, authorId),
+        listAgentMembers: (roomId) => rooms.service.listAgentMembers(roomId),
+        listStrandedWorktrees: (roomId) => repoService.listStrandedWorktrees(roomId),
+        announce: (roomId, input) => rooms.service.postMergeEvent(roomId, input),
+        isOwnerAuthor: (authorId) =>
+          rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+      })
+    );
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    resetAgentIdentityService();
+    await rm(dorkHome, { recursive: true, force: true });
+  });
+
+  /** A channel with Ana on the roster, with files of its own. */
+  async function projectRoom(): Promise<string> {
+    const created = await request(app)
+      .post('/api/rooms')
+      .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
+    expect(created.status).toBe(201);
+    const roomId = created.body.id as string;
+    expect((await request(app).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
+    return roomId;
+  }
+
+  it('answers the status of a room with files', async () => {
+    const roomId = await projectRoom();
+    const res = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.mainCommit).toMatch(/^[0-9a-f]{40}$/);
+    // Ana has never worked here, so she has no branch to report yet — an empty
+    // list rather than a row full of zeroes.
+    expect(res.body.branches).toEqual([]);
+    expect(res.body.strandedWorktrees).toEqual([]);
+    expect(res.body.size.maxRepoBytes).toBe(ROOM_REPO_CAP_DEFAULTS.maxRepoBytes);
+  });
+
+  it('tells a room without files that it has none, on both routes', async () => {
+    const created = await request(app)
+      .post('/api/rooms')
+      .send({ kind: 'channel', title: 'Plain', agentPaths: [ANA_PATH] });
+    const roomId = created.body.id as string;
+
+    const status = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+    expect(status.status).toBe(409);
+    expect(status.body.code).toBe('NOT_A_PROJECT_ROOM');
+
+    const merged = await request(app)
+      .post(`/api/rooms/${roomId}/repo/merge`)
+      .send({ summary: 'anything' });
+    expect(merged.status).toBe(409);
+    expect(merged.body.code).toBe('NOT_A_PROJECT_ROOM');
+  });
+
+  it('answers an unknown room the way reading one does', async () => {
+    const res = await request(app)
+      .post('/api/rooms/01NOSUCHROOMAAAAAAAAAAAAAA/repo/merge')
+      .send({ summary: 'anything' });
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a merge with nothing to say', async () => {
+    const roomId = await projectRoom();
+    const res = await request(app).post(`/api/rooms/${roomId}/repo/merge`).send({ summary: '' });
+    // The route's own validation, before any git runs: a merge nobody can read
+    // a summary of is a line in the room that says nothing.
+    expect(res.status).toBe(400);
+  });
+
+  it('lands an agent’s work when the operator names its working copy, and says so once', async () => {
+    const roomId = await projectRoom();
+    // Ana works, exactly as a room turn would: in her own standing worktree,
+    // committing there. The server never writes in it.
+    const tree = await roomWorktrees.ensureWorktree(roomId, ANA_PATH, 'Ana');
+    const ceiling = store.homeDir(roomId);
+    await writeFile(path.join(tree.path, 'checklist.md'), 'one\n', 'utf-8');
+    await runGit(['add', '--all'], tree.path, ceiling);
+    await runGit(
+      [
+        '-c',
+        'user.name=Ana',
+        '-c',
+        'user.email=ana@dorkos.local',
+        'commit',
+        '-q',
+        '-m',
+        'checklist',
+      ],
+      tree.path,
+      ceiling
+    );
+
+    const res = await request(app)
+      .post(`/api/rooms/${roomId}/repo/merge`)
+      .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
+
+    expect(res.status).toBe(200);
+    expect(res.body.files).toBe(1);
+    expect(res.body.commit).toBe(await gitInRepo(['rev-parse', 'HEAD'], store, roomId));
+    expect(existsSync(path.join(store.repoPath(roomId), 'checklist.md'))).toBe(true);
+
+    // One line in the room, in the room's own voice, about Ana.
+    const log = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const merges = (log.body.entries as { body: { merge?: unknown; text: string } }[]).filter(
+      (entry) => entry.body.merge !== undefined
+    );
+    expect(merges).toHaveLength(1);
+    expect(merges[0]?.body.text).toContain('Ana merged: Add the deploy checklist');
   });
 });

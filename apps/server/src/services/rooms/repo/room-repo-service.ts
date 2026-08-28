@@ -31,6 +31,7 @@ import { type RoomRepoCaps, type RoomRepoSidecar } from '@dorkos/shared/room-rep
 import { RoomError } from '../room-errors.js';
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
+import type { RoomRepoMutex } from './room-repo-mutex.js';
 import {
   commitAll,
   commitsAheadOfMain,
@@ -65,6 +66,21 @@ export interface EnableRoomRepoResult {
 export interface RoomRepoServiceDeps {
   /** File-first store for the sidecar and its cache row. */
   store: RoomRepoStore;
+  /**
+   * The per-room serialized queue every server-side write to a room's repo goes
+   * through — **the same instance the merge verb uses** (`room-repo-mutex.ts`).
+   *
+   * Required rather than optional, because what it protects is a check-then-act
+   * with an `await` in the middle: see {@link RoomRepoService.enable}. A wiring
+   * that forgot it would compile, pass every single-caller test, and lose a
+   * room's first commit the first time two callers arrived together.
+   */
+  mutex: RoomRepoMutex;
+  /**
+   * How long a caller may wait for the room's queue, in milliseconds
+   * (`config.rooms.repo.mergeQueueWaitMs`). Read per call.
+   */
+  queueWaitMs: () => number;
   /**
    * Whether rooms may have files at all (`config.rooms.repo.enabled`).
    *
@@ -173,6 +189,17 @@ export class RoomRepoService {
    *   answering `created: false` about files that are not there. Without that,
    *   the only way out was deleting the sidecar by hand.
    *
+   * **Serialized on the room's own queue, and that is a fix rather than
+   * tidiness.** Everything below is a check-then-act with an `await` in the
+   * middle: read the sidecar, decide there is no repo, create one. Two calls for
+   * one room both read "no repo", both ran `git init -b main` in the same
+   * directory, and the second re-initialised the repository the first had just
+   * seeded — destroying its `ROOM.md` commit while answering `201`. Holding the
+   * merge queue's lane for the whole method makes the second caller read the
+   * sidecar the first one wrote, and answer `created: false` with the binding
+   * that exists. It is the SAME lane merges take, so a merge can never run
+   * against a repo halfway through being created either.
+   *
    * @param roomId - The room to give files to.
    * @param callerAuthorId - Who is asking.
    * @returns The binding, and whether this call is what made it.
@@ -180,7 +207,33 @@ export class RoomRepoService {
    *   `OPERATOR_ONLY`, or `ROOM_REPO_GIT_UNAVAILABLE` when this machine has no
    *   git.
    */
-  async enable(roomId: string, callerAuthorId: string): Promise<EnableRoomRepoResult> {
+  enable(roomId: string, callerAuthorId: string): Promise<EnableRoomRepoResult> {
+    return this.deps.mutex.run(
+      roomId,
+      {
+        waitMs: this.deps.queueWaitMs(),
+        busy: () =>
+          new RoomError(
+            'MERGE_IN_FLIGHT',
+            'This room’s files are busy — something else is writing to them. Try again in a moment.'
+          ),
+      },
+      () => this.enableUnderLock(roomId, callerAuthorId)
+    );
+  }
+
+  /**
+   * The body of {@link RoomRepoService.enable}, run while holding the room's
+   * queue.
+   *
+   * @param roomId - The room to give files to.
+   * @param callerAuthorId - Who is asking.
+   * @returns The binding, and whether this call is what made it.
+   */
+  private async enableUnderLock(
+    roomId: string,
+    callerAuthorId: string
+  ): Promise<EnableRoomRepoResult> {
     if (!this.deps.enabled()) {
       throw new RoomError(
         'ROOM_REPOS_DISABLED',

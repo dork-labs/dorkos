@@ -55,8 +55,18 @@
  *
  * **What none of this claims:** a repo-local `.git/hooks/` directory that some
  * other program populated is neutralised by `core.hooksPath`, but nothing here
- * inspects a checkout for hostile content, and a merge is not made safe by this
- * module — the tree validation spec §3.6 calls for is task 2.3's.
+ * inspects a checkout for hostile content. What this module contributes to a
+ * SAFE merge is the four reads the policy is made of — {@link aheadBehind},
+ * {@link listTree}, {@link readBlob} and {@link shortstat} — plus
+ * {@link mergeNoFf}, which is the one command in the domain that can leave a
+ * checkout mid-merge and therefore owns the abort. The policy itself (which
+ * refusal, which cap, whose branch) lives in `room-merge-service.ts`.
+ *
+ * **There is no force, no reset and no push anywhere in this module**, and that
+ * absence is load-bearing rather than an omission: history in a room's repo is
+ * append-only (spec §3.6), so the destructive verbs are not exposed at a lower
+ * layer for a higher one to decline to call. `deleteMergedBranch` is `-d` and
+ * `removeWorktree` has no `--force`, for the same reason.
  *
  * Nothing here takes a remote, so `hardenedGitEnv` (the transport allowlist for
  * author-supplied URLs) has nothing to protect: an owned repo is created empty
@@ -590,6 +600,288 @@ export async function headCommittedAt(
   }
   const at = new Date(iso);
   return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * How far one branch has run ahead of another, and how far behind.
+ *
+ * `rev-list --left-right --count a...b` counts the commits reachable from
+ * exactly one side of the symmetric difference: the left number is what `a` has
+ * and `b` has not (`behind`, from `b`'s point of view), the right is what `b`
+ * has and `a` has not (`ahead`). Asked in the MAIN checkout so a status sweep
+ * never has to enter somebody else's working copy.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param base - The integration branch, normally `main`.
+ * @param branch - The branch being measured against it.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns How many commits `branch` holds that `base` does not, and vice versa.
+ */
+export async function aheadBehind(
+  repoDir: string,
+  base: string,
+  branch: string,
+  ceilingDir: string
+): Promise<{ ahead: number; behind: number }> {
+  const out = await runGit(
+    ['rev-list', '--left-right', '--count', `${base}...${branch}`],
+    repoDir,
+    ceilingDir
+  );
+  const [behind, ahead] = out.split(/\s+/).map((part) => Number.parseInt(part, 10) || 0);
+  return { ahead: ahead ?? 0, behind: behind ?? 0 };
+}
+
+/** One blob in a tree, as `git ls-tree -r -l` describes it. */
+export interface TreeEntry {
+  /** The path, relative to the repo root, with `/` separators. */
+  path: string;
+  /** The git file mode — `100644`, `100755`, or `120000` for a symlink. */
+  mode: string;
+  /** The blob's object id. */
+  sha: string;
+  /** The blob's size in bytes. For a symlink, the length of its target. */
+  size: number;
+}
+
+/** The mode git gives a symlink. */
+export const SYMLINK_MODE = '120000';
+
+/**
+ * Every blob in a commit's tree, with its mode, object id and size.
+ *
+ * `-r` recurses (so no sub-tree entries come back), `-l` adds the size, and
+ * `-z` makes the record separator a NUL — which is the only way to read a path
+ * that contains a newline, and paths in a repo members write to are not this
+ * module's to trust.
+ *
+ * One command for the whole tree rather than one per changed file: the merge
+ * validation needs both the delta (what changed) and the total (what the repo
+ * would weigh), and comparing two of these answers both without a second pass.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param commitish - The commit or branch whose tree to list.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns Every blob, keyed by path.
+ */
+export async function listTree(
+  repoDir: string,
+  commitish: string,
+  ceilingDir: string
+): Promise<Map<string, TreeEntry>> {
+  const out = await runGit(['ls-tree', '-r', '-l', '-z', commitish], repoDir, ceilingDir);
+  const entries = new Map<string, TreeEntry>();
+  for (const record of out.split('\0')) {
+    if (record.length === 0) continue;
+    // `<mode> SP <type> SP <sha> SP <size> TAB <path>`, with the size
+    // right-aligned in a padded column and `-` for anything that is not a blob.
+    const match = /^(\d{6}) (\w+) ([0-9a-f]+) +(\d+|-)\t(.*)$/s.exec(record);
+    if (!match) continue;
+    const [, mode, type, sha, size, entryPath] = match;
+    if (type !== 'blob' || !mode || !sha || !entryPath) continue;
+    entries.set(entryPath, {
+      path: entryPath,
+      mode,
+      sha,
+      size: size === '-' ? 0 : Number.parseInt(size, 10) || 0,
+    });
+  }
+  return entries;
+}
+
+/**
+ * The content of one blob, as text.
+ *
+ * Used for exactly one thing: reading where a symlink points, which is a short
+ * path and never a file the caller has not already size-checked. It trims,
+ * which a general blob reader must not — a symlink target with trailing
+ * whitespace is not a target anybody meant, and trimming can only make the
+ * escape check stricter.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param sha - The blob to read.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns The blob's content, trimmed.
+ */
+export async function readBlob(repoDir: string, sha: string, ceilingDir: string): Promise<string> {
+  return runGit(['cat-file', 'blob', sha], repoDir, ceilingDir);
+}
+
+/** What one merge would bring in, as a person reads it. */
+export interface DiffStat {
+  /** How many files the delta touches, additions and deletions included. */
+  files: number;
+  /** Lines added. */
+  insertions: number;
+  /** Lines removed. */
+  deletions: number;
+}
+
+/**
+ * How large the delta between two commits is, in files and lines.
+ *
+ * `--shortstat` rather than counting `--numstat` rows, because the numbers are
+ * for a sentence a person reads in the room ("4 files, +120/−8") and git
+ * already writes that sentence. A delta of nothing answers all zeros, which is
+ * what an empty `--shortstat` line means.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param from - The commit the delta starts at.
+ * @param to - The commit it ends at.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns The counts.
+ */
+export async function shortstat(
+  repoDir: string,
+  from: string,
+  to: string,
+  ceilingDir: string
+): Promise<DiffStat> {
+  const out = await runGit(['diff', '--shortstat', from, to], repoDir, ceilingDir);
+  const read = (pattern: RegExp): number => Number.parseInt(pattern.exec(out)?.[1] ?? '0', 10) || 0;
+  return {
+    files: read(/(\d+) files? changed/),
+    insertions: read(/(\d+) insertions?\(\+\)/),
+    deletions: read(/(\d+) deletions?\(-\)/),
+  };
+}
+
+/**
+ * The commit a ref points at right now.
+ *
+ * @param checkoutDir - The checkout to ask.
+ * @param ref - The ref to resolve.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns The full sha.
+ */
+export async function revParse(
+  checkoutDir: string,
+  ref: string,
+  ceilingDir: string
+): Promise<string> {
+  return runGit(['rev-parse', ref], checkoutDir, ceilingDir);
+}
+
+/**
+ * The branch a checkout has checked out, or `null` when its HEAD is detached.
+ *
+ * The main checkout of a room repo is only ever on `main` — the server is its
+ * only writer and never leaves it — so anything else is an out-of-band change,
+ * which the merge refuses rather than merging into whatever it finds.
+ *
+ * @param checkoutDir - The checkout to ask.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ */
+export async function currentBranch(
+  checkoutDir: string,
+  ceilingDir: string
+): Promise<string | null> {
+  const name = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], checkoutDir, ceilingDir);
+  return name === 'HEAD' ? null : name;
+}
+
+/**
+ * Raised when a merge could not be completed and was rolled back.
+ *
+ * Its own type because it is the one git failure a caller must be able to tell
+ * from every other: the tree is exactly as it was, so the right answer is a
+ * refusal the agent can act on rather than an error report.
+ */
+export class MergeConflictError extends Error {
+  constructor(
+    /** The branch that would not merge. */
+    readonly branch: string,
+    cause?: unknown
+  ) {
+    super(`Could not merge ${branch} cleanly`);
+    this.name = 'MergeConflictError';
+    this.cause = cause;
+  }
+}
+
+/**
+ * Merge `branch` into whatever `repoDir` has checked out, always as a real
+ * merge commit — and leave nothing behind if it fails.
+ *
+ * **`--no-ff` is the point, not a preference.** The caller has already refused
+ * anything that is behind `main`, so every merge that gets here COULD fast
+ * forward; letting it would erase the fact that the work happened on a branch,
+ * and a room's log says "Ana merged …" about a commit that would then not
+ * exist. One merge, one commit, one entry.
+ *
+ * **The abort is this function's own job**, and that is why the merge is here
+ * rather than assembled by the caller. A conflicted `git merge` leaves the
+ * checkout mid-merge — an index full of conflict stages, `MERGE_HEAD` written
+ * — and the next merge into that tree would be refused, or worse, would commit
+ * somebody's conflict markers. `git merge --abort` puts the tree back exactly
+ * where it was, and it runs in a `finally`-shaped path so no error route can
+ * skip it. The abort's own failure is swallowed deliberately: there is nothing
+ * to abort when the merge failed before starting, and the caller is owed the
+ * reason the merge failed rather than the reason the cleanup did.
+ *
+ * `--no-verify` is deliberately absent, unlike {@link commitAll}. It is a newer
+ * option on `merge` than on `commit`, and `core.hooksPath` — applied to every
+ * command in this module — is what actually stops a hook running (see the
+ * module doc, where that was measured).
+ *
+ * @param repoDir - The checkout to merge INTO. Must be clean.
+ * @param branch - The branch to merge in.
+ * @param message - The merge commit's message. Sanitized by the caller.
+ * @param identity - Who the merge commit is attributed to.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns The new merge commit's full sha.
+ * @throws {MergeConflictError} When the merge did not complete. The checkout is
+ *   back at its previous commit, unmodified.
+ */
+export async function mergeNoFf(
+  repoDir: string,
+  branch: string,
+  message: string,
+  identity: GitIdentity,
+  ceilingDir: string
+): Promise<string> {
+  try {
+    await runGit(
+      [
+        '-c',
+        `user.name=${identity.name}`,
+        '-c',
+        `user.email=${identity.email}`,
+        'merge',
+        '--no-ff',
+        '--quiet',
+        '-m',
+        message,
+        branch,
+      ],
+      repoDir,
+      ceilingDir
+    );
+  } catch (err) {
+    if (err instanceof GitUnavailableError) throw err;
+    try {
+      await runGit(['merge', '--abort'], repoDir, ceilingDir);
+    } catch {
+      // Nothing was in progress — the merge failed before it touched the tree.
+      // The caller's error is the one worth reporting.
+    }
+    throw new MergeConflictError(branch, err);
+  }
+  return runGit(['rev-parse', 'HEAD'], repoDir, ceilingDir);
+}
+
+/**
+ * The absolute git directory backing a checkout.
+ *
+ * For a linked worktree this is `<repo>/.git/worktrees/<name>`, which is where
+ * that worktree's own `index` lives — the file whose mtime says when anything
+ * was last staged, committed or refreshed in it.
+ *
+ * @param checkoutDir - The checkout to ask.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ */
+export async function absoluteGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
+  return runGit(['rev-parse', '--absolute-git-dir'], checkoutDir, ceilingDir);
 }
 
 /**
