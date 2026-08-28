@@ -33,8 +33,19 @@ import { recordRefusal } from './dispatch-buffers.js';
  * - `shown` — a notice, an error, or an HTTP status reached them.
  * - `damped` — a notice existed but was deliberately suppressed as a repeat.
  * - `silent` — there is no notice for this path; the log is the only record.
+ * - `chosen` — the agent decided this, and nobody was waiting to be told.
+ *
+ * **`chosen` is the one that does not log at `warn`, and the reason is the same
+ * reason the other three do.** Level follows visibility because a refusal
+ * nobody saw is the only record that it happened. A `chosen` refusal is the
+ * expected, common outcome on the commonest path in the product — an engaged
+ * agent overhearing a message that named somebody else — and filing thousands of
+ * them at `warn` would make `warn` mean nothing, which is the fastest way to
+ * lose the very signal the rule protects. It is a fourth value rather than a
+ * reuse of `silent` so that an operator grepping for invisible failures does not
+ * have to subtract the expected case by hand.
  */
-export type RefusalVisibility = 'shown' | 'damped' | 'silent';
+export type RefusalVisibility = 'shown' | 'damped' | 'silent' | 'chosen';
 
 /**
  * Every reason DorkOS declines to do the obvious thing, as one closed set.
@@ -48,6 +59,19 @@ export type RefusalVisibility = 'shown' | 'damped' | 'silent';
 export const REFUSAL_REASONS = {
   /** An agent was already mid-turn, so no second turn ran. */
   agent_busy: 'the agent was already working',
+  /**
+   * A routing rule sent an overheard message straight to silence, so no turn
+   * ran (spec `engaged-response-gate` §4).
+   *
+   * The agent was picked only because its engaged window was open — nobody
+   * named it — and one of the tier-1 rules recognised the message as somebody
+   * else's: it named another agent, or it was a colleague answering a question
+   * this agent is not part of. `detail.rule` says which.
+   *
+   * Paired with `visibility: 'chosen'` and never with any other: nothing was
+   * refused TO anybody, because nobody asked.
+   */
+  not_addressed_to_me: 'the message was addressed to somebody else',
   /** A turn ran and ended in an error, or never finished at all. */
   turn_failed: 'the turn failed',
   /**
@@ -193,8 +217,11 @@ export function logRefusal(message: string, refusal: Refusal): void {
     visibility,
   };
   // Level follows visibility. A refusal nobody saw is the only record that it
-  // happened, and a record filed at `info` is a record nobody looks at.
-  if (visibility === 'shown') logger.info(message, fields);
+  // happened, and a record filed at `info` is a record nobody looks at — so
+  // `damped` and `silent` are `warn`. `chosen` joins `shown` at `info` for the
+  // opposite reason: it is the expected outcome rather than an incident, and it
+  // is common enough that filing it at `warn` would drown the two that are not.
+  if (visibility === 'shown' || visibility === 'chosen') logger.info(message, fields);
   else logger.warn(message, fields);
   // The same fact, kept in memory so `GET /api/debug/refusals` can answer
   // "why has nothing replied for ten minutes" without anyone opening a file.

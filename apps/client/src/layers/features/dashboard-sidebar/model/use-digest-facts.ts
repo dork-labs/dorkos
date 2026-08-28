@@ -280,9 +280,15 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
   // unknown, and `showing` below refuses to fire during it — the row waits a
   // frame rather than spending the day's one showing on a guess.
   const [latched, setLatched] = useState<{ value: string | undefined } | null>(null);
+  // The "already latched" bit lives in a ref as well, because it is the one
+  // reading that stays true through StrictMode's second invocation of this
+  // effect — the state has not committed yet at that point.
+  const hasLatched = useRef(false);
   useEffect(() => {
-    if (settled && latched === null) setLatched({ value: storedLastShownDate });
-  }, [settled, latched, storedLastShownDate]);
+    if (!settled || hasLatched.current) return;
+    hasLatched.current = true;
+    setLatched({ value: storedLastShownDate });
+  }, [settled, storedLastShownDate]);
   const lastShownDate = latched?.value;
 
   // "Opened any conversation" — the dissolve (BC-22). Compared by VALUE, not by

@@ -123,6 +123,7 @@ import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './aut
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
+import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
 import { resolveAddressing } from './mentions.js';
 import type { ReactionBudget } from './reactions/reaction-budget.js';
@@ -264,6 +265,8 @@ export interface RoomServiceDeps {
   engagedWindow(): EngagedWindow;
   /** The live `rooms.collect*` ceilings, injected for the same reason. */
   collect(): CollectWindow;
+  /** The live `rooms.responseGate` setting, injected for the same reason. */
+  responseGate(): ResponseGateMode;
   /**
    * The live `rooms.lateReplyCeilingMinutes` in milliseconds — how long a room
    * waits on an agent busy elsewhere before it gives up. Injected for the same
@@ -685,6 +688,7 @@ export class RoomService {
       limitsFor: deps.limitsFor,
       engagedWindow: deps.engagedWindow,
       collect: deps.collect,
+      responseGate: deps.responseGate,
       holdCeilingMs: deps.holdCeilingMs,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
@@ -2923,6 +2927,46 @@ export class RoomService {
     if (!this.store.getMember(roomId, authorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
+  }
+
+  /**
+   * Refuse anyone who may not read this room's own files (spec `project-rooms`
+   * §3.9).
+   *
+   * **Exactly the history gate, and deliberately not a new one.** It goes
+   * through the same {@link RoomService.requireHistoryFloor} the room's log,
+   * its search and its export go through, so "not a member" answers as "no such
+   * room" and a room id is never a capability. An agent that is a member may
+   * read, the same way it may read history — a room's files are what its
+   * members are working on together, and an agent member is one of them.
+   *
+   * Three deliberate differences from the neighbours:
+   *
+   * - **The `joinedSeq` floor is discarded.** It is a rule about a
+   *   CONVERSATION: what was said before you arrived is not yours to read back.
+   *   Files have no `seq` and carry no such rule — a repo is the state of the
+   *   work, not a record of who said what when, and a member who could see only
+   *   the files added since they joined would be looking at a tree with holes
+   *   in it. The membership half of that gate is what this borrows, and the
+   *   membership half is the part that protects anything.
+   * - **An archived room still reads.** Archiving stops a room, and
+   *   `RoomRepoService` keeps every byte on disk on purpose; refusing to show
+   *   an archived room's files would hide work nobody agreed to delete.
+   * - **It says nothing about whether the room HAS files.** That question is
+   *   `RoomRepoService.hasRepo`'s and is asked afterwards, so that a non-member
+   *   cannot tell a project room from any other.
+   *
+   * Exposed rather than duplicated in the route, for the reason
+   * {@link RoomService.assertCanAttach} is: a second copy of a visibility
+   * predicate is the copy that gets it wrong.
+   *
+   * @param roomId - The room whose files are being read.
+   * @param authorId - Who is asking.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a room this caller may not see AND
+   *   for one they are not on the roster of — the same answer, on purpose.
+   */
+  assertCanReadFiles(roomId: string, authorId: string): void {
+    this.requireHistoryFloor(roomId, authorId);
   }
 
   /**

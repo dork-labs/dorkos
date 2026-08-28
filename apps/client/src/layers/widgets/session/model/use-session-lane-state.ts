@@ -106,20 +106,23 @@ export function useSessionLaneState(input: SessionLaneInput): LaneState {
 
   // Snapshot the final readings while the turn runs, so the summary after it has
   // something true to show.
+  // `prevStatusRef` is what turns "streaming" into "just started" and
+  // "streaming → idle" into "just finished" — the two transitions the summary is
+  // a fact about, which a render handed one status cannot see.
+  const prevStatusRef = useRef(input.status);
   const lastElapsedRef = useRef(elapsed);
   const lastTokensRef = useRef(input.estimatedTokens);
   const [showComplete, setShowComplete] = useState(false);
 
   useEffect(() => {
-    if (input.status === 'streaming') {
-      lastElapsedRef.current = elapsed;
-      lastTokensRef.current = input.estimatedTokens;
-      setShowComplete(false);
-    }
+    if (input.status !== 'streaming') return;
+    lastElapsedRef.current = elapsed;
+    lastTokensRef.current = input.estimatedTokens;
+    // Only as the turn STARTS: once it is running the summary is already put
+    // away, and clearing it again on every token says nothing new.
+    if (prevStatusRef.current !== 'streaming') setShowComplete(false);
   }, [input.status, elapsed, input.estimatedTokens]);
 
-  // Streaming → idle with tokens spent is what earns the summary.
-  const prevStatusRef = useRef(input.status);
   useEffect(() => {
     if (
       prevStatusRef.current === 'streaming' &&

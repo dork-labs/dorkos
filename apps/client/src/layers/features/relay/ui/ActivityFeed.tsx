@@ -88,8 +88,11 @@ export function ActivityFeed({
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchFilter, setSearchFilter] = useState('');
-  const [showFailures, setShowFailures] = useState(false);
-  const [userToggled, setUserToggled] = useState(false);
+  // What the operator chose, stamped with the auto-show request that was in
+  // force when they chose it. A fresh request from the health bar outranks an
+  // older choice — asking again is a new request — which is why the stamp is
+  // here rather than an effect resetting a flag.
+  const [choice, setChoice] = useState<{ open: boolean; afterAutoShow: boolean } | null>(null);
   const { data, isLoading } = useRelayConversations(enabled);
   const { data: deadLetterGroups = [] } = useAggregatedDeadLetters(enabled);
   const conversations = useMemo(() => data?.conversations ?? [], [data?.conversations]);
@@ -105,21 +108,12 @@ export function ActivityFeed({
     }
   }, [conversations]);
 
-  // Auto-open the dead-letter section when dead letters arrive, unless the user manually closed it.
-  useEffect(() => {
-    if (!userToggled && deadLetterGroups.length > 0) {
-      setShowFailures(true);
-    }
-  }, [deadLetterGroups.length, userToggled]);
-
-  // Force the dead-letter section open when the health bar click handler signals it.
-  // Also resets userToggled so the auto-show effect can fire again on future arrivals.
-  useEffect(() => {
-    if (autoShowFailures) {
-      setShowFailures(true);
-      setUserToggled(false);
-    }
-  }, [autoShowFailures]);
+  // Open when the operator said so, and otherwise whenever there is something to
+  // see: dead letters arriving, or the health bar asking for them.
+  const honoured = choice !== null && (choice.afterAutoShow || !autoShowFailures) ? choice : null;
+  const userToggled = honoured !== null;
+  const showFailures =
+    honoured !== null ? honoured.open : Boolean(autoShowFailures) || deadLetterGroups.length > 0;
 
   const hasActiveFilters = sourceFilter !== 'all' || statusFilter !== 'all' || searchFilter !== '';
 
@@ -186,8 +180,7 @@ export function ActivityFeed({
             size="sm"
             className="relative"
             onClick={() => {
-              setShowFailures(!showFailures);
-              setUserToggled(true);
+              setChoice({ open: !showFailures, afterAutoShow: autoShowFailures ?? false });
             }}
             aria-pressed={showFailures}
             aria-label="Show dead letters"

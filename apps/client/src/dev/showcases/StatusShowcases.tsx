@@ -19,6 +19,9 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { SAMPLE_TASKS } from '../mock-chat-data';
 import { IDENTITY_STATUSES } from '../mock-samples';
 
+/** A fixed "three hours from now", picked once at import: a showcase reads the clock nowhere near a render. */
+const SHOWCASE_RESETS_AT = new Date(Date.now() + 3 * 3600 * 1000).toISOString();
+
 /** What each dot signal means, in the words the cockpit uses for it. */
 const SIGNALS: readonly { signal: StatusSignal; means: string }[] = [
   { signal: 'working', means: 'working — a turn is streaming right now' },
@@ -198,7 +201,7 @@ export function StatusShowcases() {
                 kind: 'subscription',
                 utilization: 0.47,
                 windowLabel: '5-hour window',
-                resetsAt: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
+                resetsAt: SHOWCASE_RESETS_AT,
                 costUsd: 1.23,
                 state: 'ok',
               }}

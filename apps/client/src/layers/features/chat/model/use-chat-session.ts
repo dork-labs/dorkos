@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useTransport } from '@/layers/shared/model';
@@ -7,6 +7,7 @@ import {
   useSessionChatState,
   useSessionListStore,
   useSessionStreamConnection,
+  useSessionScopedCwd,
   selectRenderedStatus,
 } from '@/layers/entities/session';
 import { useSessionStoreActions } from './use-session-store-actions';
@@ -50,6 +51,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // sending whatever happens to be in it would let a pick made on an abandoned
   // draft bill the next conversation.
   const pendingAccount = useAppStore((s) => s.pendingAccount);
+  // Where THIS conversation's own reads look, which is not `selectedCwd`: the
+  // store holds the server default once nothing else has claimed it, and a
+  // session opened without `&dir=` does not live there (DOR-1444). The send
+  // path below keeps using `selectedCwd` — launching a new conversation needs a
+  // concrete directory, and that is the question the store actually answers.
+  const sessionCwd = useSessionScopedCwd();
   const sid = sessionId ?? '';
 
   // Single store subscription for all per-session fields.
@@ -72,7 +79,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // per-session store (spec chat-stream-reconnection). The render fields below
   // (messages/status/pendingInteractions) come from this projection once it
   // hydrates; until then the legacy chat store provides the instant first paint.
-  const streamState = useSessionStream(sessionId, selectedCwd);
+  const streamState = useSessionStream(sessionId, sessionCwd.cwd);
 
   // Late rekey follow-up: when the canonical id resolves only AFTER the trigger
   // 202 (the common Claude path), the server's retire announce rewrites the URL
@@ -131,6 +138,21 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // stale closures from a destroyed-and-recreated session.
   const mountGenerationMapRef = useRef<Map<string, number>>(new Map());
 
+  // Seed the generation for this session. A layout effect rather than render,
+  // because render may not touch refs — and the first one this hook declares, so
+  // it lands ahead of every effect this component owns and every passive effect
+  // anywhere. It is NOT ahead of a descendant's layout effect, which React runs
+  // child-first; the guard fails open there, since `setMessages` skips the
+  // generation check entirely when the map has no entry for the session yet.
+  useLayoutEffect(() => {
+    if (!sid) return;
+    if (mountGenerationMapRef.current.has(sid)) return;
+    mountGenerationMapRef.current.set(
+      sid,
+      useSessionChatStore.getState().getSession(sid).mountGeneration
+    );
+  }, [sid]);
+
   // ---------------------------------------------------------------------------
   // Store write actions
   // ---------------------------------------------------------------------------
@@ -157,12 +179,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // the store is external to the React tree (Zustand), so the setState doesn't
   // trigger re-render of a *different* component.
   if (sid) useSessionChatStore.getState().initSession(sid);
-  if (sid) {
-    const gen = useSessionChatStore.getState().getSession(sid).mountGeneration;
-    if (!mountGenerationMapRef.current.has(sid)) {
-      mountGenerationMapRef.current.set(sid, gen);
-    }
-  }
 
   // Re-init, capture mountGeneration, and touch access order when the active
   // session changes. initSession is idempotent; touchSession updates LRU order.
@@ -200,7 +216,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     sessionId,
     sid,
     transport,
-    selectedCwd,
+    sessionCwd,
     enableMessagePolling,
     isStreaming: status === 'streaming',
     setMessages,
@@ -284,7 +300,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   useTurnEndReconcile({
     sessionId,
     transport,
-    selectedCwd,
+    sessionCwd,
     streamState,
     queryClient,
     onStreamingDone: options.onStreamingDone,

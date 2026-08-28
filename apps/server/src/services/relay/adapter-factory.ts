@@ -25,6 +25,7 @@ import {
 import type {
   AgentRuntimeLike,
   ApprovalAuthorizer,
+  InboundTurnBudgets,
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
@@ -53,6 +54,13 @@ export interface AdapterFactoryDeps {
    * same posture-as-data argument `UpgradeRoute.credential` makes.
    */
   approvalAuthorizer: ApprovalAuthorizer;
+  /**
+   * Where a running agent turn records the envelope it is answering, so that
+   * turn's own `relay_send*` calls continue that budget (DOR-791). This is
+   * `RelayCore.inboundBudgets` — the SAME instance the in-session tool surface
+   * reads back from; a second one would thread nothing and fail silently.
+   */
+  inboundBudgets?: InboundTurnBudgets;
 }
 
 /** Default status for adapters that are not currently running. */
@@ -112,6 +120,7 @@ export async function createAdapter(
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
+        inboundBudgets: deps.inboundBudgets,
         logger,
       });
     }

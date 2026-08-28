@@ -197,6 +197,8 @@ export const CONFIG_DISCLOSURE = {
 
   'relay.enabled': 'expose',
   'relay.dataDir': 'expose',
+  'relay.maxAgentTurnsPerAgentPerHour': 'expose',
+  'relay.maxAgentTurnsTotalPerHour': 'expose',
 
   // Whether outside agents may reach the ones here over A2A. A plain boolean:
   // it names no credential and no host, and an agent that learns the gate is
@@ -226,6 +228,7 @@ export const CONFIG_DISCLOSURE = {
   'rooms.engagedWindowPosts': 'expose',
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
+  'rooms.responseGate': 'expose',
 
   // A room's own files: whether they are available at all, and the bounds a
   // merge is measured against. Plain numbers and a boolean about the person's

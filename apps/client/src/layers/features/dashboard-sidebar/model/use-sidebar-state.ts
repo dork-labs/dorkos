@@ -18,10 +18,11 @@
  *
  * @module features/dashboard-sidebar/model/use-sidebar-state
  */
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useRouterState, useSearch } from '@tanstack/react-router';
 import { useShallow } from 'zustand/shallow';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
+import { useRenderSlot } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import {
   disambiguateDisplayNames,
@@ -101,28 +102,63 @@ function sidebarRecentWindow(data: RecentSessionsResponse): RecentSessionsRespon
 }
 
 /**
+ * The value a slot was last given, until it is given a different one by the
+ * caller's own definition of different.
+ *
+ * A {@link useRenderSlot} rather than a ref because the guards below are read
+ * DURING render — returning a held identity is the entire job — and render is
+ * not allowed to read refs.
+ *
+ * @param value - This render's value.
+ * @param isEqual - What counts as the same value.
+ */
+function useHeldWhileEqual<T>(value: T, isEqual: (a: T, b: T) => boolean): T {
+  const slot = useRenderSlot(value);
+  const held = slot.read();
+  if (held !== value && !isEqual(held, value)) {
+    slot.write(value);
+    return value;
+  }
+  return held;
+}
+
+/**
+ * Whether two flat maps carry the same keys and the same values.
+ *
+ * Shallow rather than deep on purpose — it must not mask a real change, and the
+ * values it is used on here are flat maps of primitives.
+ *
+ * @param a - The held value.
+ * @param b - This render's value.
+ */
+function shallowEqualRecords(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return aKeys.length === bKeys.length && bKeys.every((key) => Object.is(a[key], b[key]));
+}
+
+/**
+ * Whether two arrays carry the same members in the same order.
+ *
+ * @param a - The held array.
+ * @param b - This render's array.
+ */
+function sameMembers(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && b.every((entry, i) => a[i] === entry);
+}
+
+/**
  * The previous value, whenever the new one is shallow-equal to it.
  *
  * The guard the whole memo rests on. An activity event re-runs
  * `useAgentAttentionMap`'s own memo and hands back a structurally identical
  * record with a fresh identity; without this, that identity alone would rebuild
- * the model. Shallow rather than deep on purpose — it must not mask a real
- * change, and the values it is used on here are flat maps of primitives.
+ * the model.
  *
  * @param value - This render's value.
  */
 function useShallowStable<T extends Record<string, unknown>>(value: T): T {
-  const held = useRef(value);
-  const previous = held.current;
-  if (previous !== value) {
-    const previousKeys = Object.keys(previous);
-    const nextKeys = Object.keys(value);
-    const equal =
-      previousKeys.length === nextKeys.length &&
-      nextKeys.every((key) => Object.is(previous[key], value[key]));
-    if (!equal) held.current = value;
-  }
-  return held.current;
+  return useHeldWhileEqual(value, shallowEqualRecords);
 }
 
 /**
@@ -134,15 +170,7 @@ function useShallowStable<T extends Record<string, unknown>>(value: T): T {
  * @param value - This render's array.
  */
 function useStableList(value: string[]): string[] {
-  const held = useRef(value);
-  const previous = held.current;
-  if (
-    previous !== value &&
-    (previous.length !== value.length || value.some((entry, i) => previous[i] !== entry))
-  ) {
-    held.current = value;
-  }
-  return held.current;
+  return useHeldWhileEqual(value, sameMembers);
 }
 
 /**

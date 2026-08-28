@@ -242,6 +242,12 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
       type: 'integer (1--200)',
       default: '20',
     },
+    'rooms.responseGate': {
+      description:
+        "Whether an agent may skip a message that was plainly meant for somebody else instead of reading it properly first. 'routing' skips a message that named a different agent, and the replies in an exchange the agent is not part of. 'off' goes back to thinking about every overheard message. A skipped message is not lost — the agent still sees it as background next time it replies — and nothing that names the agent, or anything in a direct message, is ever skipped. Only you can change this.",
+      type: "'off' | 'routing'",
+      default: "'routing'",
+    },
   }}
 />
 

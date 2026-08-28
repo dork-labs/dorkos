@@ -24,7 +24,7 @@ import type {
   RelayPublisher,
 } from '../../types.js';
 import { BaseRelayAdapter } from '../../base-adapter.js';
-import { DEFAULT_MAX_HOPS } from '../../budget-enforcer.js';
+import { DEFAULT_MAX_HOPS, DEFAULT_CALL_BUDGET, DEFAULT_TTL_MS } from '../../budget-enforcer.js';
 
 /** Stripe-standard timestamp window for replay attack prevention (±5 minutes). */
 const TIMESTAMP_WINDOW_SECS = 300;
@@ -41,16 +41,28 @@ const HOP_COUNT_HEADER = 'X-Relay-Hop-Count';
 /** Header carrying the hop ceiling that applies to it. */
 const MAX_HOPS_HEADER = 'X-Relay-Max-Hops';
 
+/** Header carrying how many turns the message being sent out may still buy. */
+const CALL_BUDGET_HEADER = 'X-Relay-Call-Budget';
+
+/** Header carrying the instant, epoch ms, after which the chain is dead. */
+const EXPIRES_AT_HEADER = 'X-Relay-Expires-At';
+
 /**
- * The hop budget an inbound request claims to be continuing.
+ * The budget an inbound request claims to be continuing.
  *
  * Coerced from header text, and only believed when it is a sane non-negative
  * integer; anything else is treated as no claim at all, which starts a fresh
  * budget exactly as before.
+ *
+ * `hopCount` is the only required field: it is the one every prior version of
+ * this adapter sent, and a request echoing an older DorkOS's headers must keep
+ * continuing the chain rather than falling back to a fresh budget.
  */
 const InboundHopBudgetSchema = z.object({
   hopCount: z.coerce.number().int().min(0).max(1_000),
   maxHops: z.coerce.number().int().min(1).max(1_000).optional(),
+  callBudgetRemaining: z.coerce.number().int().min(0).max(1_000_000).optional(),
+  ttl: z.coerce.number().int().min(0).optional(),
 });
 
 // === Manifest ===
@@ -343,6 +355,13 @@ export class WebhookAdapter extends BaseRelayAdapter {
           // rather than resetting it (see `continuedBudget`).
           [HOP_COUNT_HEADER]: String(envelope.budget.hopCount),
           [MAX_HOPS_HEADER]: String(envelope.budget.maxHops),
+          // The other two halves of the same budget. Sending only the hop
+          // counter meant a service that answered every message got a fresh call
+          // budget and a fresh hour on every lap — the hop guard stopped the
+          // chain, but nothing bounded what it cost to get there, and nothing
+          // bounded a chain that stayed under the hop limit forever.
+          [CALL_BUDGET_HEADER]: String(envelope.budget.callBudgetRemaining),
+          [EXPIRES_AT_HEADER]: String(envelope.budget.ttl),
           ...this.config.outbound.headers,
         },
         body,
@@ -392,18 +411,35 @@ export class WebhookAdapter extends BaseRelayAdapter {
    * higher-than-default configured ceiling is that an echoed budget is
    * shortened, which errs toward stopping sooner.
    *
+   * **The whole budget continues, not just the hop counter (DOR-791).** Sending
+   * hops alone left the other two dimensions resetting every lap: the call
+   * budget went back to ten and the TTL back to a full hour, so a loop that
+   * stayed under the hop ceiling was unbounded in both cost and time. The call
+   * budget is clamped, then decremented for the lap that just happened; the
+   * deadline is clamped to at most a fresh hour and otherwise carried, so a
+   * chain cannot buy itself more life by going round again.
+   *
    * @param headers - The inbound request headers.
    * @returns Publish options carrying the continued budget, or `undefined`.
    */
-  private continuedBudget(
-    headers: Record<string, string | string[] | undefined>
-  ): { budget: { hopCount: number; maxHops?: number } } | undefined {
+  private continuedBudget(headers: Record<string, string | string[] | undefined>):
+    | {
+        budget: {
+          hopCount: number;
+          maxHops?: number;
+          callBudgetRemaining?: number;
+          ttl?: number;
+        };
+      }
+    | undefined {
     const declared = normalizeHeader(headers[HOP_COUNT_HEADER.toLowerCase()]);
     if (!declared) return undefined;
 
     const parsed = InboundHopBudgetSchema.safeParse({
       hopCount: declared,
       maxHops: normalizeHeader(headers[MAX_HOPS_HEADER.toLowerCase()]) || undefined,
+      callBudgetRemaining: normalizeHeader(headers[CALL_BUDGET_HEADER.toLowerCase()]) || undefined,
+      ttl: normalizeHeader(headers[EXPIRES_AT_HEADER.toLowerCase()]) || undefined,
     });
     if (!parsed.success) {
       this.logger.debug?.(
@@ -417,6 +453,26 @@ export class WebhookAdapter extends BaseRelayAdapter {
         hopCount: parsed.data.hopCount + 1,
         ...(parsed.data.maxHops !== undefined
           ? { maxHops: Math.min(parsed.data.maxHops, DEFAULT_MAX_HOPS) }
+          : {}),
+        // Clamped and then SPENT, exactly like the hop counter one line above:
+        // the lap that just happened cost a turn, so the republish carries one
+        // less. Floored at zero rather than allowed negative, because zero is
+        // what the publish gate reads as exhausted, and a chain that has spent
+        // its budget is refused there instead of continuing on a negative
+        // number nothing checks.
+        ...(parsed.data.callBudgetRemaining !== undefined
+          ? {
+              callBudgetRemaining: Math.max(
+                0,
+                Math.min(parsed.data.callBudgetRemaining, DEFAULT_CALL_BUDGET) - 1
+              ),
+            }
+          : {}),
+        // The deadline is carried, not restarted — clamped to at most a fresh
+        // hour so an echoed value from a wrong clock (or a caller that fancied
+        // a longer life) cannot extend the chain past what a new one would get.
+        ...(parsed.data.ttl !== undefined
+          ? { ttl: Math.min(parsed.data.ttl, Date.now() + DEFAULT_TTL_MS) }
           : {}),
       },
     };

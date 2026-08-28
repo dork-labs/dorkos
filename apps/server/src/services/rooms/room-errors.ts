@@ -285,7 +285,52 @@ export type RoomErrorCode =
    * delete guard treats a worktree it cannot read as unfinished work instead,
    * which is the conservative answer when the reason might be a missing binary.
    */
-  | 'ROOM_REPO_GIT_UNAVAILABLE';
+  | 'ROOM_REPO_GIT_UNAVAILABLE'
+  /**
+   * Somebody asked for the files of a room that has none (spec `project-rooms`
+   * §3.9).
+   *
+   * **Asked only AFTER the caller has been admitted to the room**, so it can
+   * never be the thing that tells an outsider a room exists — that answer is
+   * `ROOM_NOT_FOUND`, and it comes first.
+   *
+   * One code for two situations, because `RoomRepoService.hasRepo` is one
+   * predicate over both: a room nobody has given files to, and every room while
+   * `config.rooms.repo.enabled` is off. A member reading a room with no files
+   * should be told the room has no files, whichever of those is why.
+   *
+   * A 409 rather than a 404: the room is real and the caller may see it, and
+   * "there is nothing here yet" is a state the person can change.
+   */
+  | 'ROOM_HAS_NO_REPO'
+  /**
+   * A file path could have meant somewhere other than inside the room's repo —
+   * `..`, an absolute path, a backslash, a control character, an empty segment
+   * (`room-files.ts`).
+   *
+   * Refused before git is asked anything, so a hostile path never becomes an
+   * argument. A 400: nothing about the room or the caller would change it.
+   */
+  | 'ROOM_FILE_PATH_INVALID'
+  /**
+   * A path is not in the commit that was read.
+   *
+   * A different code from `ROOM_NOT_FOUND` on purpose, and it discloses
+   * nothing: by the time a path can be wrong, the caller has already been
+   * admitted to the room, so the only fact this leaks is about a room they can
+   * already list.
+   */
+  | 'ROOM_FILE_NOT_FOUND'
+  /**
+   * A path is in the tree but is not the kind of thing that was asked for — a
+   * directory asked for as a file, a file asked for as a directory, or a
+   * **symlink**, which is listed and never followed.
+   *
+   * The symlink half is the one that matters: a link in a room's tree can name
+   * any path on the machine, and nothing in DorkOS resolves it. The message
+   * says which of the three it was, because the remedy differs.
+   */
+  | 'ROOM_FILE_NOT_READABLE';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

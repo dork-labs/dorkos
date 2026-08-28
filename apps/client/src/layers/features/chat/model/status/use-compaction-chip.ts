@@ -139,7 +139,7 @@ export function useCompactionChip({
   // time it becomes relevant (e.g. a turn that starts but the compaction
   // itself later fails, leaving usage over threshold with the chip due back).
   useEffect(() => {
-    if (isStreaming) clearPending();
+    if (isStreaming && pendingRef.current) clearPending();
   }, [isStreaming, clearPending]);
 
   // Never leave a watchdog running past unmount.

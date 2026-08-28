@@ -16,7 +16,7 @@
  *
  * @module widgets/session/ui/SessionTranscript
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
@@ -47,6 +47,7 @@ import {
   type MessageAuthorContext,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
+import { useRenderSlot } from '@/layers/shared/lib';
 
 /**
  * What the transcript is called when a screen reader lands in it.
@@ -148,7 +149,12 @@ export function SessionTranscript({
   runtimeLabel,
   landOnRow,
 }: SessionTranscriptProps) {
-  const [historyCount, setHistoryCount] = useState<number | null>(null);
+  // How long the transcript was when this mount first had one — the line between
+  // history and what arrived since, which decides which rows animate. Latched in
+  // a slot rather than state: it is read in the same render that captures it, and
+  // capturing it must not cause a render of its own.
+  const historyCount = useRenderSlot<number | null>(null);
+  if (historyCount.read() === null && messages.length > 0) historyCount.write(messages.length);
   const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
   const birthRecord = useAgentBirthRecord(sessionId);
 
@@ -208,15 +214,35 @@ export function SessionTranscript({
   // Accepted consequence: a tab left idle across midnight keeps yesterday's
   // "Today" chip until the next message lands. Re-labelling a silent transcript
   // is not worth a timer.
+  // The clock those labels are phrased against. Read at mount and again, as the
+  // list changes, only when the day itself has turned — render may not read the
+  // clock, and a fresh reading on every streamed token would re-render the whole
+  // transcript for a label that says the same thing.
+  const [now, setNow] = useState(() => Date.now());
+  const anchoredDay = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const sampled = Date.now();
+    const day = new Date(sampled).toDateString();
+    if (anchoredDay.current === null) {
+      // The mount's reading is the `useState` initializer above.
+      anchoredDay.current = day;
+      return;
+    }
+    if (anchoredDay.current !== day) {
+      anchoredDay.current = day;
+      setNow(sampled);
+    }
+  }, [messages]);
+
   const listRows = useMemo(
     () =>
       buildListRows(messages, {
         resolveAuthor: (message) => resolveMessageAuthor(message, authorContext),
-        now: Date.now(),
+        now,
         lastSeenMessageId,
         unreadFromStart,
       }),
-    [messages, authorContext, lastSeenMessageId, unreadFromStart]
+    [messages, authorContext, now, lastSeenMessageId, unreadFromStart]
   );
 
   const rows = useMemo<ConversationRow[]>(
@@ -236,12 +262,6 @@ export function SessionTranscript({
       }),
     [listRows]
   );
-
-  useEffect(() => {
-    if (historyCount === null && messages.length > 0) {
-      setHistoryCount(messages.length);
-    }
-  }, [messages.length, historyCount]);
 
   /**
    * Render one row by kind.
@@ -269,6 +289,9 @@ export function SessionTranscript({
       // `true` vacuously (they render no widget).
       const isLatestWidgetMessage =
         lastWidgetFenceIndex === -1 || messageIndex >= lastWidgetFenceIndex;
+      // The history line as of THIS call, so a row drawn before the transcript
+      // first had messages is still judged against the latch that landed since.
+      const history = historyCount.read();
 
       return (
         <SessionMessage
@@ -276,7 +299,7 @@ export function SessionTranscript({
           grouping={row.grouping}
           author={row.author}
           sessionId={sessionId}
-          isNew={historyCount !== null && messageIndex >= historyCount}
+          isNew={history !== null && messageIndex >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
           activeToolCallId={activeToolCallId}

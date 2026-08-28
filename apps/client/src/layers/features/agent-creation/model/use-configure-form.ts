@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { validateAgentName, slugifyAgentName } from '@dorkos/shared/validation';
 import type { AgentRuntime } from '@dorkos/shared/mesh-schemas';
 import { useQuery } from '@tanstack/react-query';
@@ -6,6 +6,28 @@ import { useTransport } from '@/layers/shared/model';
 import type { WizardStep, ConflictStatus } from '../lib/wizard-types';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { configKeys } from '@/layers/entities/config';
+import type { Transport } from '@dorkos/shared/transport';
+
+/**
+ * Ask the filesystem what is already at a directory, as a conflict status.
+ *
+ * Returns rather than sets, so the caller decides when the answer applies —
+ * a probe for a directory the form has since moved on from is discarded.
+ *
+ * @param transport - The transport to browse through.
+ * @param directory - The absolute directory the agent would be created in.
+ */
+async function probeDirectory(transport: Transport, directory: string): Promise<ConflictStatus> {
+  try {
+    const result = await transport.browseDirectory(directory);
+    return result.entries.some((entry) => entry.name === '.dork')
+      ? 'exists-has-dork'
+      : 'exists-no-dork';
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    return message.includes('EACCES') || message.includes('permission') ? 'error' : 'no-path';
+  }
+}
 
 interface UseConfigureFormOptions {
   step: WizardStep;
@@ -59,7 +81,10 @@ export function useConfigureForm({
   const [directoryOverride, setDirectoryOverride] = useState('');
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
-  const [conflictStatus, setConflictStatus] = useState<ConflictStatus>('idle');
+  // What the last probe found, stamped with the directory it probed. A stamp
+  // rather than a plain status because the answer belongs to ONE path: a
+  // directory that has since changed is not "checked", it is being checked.
+  const [probe, setProbe] = useState<{ directory: string; status: ConflictStatus } | null>(null);
   const [icon, setIconState] = useState('');
   const [iconUserSet, setIconUserSet] = useState(false);
   const [runtime, setRuntime] = useState<AgentRuntime>(runtimeSeed);
@@ -96,6 +121,14 @@ export function useConfigureForm({
   const showSlugError = displayName.length > 0 && slug.length > 0 && !slugValidation.valid;
   const resolvedDirectory =
     directoryOverride || (defaultDirectory && slug ? `${defaultDirectory}/${slug}` : '');
+
+  // What the last probe said about the directory on screen right now.
+  const conflictStatus: ConflictStatus =
+    step !== 'naming' || !resolvedDirectory
+      ? 'idle'
+      : probe !== null && probe.directory === resolvedDirectory
+        ? probe.status
+        : 'checking';
   const canSubmit = displayName.length > 0 && slugValidation.valid && conflictStatus !== 'error';
 
   // Auto-fill name from the selected template on entering the naming step.
@@ -104,54 +137,54 @@ export function useConfigureForm({
   // never clobbered (`nameAutoFilled` is the provenance bit; typing clears it).
   // Deps intentionally exclude `displayName`/`nameAutoFilled` so the effect
   // fires only when the selection changes, never on user edits.
+  // The step-and-selection this hook last auto-filled for. The auto-fill is a
+  // fact about the SELECTION CHANGING, which a render handed one selection
+  // cannot see, so the ref is what says whether this is that moment.
+  const filledFor = useRef<string | null>(null);
   useEffect(() => {
     if (step !== 'naming') return;
-    if (templateName) {
-      if (!displayName || nameAutoFilled) {
-        setDisplayName(templateName.replace(/^@[^/]+\//, ''));
-        setNameAutoFilled(true);
-      }
-    } else if (nameAutoFilled) {
-      // Design-your-own after a template: the inherited name was never the
-      // user's — start blank.
-      setDisplayName('');
-      setNameAutoFilled(false);
-    }
+    // What this selection would put in the field, or `null` for "leave it": a
+    // USER-typed name is never clobbered. Design-your-own after a template
+    // clears it, because the inherited name was never the user's.
+    const nextName = templateName
+      ? !displayName || nameAutoFilled
+        ? templateName.replace(/^@[^/]+\//, '')
+        : null
+      : nameAutoFilled
+        ? ''
+        : null;
+    if (nextName === null) return;
+    const selection = `${step}|${templateName ?? ''}`;
+    if (filledFor.current === selection) return;
+    filledFor.current = selection;
+    setDisplayName(nextName);
+    setNameAutoFilled(Boolean(templateName));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, templateName]);
 
   // Seed the face on entering the naming step, unless the user has picked one.
+  // Same shape as the auto-fill above: the seed follows a change of seed, and
+  // the ref is what tells this render from the one before it.
+  const seededFace = useRef<string | null>(null);
   useEffect(() => {
-    if (step === 'naming' && !iconUserSet) {
-      setIconState(faceSeed);
-    }
+    if (step !== 'naming' || iconUserSet) return;
+    const seed = `${step}|${faceSeed}`;
+    if (seededFace.current === seed) return;
+    seededFace.current = seed;
+    setIconState(faceSeed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, faceSeed]);
 
-  // Debounced .dork conflict detection
+  // Debounced .dork conflict detection. The 'idle' and 'checking' phases are
+  // derived above, so the only thing this effect writes is the answer.
   useEffect(() => {
-    if (step !== 'naming') return;
+    if (step !== 'naming' || !resolvedDirectory) return;
 
-    if (!resolvedDirectory) {
-      setConflictStatus('idle');
-      return;
-    }
-
-    setConflictStatus('checking');
-
-    const timer = setTimeout(async () => {
-      try {
-        const result = await transport.browseDirectory(resolvedDirectory);
-        const hasDork = result.entries.some((entry) => entry.name === '.dork');
-        setConflictStatus(hasDork ? 'exists-has-dork' : 'exists-no-dork');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : '';
-        if (message.includes('EACCES') || message.includes('permission')) {
-          setConflictStatus('error');
-        } else {
-          setConflictStatus('no-path');
-        }
-      }
+    const directory = resolvedDirectory;
+    const timer = setTimeout(() => {
+      void probeDirectory(transport, directory).then((status) => {
+        setProbe({ directory, status });
+      });
     }, 500);
 
     return () => clearTimeout(timer);
@@ -169,12 +202,18 @@ export function useConfigureForm({
   }
 
   function reset() {
+    // The two seeding guards go with it. They record what this wizard has
+    // already filled in, and a reset says none of it happened — leave them set
+    // and re-entering the wizard on the same template seeds nothing, so the
+    // name stays empty and Create never enables (DOR-1558).
+    filledFor.current = null;
+    seededFace.current = null;
     setDisplayName('');
     setNameAutoFilled(false);
     setDirectoryOverride('');
     setDirectoryOpen(false);
     setDirectoryPickerOpen(false);
-    setConflictStatus('idle');
+    setProbe(null);
     setIconState('');
     setIconUserSet(false);
     setRuntime(runtimeSeed);

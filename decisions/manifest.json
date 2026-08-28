@@ -2,6 +2,45 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260828-123331",
+      "slug": "the-first-hard-tool-filter-lives-at-registry-invoke",
+      "title": "The first hard per-agent tool filter lives at registry.invoke, keyed on a grant only a person may write",
+      "status": "accepted",
+      "created": "2026-08-28",
+      "extractedFrom": "rooms-management-tools",
+      "specSlug": "rooms-management-tools",
+      "amends": "260726-171347",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/capabilities/capability-definition.ts",
+        "apps/server/src/services/core/capabilities/registry.ts",
+        "apps/server/src/services/core/capabilities/tier-enforcement.ts",
+        "apps/server/src/services/core/capabilities/tool-group-enforcement.ts",
+        "apps/server/src/services/core/capabilities/tool-group-grants.ts",
+        "apps/server/src/services/core/operator/agent-updater.ts",
+        "packages/shared/src/mesh-schemas.ts"
+      ]
+    },
+    {
+      "id": "260824-120429",
+      "slug": "one-turn-ceiling-at-the-relay-adapter-dispatch",
+      "title": "One turn ceiling at the relay adapter dispatch, not one per surface",
+      "status": "proposed",
+      "created": "2026-08-24",
+      "extractedFrom": null,
+      "specSlug": null,
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/relay/src/turn-ceiling.ts",
+        "packages/relay/src/inbound-turn-budgets.ts",
+        "packages/relay/src/relay-publish.ts",
+        "packages/relay/src/adapters/webhook/webhook-adapter.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/relay-helpers.ts",
+        "packages/shared/src/config-schema.ts"
+      ]
+    },
+    {
       "id": "260828-002117",
       "slug": "telemetry-routes-read-the-client-ip-to-count-it-never-to-keep-it",
       "title": "Public telemetry routes read the client IP to count it, never to keep it",

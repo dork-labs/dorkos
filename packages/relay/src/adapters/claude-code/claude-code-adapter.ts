@@ -197,6 +197,30 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   ] as const;
   readonly displayName = 'Claude Code';
 
+  /**
+   * Whether delivering this subject makes this adapter run a real, paid turn
+   * (DOR-791).
+   *
+   * The publish pipeline's hourly turn ceiling asks this at the dispatch,
+   * because the dispatch is the only place that knows the answer. Deciding it
+   * from the subject upstream is how the ceiling first shipped, and it missed
+   * `relay.system.tasks.*` entirely: this adapter answers for that prefix too
+   * and routes it to `ensureSession` + `sendMessage`, so scheduled runs — and
+   * anything `relay_send` addressed there, since only endpoint REGISTRATION is
+   * reserved — cost money nothing counted.
+   *
+   * The one "no" is the subject beneath a dispatch subject, which
+   * {@link ClaudeCodeAdapter.deliver} skips rather than runs. Answering
+   * truthfully here means the ceiling never charges for it, instead of charging
+   * and refunding a moment later.
+   *
+   * @param subject - The subject about to be delivered.
+   */
+  startsAgentTurns(subject: string): boolean {
+    if (subject.startsWith(TASK_DISPATCH_SUBJECT_PREFIX)) return isTaskDispatchSubject(subject);
+    return true;
+  }
+
   private readonly config: ResolvedConfig;
   private readonly deps: ClaudeCodeAdapterDeps;
   private relay: RelayPublisher | null = null;
@@ -451,6 +475,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             traceStore: this.deps.traceStore,
             taskStore: this.deps.taskStore,
             runningTasks: this.runningTasks,
+            inboundBudgets: this.deps.inboundBudgets,
             logger: this.deps.logger,
           }
         );
@@ -476,6 +501,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             agentSessionStore: this.deps.agentSessionStore,
             resolveExecutionSettings: this.deps.resolveExecutionSettings,
             turnController,
+            inboundBudgets: this.deps.inboundBudgets,
             logger: this.deps.logger,
           },
           this.relay

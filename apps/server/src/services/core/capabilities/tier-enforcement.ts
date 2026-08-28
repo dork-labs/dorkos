@@ -311,9 +311,17 @@ export interface ApprovalRequiredPayload {
  * - `input_not_bindable` — the input cannot be canonicalized without losing
  *   information, so no approval could honestly cover it. Refused, because an
  *   approval bound to a hash that ignores part of the action is worse than none.
+ * - `tool_group_disabled` — the capability declares a per-agent tool group and
+ *   this caller does not hold it (`tool-group-enforcement.ts`). Not a tier answer
+ *   at all; it shares this union so every surface that already renders a refusal
+ *   renders this one too, with no second shape to teach anybody.
  */
 export type TierDeniedReason =
-  'tier_ceiling' | 'operator_denied' | 'enforcement_unavailable' | 'input_not_bindable';
+  | 'tier_ceiling'
+  | 'operator_denied'
+  | 'enforcement_unavailable'
+  | 'input_not_bindable'
+  | 'tool_group_disabled';
 
 /** The result a refused caller receives instead of the capability's output. */
 export interface TierDeniedPayload {

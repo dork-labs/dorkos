@@ -70,6 +70,14 @@ function groupConfigItems(
   return grouped;
 }
 
+/** What one read of the two status endpoints came back with; an absent key means that endpoint had nothing to say. */
+interface PanelStatuses {
+  /** Which declared secrets are set, keyed by secret key. */
+  secrets?: Map<string, boolean>;
+  /** The declared settings and their current values. */
+  settings?: SettingStatus[];
+}
+
 /**
  * Auto-generated settings panel for extension secrets and settings declared
  * in the manifest.
@@ -95,7 +103,9 @@ export function ManifestSettingsPanel({
   const [settingStatuses, setSettingStatuses] = useState<SettingStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchStatuses = useCallback(async () => {
+  // Reads the two status endpoints and RETURNS what they said — no setState of
+  // its own, so the effect below decides when to apply the answer.
+  const readStatuses = useCallback(async (): Promise<PanelStatuses> => {
     try {
       const [secretsRes, settingsRes] = await Promise.all([
         secrets.length > 0
@@ -106,25 +116,42 @@ export function ManifestSettingsPanel({
           : Promise.resolve(null),
       ]);
 
+      const next: PanelStatuses = {};
       if (secretsRes?.ok) {
         const data = (await secretsRes.json()) as SecretStatus[];
-        setSecretStatuses(new Map(data.map((s) => [s.key, s.isSet])));
+        next.secrets = new Map(data.map((s) => [s.key, s.isSet]));
       }
-
       if (settingsRes?.ok) {
-        const data = (await settingsRes.json()) as SettingStatus[];
-        setSettingStatuses(data);
+        next.settings = (await settingsRes.json()) as SettingStatus[];
       }
+      return next;
     } catch {
       // Non-blocking — settings panel degrades gracefully
-    } finally {
-      setLoading(false);
+      return {};
     }
   }, [extensionId, secrets.length, settings.length]);
 
+  const applyStatuses = useCallback((next: PanelStatuses) => {
+    if (next.secrets) setSecretStatuses(next.secrets);
+    if (next.settings) setSettingStatuses(next.settings);
+    setLoading(false);
+  }, []);
+
+  // A card that changed a secret or a setting asks for a fresh read.
+  const fetchStatuses = useCallback(
+    async () => applyStatuses(await readStatuses()),
+    [readStatuses, applyStatuses]
+  );
+
   useEffect(() => {
-    void fetchStatuses();
-  }, [fetchStatuses]);
+    let alive = true;
+    void readStatuses().then((next) => {
+      if (alive) applyStatuses(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [readStatuses, applyStatuses]);
 
   if (loading) {
     return (

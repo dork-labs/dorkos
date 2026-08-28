@@ -48,6 +48,9 @@ let mockPathname = '/team';
 // Router: the sections use useNavigate (overflow links) and useRouterState
 // (current pathname, to omit a link that would self-navigate).
 vi.mock('@tanstack/react-router', () => ({
+  // Present, because these cases render inside a routed cockpit. The safe-router
+  // wrappers ask before reading route state (DOR-1444).
+  useRouter: () => ({ stores: {} }),
   useNavigate: () => mockNavigate,
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),

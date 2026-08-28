@@ -213,6 +213,30 @@ describe('catalog — serialization', () => {
     });
   });
 
+  it('carries a declared tool group, and omits the key entirely without one', () => {
+    // The catalog is where the cockpit and the docs projection read this from,
+    // so a capability whose grant never reached the wire would leave the Tools
+    // tab describing a switch the server does not have (DOR-1611). Omitted
+    // rather than nulled for the ungated majority: an absent key keeps their
+    // catalog entries byte-identical and their content hash still.
+    const gated = defineCapability({
+      id: 'config.manage',
+      title: 'Manage config',
+      description: 'A capability declaring a per-agent grant, for the catalog assertion.',
+      tier: 'act',
+      input: z.object({}),
+      output: z.unknown(),
+      surfaces: { mcp: { toolName: 'config_manage', servers: ['external'] } },
+      toolGroup: 'roomsManage',
+      invoke: async () => ({ ok: true }),
+    });
+    const registry = composeRegistry([{ name: 'config', capabilities: [configGet, gated] }], deps);
+    const entries = registry.catalog().capabilities;
+
+    expect(entries.find((c) => c.id === 'config.manage')?.toolGroup).toBe('roomsManage');
+    expect(entries.find((c) => c.id === 'config.get')).not.toHaveProperty('toolGroup');
+  });
+
   it('carries the per-tool MCP annotation hints through unchanged', () => {
     const registry = composeRegistry([configDomain], deps);
     const get = registry.catalog().capabilities.find((c) => c.id === 'config.get');

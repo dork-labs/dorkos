@@ -137,6 +137,11 @@ export type { StallGuardOpts } from './stall-guard.js';
 export { TurnWindowSignal } from './turn-window-signal.js';
 export type { TurnWindowWatcher } from './turn-window-signal.js';
 export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
+export {
+  callerNamedCwd,
+  resolveSessionCwdOrDefault,
+  resolveSessionCwdOrNull,
+} from './resolve-read-cwd.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
 export {

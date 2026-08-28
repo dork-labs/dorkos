@@ -147,7 +147,6 @@ export function McpSigninBody({
   const onDisclosure = state.step === 'disclosure';
   const offerRef = useRef<HTMLButtonElement>(null);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
-  const [returningFocus, setReturningFocus] = useState(false);
   // Kept honest against the flow rather than trusted on its own: the form is for
   // ONE failure family, and a retry that fails a different way (or succeeds)
   // must not leave credential fields sitting under it. A failed SAVE does not
@@ -163,11 +162,12 @@ export function McpSigninBody({
   // dismissing the form drops focus to the document body — the same failure the
   // disclosure step's focus move exists to prevent. Deferred to an effect
   // because the button is remounted by the same state change that hides the form.
+  const returningFocus = useRef(false);
   useEffect(() => {
-    if (!returningFocus || showCredentialsForm) return;
+    if (!returningFocus.current || showCredentialsForm) return;
+    returningFocus.current = false;
     offerRef.current?.focus();
-    setReturningFocus(false);
-  }, [returningFocus, showCredentialsForm]);
+  }, [showCredentialsForm]);
 
   return (
     <>
@@ -225,7 +225,7 @@ export function McpSigninBody({
               onSave={(credentials) => flow.useOwnCredentials(credentials)}
               onCancel={() => {
                 setCredentialsOpen(false);
-                setReturningFocus(true);
+                returningFocus.current = true;
               }}
               saving={state.savingCredentials}
               error={state.credentialsError}

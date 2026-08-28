@@ -150,7 +150,7 @@ export function useFilterState<
   useEffect(() => {
     if (prevSearchRef.current !== search) {
       prevSearchRef.current = search;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncing with external URL state (browser back/forward)
+      // Syncing with external URL state (browser back/forward).
       setInputValues(deserializeAll(definitions, search));
     }
   }, [search, definitions]);

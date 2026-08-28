@@ -129,6 +129,20 @@ export interface AdapterDeliveryDeps {
   /** Dead letter queue for failed detached deliveries. */
   deadLetterQueue: DeadLetterQueue;
 
+  /**
+   * Give back a turn-ceiling reservation whose dispatch never ran (DOR-791).
+   *
+   * The pipeline reserves before handing a dispatch over, because that is what
+   * stops a burst from spending the last unit twice. This is the other end of
+   * that: a detached delivery that dead-letters — a refused capacity slot, a
+   * thrown adapter, an adapter that vanished mid-flight — ran no turn, and
+   * without this the allowance drains for work that never happened.
+   *
+   * Optional so a pipeline built without a ceiling (a test double) needs no
+   * stub; a missing callback simply means nothing is refunded.
+   */
+  refundTurn?: (subject: string) => void;
+
   /** Logger for delivery diagnostics. Defaults to `console`. */
   logger?: Logger;
 }
@@ -189,6 +203,14 @@ export class AdapterDelivery {
    * @param subject - The target subject
    * @param envelope - The relay envelope to deliver
    * @param contextBuilder - Optional callback to build adapter context
+   * @param opts.counted - Whether the caller charged this dispatch to the turn
+   *   ceiling. Carried, never re-derived: the reserve side asks the ADAPTER
+   *   whether this dispatch runs a turn ({@link RelayAdapter.startsAgentTurns}),
+   *   and a refund that guessed instead would give back a charge nobody made.
+   *   An adapter that answers "no" on an agent-shaped subject — the whole point
+   *   of the method being optional — would then have its uncounted failure pop
+   *   somebody else's real reservation, and two paid turns would run under a
+   *   one-turn ceiling. Both ends read the same answer or the counter drifts.
    * @returns DeliveryResult, or null when no adapter registry is configured
    *          or no adapter matches the subject (publish() then falls back to
    *          the pending-buffer / dead-letter pipeline)
@@ -196,7 +218,8 @@ export class AdapterDelivery {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    contextBuilder?: (subject: string) => AdapterContext | undefined
+    contextBuilder?: (subject: string) => AdapterContext | undefined,
+    opts?: { counted?: boolean }
   ): Promise<DeliveryResult | null> {
     const registry = this.deps.adapterRegistry;
     if (!registry) return null;
@@ -211,7 +234,7 @@ export class AdapterDelivery {
       if (registry.getBySubject && !registry.getBySubject(subject)) {
         return null;
       }
-      return this.deliverDetached(subject, envelope, context);
+      return this.deliverDetached(subject, envelope, context, opts?.counted === true);
     }
 
     return this.deliverWithTimeout(subject, envelope, context);
@@ -226,11 +249,18 @@ export class AdapterDelivery {
    * envelope is dead-lettered for forensics; on success the audit row is
    * indexed. A turn that is merely WAITING for a free slot is neither — it says
    * so through {@link AdapterContext.onHeld} and then runs.
+   *
+   * @param subject - The target subject.
+   * @param envelope - The envelope being delivered.
+   * @param context - Adapter context, if the host built one.
+   * @param counted - Whether the pipeline charged this dispatch to the turn
+   *   ceiling, so a failure below refunds exactly what was spent.
    */
   private deliverDetached(
     subject: string,
     envelope: RelayEnvelope,
-    context: AdapterContext | undefined
+    context: AdapterContext | undefined,
+    counted: boolean
   ): DeliveryResult {
     const startTime = Date.now();
 
@@ -251,12 +281,13 @@ export class AdapterDelivery {
           // Acceptance was already reported, so a no-match here (registry
           // without getBySubject, or the adapter vanished mid-flight) must
           // dead-letter — otherwise the message is silently swallowed.
-          await this.deadLetterDetached(subject, envelope, 'no adapter matched subject');
+          await this.deadLetterDetached(subject, envelope, 'no adapter matched subject', counted);
         } else if (!result.success) {
           await this.deadLetterDetached(
             subject,
             envelope,
             result.error ?? 'unknown error',
+            counted,
             result.code
           );
         } else {
@@ -265,7 +296,7 @@ export class AdapterDelivery {
       })
       .catch(async (err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
-        await this.deadLetterDetached(subject, envelope, message);
+        await this.deadLetterDetached(subject, envelope, message, counted);
       });
 
     return { success: true, durationMs: Date.now() - startTime };
@@ -356,14 +387,29 @@ export class AdapterDelivery {
    * Mirrors the publish pipeline's dead-letter convention (mailbox keyed by
    * subject via `ensureMaildir`) so failed agent turns land in the same DLQ
    * surfaces as other undeliverable messages.
+   *
+   * @param subject - The target subject.
+   * @param envelope - The envelope whose delivery failed.
+   * @param reason - Why it failed, recorded on the dead letter.
+   * @param counted - Whether this dispatch was charged to the turn ceiling.
+   * @param code - The adapter's machine code, when it gave one.
    */
   private async deadLetterDetached(
     subject: string,
     envelope: RelayEnvelope,
     reason: string,
+    counted: boolean,
     code?: DeliveryResult['code']
   ): Promise<void> {
     this.logger.warn(`RelayCore: detached adapter delivery failed for ${subject}: ${reason}`);
+
+    // No turn ran, so the ceiling gets back exactly what it charged — and only
+    // if it charged. `counted` is the reserve side's own answer, carried down
+    // rather than re-derived here (see {@link deliver}). First, before any
+    // await: everything below can throw or be slow, and an allowance that only
+    // comes back when the dead-lettering goes smoothly is an allowance that
+    // leaks on exactly the busy machines this bound is for.
+    if (counted) this.deps.refundTurn?.(subject);
     try {
       await this.deps.maildirStore.ensureMaildir(subject);
       await this.deps.deadLetterQueue.reject(

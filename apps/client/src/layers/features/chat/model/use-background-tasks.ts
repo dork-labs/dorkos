@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import type { BackgroundTaskPart, BackgroundTaskStatus } from '@dorkos/shared/types';
+import { useRenderSlot } from '@/layers/shared/lib';
 import type { ChatMessage } from './chat-types';
 
 /** A background task with a stable color assignment, ready for display. */
@@ -37,21 +38,34 @@ const BASH_TIMER_INTERVAL_MS = 1000;
 /** How long (ms) a just-completed task stays visible (celebration window). */
 const CELEBRATION_DURATION_MS = 1500;
 
+/** Stable empty set so the initial celebration state keeps one identity across renders. */
+const NO_CELEBRATIONS: ReadonlySet<string> = new Set();
+
 /**
  * Derive visible background tasks from the message stream.
  *
  * Agent tasks appear immediately when running. Bash tasks are suppressed until
  * they have been running for at least 5 seconds, preventing UI churn from
  * short-lived commands. All tasks remain visible for 1500ms after completion
- * (celebration window). Colors are assigned from a stable 5-color pool.
+ * (celebration window). Colors are pinned per task from a stable 5-color pool,
+ * the first time a task is drawn — a task keeps its color for as long as it
+ * exists, and one nobody ever sees never takes a slot out of the pool.
  *
  * @param messages - The current chat message list to scan for BackgroundTaskPart entries.
  */
 export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTask[] {
-  const colorMapRef = useRef<Map<string, string>>(new Map());
-  const colorIndexRef = useRef(0);
   const prevStatusRef = useRef<Map<string, string>>(new Map());
-  const celebratingRef = useRef<Set<string>>(new Set());
+  // Each task's colour, pinned the first time it is actually DRAWN. A render
+  // slot rather than a ref because the list below is built during render and has
+  // to read it; the write is idempotent (a task that already has a colour keeps
+  // it), so a render React discards costs nothing.
+  const colors = useRenderSlot<{ byTask: Map<string, string>; assigned: number }>({
+    byTask: new Map(),
+    assigned: 0,
+  });
+  // Celebrating tasks are state, not a ref: the visible-task list below is
+  // computed during render and has to see them, and render cannot read refs.
+  const [celebrating, setCelebrating] = useState<ReadonlySet<string>>(NO_CELEBRATIONS);
   const [, setRenderTick] = useState(0);
 
   // Collect the latest BackgroundTaskPart per taskId across all messages
@@ -89,37 +103,41 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
   // Track which tasks already have expiry timers to avoid double-scheduling
   const timerSetRef = useRef<Set<string>>(new Set());
 
-  // Detect running→terminal transitions synchronously so celebratingRef is
-  // up-to-date before the useMemo below reads it during the same render.
-  for (const [taskId, part] of taskMap) {
-    const prevStatus = prevStatusRef.current.get(taskId);
-    // A negative check on purpose: `running` is the only status still in flight,
-    // so enumerating the terminal ones would silently stop celebrating the day a
-    // new one lands (`untracked` did exactly that, DOR-1108).
-    const isTerminal = part.status !== 'running';
-    const justCompleted = prevStatus === 'running' && isTerminal;
-
-    if (justCompleted && !celebratingRef.current.has(taskId)) {
-      celebratingRef.current.add(taskId);
+  // Detect running→terminal transitions. A layout effect, not a plain one: the
+  // celebration has to be committed before the browser paints, or the finished
+  // task blinks out for a frame and back in. The previous status lives in a ref
+  // because it is bookkeeping the render never reads.
+  useLayoutEffect(() => {
+    for (const [taskId, part] of taskMap) {
+      const prevStatus = prevStatusRef.current.get(taskId);
+      // A negative check on purpose: `running` is the only status still in flight,
+      // so enumerating the terminal ones would silently stop celebrating the day a
+      // new one lands (`untracked` did exactly that, DOR-1108).
+      if (prevStatus === 'running' && part.status !== 'running') {
+        setCelebrating((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)));
+      }
+      prevStatusRef.current.set(taskId, part.status);
     }
-
-    prevStatusRef.current.set(taskId, part.status);
-  }
+  }, [taskMap]);
 
   // Schedule celebration expiry timers in an effect (side-effect).
   // Only schedules timers for newly celebrating tasks to avoid resetting countdowns.
   useEffect(() => {
-    for (const taskId of celebratingRef.current) {
+    for (const taskId of celebrating) {
       if (timerSetRef.current.has(taskId)) continue;
       timerSetRef.current.add(taskId);
 
       setTimeout(() => {
-        celebratingRef.current.delete(taskId);
         timerSetRef.current.delete(taskId);
-        setRenderTick((tick) => tick + 1);
+        setCelebrating((prev) => {
+          if (!prev.has(taskId)) return prev;
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
       }, CELEBRATION_DURATION_MS);
     }
-  }, [taskMap]);
+  }, [celebrating]);
 
   // Build the visible task list
   return useMemo(() => {
@@ -127,9 +145,12 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
     const now = Date.now();
     const result: VisibleBackgroundTask[] = [];
 
+    const pinned = colors.read();
+    let assigned = pinned.assigned;
+
     for (const [taskId, part] of taskMap) {
       const isRunning = part.status === 'running';
-      const isCelebrating = celebratingRef.current.has(taskId);
+      const isCelebrating = celebrating.has(taskId);
 
       if (!isRunning && !isCelebrating) continue;
 
@@ -142,17 +163,26 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
         continue;
       }
 
-      // Assign stable color from the shared pool
-      if (!colorMapRef.current.has(taskId)) {
-        colorMapRef.current.set(taskId, TASK_COLORS[colorIndexRef.current % TASK_COLORS.length]);
-        colorIndexRef.current += 1;
+      // The colour is pinned to the taskId the first time the task is drawn, and
+      // never moves again: a task keeps its colour for as long as it exists, and
+      // a task nobody ever sees — a bash command that finished inside the
+      // five-second threshold, or history that was terminal before this client
+      // loaded — never takes a slot out of the pool.
+      let color = pinned.byTask.get(taskId);
+      if (color === undefined) {
+        color = TASK_COLORS[assigned % TASK_COLORS.length]!;
+        assigned += 1;
+        pinned.byTask.set(taskId, color);
+        // The map and the counter move together, so a render React discards
+        // cannot leave one ahead of the other and hand two live tasks one colour.
+        colors.write({ byTask: pinned.byTask, assigned });
       }
 
       result.push({
         taskId: part.taskId,
         taskType: part.taskType,
         status: part.status,
-        color: colorMapRef.current.get(taskId)!,
+        color,
         startedAt: part.startedAt,
         description: part.description,
         toolUses: part.toolUses,
@@ -164,6 +194,5 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
     }
 
     return result;
-    // celebratingRef is a ref — renderTick (state) drives re-computation when celebrations expire
-  }, [taskMap /* renderTick drives re-computation via state change */]);
+  }, [taskMap, celebrating, colors]);
 }

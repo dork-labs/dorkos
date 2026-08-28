@@ -9,29 +9,45 @@ import type { ReactNode } from 'react';
 // global list stream (CLI-B5). Mock the manager singleton with a controllable
 // fake: state listeners and generic-event subscribers are captured so tests can
 // fire transitions/events synchronously.
-const { fakeManager, stateListeners, eventListeners, mockInvalidateQueries } = vi.hoisted(() => {
-  const stateListeners = new Set<(state: string, attempts: number) => void>();
-  const eventListeners = new Map<string, Set<(data: unknown) => void>>();
-  const fakeManager = {
-    connectList: vi.fn(),
-    getListConnectionState: vi.fn().mockReturnValue('connecting'),
-    getListFailedAttempts: vi.fn().mockReturnValue(0),
-    subscribeListConnectionState: vi.fn((listener: (state: string, attempts: number) => void) => {
-      stateListeners.add(listener);
-      return () => stateListeners.delete(listener);
-    }),
-    subscribeEvent: vi.fn((name: string, handler: (data: unknown) => void) => {
-      let set = eventListeners.get(name);
-      if (!set) {
-        set = new Set();
-        eventListeners.set(name, set);
-      }
-      set.add(handler);
-      return () => eventListeners.get(name)?.delete(handler);
-    }),
-  };
-  return { fakeManager, stateListeners, eventListeners, mockInvalidateQueries: vi.fn() };
-});
+const { fakeManager, stateListeners, eventListeners, mockInvalidateQueries, setListState } =
+  vi.hoisted(() => {
+    const stateListeners = new Set<(state: string, attempts: number) => void>();
+    const eventListeners = new Map<string, Set<(data: unknown) => void>>();
+    // The real manager HOLDS its connection state and answers the getters from it,
+    // which is what the provider reads — so this fake holds it too. A double whose
+    // getters can disagree with what it just announced would let a test pass
+    // against behaviour the running app never has.
+    const listState = { state: 'connecting', attempts: 0 };
+    const setListState = (state: string, attempts: number) => {
+      listState.state = state;
+      listState.attempts = attempts;
+    };
+    const fakeManager = {
+      connectList: vi.fn(),
+      getListConnectionState: vi.fn(() => listState.state),
+      getListFailedAttempts: vi.fn(() => listState.attempts),
+      subscribeListConnectionState: vi.fn((listener: (state: string, attempts: number) => void) => {
+        stateListeners.add(listener);
+        return () => stateListeners.delete(listener);
+      }),
+      subscribeEvent: vi.fn((name: string, handler: (data: unknown) => void) => {
+        let set = eventListeners.get(name);
+        if (!set) {
+          set = new Set();
+          eventListeners.set(name, set);
+        }
+        set.add(handler);
+        return () => eventListeners.get(name)?.delete(handler);
+      }),
+    };
+    return {
+      fakeManager,
+      stateListeners,
+      eventListeners,
+      mockInvalidateQueries: vi.fn(),
+      setListState,
+    };
+  });
 
 vi.mock('@/layers/shared/lib/query-client', async (importOriginal) => ({
   // The real `isStreamOwnedQuery`, because the point of the assertion below is
@@ -55,6 +71,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 /** Fire a connection-state transition into every captured listener. */
 function fireState(state: string, attempts = 0) {
   act(() => {
+    setListState(state, attempts);
     for (const listener of [...stateListeners]) listener(state, attempts);
   });
 }

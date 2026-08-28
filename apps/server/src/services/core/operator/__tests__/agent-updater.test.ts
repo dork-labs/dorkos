@@ -172,3 +172,69 @@ describe('billing stays operator-only (spec billing-account-ladder invariant 4)'
     expect(updated.displayName).toBe('The Warden');
   });
 });
+
+/**
+ * The self-grant seam, written as the reproduction it is (spec
+ * `rooms-management-tools` §D6, DOR-1611 — the narrow half of DOR-1506).
+ *
+ * `UpdateAgentRequestSchema` picks `enabledToolGroups`, so the field is on the
+ * agent-reachable wire, and this service is where `PATCH /api/agents/current` and
+ * the `update_agent` MCP tool both land. Before the guard, an agent could turn its
+ * own hard filter on and the filter was theatre. Four of the object's five keys
+ * decide what an agent is TOLD about and stay writable here; only the enforced one
+ * is refused.
+ */
+describe('an agent cannot grant itself the rooms-management group', () => {
+  it('refuses `roomsManage: true` on the agent-reachable self-edit path', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { enabledToolGroups: { roomsManage: true } } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.enabledToolGroups?.roomsManage).toBeUndefined();
+  });
+
+  it('refuses the key whatever its value — naming the field is a write to it', async () => {
+    for (const value of [false, null, undefined]) {
+      await expect(
+        updateAgentManifest({ agentPath, body: { enabledToolGroups: { roomsManage: value } } })
+      ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+    }
+  });
+
+  it('refuses the WHOLE patch, so a legitimate half does not land beside it', async () => {
+    await expect(
+      updateAgentManifest({
+        agentPath,
+        body: {
+          displayName: 'Sneaky',
+          enabledToolGroups: { tasks: false, roomsManage: true },
+        },
+      })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.displayName).toBe('Warden');
+    expect(onDisk?.enabledToolGroups).toEqual({});
+  });
+
+  it('tells the agent who can change it, rather than failing blankly', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { enabledToolGroups: { roomsManage: true } } })
+    ).rejects.toThrow(/set by a person/i);
+  });
+
+  it('still lets an agent write the four documentation keys beside it', async () => {
+    // The guard is narrow on purpose. Those four steer an agent rather than
+    // restricting it (DOR-519), and turning this into a blanket refusal of
+    // `enabledToolGroups` would take a working feature away to fix another one.
+    const updated = await updateAgentManifest({
+      agentPath,
+      body: { enabledToolGroups: { tasks: false, relay: true } },
+    });
+
+    expect(updated.enabledToolGroups).toEqual({ tasks: false, relay: true });
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.enabledToolGroups).toEqual({ tasks: false, relay: true });
+  });
+});

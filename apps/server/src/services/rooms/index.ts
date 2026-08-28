@@ -27,11 +27,13 @@ import { AuthorRegistry, isOwnerRecord } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
+import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
+import type { RoomFilesService } from './repo/room-files.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
@@ -234,6 +236,25 @@ function readCollectWindow(): CollectWindow {
 }
 
 /**
+ * Whether the response gate is on, degrading to the shipped default the same way
+ * {@link readEngagedWindow} does.
+ *
+ * Failing to the DEFAULT rather than to `'off'` is deliberate, and it is the
+ * same direction every other reader here fails in: the failure mode is "the
+ * setting used its default", never "the setting was absent". An unreadable
+ * config file must not quietly buy back a turn per overheard message — and it
+ * cannot silence anything either, because the gate only ever excuses a message
+ * that named somebody else.
+ */
+function readResponseGate(): ResponseGateMode {
+  try {
+    return configManager.get('rooms').responseGate;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.responseGate;
+  }
+}
+
+/**
  * How many files one message may carry, read live from `uploads.maxFiles` and
  * degrading to the shipped default the same way {@link readMaxAgentDepth} does.
  *
@@ -398,6 +419,9 @@ export function createRoomSubsystem(opts: {
     // Read per burst, for the same reason: lengthening the gathering window in
     // Settings has to bind the very next message.
     collect: readCollectWindow,
+    // Read per sweep, for the same reason: switching the gate off in Settings
+    // has to bind the very next burst.
+    responseGate: readResponseGate,
     // Read per tick, for the same reason: shortening how long a room waits on a
     // busy agent has to bind the wait that is already running.
     holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
@@ -570,6 +594,28 @@ export function getRoomRepoService(): RoomRepoService {
  */
 export function tryGetRoomRepoService(): RoomRepoService | null {
   return activeRepos;
+}
+
+let activeRoomFiles: RoomFilesService | null = null;
+
+/**
+ * Register the read-only room files service at bootstrap, beside
+ * {@link setRoomRepoService} and for the same reason.
+ *
+ * Its own singleton rather than a method on the repo service: enabling a repo
+ * is a write the operator makes once, reading its files is a request path every
+ * member takes, and the two share nothing but the store.
+ *
+ * @param service - The wired service.
+ */
+export function setRoomFilesService(service: RoomFilesService): void {
+  activeRoomFiles = service;
+}
+
+/** The active room files service (throws if bootstrap has not run). */
+export function getRoomFilesService(): RoomFilesService {
+  if (!activeRoomFiles) throw new Error('RoomFilesService not initialized');
+  return activeRoomFiles;
 }
 
 let activeBridges: BridgeStore | null = null;

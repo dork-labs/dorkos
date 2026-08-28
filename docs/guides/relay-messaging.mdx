@@ -172,10 +172,47 @@ curl -X POST http://localhost:4242/api/relay/messages \
 ```
 
 <Callout type="warn">
-  If you leave budget fields out, Relay uses defaults: 5 maximum hops, a 1-hour time-to-live, and no
-  call limit. For automated agent-to-agent workflows, set explicit budgets so a chain of agents
-  can't consume more time or calls than you intended.
+  If you leave budget fields out, Relay uses defaults: 5 maximum hops, a 1-hour time-to-live, and 10
+  calls. For automated agent-to-agent workflows, set explicit budgets so a chain of agents can't
+  consume more time or calls than you intended.
 </Callout>
+
+You don't have to set one for an agent that's answering a message, though. When a message starts an
+agent's turn, anything that agent sends during that turn continues the same budget, one step further
+along — so a reply can't hand itself a fresh allowance. An agent can ask for a tighter budget than
+the one it inherited; it can't ask for a looser one.
+
+### The hourly ceiling
+
+Budgets bound one chain of messages. The ceiling bounds your bill.
+
+Every route into an agent — another agent's message, an outside system speaking A2A, a webhook
+posting back — ends at the same place: DorkOS hands the message to the agent and a real turn starts.
+That's where the turns are counted, so no route can go around it and starting a fresh chain doesn't
+buy a fresh allowance.
+
+Two numbers, both per hour, both editable:
+
+| Setting                              | Default | Bounds                                                           |
+| ------------------------------------ | ------- | ---------------------------------------------------------------- |
+| `relay.maxAgentTurnsPerAgentPerHour` | `1000`  | What any one agent — or one scheduled task — can cost            |
+| `relay.maxAgentTurnsTotalPerHour`    | `5000`  | Everything above, altogether — agent messages and scheduled runs |
+
+```bash
+dorkos config set relay.maxAgentTurnsTotalPerHour 2000
+```
+
+Set either to `null` for no limit.
+
+<Callout type="warn">
+  `0` stops **every** turn that starts this way — including your scheduled tasks, which run through
+  the same dispatch. If you want to quieten chatty agents without stopping your schedule, set a
+  small number rather than zero.
+</Callout>
+
+When the ceiling stops a message, it says which of the two limits it was, and the message stays in
+the agent's inbox — it just doesn't start a turn. A turn DorkOS accepted but couldn't run — every
+agent slot busy, say — doesn't count against you: the allowance is given back.
 
 ## Built-in adapters
 

@@ -450,6 +450,13 @@ The window is per thread. Asking an agent something inside a thread keeps it in 
 the whole channel — and talking to it in the channel does not pull it into every thread that happens
 to be open.
 
+Listening inside that window is nearly free. An agent that is following the conversation skips a
+message that plainly was not for it — one that named a different agent, or a reply in an exchange it
+is not part of — instead of reading it properly and then deciding to say nothing. It still sees the
+message as background the next time it does reply, so nothing goes missing, and a message that names
+it is never skipped. Set `rooms.responseGate` to `off` if you would rather every agent weigh every
+message.
+
 An agent's own settings do not offer **Engaged** as its default. That default only ever seeds a
 one-to-one, at the moment the agent joins it, and how loud an agent is belongs to the room rather
 than to the agent.

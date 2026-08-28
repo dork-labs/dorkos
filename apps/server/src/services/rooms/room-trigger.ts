@@ -126,6 +126,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type {
+  AuthorKind,
   Room,
   RoomAttachment,
   RoomEntry,
@@ -143,7 +144,15 @@ import {
   selectTriggerTargets,
   standDownFallbackSeat,
   type AddressingMember,
+  type TriggerReason,
 } from './addressing.js';
+import {
+  routeAmbient,
+  type ResponseGateMode,
+  type RoutedEntry,
+  type RoutingVerdict,
+} from './response-gate/routing-rules.js';
+import { logRefusal } from '../observability/refusals.js';
 import {
   DISPATCH_OUTCOMES,
   agentKey,
@@ -251,6 +260,8 @@ interface TriggerCandidate {
   depth: number;
   /** Its open engaged window when this message landed, or `null`. */
   engaged: EngagementWindow | null;
+  /** Why the matrix picked it — the response gate's only scoping input. */
+  reason: TriggerReason;
 }
 
 /** Everything {@link RoomTriggerDispatcher} is constructed from. */
@@ -311,6 +322,16 @@ export interface RoomTriggerDeps {
    * the gathering window in Settings has to bind the very next message.
    */
   collect(): CollectWindow;
+  /**
+   * Whether an overhearing agent may be excused from a message that was plainly
+   * somebody else's — `rooms.responseGate`.
+   *
+   * Read per sweep, like every other setting on this path, so switching it off
+   * binds the very next burst rather than the next server start. `'off'` makes
+   * {@link RoomTriggerDispatcher.gateBatch} return its input untouched, which is
+   * bit-for-bit the behaviour that shipped before DOR-1203.
+   */
+  responseGate(): ResponseGateMode;
   /**
    * How long a message may wait on an agent busy in another room before this
    * room gives up on it, in milliseconds — `rooms.lateReplyCeilingMinutes`.
@@ -623,6 +644,7 @@ export class RoomTriggerDispatcher {
       entry,
       depth: candidate.depth,
       engaged: candidate.engaged,
+      reason: candidate.reason,
       duringTurnHere: busyWith?.where === 'here',
       park: busyWith !== null,
       arrivedAt,
@@ -801,7 +823,7 @@ export class RoomTriggerDispatcher {
     // Collected rather than reported inline, so a member that is BOTH a selected
     // target and a name this message typed gets one notice, not two.
     const gone = new Set<string>(namedUnreachable);
-    for (const authorId of selected) {
+    for (const { authorId, reason } of selected) {
       const record = records.get(authorId);
       const decision: CascadeDecision =
         limits && provenance
@@ -878,6 +900,7 @@ export class RoomTriggerDispatcher {
         displayName: record.displayName,
         depth: decision.depth,
         engaged: engaged.get(authorId) ?? null,
+        reason,
       });
     }
 
@@ -1024,13 +1047,234 @@ export class RoomTriggerDispatcher {
    */
   private runCollected(batch: RoomCollection[]): void {
     const started: Array<{ room: Room; entry: RoomEntry; target: TriggerTarget }> = [];
-    for (const collection of batch) {
+    for (const collection of this.gateBatch(batch)) {
       const claimed = this.claimCollected(collection);
       if (claimed) started.push(claimed);
     }
     for (const { room, entry, target } of started) {
       void this.runOne(room, entry, target).finally(() => this.settleOne());
     }
+  }
+
+  /**
+   * Drop the bursts an overhearing agent can be excused from, before anything
+   * costs money (spec `engaged-response-gate` §3).
+   *
+   * **The gate is the last thing before the claim tail and the first thing that
+   * could cost anything** — which in this release is nothing at all, because
+   * tier 1 is a pure function with no clock, no store read of its own and no
+   * model (`response-gate/routing-rules.ts`). Placing it here rather than inside
+   * {@link RoomTriggerDispatcher.claimCollected} is what makes every property
+   * below fall out for free rather than needing to be undone:
+   *
+   * | Not done | Because |
+   * | -------- | ------- |
+   * | Charged the budget | `budget.tryReserve` is downstream. Nothing is spent, so nothing needs refunding — which matters, since `tryReserve` has no counterpart and this file explicitly declines to invent one. |
+   * | Counted against a limit | Nothing is reserved, no reply is posted, and no dispatch id is minted — so `room_turn_spend` gains no row, `turnsByAuthorInCascade` is unmoved, and the turn-scoped repeat counter (DOR-1434) counts nothing. |
+   * | Moved the cursor | `setReadCursor` is downstream. The message stays behind this agent's cursor and reaches it as ambient background on whatever turn does run. |
+   * | Taken a claim | `holdClaim` is downstream, so no working indicator appears and vanishes with nothing to show for it. |
+   * | Said anything | No entry, no notice. Nobody asked, so there is no obligation to discharge (room-participation spec §10.2.2). |
+   *
+   * **Only a burst where EVERY message says `'window'` is eligible**, and that
+   * one line is invariant I-G3. One `mention` or `dm` anywhere in a gathered
+   * burst makes the whole burst addressed and it passes through untouched: an
+   * addressed message is going to run a turn regardless, and the overheard ones
+   * riding with it are context that turn is owed. Conservative in the only
+   * direction that is safe to be wrong in.
+   *
+   * The four skips before the rules are the cheap deterministic ones, and none
+   * of them is a verdict:
+   *
+   * - **Gate off** — this install said no.
+   * - **Not ambient** — see above.
+   * - **Busy** — {@link RoomTriggerDispatcher.claimCollected} is about to PARK
+   *   this burst, and parking is not a decision. Routing it to silence now would
+   *   spend a verdict on a question that gets asked again when the claim
+   *   releases, against a room that has moved on.
+   * - **Gone** — an archived room, or an agent no longer on the roster. The
+   *   claim tail settles those as `left`, in its own words.
+   *
+   * Every one of them is re-checked downstream. This is a pre-filter, never a
+   * replacement: `claimCollected` stays correct when called with a batch that
+   * was never gated, which is exactly what `responseGate: 'off'` produces.
+   *
+   * **The busy and gone branches are DEFENSIVE, and no test reaches them.** Say
+   * that plainly rather than leaving the next reader to infer coverage from the
+   * tests that surround them, because both are shadowed by machinery upstream:
+   *
+   * - A collection opened behind a live claim is parked at the `collectOne`
+   *   seam and given no deadline at all, so it is never swept and never arrives
+   *   here. Its one REACHABLE shape is a race — a window that opened while the
+   *   agent was free, and something claiming that agent (an aside turn, or a
+   *   burst in another room sharing its checkout) between the arming and the
+   *   sweep firing. That is the same race `claimCollected` re-asks for, and its
+   *   comment there says so.
+   * - A member that has left the room is never SELECTED, so no collection
+   *   exists to judge; and archiving through the service calls `abandonHolds`,
+   *   which drops every pending collection first.
+   *
+   * They stay because the cost is two comparisons and the failure they prevent
+   * is a refusal line about a conduct decision nobody made — which would be
+   * indistinguishable, in the ledger §14 tunes against, from a real mute. But
+   * they are not load-bearing, and deleting them would leave every test green.
+   *
+   * **Judging is guarded and accounting is not**, deliberately. The `try` below
+   * covers exactly the part that can have a bug in it — the rules, and the two
+   * store reads that feed them — and a throw there falls open to a turn. It does
+   * NOT cover `logRefusal` and `settleCollection`, because those run only after
+   * a verdict is in, and a wrapper around them would have to decide whether a
+   * half-finished accounting had already settled the collection. Every other
+   * refusal site in this file leaves the same pair unguarded, for the same
+   * reason: a logger that throws is a broken process, not a room outcome.
+   *
+   * @param batch - Everything the collector just closed.
+   * @returns The collections that still deserve a turn, in the order given.
+   */
+  private gateBatch(batch: RoomCollection[]): RoomCollection[] {
+    if (this.deps.responseGate() === 'off') return batch;
+    const survivors: RoomCollection[] = [];
+    // One roster read per ROOM per sweep, not per collection: a burst that
+    // reaches three agents in one channel asks the same question three times.
+    const agentsIn = new Map<string, ReadonlySet<string>>();
+    for (const collection of batch) {
+      let verdict: NonNullable<RoutingVerdict> | null = null;
+      try {
+        verdict = this.routeCollection(collection, agentsIn);
+      } catch (err) {
+        // **Fail OPEN, per collection** (spec `engaged-response-gate` §9, and the
+        // whole of invariant I-G6). Three things are true here and each one on
+        // its own would decide it:
+        //
+        // 1. The fallback of a cost optimisation is the status quo it optimises.
+        //    Running the turn is what shipped before this gate existed.
+        // 2. **A gate outage must never be indistinguishable from good
+        //    judgement.** Failing closed would take every agent in every room
+        //    quiet, and the room would look exactly like a room full of tactful
+        //    agents. That is the worst failure this domain can produce.
+        // 3. There is no net under this. `RoomCollector.sweep` calls us from a
+        //    `setTimeout` with nothing awaiting it, so an escaping throw reaches
+        //    `process.on('uncaughtException')` — and on the way out it strands
+        //    the hold this collection is between: `sweep` has already removed it
+        //    from its map and `settleCollection` has not run, so `triggersIdle`
+        //    never settles and the room wedges.
+        //
+        // PER COLLECTION, and that is the half a single wrapper around the loop
+        // would get wrong: one bad burst must not drop the others in the same
+        // sweep, and some of those others are ADDRESSED.
+        //
+        // Deliberately not a `logRefusal`: nothing was refused, the turn ran.
+        // Counting this as a mute would corrupt the one signal §14 says to tune
+        // against.
+        logger.warn('[rooms] the response gate could not judge a message, so the turn ran', {
+          roomId: collection.room.id,
+          authorId: collection.authorId,
+          entryId: collection.entries.at(-1)?.entry.id,
+          ...logError(err),
+        });
+      }
+      if (verdict === null) {
+        survivors.push(collection);
+        continue;
+      }
+      logRefusal('[rooms] an agent stayed out of a conversation it was not part of', {
+        reason: 'not_addressed_to_me',
+        visibility: 'chosen',
+        roomId: collection.room.id,
+        authorId: collection.authorId,
+        entryId: collection.entries.at(-1)?.entry.id,
+        // Explicitly none, and never the ambient one. No target has been given a
+        // dispatch id — one is minted in `claimCollected`, downstream of here —
+        // and this sweep may be running inside the scope of whichever agent's
+        // reply produced the message being excused. Left ambient, a line about
+        // Bo staying quiet would be filed under Ana's dispatch.
+        dispatchId: null,
+        detail: { tier: 1, rule: verdict.rule, entries: collection.entries.length },
+      });
+      this.settleCollection(collection, 'refused');
+    }
+    return survivors;
+  }
+
+  /**
+   * Tier 1's verdict on one collection, or `null` to let it through.
+   *
+   * Split out from {@link RoomTriggerDispatcher.gateBatch} so the loop reads as
+   * "decide, then account for the decision" — the accounting is three calls that
+   * must all happen together, and burying them under four early returns is how
+   * one of them gets missed.
+   *
+   * @param collection - The burst being weighed.
+   * @param agentsIn - Per-room agent rosters memoised for this sweep.
+   */
+  private routeCollection(
+    collection: RoomCollection,
+    agentsIn: Map<string, ReadonlySet<string>>
+  ): NonNullable<RoutingVerdict> | null {
+    const { room, authorId, agentPath } = collection;
+    if (!collection.entries.every((held) => held.reason === 'window')) return null;
+    if (this.busyWith(room.id, authorId, agentPath) !== null) return null;
+    if (room.archived || this.deps.store.getMember(room.id, authorId) === null) return null;
+
+    let agentMembers = agentsIn.get(room.id);
+    if (!agentMembers) {
+      const members = this.deps.store.listMembers(room.id);
+      const records = this.deps.authors.getMany(members.map((member) => member.authorId));
+      agentMembers = new Set(
+        members
+          .map((member) => member.authorId)
+          .filter((memberId) => records.get(memberId)?.kind === 'agent')
+      );
+      agentsIn.set(room.id, agentMembers);
+    }
+
+    // ONE registry read for the whole burst. Every message's author, not the
+    // roster's: a burst can carry a post by somebody who has since left, and a
+    // kind that resolved to `system` because the row was not asked for would
+    // read as "not an agent" and quietly stop two of the three rules firing.
+    const kinds = this.deps.authors.getMany(collection.entries.map((held) => held.entry.authorId));
+    return routeAmbient({
+      agentAuthorId: authorId,
+      agentMembers,
+      entries: collection.entries.map((held) =>
+        this.routedEntry(room.id, authorId, held.entry, kinds.get(held.entry.authorId)?.kind)
+      ),
+    });
+  }
+
+  /**
+   * One collected message in the flat shape the routing rules take.
+   *
+   * The `answersThisAgent` lookup is the only store read here, it is one indexed
+   * primary-key hit, and it is skipped entirely for the common case of a message
+   * that answers nothing. An entry that cannot be found reads as `false`, which
+   * is the conservative side: it can only stop a rule firing.
+   *
+   * @param roomId - The room.
+   * @param agentAuthorId - The agent being judged.
+   * @param entry - The committed message.
+   * @param authorKind - Its author's kind, already resolved by the caller;
+   *   `undefined` for a row that has vanished, which reads as `system` — the
+   *   conservative side, since only an `agent` author can reach R2 or R3.
+   */
+  private routedEntry(
+    roomId: string,
+    agentAuthorId: string,
+    entry: RoomEntry,
+    authorKind: AuthorKind | undefined
+  ): RoutedEntry {
+    const answersEntryId = entry.body.answersEntryId ?? null;
+    const answered =
+      answersEntryId === null ? null : this.deps.store.getEntryById(roomId, answersEntryId);
+    return {
+      entryId: entry.id,
+      authorId: entry.authorId,
+      authorKind: authorKind ?? 'system',
+      mentions: entry.mentions,
+      answersEntryId,
+      answersThisAgent: answered !== null && answered.authorId === agentAuthorId,
+      answeredEntryMentionsThisAgent:
+        answered !== null && answered.mentions.includes(agentAuthorId),
+    };
   }
 
   /**

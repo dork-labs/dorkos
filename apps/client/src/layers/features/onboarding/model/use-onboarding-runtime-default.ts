@@ -151,10 +151,13 @@ export function useOnboardingRuntimeDefault({
     // No config yet means the marker is unknown, and an unknown marker must
     // never be read as "not decided" — that is how an install past first run
     // would get its setting rewritten.
-    if (!config || alreadyDecided || actedOnRef.current === settleToken) return;
+    if (!config || alreadyDecided) return;
 
     const chosen = chooseDefaultRuntime(readyTypes, configured);
     if (!chosen) return;
+    // Last, so the write below is reached only through this ref: a settle token
+    // already acted on must not be acted on twice.
+    if (actedOnRef.current === settleToken) return;
     actedOnRef.current = settleToken;
     write(
       {
