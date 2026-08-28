@@ -96,11 +96,13 @@
  *
  * **Harness projection is no longer the only thing DorkOS writes in here.**
  * Since the cwd rung landed (DOR-1597) a room turn RUNS in this tree, so the
- * room's attachments are projected into it too — under
- * `PROJECTED_ATTACHMENTS_ROOT`, which is therefore in the same block, derived
- * from the projector's own constant rather than spelled again. It is DorkOS's
- * own `.temp` area and nothing a member would author, which is what makes it
- * safe to hide by the same rule the other two entries pass.
+ * room's attachments are projected into it too. So DorkOS's whole scratch area
+ * inside the tree is in the same block, derived from the projector's own
+ * constant rather than spelled again. It is `.dork/.temp/` and nothing a member
+ * would author, which is what makes it safe to hide by the same rule the other
+ * two entries pass — and excluding the directory rather than each projection
+ * inside it means the next thing brought to an agent cannot silently make every
+ * worktree dirty.
  *
  * The list holds only what DorkOS generates in THIS configuration, and nothing
  * a person might write. Two paths were considered and left out, for the same
@@ -175,6 +177,19 @@ export function roomWorktreeBranch(slug: string): string {
 }
 
 /**
+ * DorkOS's own scratch area inside a turn's directory — the parent of every
+ * projection it makes there, derived from the projector's constant rather than
+ * spelled a second time.
+ *
+ * Excluded whole rather than per-projection. It passes the same test the other
+ * entries do — DorkOS writes it, nobody authors in it — and the alternative is a
+ * list that has to be extended every time something new is brought to an agent,
+ * with a permanently-dirty worktree as the failure mode each time somebody
+ * forgets.
+ */
+const DORKOS_TEMP_DIR = path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT);
+
+/**
  * The `info/exclude` block that keeps what DorkOS writes out of `git status`.
  *
  * Marker-delimited so the block can be recognized and REPLACED on the next call
@@ -183,25 +198,36 @@ export function roomWorktreeBranch(slug: string): string {
  * excluding a file DorkOS does not generate would be worse than leaving a
  * generated one visible.
  *
- * `PROJECTED_ATTACHMENTS_ROOT` is derived, never spelled twice: the projector
- * decides where a room's files land in a turn's directory, and a second copy of
- * that path here would go stale the moment it moved — leaving every worktree
- * that ever received an attachment permanently dirty, and therefore never
- * reaped and never mergeable.
+ * {@link DORKOS_TEMP_DIR} is derived, never spelled twice: the projector decides
+ * where a room's files land in a turn's directory, and a second copy of that
+ * path here would go stale the moment it moved — leaving every worktree that
+ * ever received an attachment permanently dirty, and therefore never reaped and
+ * never mergeable.
  */
 const EXCLUDE_BLOCK = [
   '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
   '/.claude/skills/',
   '/.agents/harness.manifest.json',
-  `/${PROJECTED_ATTACHMENTS_ROOT}/`,
+  `/${DORKOS_TEMP_DIR}/`,
   '# --- end DorkOS ---',
 ].join('\n');
 
-/** The first line of {@link EXCLUDE_BLOCK}, used to find an existing block. */
-const EXCLUDE_MARKER = EXCLUDE_BLOCK.split('\n')[0] ?? '';
+/**
+ * How an EXISTING block is recognized — a version-free sentinel, never the
+ * marker line itself.
+ *
+ * The opening line carries prose, and prose gets edited: it already has been
+ * once, when the block stopped being only about harness projection. Searching
+ * for the CURRENT first line means a block written by any earlier version is
+ * not found at all, so the writer appends a second one and the file ends up
+ * with an orphaned old block that nothing will ever update or remove — the
+ * duplicate this constant exists to prevent. Only the stable prefix is matched;
+ * everything after it is free to be reworded.
+ */
+const EXCLUDE_SENTINEL = '# --- DorkOS:';
 
-/** The last line of {@link EXCLUDE_BLOCK}, which closes it. */
-const EXCLUDE_END = '# --- end DorkOS ---';
+/** The last line of {@link EXCLUDE_BLOCK}, which closes it — derived, never respelled. */
+const EXCLUDE_END = EXCLUDE_BLOCK.split('\n').at(-1) ?? '';
 
 /** One agent's standing working copy in one room. */
 export interface RoomWorktreeHandle {
@@ -656,6 +682,20 @@ export class RoomWorktreeManager {
       }
 
       const dir = path.join(root, slug);
+      // **Both time-varying gates re-asked immediately before the delete, and
+      // this is not belt-and-braces.** Everything above was decided from ONE
+      // snapshot taken before the first `await`, and this loop spans many: a
+      // `git status` per candidate, a stranded-list walk, a `git log` per tree.
+      // A turn that claims anywhere inside that window was not in `busy` and its
+      // fresh `utimes` stamp was not in `dated`, so the sweep would remove the
+      // directory that turn is standing in — and the attachment projector, which
+      // runs next, would `mkdir` it straight back as something that is not a
+      // checkout. Re-asking narrows the window from the whole sweep to the one
+      // syscall below.
+      if (await this.claimedSince(slug, idleCutoff, dir)) {
+        result.spared.push(slug);
+        continue;
+      }
       try {
         // No `--force`: git refuses a tree holding modified or untracked files.
         // A DIFFERENT half of the question from `branch -d` below — see the
@@ -810,6 +850,96 @@ export class RoomWorktreeManager {
   }
 
   /**
+   * Every directory this agent works in across every room with files of its own.
+   *
+   * **The session list needs this, and the reason is worth stating.** Session
+   * storage is derived per working directory (ADR-0310): claude-code files a
+   * transcript under a slug of the cwd it ran in. Since the cwd rung landed, a
+   * room turn's cwd is a worktree — so its conversation is filed under the
+   * WORKTREE's slug, and an agent's session list, which scans that agent's own
+   * folder, cannot see it at all. It is not a filtering problem; the session is
+   * never found. So the fan-out scans these directories too and attributes what
+   * it finds back to the agent that owns them.
+   *
+   * Matched on the digest half of the directory name, which is the only join
+   * available: a worktree name is `<slug>-<digest of the agent path>` and the
+   * digest is one-way, so the question is asked in the direction that can be
+   * answered. That also means a directory left behind by a RENAMED agent still
+   * matches — correctly: the conversations in it are that agent's.
+   *
+   * Best-effort per room. A room whose worktrees directory cannot be read
+   * contributes nothing rather than failing a session list.
+   *
+   * @param agentPath - The agent's workspace path — its identity anchor.
+   * @returns Absolute worktree directories, in no particular order.
+   */
+  async listWorktreesForAgent(agentPath: string): Promise<string[]> {
+    const digest = RoomWorktreeManager.digestFor(agentPath);
+    const found: string[] = [];
+    for (const row of this.deps.store.listRows()) {
+      let root: string;
+      try {
+        root = this.deps.store.worktreesPath(row.roomId);
+      } catch {
+        continue;
+      }
+      let entries: string[];
+      try {
+        entries = await fs.readdir(root);
+      } catch {
+        // No worktrees in this room yet, or a room home that cannot be read.
+        continue;
+      }
+      for (const name of entries) {
+        if (name.endsWith(`-${digest}`)) found.push(path.join(root, name));
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Has this worktree been claimed, or touched, since the sweep looked?
+   *
+   * The last thing asked before a removal, and deliberately the two gates that
+   * can change WHILE a sweep runs — the claim map and the directory's own
+   * stamp. The other two cannot: `stranded` is about committed and uncommitted
+   * content, which an agent can only change by working in the tree, which
+   * requires the claim this asks about.
+   *
+   * **It stats the DIRECTORY only, and must never call
+   * {@link RoomWorktreeManager.lastTouchedAt}.** That method reads the git
+   * index among its four sources, and `listStrandedWorktrees` has by now run a
+   * `git status` in every candidate, which rewrites exactly that index. Asking
+   * it here would read a timestamp the sweep itself created and spare every
+   * tree forever — the bug the `dated`-before-`stranded` ordering above exists
+   * to prevent, reintroduced one loop later. The directory's own mtime is the
+   * right source precisely because nothing the sweep does touches it, while
+   * {@link RoomWorktreeManager.ensureWorktree} stamps it on every single
+   * resolution — which is what makes a turn that only READS visible at all.
+   *
+   * @param slug - The worktree directory name.
+   * @param idleCutoff - Anything touched at or after this is in use.
+   * @param dir - The working copy, whose own stamp is re-read.
+   * @returns Whether the tree must be left alone after all.
+   */
+  private async claimedSince(slug: string, idleCutoff: number, dir: string): Promise<boolean> {
+    const digest = slug.slice(-SLUG_DIGEST_CHARS);
+    if (this.deps.busyAgentPaths().some((p) => RoomWorktreeManager.digestFor(p) === digest)) {
+      logger.debug('[rooms] a turn claimed a room worktree mid-sweep; leaving it alone', {
+        worktree: slug,
+      });
+      return true;
+    }
+    try {
+      return (await fs.stat(dir)).mtimeMs > idleCutoff;
+    } catch {
+      // Unreadable at this instant, having been readable a moment ago:
+      // something is happening in there. Never a reason to delete it.
+      return true;
+    }
+  }
+
+  /**
    * Put the generated paths in the repo's shared `info/exclude`, keeping the
    * block current.
    *
@@ -864,7 +994,7 @@ export class RoomWorktreeManager {
  * @returns What it should hold, ending in a newline.
  */
 function withExcludeBlock(current: string): string {
-  const start = current.indexOf(EXCLUDE_MARKER);
+  const start = current.indexOf(EXCLUDE_SENTINEL);
   if (start === -1) {
     const separator = current === '' || current.endsWith('\n') ? '' : '\n';
     return `${current}${separator}${EXCLUDE_BLOCK}\n`;

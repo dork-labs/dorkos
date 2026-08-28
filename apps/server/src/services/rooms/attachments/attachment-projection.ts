@@ -118,6 +118,14 @@ export async function projectRoomAttachments(input: {
   // them. Growth is still bounded, which is what the sweep is for.
   if (input.attachments.length === 0) return;
 
+  // **Accepted: giving a room files strands whatever was projected before.** The
+  // sweep only ever walks the tree it is called with, so projections an agent
+  // received under its own folder before that room had a repo are not aged out
+  // by its later turns in the worktree. They are hardlinks bounded by one
+  // context window, the agent's own folder is swept again the moment any
+  // repo-less room sends it a file, and the alternative — sweeping directories
+  // this turn is not standing in — is a deletion path with no idea what else is
+  // using them.
   await sweep(input.cwd, input.now ?? Date.now);
 
   const store = input.store();

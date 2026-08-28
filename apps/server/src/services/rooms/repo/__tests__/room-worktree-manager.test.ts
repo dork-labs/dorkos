@@ -21,6 +21,9 @@
  *   its list could change — reddens "brings a stale exclude block up to date":
  *   a repo whose first worktree predates an addition keeps the old block, and
  *   whatever the new line hides makes every worktree dirty again.
+ * - Matching the block on its current FIRST LINE rather than on the version-free
+ *   sentinel reddens the same test the other way: the previous release's block
+ *   is not found, a second one is appended, and the file carries two.
  * - Dropping the digest from `slugFor` reddens "two agents with one name get
  *   two worktrees".
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
@@ -90,6 +93,24 @@ describe('RoomWorktreeManager', () => {
   let busyAgentPaths: string[];
   /** The manager's injected clock (epoch ms). Advance it to age a worktree. */
   let nowMs: number;
+  /**
+   * How the sweep reads that list — replaceable, so a test can make the answer
+   * CHANGE between reads.
+   *
+   * The claim map is live in production: the sweep snapshots it once and then
+   * spends real time removing trees, and a turn can claim anywhere in there.
+   * Defaults to simply reporting {@link busyAgentPaths}, which is what every
+   * test but the race one wants.
+   */
+  let busyAgentPathsReader: () => string[];
+  /**
+   * Something that happens DURING the sweep, hung off the stranded-list read.
+   *
+   * That read is the sweep's own mid-flight moment: it runs after every gate has
+   * been snapshotted and before the first removal, which is precisely the window
+   * a turn can claim in. A no-op for every test but the two race ones.
+   */
+  let strandedDuringSweep: () => Promise<void>;
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -162,6 +183,8 @@ describe('RoomWorktreeManager', () => {
     reapAfterDays = 14;
     busyAgentPaths = [];
     nowMs = Date.now();
+    busyAgentPathsReader = () => busyAgentPaths;
+    strandedDuringSweep = () => Promise.resolve();
     db.insert(rooms)
       .values({
         id: ROOM_ID,
@@ -184,9 +207,13 @@ describe('RoomWorktreeManager', () => {
     manager = new RoomWorktreeManager({
       store,
       hasRepo: (roomId) => service.hasRepo(roomId),
-      listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
+      listStrandedWorktrees: async (roomId) => {
+        const answer = await service.listStrandedWorktrees(roomId);
+        await strandedDuringSweep();
+        return answer;
+      },
       reapAfterDays: () => reapAfterDays,
-      busyAgentPaths: () => busyAgentPaths,
+      busyAgentPaths: () => busyAgentPathsReader(),
       now: () => nowMs,
     });
   });
@@ -321,25 +348,31 @@ describe('RoomWorktreeManager', () => {
       expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
     });
 
-    it('brings a stale exclude block up to date instead of trusting its marker', async () => {
-      // Recognizing the marker and returning was enough while the list never
-      // changed. It stopped being enough when the projected-attachments root
-      // joined it (DOR-1597): a repo whose first worktree predates an addition
-      // would keep the old block forever, and every worktree that ever carried
-      // a file would read permanently dirty — never reaped, never mergeable.
+    it('brings a stale exclude block up to date, found by its version-free sentinel', async () => {
+      // Two bugs in one fixture, and the fixture is the point: this writes the
+      // block EXACTLY as the shipped version before DOR-1597 wrote it, prose and
+      // all. An earlier version of this test invented a marker line that no
+      // release ever produced, so it pinned a state nothing could reach and
+      // stayed green through the very defect it was written for.
+      //
+      // Matching on the current first line cannot find that block, so the writer
+      // appends a second one and the file is left with an orphaned old block
+      // nothing will ever update or remove — while `/.dork/.temp/` sits only in
+      // the new one and the old one goes on hiding nothing. Hence a sentinel
+      // that survives the prose being reworded.
       await service.enable(ROOM_ID, OPERATOR);
       const repoDir = store.repoPath(ROOM_ID);
       const infoDir = path.join(await commonGitDir(repoDir, store.homeDir(ROOM_ID)), 'info');
       await mkdir(infoDir, { recursive: true });
-      // A block written by an older DorkOS, with somebody else's lines on both
-      // sides of it — neither of which may be touched.
       await writeFile(
         path.join(infoDir, 'exclude'),
         [
           '# somebody’s own line, above',
           '/scratch/',
-          '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
+          // The REAL marker the previous release shipped — verbatim.
+          '# --- DorkOS: harness projection output, not anybody’s work (room-worktree-manager.ts) ---',
           '/.claude/skills/',
+          '/.agents/harness.manifest.json',
           '# --- end DorkOS ---',
           '# somebody’s own line, below',
           '/notes.local.md',
@@ -351,11 +384,13 @@ describe('RoomWorktreeManager', () => {
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
       const exclude = await readFile(path.join(infoDir, 'exclude'), 'utf-8');
-      // The block is current…
-      expect(exclude).toContain(`/${PROJECTED_ATTACHMENTS_ROOT}/`);
-      // …written exactly once, not appended beside the old one…
+      // Exactly ONE block — the old one was replaced, not orphaned beside a new
+      // one. This is the assertion the invented-marker fixture could not make.
       expect(exclude.match(/--- DorkOS:/g)).toHaveLength(1);
-      // …and everything that was not ours is still there, on both sides.
+      // …it is the current one…
+      expect(exclude).toContain('/.dork/.temp/');
+      expect(exclude).not.toContain('harness projection output');
+      // …and everything that was not ours survives, on both sides.
       expect(exclude).toContain('# somebody’s own line, above');
       expect(exclude).toContain('/scratch/');
       expect(exclude).toContain('# somebody’s own line, below');
@@ -689,6 +724,65 @@ describe('RoomWorktreeManager', () => {
       expect(swept.reaped).toEqual([]);
       expect(swept.spared).toEqual([path.basename(dir)]);
       expect(existsSync(dir)).toBe(true);
+    });
+
+    it('spares a worktree whose agent claims a turn WHILE the sweep is running', async () => {
+      // The snapshot race, reproduced. Every gate above the removal is decided
+      // from one snapshot taken before the sweep's first `await`, and the sweep
+      // then spans many of them — a `git status` per candidate, a stranded-list
+      // walk, a `git log` per tree. A turn that claims inside that window was
+      // not in `busyAgentPaths` when it was read and its `utimes` stamp was not
+      // in `dated`, so the tree it is standing in was deleted underneath it —
+      // and the attachment projector, which runs next, recreated the directory
+      // as something that is not a checkout.
+      //
+      // Driven through the claim map's own reader: the sweep takes ONE snapshot
+      // of it, and the turn arrives immediately afterwards. Every later read
+      // sees the claim, so a sweep that only ever consults its snapshot deletes
+      // a directory that is in use by the time it gets there.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      reapAfterDays = 14;
+      // Nobody is working when the sweep takes its snapshot; the turn claims
+      // the instant it has.
+      let reads = 0;
+      busyAgentPathsReader = () => {
+        reads += 1;
+        return reads === 1 ? [] : [agentPath('ana')];
+      };
+
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([]);
+      expect(swept.spared).toEqual([path.basename(dir)]);
+      // The whole point: the live turn's working directory is still a checkout.
+      expect(existsSync(dir)).toBe(true);
+      expect(existsSync(path.join(dir, '.git'))).toBe(true);
+    });
+
+    it('spares a worktree a READ-ONLY turn claimed mid-sweep, on the stamp alone', async () => {
+      // The half the claim map cannot cover on its own, and the reason the
+      // re-check re-stats the DIRECTORY rather than re-asking `lastTouchedAt`:
+      // a turn that only thinks and reads writes nothing git can see, so
+      // `ensureWorktree`'s stamp on the directory is the only trace it leaves.
+      // Here the claim is already released by the time the removals run — the
+      // turn was short — so that stamp is all there is left to save it.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      reapAfterDays = 14;
+      busyAgentPaths = [];
+      let ran = false;
+      strandedDuringSweep = async () => {
+        if (ran) return;
+        ran = true;
+        // A whole turn: resolve the cwd, read nothing, release the claim.
+        await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'ana');
+      };
+
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.spared).toEqual([path.basename(dir)]);
+      expect(existsSync(path.join(dir, '.git'))).toBe(true);
     });
 
     it('is not fooled by another agent being busy', async () => {
