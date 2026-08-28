@@ -6,7 +6,7 @@
       "slug": "tool-only-room-replies",
       "title": "Room replies go through tool calls only — silence, reactions and DMs become real choices",
       "created": "2026-08-28",
-      "status": "ideation",
+      "status": "specified",
       "linearIssue": "DOR-1613"
     },
     {

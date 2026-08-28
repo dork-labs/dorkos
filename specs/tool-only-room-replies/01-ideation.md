@@ -490,21 +490,30 @@ _Could PR2 split?_ The DM reversal is arguably separable. It should not be: it i
 
 ## 9) Open questions
 
-Three, and only Q1 genuinely needs the operator.
+**All three were ruled on by the orchestrator on 2026-08-28 and are settled.** The original context is preserved below as an audit trail; each carries its Answer and Rationale. They are recorded in `02-specification.md`'s Decisions Register as D6, D7 and D15.
 
-**Q1 — the per-turn post ceiling's number (D6).** 3 is a judgement, and `meta/agent-etiquette.md` §10 is explicit that every number in this space is unsourced and ours to set by using the product. 3 allows "on it" → answer → correction and refuses a serialised essay. **Recommend 3, tune by dogfooding.** Flagged because it is a mechanism that can refuse an agent mid-sentence, and the operator has set every other number in this namespace.
+**Q1 — the per-turn post ceiling's number (D6).** 3 is a judgement, and `meta/agent-etiquette.md` §10 is explicit that every number in this space is unsourced and ours to set by using the product. 3 allows "on it" → answer → correction and refuses a serialised essay. ~~**Recommend 3, tune by dogfooding.**~~ Flagged because it is a mechanism that can refuse an agent mid-sentence, and the operator has set every other number in this namespace.
 
-**Q2 — does `agent_declined` fire for an agent that was mentioned by another agent?** D7 says no (narrow `directlyAsked`). The counter-argument is that a person watching agent A ask agent B a question, and B doing nothing visible, is also confusing. Recommend shipping narrow and widening only if a dogfood week produces a real instance — the flood evidence for the wide version is measured and the confusion for the narrow one is hypothetical.
+> **(RESOLVED — orchestrator, 2026-08-28.) Answer:** 3, as recommended — but as an **operator-tunable config value** in the `rooms.*` namespace defaulting to 3, not a bare constant. Follow the `adding-config-fields` conventions (`contributing/configuration.md`).
+> **Rationale:** posting is becoming the agent's only voice, and the person who feels a wrong number must be able to move it without waiting for a release. Specified as `rooms.maxPostsPerTurn` (spec D9).
 
-**Q3 — the aside / welcome-back turn (R8).** It is the one remaining path where a turn's text becomes a room message outside `deliver`. Recommend it keeps text-as-reply and that this is stated deliberately rather than left as an oversight: a welcome-back offer is the room asking a closed question on the person's behalf, four of its outcomes are already silent by design, and routing it through a tool would give it a fifth way to produce nothing.
+**Q2 — does `agent_declined` fire for an agent that was mentioned by another agent?** D7 says no (narrow `directlyAsked`). The counter-argument is that a person watching agent A ask agent B a question, and B doing nothing visible, is also confusing. ~~Recommend shipping narrow and widening only if a dogfood week produces a real instance~~ — the flood evidence for the wide version is measured and the confusion for the narrow one is hypothetical.
+
+> **(RESOLVED — orchestrator, 2026-08-28.) Answer:** the recommendation stands. Ship the narrow `directlyAsked`; no notice when an agent mentions an agent.
+> **Rationale:** the flood evidence is measured and the confusion is hypothetical; widening later is cheap, and the predicate is promoted to an export so the two consumers cannot drift (spec D6).
+
+**Q3 — the aside / welcome-back turn (R8).** It is the one remaining path where a turn's text becomes a room message outside `deliver`. ~~Recommend it keeps text-as-reply~~ and that this is stated deliberately rather than left as an oversight: a welcome-back offer is the room asking a closed question on the person's behalf, four of its outcomes are already silent by design, and routing it through a tool would give it a fifth way to produce nothing.
+
+> **(RESOLVED — orchestrator, 2026-08-28.) Answer:** the recommendation stands, recorded as settled with its reasoning.
+> **Rationale:** as argued — the greeter's own posting comment is amended to say the flip does not reach here and why (spec D12).
 
 ---
 
 ## 10) Recommended next step
 
-**SPECIFY.** The design is grounded and the decisions are resolved; what remains is the shape a spec fixes — the exact `deliver` branch, the `agent_declined` copy, the reply-mode plumbing through `RoomTurnResult`, the eval case list, and the ADR's argument. Two things should happen at SPECIFY before anything else:
+**SPECIFY — done, 2026-08-28** (`02-specification.md`). The design was grounded and the decisions resolved; what remained was the shape a spec fixes — the exact `deliver` branch, the `agent_declined` copy, the reply-mode plumbing through `RoomTurnResult`, the eval case list, and the ADR's argument. Two things were carried into SPECIFY:
 
-1. **Close DOR-1212 into this item** (D1), so one behaviour has one issue.
+1. **Close DOR-1212 into this item** (D1), so one behaviour has one issue. **Settled** — the orchestrator ruled DOR-1613 formally absorbs it and handles the tracker side.
 2. **Confirm the DOR-1611 PR1 landing order.** DOR-1611 is now `specified` on `main`, so its D1 is fixed rather than proposed. This feature does not need the per-agent grant, but it does need `registry.invoke` to remain the single choke point both MCP surfaces pass through — which PR1 asserts with a registry-derived conformance test. If PR1 lands first, this inherits that assertion for free; if it does not, this feature should not add a second one.
 
-Two follow-ups to file rather than absorb: **DOR-1203** (the cheap should-respond gate) becomes markedly more valuable once silence is the common outcome, and the `room-service.ts` split parked on DOR-1212 (3600+ lines) should move to its own item rather than ride a behaviour-flip branch.
+Two follow-ups to file rather than absorb: **DOR-1203** (the cheap should-respond gate) becomes markedly more valuable once silence is the common outcome — **noted, not built here** (orchestrator) — and the `room-service.ts` split parked on DOR-1212 (3600+ lines), ruled **out of scope** and filed separately by the orchestrator.
