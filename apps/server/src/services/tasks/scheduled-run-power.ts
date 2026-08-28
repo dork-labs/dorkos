@@ -58,6 +58,16 @@ export const SCHEDULED_RUN_FALLBACK_MODE: PermissionMode = 'acceptEdits';
  * runtime was fixed at boot; a task now carries its own, so the fix its own
  * comment asked for ("read it from the task") is what this is.
  *
+ * **Registration is asked, never indexing.** `runtime` is caller-controlled — it
+ * arrives from a request body, an MCP argument or a CLI flag — and a plain
+ * `capabilities[runtime]` lookup answers `constructor`, `__proto__`, `toString`
+ * and friends with an inherited `Object.prototype` member. Those are truthy, so
+ * they sailed past the `if (!capabilities)` guard below and blew up on
+ * `capabilities.settings`, turning `POST /api/tasks` (and the CLI and MCP create
+ * doors behind it) into a 500 for anyone who typed one of those words
+ * (DOR-1615 review). Asking `has()` is both the correct question and immune to
+ * it: an unregistered name is `undefined`, whatever the name is.
+ *
  * @param runtime - The runtime the caller named, or null/undefined for none.
  * @param registry - The registry; defaults to the process singleton.
  * @returns The profile, or `undefined` for a runtime that is not registered —
@@ -68,10 +78,12 @@ export function capabilitiesForTaskRuntime(
   runtime: string | null | undefined,
   registry: Pick<
     typeof runtimeRegistry,
-    'getAllCapabilities' | 'getDefaultType'
+    'getAllCapabilities' | 'getDefaultType' | 'has'
   > = runtimeRegistry
 ): RuntimeCapabilities | undefined {
-  return registry.getAllCapabilities()[runtime || registry.getDefaultType()];
+  const type = runtime || registry.getDefaultType();
+  if (!registry.has(type)) return undefined;
+  return registry.getAllCapabilities()[type];
 }
 
 /**

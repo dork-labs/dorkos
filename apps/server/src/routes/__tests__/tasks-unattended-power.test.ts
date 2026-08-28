@@ -62,6 +62,10 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     // of its own (DOR-1615) — which is every fixture in this file, so the create
     // path resolves its power through the DEFAULT runtime's vocabulary.
     getDefaultType: () => 'claude-code',
+    // Asked BEFORE the capability map is indexed, so a caller-supplied
+    // `constructor` / `__proto__` cannot reach an inherited member (DOR-1615
+    // review). Registration is the real question either way.
+    has: (type: string) => state.registered && type === 'claude-code',
     getAllCapabilities: () => (state.registered ? { 'claude-code': CLAUDE_CODE_CAPABILITIES } : {}),
   },
 }));

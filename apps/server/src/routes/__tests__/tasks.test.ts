@@ -415,6 +415,35 @@ describe('Tasks routes', () => {
       expect(store.getTask(res.body.id)).toMatchObject({ runtime: 'codex', model: 'gpt-5.5' });
     });
 
+    it.each(['constructor', '__proto__', 'toString', 'valueOf'])(
+      'creates a task naming the runtime %s instead of 500ing',
+      async (runtime) => {
+        // The create path looks the runtime's capability profile up to read the
+        // operator's trust stop in its vocabulary. A plain index answered these
+        // four with an inherited `Object.prototype` member — truthy, so it sailed
+        // past the "is it registered" guard and threw on `.settings`, turning
+        // this route (and the CLI and MCP doors behind it) into a 500 for anyone
+        // who typed one of them (DOR-1615 review).
+        //
+        // The right answer is the same as for any other unregistered runtime:
+        // accept the write — registration is a question for fire time, which
+        // fails the run loudly and names it — and resolve power through the
+        // fallback mode.
+        const res = await request(app).post('/api/tasks').send({
+          name: 'proto',
+          description: 'p',
+          prompt: 'p',
+          cron: '0 * * * *',
+          target: 'global',
+          runtime,
+        });
+
+        expect(res.status).toBe(201);
+        expect(res.body.runtime).toBe(runtime);
+        expect(res.body.permissionMode).toBe('acceptEdits');
+      }
+    );
+
     it('leaves all three null for a create that names none', async () => {
       const res = await request(app).post('/api/tasks').send({
         name: 'Plain',

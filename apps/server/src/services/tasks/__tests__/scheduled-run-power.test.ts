@@ -147,6 +147,7 @@ describe('capabilitiesForTaskRuntime', () => {
   const registry = (registered: Record<string, RuntimeCapabilities>, dflt: string) => ({
     getAllCapabilities: () => registered,
     getDefaultType: () => dflt,
+    has: (type: string) => Object.hasOwn(registered, type),
   });
 
   it('reads the profile of the runtime the caller NAMED', () => {
