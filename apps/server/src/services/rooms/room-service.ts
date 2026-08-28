@@ -3993,6 +3993,21 @@ export class RoomService {
    * while an install minted exactly one human author. A second one — an invited
    * person — would have passed it and read every room on the install, the
    * owner's DMs with agents included.
+   *
+   * The grant is by OWNERSHIP of the install, not by membership in a room: it
+   * covers every room the agents she manages hold, agent-to-agent DMs
+   * included, whether or not she is on the roster — `listRooms` and `canSee`
+   * both read it before checking `room_members` at all. A second human never
+   * inherits this: `requireOperator` and this method answer the same author id
+   * and no other, so an invited person sees exactly the rooms she is in, same
+   * as an agent.
+   *
+   * It also does not reach past this install. When a room's truth lives in a
+   * remote community, that community lists its own rooms per-caller through
+   * the `CommunityAdapter` port (`GET /api/rooms` aggregates every OTHER
+   * configured community alongside this one) — this machine's owner power is
+   * scoped to the rooms `RoomService` itself owns, and grants nothing on a
+   * community that answers for itself.
    */
   private seesEveryRoom(viewerAuthorId: string): boolean {
     return this.isOwnerAuthor(viewerAuthorId);
