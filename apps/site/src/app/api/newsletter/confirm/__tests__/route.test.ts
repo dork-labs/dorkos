@@ -61,8 +61,12 @@ describe('GET /api/newsletter/confirm rate limiting', () => {
     const body = await blocked.text();
     expect(body).toContain('<!doctype html>');
     expect(body).toContain('One moment');
-    // Plain words about what to do next, not a machine-readable error code.
-    expect(body).toContain('Wait a minute, then open it again');
+    // De-personalised: it names the network, never accuses the reader.
+    expect(body).toContain('Too many people opened this link from your network');
+    // And the wait it promises is the wait the header actually asks for —
+    // 600 seconds is ten minutes, not "a minute".
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    expect(body).toContain('Try again in about 10 minutes to confirm.');
   });
 
   it("does not charge one IP for another IP's attempts", async () => {

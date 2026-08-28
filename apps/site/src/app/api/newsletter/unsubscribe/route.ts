@@ -27,8 +27,11 @@
  * @module app/api/newsletter/unsubscribe
  */
 import { unsubscribe } from '@/lib/newsletter/service';
-import { consumeUnsubscribeQuota } from '@/lib/newsletter/unsubscribe-rate-limit';
-import { tooManyRequestsPage } from '@/lib/rate-limit/too-many-requests-page';
+import {
+  consumeUnsubscribeLinkQuota,
+  consumeUnsubscribeOneClickQuota,
+} from '@/lib/newsletter/unsubscribe-rate-limit';
+import { tooManyRequestsPage, waitPhrase } from '@/lib/rate-limit/too-many-requests-page';
 
 export const runtime = 'nodejs';
 
@@ -42,11 +45,11 @@ function tokenFrom(request: Request): string {
  * Returns `429` as a readable page when this IP is over its limit.
  */
 export async function GET(request: Request): Promise<Response> {
-  const quota = consumeUnsubscribeQuota(request);
+  const quota = consumeUnsubscribeLinkQuota(request);
   if (!quota.allowed) {
     return tooManyRequestsPage(
       'One moment',
-      'You have opened this link a lot in a short time. Wait a minute, then open it again to unsubscribe.',
+      `Too many people opened this link from your network just now. Try again in ${waitPhrase(quota.retryAfterSeconds)} to unsubscribe.`,
       quota.retryAfterSeconds
     );
   }
@@ -61,7 +64,7 @@ export async function GET(request: Request): Promise<Response> {
  * `429` with a `Retry-After` in the same style when this IP is over its limit.
  */
 export async function POST(request: Request): Promise<Response> {
-  const quota = consumeUnsubscribeQuota(request);
+  const quota = consumeUnsubscribeOneClickQuota(request);
   if (!quota.allowed) {
     return new Response(null, {
       status: 429,

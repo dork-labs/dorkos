@@ -25,7 +25,7 @@
  */
 import { confirm } from '@/lib/newsletter/service';
 import { consumeConfirmQuota } from '@/lib/newsletter/confirm-rate-limit';
-import { tooManyRequestsPage } from '@/lib/rate-limit/too-many-requests-page';
+import { tooManyRequestsPage, waitPhrase } from '@/lib/rate-limit/too-many-requests-page';
 
 export const runtime = 'nodejs';
 
@@ -38,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!quota.allowed) {
     return tooManyRequestsPage(
       'One moment',
-      'You have opened this link a lot in a short time. Wait a minute, then open it again to confirm.',
+      `Too many people opened this link from your network just now. Try again in ${waitPhrase(quota.retryAfterSeconds)} to confirm.`,
       quota.retryAfterSeconds
     );
   }

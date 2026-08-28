@@ -20,8 +20,25 @@ const CHARCOAL = '#1a1814';
 const WARM_GRAY = '#4a4640';
 
 /** Escape the few characters that could otherwise break out of the markup. */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * How long to tell a reader to wait, derived from the real `Retry-After`.
+ *
+ * The number in the header and the number in the sentence have to be the same
+ * fact. Writing "a minute" beside a `Retry-After` of 600 is a small lie that
+ * costs a reader nine minutes of retrying, so the sentence is computed, never
+ * typed. Rounded up: telling someone to come back too early is the failure
+ * worth avoiding.
+ *
+ * @param retryAfterSeconds - Whole seconds until the caller's window resets.
+ * @returns A phrase to drop into "Try again in ___".
+ */
+export function waitPhrase(retryAfterSeconds: number): string {
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  return minutes === 1 ? 'about a minute' : `about ${minutes} minutes`;
 }
 
 /**

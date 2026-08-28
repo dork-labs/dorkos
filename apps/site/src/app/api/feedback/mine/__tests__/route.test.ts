@@ -4,6 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getDb } from '@/db/client';
+import {
+  FEEDBACK_HISTORY_RATE_LIMIT,
+  resetFeedbackHistoryRateLimit,
+} from '@/lib/feedback/history-rate-limit';
 
 vi.mock('@/db/client', () => ({ getDb: vi.fn() }));
 
@@ -48,14 +52,15 @@ beforeEach(() => {
   mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
   mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
   vi.mocked(getDb).mockReturnValue({ select: mockSelect } as never);
+  resetFeedbackHistoryRateLimit();
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-function get(query: string): Promise<Response> {
-  return GET(new Request(`https://dorkos.ai/api/feedback/mine${query}`));
+function get(query: string, headers: Record<string, string> = {}): Promise<Response> {
+  return GET(new Request(`https://dorkos.ai/api/feedback/mine${query}`, { headers }));
 }
 
 describe('GET /api/feedback/mine', () => {
@@ -125,5 +130,54 @@ describe('GET /api/feedback/mine', () => {
     const res = await get(`?instanceId=${'x'.repeat(200)}`);
     expect(res.status).toBe(400);
     expect(mockSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/feedback/mine — rate limiting', () => {
+  const ip = { 'x-real-ip': '203.0.113.80' };
+
+  it('lets one IP through up to the limit, then answers 429', async () => {
+    for (let i = 0; i < FEEDBACK_HISTORY_RATE_LIMIT; i += 1) {
+      expect((await get(`?instanceId=${INSTANCE_ID}`, ip)).status).toBe(200);
+    }
+    expect(mockSelect).toHaveBeenCalledTimes(FEEDBACK_HISTORY_RATE_LIMIT);
+
+    const blocked = await get(`?instanceId=${INSTANCE_ID}`, ip);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    await expect(blocked.json()).resolves.toEqual({
+      error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
+    });
+    // The throttled read never reaches the database.
+    expect(mockSelect).toHaveBeenCalledTimes(FEEDBACK_HISTORY_RATE_LIMIT);
+  });
+
+  it('bounds an instanceId-guessing walk, which the id gate cannot', async () => {
+    // The id decides what a caller may see. It does not decide what a caller
+    // may cost, and each guess here is an indexed read returning up to 200
+    // rows of somebody's own message text.
+    for (let i = 0; i < FEEDBACK_HISTORY_RATE_LIMIT; i += 1) {
+      await get(`?instanceId=00000000-0000-0000-0000-${i.toString().padStart(12, '0')}`, ip);
+    }
+    const nextGuess = await get(`?instanceId=00000000-0000-0000-0000-999999999999`, ip);
+    expect(nextGuess.status).toBe(429);
+  });
+
+  it('charges a malformed instanceId too, so a garbage flood is throttled', async () => {
+    for (let i = 0; i < FEEDBACK_HISTORY_RATE_LIMIT; i += 1) {
+      expect((await get('', ip)).status).toBe(400);
+    }
+    expect((await get(`?instanceId=${INSTANCE_ID}`, ip)).status).toBe(429);
+    expect(mockSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not charge one IP for another IP's reads", async () => {
+    for (let i = 0; i <= FEEDBACK_HISTORY_RATE_LIMIT; i += 1) {
+      await get(`?instanceId=${INSTANCE_ID}`, ip);
+    }
+    expect((await get(`?instanceId=${INSTANCE_ID}`, ip)).status).toBe(429);
+
+    const bystander = await get(`?instanceId=${INSTANCE_ID}`, { 'x-real-ip': '203.0.113.81' });
+    expect(bystander.status).toBe(200);
   });
 });

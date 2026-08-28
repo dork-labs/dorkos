@@ -1,20 +1,29 @@
 /**
- * Per-IP throttle for `/api/newsletter/unsubscribe` (DOR-1586).
+ * Per-IP throttles for `/api/newsletter/unsubscribe` (DOR-1586).
  *
- * Both verbs share one allowance: they are the same idempotent operation on the
- * same token, so counting them separately would only invent a second bucket for
- * one resource.
+ * **Two verbs, two buckets** — and the split is the point of this module.
  *
- * **The RFC 8058 one-click POST is what sets the number, and it is set loose on
- * purpose.** A GET arrives from the subscriber's own browser, so those requests
- * spread across as many IPs as there are readers. A one-click POST does not: the
- * mail provider's servers make it, so every Gmail reader who unsubscribes from
- * one broadcast arrives from the same handful of Google egress addresses, in a
- * burst, right after the send. Throttling that would fail the unsubscribe
- * silently — the reader sees "unsubscribed", keeps getting mail, and reports it
- * as spam. A refused unsubscribe costs far more than an extra token read, so
- * sixty per ten minutes sits well above any realistic provider burst while
- * still capping a `curl` loop that is guessing tokens.
+ * The verbs look like one operation on one resource, which argues for one
+ * shared allowance. What breaks that argument is who sends each one, and what
+ * it costs when each one is refused.
+ *
+ * - **GET** is the in-email link. It is in *every* broadcast, so it is the most
+ *   pre-fetched URL this site has: email security scanners (Outlook Safe Links,
+ *   Proofpoint) fetch links on delivery, from a corporate gateway address
+ *   shared by everyone at that organization. One gateway serving a few dozen
+ *   subscribers can spend a whole allowance in seconds, through no fault of any
+ *   reader. Refusing one of these shows a person a page telling them to try
+ *   again — annoying, and recoverable.
+ * - **POST** is the RFC 8058 one-click, sent by the mail provider's own servers
+ *   when a reader hits "unsubscribe" in Gmail or Apple Mail. Those also arrive
+ *   from a handful of shared egress addresses, in a burst right after a send.
+ *   Refusing one is **not** recoverable: the reader is told they unsubscribed,
+ *   stays subscribed, keeps getting mail, and reports it as spam.
+ *
+ * Sharing one bucket would let the cheap, heavily pre-fetched failure starve the
+ * expensive, silent one — a scanner sweep spending the allowance the next real
+ * one-click needed. So each verb gets its own limiter instance, and one-click
+ * gets the larger of the two.
  *
  * Instance-local by design — see `lib/rate-limit/fixed-window` for what that
  * does and does not buy.
@@ -24,30 +33,54 @@
 import type { RateLimitDecision } from '@/lib/rate-limit/fixed-window';
 import { createPerIpLimiter } from '@/lib/rate-limit/per-ip-limiter';
 
-/** Unsubscribe attempts one IP may spend per window (see module doc). */
-export const UNSUBSCRIBE_RATE_LIMIT = 60;
+/** In-email link opens one IP may spend per window (see module doc). */
+export const UNSUBSCRIBE_LINK_RATE_LIMIT = 60;
+
+/**
+ * One-click unsubscribes one IP may spend per window. Twice the link
+ * allowance: these arrive from mail-provider egress addresses shared by every
+ * reader on that provider, and a refusal here fails silently.
+ */
+export const UNSUBSCRIBE_ONE_CLICK_RATE_LIMIT = 120;
 
 /** Window length: ten minutes, matching the newsletter subscribe throttle. */
 export const UNSUBSCRIBE_RATE_WINDOW_MS = 10 * 60 * 1000;
 
-const limiter = createPerIpLimiter({
-  limit: UNSUBSCRIBE_RATE_LIMIT,
+const linkLimiter = createPerIpLimiter({
+  limit: UNSUBSCRIBE_LINK_RATE_LIMIT,
+  windowMs: UNSUBSCRIBE_RATE_WINDOW_MS,
+});
+
+const oneClickLimiter = createPerIpLimiter({
+  limit: UNSUBSCRIBE_ONE_CLICK_RATE_LIMIT,
   windowMs: UNSUBSCRIBE_RATE_WINDOW_MS,
 });
 
 /**
- * Spend one unsubscribe attempt for the request's client IP. Shared by the
- * human-clicked `GET` and the one-click `POST`.
+ * Spend one in-email link open (the `GET`) for the request's client IP.
  *
  * @param request - The incoming unsubscribe request.
  * @param now - Current epoch milliseconds. Defaults to `Date.now()`.
  * @returns Whether the request may proceed, and when to retry if not.
  */
-export function consumeUnsubscribeQuota(request: Request, now?: number): RateLimitDecision {
-  return limiter.consume(request, now);
+export function consumeUnsubscribeLinkQuota(request: Request, now?: number): RateLimitDecision {
+  return linkLimiter.consume(request, now);
+}
+
+/**
+ * Spend one RFC 8058 one-click unsubscribe (the `POST`) for the request's
+ * client IP. Deliberately a separate bucket from the link above.
+ *
+ * @param request - The incoming unsubscribe request.
+ * @param now - Current epoch milliseconds. Defaults to `Date.now()`.
+ * @returns Whether the request may proceed, and when to retry if not.
+ */
+export function consumeUnsubscribeOneClickQuota(request: Request, now?: number): RateLimitDecision {
+  return oneClickLimiter.consume(request, now);
 }
 
 /** @internal Exported for testing only — clears every tracked window. */
 export function resetUnsubscribeRateLimit(): void {
-  limiter.reset();
+  linkLimiter.reset();
+  oneClickLimiter.reset();
 }

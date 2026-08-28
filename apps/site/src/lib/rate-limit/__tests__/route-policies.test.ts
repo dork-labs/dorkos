@@ -9,6 +9,18 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  FEEDBACK_HISTORY_RATE_LIMIT,
+  FEEDBACK_HISTORY_RATE_WINDOW_MS,
+  consumeFeedbackHistoryQuota,
+  resetFeedbackHistoryRateLimit,
+} from '@/lib/feedback/history-rate-limit';
+import {
+  FEEDBACK_STATUS_RATE_LIMIT,
+  FEEDBACK_STATUS_RATE_WINDOW_MS,
+  consumeFeedbackStatusQuota,
+  resetFeedbackStatusRateLimit,
+} from '@/lib/feedback/status-rate-limit';
+import {
   FEEDBACK_RATE_LIMIT,
   FEEDBACK_RATE_WINDOW_MS,
   consumeFeedbackQuota,
@@ -27,9 +39,11 @@ import {
   resetSubscribeRateLimit,
 } from '@/lib/newsletter/subscribe-rate-limit';
 import {
-  UNSUBSCRIBE_RATE_LIMIT,
+  UNSUBSCRIBE_LINK_RATE_LIMIT,
+  UNSUBSCRIBE_ONE_CLICK_RATE_LIMIT,
   UNSUBSCRIBE_RATE_WINDOW_MS,
-  consumeUnsubscribeQuota,
+  consumeUnsubscribeLinkQuota,
+  consumeUnsubscribeOneClickQuota,
   resetUnsubscribeRateLimit,
 } from '@/lib/newsletter/unsubscribe-rate-limit';
 import {
@@ -83,10 +97,17 @@ const POLICIES: RoutePolicy[] = [
     reset: resetConfirmRateLimit,
   },
   {
-    name: '/api/newsletter/unsubscribe',
+    name: 'GET /api/newsletter/unsubscribe (in-email link)',
     limit: 60,
     windowMs: 600_000,
-    consume: consumeUnsubscribeQuota,
+    consume: consumeUnsubscribeLinkQuota,
+    reset: resetUnsubscribeRateLimit,
+  },
+  {
+    name: 'POST /api/newsletter/unsubscribe (RFC 8058 one-click)',
+    limit: 120,
+    windowMs: 600_000,
+    consume: consumeUnsubscribeOneClickQuota,
     reset: resetUnsubscribeRateLimit,
   },
   {
@@ -95,6 +116,20 @@ const POLICIES: RoutePolicy[] = [
     windowMs: 600_000,
     consume: consumeFeedbackQuota,
     reset: resetFeedbackRateLimit,
+  },
+  {
+    name: 'GET /api/feedback/mine',
+    limit: 60,
+    windowMs: 600_000,
+    consume: consumeFeedbackHistoryQuota,
+    reset: resetFeedbackHistoryRateLimit,
+  },
+  {
+    name: 'GET /api/feedback/[id]',
+    limit: 120,
+    windowMs: 600_000,
+    consume: consumeFeedbackStatusQuota,
+    reset: resetFeedbackStatusRateLimit,
   },
   {
     name: 'POST /api/telemetry/install',
@@ -144,8 +179,11 @@ describe('the exported constants match the policy table', () => {
   it.each([
     ['subscribe', SUBSCRIBE_RATE_LIMIT, SUBSCRIBE_RATE_WINDOW_MS, 5],
     ['confirm', CONFIRM_RATE_LIMIT, CONFIRM_RATE_WINDOW_MS, 30],
-    ['unsubscribe', UNSUBSCRIBE_RATE_LIMIT, UNSUBSCRIBE_RATE_WINDOW_MS, 60],
+    ['unsubscribe link', UNSUBSCRIBE_LINK_RATE_LIMIT, UNSUBSCRIBE_RATE_WINDOW_MS, 60],
+    ['unsubscribe one-click', UNSUBSCRIBE_ONE_CLICK_RATE_LIMIT, UNSUBSCRIBE_RATE_WINDOW_MS, 120],
     ['feedback', FEEDBACK_RATE_LIMIT, FEEDBACK_RATE_WINDOW_MS, 10],
+    ['feedback history', FEEDBACK_HISTORY_RATE_LIMIT, FEEDBACK_HISTORY_RATE_WINDOW_MS, 60],
+    ['feedback status', FEEDBACK_STATUS_RATE_LIMIT, FEEDBACK_STATUS_RATE_WINDOW_MS, 120],
     ['install telemetry', INSTALL_TELEMETRY_RATE_LIMIT, INSTALL_TELEMETRY_RATE_WINDOW_MS, 120],
     ['heartbeat telemetry', HEARTBEAT_TELEMETRY_RATE_LIMIT, HEARTBEAT_TELEMETRY_RATE_WINDOW_MS, 60],
     ['events telemetry', EVENTS_TELEMETRY_RATE_LIMIT, EVENTS_TELEMETRY_RATE_WINDOW_MS, 600],
