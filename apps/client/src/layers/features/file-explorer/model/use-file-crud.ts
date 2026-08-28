@@ -1,7 +1,12 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { toast } from 'sonner';
 import type { QueryClient } from '@tanstack/react-query';
-import type { ExplorerEntry, ExplorerListing } from './source';
+import {
+  explorerDirQueryKey,
+  type ExplorerEntry,
+  type ExplorerListing,
+  type FileExplorerSource,
+} from './source';
 import { useTransport } from '@/layers/shared/model';
 import { toastCrudError, getErrorCode, COPY_INTO_SELF_MESSAGE } from '../lib/crud-errors';
 import { freeCopyName } from '../lib/copy-name';
@@ -25,8 +30,18 @@ import { useFileExplorerStore } from './file-explorer-store';
 
 /** Dependencies the CRUD ops need to reach the query cache. */
 export interface FileCrudDeps {
-  /** Session working directory every path resolves within. */
-  cwd: string;
+  /**
+   * The source being written to — where its listings are cached, and the
+   * working directory its paths resolve within.
+   *
+   * The cache key comes from the SOURCE rather than from the directory, even
+   * though today they are the same string: only a session source is writable,
+   * and its `scopeKey` is its cwd. §3.10's human editing makes a second kind of
+   * source writable, whose scope key is not a directory at all — and a mutation
+   * keyed on the cwd would then write its optimistic update into a key nothing
+   * reads, leaving the tree showing the old listing until a refetch.
+   */
+  source: FileExplorerSource;
   /** Whether hidden entries are shown — part of each directory's query key. */
   showHidden: boolean;
   /** The active query client, for optimistic cache reads/writes and invalidation. */
@@ -71,7 +86,10 @@ function draftEntry(path: string, name: string, type: 'file' | 'dir'): ExplorerE
 /** Optimistic file-service mutations bound to the explorer's query cache. */
 export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   const transport = useTransport();
-  const { cwd, showHidden, queryClient, inFlightRef } = deps;
+  const { source, showHidden, queryClient, inFlightRef } = deps;
+  // Every transport call names a real directory on this machine. A source with
+  // no cwd is never writable, so nothing below is reachable for one.
+  const cwd = source.cwd ?? '';
   const [pendingRecursiveDelete, setPendingRecursiveDelete] = useState<ExplorerEntry | null>(null);
 
   // Raise the in-flight guard for the whole duration of an optimistic op. While
@@ -94,7 +112,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   // the keys `useFileExplorer` mounts, so writes here land in the same cache the
   // tree renders from.
   const cache = useMemo(() => {
-    const treeKey = (path: string) => ['file-explorer', 'tree', cwd, path, showHidden] as const;
+    const treeKey = (path: string) => explorerDirQueryKey(source, path, showHidden);
     return {
       /** A directory's current cached children (empty when not cached). */
       getChildren: (path: string): ExplorerEntry[] =>
@@ -138,7 +156,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         void queryClient.invalidateQueries({ queryKey: treeKey(path), exact: true });
       },
     };
-  }, [queryClient, transport, cwd, showHidden]);
+  }, [queryClient, transport, cwd, source, showHidden]);
 
   const createEntry = useCallback(
     (parent: string, name: string, type: 'file' | 'dir'): Promise<boolean> =>

@@ -9,8 +9,9 @@
  * **A room without files of its own shows nothing at all** — not an empty
  * state, not a "no files yet" invitation. Most rooms are conversations and
  * always will be; a section explaining its own absence in every one of them is
- * worse than the absence. The room says so itself, with `ROOM_HAS_NO_REPO`, and
- * that answer is the whole gate.
+ * worse than the absence. The room says so itself, and that answer is the whole
+ * gate — as a listing marked `absent` rather than as a refusal, so that opening
+ * an ordinary room is not an error anything has to log.
  *
  * @module features/file-explorer/ui/RoomFilesSection
  */
@@ -22,7 +23,6 @@ import { useFileExplorerStore } from '../model/file-explorer-store';
 import { createRoomFilesSource } from '../model/room-files-source';
 import { explorerDirQueryOptions } from '../model/source';
 import { ROOT_KEY } from '../model/tree';
-import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
 import { FileExplorer } from './FileExplorer';
 import { HiddenEntriesToggle } from './HiddenEntriesToggle';
 
@@ -52,11 +52,12 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
   // "does this room have files" and "what is in them" have the same answer.
   const root = useQuery(explorerDirQueryOptions(source, ROOT_KEY, showHidden, queryClient));
 
-  // Only "this room has no files of its own" hides the section. Anything else
-  // — the room is unreachable, this machine has no git — is a real failure, and
-  // the section stays to say so where the tree would have been.
-  const answered =
-    root.isSuccess || (root.isError && errorCodeOf(root.error) !== ROOM_HAS_NO_REPO_CODE);
+  // Only "this room has no files of its own" hides the section, and it arrives
+  // as a LISTING that says so rather than as a rejection — see the source's
+  // `list`. Anything else — the room is unreachable, this machine has no git —
+  // is a real failure, and the section stays to say so where the tree would
+  // have been, with the retry the explorer offers.
+  const answered = (root.isSuccess && root.data.absent !== true) || root.isError;
 
   // Sticky, and it has to be. The listing below is the SAME cache entry this
   // query is, so mounting the tree adds a second reader of it — and a second
@@ -83,11 +84,21 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
       </header>
       {/* Bounded rather than free-growing: this is one section of a scrolling
           panel, so a repo with three hundred files must not push the roster and
-          the limits off the bottom of it. The scroll lives HERE rather than on
-          the tree — this box has a max height and no fixed one, so the tree
-          inside it has no definite height to scroll within, and clipping it
-          without scrolling would put the three hundredth file out of reach. */}
-      <div className="border-border/60 max-h-72 min-h-16 overflow-y-auto rounded-lg border">
+          the limits off the bottom of it.
+
+          **The height is DEFINITE (`h-72`), not a maximum, and it has to be.**
+          The tree inside owns its own scroll — that is where the saved offset
+          is restored to and where the virtualizer measures its window — and
+          `height: 100%` against an auto-height containing block computes to
+          auto. Under `max-h-*` the tree would grow to its full content height
+          and never scroll: past a hundred rows the virtualizer would render
+          every one of them, and the offset a person left the panel at would
+          have nowhere to be restored to. A fixed box costs an empty strip
+          under a room with three files; the alternative costs correctness. */}
+      <div
+        data-slot="room-files-body"
+        className="border-border/60 h-72 overflow-hidden rounded-lg border"
+      >
         <FileExplorer source={source} />
       </div>
     </section>

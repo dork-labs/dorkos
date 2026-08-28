@@ -3,7 +3,6 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { executeUiCommand, type DispatcherContext } from '@/layers/shared/lib';
 import { pinnedFirst, withoutHidden } from '../lib/listing-shape';
-import { errorCodeOf } from '../lib/error-code';
 import { flattenTree, ROOT_KEY, visibleExpandedDirs } from './tree';
 import type { DirState, FlatRow } from './types';
 import {
@@ -20,8 +19,7 @@ import { useFileExplorerStore } from './file-explorer-store';
  * Orchestration hook for the file explorer (DOR-404, extended to sources by
  * DOR-1595). Expansion, selection, and scroll live in the feature store
  * (persisted per source); directory *data* lives in TanStack Query — one query
- * per visible directory, keyed
- * `['file-explorer', 'tree', scopeKey, dirPath, showHidden]`. So the tree
+ * per visible directory, keyed by {@link explorerDirQueryKey}. So the tree
  * survives an unmount (tab switch, reopen) from cache, a refresh refetches the
  * whole expanded subtree with one `invalidateQueries`, and CRUD is optimistic
  * against the query cache. Opening a file rides the shared `open_file`
@@ -42,6 +40,24 @@ import { useFileExplorerStore } from './file-explorer-store';
  * @module features/file-explorer/model/use-file-explorer
  */
 
+/**
+ * The stand-in for "nothing to browse", so the CRUD hook below is called
+ * unconditionally like every other hook.
+ *
+ * Not writable and holding no directory, which is exactly what it is: with no
+ * source the pane renders its "pick a working directory" state and no mutation
+ * can be reached from it.
+ */
+const EMPTY_SOURCE: FileExplorerSource = {
+  scopeKey: '',
+  cwd: null,
+  writable: false,
+  provenance: false,
+  filtersHidden: true,
+  preview: 'canvas',
+  list: () => Promise.resolve({ entries: [] }),
+};
+
 /** The full explorer API a `FileExplorer` component consumes. */
 export interface FileExplorerApi extends FileCrudApi, FileActionsApi {
   /** Ordered visible rows (root children, recursing into expanded directories). */
@@ -50,14 +66,6 @@ export interface FileExplorerApi extends FileCrudApi, FileActionsApi {
   rootLoading: boolean;
   /** True when the root level's listing failed to load. */
   rootError: boolean;
-  /**
-   * The coded reason the root listing failed, when it carried one.
-   *
-   * A surface that offers files only where there are any reads this: a room
-   * with no files of its own refuses with `ROOM_HAS_NO_REPO`, and that is not
-   * an error to apologise for — it is the answer, and the section shows nothing.
-   */
-  rootErrorCode: string | null;
   /** Visible expanded directories whose listing failed (for inline retry rows). */
   errorPaths: Set<string>;
   /** Expand or collapse a directory (its query mounts/unmounts declaratively). */
@@ -168,7 +176,6 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
 
   const rootLoading = Boolean(source) && Boolean(dirData[ROOT_KEY]?.loading);
   const rootError = Boolean(source) && Boolean(dirData[ROOT_KEY]?.error);
-  const rootErrorCode = rootError ? (errorCodeOf(results[0]?.error) ?? null) : null;
   const errorPaths = useMemo(() => {
     const set = new Set<string>();
     for (const dirPath of dirPaths) {
@@ -224,13 +231,13 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
 
   const retryDir = useCallback(
     (path: string): void => {
-      if (scopeKey === null) return;
+      if (source === null) return;
       void queryClient.invalidateQueries({
-        queryKey: explorerDirQueryKey(scopeKey, path, showHidden),
+        queryKey: explorerDirQueryKey(source, path, showHidden),
         exact: true,
       });
     },
-    [queryClient, scopeKey, showHidden]
+    [queryClient, source, showHidden]
   );
 
   // A source that knows when its files may have changed says so; the pane turns
@@ -242,7 +249,9 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
   }, [source, reload]);
 
   const crud = useFileCrud({
-    cwd: cwd ?? '',
+    // A null source has nothing to write to, and every op below is unreachable
+    // without one — the pane renders its "pick a directory" state instead.
+    source: source ?? EMPTY_SOURCE,
     showHidden,
     queryClient,
     inFlightRef: inFlightMutations,
@@ -254,7 +263,6 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
     rows,
     rootLoading,
     rootError,
-    rootErrorCode,
     errorPaths,
     toggleExpand,
     ensureExpanded,

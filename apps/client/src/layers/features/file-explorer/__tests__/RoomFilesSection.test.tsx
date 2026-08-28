@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomFileEntry } from '@dorkos/shared/room-files';
@@ -82,7 +82,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 function renderSection(transport: Transport) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryErrors: unknown[] = [];
+  const queryCache = new QueryCache({ onError: (error) => queryErrors.push(error) });
+  const queryClient = new QueryClient({
+    queryCache,
+    defaultOptions: { queries: { retry: false } },
+  });
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -90,13 +95,13 @@ function renderSection(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { ...view, queryClient };
+  return { ...view, queryClient, queryErrors };
 }
 
 describe('RoomFilesSection', () => {
   it('shows nothing at all for a room with no files of its own', async () => {
     const transport = roomWithoutFiles();
-    renderSection(transport);
+    const { queryErrors } = renderSection(transport);
 
     await waitFor(() => expect(transport.readRoomFiles).toHaveBeenCalled());
     // Not an empty state, not an invitation: most rooms are conversations, and
@@ -104,6 +109,30 @@ describe('RoomFilesSection', () => {
     // the absence.
     expect(screen.queryByRole('region', { name: 'Room files' })).not.toBeInTheDocument();
     expect(screen.queryByText('Files')).not.toBeInTheDocument();
+
+    // And it does it QUIETLY. This is the ordinary answer for most rooms, so a
+    // repo-less room must not register a query failure — that path logs and
+    // drops a breadcrumb, which at any scale would mean a bug report full of
+    // people opening ordinary rooms.
+    await waitFor(() => expect(queryErrors).toHaveLength(0));
+  });
+
+  it('still reports a refusal that really is one', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE' })
+      );
+    const { queryErrors } = renderSection(transport);
+
+    await screen.findByText("Couldn't load files.");
+    // Reported, not swallowed — and the count is deliberately not pinned: the
+    // tree mounts a second reader of the same cache entry, which refetches and
+    // fails again. What matters is that this one reaches the error path at all,
+    // where "no files of its own" must not.
+    expect(queryErrors.length).toBeGreaterThan(0);
+    expect((queryErrors[0] as { code?: string }).code).toBe('ROOM_REPO_GIT_UNAVAILABLE');
   });
 
   it('shows the room its files, with who last touched each one', async () => {
@@ -139,21 +168,49 @@ describe('RoomFilesSection', () => {
   });
 
   it('hides the plumbing by default and gives it back on the toggle', async () => {
-    renderSection(
-      roomWithFiles([
-        entry({ name: 'ROOM.md' }),
-        entry({ name: '.claude', kind: 'dir', size: 0 }),
-        entry({ name: '.env' }),
-      ])
-    );
+    const transport = roomWithFiles([
+      entry({ name: 'ROOM.md' }),
+      entry({ name: '.claude', kind: 'dir', size: 0 }),
+      entry({ name: '.env' }),
+    ]);
+    renderSection(transport);
 
     await screen.findByRole('treeitem', { name: 'ROOM.md' });
     expect(screen.queryByRole('treeitem', { name: '.claude' })).not.toBeInTheDocument();
     expect(screen.queryByRole('treeitem', { name: '.env' })).not.toBeInTheDocument();
 
+    const before = (transport.readRoomFiles as ReturnType<typeof vi.fn>).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Show hidden files' }));
     expect(await screen.findByRole('treeitem', { name: '.claude' })).toBeInTheDocument();
     expect(screen.getByRole('treeitem', { name: '.env' })).toBeInTheDocument();
+
+    // Without asking the server again. The room API serves its tree whole and
+    // the pane does the filtering, so both answers are the same bytes — keying
+    // the cache on the toggle would buy a round trip to be handed back what is
+    // already in hand.
+    expect((transport.readRoomFiles as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+  });
+
+  it('gives the tree a definite height to scroll and virtualize within', async () => {
+    renderSection(roomWithFiles([entry({ name: 'ROOM.md' })]));
+
+    const tree = await screen.findByRole('tree');
+    // The tree is the scroll container — that is where the saved offset is
+    // restored to and where the virtualizer measures its window — and it sizes
+    // itself with `height: 100%`, which computes to `auto` against an
+    // auto-height containing block. So the box around it must have a DEFINITE
+    // height: under `max-h-*` the tree grows to its full content height and
+    // never scrolls, which silently renders all 300 rows past the
+    // virtualization threshold and leaves a restored scroll offset nowhere to
+    // land.
+    //
+    // Asserted on the class rather than on a measurement because jsdom has no
+    // layout: `getBoundingClientRect` is all zeroes here, so a computed-height
+    // check would pass for `max-h-72` too and prove nothing. Verified for real
+    // in a browser; this pin is what stops the two characters drifting back.
+    const box = tree.closest('[data-slot="room-files-body"]')!;
+    expect(box.className).toContain('h-72');
+    expect(box.className).not.toContain('max-h-');
   });
 
   it('offers nothing that would write to a commit', async () => {
@@ -276,13 +333,9 @@ describe('the session pane, over the same component', () => {
     // must not sprout a row of em-dashes for a question nobody can answer.
     const { createSessionCwdSource } = await import('../model/session-cwd-source');
     const transport = createMockTransport();
-    transport.readFileTree = vi
-      .fn()
-      .mockResolvedValue({
-        entries: [
-          { name: 'a.ts', path: 'a.ts', type: 'file', size: 1, mtime: 0, isSymlink: false },
-        ],
-      });
+    transport.readFileTree = vi.fn().mockResolvedValue({
+      entries: [{ name: 'a.ts', path: 'a.ts', type: 'file', size: 1, mtime: 0, isSymlink: false }],
+    });
     const source = createSessionCwdSource({ transport, cwd: '/repo' });
     expect(source.provenance).toBe(false);
     expect(source.writable).toBe(true);

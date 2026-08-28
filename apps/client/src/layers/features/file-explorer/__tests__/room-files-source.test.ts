@@ -39,6 +39,34 @@ describe('the room files source', () => {
     expect(transport.readRoomFiles).toHaveBeenCalledWith(ROOM_ID, 'docs');
   });
 
+  it('answers "this room has no files" as a listing, not as a failure', async () => {
+    const { transport, source } = build();
+    transport.readRoomFiles = vi.fn().mockRejectedValue(
+      Object.assign(new Error('This room does not have files of its own.'), {
+        code: 'ROOM_HAS_NO_REPO',
+        status: 409,
+      })
+    );
+
+    // The ordinary answer for most rooms, so it must not travel the rejection
+    // path: left there it was retried, logged as a query error, and dropped a
+    // breadcrumb into the next bug report — once per repo-less room opened.
+    await expect(source.list('', { showHidden: false })).resolves.toEqual({
+      entries: [],
+      absent: true,
+    });
+  });
+
+  it('still rejects a refusal that is not "no files" — those are real', async () => {
+    const { transport, source } = build();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE' })
+      );
+    await expect(source.list('', { showHidden: false })).rejects.toThrow('no git here');
+  });
+
   it('lists a symlink and a submodule as leaves, never as things to open into', async () => {
     const { transport, source } = build();
     transport.readRoomFiles = vi.fn().mockResolvedValue({
@@ -104,6 +132,17 @@ describe('the room files source', () => {
       kind: 'not-readable',
       reason: "This isn't a file that can be shown here.",
     });
+  });
+
+  it('does not mistake a prototype key for copy it has written', async () => {
+    const { transport, source } = build();
+    // 'constructor' is a string like any other coming off a thrown error. An
+    // object literal would have answered it from its prototype and rendered a
+    // function as the reason there is nothing to show.
+    transport.readRoomFileContent = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('weird'), { code: 'constructor' }));
+    await expect(source.read!('a.md')).rejects.toThrow('weird');
   });
 
   it('still rejects a refusal that is about the request rather than the file', async () => {

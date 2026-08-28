@@ -55,12 +55,6 @@ interface FileTreeProps {
   readOnly?: boolean;
   /** Whether rows draw the "who last touched this" column. Defaults to false. */
   provenance?: boolean;
-  /**
-   * Where the scroll offset is remembered, for a tree whose scope is not the
-   * one the feature store currently holds. Defaults to the store, which is what
-   * the session pane has always used.
-   */
-  onScrollTop?: (scrollTop: number) => void;
 }
 
 /**
@@ -75,8 +69,7 @@ export function FileTree(props: FileTreeProps) {
   const { rows, selectedPath, renamingPath, errorPaths, onSelectPath, onRetryDir } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const persistScrollTop = useFileExplorerStore((s) => s.setScrollTop);
-  const setScrollTop = props.onScrollTop ?? persistScrollTop;
+  const setScrollTop = useFileExplorerStore((s) => s.setScrollTop);
   const scopeKey = useFileExplorerStore((s) => s.scopeKey);
 
   const activate = useCallback(

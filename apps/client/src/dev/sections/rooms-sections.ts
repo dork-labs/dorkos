@@ -5,33 +5,18 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Section IDs must equal `slugify(title)` — verified by the playground-registry test suite.
  *
- * Sources: FileExplorerShowcases — Room Files. RoomsShowcases — Room Panel, RoomMemberRow, RoomAvatar,
+ * Listed in the order the page renders them, which is the order the TOC and
+ * ⌘K offer them in — a reader scanning either should be able to scroll to what
+ * they picked without passing it.
+ *
+ * Sources: RoomsShowcases — Room Panel, RoomMemberRow, RoomAvatar,
  * BridgeVisibilityBadge, ResponseModeControl, LoudnessMeter, RoomLoudnessLine,
- * AgentRosterPicker, RemoveMemberConfirm. RoomThreadShowcases — ThreadReplyRow,
- * RoomThreadPanel, Thread arrival animations.
+ * AgentRosterPicker, RemoveMemberConfirm. FileExplorerShowcases — Room Files.
+ * RoomThreadShowcases — ThreadReplyRow, RoomThreadPanel, Thread arrival
+ * animations. RoomDeliveryShowcases — Room moments, Room notices, PendingRow,
+ * Message.Attachments.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
-  {
-    id: 'room-files',
-    title: 'Room Files',
-    page: 'rooms',
-    category: 'Rooms',
-    keywords: [
-      'files',
-      'explorer',
-      'tree',
-      'repo',
-      'git',
-      'provenance',
-      'commit',
-      'pinned',
-      'ROOM.md',
-      'README',
-      'hidden',
-      'dotfiles',
-      'preview',
-    ],
-  },
   {
     id: 'room-panel',
     title: 'Room Panel',
@@ -137,6 +122,27 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['remove', 'confirm', 'undo', 'toast', 'member', 'destructive'],
   },
   {
+    id: 'room-files',
+    title: 'Room Files',
+    page: 'rooms',
+    category: 'Rooms',
+    keywords: [
+      'files',
+      'explorer',
+      'tree',
+      'repo',
+      'git',
+      'provenance',
+      'commit',
+      'pinned',
+      'ROOM.md',
+      'README',
+      'hidden',
+      'dotfiles',
+      'preview',
+    ],
+  },
+  {
     id: 'threadreplyrow',
     title: 'ThreadReplyRow',
     page: 'rooms',
@@ -168,6 +174,22 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
       'pushed',
       'mobile',
       'composer',
+    ],
+  },
+  {
+    id: 'thread-arrival-animations',
+    title: 'Thread arrival animations',
+    page: 'rooms',
+    category: 'Threads',
+    keywords: [
+      'thread',
+      'animation',
+      'connector',
+      'drop',
+      'hand-off',
+      'handoff',
+      'presence',
+      'micro-interaction',
     ],
   },
   {
@@ -215,21 +237,5 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Delivery',
     keywords: ['attachment', 'file', 'image', 'thumbnail', 'download', 'chip', 'upload'],
-  },
-  {
-    id: 'thread-arrival-animations',
-    title: 'Thread arrival animations',
-    page: 'rooms',
-    category: 'Threads',
-    keywords: [
-      'thread',
-      'animation',
-      'connector',
-      'drop',
-      'hand-off',
-      'handoff',
-      'presence',
-      'micro-interaction',
-    ],
   },
 ];

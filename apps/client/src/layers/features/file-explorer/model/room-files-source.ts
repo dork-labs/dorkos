@@ -16,7 +16,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomFileEntry } from '@dorkos/shared/room-files';
 import { roomKeys } from '@/layers/entities/room';
-import { errorCodeOf } from '../lib/error-code';
+import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
 import type { ExplorerEntry, ExplorerFile, ExplorerListing, FileExplorerSource } from './source';
 
 /**
@@ -68,11 +68,16 @@ function toExplorerEntry(entry: RoomFileEntry): ExplorerEntry {
  * A directory, a link and a submodule are all real answers to "show me this" —
  * there is simply nothing to show — so they become a body the preview renders,
  * not an error it apologises for. Everything else stays a rejection.
+ *
+ * A `Map` rather than an object literal because the key is a string off a
+ * thrown error, and an object would answer `'constructor'` and `'toString'`
+ * with something from its prototype — turning a refusal nobody wrote copy for
+ * into a "preview" of a function.
  */
-const NOT_READABLE_COPY: Record<string, string> = {
-  ROOM_FILE_NOT_READABLE: "This isn't a file that can be shown here.",
-  ROOM_FILE_NOT_FOUND: "This file isn't in the room's files any more.",
-};
+const NOT_READABLE_COPY = new Map<string, string>([
+  ['ROOM_FILE_NOT_READABLE', "This isn't a file that can be shown here."],
+  ['ROOM_FILE_NOT_FOUND', "This file isn't in the room's files any more."],
+]);
 
 /**
  * Build the source for a room's own files.
@@ -93,8 +98,18 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     filtersHidden: false,
     preview: 'inline',
     async list(path: string): Promise<ExplorerListing> {
-      const listing = await transport.readRoomFiles(roomId, path === '' ? undefined : path);
-      return { entries: listing.entries.map(toExplorerEntry) };
+      try {
+        const listing = await transport.readRoomFiles(roomId, path === '' ? undefined : path);
+        return { entries: listing.entries.map(toExplorerEntry) };
+      } catch (error) {
+        // "This room has no files of its own" is the ordinary answer, not a
+        // failure: most rooms are conversations and always will be. Left on the
+        // rejection path it was retried, logged as a query error and dropped a
+        // breadcrumb — once per repo-less room a person opened, which at any
+        // scale is most of them. It comes back as a listing that says so.
+        if (errorCodeOf(error) !== ROOM_HAS_NO_REPO_CODE) throw error;
+        return { entries: [], absent: true };
+      }
     },
     async read(path: string): Promise<ExplorerFile> {
       try {
@@ -111,7 +126,7 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
                 : { kind: 'too-large', maxBytes: file.body.maxBytes },
         };
       } catch (error) {
-        const reason = NOT_READABLE_COPY[errorCodeOf(error) ?? ''];
+        const reason = NOT_READABLE_COPY.get(errorCodeOf(error) ?? '');
         if (reason === undefined) throw error;
         return { path, size: 0, lastCommit: null, body: { kind: 'not-readable', reason } };
       }

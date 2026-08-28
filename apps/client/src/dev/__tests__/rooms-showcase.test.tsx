@@ -306,7 +306,12 @@ describe('the page itself draws every section', () => {
       expect(document.getElementById(section.id)).not.toBeNull();
     }
     expect(screen.queryByText(/crashed$/)).not.toBeInTheDocument();
-  });
+    // A generous ceiling on purpose. These two render the WHOLE page, so their
+    // cost is the page's — every section anybody adds lands in both, and the
+    // default 5s was already within a second of the real ~4s when Room Files
+    // arrived. The number is not a performance budget; it is headroom so that a
+    // page growing by a section reds on an assertion rather than on a clock.
+  }, 20_000);
 
   it('draws every loudness level and every rung the two room kinds offer', async () => {
     render(
@@ -333,7 +338,7 @@ describe('the page itself draws every section', () => {
     // three would be the collapse this page exists to show is gone.
     const groups = screen.getAllByRole('radiogroup');
     expect(groups.map((group) => within(group).getAllByRole('radio').length)).toEqual([4, 4, 4, 4]);
-  });
+  }, 20_000);
 });
 
 describe('the rooms page is wired into the playground', () => {

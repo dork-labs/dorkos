@@ -80,6 +80,21 @@ export interface ExplorerEntry {
 export interface ExplorerListing {
   /** The directory's immediate children. */
   entries: ExplorerEntry[];
+  /**
+   * Set when the place behind the source does not have files at all.
+   *
+   * Different from an empty directory, and deliberately not an error. Most
+   * rooms are conversations and will never have files of their own, so "this
+   * room has none" is the ordinary answer rather than a failure — and routing
+   * it through the rejection path would mean every repo-less room a person
+   * opened logged a query error and dropped a breadcrumb into their next bug
+   * report. Same move {@link ExplorerFileBody}'s `not-readable` makes for a
+   * file there is nothing to show for.
+   *
+   * A surface that offers files only where there are any renders nothing on
+   * this; one that always shows a tree renders an empty one.
+   */
+  absent?: true;
 }
 
 /**
@@ -182,23 +197,40 @@ export interface FileExplorerSource {
   events?(onChange: () => void): () => void;
 }
 
+/** The parts of a source that decide where its listings are cached. */
+type ExplorerCacheIdentity = Pick<FileExplorerSource, 'scopeKey' | 'filtersHidden'>;
+
 /**
  * The query key one directory of one source is cached under.
  *
  * Deliberately the shape it has always had, with the scope key sitting where
- * the working directory used to: a session source's `scopeKey` IS its cwd, so
- * the keys are byte-identical to the ones before sources existed.
+ * the working directory used to: a session source's `scopeKey` IS its cwd and
+ * it filters server-side, so its keys are byte-identical to the ones before
+ * sources existed.
  *
- * @param scopeKey - The source's identity.
+ * **`showHidden` partitions the key only for a source that filters it.** The
+ * flag is in the key because it changes the server's ANSWER — ask with it off
+ * and the dotfiles are not in the response. A source that serves its tree whole
+ * and leaves the filtering to the pane gives the same bytes either way, so
+ * partitioning on it there would buy a fresh round trip every time the eye is
+ * pressed, to be handed back what is already in the cache.
+ *
+ * @param source - The source's identity: where it caches, and who filters.
  * @param dirPath - The directory, `''` for the root.
- * @param showHidden - Part of the key, because it partitions the answer.
+ * @param showHidden - Whether hidden entries are wanted.
  */
 export function explorerDirQueryKey(
-  scopeKey: string,
+  source: ExplorerCacheIdentity,
   dirPath: string,
   showHidden: boolean
 ): readonly unknown[] {
-  return ['file-explorer', 'tree', scopeKey, dirPath, showHidden] as const;
+  return [
+    'file-explorer',
+    'tree',
+    source.scopeKey,
+    dirPath,
+    source.filtersHidden ? showHidden : null,
+  ] as const;
 }
 
 /**
@@ -222,7 +254,7 @@ export function explorerDirQueryOptions(
   queryClient: QueryClient
 ) {
   return {
-    queryKey: explorerDirQueryKey(source.scopeKey, dirPath, showHidden),
+    queryKey: explorerDirQueryKey(source, dirPath, showHidden),
     queryFn: () => source.list(dirPath, { showHidden }),
     staleTime: QUERY_TIMING.FILE_TREE_STALE_TIME_MS,
     gcTime: QUERY_TIMING.FILE_TREE_GC_TIME_MS,
@@ -232,10 +264,10 @@ export function explorerDirQueryOptions(
     // key finds no previous data of its own — so read the sibling (opposite
     // show-hidden) listing straight from the cache as the placeholder instead.
     // A first-ever expand has neither key cached, so its skeleton still shows.
+    // For a source the pane filters itself both keys are the same one, and
+    // `prev` answers before the cache is ever consulted.
     placeholderData: (prev: ExplorerListing | undefined) =>
       prev ??
-      queryClient.getQueryData<ExplorerListing>(
-        explorerDirQueryKey(source.scopeKey, dirPath, !showHidden)
-      ),
+      queryClient.getQueryData<ExplorerListing>(explorerDirQueryKey(source, dirPath, !showHidden)),
   };
 }
