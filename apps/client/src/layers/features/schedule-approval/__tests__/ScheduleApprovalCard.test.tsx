@@ -60,6 +60,9 @@ function proposal(overrides: Partial<Task> = {}): Task {
     sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
+    runtime: null,
+    model: null,
+    effort: null,
     status: 'pending_approval',
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: minutesFromLoad(-20),
@@ -88,6 +91,8 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
     error: null,
     sessionId: null,
     trigger: 'manual',
+    resolvedRuntime: null,
+    resolvedModel: null,
     createdAt: minutesFromLoad(-1),
     ...overrides,
   };

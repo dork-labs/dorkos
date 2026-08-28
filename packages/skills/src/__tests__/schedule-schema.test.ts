@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
+import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import {
   ScheduleBlockSchema,
   TASK_PERMISSION_MODES,
@@ -79,6 +80,52 @@ describe('ScheduleBlockSchema', () => {
     expect(ScheduleBlockSchema.parse({ origin: 'shape' }).origin).toBe('shape');
     expect(ScheduleBlockSchema.parse({ origin: 'plugin' }).origin).toBe('plugin');
     expect(ScheduleBlockSchema.safeParse({ origin: 'somewhere' }).success).toBe(false);
+  });
+
+  // === runtime / model / effort (DOR-1615) ===
+
+  it('reads the three execution runtimes and leaves them absent when unset', () => {
+    for (const runtime of ['claude-code', 'codex', 'opencode']) {
+      expect(ScheduleBlockSchema.parse({ runtime }).runtime).toBe(runtime);
+    }
+    expect(ScheduleBlockSchema.parse({}).runtime).toBeUndefined();
+  });
+
+  // Registration is a question about the machine that FIRES the schedule, not
+  // about the file — a runtime this build has no adapter for has to reach the
+  // resolver, which fails the run naming it. An enum here would park the whole
+  // file instead, which says nothing useful and costs the skill.
+  it('accepts a runtime id no adapter ships, rather than parking the file', () => {
+    expect(ScheduleBlockSchema.parse({ runtime: 'gemini' }).runtime).toBe('gemini');
+  });
+
+  it('degrades an unreadable runtime/model to absent instead of failing the block', () => {
+    // A YAML mapping under `runtime:` is what a hand-edit produces; absent means
+    // "the agent's runtime", which is the answer a schedule had before the field.
+    expect(ScheduleBlockSchema.parse({ runtime: { name: 'codex' } }).runtime).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({ runtime: '' }).runtime).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({ model: 42 }).model).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({ model: '' }).model).toBeUndefined();
+  });
+
+  it('takes a model id at face value, in whatever namespace it is written', () => {
+    for (const model of ['sonnet', 'claude-opus-4-6', 'gpt-5.5', 'anthropic/claude-sonnet-4-5']) {
+      expect(ScheduleBlockSchema.parse({ model }).model).toBe(model);
+    }
+  });
+
+  it('reads the shared effort ladder and drops a rung outside it', () => {
+    expect(ScheduleBlockSchema.parse({ effort: 'high' }).effort).toBe('high');
+    expect(ScheduleBlockSchema.parse({ effort: 'xhigh' }).effort).toBe('xhigh');
+    expect(ScheduleBlockSchema.parse({ effort: 'ludicrous' }).effort).toBeUndefined();
+  });
+
+  // The block's ladder is the shared one every runtime maps into — never the
+  // narrow four-rung enum the skill's own top-level `effort:` carries.
+  it('accepts every rung of the shared effort ladder', () => {
+    for (const level of EFFORT_LEVELS) {
+      expect(ScheduleBlockSchema.parse({ effort: level }).effort).toBe(level);
+    }
   });
 
   // The falsy rows are the ones that discriminate: `enabled` falls back to
@@ -256,6 +303,34 @@ describe('scheduleToFrontmatter', () => {
     ).toEqual({ cron: '0 9 * * *' });
   });
 
+  // Three fields, one rule: an absent one stays absent (it means "the agent's
+  // answer"), and a set one is written back verbatim. A field the writer drops
+  // is an override the person set in the app and lost on the next file sync.
+  it('writes runtime, model and effort back and omits them when unset (DOR-1615)', () => {
+    expect(
+      scheduleToFrontmatter(
+        ScheduleBlockSchema.parse({
+          cron: '0 9 * * *',
+          runtime: 'codex',
+          model: 'gpt-5.5',
+          effort: 'high',
+        })
+      )
+    ).toEqual({ cron: '0 9 * * *', runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
+    expect(scheduleToFrontmatter(ScheduleBlockSchema.parse({ cron: '0 9 * * *' }))).toEqual({
+      cron: '0 9 * * *',
+    });
+  });
+
+  it('round-trips runtime/model/effort through parse → write → parse (DOR-1615)', () => {
+    const written = scheduleToFrontmatter(
+      ScheduleBlockSchema.parse({ runtime: 'opencode', model: 'anthropic/claude-sonnet-4-5' })
+    );
+    const reparsed = ScheduleBlockSchema.parse(written);
+    expect(reparsed.runtime).toBe('opencode');
+    expect(reparsed.model).toBe('anthropic/claude-sonnet-4-5');
+  });
+
   it('reads YAML 1.1 boolean words for sticky, defaulting off (DOR-1571)', () => {
     expect(ScheduleBlockSchema.parse({ sticky: 'yes' }).sticky).toBe(true);
     expect(ScheduleBlockSchema.parse({ sticky: 'off' }).sticky).toBe(false);
@@ -305,6 +380,9 @@ describe('schedule block round trip through disk', () => {
           prompt: 'Check every service.',
           origin: 'plugin',
           shape: 'ops-plugin',
+          runtime: 'codex',
+          model: 'gpt-5.5',
+          effort: 'high',
         },
       },
       'Check every service and report.'
@@ -325,6 +403,9 @@ describe('schedule block round trip through disk', () => {
       prompt: 'Check every service.',
       origin: 'plugin',
       shape: 'ops-plugin',
+      runtime: 'codex',
+      model: 'gpt-5.5',
+      effort: 'high',
     });
     expect(definition.body).toBe('Check every service and report.');
   });

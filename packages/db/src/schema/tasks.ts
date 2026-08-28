@@ -77,6 +77,32 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   sticky: integer('sticky', { mode: 'boolean' }).notNull().default(false),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),
+  /**
+   * Which agent runtime this schedule's runs execute on (DOR-1615).
+   *
+   * NULL — the state every existing row starts in and the default for a new one
+   * — means "whatever this task's agent runs on", which is exactly what every
+   * scheduled run did before the column existed. A value overrides the agent.
+   *
+   * Nullable TEXT rather than a checked enum, and not because a check would be
+   * hard: whether a runtime can take a run is a question about what is
+   * REGISTERED on the machine that fires it, answered at fire time
+   * (`resolve-run-execution.ts`), and a row is a cache of a SKILL.md that a
+   * person may have written on another machine entirely.
+   */
+  runtime: text('runtime'),
+  /**
+   * The model this schedule's runs execute on, in the resolved runtime's own id
+   * space (DOR-1347). NULL follows the agent, then the server's per-runtime
+   * default, then whatever the runtime picks.
+   */
+  model: text('model'),
+  /**
+   * The reasoning-effort rung this schedule's runs execute at, on the shared
+   * ladder. NULL follows the agent and the server default. A runtime whose API
+   * has no effort at all drops it rather than pretending.
+   */
+  effort: text('effort'),
   status: text('status', {
     enum: ['active', 'paused', 'pending_approval'],
   })
@@ -120,6 +146,30 @@ export const pulseRuns = sqliteTable(
     output: text('output'), // was: output_summary
     error: text('error'),
     sessionId: text('session_id'),
+    /**
+     * The runtime this run ACTUALLY ran on, stamped at dispatch (DOR-1615).
+     *
+     * The RESOLVED answer, never the schedule's setting: a schedule that names
+     * no runtime still records the one its agent resolved to, so history says
+     * what happened rather than what is configured now. Re-reading the schedule
+     * would rewrite a run's past every time its agent changed runtime.
+     *
+     * NULL on every run written before this column, and on one whose dispatch
+     * failed before it resolved anything.
+     */
+    resolvedRuntime: text('resolved_runtime'),
+    /**
+     * The model this run RESOLVED to (DOR-1347). NULL when nothing chose one
+     * and the runtime picked for itself — which is a real answer, not a missing
+     * one — or on a run older than the column.
+     *
+     * A STICKY run that resumes a still-resident session continues on the model
+     * that session was CREATED with, so this reports the newly resolved model
+     * while the turn used the old one until the session is evicted. See
+     * `TaskRunSchema.resolvedModel` in `@dorkos/shared` for the full caveat and
+     * why it is model-only.
+     */
+    resolvedModel: text('resolved_model'),
     trigger: text('trigger', {
       enum: ['scheduled', 'manual', 'agent'],
     })

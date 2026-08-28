@@ -4434,6 +4434,33 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "runtime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "effort": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EffortLevel"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
           },
@@ -4596,6 +4623,33 @@
           "sticky": {
             "type": "boolean"
           },
+          "runtime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "effort": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EffortLevel"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
@@ -4660,6 +4714,33 @@
           },
           "sticky": {
             "type": "boolean"
+          },
+          "runtime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "effort": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EffortLevel"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
@@ -4729,6 +4810,20 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/TaskRunTrigger"
+          },
+          "resolvedRuntime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "resolvedModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           },
           "createdAt": {
             "type": "string"

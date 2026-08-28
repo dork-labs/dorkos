@@ -6,6 +6,7 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import {
   TaskSchedulerService,
+  singleRuntimeSource,
   type SchedulerAgentManager,
 } from '../../services/tasks/task-scheduler-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -394,6 +395,66 @@ describe('Tasks routes', () => {
       // and nobody is being asked to approve it.
       expect(res.body.nextRuns).toEqual([]);
     });
+
+    it('carries runtime, model and effort through to the created task (DOR-1615)', async () => {
+      const res = await request(app).post('/api/tasks').send({
+        name: 'On codex',
+        description: 'p',
+        prompt: 'p',
+        cron: '0 * * * *',
+        target: 'global',
+        runtime: 'codex',
+        model: 'gpt-5.5',
+        effort: 'high',
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
+      // The route hands `req.body` straight to `createScheduledTask`, so a field
+      // the response echoes but the ROW does not hold would be a lie-on-success.
+      expect(store.getTask(res.body.id)).toMatchObject({ runtime: 'codex', model: 'gpt-5.5' });
+    });
+
+    it.each(['constructor', '__proto__', 'toString', 'valueOf'])(
+      'creates a task naming the runtime %s instead of 500ing',
+      async (runtime) => {
+        // The create path looks the runtime's capability profile up to read the
+        // operator's trust stop in its vocabulary. A plain index answered these
+        // four with an inherited `Object.prototype` member — truthy, so it sailed
+        // past the "is it registered" guard and threw on `.settings`, turning
+        // this route (and the CLI and MCP doors behind it) into a 500 for anyone
+        // who typed one of them (DOR-1615 review).
+        //
+        // The right answer is the same as for any other unregistered runtime:
+        // accept the write — registration is a question for fire time, which
+        // fails the run loudly and names it — and resolve power through the
+        // fallback mode.
+        const res = await request(app).post('/api/tasks').send({
+          name: 'proto',
+          description: 'p',
+          prompt: 'p',
+          cron: '0 * * * *',
+          target: 'global',
+          runtime,
+        });
+
+        expect(res.status).toBe(201);
+        expect(res.body.runtime).toBe(runtime);
+        expect(res.body.permissionMode).toBe('acceptEdits');
+      }
+    );
+
+    it('leaves all three null for a create that names none', async () => {
+      const res = await request(app).post('/api/tasks').send({
+        name: 'Plain',
+        description: 'p',
+        prompt: 'p',
+        cron: '0 * * * *',
+        target: 'global',
+      });
+
+      expect(res.body).toMatchObject({ runtime: null, model: null, effort: null });
+    });
   });
 
   describe('PATCH /api/tasks/:id', () => {
@@ -506,6 +567,46 @@ describe('Tasks routes', () => {
       // what has to keep this empty.
       expect(escalation.armedSubjects()).toEqual([]);
     });
+
+    it('sets runtime, model and effort, and clears them with null (DOR-1615)', async () => {
+      const sched = store.createTask(
+        taskInput({ name: 'Retarget', prompt: 'p', cron: '0 * * * *' })
+      );
+
+      const set = await request(app)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
+      expect(set.status).toBe(200);
+      expect(store.getTask(sched.id)).toMatchObject({
+        runtime: 'codex',
+        model: 'gpt-5.5',
+        effort: 'high',
+      });
+
+      // `null` is how every clearable field on this route spells "go back to
+      // following the agent", and it has to reach the column as null rather than
+      // being dropped as a no-op.
+      const cleared = await request(app)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ runtime: null, model: null, effort: null });
+      expect(cleared.status).toBe(200);
+      expect(store.getTask(sched.id)).toMatchObject({
+        runtime: null,
+        model: null,
+        effort: null,
+      });
+    });
+
+    it('does not refuse the three as unknown fields', async () => {
+      // `refuseUnknownTaskUpdateFields` derives its allowlist from
+      // `UpdateTaskRequestSchema.shape`, so this passes for free — and would
+      // start failing the moment the two came apart, which is the point.
+      const sched = store.createTask(taskInput({ name: 'Known', prompt: 'p', cron: '0 * * * *' }));
+
+      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ runtime: 'codex' });
+
+      expect(res.status).not.toBe(400);
+    });
   });
 
   describe('DELETE /api/tasks/:id', () => {
@@ -551,6 +652,8 @@ describe('Tasks routes', () => {
         error: null,
         sessionId: null,
         trigger: 'manual',
+        resolvedRuntime: null,
+        resolvedModel: null,
         createdAt: new Date().toISOString(),
       });
 
@@ -665,11 +768,11 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     relay = { publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }) };
     scheduler = new TaskSchedulerService({
       store,
-      agentManager: {
+      runtimes: singleRuntimeSource({
         ensureSession: vi.fn(),
         sendMessage: vi.fn(),
         interruptQuery: vi.fn().mockResolvedValue(true),
-      } as unknown as SchedulerAgentManager,
+      } as unknown as SchedulerAgentManager),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,

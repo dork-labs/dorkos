@@ -105,6 +105,9 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
+    runtime: null,
+    model: null,
+    effort: null,
     filePath: '/tmp/tasks/test.md',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -130,6 +133,8 @@ function makeRun(overrides: Partial<TaskRun> & { id: string; scheduleId: string 
     error: null,
     sessionId: null,
     trigger: 'scheduled',
+    resolvedRuntime: null,
+    resolvedModel: null,
     createdAt: '2026-01-01T00:00:00Z',
     ...overrides,
   };

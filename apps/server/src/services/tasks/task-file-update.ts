@@ -66,6 +66,12 @@ const FILE_BACKED_COLUMN = {
   sticky: 'sticky',
   permissionMode: 'permissionMode',
   prompt: 'prompt',
+  // The execution trio (DOR-1615/DOR-1347). Comparable against the row directly:
+  // the request spells "no override" as `null` and so does the column, so a
+  // re-sent current value is correctly read as no change and opens no file.
+  runtime: 'runtime',
+  model: 'model',
+  effort: 'effort',
 } as const satisfies Record<string, string>;
 
 /** The row columns {@link touchesFile} compares a request against. */
@@ -79,6 +85,12 @@ export interface FileBackedRow {
   sticky: boolean;
   permissionMode: string;
   prompt: string;
+  /** Which runtime the task's runs execute on; `null` = follow the agent. */
+  runtime?: string | null;
+  /** The model its runs execute on; `null` = follow the agent and the server default. */
+  model?: string | null;
+  /** The reasoning-effort rung its runs execute at; `null` = follow the agent. */
+  effort?: string | null;
 }
 
 /**
@@ -224,6 +236,13 @@ const SCHEDULE_FIELD: Record<string, keyof ScheduleBlock> = {
   sticky: 'sticky',
   maxRuntime: 'max-runtime',
   permissionMode: 'permissions',
+  // The execution trio (DOR-1615/DOR-1347). Inside the block, never at the top
+  // level: a top-level `model:` is the Claude Code dialect a person's own
+  // invocation of the skill reads, so a codex model id written there would be
+  // handed to Claude Code. The block is where the SCHEDULED fire's answer lives.
+  runtime: 'runtime',
+  model: 'model',
+  effort: 'effort',
 };
 
 /**

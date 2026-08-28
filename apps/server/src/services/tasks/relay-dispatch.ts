@@ -19,6 +19,7 @@ import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
+import type { RunExecution } from './execution/resolve-run-execution.js';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
@@ -59,11 +60,15 @@ const DEFAULT_DISPATCH_TTL_MS = 3_600_000;
  * @param deps - The scheduler's store, bus, run registry and cwd resolver.
  * @param task - The task being run.
  * @param run - Its run row, already opened.
+ * @param execution - What this run resolved to run on (DOR-1615). Always
+ *   claude-code here in v1 — the scheduler routes every other runtime direct,
+ *   because the bus has no adapter that could run one (DOR-1614).
  */
 export async function dispatchRunViaRelay(
   deps: RelayDispatchDeps,
   task: Task,
-  run: TaskRun
+  run: TaskRun,
+  execution: RunExecution
 ): Promise<void> {
   // Counted from here, not after a successful publish: a run handed to the bus
   // is in flight from the moment it is handed over, and the cap has to mean the
@@ -96,7 +101,12 @@ export async function dispatchRunViaRelay(
   // a first sticky fire and every non-sticky run resolve to the run's own id with
   // no resume — the wire default — so the branch below only adds fields for a
   // sticky run, keeping every non-sticky envelope byte-for-byte what it was.
-  const { sessionId, hasStarted } = resolveRunSession(deps.store, task, run);
+  // A sticky task whose resolved runtime differs from the one its previous RUN
+  // used starts FRESH, exactly as on the direct path — sessions are
+  // runtime-bound and never revised (ADR-0255, DOR-1615).
+  const { sessionId, hasStarted } = resolveRunSession(deps.store, task, run, {
+    runtimeType: execution.runtimeType,
+  });
 
   const payload: TaskDispatchPayload = {
     type: 'task_dispatch',
@@ -110,7 +120,10 @@ export async function dispatchRunViaRelay(
     // reached memory without a mode (a hand-built fixture, a future store, a
     // column that loses its constraint) resolves to the same ladder both paths
     // trust, so the two can never disagree on the level a run executes at.
-    permissionMode: task.permissionMode ?? resolveScheduledRunPermissionMode(),
+    // ...and read in the RESOLVED runtime's own mode vocabulary (DOR-1615).
+    permissionMode:
+      task.permissionMode ??
+      resolveScheduledRunPermissionMode({ capabilities: execution.capabilities }),
     taskName: task.name,
     cron: task.cron,
     trigger: run.trigger,
@@ -122,6 +135,13 @@ export async function dispatchRunViaRelay(
     // resume. Absent on a non-sticky run, where the receiver falls back to the
     // run id and starts fresh.
     ...(task.sticky ? { sessionId, resumeSession: hasStarted } : {}),
+    // What this run resolved to run on (DOR-1615/DOR-1347). Resolved HERE
+    // because only this side has the task row, the agent manifest and the
+    // server config to walk the ladder with; the receiver runs in another
+    // process and could rebuild none of it. Absent means "the runtime decides",
+    // which is byte-for-byte what every relay envelope carried before.
+    ...(execution.settings.model !== undefined ? { model: execution.settings.model } : {}),
+    ...(execution.settings.effort !== undefined ? { effort: execution.settings.effort } : {}),
   };
 
   // No `replyTo`. Nothing subscribes to a task run's progress: this function

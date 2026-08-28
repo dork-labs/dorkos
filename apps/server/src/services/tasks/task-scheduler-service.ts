@@ -1,7 +1,8 @@
 import { Cron } from 'croner';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
-import type { Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { EffortLevel, Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
@@ -25,6 +26,25 @@ import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
+import {
+  resolveRunExecution,
+  type RunExecution,
+  type RunExecutionRuntimes,
+} from './execution/resolve-run-execution.js';
+import { runtimeRegistry } from '../core/runtime-registry.js';
+
+/**
+ * The one runtime whose scheduled runs may travel the message bus, in v1.
+ *
+ * The relay's adapter map holds exactly one adapter and it speaks the Claude
+ * Agent SDK's session and approval vocabulary (`packages/relay/src/adapters/
+ * claude-code/`), so there is nothing on the far side that could run a Codex or
+ * OpenCode turn. Those dispatch DIRECT instead — same run, same row, same
+ * accounting, executed in this process. DOR-1614 adds the missing adapters and
+ * widens the predicate in {@link TaskSchedulerService} to "any runtime with a
+ * registered relay adapter".
+ */
+const RELAY_RUNTIME = 'claude-code';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -72,12 +92,39 @@ export interface SchedulerAgentManager {
        * that is not coming (spec `ask-parks-on-timeout` §7).
        */
       unattended?: boolean;
+      /**
+       * The model this run resolved to, in the runtime's own id space, or absent
+       * for "the runtime decides" (DOR-1347).
+       *
+       * Asked HERE and not only at `sendMessage`, because for claude-code this
+       * is the only call that can answer it: the runtime reads `session.model`
+       * when it launches a query, and that field is written once, when the
+       * session record is created (`messaging/launch-resolver.ts`). A model
+       * handed over afterwards reaches nothing. `agent-handler.ts` in the relay
+       * spreads its resolved settings into both calls for exactly this reason.
+       */
+      model?: string;
+      /** The reasoning-effort rung this run resolved to; absent leaves it unset. */
+      effort?: EffortLevel;
     }
   ): void;
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: PermissionMode; cwd?: string; systemPromptAppend?: string }
+    opts?: {
+      permissionMode?: PermissionMode;
+      cwd?: string;
+      systemPromptAppend?: string;
+      /**
+       * Sent again, for the same reason the permission mode and the cwd are: the
+       * runtime contract resolves a turn as per-send override → persisted → its
+       * own default, and a runtime whose sessions are not held in memory sees
+       * this call and not `ensureSession`.
+       */
+      model?: string;
+      /** See {@link SchedulerAgentManager.sendMessage}'s `model`. */
+      effort?: EffortLevel;
+    }
   ): AsyncGenerator<StreamEvent>;
   /**
    * End the in-flight turn for a session (`AgentRuntime.interruptQuery`).
@@ -99,6 +146,78 @@ export interface SchedulerAgentManager {
   getInternalSessionId(sessionId: string): string | undefined;
 }
 
+/**
+ * Where the scheduler gets an agent manager for the runtime a run RESOLVED to
+ * (DOR-1615).
+ *
+ * This replaces the single boot-bound `agentManager` the scheduler used to hold.
+ * That binding was the reason a scheduled run could only ever happen on Claude
+ * Code: `index.ts` constructed one `ClaudeCodeRuntime` and handed it over, so
+ * `runtimes.default` moved which runtime a new CHAT got and never reached a
+ * scheduled run at all.
+ *
+ * Deliberately the narrow shape rather than `RuntimeRegistry` itself — the
+ * registry satisfies it structurally, and a test can hand over three functions
+ * instead of a registry with a database behind it.
+ */
+export interface SchedulerRuntimes extends RunExecutionRuntimes {
+  /**
+   * The agent manager for a registered runtime type.
+   *
+   * Only ever called for a type {@link RunExecutionRuntimes.has} has already
+   * answered `true` for — {@link resolveRunExecution} refuses an unregistered
+   * one before anything reaches here — so a throw from this is a bug, not a
+   * state to handle.
+   */
+  get(type: string): SchedulerAgentManager;
+}
+
+/**
+ * Present ONE agent manager as a whole registry.
+ *
+ * Says "this one manager answers for whatever runtime the task resolves to" —
+ * which is precisely what the scheduler did for EVERY task before this change,
+ * so a caller that wraps a single fake keeps testing what it was written to
+ * test. The capability profiles and the default type still come from the real
+ * registry, so a scheduler built this way resolves power and settings exactly as
+ * a wired one does; only the "which manager runs it" lookup is collapsed.
+ *
+ * Exported because the tests are its callers and the collapse should be visible
+ * at each one rather than inferred from which constructor overload was used.
+ * Production never takes this path: `index.ts` hands over the registry itself.
+ *
+ * @param agentManager - The single manager to answer every lookup with.
+ */
+export function singleRuntimeSource(agentManager: SchedulerAgentManager): SchedulerRuntimes {
+  return {
+    // Never refuses. This source has one manager and no registry to ask, so
+    // refusing here would fail runs over a question it cannot answer. The
+    // capability profiles below may still come back empty, which is a
+    // different (and non-fatal) fact — see {@link RunExecution.capabilities}.
+    has: () => true,
+    get: () => agentManager,
+    getDefaultType: () => runtimeRegistry.getDefaultType(),
+    getAllCapabilities: () => runtimeRegistry.getAllCapabilities(),
+  };
+}
+
+/**
+ * Where one scheduled run happens — resolved once, used by everything
+ * (DOR-1615 review).
+ *
+ * See {@link TaskSchedulerService.resolveRunPlacement} for why the working
+ * directory and the agent's manifest directory are two separate answers.
+ */
+interface RunPlacement {
+  /** The directory the turn runs in, after the shared cwd precedence chain. */
+  cwd: string;
+  /**
+   * The agent's own project directory — the one holding `.dork/agent.json` —
+   * or absent for a task with no agent. NEVER the resolved `cwd`.
+   */
+  agentPath?: string;
+}
+
 /** Configuration for the task scheduler service. */
 export interface SchedulerConfig {
   maxConcurrentRuns: number;
@@ -116,7 +235,11 @@ export interface SchedulerConfig {
 /** Dependencies for the task scheduler service. */
 export interface SchedulerDeps {
   store: TaskStore;
-  agentManager: SchedulerAgentManager;
+  /**
+   * Every runtime a run may execute on — the registry, in production
+   * (DOR-1615). Replaces the single `agentManager` this used to take.
+   */
+  runtimes: SchedulerRuntimes;
   config: SchedulerConfig;
   /** Optional RelayCore instance for dispatching runs via the Relay message bus. */
   relay?: RelayCore | null;
@@ -155,7 +278,7 @@ export class TaskSchedulerService {
    */
   private runs: RunAccounting;
   private store: TaskStore;
-  private agentManager: SchedulerAgentManager;
+  private runtimes: SchedulerRuntimes;
   private config: SchedulerConfig;
   private relay: RelayCore | null;
   private meshCore: MeshCore | null;
@@ -195,10 +318,10 @@ export class TaskSchedulerService {
     relay?: RelayCore | null,
     meshCore?: MeshCore | null
   ) {
-    if ('store' in storeOrDeps && 'agentManager' in storeOrDeps && 'config' in storeOrDeps) {
+    if ('store' in storeOrDeps && 'runtimes' in storeOrDeps && 'config' in storeOrDeps) {
       // SchedulerDeps object form
       this.store = storeOrDeps.store;
-      this.agentManager = storeOrDeps.agentManager;
+      this.runtimes = storeOrDeps.runtimes;
       this.config = storeOrDeps.config;
       this.relay = storeOrDeps.relay ?? null;
       this.meshCore = storeOrDeps.meshCore ?? null;
@@ -207,9 +330,22 @@ export class TaskSchedulerService {
         storeOrDeps.leaderLock ??
         (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
     } else {
-      // Positional args form (backwards-compatible)
+      // A deps object that is MISSING `runtimes` reaches here and would be
+      // silently treated as a `TaskStore`, leaving `this.store.getTask`
+      // undefined until the first dispatch. TypeScript does not catch it — the
+      // first parameter is a union, so the object simply matches the other arm
+      // — and it is exactly what the rename from `agentManager` to `runtimes`
+      // produced in three integration tests (DOR-1615). Said out loud instead.
+      if ('store' in storeOrDeps && 'config' in storeOrDeps) {
+        throw new TypeError(
+          'TaskSchedulerService was given a deps object with no `runtimes`. ' +
+            'The scheduler resolves a runtime per run off the registry; pass ' +
+            '`runtimes: runtimeRegistry`, or `runtimes: singleRuntimeSource(fake)` in a test.'
+        );
+      }
+      // Positional args form: one agent manager standing in for every runtime.
       this.store = storeOrDeps as TaskStore;
-      this.agentManager = agentManager!;
+      this.runtimes = singleRuntimeSource(agentManager!);
       this.config = config!;
       this.relay = relay ?? null;
       this.meshCore = meshCore ?? null;
@@ -624,15 +760,27 @@ export class TaskSchedulerService {
   }
 
   /**
-   * Resolve the effective working directory for a task.
+   * Resolve, ONCE per run, the two directories a scheduled run needs.
    *
-   * When the task is linked to an agent (via agentId), MeshCore turns the agent
-   * id into a directory and the shared precedence chain
-   * (`services/workspace/resolve-session-cwd.ts`) turns that into the directory
-   * the run actually gets — the agent's own folder for the default `home`
-   * binding, its private checkout for `managed`. Before that chain existed this
-   * method WAS the derivation, and it would have kept answering `projectPath`
-   * for an agent that had asked for a checkout of its own.
+   * They are genuinely two different questions and conflating them was a bug
+   * (DOR-1615 review):
+   *
+   * - **`cwd` — where the run WORKS.** MeshCore turns the agent id into a
+   *   directory and the shared precedence chain
+   *   (`services/workspace/resolve-session-cwd.ts`) turns that into the
+   *   directory the run actually gets — the agent's own folder for the default
+   *   `home` binding, its private checkout for `managed`, and `DEFAULT_CWD` for
+   *   `none` or a binding the boundary refuses.
+   * - **`agentPath` — where the agent's `.dork/agent.json` LIVES.** That is the
+   *   pre-chain `projectPath`, always. A `managed` agent's provisioned checkout
+   *   has no manifest in it, and a `none` binding lands on `DEFAULT_CWD`, which
+   *   may hold a DIFFERENT agent's manifest entirely — so reading the execution
+   *   ladder's agent tier out of `cwd` silently lost the agent's own
+   *   model/runtime, or picked up a stranger's.
+   *
+   * Resolved once and threaded to both consumers because the chain is not free:
+   * in `managed` mode it provisions (a git checkout and a port allocation), and
+   * its rungs degrade independently, so asking twice could also answer twice.
    *
    * Two failures, told apart on purpose:
    *
@@ -650,10 +798,10 @@ export class TaskSchedulerService {
    * the other only says WHERE.
    *
    * @param task - The task to resolve CWD for
-   * @returns The absolute path to use as CWD for this run
+   * @returns Where the run works, and where its agent's manifest lives
    * @throws When agentId is set but the agent is not found in the Mesh registry
    */
-  private async resolveEffectiveCwd(task: Task): Promise<string> {
+  private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
     if (task.agentId && this.meshCore) {
       const projectPath = this.meshCore.getProjectPath(task.agentId);
       if (!projectPath) {
@@ -662,13 +810,16 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return (await resolveSessionCwd({ agentPath: projectPath })).cwd;
+      return {
+        cwd: (await resolveSessionCwd({ agentPath: projectPath })).cwd,
+        agentPath: projectPath,
+      };
     }
     // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
     // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
     // agent-less task through the chain's default rung would quietly move the
     // ones where they differ.
-    return process.cwd();
+    return { cwd: process.cwd() };
   }
 
   /**
@@ -808,7 +959,39 @@ export class TaskSchedulerService {
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
       withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
-        const viaRelay = isRelayEnabled() && this.relay;
+        // Both resolved FIRST, before either dispatch path. The execution
+        // decides which path is even eligible, and a run that cannot resolve a
+        // runtime must fail without a turn being started anywhere (DOR-1615).
+        // The placement comes first because the execution ladder's agent tier
+        // reads out of it, and because resolving it once is what stops the cwd
+        // chain running (and, in `managed` mode, PROVISIONING) two or three
+        // times per run with independently degradable answers.
+        let placement: RunPlacement;
+        let execution: RunExecution;
+        try {
+          placement = await this.resolveRunPlacement(task);
+          execution = await this.resolveExecution(task, placement);
+        } catch (err) {
+          this.failRun(run, err);
+          recordDispatchEnd(dispatchId, 'failed');
+          return;
+        }
+        span.setAttr(ATTR.RUNTIME, execution.runtimeType);
+        // What actually ran, on the run row, before anything runs — see
+        // `TaskStore.recordRunExecution` for why it cannot wait until after.
+        this.store.recordRunExecution(run.id, {
+          runtime: execution.runtimeType,
+          model: execution.settings.model ?? null,
+        });
+
+        // **Claude Code only, for now.** The relay's adapter map holds exactly
+        // one adapter and it speaks the Claude Agent SDK's vocabulary, so a
+        // codex or opencode run handed to the bus would be run by the wrong
+        // adapter or by none. Those go DIRECT until DOR-1614 lands per-runtime
+        // relay adapters; widen this predicate to "has a registered relay
+        // adapter" there, do not delete it.
+        const viaRelay =
+          isRelayEnabled() && this.relay !== null && execution.runtimeType === RELAY_RUNTIME;
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         try {
           const result = viaRelay
@@ -817,12 +1000,14 @@ export class TaskSchedulerService {
                   store: this.store,
                   relay: this.relay!,
                   runs: this.runs,
-                  resolveCwd: (t) => this.resolveEffectiveCwd(t),
+                  // Already resolved, once, above — see `resolveRunPlacement`.
+                  resolveCwd: () => Promise.resolve(placement.cwd),
                 },
                 task,
-                run
+                run,
+                execution
               )
-            : await this.executeRunDirect(task, run);
+            : await this.executeRunDirect(task, run, execution, placement.cwd);
           recordDispatchEnd(dispatchId, 'answered');
           return result;
         } catch (err) {
@@ -833,24 +1018,75 @@ export class TaskSchedulerService {
     );
   }
 
-  /** Execute a run directly via AgentManager — manages AbortController, streams output, updates status. */
-  private async executeRunDirect(task: Task, run: TaskRun): Promise<void> {
-    let effectiveCwd: string | undefined;
-    try {
-      effectiveCwd = await this.resolveEffectiveCwd(task);
-    } catch (err) {
-      this.store.updateRun(run.id, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        durationMs: 0,
-        error: (err as Error).message,
-      });
-      logger.error(`run ${run.id} failed: ${(err as Error).message}`);
-      // The activity-feed event for this failure rides the TaskStore run-terminal
-      // hook (DOR-1573), fired by the `updateRun('failed')` above — the one funnel
-      // both dispatch paths share. See `createRunTerminalListener`.
-      return;
-    }
+  /**
+   * Which runtime, model and effort this task's run executes on.
+   *
+   * A thin wrapper so the scheduler's two dispatch paths ask the same question
+   * of the same resolver.
+   *
+   * The agent tier reads {@link RunPlacement.agentPath} — the agent's own
+   * project directory — and NOT the run's working directory. Those are the same
+   * folder only for the default `home` binding; a `managed` agent works in a
+   * provisioned checkout with no manifest in it, and a `none` binding works in
+   * `DEFAULT_CWD`, which may hold an unrelated agent's manifest. Passing the cwd
+   * here therefore lost the agent's own runtime and model for every binding but
+   * one, and could read a stranger's (DOR-1615 review).
+   *
+   * Absent for a task with no agent, and then the agent tiers simply drop out.
+   *
+   * @param task - The task being dispatched.
+   * @param placement - Where this run happens, already resolved.
+   * @throws {TaskRuntimeUnavailableError} When the resolved runtime is off.
+   */
+  private async resolveExecution(task: Task, placement: RunPlacement): Promise<RunExecution> {
+    return resolveRunExecution(task, {
+      runtimes: this.runtimes,
+      ...(placement.agentPath !== undefined ? { agentPath: placement.agentPath } : {}),
+    });
+  }
+
+  /**
+   * End a run that never started, with the reason on the row a person reads.
+   *
+   * The activity-feed event rides the TaskStore run-terminal hook (DOR-1573),
+   * fired by this `updateRun('failed')` — the one funnel both dispatch paths
+   * share.
+   *
+   * @param run - The run row, already opened.
+   * @param err - Why it could not start.
+   */
+  private failRun(run: TaskRun, err: unknown): void {
+    const message = err instanceof Error ? err.message : String(err);
+    this.store.updateRun(run.id, {
+      status: 'failed',
+      finishedAt: new Date().toISOString(),
+      durationMs: 0,
+      error: message,
+    });
+    logger.error(`run ${run.id} could not start: ${message}`);
+  }
+
+  /**
+   * Execute a run directly via the resolved runtime's agent manager — manages
+   * AbortController, streams output, updates status.
+   *
+   * @param task - The task being run.
+   * @param run - Its run row, already opened.
+   * @param execution - What this run resolved to run on (DOR-1615).
+   * @param effectiveCwd - Where it runs, resolved once by
+   *   {@link TaskSchedulerService.resolveRunPlacement}. A broken agent link has
+   *   already failed the run there, with the same message it used to raise here.
+   */
+  private async executeRunDirect(
+    task: Task,
+    run: TaskRun,
+    execution: RunExecution,
+    effectiveCwd: string
+  ): Promise<void> {
+    // The manager for the runtime this run RESOLVED to, not one bound at boot.
+    // Safe to `get` unconditionally: `resolveRunExecution` has already refused an
+    // unregistered type, so a throw here would be a bug rather than a state.
+    const agentManager = this.runtimes.get(execution.runtimeType);
 
     const controller = new AbortController();
     this.runs.addDirect(run.id, controller);
@@ -871,7 +1107,12 @@ export class TaskSchedulerService {
     // own id, exactly as before; a sticky run resumes the real SDK session of the
     // task's previous run, so context carries across runs (DOR-1571). Declared out
     // here, not inside the `try`, because the failure finalizer needs it too.
-    const { sessionId, hasStarted } = resolveRunSession(this.store, task, run);
+    // A sticky task whose resolved runtime differs from the one its previous RUN
+    // used starts FRESH — sessions are runtime-bound and never revised
+    // (ADR-0255), so there is nothing there to resume (DOR-1615).
+    const { sessionId, hasStarted } = resolveRunSession(this.store, task, run, {
+      runtimeType: execution.runtimeType,
+    });
 
     // What to write as this run's `sessionId`. For a sticky run it is the RUNTIME's
     // own id after the turn — the id the SDK actually wrote its transcript under —
@@ -881,7 +1122,7 @@ export class TaskSchedulerService {
     // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
     // branch — including the failure finalizer — records the freshest answer.
     const persistedSessionId = (): string =>
-      task.sticky ? (this.agentManager.getInternalSessionId(sessionId) ?? sessionId) : sessionId;
+      task.sticky ? (agentManager.getInternalSessionId(sessionId) ?? sessionId) : sessionId;
 
     try {
       // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
@@ -898,12 +1139,23 @@ export class TaskSchedulerService {
       // and it answers with the same ladder rather than a second hardcoded
       // constant, so the two can never disagree. Still `'acceptEdits'` when
       // nothing is configured, which is what this line always did.
+      //
+      // The profile is the RESOLVED runtime's, so a task that runs on Codex has
+      // its trust stop read in Codex's mode vocabulary (DOR-1615).
       const permissionMode = (task.permissionMode ??
-        resolveScheduledRunPermissionMode()) as PermissionMode;
+        resolveScheduledRunPermissionMode({
+          capabilities: execution.capabilities,
+        })) as PermissionMode;
 
-      this.agentManager.ensureSession(sessionId, {
+      agentManager.ensureSession(sessionId, {
         permissionMode,
         cwd: effectiveCwd,
+        // What this run resolved to run on. Spread into BOTH calls, the way
+        // `agent-handler.ts` spreads its own, because the two seams answer for
+        // different runtimes: claude-code reads the model off the session record
+        // at launch, while a runtime that does not hold sessions in memory sees
+        // only the send. Absent keys mean "the runtime decides".
+        ...execution.settings,
         // Resume a sticky session that has already run, so the turn picks the
         // conversation back up rather than starting over. This explicit
         // `ensureSession` short-circuits `sendMessage`'s own transcript probe, so
@@ -917,16 +1169,17 @@ export class TaskSchedulerService {
       });
 
       const taskAppend = buildTaskAppend(task, run);
-      const stream = this.agentManager.sendMessage(sessionId, task.prompt, {
+      const stream = agentManager.sendMessage(sessionId, task.prompt, {
         permissionMode,
         cwd: effectiveCwd,
         systemPromptAppend: taskAppend,
+        ...execution.settings,
       });
 
       const stopped = await consumeRunStream(
         stream,
         combinedSignal,
-        () => void interruptRun(this.agentManager, sessionId),
+        () => void interruptRun(agentManager, sessionId),
         (event) => {
           // Collect first 500 chars of text output as summary
           if (event.type === 'text_delta' && outputChars < 500) {

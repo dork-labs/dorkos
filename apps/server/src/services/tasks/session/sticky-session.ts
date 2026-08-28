@@ -23,7 +23,7 @@
  *
  * So the resume target is the runtime's own session id, captured after each run
  * (`getInternalSessionId`) and persisted as that run's `TaskRun.sessionId`. The
- * next fire reads it back (`latestStickySessionId`) and resumes it, which the
+ * next fire reads it back (`latestStickyRun`) and resumes it, which the
  * runtime can genuinely rehydrate from `{id}.jsonl` cold. Storing the real id on
  * the run row also makes "click any sticky run → open its conversation" work
  * after eviction, since the row now names the actual transcript.
@@ -34,8 +34,11 @@ import type { Task, TaskRun } from '@dorkos/shared/types';
 
 /** The store method {@link resolveRunSession} needs — the resume-target lookup. */
 export interface StickySessionLookup {
-  /** The real SDK session id of the task's most recent run, or null for the first. */
-  latestStickySessionId(taskId: string): string | null;
+  /**
+   * The task's most recent run that actually ran a turn: the real SDK session id
+   * to resume, and the runtime it ran on. `null` for a task that has never run.
+   */
+  latestStickyRun(taskId: string): { sessionId: string; runtime: string | null } | null;
 }
 
 /** Which session a run runs on, and whether it resumes existing history. */
@@ -62,19 +65,50 @@ export interface RunSession {
  * fire starts fresh (under the run's own id, with the real id captured afterward
  * for the next fire to resume).
  *
+ * ## …unless the runtime changed under it (DOR-1615)
+ *
+ * A session belongs to ONE runtime, decided by the first authoritative write and
+ * never revised (ADR-0255). So a sticky task that now resolves to a different
+ * runtime than its previous run used cannot resume it: the id names a transcript
+ * in another program's store, and asking a Codex thread to be resumed by Claude
+ * Code is not a degraded resume, it is a resume of nothing.
+ *
+ * The honest answer is a FRESH session — the same answer the task's very first
+ * fire gets. Its history does not vanish: the prior runs keep their own session
+ * ids and stay clickable. What changes is that "since I last ran" starts over,
+ * which is the truth of moving a task to a different agent runtime.
+ *
+ * **The prior runtime comes off the RUN ROW**, `pulse_runs.resolved_runtime`,
+ * which the scheduler stamps on every dispatch. It used to be read from
+ * `session_metadata` through the runtime registry — but only an interactive
+ * session ever calls `persistSessionRuntime`, so a scheduled run's session has
+ * no binding there and the answer was `null` for every scheduled run ever made.
+ * The rule parsed, tested green against an injected stub, and did nothing in
+ * production (DOR-1615 review).
+ *
  * @param lookup - The resume-target lookup (the task store).
  * @param task - The task being dispatched.
  * @param run - Its run row, already opened.
+ * @param opts.runtimeType - The runtime THIS run resolved to.
  * @returns The session id and whether to resume it.
  */
 export function resolveRunSession(
   lookup: StickySessionLookup,
   task: Task,
-  run: TaskRun
+  run: TaskRun,
+  opts: { runtimeType: string }
 ): RunSession {
   if (!task.sticky) return { sessionId: run.id, hasStarted: false };
-  const previous = lookup.latestStickySessionId(task.id);
-  return previous
-    ? { sessionId: previous, hasStarted: true }
-    : { sessionId: run.id, hasStarted: false };
+  const previous = lookup.latestStickyRun(task.id);
+  if (!previous) return { sessionId: run.id, hasStarted: false };
+
+  // A prior run with no runtime on record — one written before the column
+  // existed — is resumed exactly as it always was. "Unknown" and "different"
+  // must not collapse: guessing here would manufacture a mismatch for every
+  // sticky task older than this change and throw away the history sticky exists
+  // to carry. Only a recorded runtime that DISAGREES starts over.
+  if (previous.runtime !== null && previous.runtime !== opts.runtimeType) {
+    return { sessionId: run.id, hasStarted: false };
+  }
+  return { sessionId: previous.sessionId, hasStarted: true };
 }
