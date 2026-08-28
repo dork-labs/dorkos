@@ -67,9 +67,7 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildAgentContextAppend } from '../shared/agent-context.js';
-import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
-import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
+import { buildOpenCodeTurnContext } from './turn-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -98,11 +96,8 @@ import {
   type ApprovalGateDeps,
   type ApprovalRouting,
 } from './approvals.js';
-import {
-  OPENCODE_CAPABILITIES,
-  STREAM_LIVE_TIMEOUT_MS,
-  INTERRUPT_ACK_TIMEOUT_MS,
-} from './runtime-constants.js';
+import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
+import { awaitAbortAck, delay } from './bounded-abort.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
@@ -127,55 +122,6 @@ export interface OpenCodeRuntimeOptions {
 interface ActiveTurn {
   ocSessionId: string;
   cwd: string;
-}
-
-/** Sleep helper for the stream-liveness race. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-control.ts`). */
-type AbortAck =
-  /** The backend answered, and the answer is `request`'s return value. */
-  | { kind: 'settled'; aborted: boolean }
-  /** The backend answered with a rejection — a refusal, not silence. */
-  | { kind: 'refused' }
-  /** Nothing answered inside the bound — which says nothing about whether it ever will. */
-  | { kind: 'unacked' };
-
-/**
- * Race one `session.abort` call against {@link INTERRUPT_ACK_TIMEOUT_MS},
- * mirroring the load-bearing details of claude-code's `awaitStopAck`
- * (`sessions/bounded-control.ts`, DOR-1244) for the same reason: a promise
- * that only a backend ack settles must not be trusted to settle at all.
- *
- * Never throws, whichever way the race goes and however `request` fails —
- * `request` is INVOKED here rather than passed in as an already-started
- * promise, so a SYNCHRONOUS throw from it becomes a `refused` like any other
- * failure instead of escaping past the bound this function exists to
- * provide — and never leaves a live timer behind.
- *
- * @param request - Makes the abort call and reports whether it actually aborted.
- * @returns The tri-state outcome; the caller decides what each means for its
- *   own `false` vs `true`.
- */
-function awaitAbortAck(request: () => Promise<boolean>): Promise<AbortAck> {
-  const settled: Promise<AbortAck> = (async () => request())().then(
-    (aborted) => ({ kind: 'settled', aborted }) as const,
-    () => ({ kind: 'refused' }) as const
-  );
-  let timer: NodeJS.Timeout | undefined;
-  return (async () => {
-    try {
-      const expiry = new Promise<AbortAck>((resolve) => {
-        timer = setTimeout(() => resolve({ kind: 'unacked' }), INTERRUPT_ACK_TIMEOUT_MS);
-        timer.unref?.();
-      });
-      return await Promise.race([settled, expiry]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  })();
 }
 
 /**
@@ -338,17 +284,6 @@ export class OpenCodeRuntime implements AgentRuntime {
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
 
-    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
-    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so an
-    // OpenCode agent knows who it is and how to reach its capabilities. It rides
-    // the `synthetic` part with the rest of the injected prefix, so it never
-    // renders as user-authored text.
-    // `.text` — the whole append, memory block included. The `stable` half of
-    // this result exists only for claude-code's relaunch fingerprint; opencode
-    // has no warm process to keep, so it sends everything, every turn (see
-    // `buildMemoryBlock` for what that costs).
-    const neutralContext = (await buildAgentContextAppend(cwd)).text;
-
     // Reconcile the sidecar's MCP servers BEFORE the prompt is assembled, so the
     // room verbs are named only when the `dorkos` server really registered.
     // Gating on an intention instead would tell the agent it can post whenever
@@ -361,13 +296,11 @@ export class OpenCodeRuntime implements AgentRuntime {
     const mcpClient = await this.provider.getClient(cwd);
     const { dorkosApplied } = await this.mcp.ensureManaged(mcpClient, cwd);
 
-    // Named under OpenCode's own MCP prefix — one underscore and no `mcp`
-    // marker, which is nothing like claude-code's — because a wrongly-prefixed
-    // name is as uncallable as a bare one (DOR-1292). Not applied, this is
-    // byte-identical to what an OpenCode turn carried before.
-    const agentContext = dorkosApplied
-      ? `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`
-      : neutralContext;
+    // The synthetic context prefix: the runtime-neutral blocks plus, when this
+    // turn really carries them, the room verbs. It rides the `synthetic` part
+    // with the rest of the injected prefix, so it never renders as
+    // user-authored text.
+    const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
 
     yield* this.runOpenCodeTurn(
       sessionId,

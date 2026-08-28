@@ -115,32 +115,6 @@ function resolveMcpBearer(): string | null {
 }
 
 /**
- * Whether this session is going to carry the DorkOS tools — the same question
- * {@link resolveDorkosMcpInjection} answers, minus the mint.
- *
- * It exists because the PROMPT has to be gated on the same fact as the wiring,
- * and the prompt is assembled at a point where minting a second token would be
- * pure waste (tokens accumulate per mint; nothing collects the spare).
- *
- * The one thing it cannot see is a mint FAILURE, which is the only way the two
- * answers diverge: the block would then name tools that turned out not to be
- * there, costing an agent one turn to discover it. That failure already logs a
- * warning, it is rare, and the alternative — minting twice per turn to keep a
- * paragraph honest — is worse. Anything that must be exact about tool presence
- * (reply mode, in the flip that follows this wiring) reads the injection result
- * itself, never this.
- *
- * @param agentPath - The session's working directory, when it hosts a registered
- *   agent. `undefined` answers `false`.
- */
-export function dorkosToolsEnabledFor(agentPath: string | undefined): boolean {
-  if (agentPath === undefined) return false;
-  if (configManager?.get('runtimes')?.dorkosTools !== true) return false;
-  if (configManager?.get('mcp')?.enabled !== true) return false;
-  return resolveMcpBearer() !== null;
-}
-
-/**
  * Resolve the `dorkos` MCP entry for one agent-bound session, or `null` when it
  * must not be injected.
  *

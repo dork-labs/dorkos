@@ -69,7 +69,6 @@ vi.mock('../../../core/auth/mcp-local-token.js', async (importOriginal) => {
 const {
   dorkosMcpUrl,
   resolveDorkosMcpInjection,
-  dorkosToolsEnabledFor,
   DORKOS_MCP_SERVER_NAME,
   DORKOS_MCP_HEADER_ENV_VARS,
 } = await import('../dorkos-mcp-injection.js');
@@ -251,32 +250,6 @@ describe('the dorkos MCP entry DorkOS injects into codex and opencode', () => {
           expect.any(String)
         );
       }
-    });
-  });
-
-  describe('the prompt gate', () => {
-    it('agrees with the injection on every configuration except a mint failure', async () => {
-      // `dorkosToolsEnabledFor` is what the prompt is gated on, and it exists
-      // only to avoid minting a second token per turn. It must therefore answer
-      // exactly as the injection does wherever the injection does not mint.
-      const cases = [
-        { config: wiredConfig(), agent: agentDir as string | undefined },
-        { config: wiredConfig(), agent: undefined },
-        { config: { runtimes: { dorkosTools: false }, mcp: { enabled: true } }, agent: agentDir },
-        { config: { runtimes: { dorkosTools: true }, mcp: { enabled: false } }, agent: agentDir },
-        { config: {}, agent: agentDir },
-      ];
-      for (const { config, agent } of cases) {
-        configState.value = config;
-        const injected = (await resolveDorkosMcpInjection(agent, 'Researcher')) !== null;
-        expect(dorkosToolsEnabledFor(agent), JSON.stringify(config)).toBe(injected);
-      }
-    });
-
-    it('says no when there is no bearer, matching the injection', async () => {
-      tokenMocks.local = null;
-      envState.MCP_API_KEY = undefined;
-      expect(dorkosToolsEnabledFor(agentDir)).toBe(false);
     });
   });
 });

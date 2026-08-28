@@ -207,13 +207,22 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
     expect(result.dorkosApplied).toBe(false);
   });
 
-  it('reports dorkosApplied true on a successful add, and again on the cheap re-check', async () => {
+  it('reports dorkosApplied true on a successful add, and on every reconcile after it', async () => {
     // The positive half, without which every assertion above is satisfied by a
     // method that always returns false.
-    const { client } = fakeSidecar();
+    //
+    // Both calls take the same route — a full re-add — and NOT the cheap
+    // early-return: the token is re-minted each reconcile, so the desired-set
+    // signature always differs and the skip never fires while `dorkos` is
+    // wanted. (That is deliberate; it is what keeps the credential live. The
+    // early return's true-branch is reachable only for a directory whose
+    // desired set is managed servers alone.) So what this pins is that a
+    // second, later turn still reports the tools as present.
+    const { client, adds } = fakeSidecar();
     const manager = makeManager(agentDir);
     expect((await manager.ensureManaged(client, agentDir)).dorkosApplied).toBe(true);
     expect((await manager.ensureManaged(client, agentDir)).dorkosApplied).toBe(true);
+    expect(adds).toHaveLength(2);
   });
 
   describe('when it withholds', () => {
