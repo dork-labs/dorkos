@@ -279,6 +279,7 @@ import {
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
+  RoomWorktreeManager,
 } from './services/rooms/repo/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
 import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
@@ -1199,11 +1200,24 @@ async function start() {
       maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
+  });
+  setRoomRepoService(roomRepoService);
+  // One standing working copy per (room, agent), and the reap that tidies away
+  // the empty ones (spec `project-rooms` §3.4). It gets no timer of its own:
+  // the reconciler below owns the single sweep, and therefore the single
+  // overlap guard.
+  const roomWorktrees = new RoomWorktreeManager({
+    store: roomRepoStore,
+    hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+    reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
+  });
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
   // a room's files — see its module doc for why an orphaned home directory is
-  // reported and left standing.
-  new RoomRepoReconciler(roomRepoStore).start();
+  // reported and left standing, and the worktree manager's for the four gates
+  // an agent's working copy has to fail before the reap may remove it.
+  new RoomRepoReconciler(roomRepoStore, undefined, roomWorktrees).start();
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the

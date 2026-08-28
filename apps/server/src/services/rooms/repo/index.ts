@@ -10,7 +10,19 @@ export {
   ROOM_REPO_SIDECAR_FILENAME,
   InvalidRoomIdError,
 } from './room-repo-store.js';
-export { RoomRepoReconciler, type RoomRepoReconcileResult } from './room-repo-reconciler.js';
+export {
+  RoomRepoReconciler,
+  type RoomRepoReconcileResult,
+  type RoomWorktreeReapTotals,
+} from './room-repo-reconciler.js';
+export {
+  RoomWorktreeManager,
+  roomWorktreeBranch,
+  type RoomWorktreeHandle,
+  type RoomWorktreeManagerDeps,
+  type RoomWorktreeStatus,
+  type RoomWorktreeSweepResult,
+} from './room-worktree-manager.js';
 export {
   RoomRepoService,
   ROOM_REPO_EXISTS_CODE,
