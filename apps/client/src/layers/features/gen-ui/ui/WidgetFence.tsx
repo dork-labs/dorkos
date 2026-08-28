@@ -1,6 +1,6 @@
-import { useRef } from 'react';
 import { PictureInPicture2 } from 'lucide-react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
+import { useRenderSlot } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { parseWidget } from '../model/parse-widget';
 import { WidgetRenderer } from './WidgetRenderer';
@@ -57,7 +57,9 @@ export function WidgetFence({
   isLatestMessage,
   isStreaming = false,
 }: WidgetFenceProps) {
-  const lastDocRef = useRef<WidgetDocument | null>(null);
+  // A render slot, not a ref: the latch is written and read inside the SAME
+  // render — that is what stops the flicker — and render may not read refs.
+  const lastDoc = useRenderSlot<WidgetDocument | null>(null);
   // Called unconditionally, ahead of the branches below, so hook order never
   // shifts with parse state (an early return before these would violate the
   // rules of hooks once the pop-out affordance needs them).
@@ -66,8 +68,8 @@ export function WidgetFence({
   if (!isIncomplete) {
     const result = parseWidget(code);
     if (result.ok) {
-      lastDocRef.current = result.document;
-    } else if (lastDocRef.current === null && !isStreaming) {
+      lastDoc.write(result.document);
+    } else if (lastDoc.read() === null && !isStreaming) {
       // Fence closed in a SETTLED message but never parsed into a valid
       // document — genuinely broken, show the error card. While streaming,
       // fall through to the skeleton instead: the "complete" fence may just be
@@ -81,8 +83,8 @@ export function WidgetFence({
     // else: a late invalid re-parse after a good render — keep the good render below.
   }
 
-  if (lastDocRef.current) {
-    const latchedDocument = lastDocRef.current;
+  const latchedDocument = lastDoc.read();
+  if (latchedDocument) {
     // Popping out never touches this document's own agent-action dispatch, so
     // define it here rather than lifting it — closing over the latched
     // document by value keeps the panel's title pinned to what was actually

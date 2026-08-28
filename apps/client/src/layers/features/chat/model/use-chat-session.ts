@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useTransport } from '@/layers/shared/model';
@@ -131,6 +131,19 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // stale closures from a destroyed-and-recreated session.
   const mountGenerationMapRef = useRef<Map<string, number>>(new Map());
 
+  // Seed the generation for this session before anything can write messages.
+  // A layout effect, not render: render may not touch refs, and this is the
+  // first effect the hook declares, so it lands ahead of every passive effect
+  // in the tree — nothing can reach `setMessages` before the entry exists.
+  useLayoutEffect(() => {
+    if (!sid) return;
+    if (mountGenerationMapRef.current.has(sid)) return;
+    mountGenerationMapRef.current.set(
+      sid,
+      useSessionChatStore.getState().getSession(sid).mountGeneration
+    );
+  }, [sid]);
+
   // ---------------------------------------------------------------------------
   // Store write actions
   // ---------------------------------------------------------------------------
@@ -157,12 +170,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // the store is external to the React tree (Zustand), so the setState doesn't
   // trigger re-render of a *different* component.
   if (sid) useSessionChatStore.getState().initSession(sid);
-  if (sid) {
-    const gen = useSessionChatStore.getState().getSession(sid).mountGeneration;
-    if (!mountGenerationMapRef.current.has(sid)) {
-      mountGenerationMapRef.current.set(sid, gen);
-    }
-  }
 
   // Re-init, capture mountGeneration, and touch access order when the active
   // session changes. initSession is idempotent; touchSession updates LRU order.
