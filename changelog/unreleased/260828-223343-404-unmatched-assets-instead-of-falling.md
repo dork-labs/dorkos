@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- 404 unmatched /assets/* instead of falling back to the SPA shell
+- A missing or broken app file now shows up as a clear error in your browser's network tab instead of a silently blank window (DOR-1474)
