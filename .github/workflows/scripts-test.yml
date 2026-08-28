@@ -100,6 +100,7 @@ on:
   pull_request:
     paths:
       - 'scripts/**'
+      - '.agents/skills/creating-pull-requests/scripts/**'
       - 'package.json'
       - 'apps/*/package.json'
       - 'packages/*/package.json'
@@ -116,6 +117,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/**'
+      - '.agents/skills/creating-pull-requests/scripts/**'
       - 'package.json'
       - 'apps/*/package.json'
       - 'packages/*/package.json'
@@ -245,6 +247,20 @@ jobs:
       # test rather than a mistake.
       - name: Raw-NUL-byte guard fixtures
         run: bash scripts/test-check-nul-bytes.sh
+
+      # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
+      # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
+      # collection path against a stubbed `gh`. Before DOR-1630 nothing
+      # anywhere ran this suite: it lived only as a thing you might remember
+      # to run by hand, so the bug that made FAILING() permanently
+      # unreachable shipped and stayed shipped. Needs only bash, jq and a
+      # stubbed `gh` on PATH — no pnpm — so it belongs in `fixtures`, not
+      # `harness`. Lives under `.agents/skills/creating-pull-requests/scripts/`
+      # (the skill's real files; `.claude/skills/creating-pull-requests` is a
+      # symlink to it), not `scripts/`, so it is named directly here rather
+      # than through `shell-suite-parity.test.ts`'s `scripts/test-*.sh` regex.
+      - name: Watch-PRs FAILING-state regression fixtures
+        run: bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

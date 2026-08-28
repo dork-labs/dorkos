@@ -418,7 +418,7 @@ on a **required** check that went red on **this** PR.
 
 ```bash
 .agents/skills/creating-pull-requests/scripts/watch-prs.sh --interval 60 <number> [<number>...]
-# pipe it into the Monitor tool for hands-free notification; --once for a single probe
+# pipe it into the Monitor tool for hands-free notification; --once for a single cycle
 ```
 
 It reports state **transitions** (never a once-per-PR "seen" flag that goes
