@@ -15,11 +15,16 @@
  *    the path is passed through untouched. This rung is what keeps every
  *    cockpit turn, every already-resolved task and every relay dispatch
  *    byte-for-byte what it was.
- * 2. **`room-worktree`** — DECLARED, NOT WIRED. A room turn in a repo-enabled
- *    room will resolve to that agent's standing worktree in the room's repo.
- *    Task 2.2 of the project-rooms programme wires it (spec `project-rooms`
- *    §3.5); until then {@link resolveSessionCwd} never returns this rung. It is
- *    named here so the type is the whole chain rather than most of it.
+ * 2. **`room-worktree`** — a room turn in a repo-enabled room, resolving to that
+ *    agent's standing worktree in the room's repo (spec `project-rooms` §3.5).
+ *    **Answered by `services/rooms/room-turn-cwd.ts`, not by this function**,
+ *    which is why {@link resolveSessionCwd} still never returns it. A room turn
+ *    does not reach this chain at all: its boundary is the room dispatcher, and
+ *    routing it through here would silently apply rungs 3 and 4 to room turns,
+ *    which have never been boundary-validated and have never followed a
+ *    `managed` or `none` binding. That is a real behavior change with its own
+ *    argument to make, and DOR-1597 is not where it gets made. The rung name is
+ *    shared rather than duplicated — see {@link SessionCwdRung}.
  * 3. **`agent-home` / `agent-managed`** — an agent was named, and its manifest
  *    says where it works ({@link AgentWorkspaceBindingSchema}).
  * 4. **`default`** — nobody had a better answer, so `DEFAULT_CWD`. Not a lazy
@@ -59,28 +64,10 @@ import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary
 import { logger } from '../../lib/logger.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
 import { getWorkspaceManager } from './index.js';
 
-/**
- * Which rung of the precedence chain answered.
- *
- * `room-worktree` is declared and not yet reachable — task 2.2 of the
- * project-rooms programme wires it (spec `project-rooms` §3.5).
- */
-export type SessionCwdRung =
-  'explicit' | 'room-worktree' | 'agent-home' | 'agent-managed' | 'default';
-
-/** Where a turn runs, and why. */
-export interface ResolvedCwd {
-  /** The absolute working directory the runtime should be given. */
-  cwd: string;
-  /** Which rung answered — see {@link SessionCwdRung}. */
-  rung: SessionCwdRung;
-  /** The workspace id, when a `managed` binding provisioned or reused one. */
-  workspaceId?: string;
-  /** Why a lower rung answered than the binding asked for. Absent when none did. */
-  degraded?: string;
-}
+export type { SessionCwdRung, ResolvedCwd } from './session-cwd-rung.js';
 
 /** What a caller knows about the turn it is about to start. */
 export interface ResolveSessionCwdRequest {
@@ -195,17 +182,10 @@ export async function resolveSessionCwd(
   deps: ResolveSessionCwdDeps = productionDeps()
 ): Promise<ResolvedCwd> {
   const resolved = await resolve(req, deps);
-  // One line per turn naming the rung, the directory and any degradation.
-  // Without it, "why is my agent writing there" is unanswerable, and a
-  // precedence chain that cannot be interrogated is worse than the one-rung
-  // chain it replaced.
-  logger.info('[cwd] resolved', {
-    rung: resolved.rung,
-    cwd: resolved.cwd,
-    ...(req.sessionId ? { sessionId: req.sessionId } : {}),
-    ...(resolved.workspaceId ? { workspaceId: resolved.workspaceId } : {}),
-    ...(resolved.degraded ? { degraded: resolved.degraded } : {}),
-  });
+  // One line per turn naming the rung, the directory and any degradation —
+  // written through the shared reporter so a room turn's decision and a session
+  // turn's are one greppable event rather than two.
+  logResolvedCwd(resolved, { sessionId: req.sessionId ?? null });
   return resolved;
 }
 
@@ -222,7 +202,10 @@ async function resolve(
   // promised not to do.
   if (req.cwd) return { cwd: req.cwd, rung: 'explicit' };
 
-  // Rung 2 (`room-worktree`) is not wired — task 2.2, spec `project-rooms` §3.5.
+  // Rung 2 (`room-worktree`) is answered at the ROOM's own turn boundary
+  // (`services/rooms/room-turn-cwd.ts`), and no room turn reaches this chain —
+  // see the module doc's rung 2 for why routing one through here would change
+  // what a repo-less room turn does today.
 
   const agentPath = req.agentPath ?? (req.sessionId ? await agentPathOf(req, deps) : null);
   if (agentPath) {
