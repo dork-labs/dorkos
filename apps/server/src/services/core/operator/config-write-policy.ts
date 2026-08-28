@@ -352,6 +352,13 @@ export const CONFIG_WRITE_POLICY = {
   'relay.enabled': 'agent-writable',
   // A directory DorkOS writes message history into, resolved without a boundary check.
   'relay.dataDir': 'operator-only',
+  // The two ceilings on turns agent messaging may start. Operator-only for the
+  // same sharpened reason the room spend caps are: they exist precisely BECAUSE
+  // the identity-based bounds can be defeated in the default posture (DOR-505),
+  // so an agent that could raise them would be an agent voting itself a bigger
+  // bill on the one path every messaging surface funnels through.
+  'relay.maxAgentTurnsPerAgentPerHour': 'operator-only',
+  'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
@@ -938,6 +945,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.maxTurnsPerAgentPerCascade',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
+      // The same stake on the message bus rather than in a room: the two
+      // ceilings on turns agent messaging may start (DOR-791).
+      'relay.maxAgentTurnsPerAgentPerHour',
+      'relay.maxAgentTurnsTotalPerHour',
       'rooms.engagedWindowMinutes',
       'rooms.engagedWindowPosts',
       'rooms.collectDebounceMs',

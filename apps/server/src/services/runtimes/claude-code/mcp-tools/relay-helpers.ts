@@ -7,6 +7,7 @@ import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
+import type { RelayBudget } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../../lib/logger.js';
 
 /** Sender identity injected on the external `/mcp` surface (no per-session context). */
@@ -252,4 +253,104 @@ export function publishErrorContent(e: unknown, fallback: string, fallbackCode: 
     { error: message, code, ...(code === 'ACCESS_DENIED' && { hint: ACCESS_DENIED_HINT }) },
     true
   );
+}
+
+/**
+ * What the model may say about a send's budget.
+ *
+ * The same three fields every `relay_send*` tool advertises. Deliberately a
+ * subset of {@link RelayBudget}: `hopCount` and `ancestorChain` are the
+ * pipeline's own bookkeeping and were never writable from a tool argument.
+ */
+export interface DeclaredBudget {
+  maxHops?: number;
+  ttl?: number;
+  callBudgetRemaining?: number;
+}
+
+/**
+ * The budget an outbound send actually travels on.
+ *
+ * ## Why the model's answer is not the whole answer
+ *
+ * A `relay_send` that omits `budget` gets a FRESH full one from the publish
+ * pipeline. That is right for a turn a person started by typing, and wrong for
+ * every turn the bus itself started: A messages B, B's turn sends back to A
+ * with no budget, and the hop counter that was supposed to end the exchange is
+ * back at zero. The budget an agent-triggered turn should continue is a fact the
+ * server already knows — which envelope that turn is answering — so it is read
+ * from there rather than asked of the model, exactly as the publish `from` is
+ * (see {@link resolveSenderIdentity}).
+ *
+ * ## What is inherited, and the one field that is not
+ *
+ * `hopCount`, `maxHops`, `ttl` and `callBudgetRemaining` all carry: the chain
+ * keeps counting, keeps its deadline, and keeps spending down the same
+ * allowance. `ancestorChain` deliberately does NOT.
+ *
+ * Carrying it would hand the publish gate's cycle detector a chain containing
+ * the peer that just wrote, so the very first reply back would be refused as a
+ * cycle and every agent-to-agent exchange would be exactly two messages long.
+ * Two messages is not a conversation — the rooms ceiling learned the same
+ * lesson at a cost (ADR 260823-000218: a bound "chosen to be obviously safe"
+ * turned out to stop the exchanges people had asked for, and a bound that fires
+ * during ordinary work teaches people to switch bounds off). What bounds the
+ * chain instead is what bounds every chain: the hop ceiling, the call budget,
+ * the TTL — and, above all of them, the hourly turn ceiling at the dispatch,
+ * which no chain can restart its way out of.
+ *
+ * ## A declared budget may only shrink an inherited one
+ *
+ * An agent that wants a shorter leash gets it; an agent that asks for a longer
+ * one gets the inherited number, because a bound the bounded party can raise is
+ * not a bound. With nothing inherited the declared budget stands as written —
+ * that is a fresh chain, and the pipeline's own ceilings apply to it.
+ *
+ * @param inherited - The budget of the envelope this turn is answering, if any.
+ * @param declared - What the tool call asked for, if anything.
+ * @returns The budget to publish with, or `undefined` for "pipeline default".
+ */
+export function resolveOutboundBudget(
+  inherited: RelayBudget | undefined,
+  declared: DeclaredBudget | undefined
+): Partial<RelayBudget> | undefined {
+  if (!inherited) return declared;
+  return {
+    hopCount: inherited.hopCount,
+    maxHops:
+      declared?.maxHops !== undefined
+        ? Math.min(declared.maxHops, inherited.maxHops)
+        : inherited.maxHops,
+    ttl: declared?.ttl !== undefined ? Math.min(declared.ttl, inherited.ttl) : inherited.ttl,
+    callBudgetRemaining:
+      declared?.callBudgetRemaining !== undefined
+        ? Math.min(declared.callBudgetRemaining, inherited.callBudgetRemaining)
+        : inherited.callBudgetRemaining,
+  };
+}
+
+/**
+ * What a caller is told when the hourly turn ceiling refused their message.
+ *
+ * One sentence in one place because three tools say it: they differ in what
+ * else they return, never in what happened.
+ */
+export const TURN_CEILING_ERROR =
+  'Delivered to the inbox, but no turn was started: this DorkOS has run its hourly limit ' +
+  'of turns for agent messaging. Nobody will answer until the hour rolls or the limit is raised.';
+
+/**
+ * Whether the turn ceiling refused this publish.
+ *
+ * Needed because a ceiling refusal is not a failed delivery: it refuses the
+ * TURN and leaves the mailbox copy standing, so `deliveredTo` is 1 and the
+ * ordinary "rejected with nothing delivered" check waves it through as a
+ * success. The caller who most needs to hear "nobody is going to answer" is an
+ * agent in an accidental loop — precisely the caller a `deliveredTo: 1` teaches
+ * to send again.
+ *
+ * @param rejected - The publish result's rejection list, if it had one.
+ */
+export function refusedByTurnCeiling(rejected: { reason: string }[] | undefined): boolean {
+  return rejected?.some((r) => r.reason === 'turn_ceiling') === true;
 }

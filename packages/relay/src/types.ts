@@ -246,6 +246,14 @@ export interface RelayOptions {
   maxHops?: number;
   defaultTtlMs?: number;
   defaultCallBudget?: number;
+  /**
+   * The two hourly ceilings on agent turns started over the bus, read per
+   * dispatch so a Settings change takes effect at once.
+   *
+   * Omit and the shipped defaults apply — this is a spend bound, so an unwired
+   * host is capped, never uncapped (`turn-ceiling.ts`).
+   */
+  turnCeiling?: import('./turn-ceiling.js').TurnCeilingLimits;
   /** Optional reliability configuration. Omit to use built-in defaults for all subsystems. */
   reliability?: ReliabilityConfig;
   /**
@@ -425,7 +433,14 @@ export interface PublishResult {
       // `serverBridgePrincipal` trust marker — a caller-supplied bridge
       // principal that slipped past or around the HTTP route guard. Rejected
       // before the consent gate and any delivery.
-      | 'untrusted_bridge_principal';
+      | 'untrusted_bridge_principal'
+      // DOR-791: the hourly ceiling on agent turns refused this dispatch at the
+      // adapter step. Distinct from `budget_exceeded`, which is the ENVELOPE's
+      // own budget running out along one chain — this one is the install's
+      // wallet, counted across every chain and every surface, so a caller can
+      // tell "this conversation went on too long" apart from "this DorkOS has
+      // started as many turns this hour as you allowed".
+      | 'turn_ceiling';
   }>;
 
   /** Per-endpoint pressure ratios for proactive signaling (0.0-1.0). */
@@ -555,6 +570,33 @@ export interface RelayAdapter {
     envelope: RelayEnvelope,
     context?: AdapterContext
   ): Promise<DeliveryResult>;
+
+  /**
+   * Whether delivering this subject makes this adapter run a real, paid model
+   * turn (DOR-791).
+   *
+   * The publish pipeline's turn ceiling asks this at the dispatch, because the
+   * dispatch is the only place that knows the answer. Deciding it from the
+   * subject upstream is what let `relay.system.tasks.*` through: the Claude Code
+   * adapter answers for that prefix too, routes it to a handler that calls
+   * `ensureSession` + `sendMessage`, and the ceiling — which matched only
+   * `relay.agent.*` — never counted it. Any adapter that grows a second
+   * turn-running prefix would reopen the same door silently.
+   *
+   * Optional so an adapter that never runs turns (Telegram, Slack, a webhook)
+   * says nothing and is treated as free, which it is.
+   *
+   * **An adapter that DOES run turns must implement it.** Staying silent does
+   * not mean "uncounted" — it means "fall back to the shipped prefixes"
+   * (`relay.agent.*`, `relay.system.tasks.*`), which the pipeline also uses for
+   * registry shims that cannot resolve an adapter at all. That fallback is a
+   * safety net for the two prefixes that exist today and nothing more: a silent
+   * adapter answering for a NOVEL prefix goes uncounted, and its turns are free.
+   * Which is exactly why this method, not the prefix list, is the contract.
+   *
+   * @param subject - The subject about to be delivered.
+   */
+  startsAgentTurns?(subject: string): boolean;
 
   /** Current adapter status */
   getStatus(): AdapterStatus;

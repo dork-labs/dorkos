@@ -56,6 +56,9 @@ export { enforceBudget, createDefaultBudget } from './budget-enforcer.js';
 
 // Reliability modules
 export { checkRateLimit, resolveLimit, DEFAULT_RATE_LIMIT_CONFIG } from './rate-limiter.js';
+export { RelayTurnCeiling, defaultTurnCeilingLimits } from './turn-ceiling.js';
+export type { TurnCeilingLimits, TurnCeilingDecision, TurnCeilingScope } from './turn-ceiling.js';
+export { InboundTurnBudgets } from './inbound-turn-budgets.js';
 export { CircuitBreakerManager, DEFAULT_CB_CONFIG } from './circuit-breaker.js';
 export { checkBackpressure, DEFAULT_BP_CONFIG } from './backpressure.js';
 

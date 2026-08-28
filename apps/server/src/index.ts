@@ -1388,6 +1388,15 @@ async function start() {
           db,
           traceStore,
           logger,
+          // The hourly ceiling on turns agent messaging may start (DOR-791),
+          // enforced at the adapter dispatch every surface funnels through.
+          // Read from config PER DISPATCH, not captured here, so a change in
+          // Settings takes effect at once rather than at the next restart —
+          // the same contract the room ceilings have.
+          turnCeiling: {
+            perAgent: () => configManager.get('relay').maxAgentTurnsPerAgentPerHour,
+            global: () => configManager.get('relay').maxAgentTurnsTotalPerHour,
+          },
           // Tick the Pulse attention badge the instant a message is dead-lettered
           // (DOR-403) instead of waiting for the 30s dead-letters poll, and
           // leave a quiet row in the inbox so it is still findable tomorrow.

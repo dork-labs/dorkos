@@ -21,6 +21,37 @@ import {
 } from '../config-schema.js';
 import type { UserConfig, SidebarPrefs } from '../config-schema.js';
 
+describe('the relay turn ceiling', () => {
+  /**
+   * Parse just the relay block, with the two ceiling fields under test.
+   *
+   * @param relay - The partial relay config to parse.
+   */
+  function parseRelay(relay: Record<string, unknown>) {
+    return UserConfigSchema.safeParse({ version: 1, relay });
+  }
+
+  it('accepts the whole declared range, both ends', () => {
+    expect(parseRelay({ maxAgentTurnsTotalPerHour: 0 }).success).toBe(true);
+    expect(parseRelay({ maxAgentTurnsTotalPerHour: 100_000 }).success).toBe(true);
+    expect(parseRelay({ maxAgentTurnsPerAgentPerHour: 0 }).success).toBe(true);
+    expect(parseRelay({ maxAgentTurnsPerAgentPerHour: 100_000 }).success).toBe(true);
+  });
+
+  it('refuses a number outside it, so no surface can offer a ceiling the store would take', () => {
+    expect(parseRelay({ maxAgentTurnsTotalPerHour: -1 }).success).toBe(false);
+    expect(parseRelay({ maxAgentTurnsTotalPerHour: 100_001 }).success).toBe(false);
+    expect(parseRelay({ maxAgentTurnsPerAgentPerHour: 100_001 }).success).toBe(false);
+    expect(parseRelay({ maxAgentTurnsPerAgentPerHour: 1.5 }).success).toBe(false);
+  });
+
+  it('keeps `null` — no limit — as a distinct state rather than a number in range', () => {
+    const parsed = parseRelay({ maxAgentTurnsTotalPerHour: null });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.relay.maxAgentTurnsTotalPerHour).toBeNull();
+  });
+});
+
 describe('UserConfigSchema', () => {
   it('parses minimal input with defaults filled', () => {
     const result = UserConfigSchema.parse({ version: 1 });
@@ -65,7 +96,12 @@ describe('UserConfigSchema', () => {
         browserPermissionPrimerDismissed: false,
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
-      relay: { enabled: true, dataDir: null },
+      relay: {
+        enabled: true,
+        dataDir: null,
+        maxAgentTurnsPerAgentPerHour: 1000,
+        maxAgentTurnsTotalPerHour: 5000,
+      },
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
@@ -432,7 +468,12 @@ describe('USER_CONFIG_DEFAULTS', () => {
         browserPermissionPrimerDismissed: false,
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
-      relay: { enabled: true, dataDir: null },
+      relay: {
+        enabled: true,
+        dataDir: null,
+        maxAgentTurnsPerAgentPerHour: 1000,
+        maxAgentTurnsTotalPerHour: 5000,
+      },
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },

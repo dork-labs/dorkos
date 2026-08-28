@@ -100,6 +100,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'notifications.sounds.turnEnd',
       'providers',
       'relay.dataDir',
+      'relay.maxAgentTurnsPerAgentPerHour',
+      'relay.maxAgentTurnsTotalPerHour',
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.engagedWindowMinutes',

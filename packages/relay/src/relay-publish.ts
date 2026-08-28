@@ -12,6 +12,7 @@ import { validateSubject, matchesPattern } from './subject-matcher.js';
 import { requiresInitiateConsent, BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
+import { RelayTurnCeiling, type TurnCeilingScope } from './turn-ceiling.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { EndpointRegistry } from './endpoint-registry.js';
 import type { SubscriptionRegistry } from './subscription-registry.js';
@@ -63,6 +64,55 @@ export interface PublishDeps {
   adapterRegistry?: AdapterRegistryLike;
   traceStore?: TraceStoreLike;
   logger?: RelayLogger;
+  /**
+   * The install-wide ceiling on agent turns started over the bus.
+   *
+   * Optional in the type and never optional in effect: RelayCore always
+   * constructs one (with the shipped defaults when a host wires no limits), so
+   * a pipeline built without it is a test double, not a production path.
+   */
+  turnCeiling?: RelayTurnCeiling;
+}
+
+/**
+ * Subject prefixes whose adapter dispatch starts a real, paid turn.
+ *
+ * The FALLBACK, and it covers two cases rather than one: a registry shim that
+ * cannot resolve an adapter at all (no `getBySubject`), AND a resolved adapter
+ * that stays silent about {@link RelayAdapter.startsAgentTurns}. The
+ * authoritative answer is the adapter's own, because the adapter is what knows
+ * which of its prefixes end in `sendMessage`.
+ *
+ * **So this list is a net under today's prefixes, not a substitute for the
+ * method.** A silent adapter answering for one of these two is counted; a silent
+ * adapter answering for a prefix nobody has invented yet is NOT, and its turns
+ * are free. That is the reason a turn-running adapter must implement the method
+ * rather than lean on this.
+ *
+ * Both entries are here because both were reachable and only one was counted:
+ * `relay.system.tasks.*` runs a scheduled turn through the SAME dispatch, and
+ * `relay_send` will publish to it (`isReservedSubject` guards registration, not
+ * publishing), so the ceiling was bypassable by exactly the party it bounds.
+ */
+const TURN_SUBJECT_PREFIXES = ['relay.agent.', 'relay.system.tasks.'] as const;
+
+/**
+ * The line a person is shown when a ceiling refused a turn.
+ *
+ * Names the ceiling that refused, because the two send someone to different
+ * settings, and says what to do rather than what broke.
+ *
+ * @param scope - Which ceiling refused.
+ * @param subject - The agent subject the turn was for.
+ */
+function ceilingRefusalReason(scope: TurnCeilingScope, subject: string): string {
+  return scope === 'global'
+    ? 'agent messaging has run its hourly limit of turns for this whole DorkOS, so this ' +
+        "message did not start one. It is still in the agent's inbox. Raise " +
+        '"relay.maxAgentTurnsTotalPerHour" in your DorkOS config, or wait for the hour to roll.'
+    : `${subject} has run its hourly limit of turns, so this message did not start one. ` +
+        'It is still in the agent\'s inbox. Raise "relay.maxAgentTurnsPerAgentPerHour" ' +
+        'in your DorkOS config, or wait for the hour to roll.';
 }
 
 // === Private Helpers ===
@@ -95,6 +145,15 @@ function findMatchingEndpoints(
 export class RelayPublishPipeline {
   private readonly deps: PublishDeps;
   private readonly opts: PublishResolvedOptions;
+  /**
+   * The hourly ceiling on agent turns, enforced at the adapter dispatch.
+   *
+   * Never undefined. A pipeline handed no ceiling builds one with the shipped
+   * defaults rather than running uncapped, for the same reason the consent gate
+   * denies while unwired: a bound you can lose by forgetting to pass it is not a
+   * bound.
+   */
+  private readonly turnCeiling: RelayTurnCeiling;
   private rateLimitConfig: RateLimitConfig;
   private adapterContextBuilder?: (subject: string) => AdapterContext | undefined;
 
@@ -120,6 +179,87 @@ export class RelayPublishPipeline {
     this.opts = opts;
     this.rateLimitConfig = rateLimitConfig;
     this.adapterContextBuilder = adapterContextBuilder;
+    this.turnCeiling = deps.turnCeiling ?? new RelayTurnCeiling();
+  }
+
+  /**
+   * Whether delivering this subject would start a real, paid turn.
+   *
+   * **Asks the adapter, not the subject.** The subject-prefix version of this
+   * question shipped wrong: it matched `relay.agent.*` only, while the Claude
+   * Code adapter also answers for `relay.system.tasks.*` and routes THAT to a
+   * handler which calls `ensureSession` + `sendMessage`. Those are paid turns,
+   * they were never counted, and `relay_send` reaches that subject — so the
+   * ceiling was bypassable by the party it bounds. Asking the dispatch keeps the
+   * two facts in one place, so an adapter that grows another turn-running prefix
+   * cannot reopen the door by staying quiet.
+   *
+   * A dispatch that will not happen is never charged: an adapter-less subject
+   * dispatches nothing, and reserving for it would bill the install for turns it
+   * never ran — the exact shape of bug that makes people switch ceilings off.
+   * An adapter that runs no turns at all (Telegram, Slack, a webhook) implements
+   * nothing and falls through to {@link TURN_SUBJECT_PREFIXES}, which its
+   * subjects do not match, so it is free — as it should be.
+   *
+   * **Whatever this answers is carried to the refund**, rather than asked again
+   * where the refund happens: the two ends must agree, or an uncounted failure
+   * gives back a charge somebody else made.
+   *
+   * @param subject - The target subject.
+   */
+  private willDispatchAgentTurn(subject: string): boolean {
+    const registry = this.deps.adapterRegistry;
+    if (!registry) return false;
+    if (registry.getBySubject) {
+      const adapter = registry.getBySubject(subject);
+      if (!adapter) return false;
+      if (adapter.startsAgentTurns) return adapter.startsAgentTurns(subject);
+    }
+    return TURN_SUBJECT_PREFIXES.some((prefix) => subject.startsWith(prefix));
+  }
+
+  /**
+   * Make a ceiling refusal visible, on every surface relay already refuses on.
+   *
+   * Deliberately reuses {@link rejectAtGate}'s three channels rather than
+   * inventing a fourth: the warning log, a dead letter under the target subject
+   * (which is what fires the host's `onDeadLetter` — the cockpit's Pulse badge
+   * and the dead-letters inbox), and the reply-failure notifier that settles a
+   * caller blocked in `relay_send_and_wait` or the A2A executor instead of
+   * leaving it to time out saying "timed out" when the truth was a ceiling.
+   *
+   * It does NOT delete the Maildir copies already delivered above. The turn is
+   * what was refused, not the message.
+   *
+   * @param envelope - The envelope whose turn was refused.
+   * @param subject - The agent subject.
+   * @param reason - The person-facing reason, naming the ceiling that refused.
+   */
+  private async refuseAgentTurn(
+    envelope: RelayEnvelope,
+    subject: string,
+    reason: string
+  ): Promise<void> {
+    this.deps.logger?.warn?.(
+      `publish refused at turn ceiling: subject=${subject}, from=${envelope.from}, reason=${reason}`
+    );
+
+    try {
+      await this.deps.maildirStore.ensureMaildir(subject);
+      await this.deps.deadLetterQueue.reject(subject, envelope, reason);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.deps.logger?.warn?.(`failed to dead-letter a ceiling refusal: ${message}`);
+    }
+
+    if (envelope.replyTo && this.replyFailureNotifier) {
+      try {
+        await this.replyFailureNotifier(envelope.replyTo, reason, envelope);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.logger?.warn?.(`failed to notify reply inbox of a ceiling refusal: ${message}`);
+      }
+    }
   }
 
   /** Update the rate limit config (called on hot-reload). */
@@ -388,14 +528,53 @@ export class RelayPublishPipeline {
     //    ancestor chain exactly like a Maildir copy does. Each delivered copy
     //    is decremented exactly once — the Maildir path decrements its own
     //    copies from the original envelope above.
+    //
+    // 7a. THE TURN CEILING. This dispatch is the one choke point every surface
+    //     that can make an agent answer crosses — the rooms tool, `relay_send`,
+    //     an A2A peer, a webhook posting back — so it is where the hourly
+    //     ceiling is counted, and it is counted WITHOUT asking who is calling
+    //     (see `turn-ceiling.ts`). A refusal stops the paid turn and nothing
+    //     else: Maildir copies delivered above stand, so the message is still in
+    //     the agent's inbox to be read later. It is dead-lettered, traced, logged
+    //     and pushed to a waiting caller, because a ceiling nobody can see is
+    //     indistinguishable from an agent that ignored you.
     let adapterResult: DeliveryResult | null = null;
+    let ceilingRefusal: string | undefined;
     if (this.deps.adapterRegistry) {
-      const adapterEnvelope: RelayEnvelope = { ...envelope, budget: gate.updatedBudget! };
-      adapterResult = await this.deps.adapterDelivery.deliver(
-        subject,
-        adapterEnvelope,
-        this.adapterContextBuilder
-      );
+      const ceiling = this.willDispatchAgentTurn(subject)
+        ? this.turnCeiling.tryReserve(subject)
+        : undefined;
+      if (ceiling && !ceiling.allowed) {
+        ceilingRefusal = ceilingRefusalReason(ceiling.scope!, subject);
+        rejected.push({ endpointHash: subject, reason: 'turn_ceiling' });
+        await this.refuseAgentTurn(envelope, subject, ceilingRefusal);
+      } else {
+        const adapterEnvelope: RelayEnvelope = { ...envelope, budget: gate.updatedBudget! };
+        adapterResult = await this.deps.adapterDelivery.deliver(
+          subject,
+          adapterEnvelope,
+          this.adapterContextBuilder,
+          // Carried, not re-derived. A detached delivery settles long after this
+          // returns, and its refund must give back exactly what was charged: an
+          // adapter that answers `startsAgentTurns: false` on an agent-shaped
+          // subject is uncounted here, and a refund that assumed otherwise would
+          // pop somebody else's live reservation.
+          { counted: ceiling?.counted === true }
+        );
+        // The reservation is given back when the dispatch it paid for did not
+        // happen: no adapter matched after all, the adapter refused, or it
+        // deliberately sent nothing. This is the AWAITED half — a detached
+        // `relay.agent.*` delivery reports success immediately and settles later,
+        // so its refund is `AdapterDelivery`'s (`refundTurn`). Guarded on
+        // `counted`, because a reservation the ceilings never charged has
+        // nothing to give back.
+        if (
+          ceiling?.counted &&
+          (!adapterResult || adapterResult.skipped || !adapterResult.success)
+        ) {
+          this.turnCeiling.release(subject);
+        }
+      }
       // An adapter that deliberately sent nothing did not deliver anything.
       // The Telegram/Slack echo guard returns success for a message the adapter
       // recognises as its own, which counted as a delivery — so an inbound chat
@@ -421,17 +600,23 @@ export class RelayPublishPipeline {
       deliveredTo += handledSubscribers;
     }
 
-    // 9. Buffer for late subscribers when no handlers matched
-    if (matchedSubscribers === 0 && matchingEndpoints.length === 0) {
+    // 9. Buffer for late subscribers when no handlers matched.
+    //    NOT when the ceiling refused: the buffer exists so a subscriber that
+    //    arrives a moment late still sees the message, and replaying a turn the
+    //    ceiling just declined to run would hand back exactly what it refused.
+    if (matchedSubscribers === 0 && matchingEndpoints.length === 0 && !ceilingRefusal) {
       this.deps.subscriptionRegistry.bufferForPendingSubscriber(subject, envelope);
     }
 
-    // 10. Dead-letter only when NO delivery targets matched at all
+    // 10. Dead-letter only when NO delivery targets matched at all — and never
+    //     a second time for a ceiling refusal, which dead-lettered itself with
+    //     the reason that actually explains it.
     if (
       deliveredTo === 0 &&
       matchingEndpoints.length === 0 &&
       matchedSubscribers === 0 &&
-      !adapterResult?.skipped
+      !adapterResult?.skipped &&
+      !ceilingRefusal
     ) {
       await this.deadLetter(subject, envelope, adapterResult);
     }
@@ -444,7 +629,13 @@ export class RelayPublishPipeline {
       rejected,
       adapterResult,
       createdAt: envelope.createdAt,
-      ...(deliveredTo === 0 && refusal ? { error: refusal } : {}),
+      // The ceiling's reason wins over a subscriber refusal: it is the one that
+      // explains why no turn ran, and it is true even when a Maildir copy landed.
+      ...(ceilingRefusal
+        ? { error: ceilingRefusal, rejectionCode: 'turn_ceiling' }
+        : deliveredTo === 0 && refusal
+          ? { error: refusal }
+          : {}),
       ...(envelope.dispatchId !== undefined ? { dispatchId: envelope.dispatchId } : {}),
     });
 

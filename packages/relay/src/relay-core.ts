@@ -39,6 +39,8 @@ import type { ChatNoticeTargetResolver } from './chat-notice.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline } from './relay-publish.js';
+import { RelayTurnCeiling } from './turn-ceiling.js';
+import { InboundTurnBudgets } from './inbound-turn-budgets.js';
 import { executeSubscribe, executeSignal, executeOnSignal } from './relay-subscriptions.js';
 import {
   executeRegisterEndpoint,
@@ -164,6 +166,17 @@ export class RelayCore {
   private gcInterval?: ReturnType<typeof setInterval>;
   private closed = false;
   private readonly adapterRegistry?: AdapterRegistryLike;
+  /**
+   * Which inbound envelope each running agent turn is answering (DOR-791).
+   *
+   * Public because the two sides that need it live in different packages: the
+   * adapter that dispatches a turn binds here, and the host's `relay_send*`
+   * tools read it back so an outbound send continues the inbound envelope's
+   * budget instead of minting a fresh one. Hanging it off the relay rather than
+   * threading a separate dependency is what keeps those two reading the SAME
+   * map — a second instance would silently thread nothing.
+   */
+  readonly inboundBudgets = new InboundTurnBudgets();
 
   constructor(options?: RelayOptions) {
     this.logger = options?.logger ?? noopLogger;
@@ -208,11 +221,19 @@ export class RelayCore {
       },
       this.backpressureConfig
     );
+    // One ceiling, two readers (DOR-791). The pipeline reserves against it at
+    // the dispatch; AdapterDelivery gives a reservation back when the dispatch
+    // it was charged for turns out never to have run. A second instance here
+    // would refund a counter nobody is spending.
+    const turnCeiling = new RelayTurnCeiling(
+      options?.turnCeiling ? { limits: options.turnCeiling } : {}
+    );
     const adapterDelivery = new AdapterDelivery({
       adapterRegistry: options?.adapterRegistry,
       sqliteIndex: this.sqliteIndex,
       maildirStore,
       deadLetterQueue,
+      refundTurn: (subject) => turnCeiling.release(subject),
       logger: options?.logger,
     });
     const watcherManager = new WatcherManager(
@@ -238,6 +259,11 @@ export class RelayCore {
         adapterRegistry: options?.adapterRegistry,
         traceStore: options?.traceStore,
         logger: options?.logger,
+        // The hourly ceiling on turns, at the one dispatch every surface
+        // crosses (DOR-791). Built above rather than left to the pipeline's
+        // fallback so a host that DID wire limits gets them; a host that wired
+        // none still gets the shipped ones.
+        turnCeiling,
       },
       {
         maxHops: options?.maxHops ?? DEFAULT_MAX_HOPS,
