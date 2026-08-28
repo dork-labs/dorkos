@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { TRAY_IMAGE_FILES } from './src/shared/tray-images';
+import { FALLBACK_PAGE_FILE, FALLBACK_PAGE_SOURCE_DIR } from './src/shared/fallback-page';
 import { clientDefines } from '../client/vite-define';
 
 const clientRoot = path.resolve(__dirname, '../client');
@@ -41,6 +42,31 @@ function emitTrayImages(): Plugin {
 }
 
 /**
+ * Copy the renderer supervisor's recovery page into the main process's output
+ * directory.
+ *
+ * Same arrangement as {@link emitTrayImages} and for the same reason: the page
+ * is authored as plain HTML, so no bundler picks it up on its own, and
+ * `renderer-health/index.ts` resolves exactly one path for it —
+ * `join(__dirname, name)` — in dev and packaged alike. The file name is shared
+ * with the loader through `src/shared/fallback-page.ts`; renaming it in one
+ * place and not the other packages green and leaves the recovery page missing
+ * on the one screen a person only ever sees when everything else has failed.
+ */
+function emitFallbackPage(): Plugin {
+  return {
+    name: 'dorkos:fallback-page',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: FALLBACK_PAGE_FILE,
+        source: fs.readFileSync(path.join(__dirname, FALLBACK_PAGE_SOURCE_DIR, FALLBACK_PAGE_FILE)),
+      });
+    },
+  };
+}
+
+/**
  * Build alias entries for @dorkos/shared subpath exports.
  *
  * electron-vite runs from apps/desktop/ with root set to apps/client/.
@@ -60,7 +86,7 @@ function sharedSubpathAliases(): Record<string, string> {
 
 export default defineConfig({
   main: {
-    plugins: [emitTrayImages()],
+    plugins: [emitTrayImages(), emitFallbackPage()],
     build: {
       outDir: 'dist/main',
       rollupOptions: {

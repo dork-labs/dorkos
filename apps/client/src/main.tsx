@@ -517,4 +517,9 @@ ReactDOM.createRoot(document.getElementById('root')!, {
 // question the sentinel exists to answer — everything after this (data, streams)
 // has its own error surfaces. Optional because embeds that do not use
 // `index.html` as their host document (Obsidian) never run the sentinel.
+//
+// In the desktop app this same call reports the window alive to the shell's
+// renderer supervisor (DOR-1453), which reloads and eventually replaces a
+// window that never does. The report is made from inside `done()` rather than
+// added here, so there is exactly one definition of "the app came up".
 window.__dorkosBoot?.done();
