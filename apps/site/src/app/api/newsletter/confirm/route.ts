@@ -38,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!quota.allowed) {
     return tooManyRequestsPage(
       'One moment',
-      'You have opened this link a lot in a short time. Wait a minute, then open it again. Your subscription is unaffected.',
+      'You have opened this link a lot in a short time. Wait a minute, then open it again to confirm.',
       quota.retryAfterSeconds
     );
   }
