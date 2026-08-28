@@ -41,6 +41,7 @@ const NOW = new Date().toISOString();
 
 /** Fully-materialized agent manifest fixture (all schema defaults applied). */
 const MANIFEST: AgentManifest = {
+  workspace: { mode: 'home' },
   id: '01JXAMPLE0000000000000TEST',
   name: 'structured-output-bot',
   description: 'Fixture agent for structured-output tests',

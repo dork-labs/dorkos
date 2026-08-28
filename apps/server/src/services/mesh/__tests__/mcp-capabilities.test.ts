@@ -68,6 +68,7 @@ class FakeLocator implements AgentWorkspaceLocator {
 
 function baseManifest(): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: 'A test agent',

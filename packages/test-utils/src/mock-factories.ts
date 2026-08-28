@@ -137,6 +137,7 @@ const mockAgent: AgentManifest = {
   isSystem: false,
   enabledToolGroups: {},
   mcpServers: [],
+  workspace: { mode: 'home' },
 };
 
 /**

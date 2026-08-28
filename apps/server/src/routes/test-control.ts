@@ -552,6 +552,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     isSystem: false,
     enabledToolGroups: {},
     mcpServers: [],
+    workspace: { mode: 'home' },
   };
   await writeManifest(agentDir, manifest);
 
@@ -754,6 +755,7 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
         addedBy: 'operator',
       },
     ],
+    workspace: { mode: 'home' },
   };
   const agentDir = e2eOAuthAgentDir();
   await writeManifest(agentDir, manifest);

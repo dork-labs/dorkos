@@ -50,6 +50,7 @@ afterEach(async () => {
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01JKABC00001',
     name: 'pre-registered',
     description: '',

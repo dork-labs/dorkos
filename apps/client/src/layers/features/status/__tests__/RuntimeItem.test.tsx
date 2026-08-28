@@ -240,6 +240,7 @@ let mockAgent: AgentManifest | null = null;
  */
 function agentPinnedTo(account: string | undefined): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: 'agent-1',
     name: 'Worker',
     description: 'An agent registered at the launch directory.',

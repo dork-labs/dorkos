@@ -30,6 +30,7 @@ function createWrapper(transport: Transport) {
 }
 
 const mockAgent: AgentManifest = {
+  workspace: { mode: 'home' },
   id: '01HZ0000000000000000000001',
   name: 'test-agent',
   description: 'A mock agent for testing',

@@ -37,6 +37,7 @@ import type {
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 const agent: AgentManifest = {
+  workspace: { mode: 'home' },
   id: '01HZ0000000000000000000001',
   name: 'test-agent',
   displayName: 'Test Agent',

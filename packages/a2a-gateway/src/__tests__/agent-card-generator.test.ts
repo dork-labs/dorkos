@@ -18,6 +18,7 @@ const PASSTHROUGH_CONFIG: CardGeneratorConfig = { ...BASE_CONFIG, authRequired: 
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HZB1AGENTULID0000001',
     name: 'backend-bot',
     description: 'An expert in REST API design',

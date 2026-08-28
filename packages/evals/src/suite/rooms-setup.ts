@@ -87,6 +87,7 @@ export async function seedRoomAgents(
     const dir = agentDir(sandbox, agent.slug);
     await mkdir(dir, { recursive: true });
     const manifest: AgentManifest = {
+      workspace: { mode: 'home' },
       id: seededAgentId(agent.slug),
       name: agent.slug,
       displayName: agent.displayName,

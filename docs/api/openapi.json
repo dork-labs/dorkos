@@ -5126,6 +5126,37 @@
               "$ref": "#/components/schemas/ManagedMcpServer"
             },
             "default": []
+          },
+          "workspace": {
+            "type": "object",
+            "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "home",
+                  "managed",
+                  "none"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "description": "Repository or directory the checkout is made from ('managed' only)."
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "worktree",
+                  "clone"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "example": {
+              "mode": "home"
+            }
           }
         },
         "required": [
@@ -5488,6 +5519,37 @@
                   "$ref": "#/components/schemas/ManagedMcpServer"
                 },
                 "default": []
+              },
+              "workspace": {
+                "type": "object",
+                "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "home",
+                      "managed",
+                      "none"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "Repository or directory the checkout is made from ('managed' only)."
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "worktree",
+                      "clone"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "example": {
+                  "mode": "home"
+                }
               }
             }
           },

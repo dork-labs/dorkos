@@ -30,6 +30,17 @@ const PRE_ATTACHMENT_URL_MIGRATION_IDX = 58;
  */
 const PRE_MESSAGE_QUEUE_MIGRATION_IDX = 63;
 
+/**
+ * Journal index of the last migration BEFORE a workspace could be OWNED
+ * (`owner_kind`/`owner_ref`, migration 0082, DOR-1589).
+ *
+ * A database built through this index is what every existing install is coming
+ * from: workspaces that predate ownership entirely, which is why both columns
+ * are nullable and NULL means "unit of work" — today's semantics, needing no
+ * backfill.
+ */
+const PRE_WORKSPACE_OWNER_IDX = 81;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -414,6 +425,43 @@ describe('Database Migrations', () => {
     // Partial: a full index would carry a row per ordinary message to serve a
     // lookup that only ever asks for a non-null root.
     expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
+  });
+
+  it('adds workspace ownership to an install that predates it, without touching its rows', () => {
+    // The upgrade path, not the fresh-install one: a workspace row written
+    // before ownership existed must survive the migration unchanged and read as
+    // unowned. `sweep()` keys its exemption on `owner`, so a row that came out
+    // of this the wrong way would either lose its exemption or gain one nobody
+    // asked for.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_WORKSPACE_OWNER_IDX) });
+    db.$client
+      .prepare(
+        `INSERT INTO workspaces
+           (id, project_key, key, path, source, branch, provider, status,
+            port_base, port_block_size, pinned, created_at, last_used_at)
+         VALUES ('ws_legacy', 'core', 'DOR-1', '/r/core/DOR-1', '/r', 'dork/DOR-1',
+                 'worktree', 'ready', 4250, 10, 0, '2026-08-01', '2026-08-01')`
+      )
+      .run();
+
+    runMigrations(db);
+
+    const columns = db.$client.prepare('PRAGMA table_info(workspaces)').all() as {
+      name: string;
+      notnull: number;
+    }[];
+    // Both nullable: NULL/NULL is a unit-of-work checkout, which is what every
+    // pre-change row is. A NOT NULL column here would have needed a backfill.
+    expect(columns.find((c) => c.name === 'owner_kind')?.notnull).toBe(0);
+    expect(columns.find((c) => c.name === 'owner_ref')?.notnull).toBe(0);
+
+    const row = db.$client
+      .prepare('SELECT key, owner_kind, owner_ref FROM workspaces WHERE id = ?')
+      .get('ws_legacy') as { key: string; owner_kind: string | null; owner_ref: string | null };
+    expect(row.key).toBe('DOR-1');
+    expect(row.owner_kind).toBeNull();
+    expect(row.owner_ref).toBeNull();
   });
 
   it('gives room_attachments a nullable entry link, behind a partial index', () => {

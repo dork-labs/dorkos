@@ -22,6 +22,12 @@ export const workspaces = sqliteTable(
     hostname: text('hostname'), // reserved for the v2 naming layer (DOR-91)
     url: text('url'), // reserved for the v2 naming layer (DOR-91)
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    // Ownership, both nullable: NULL/NULL is a unit-of-work checkout, which is
+    // what every row created before this column existed is. `owner_ref` holds
+    // the owner's stable path (an agent's `project_path`), never a ULID — the
+    // reconciler is licensed to rebuild the `agents` cache under fresh ids.
+    ownerKind: text('owner_kind'), // 'agent' | NULL
+    ownerRef: text('owner_ref'),
     createdAt: text('created_at').notNull(),
     lastUsedAt: text('last_used_at').notNull(),
   },

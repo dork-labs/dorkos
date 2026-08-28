@@ -10,6 +10,7 @@ import { agentFilterSchema, agentSortOptions } from '../lib/agent-filter-schema'
 // ---------------------------------------------------------------------------
 
 const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): TopologyAgent => ({
+  workspace: { mode: 'home' },
   id: overrides.id,
   name: overrides.name ?? `Agent ${overrides.id}`,
   displayName: overrides.displayName,

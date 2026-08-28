@@ -11,11 +11,13 @@ import {
   MANIFEST_FILE,
 } from '../manifest.js';
 import type { AgentManifest } from '../mesh-schemas.js';
+import { AgentWorkspaceBindingSchema } from '../mesh-schemas.js';
 
 // === Helpers ===
 
 function makeManifest(overrides?: Partial<AgentManifest>): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HV7KJZZZ0000000000000000',
     name: 'test-agent',
     description: 'A test agent',
@@ -486,5 +488,134 @@ describe('round-trip with new fields', () => {
     const warn = vi.fn();
     expect(await readManifest(projectDir, { warn })).toBeNull();
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe('workspace binding (spec `agent-workspace-binding` §3.1)', () => {
+  const tempDirs: string[] = [];
+
+  async function makeTempDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shared-manifest-test-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The migration guarantee: every manifest written before the field existed
+  // keeps meaning what it already meant.
+  it('a manifest with no workspace field reads as home', async () => {
+    const projectDir = await makeTempDir();
+    const { workspace: _dropped, ...legacy } = makeManifest();
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, JSON.stringify(legacy), 'utf-8');
+
+    const result = await readManifest(projectDir);
+
+    expect(result?.workspace).toEqual({ mode: 'home' });
+  });
+
+  it('round-trips a managed binding with its source and provider', async () => {
+    const projectDir = await makeTempDir();
+    const manifest = makeManifest({
+      workspace: { mode: 'managed', source: '/repos/dorkos', provider: 'worktree' },
+    });
+
+    await writeManifest(projectDir, manifest);
+    const result = await readManifest(projectDir);
+
+    expect(result?.workspace).toEqual({
+      mode: 'managed',
+      source: '/repos/dorkos',
+      provider: 'worktree',
+    });
+  });
+
+  it('round-trips a none binding — sharing the default folder is sayable', async () => {
+    const projectDir = await makeTempDir();
+    const manifest = makeManifest({ workspace: { mode: 'none' } });
+
+    await writeManifest(projectDir, manifest);
+
+    expect((await readManifest(projectDir))?.workspace).toEqual({ mode: 'none' });
+  });
+
+  it('rejects a managed binding with no source at the schema', () => {
+    const bad = { ...makeManifest(), workspace: { mode: 'managed' } };
+
+    // The union itself is strict — `source` is what makes `managed` mean
+    // anything. It is the MANIFEST FIELD that degrades rather than refuses, and
+    // the next two cases are what that looks like.
+    expect(AgentWorkspaceBindingSchema.safeParse(bad.workspace).success).toBe(false);
+  });
+
+  // `.catch()`-degraded, on the `model`/`effort` precedent. Refusing the parse
+  // would cost the agent its whole presence in the fleet — `readManifest`
+  // answers `null`, and every list, roster and router stops seeing it — over a
+  // typo that changes no cwd, since an unreadable manifest already resolves to
+  // the agent's own folder, which is exactly what `home` means.
+  it('an unreadable binding reads as home instead of losing the agent', async () => {
+    const projectDir = await makeTempDir();
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({ ...makeManifest(), workspace: { mode: 'ludicrous' } }),
+      'utf-8'
+    );
+    const warn = vi.fn();
+
+    const result = await readManifest(projectDir, { warn });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace).toEqual({ mode: 'home' });
+    // Degrading is fine; degrading QUIETLY is not. The warning cannot come from
+    // the schema — a function `.catch()` breaks JSON Schema generation for every
+    // MCP tool that embeds the manifest — so `readManifest` says it instead.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/workspace binding this build cannot read/)
+    );
+  });
+
+  // Forward compatibility, which is the other half of the same decision: a mode
+  // written by a NEWER build must not make the agent vanish on a downgrade. It
+  // reads as `home` here and stays on disk verbatim, so the newer build still
+  // finds what it wrote.
+  it('keeps an unknown mode on disk while reading it as home', async () => {
+    const projectDir = await makeTempDir();
+    const warn = vi.fn();
+    const future = {
+      ...makeManifest(),
+      workspace: { mode: 'room-worktree', roomId: 'r1' },
+    } as unknown as AgentManifest;
+
+    await writeManifest(projectDir, future);
+    const reread = await readManifest(projectDir, { warn });
+    const raw: unknown = JSON.parse(
+      await fs.readFile(path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE), 'utf-8')
+    );
+
+    expect(reread?.workspace).toEqual({ mode: 'home' });
+    expect((raw as AgentManifest).workspace).toEqual({ mode: 'room-worktree', roomId: 'r1' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  // The migration guarantee is NOT a degradation, so it must not be reported as
+  // one. A warning on every pre-change manifest would be noise on every boot.
+  it('says nothing when the workspace key is simply absent', async () => {
+    const projectDir = await makeTempDir();
+    const { workspace: _absent, ...legacy } = makeManifest();
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, JSON.stringify(legacy), 'utf-8');
+    const warn = vi.fn();
+
+    expect((await readManifest(projectDir, { warn }))?.workspace).toEqual({ mode: 'home' });
+    expect(warn).not.toHaveBeenCalled();
   });
 });

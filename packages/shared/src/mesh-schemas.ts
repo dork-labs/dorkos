@@ -12,6 +12,7 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
 import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
+import { WorkspaceProviderTypeSchema } from './workspace.js';
 
 extendZodWithOpenApiOnce();
 
@@ -347,6 +348,89 @@ const AgentEffortSchema = z.enum(EFFORT_LEVELS).optional().openapi({
   example: 'high',
 });
 
+/**
+ * Where an agent works — the standing preference that answers "which directory
+ * does a turn for this agent run in?" when the caller does not say.
+ *
+ * Three modes, as a discriminated union rather than three loose optional fields
+ * because `source` is meaningless without `managed`:
+ *
+ * - `home` — the agent works in its own directory (its `projectPath`, the folder
+ *   holding this very manifest). Nothing is provisioned. This is the default,
+ *   and an absent `workspace` field reads as exactly this.
+ * - `managed` — the server ensures a {@link WorkspaceSchema | Workspace} from
+ *   `source` and the agent works in that checkout. The mode that gives N agents
+ *   on one repo N trees.
+ * - `none` — no binding; the resolver falls through to the server's default
+ *   working directory. Sayable on purpose, so "share the default folder" is a
+ *   choice rather than the accident of an unset field.
+ *
+ * **A coordination default, not a containment boundary.** The binding lives in
+ * `agent.json`, which an agent can rewrite — and that is acceptable only because
+ * every resolved path is boundary-validated at resolution time, so no binding
+ * can widen what the agent could already reach. Containment stays
+ * `DORKOS_BOUNDARY` plus the capability tier gate (spec `agent-workspace-binding`
+ * §3.1).
+ */
+export const AgentWorkspaceBindingSchema = z
+  .discriminatedUnion('mode', [
+    z.object({ mode: z.literal('home') }),
+    z.object({
+      mode: z.literal('managed'),
+      /** Repository or directory the managed checkout is made from. */
+      source: z.string().min(1),
+      /** Provisioning strategy; the server's configured default when absent. */
+      provider: WorkspaceProviderTypeSchema.optional(),
+    }),
+    z.object({ mode: z.literal('none') }),
+  ])
+  .openapi('AgentWorkspaceBinding');
+
+/** Where an agent works — see {@link AgentWorkspaceBindingSchema}. */
+export type AgentWorkspaceBinding = z.infer<typeof AgentWorkspaceBindingSchema>;
+
+/**
+ * OpenAPI metadata for the manifest field, spelled out because the generator
+ * cannot see through a `ZodCatch` (it throws "Unknown zod object type" and takes
+ * the whole document with it).
+ *
+ * So the union is described by hand here, flattened into one object rather than
+ * a `oneOf` — the same trade the `model` field makes two hundred lines below,
+ * where an enum is documented as a bare string for the same reason. The
+ * authoritative shape stays {@link AgentWorkspaceBindingSchema}; this is the
+ * doc's copy of it, and the two are kept together deliberately.
+ */
+const WORKSPACE_BINDING_OPENAPI = {
+  type: 'object' as const,
+  description:
+    "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+  properties: {
+    mode: { type: 'string' as const, enum: ['home', 'managed', 'none'] },
+    source: {
+      type: 'string' as const,
+      description: "Repository or directory the checkout is made from ('managed' only).",
+    },
+    provider: { type: 'string' as const, enum: ['worktree', 'clone'] },
+  },
+  required: ['mode'],
+  example: { mode: 'home' },
+};
+
+/**
+ * What an unreadable `workspace` binding is read as.
+ *
+ * A STATIC value, and it has to be: zod's JSON Schema generation refuses a
+ * function catch outright ("Dynamic catch values are not supported in JSON
+ * Schema"), and every MCP tool whose input schema embeds the manifest goes
+ * through that generation — a function here took `tools/list` down on both MCP
+ * servers, which is to say every external MCP caller lost every tool.
+ *
+ * So the degradation cannot announce itself from inside the schema. It is
+ * announced by {@link readManifest} instead, which has a logger and is the one
+ * path that reads these files off disk.
+ */
+const UNREADABLE_BINDING_FALLBACK: AgentWorkspaceBinding = { mode: 'home' };
+
 export const AgentManifestSchema = z
   .object({
     id: z.string().min(1).describe('ULID assigned at registration'),
@@ -427,6 +511,30 @@ export const AgentManifestSchema = z
     // Mutated only through the gated `mcp.*` capabilities, never the agent
     // PATCH surface — which is why it is absent from `AgentManifestUpdate`.
     mcpServers: z.array(ManagedMcpServerSchema).default([]),
+    // Absent reads as `{ mode: 'home' }` — every manifest written before this
+    // field existed keeps working, and keeps meaning what it already meant: the
+    // agent works in its own directory.
+    //
+    // `.catch()`-degraded on exactly the `model`/`effort` precedent above, and
+    // the `.openapi(...)` outside the `.catch()` is load-bearing for the same
+    // reason (the generator cannot see through a `ZodCatch`).
+    //
+    // Strictness was tried here first and bought nothing. On the axis that
+    // matters — which directory a turn runs in — an unreadable manifest and a
+    // `home` binding reach the SAME place: `resolveSessionCwd` degrades an
+    // unreadable manifest to the agent's own folder, which is what `home` means.
+    // So refusing the parse changed no cwd; it only cost the agent its entire
+    // presence in the fleet (`readManifest` returns null, and every list, roster
+    // and router stops seeing it) over one typo. Worse, it bricked forward
+    // compatibility: a newer build writing a mode this one has not learned yet
+    // would make the agent vanish on downgrade, rather than fall back to its own
+    // folder and carry on.
+    //
+    // The degradation is not silent — {@link warnUnreadableBinding} says so on
+    // the way past.
+    workspace: AgentWorkspaceBindingSchema.default({ mode: 'home' })
+      .catch(UNREADABLE_BINDING_FALLBACK)
+      .openapi(WORKSPACE_BINDING_OPENAPI),
   })
   .openapi('AgentManifest');
 

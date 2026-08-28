@@ -63,6 +63,7 @@ const MOCK_CATALOG: CatalogEntry[] = [
 
 const MOCK_AGENTS: AgentManifest[] = [
   {
+    workspace: { mode: 'home' },
     id: 'agent-1',
     name: 'Support Agent',
     description: '',

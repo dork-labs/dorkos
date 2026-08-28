@@ -9,6 +9,7 @@ import type { NamespaceRule, NamespaceRuleStoreLike } from '../namespace-rule-st
 
 function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEntry {
   return {
+    workspace: { mode: 'home' },
     id: '01JKABC00001',
     name: 'test-agent',
     description: '',

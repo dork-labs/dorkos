@@ -17,6 +17,7 @@ import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HZB1AGENTULID0000001',
     name: 'backend-bot',
     description: 'An expert in REST API design',

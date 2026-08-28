@@ -323,6 +323,7 @@ describe('ScheduleRow', () => {
         mcpServers: [],
         personaEnabled: true,
         isSystem: false,
+        workspace: { mode: 'home' as const },
       };
 
       const scheduleWithAgent: Task = {
@@ -362,6 +363,7 @@ describe('ScheduleRow', () => {
         registeredBy: 'test',
         enabledToolGroups: {},
         mcpServers: [],
+        workspace: { mode: 'home' as const },
         personaEnabled: true,
         isSystem: false,
       };

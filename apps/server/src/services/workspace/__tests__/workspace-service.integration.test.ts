@@ -231,4 +231,140 @@ describe('WorkspaceService.sweep — retention policy', () => {
     expect(result.skipped).toContainEqual({ id: ws.id, reason: 'dirty' });
     expect(await sub.service.get(ws.id)).not.toBeNull();
   });
+
+  // The discriminating case for the ownership exemption: this workspace is
+  // unpinned, clean, session-less and past a cap of 0, so EVERY other gate lets
+  // it through. Only `owner` can save it — remove that check and this test is
+  // the one that goes red.
+  it('an agent-owned workspace beyond the cap is never swept', async () => {
+    const sub = makeSub(0);
+    const owned = await sub.service.ensure({
+      projectKey: 'core',
+      key: 'agent-api-bot-deadbeef',
+      source,
+      owner: { kind: 'agent', ref: '/projects/api-bot' },
+    });
+
+    const result = await sub.service.sweep();
+
+    expect(result.removed).toEqual([]);
+    expect(result.skipped).toContainEqual({ id: owned.id, reason: 'owned' });
+    expect(await sub.service.get(owned.id)).not.toBeNull();
+  });
+
+  it('an unowned workspace beside an owned one is still swept', async () => {
+    const sub = makeSub(0);
+    const owned = await sub.service.ensure({
+      projectKey: 'core',
+      key: 'agent-api-bot-deadbeef',
+      source,
+      owner: { kind: 'agent', ref: '/projects/api-bot' },
+    });
+    const unowned = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+
+    const result = await sub.service.sweep();
+
+    expect(result.removed).toEqual([unowned.id]);
+    expect(await sub.service.get(owned.id)).not.toBeNull();
+    expect(await sub.service.get(unowned.id)).toBeNull();
+  });
+});
+
+describe('WorkspaceService — ownership', () => {
+  let db: Db;
+  let base: string;
+  let root: string;
+  let source: string;
+  let sub: WorkspaceSubsystem;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    base = await realpath(await mkdtemp(path.join(tmpdir(), 'ws-owner-')));
+    root = path.join(base, 'workspaces');
+    source = path.join(base, 'source');
+    const origin = path.join(base, 'origin.git');
+
+    git(['init', '--bare', '-b', 'main', origin], base);
+    await mkdir(source, { recursive: true });
+    git(['clone', origin, source], base);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# source\n');
+    await writeFile(path.join(source, '.gitignore'), '.env\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['push', '-u', 'origin', 'main'], source);
+
+    sub = createWorkspaceSubsystem({
+      db,
+      dorkHome: base,
+      config: {
+        enabled: true,
+        rootPath: root,
+        portBase: 4250,
+        portBlockSize: 10,
+        defaultProvider: 'worktree',
+        retentionCap: null,
+      },
+    });
+  });
+
+  afterEach(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('a workspace ensured with no owner is unowned — the pre-change semantics', async () => {
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    expect(ws.owner).toBeNull();
+    expect((await sub.service.get(ws.id))?.owner).toBeNull();
+  });
+
+  it('owner survives the sidecar manifest and the derived cache row alike', async () => {
+    const owner = { kind: 'agent' as const, ref: '/projects/api-bot' };
+    const ws = await sub.service.ensure({
+      projectKey: 'core',
+      key: 'agent-api-bot-deadbeef',
+      source,
+      owner,
+    });
+
+    // The cache row (what `get`/`list` read).
+    expect((await sub.service.get(ws.id))?.owner).toEqual(owner);
+    // The sidecar manifest on disk (the source of truth the reconciler rebuilds
+    // from) — read straight off the store, not through the service.
+    const onDisk = await sub.store.readManifest('core', 'agent-api-bot-deadbeef');
+    expect(onDisk?.owner).toEqual(owner);
+  });
+
+  it('ensure never re-owns an existing workspace', async () => {
+    const first = await sub.service.ensure({
+      projectKey: 'core',
+      key: 'agent-api-bot-deadbeef',
+      source,
+      owner: { kind: 'agent', ref: '/projects/api-bot' },
+    });
+    const again = await sub.service.ensure({
+      projectKey: 'core',
+      key: 'agent-api-bot-deadbeef',
+      source,
+      owner: { kind: 'agent', ref: '/projects/somebody-else' },
+    });
+
+    expect(again.id).toBe(first.id);
+    expect(again.owner).toEqual({ kind: 'agent', ref: '/projects/api-bot' });
+  });
+
+  it('a sidecar written before ownership existed reads as unowned', async () => {
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    // Rewrite the sidecar the way a pre-change release left it: no `owner` key.
+    const { owner: _dropped, ...legacy } = ws;
+    await writeFile(
+      sub.store.manifestPath('core', 'DOR-1'),
+      JSON.stringify(legacy, null, 2) + '\n',
+      'utf-8'
+    );
+
+    const reread = await sub.store.readManifest('core', 'DOR-1');
+    expect(reread?.owner).toBeNull();
+  });
 });

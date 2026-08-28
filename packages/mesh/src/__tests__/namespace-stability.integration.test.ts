@@ -37,6 +37,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01JKNSDRIFT0001',
     name: 'alpha',
     description: '',

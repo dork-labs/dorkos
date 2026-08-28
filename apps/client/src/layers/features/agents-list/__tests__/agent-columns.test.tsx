@@ -29,6 +29,7 @@ beforeAll(() => {
 
 function row(overrides: Partial<AgentTableRow> & { id: string; name: string }): AgentTableRow {
   return {
+    workspace: { mode: 'home' },
     description: '',
     runtime: 'claude-code',
     capabilities: [],

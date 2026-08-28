@@ -131,6 +131,7 @@ function seededDefaultProse(): string {
 async function seedNewbornAgent(sandbox: EvalSandbox): Promise<void> {
   const traitBlock = renderTraits(DEFAULT_TRAITS);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: '01JQXYZDESIGNYOUROWNSCRIBE',
     name: 'scribe',
     displayName: AGENT_NAME,

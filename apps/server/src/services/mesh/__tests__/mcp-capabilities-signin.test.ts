@@ -120,6 +120,7 @@ async function setup(connection: McpServerTransport): Promise<{
   const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-signin-home-'));
   tempDirs.push(dorkHome);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: '',

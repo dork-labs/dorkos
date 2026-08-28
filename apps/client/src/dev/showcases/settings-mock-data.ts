@@ -212,6 +212,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
  * rather than the read-only system-agent state.
  */
 const MOCK_AGENT_MANIFEST: AgentManifest = {
+  workspace: { mode: 'home' },
   id: 'mock-agent-01',
   name: 'Mock Agent',
   description: 'A static agent used for playground showcases.',
@@ -570,6 +571,7 @@ export const MOCK_EXECUTION_DEVIATIONS: ExecutionException[] = MOCK_EXECUTION_EX
 export const MOCK_MESH_AGENTS: { agents: AgentManifest[] } = {
   agents: [
     {
+      workspace: { mode: 'home' as const },
       id: 'dorkbot',
       name: 'dorkbot',
       description: 'The DorkOS system agent — your guide and background worker.',

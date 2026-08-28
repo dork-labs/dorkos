@@ -24,6 +24,7 @@ import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
+import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -625,8 +626,28 @@ export class TaskSchedulerService {
   /**
    * Resolve the effective working directory for a task.
    *
-   * When the task is linked to an agent (via agentId), resolves the agent's
-   * projectPath from MeshCore. Falls back to the server default CWD.
+   * When the task is linked to an agent (via agentId), MeshCore turns the agent
+   * id into a directory and the shared precedence chain
+   * (`services/workspace/resolve-session-cwd.ts`) turns that into the directory
+   * the run actually gets — the agent's own folder for the default `home`
+   * binding, its private checkout for `managed`. Before that chain existed this
+   * method WAS the derivation, and it would have kept answering `projectPath`
+   * for an agent that had asked for a checkout of its own.
+   *
+   * Two failures, told apart on purpose:
+   *
+   * - **A missing agent throws**, loudly and unchanged. An unregistered agent is
+   *   a broken LINK a person has to fix — there is no directory to run in, so
+   *   the run must not start.
+   * - **A registered agent whose binding cannot be honored does not throw.** The
+   *   directory exists; only the preference about it is unreadable. The chain
+   *   degrades one rung, to the agent's own folder, and logs the reason
+   *   (`[cwd] resolved` carries `degraded`). Failing the run there would turn a
+   *   typo in `agent.json` into a schedule that silently stops firing.
+   *
+   * So this method is strict about the link and forgiving about the preference,
+   * which is not a contradiction: one of them says WHETHER the run can happen and
+   * the other only says WHERE.
    *
    * @param task - The task to resolve CWD for
    * @returns The absolute path to use as CWD for this run
@@ -641,8 +662,12 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return projectPath;
+      return (await resolveSessionCwd({ agentPath: projectPath })).cwd;
     }
+    // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
+    // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
+    // agent-less task through the chain's default rung would quietly move the
+    // ones where they differ.
     return process.cwd();
   }
 

@@ -44,6 +44,7 @@ afterEach(async () => {
 
 function makeManifest(id: string): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id,
     name: 'ana',
     description: '',
