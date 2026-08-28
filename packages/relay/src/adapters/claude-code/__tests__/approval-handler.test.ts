@@ -11,8 +11,9 @@ import {
 
 // === Mock factories ===
 
-function createMockAgentManager(): AgentRuntimeLike {
+function createMockAgentManager(type?: string): AgentRuntimeLike {
   return {
+    ...(type ? { type } : {}),
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockReturnValue(
       (async function* () {
@@ -96,7 +97,7 @@ describe('approval-handler', () => {
 
   describe('subscribeApprovalHandler', () => {
     it('subscribes to relay.system.approval.> pattern', () => {
-      subscribeApprovalHandler(relay, agentManager, log, authorize);
+      subscribeApprovalHandler(relay, [agentManager], log, authorize);
 
       expect(relay.subscribe).toHaveBeenCalledOnce();
       expect(relay.subscribe).toHaveBeenCalledWith(APPROVAL_SUBJECT_PATTERN, expect.any(Function));
@@ -106,12 +107,12 @@ describe('approval-handler', () => {
       const unsub = vi.fn();
       vi.mocked(relay.subscribe).mockReturnValue(unsub);
 
-      const result = subscribeApprovalHandler(relay, agentManager, log, authorize);
+      const result = subscribeApprovalHandler(relay, [agentManager], log, authorize);
       expect(result).toBe(unsub);
     });
 
     it('routes incoming envelopes to handleApprovalResponse via the callback', () => {
-      subscribeApprovalHandler(relay, agentManager, log, authorize);
+      subscribeApprovalHandler(relay, [agentManager], log, authorize);
 
       const envelope = createApprovalEnvelope();
       relay.capturedHandler!(envelope);
@@ -123,7 +124,7 @@ describe('approval-handler', () => {
   describe('handleApprovalResponse', () => {
     it('calls approveTool with correct args when approved', () => {
       const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, agentManager, log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize);
 
       expect(agentManager.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
     });
@@ -140,14 +141,14 @@ describe('approval-handler', () => {
         },
       });
 
-      handleApprovalResponse(envelope, agentManager, log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize);
 
       expect(agentManager.approveTool).toHaveBeenCalledWith('session-xyz', 'tool-deny-456', false);
     });
 
     it('logs debug message with approval details', () => {
       const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, agentManager, log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize);
 
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('approve'));
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('tool-call-123'));
@@ -164,18 +165,20 @@ describe('approval-handler', () => {
         },
       });
 
-      handleApprovalResponse(envelope, agentManager, log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize);
 
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('deny'));
     });
 
-    it('warns when approveTool returns false (interaction not found)', () => {
+    it('warns when no runtime held the tool call', () => {
       vi.mocked(agentManager.approveTool).mockReturnValue(false);
 
       const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, agentManager, log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize);
 
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('interaction not found'));
+      expect(log.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no runtime held this tool call')
+      );
     });
 
     describe('malformed payloads', () => {
@@ -184,7 +187,9 @@ describe('approval-handler', () => {
           payload: null as unknown as Record<string, unknown>,
         });
 
-        expect(() => handleApprovalResponse(envelope, agentManager, log, authorize)).not.toThrow();
+        expect(() =>
+          handleApprovalResponse(envelope, [agentManager], log, authorize)
+        ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('malformed payload'));
       });
@@ -194,7 +199,9 @@ describe('approval-handler', () => {
           payload: { type: 'something_else', toolCallId: 'tc-1', sessionId: 's-1', approved: true },
         });
 
-        expect(() => handleApprovalResponse(envelope, agentManager, log, authorize)).not.toThrow();
+        expect(() =>
+          handleApprovalResponse(envelope, [agentManager], log, authorize)
+        ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalled();
       });
@@ -204,7 +211,9 @@ describe('approval-handler', () => {
           payload: { type: 'approval_response', sessionId: 's-1', approved: true },
         });
 
-        expect(() => handleApprovalResponse(envelope, agentManager, log, authorize)).not.toThrow();
+        expect(() =>
+          handleApprovalResponse(envelope, [agentManager], log, authorize)
+        ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
 
@@ -213,7 +222,9 @@ describe('approval-handler', () => {
           payload: { type: 'approval_response', toolCallId: 'tc-1', approved: true },
         });
 
-        expect(() => handleApprovalResponse(envelope, agentManager, log, authorize)).not.toThrow();
+        expect(() =>
+          handleApprovalResponse(envelope, [agentManager], log, authorize)
+        ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
 
@@ -222,7 +233,9 @@ describe('approval-handler', () => {
           payload: { type: 'approval_response', toolCallId: 'tc-1', sessionId: 's-1' },
         });
 
-        expect(() => handleApprovalResponse(envelope, agentManager, log, authorize)).not.toThrow();
+        expect(() =>
+          handleApprovalResponse(envelope, [agentManager], log, authorize)
+        ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
 
@@ -231,7 +244,9 @@ describe('approval-handler', () => {
           payload: 'not an object' as unknown as Record<string, unknown>,
         });
 
-        expect(() => handleApprovalResponse(envelope, agentManager, log, authorize)).not.toThrow();
+        expect(() =>
+          handleApprovalResponse(envelope, [agentManager], log, authorize)
+        ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
     });
@@ -245,7 +260,7 @@ describe('approval-handler', () => {
         authorize.mockReturnValue(false);
         const envelope = createApprovalEnvelope();
 
-        handleApprovalResponse(envelope, agentManager, log, authorize);
+        handleApprovalResponse(envelope, [agentManager], log, authorize);
 
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalledTimes(1);
@@ -255,13 +270,13 @@ describe('approval-handler', () => {
       });
 
       it('forwards the decision when the click is authorized', () => {
-        handleApprovalResponse(createApprovalEnvelope(), agentManager, log, authorize);
+        handleApprovalResponse(createApprovalEnvelope(), [agentManager], log, authorize);
 
         expect(agentManager.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
       });
 
       it('is handed the session, the platform and who clicked', () => {
-        handleApprovalResponse(createApprovalEnvelope(), agentManager, log, authorize);
+        handleApprovalResponse(createApprovalEnvelope(), [agentManager], log, authorize);
 
         expect(authorize).toHaveBeenCalledWith({
           sessionId: 'session-abc',
@@ -283,7 +298,7 @@ describe('approval-handler', () => {
           },
         });
 
-        handleApprovalResponse(envelope, agentManager, log, authorize);
+        handleApprovalResponse(envelope, [agentManager], log, authorize);
 
         expect(authorize).toHaveBeenCalledWith({
           sessionId: 's-1',
@@ -293,7 +308,7 @@ describe('approval-handler', () => {
       });
 
       it('is asked on every envelope the subscription routes, not only direct calls', () => {
-        subscribeApprovalHandler(relay, agentManager, log, authorize);
+        subscribeApprovalHandler(relay, [agentManager], log, authorize);
         authorize.mockReturnValue(false);
 
         relay.capturedHandler!(createApprovalEnvelope());
@@ -307,7 +322,7 @@ describe('approval-handler', () => {
           payload: { type: 'something_else' },
         });
 
-        handleApprovalResponse(envelope, agentManager, log, authorize);
+        handleApprovalResponse(envelope, [agentManager], log, authorize);
 
         expect(authorize).not.toHaveBeenCalled();
       });
@@ -323,9 +338,58 @@ describe('approval-handler', () => {
         },
       });
 
-      handleApprovalResponse(envelope, agentManager, log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize);
 
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('platform=unknown'));
+    });
+  });
+
+  describe('several runtimes (DOR-1614)', () => {
+    // An approval card carries a session id and nothing else — no runtime — so
+    // the decision is offered to each runtime in turn. Only one can hold a given
+    // pending interaction, so this is exact rather than a guess.
+    it('reaches the runtime that holds the interaction, not just the first one', () => {
+      const first = createMockAgentManager();
+      vi.mocked(first.approveTool).mockReturnValue(false);
+      const second = createMockAgentManager();
+      vi.mocked(second.approveTool).mockReturnValue(true);
+
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+
+      expect(second.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it('stops at the runtime that answers, so no bystander is asked', () => {
+      const first = createMockAgentManager();
+      const second = createMockAgentManager();
+
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+
+      expect(first.approveTool).toHaveBeenCalledOnce();
+      expect(second.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('names every runtime it asked when none held the tool call', () => {
+      const first = createMockAgentManager('claude-code');
+      vi.mocked(first.approveTool).mockReturnValue(false);
+      const second = createMockAgentManager('codex');
+      vi.mocked(second.approveTool).mockReturnValue(false);
+
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('claude-code, codex'));
+    });
+
+    it('touches no runtime at all when the gate refuses', () => {
+      const first = createMockAgentManager();
+      const second = createMockAgentManager();
+      authorize.mockReturnValue(false);
+
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+
+      expect(first.approveTool).not.toHaveBeenCalled();
+      expect(second.approveTool).not.toHaveBeenCalled();
     });
   });
 });

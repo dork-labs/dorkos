@@ -348,6 +348,22 @@ export const TaskDispatchPayloadSchema = z
      * first run.
      */
     resumeSession: z.boolean().optional(),
+    /**
+     * Which agent runtime must execute this run (DOR-1614).
+     *
+     * On the wire because a dispatch subject is `relay.system.tasks.<taskId>`
+     * and has nowhere to carry it, and because the receiver runs in another
+     * process: nothing there can re-derive which runtime the scheduler resolved
+     * for this task. A receiver that does not hold the named runtime refuses
+     * the dispatch rather than running it on another one.
+     *
+     * A free-form string, not the runtime enum, for the same reason the task's
+     * own `runtime` field is: which runtimes exist is a registration question
+     * answered at run time, not a parse question. Absent means "the receiver's
+     * default runtime" — every envelope written before this field existed, and
+     * every task the scheduler has resolved no per-task runtime for.
+     */
+    runtime: z.string().min(1).optional(),
   })
   .openapi('TaskDispatchPayload');
 

@@ -193,9 +193,13 @@ export async function handleTasksMessage(
   // fire resumes and which makes the run clickable to the real conversation.
   // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
   // branch records the freshest answer.
+  //
+  // A runtime that does not rename its own sessions (codex, opencode) declares
+  // no `getSdkSessionId`, and the id it ran under is already the durable one —
+  // so the same expression records the right thing for it without a branch.
   const isSticky = payload.sessionId !== undefined;
   const persistedSessionId = (): string =>
-    isSticky ? (deps.agentManager.getSdkSessionId(sessionId) ?? sessionId) : sessionId;
+    isSticky ? (deps.agentManager.getSdkSessionId?.(sessionId) ?? sessionId) : sessionId;
 
   // Record trace span as delivered
   deps.traceStore.insertSpan({

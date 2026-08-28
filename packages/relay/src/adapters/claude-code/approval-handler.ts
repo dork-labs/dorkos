@@ -83,21 +83,36 @@ export type ApprovalAuthorizer = (decision: {
 /**
  * Handle a single approval response envelope.
  *
- * Validates the payload, asks `authorize`, calls `agentManager.approveTool()`,
- * and logs the outcome. Returns false if the interaction was not found (e.g.,
- * already timed out) without throwing — the deferred promise has already been
- * settled.
+ * Validates the payload, asks `authorize`, calls `approveTool()`, and logs the
+ * outcome. Returns quietly if the interaction was not found (e.g., already
+ * timed out) — the deferred promise has already been settled.
+ *
+ * ## Why this ASKS every runtime rather than resolving one
+ *
+ * An approval card carries a session id and nothing else. The card was built by
+ * a chat adapter from an `approval_required` event, and neither the event nor
+ * the click that answers it has ever carried a runtime — so unlike an agent
+ * subject or a task dispatch, there is nothing here to name one.
+ *
+ * `approveTool` is a lookup that answers `false` when the runtime holds no such
+ * pending interaction, and only one runtime can hold a given one, so asking
+ * each in turn is exact rather than a guess. It is also side-effect free on a
+ * miss in all three shipped runtimes: Claude Code and OpenCode look the
+ * interaction up and return, and Codex has no approval channel at all and
+ * always answers `false` (its `supportsToolApproval` is false, so no card for a
+ * Codex session is ever built in the first place). The default runtime is asked
+ * first, so the single-runtime case is unchanged down to the call order.
  *
  * @param envelope - The relay envelope containing the approval response
- * @param agentManager - The agent runtime to forward the approval decision to
+ * @param agentRuntimes - The runtimes to offer the decision to, default first
  * @param log - Logger instance for diagnostics
  * @param authorize - Whether this platform user may authorize this session's
- *   tool call. Runs BEFORE the runtime is touched; a refusal logs one line and
+ *   tool call. Runs BEFORE any runtime is touched; a refusal logs one line and
  *   has no other effect.
  */
 export function handleApprovalResponse(
   envelope: RelayEnvelope,
-  agentManager: AgentRuntimeLike,
+  agentRuntimes: readonly AgentRuntimeLike[],
   log: Pick<Console, 'warn' | 'debug'>,
   authorize: ApprovalAuthorizer
 ): void {
@@ -128,12 +143,19 @@ export function handleApprovalResponse(
       `toolCallId=${toolCallId} sessionId=${sessionId} platform=${platform}`
   );
 
-  const resolved = agentManager.approveTool(sessionId, toolCallId, approved);
+  const resolved = agentRuntimes.some((runtime) =>
+    runtime.approveTool(sessionId, toolCallId, approved)
+  );
   if (!resolved) {
-    // Interaction already settled (e.g., timeout auto-denied before user clicked)
+    // No runtime held the interaction: it settled already (a timeout
+    // auto-denied it before the click landed), or it belongs to a runtime this
+    // server did not start. Both are named, because the second one is a wiring
+    // problem and the first is not.
     log.warn(
-      `[CCA] approval-handler: approveTool returned false — ` +
-        `interaction not found (already timed out?) toolCallId=${toolCallId} sessionId=${sessionId}`
+      `[CCA] approval-handler: no runtime held this tool call — it has already been ` +
+        `answered (a timeout, perhaps), or the session belongs to a runtime this server did ` +
+        `not start. toolCallId=${toolCallId} sessionId=${sessionId} ` +
+        `asked=${agentRuntimes.map((runtime) => runtime.type ?? 'unknown').join(', ')}`
     );
   }
 }
@@ -146,18 +168,19 @@ export function handleApprovalResponse(
  * unsubscribe function that must be called on adapter stop.
  *
  * @param relay - The RelayPublisher to subscribe through
- * @param agentManager - The agent runtime to forward approval decisions to
+ * @param agentRuntimes - The runtimes to offer approval decisions to, default
+ *   first. See {@link handleApprovalResponse} for why every one is asked.
  * @param log - Logger instance for diagnostics
  * @param authorize - Whether the clicking platform user may authorize the
  *   session's tool call. Required; see {@link ApprovalAuthorizer}.
  */
 export function subscribeApprovalHandler(
   relay: RelayPublisher,
-  agentManager: AgentRuntimeLike,
+  agentRuntimes: readonly AgentRuntimeLike[],
   log: Pick<Console, 'warn' | 'debug'>,
   authorize: ApprovalAuthorizer
 ): Unsubscribe {
   return relay.subscribe(APPROVAL_SUBJECT_PATTERN, (envelope) => {
-    handleApprovalResponse(envelope, agentManager, log, authorize);
+    handleApprovalResponse(envelope, agentRuntimes, log, authorize);
   });
 }
