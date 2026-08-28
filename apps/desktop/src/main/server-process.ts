@@ -5,6 +5,7 @@ import { chooseServerPort } from './server-port';
 import { spawnServer, type ServerChild } from './server-spawn';
 import { formatServerOutput } from './server-output';
 import { recoverFromCrash } from './server-crash-recovery';
+import { describeLogLocation } from './log-location';
 
 /**
  * Supervisor for the Express server the desktop shell runs as a child process.
@@ -214,7 +215,7 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
       "DorkOS couldn't recover its server",
       "DorkOS lost its background server and couldn't offer to start it again, so it can't " +
         'continue. Try opening DorkOS again. If this keeps happening, check ' +
-        `~/Library/Logs/@dorkos/desktop for details.\n\n${err instanceof Error ? err.message : String(err)}`
+        `${describeLogLocation()} for details.\n\n${err instanceof Error ? err.message : String(err)}`
     );
     app.quit();
   });

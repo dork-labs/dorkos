@@ -248,10 +248,15 @@ function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void
  * — it is already an own-origin absolute URL, verified by the window-open
  * handler that created it.
  *
+ * Exported for `renderer-health/`, which has to put the app back on
+ * screen after its recovery page has been showing. Resolving the entry a
+ * second time over there would be a second answer to "where does the cockpit
+ * live", and the two would drift the first time this one changed.
+ *
  * @param win - The window to load.
  * @param options - See {@link CreateWindowOptions}.
  */
-function loadRenderer(win: BrowserWindow, options: CreateWindowOptions): void {
+export function loadRenderer(win: BrowserWindow, options: CreateWindowOptions): void {
   const rendererUrl = options.getRendererUrl?.();
   if (options.initialUrl) {
     void win.loadURL(options.initialUrl);

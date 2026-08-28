@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DorkOS</title>
+    <!--
+      The renderer supervisor's last resort (DOR-1453). Loaded with `loadFile`
+      from beside the compiled main process, so it needs no server, no network
+      and no bundle — the three things that may be exactly what is broken.
+      Everything here is inline for the same reason: a stylesheet or a font this
+      page had to fetch would be one more way for the recovery surface itself to
+      come up blank.
+
+      Its three actions go through the preload bridge to `main/renderer-health/`,
+      which only answers them while this page is the one on screen.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fafafa;
+        --panel: #ffffff;
+        --fg: #171717;
+        --dim: #525252;
+        --line: #d4d4d4;
+        --brand: #d55c0b;
+        --action-bg: #171717;
+        --action-fg: #fafafa;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0a0a0a;
+          --panel: #0f0f0f;
+          --fg: #dedede;
+          --dim: #a3a3a3;
+          --line: #404040;
+          --brand: #f17827;
+          --action-bg: #dedede;
+          --action-fg: #171717;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 480px;
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-top: 2px solid var(--brand);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+      .mark {
+        display: block;
+        width: 116px;
+        height: auto;
+        margin-bottom: 20px;
+        color: var(--fg);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0 0 16px;
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--dim);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      button {
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: transparent;
+        background: var(--action-bg);
+        color: var(--action-fg);
+      }
+      button[disabled] {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .note {
+        margin: 0;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--dim);
+      }
+    </style>
+  </head>
+  <body>
+    <main role="alertdialog" aria-labelledby="title">
+      <svg class="mark" viewBox="0 0 2325 799" fill="none" aria-hidden="true">
+        <rect x="50" y="50" width="2225" height="699" stroke="currentColor" stroke-width="100" />
+        <path
+          d="M492.333 199.627L599.833 295.627L600 295.776V491.707L492.207 599.5H199.5V199.5H492.19L492.333 199.627ZM334 347.5V448.5H435V347.5H334Z"
+          fill="currentColor"
+        />
+        <path
+          d="M1108.5 497.715L1108.34 497.862L1001.34 599.362L1001.2 599.5H699V296.283L699.158 296.135L802.158 199.635L802.303 199.5H1108.5V497.715ZM855 347.5V448.5H956V347.5H855Z"
+          fill="currentColor"
+        />
+        <path
+          d="M1616.94 200.24L1510.07 395.005L1616.94 598.768L1617.64 600.103L1616.28 599.451L1409 500.056L1208.22 599.448L1207.5 599.806V199.5H1617.34L1616.94 200.24ZM1332 337.5V439.207L1433.71 337.5H1332Z"
+          fill="currentColor"
+        />
+        <path
+          d="M1716.5 599V200L1841 291.5L2125 200L2017.5 400L2125 599L1841 501L1716.5 599Z"
+          fill="currentColor"
+          stroke="currentColor"
+        />
+      </svg>
+      <h1 id="title">DorkOS is having trouble showing its screen.</h1>
+      <p>
+        DorkOS is still running and your agents are still working — it is this window that will not
+        come up. It has already tried a few times on its own.
+      </p>
+      <div class="actions">
+        <button id="try-again" class="primary" type="button">Try Again</button>
+        <button id="reset" type="button">Reset and Relaunch</button>
+        <button id="diagnostics" type="button">Save Diagnostic Report</button>
+      </div>
+      <p class="note" id="note">
+        <strong>Try Again</strong> starts the whole thing over: DorkOS loads the app again and, if
+        it fails again, works back through the same repairs before returning you here.
+        <strong>Reset and Relaunch</strong> throws away what this window remembered and restarts
+        DorkOS; your projects, sessions and agents are kept. <strong>Save Diagnostic Report</strong>
+        puts a file on your Desktop you can send us — read it first, it contains logs that can
+        mention your file paths and what you asked your agents to do.
+      </p>
+    </main>
+    <script>
+      (function () {
+        var api = window.electronAPI;
+        var note = document.getElementById('note');
+
+        function button(id) {
+          return document.getElementById(id);
+        }
+
+        // No bridge means this page is not in the desktop shell at all, which
+        // leaves every button below a lie. Say so rather than offering three
+        // controls that do nothing.
+        if (!api || typeof api.retryRenderer !== 'function') {
+          ['try-again', 'reset', 'diagnostics'].forEach(function (id) {
+            button(id).disabled = true;
+          });
+          note.textContent =
+            'This page is open outside the DorkOS app, so it cannot fix anything from here. ' +
+            'Quit DorkOS and open it again.';
+          return;
+        }
+
+        // One in-flight action at a time: two of the three restart the app, and
+        // a second click during a relaunch is a click on a window that is going
+        // away.
+        var busy = false;
+
+        function run(node, working, action) {
+          node.addEventListener('click', function () {
+            if (busy) return;
+            busy = true;
+            var label = node.textContent;
+            node.textContent = working;
+            Promise.resolve()
+              .then(action)
+              .catch(function (err) {
+                console.error('[dorkos] Recovery action failed.', err);
+              })
+              .finally(function () {
+                busy = false;
+                node.textContent = label;
+              });
+          });
+        }
+
+        run(button('try-again'), 'Reloading…', function () {
+          return api.retryRenderer();
+        });
+        run(button('reset'), 'Resetting…', function () {
+          return api.resetAndRelaunch();
+        });
+        run(button('diagnostics'), 'Saving…', function () {
+          return api.saveDiagnosticReport();
+        });
+      })();
+    </script>
+  </body>
+</html>

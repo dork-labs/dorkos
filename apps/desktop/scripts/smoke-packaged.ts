@@ -724,6 +724,168 @@ function assertDataDirIsolated(home: string): void {
   );
 }
 
+/**
+ * The counter file the renderer supervisor writes on every heartbeat
+ * (`src/main/renderer-health/index.ts`).
+ */
+const RENDERER_HEALTH_FILE = 'renderer-health.json';
+
+/**
+ * How long to wait for the window to report a first paint, after the server is
+ * already healthy.
+ *
+ * The supervisor's own deadline is 10s from the load, and the window is only
+ * created once the server is up — so this is that deadline plus room for a
+ * cold runner to paint, and no more. Waiting longer would mean a build whose
+ * window comes up late reads the same as one that comes up.
+ */
+const RENDER_BUDGET_MS = 45_000;
+
+/** Depth to search `Application Support` for {@link RENDERER_HEALTH_FILE}. */
+const HEALTH_SEARCH_DEPTH = 3;
+
+/** What the supervisor writes; only the fields this smoke reads. */
+interface RendererHealthFile {
+  /** Renderer failures since the last first paint. */
+  consecutiveFailures?: number;
+  /** When the record was last written. */
+  updatedAt?: string;
+}
+
+/**
+ * Find the renderer health file somewhere under the throwaway home.
+ *
+ * Searched rather than composed, because the directory it lands in is
+ * `app.getPath('userData')` — Electron's own answer, built from an app name
+ * that lives in packaging config rather than in this source. Composing the
+ * path here would turn a rename into a confident "the window never painted",
+ * which is the loudest possible false alarm.
+ *
+ * @param home - The throwaway home the app was launched against.
+ * @returns Absolute path of the file, or `null` if it is not there yet.
+ */
+export function findRendererHealthFile(home: string): string | null {
+  const roots = [path.join(home, 'Library', 'Application Support'), home];
+  const search = (dir: string, depth: number): string | null => {
+    if (depth > HEALTH_SEARCH_DEPTH) return null;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      // Not created yet, or not ours to read.
+      return null;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name === RENDERER_HEALTH_FILE) {
+        return path.join(dir, entry.name);
+      }
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const found = search(path.join(dir, entry.name), depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  for (const root of roots) {
+    const found = search(root, 0);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Does this health record show a window that painted on **this** launch?
+ *
+ * Three claims in one, and all three are needed. A record at all means the
+ * heartbeat IPC arrived; `consecutiveFailures: 0` means the supervisor was not
+ * mid-recovery when it wrote; and an `updatedAt` after the launch means it is
+ * this run's record rather than one a previous run left in the directory.
+ *
+ * @param contents - The file's raw contents.
+ * @param launchedAt - Epoch milliseconds the app was spawned at.
+ * @returns `null` when the record proves a paint, otherwise why it does not.
+ */
+export function rendererPaintFailure(contents: string, launchedAt: number): string | null {
+  let parsed: RendererHealthFile;
+  try {
+    parsed = JSON.parse(contents) as RendererHealthFile;
+  } catch {
+    return `${RENDERER_HEALTH_FILE} is not readable JSON: ${contents.slice(0, 200)}`;
+  }
+  const updatedAt = parsed.updatedAt ? Date.parse(parsed.updatedAt) : NaN;
+  if (Number.isNaN(updatedAt)) return `${RENDERER_HEALTH_FILE} has no usable updatedAt.`;
+  // A second of slack: the file's timestamp comes from the app's clock and the
+  // launch time from this process's, and they are not the same reading.
+  if (updatedAt < launchedAt - 1_000) {
+    return (
+      `${RENDERER_HEALTH_FILE} was last written ${new Date(updatedAt).toISOString()}, before this ` +
+      `launch at ${new Date(launchedAt).toISOString()} — the window never reported a first paint.`
+    );
+  }
+  if (parsed.consecutiveFailures !== 0) {
+    return (
+      `The renderer supervisor recorded ${parsed.consecutiveFailures} consecutive failure(s), so ` +
+      `the window did not come up on its own.`
+    );
+  }
+  return null;
+}
+
+/**
+ * Assert the packaged app's window actually rendered.
+ *
+ * **This is the gate for the whole "packages green, black on install" class.**
+ * v0.63.0 passed every check this script had: it launched, served, quit
+ * cleanly, and showed every user a black rectangle, because the renderer
+ * bundle threw before React mounted (DOR-1448). Nothing here can see a window,
+ * so it reads the artifact that stands in for one: the heartbeat the renderer
+ * supervisor records.
+ *
+ * Be precise about what that proves. The heartbeat says the renderer got far
+ * enough to run the client's own boot script and report itself — the bundle
+ * loaded and evaluated, which is exactly what v0.63.0 could not do. It does
+ * NOT prove the window is laid out correctly or that any pixel is the right
+ * colour; a heartbeat also arrives from the sentinel's own failure panel,
+ * which is a readable screen rather than a working app. This gate catches
+ * "nothing rendered", not "it rendered wrong".
+ *
+ * @param home - The throwaway home the app was launched against.
+ * @param app - The launched app, so a crash is reported as a crash.
+ * @param launchedAt - Epoch milliseconds the app was spawned at.
+ * @throws If no window reported a first paint within {@link RENDER_BUDGET_MS}.
+ */
+async function assertRendererPainted(
+  home: string,
+  app: LaunchedApp,
+  launchedAt: number
+): Promise<void> {
+  const deadline = Date.now() + RENDER_BUDGET_MS;
+  let lastFailure = `${RENDERER_HEALTH_FILE} never appeared under ${home}.`;
+  while (Date.now() < deadline) {
+    if (app.exited) {
+      throw new Error(`The app exited (code ${app.exitCode}) before its window reported a paint.`);
+    }
+    const file = findRendererHealthFile(home);
+    if (file) {
+      try {
+        lastFailure = rendererPaintFailure(readFileSync(file, 'utf-8'), launchedAt) ?? '';
+      } catch (err) {
+        // A read that lost a race with the app's own write; try again.
+        lastFailure = `${file} could not be read: ${String(err)}`;
+      }
+      if (lastFailure === '') return;
+    }
+    await delay(POLL_INTERVAL_MS);
+  }
+  throw new Error(
+    `The packaged app's window never reported that it rendered.\n${lastFailure}\n\n` +
+      `This is the check that catches a build which launches, serves and quits cleanly while ` +
+      `showing every user a black window (DOR-1448). Do not weaken it: run the app by hand and ` +
+      `look at the window before assuming the check is wrong.`
+  );
+}
+
 /** One thing this smoke claims about the running app. */
 interface Assertion {
   /** What is being claimed, phrased as the passing case. */
@@ -908,7 +1070,7 @@ async function main(): Promise<void> {
   const expectedVersion = (
     JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as { version: string }
   ).version;
-  console.log(`[1/6] Packaged app: ${appPath}`);
+  console.log(`[1/7] Packaged app: ${appPath}`);
   console.log(`      Bundle id: ${assertBundleIdMatchesConfig(appPath)} (matches appId)`);
   assertTrayImagesPackaged(appPath);
   console.log(`      Tray images: all ${TRAY_IMAGE_FILES.length} present in app.asar`);
@@ -922,21 +1084,22 @@ async function main(): Promise<void> {
   execFileSync('xattr', ['-cr', appPath]);
   const resigned = relaxAdhocLibraryValidation(appPath);
   console.log(
-    `[2/6] Cleared extended attributes (Gatekeeper insurance)` +
+    `[2/7] Cleared extended attributes (Gatekeeper insurance)` +
       `${resigned ? '; re-signed ad-hoc so an unsigned build can load its own framework' : ''}.`
   );
 
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-home-'));
   const fixtures = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-shell-'));
   const loginShell = createFakeLoginShell(fixtures);
+  const launchedAt = Date.now();
   const app = launchApp(appPath, home, loginShell);
-  console.log(`[3/6] Launched (pid ${app.pid}) against throwaway home ${home}`);
+  console.log(`[3/7] Launched (pid ${app.pid}) against throwaway home ${home}`);
   console.log(`      PATH is launchd's (${LAUNCHD_PATH}); $SHELL is ${loginShell.shell}`);
 
   try {
     const { endpoint, health } = await waitForHealthyServer(app);
     console.log(
-      `[4/6] Server healthy on ${endpoint.host}:${endpoint.port} — version ${health.version}`
+      `[4/7] Server healthy on ${endpoint.host}:${endpoint.port} — version ${health.version}`
     );
 
     // The packaged server bundle carries the desktop package's version, baked
@@ -952,8 +1115,11 @@ async function main(): Promise<void> {
 
     assertDataDirIsolated(home);
 
-    console.log('[5/6] What the app can see from a launchd-style launch:');
+    console.log('[5/7] What the app can see from a launchd-style launch:');
     await assertAppSeesItsMachine(endpoint, home, app.output);
+
+    await assertRendererPainted(home, app, launchedAt);
+    console.log('[6/7] The window rendered — the renderer reported a first paint.');
 
     await quitApp(app);
     // Assert the (code, signal) PAIR, not the code alone. `child.on('exit')`
@@ -980,7 +1146,7 @@ async function main(): Promise<void> {
     rmSync(home, { recursive: true, force: true });
     rmSync(fixtures, { recursive: true, force: true });
     console.log(
-      '[6/6] Data dir isolated, quit cleanly (exit 0), port released. Packaged smoke PASSED.'
+      '[7/7] Data dir isolated, quit cleanly (exit 0), port released. Packaged smoke PASSED.'
     );
   } catch (err) {
     // The app's own output is the only diagnosis material for a packaged
@@ -997,8 +1163,17 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  console.error(`\n[smoke-packaged] FAILED:\n`);
-  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
-  process.exit(1);
-});
+// Run only when invoked as the script, so the pure helpers above can be
+// imported and tested — the same guard `check-renderer-defines.ts` uses. A
+// bare `main()` here would launch a packaged app the moment a test imported
+// this file.
+if (
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  main().catch((err: unknown) => {
+    console.error(`\n[smoke-packaged] FAILED:\n`);
+    console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+    process.exit(1);
+  });
+}
