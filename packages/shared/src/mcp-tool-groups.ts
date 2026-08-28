@@ -11,12 +11,19 @@
  * (`runtimes/claude-code/messaging/context-builder.ts`). An agent that names one
  * of those tools anyway still reaches it.
  *
- * There is no hard filter anywhere in this pipeline, and "gates" in the names
- * below means "is described by", nothing stronger. Until DOR-519 this file said
- * otherwise, because ADR-0070 built the feature on the premise that the SDK's
- * `allowedTools` option restricted a session's tool set. It does not; it
- * auto-approves. See ADR-260726-171347 for the current position and ADR-0070 for
- * the full history.
+ * No entry in THIS TABLE is a hard filter, and "gates" in the names below means
+ * "is described by", nothing stronger. Until DOR-519 this file said otherwise,
+ * because ADR-0070 built the feature on the premise that the SDK's `allowedTools`
+ * option restricted a session's tool set. It does not; it auto-approves. See
+ * ADR-260726-171347 for the current position and ADR-0070 for the full history.
+ *
+ * **One key beside these four now does block, and it is not in this table.**
+ * `EnabledToolGroups.roomsManage` (`mesh-schemas.ts`) is a per-agent grant the
+ * server's capability choke point reads on every call, so a capability that
+ * declares that group is refused without it. It is deliberately absent here for
+ * the same reason every registry-generated tool is (see the "Adding a tool" note
+ * below): the capability declares its own group, and restating it here would be a
+ * second copy of the fact this table exists to remove.
  *
  * What stops an agent from doing something consequential is the permission tier
  * on the tool, enforced in `apps/server/src/services/core/mcp-tool-gate.ts` below
