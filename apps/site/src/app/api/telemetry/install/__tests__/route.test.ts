@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getDb } from '@/db/client';
+import {
+  INSTALL_TELEMETRY_RATE_LIMIT,
+  resetInstallTelemetryRateLimit,
+} from '@/lib/telemetry/install-rate-limit';
 
 import { POST } from '../route';
 
@@ -34,6 +38,7 @@ beforeEach(() => {
   mockDb = { insert: mockInsert };
   vi.mocked(getDb).mockReturnValue(mockDb as never);
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  resetInstallTelemetryRateLimit();
 });
 
 afterEach(() => {
@@ -241,5 +246,47 @@ describe('POST /api/telemetry/install', () => {
         sourceType: VALID_EVENT.sourceType,
       });
     });
+  });
+});
+
+describe('POST /api/telemetry/install — rate limiting', () => {
+  const ip = { 'x-real-ip': '203.0.113.50' };
+
+  it('lets one IP through up to the limit, then answers 429', async () => {
+    for (let i = 0; i < INSTALL_TELEMETRY_RATE_LIMIT; i += 1) {
+      expect((await POST(makeRequest(VALID_EVENT, { headers: ip }))).status).toBe(200);
+    }
+    expect(mockValues).toHaveBeenCalledTimes(INSTALL_TELEMETRY_RATE_LIMIT);
+
+    const blocked = await POST(makeRequest(VALID_EVENT, { headers: ip }));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    await expect(blocked.json()).resolves.toEqual({
+      error: 'Too many requests. Retry after the number of seconds in the Retry-After header.',
+    });
+    // The throttled event never reaches the table.
+    expect(mockValues).toHaveBeenCalledTimes(INSTALL_TELEMETRY_RATE_LIMIT);
+  });
+
+  it("does not charge one IP for another IP's events", async () => {
+    for (let i = 0; i <= INSTALL_TELEMETRY_RATE_LIMIT; i += 1) {
+      await POST(makeRequest(VALID_EVENT, { headers: ip }));
+    }
+    expect((await POST(makeRequest(VALID_EVENT, { headers: ip }))).status).toBe(429);
+
+    const bystander = await POST(
+      makeRequest(VALID_EVENT, { headers: { 'x-real-ip': '203.0.113.51' } })
+    );
+    expect(bystander.status).toBe(200);
+  });
+
+  it('meters the IP without ever putting it in the row', async () => {
+    // The throttle is the only thing on this route that reads a header. It
+    // must stay a counter: the address it counted must not reach the insert.
+    await POST(makeRequest(VALID_EVENT, { headers: { 'x-real-ip': '198.51.100.77' } }));
+
+    expect(mockValues).toHaveBeenCalledTimes(1);
+    const inserted = JSON.stringify(mockValues.mock.calls[0]?.[0]);
+    expect(inserted).not.toContain('198.51.100.77');
   });
 });
