@@ -4140,9 +4140,20 @@ export const TaskRunSchema = z
      */
     resolvedRuntime: z.string().nullable().default(null),
     /**
-     * The model this run actually ran on, stamped at dispatch (DOR-1347).
+     * The model this run RESOLVED to, stamped at dispatch (DOR-1347).
      * `null` when nothing chose one — the runtime picked — or on a run older
      * than the column.
+     *
+     * **One caveat, and it is narrow.** A STICKY task resumes a session that is
+     * still resident, and a resident session keeps the model it was created
+     * with: the runtime reads `session.model` once, when the record is made, and
+     * a per-send override does not reach an existing one. So if a sticky task's
+     * model is changed between fires, this field reports the newly resolved
+     * model while the turn actually continued on the old one, until the session
+     * is evicted and remade. The runtime never lies this way — a change of
+     * RUNTIME forces a fresh session (`sticky-session.ts`), so the gap is
+     * model-only and confined to one runtime. Non-sticky runs, which are every
+     * task's default, always create their session fresh and are exact.
      */
     resolvedModel: z.string().nullable().default(null),
     createdAt: z.string(),

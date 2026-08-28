@@ -159,9 +159,15 @@ export const pulseRuns = sqliteTable(
      */
     resolvedRuntime: text('resolved_runtime'),
     /**
-     * The model this run actually ran on (DOR-1347). NULL when nothing chose
-     * one and the runtime picked for itself — which is a real answer, not a
-     * missing one — or on a run older than the column.
+     * The model this run RESOLVED to (DOR-1347). NULL when nothing chose one
+     * and the runtime picked for itself — which is a real answer, not a missing
+     * one — or on a run older than the column.
+     *
+     * A STICKY run that resumes a still-resident session continues on the model
+     * that session was CREATED with, so this reports the newly resolved model
+     * while the turn used the old one until the session is evicted. See
+     * `TaskRunSchema.resolvedModel` in `@dorkos/shared` for the full caveat and
+     * why it is model-only.
      */
     resolvedModel: text('resolved_model'),
     trigger: text('trigger', {

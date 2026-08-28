@@ -11,13 +11,13 @@ covers:
 - A scheduled task can now say which agent runtime it runs on — Claude Code,
   Codex or OpenCode — which model, and how hard that model thinks. Set them in
   the task's file, over the API, from the `dorkos task create` command, or by
-  asking an agent to set them for you (DOR-1615, DOR-1347)
+  asking an agent to make you a task with them (DOR-1615, DOR-1347)
 - Leave all three unset and nothing changes: the task runs on whatever its agent
   runs on, which is what every scheduled task did before. Setting one is an
   override, and clearing it goes back to following the agent (DOR-1615)
-- Run history now records what each run actually ran on, not what the task says
-  today. Move a task to a different runtime next week and its old runs still
-  report the truth about themselves (DOR-1615, DOR-1347)
+- Run history now records what each run ran on, not what the task says today.
+  Move a task to a different runtime next week and its old runs still report the
+  truth about themselves (DOR-1615, DOR-1347)
 
 ### Changed
 
@@ -34,3 +34,7 @@ covers:
   runtime, starts a fresh conversation instead of trying to pick up one that
   lives in another program's history. Its earlier runs are all still there to
   read (DOR-1615)
+- One rough edge worth knowing: if a task remembers its last run and you change
+  its model, the next run may carry on with the old model until that
+  conversation is put down. Tasks that start fresh each time — the default —
+  always use the model you picked (DOR-1347)
