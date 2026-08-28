@@ -1,5 +1,8 @@
 import { vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type {
   Display,
@@ -25,7 +28,28 @@ import { MockServerProcess, type SpawnOptions } from './server-child-mock';
  * main-process code under test without a real Electron runtime.
  */
 
-const DEFAULT_USER_DATA_PATH = '/tmp/dorkos-desktop-test/userData';
+/**
+ * The directory `app.getPath(...)` answers with, replaced by a fresh one on
+ * every {@link resetElectronMock}.
+ *
+ * Unique per reset because some main-process modules write to `userData` with
+ * the REAL `node:fs` (`updater-intent.ts`, whose whole job is a file that
+ * survives a restart). A shared constant path made those files outlive the test
+ * that wrote them, and a leftover install-intent file is read on the next
+ * `setupAutoUpdater` as a failed update — a cross-test failure that would look
+ * like a product bug. Nothing is created on disk until a module writes.
+ */
+let userDataPath = freshUserDataPath();
+
+/** A directory no previous test can have written to. */
+function freshUserDataPath(): string {
+  return join(tmpdir(), 'dorkos-desktop-test', randomUUID(), 'userData');
+}
+
+/** Where the mocked `app.getPath(...)` currently points — for tests that inspect what was written. */
+export function mockUserDataPath(): string {
+  return userDataPath;
+}
 
 /** A minimal ordered event bus: register listeners, then await them all on emit. */
 function createEventBus(): {
@@ -231,7 +255,7 @@ export const app = {
   relaunch: vi.fn<(options?: unknown) => void>(),
   /** No-op here; in production it must run before `ready` (see `main/index.ts`). */
   disableHardwareAcceleration: vi.fn<() => void>(),
-  getPath: vi.fn((_name?: string): string => DEFAULT_USER_DATA_PATH),
+  getPath: vi.fn((_name?: string): string => userDataPath),
   getVersion: vi.fn((): string => '0.1.0'),
   /**
    * macOS-only in real Electron, and modelled unconditionally here: the code
@@ -470,7 +494,8 @@ export function resetElectronMock(): void {
   app.quit = vi.fn();
   app.relaunch = vi.fn();
   app.disableHardwareAcceleration = vi.fn();
-  app.getPath = vi.fn((_name?: string) => DEFAULT_USER_DATA_PATH);
+  userDataPath = freshUserDataPath();
+  app.getPath = vi.fn((_name?: string) => userDataPath);
   app.getVersion = vi.fn(() => '0.1.0');
   app.isInApplicationsFolder = vi.fn(() => true);
   app.setAboutPanelOptions = vi.fn();

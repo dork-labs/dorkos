@@ -389,6 +389,28 @@ export class RoomsApi {
   }
 
   /**
+   * Take one author off a room's roster, the way `DELETE /:id/members/:authorId`
+   * takes anyone off it — including the operator themselves.
+   *
+   * A test that needs a room the OWNER is not on the roster of (`seesEveryRoom`
+   * still lists it, per {@link RoomsApi}'s own class doc) reaches this state the
+   * same way the product does: creating a room auto-joins its creator, so there
+   * is no create call that skips the owner. Removing them afterwards is the
+   * honest route, not a shortcut — it is the exact roster shape a "leave"
+   * produces, and the client has no signal that distinguishes "left" from
+   * "never joined" (both read as `unreadCount: null`).
+   *
+   * @param roomId - The room to remove them from.
+   * @param authorId - Whose membership to remove.
+   */
+  async removeMember(roomId: string, authorId: string): Promise<void> {
+    const res = await this.request.delete(`/api/rooms/${roomId}/members/${authorId}`);
+    if (!res.ok()) {
+      throw new Error(`Could not remove ${authorId} from ${roomId}: ${await res.text()}`);
+    }
+  }
+
+  /**
    * Start a direct message with one agent or several.
    *
    * @param title - What to call it. Group titles read the way

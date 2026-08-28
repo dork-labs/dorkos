@@ -1,0 +1,166 @@
+name: Desktop Renderer
+
+# Builds the desktop renderer and refuses one that still carries an
+# unsubstituted build define — on pull requests, on ubuntu, for the PRs nothing
+# else answers.
+#
+# WHY THIS EXISTS: v0.63.0 shipped a renderer whose `__APP_VERSION__` was never
+# substituted, which threw at module scope before React mounted — a permanently
+# black window on every desktop install (DOR-1448). The renderer is the CLIENT's
+# source built by a SECOND config (apps/desktop/electron.vite.config.ts), and
+# that config carried no `define` block, so the identifier survived into the
+# desktop bundle while the web build substituted it correctly. A bundler does
+# not warn about a `define` it was never given.
+#
+# BE PRECISE ABOUT WHAT DID AND DID NOT HAPPEN, because the obvious story is
+# wrong and would justify the wrong filter. PR #1179 introduced that define and
+# touched ZERO files under apps/desktop — but it DID touch pnpm-lock.yaml, which
+# is in desktop-smoke.yml's `pull_request` filter. So desktop-smoke was not
+# skipped: it ran, and its `packaged-runtime` job reported SUCCESS on that PR
+# (head 9d208264a — verified against the check-runs API). It was BLIND, not
+# absent. Nothing read the emitted renderer, and the gate that now would
+# (apps/desktop/scripts/check-renderer-defines.ts) did not exist yet; the
+# packaged smoke boots the app and probes /api/health, which a black window
+# still answers, because the server is a separate process.
+#
+# So the hole is narrower than "desktop-smoke doesn't run on client PRs". Today
+# desktop-smoke builds with `turbo build --filter=@dorkos/desktop`, whose `build`
+# script ends in the define gate — so any PR touching apps/desktop/** OR
+# pnpm-lock.yaml already gets this answer for free. What remains uncovered is a
+# client-only PR that touches NEITHER: nothing pre-merge builds the renderer at
+# all, and that is exactly the shape of the change that authors a new define.
+# That is the gap this fills.
+#
+# HENCE NO 'pnpm-lock.yaml' IN THE FILTER BELOW. Including it would run the same
+# gate a second time on every lockfile-touching PR and buy no answer that
+# desktop-smoke does not already give. `apps/desktop/**` is kept despite the same
+# overlap, for one specific reason: electron.vite.config.ts — where the renderer's
+# `define` map actually lives, and the file whose edit caused DOR-1448 — is in
+# apps/desktop. A cheap ubuntu answer for that file is worth the duplication, and
+# it still reports when macOS runners are saturated and desktop-smoke is queued.
+#
+# WHY NOT JUST WIDEN desktop-smoke.yml's PR FILTER TO apps/client/**: that job
+# holds a macOS runner, the scarcest GitHub-hosted resource here, and its header
+# argues the asymmetry deliberately — public repos cap concurrent macOS jobs, and
+# desktop-release.yml needs the same runners when a release is cut. Putting every
+# client PR on a macOS packaging job to answer a question ubuntu can answer is the
+# wrong trade. This job needs no packaging, no signing and no Electron launch: it
+# needs the emitted bundle, which `electron-vite build` produces anywhere.
+#
+# DELIBERATELY NOT A REQUIRED CHECK, and the `paths:` filter is why it can never
+# become one without also losing the filter. GitHub's
+# troubleshooting-required-status-checks doc: a workflow skipped by path
+# filtering reports NOTHING (not success), and under the merge queue a required
+# check that never reports blocks the queue until check_response_timeout_minutes
+# expires. db-check.yml's header works through the same trade and lands the other
+# way, because it is cheap and unfiltered. This one is filtered, so it is the
+# early-warning half: a red here is immediately actionable by the author, and the
+# authoritative desktop gates stay desktop-smoke.yml on push-to-main and
+# desktop-release.yml at the tag. No `merge_group:` trigger for the same reason —
+# a non-required check reporting there would only spend queue time on a question
+# already answered on the PR.
+#
+# WHAT IT DOES NOT COVER, so nobody reads it as more cover than it is:
+#
+#   - `packages/**` is NOT in the filter, though the renderer does bundle
+#     workspace packages — and electron.vite.config.ts aliases @dorkos/shared
+#     subpaths straight to TypeScript SOURCE, which the web client never does
+#     (it resolves them to dist/ through package exports). So a shared source
+#     file that breaks only under the renderer's esbuild settings is a real,
+#     uncovered, desktop-only risk here. It is left out because `packages/**`
+#     fires on a large share of this repo's PRs and the define class of defect
+#     — the one this exists for — is authored in apps/client. desktop-smoke.yml's
+#     push-to-main net does include packages/**. Widening is a one-line change if
+#     that stops being good enough.
+#   - The packaged app. asar layout, Electron ABI and packaged boot are
+#     desktop-smoke.yml's, and the signed/notarized path is desktop-release.yml's.
+#   - The server bundle. `apps/desktop`'s full `build` also runs
+#     scripts/build-server.ts; this job stops before it, because that half is
+#     already covered on PRs by cli-smoke-test.yml — which filters on
+#     apps/server/** + apps/client/** and builds the CLI, whose esbuild server
+#     bundle has the same external list and the same module graph (the argument
+#     desktop-smoke.yml's header makes at length).
+
+on:
+  pull_request:
+    paths:
+      - 'apps/client/**'
+      - 'apps/desktop/**'
+      - '.github/workflows/desktop-renderer.yml'
+  workflow_dispatch:
+
+# Opt into Node 24 for every JavaScript-based action (checkout, setup-node)
+# ahead of GitHub's Sept 2026 hard cutoff for the Node 20 runtime. See
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# PR-only trigger, so this is the simple half of the form the other workflows
+# use: cancel superseded runs on the same ref. There is no push event here to
+# need typecheck.yml's per-SHA grouping.
+concurrency:
+  group: desktop-renderer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  renderer-defines:
+    runs-on: ubuntu-latest
+    # Expect ~6-10 minutes cold, which is what this job always is: there is no
+    # remote turbo cache in CI, so the 17-package dependency build below runs
+    # from scratch every time (~2 min measured cold locally, slower on a runner),
+    # on top of the install and a renderer build measured at ~46s locally. The
+    # timeout bounds a hung bundler; it does not police the happy path.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Dependencies only (`^...` excludes @dorkos/desktop itself), because the
+      # renderer imports @dorkos/extension-api and friends, whose package
+      # exports resolve to dist/ — absent on a fresh runner unless the
+      # dependency graph builds first. Turbo computes that graph from
+      # turbo.json's `^build`, so there is no hand-maintained package list here
+      # to drift. It is the same 17 packages typecheck.yml already builds on
+      # ubuntu for every PR, so nothing here is newly unproven on linux.
+      #
+      # A NAME FILTER IS SAFE HERE and nowhere else in this job: turbo fails
+      # with "No package found with name '<x>' in workspace" and exits 1 when
+      # the name stops matching (measured, turbo 2.10.11). `pnpm --filter <x>`
+      # prints "No projects matched the filters" and exits 0 for the same
+      # mistake — the silent-no-op defect db-check.yml's header documents — so
+      # the steps below resolve apps/desktop by PATH instead.
+      - name: Build the desktop package's workspace dependencies
+        run: pnpm exec turbo build --filter=@dorkos/desktop^...
+
+      # `working-directory` + `pnpm exec`, never `pnpm --filter @dorkos/desktop
+      # exec`: see above. If apps/desktop is ever moved or renamed, this step
+      # fails on a missing directory rather than passing over nothing.
+      #
+      # Bare `electron-vite build` rather than the package's `build` script,
+      # which is `electron-vite build && check-renderer-defines && build-server`
+      # — the server bundle is deliberately out of scope (see the header). It
+      # does mean this job and the release build could drift on bundler flags;
+      # they share the config file, which is where the flags actually live.
+      - name: Build the renderer from the client's source
+        working-directory: apps/desktop
+        run: pnpm exec electron-vite build
+
+      # The same script the desktop `build` chain runs, against the bundle just
+      # emitted. It CANNOT silently pass over a build that did not happen:
+      # assertDefinesSubstituted throws when dist/renderer is missing or holds
+      # no .js assets ("a check that reads nothing cannot fail"), so a broken
+      # step above surfaces here as a failure rather than a green no-op.
+      - name: Refuse a renderer carrying unsubstituted defines
+        working-directory: apps/desktop
+        run: pnpm exec tsx scripts/check-renderer-defines.ts

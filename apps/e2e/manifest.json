@@ -1079,45 +1079,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "owner-sees-every-room": {
+      "specFile": "tests/rooms/owner-sees-every-room.spec.ts",
+      "feature": "rooms",
+      "description": "a room the owner is not a member of still lists, opens, and reads back — with no unread badge",
+      "lastRun": "2026-08-28T12:45:23.279Z",
+      "lastStatus": "passed",
+      "runCount": 4,
+      "passCount": 3,
+      "failCount": 1,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-10T21-04-34",
-      "timestamp": "2026-08-10T21:04:34.690Z",
-      "total": 2,
-      "passed": 2,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 132649
-    },
-    {
-      "id": "2026-08-11T02-19-04",
-      "timestamp": "2026-08-11T02:19:04.110Z",
-      "total": 2,
-      "passed": 0,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 376162
-    },
-    {
-      "id": "2026-08-11T02-23-46",
-      "timestamp": "2026-08-11T02:23:46.120Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 137978
-    },
-    {
-      "id": "2026-08-11T04-00-18",
-      "timestamp": "2026-08-11T04:00:18.244Z",
-      "total": 28,
-      "passed": 28,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 137436
-    },
     {
       "id": "2026-08-11T13-26-07",
       "timestamp": "2026-08-11T13:26:07.494Z",
@@ -1981,6 +1957,42 @@
       "failed": 0,
       "skipped": 0,
       "duration": 48551
+    },
+    {
+      "id": "2026-08-28T12-34-51",
+      "timestamp": "2026-08-28T12:34:51.143Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 275921
+    },
+    {
+      "id": "2026-08-28T12-37-24",
+      "timestamp": "2026-08-28T12:37:24.253Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 127216
+    },
+    {
+      "id": "2026-08-28T12-42-37",
+      "timestamp": "2026-08-28T12:42:37.271Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 199430
+    },
+    {
+      "id": "2026-08-28T12-45-23",
+      "timestamp": "2026-08-28T12:45:23.279Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 131620
     }
   ]
 }

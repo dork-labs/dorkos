@@ -33,6 +33,7 @@ vi.mock('../auto-updater', () => ({
   getLastUpdateStatus: vi.fn(() => null),
   isRestartingToUpdate: vi.fn(() => false),
   consumeUpdateRestart: vi.fn(() => false),
+  recordUpdateInstallIntent: vi.fn(),
 }));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),

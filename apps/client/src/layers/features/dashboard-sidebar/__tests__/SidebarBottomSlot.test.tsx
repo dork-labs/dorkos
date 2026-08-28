@@ -20,6 +20,7 @@ import '@testing-library/jest-dom/vitest';
 // ── The four gates, each independently switchable ──
 let gettingStarted = false;
 let updateReady = false;
+let updateKind: 'command' | 'desktop-install-failed' = 'command';
 let profileVisible = false;
 let promoQualifies = false;
 
@@ -53,9 +54,24 @@ vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ isLoading: false }),
 }));
 
+/**
+ * The readiness the slot is gating on this test.
+ *
+ * A kind rather than a boolean because the gate is `kind !== 'none'`, and a
+ * failed desktop install has to clear it exactly as a waiting restart does
+ * (spec `desktop-updater-overhaul` D5) — a new kind that resolved to `none`
+ * would be invisible however good its copy was.
+ */
+function currentUpdate(): { kind: string; latestVersion?: string; downloadFresh?: () => void } {
+  if (!updateReady) return { kind: 'none' };
+  if (updateKind === 'desktop-install-failed') {
+    return { kind: 'desktop-install-failed', downloadFresh: vi.fn() };
+  }
+  return { kind: 'command', latestVersion: '9.9.9' };
+}
+
 vi.mock('../ui/bottom-slot/use-update-ready', () => ({
-  useUpdateReady: () =>
-    updateReady ? { kind: 'command', latestVersion: '9.9.9' } : { kind: 'none' },
+  useUpdateReady: () => currentUpdate(),
 }));
 
 vi.mock('../ui/bottom-slot/UpdatePill', () => ({
@@ -78,6 +94,7 @@ function drawn(): string | null {
 beforeEach(() => {
   gettingStarted = false;
   updateReady = false;
+  updateKind = 'command';
   profileVisible = false;
   promoQualifies = false;
 });
@@ -92,6 +109,13 @@ describe('SidebarBottomSlot priority', () => {
   });
 
   it('falls to the update pill once getting started is done', () => {
+    updateReady = profileVisible = promoQualifies = true;
+    render(<SidebarBottomSlot />);
+    expect(drawn()).toBe('update');
+  });
+
+  it('gives the slot to a failed desktop install, exactly as to a waiting update', () => {
+    updateKind = 'desktop-install-failed';
     updateReady = profileVisible = promoQualifies = true;
     render(<SidebarBottomSlot />);
     expect(drawn()).toBe('update');

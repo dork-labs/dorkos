@@ -28,7 +28,14 @@ declare global {
     | { state: 'not-available' }
     | { state: 'downloading'; percent: number }
     | { state: 'downloaded'; version: string }
-    | { state: 'error'; message: string };
+    | { state: 'error'; message: string }
+    /**
+     * An update was staged, the app restarted for it, and the version that
+     * came back up is still the old one. Decided by the main process at
+     * launch, from the intent file it wrote before quitting; `attempts` is how
+     * many times this same version has failed to land.
+     */
+    | { state: 'install-failed'; version: string; attempts: number };
 
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {

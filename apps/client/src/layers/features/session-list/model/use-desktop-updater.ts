@@ -4,31 +4,60 @@
  * @module features/session-list/model/use-desktop-updater
  */
 import { useCallback, useEffect, useState } from 'react';
+import { isNewer } from '@/layers/shared/lib';
 
 /** What {@link useDesktopUpdater} exposes to the sidebar footer. */
 export interface DesktopUpdater {
   /** True when running inside the desktop shell (the preload bridge is present). */
   isDesktop: boolean;
-  /** Latest actionable updater status, or `null` until a `downloading`/`downloaded` event arrives. */
+  /** Latest actionable updater status, or `null` until a `downloading`/`downloaded`/`install-failed` event arrives. */
   status: DesktopUpdateStatus | null;
   /** Restart the app to install a downloaded update. */
   restart: () => void;
 }
 
+/** States the card can draw and a person can act on; the rest are passing noise. */
+const ACTIONABLE_STATES: ReadonlySet<DesktopUpdateStatus['state']> = new Set([
+  'downloading',
+  'downloaded',
+  'install-failed',
+]);
+
 /**
- * Fold a new status into the current one, keeping the card stable.
+ * Fold a new status into the current one, keeping the card stable **and
+ * truthful**.
  *
- * Only `downloading`/`downloaded` are actionable (the card renders them). A
- * transient status (`checking`/`available`/`not-available`/`error`) must not
- * clear an already-showing card — the 4h background re-check emits
+ * A transient status (`checking`/`available`/`not-available`) must not clear an
+ * already-showing card — the 4h background re-check emits
  * `checking`→`available`, which would otherwise blink a `downloaded` card out.
- * A genuinely newer download (`downloading`/`downloaded`) may replace it.
+ *
+ * Two things that used to be swallowed no longer are. An `error` replaces a
+ * showing `downloaded`: the card kept offering a restart over every later
+ * failure, which is how a machine that could not install anything for ten days
+ * still said "Update ready". And an `install-failed` replaces anything at all,
+ * because it is the most important thing the card can say.
+ *
+ * Once a failure is showing, **only a strictly newer version finishing its
+ * download clears it.** The updater re-downloads and re-stages the exact
+ * version that just failed on its next check, and a `downloading` carries no
+ * version at all (`ProgressInfo` has none), so neither may be read as the
+ * failure being over. Mirrored rule for rule by `foldForReplay` in the desktop
+ * main process, which has to reach the same verdict for a renderer that mounts
+ * later — otherwise closing and reopening the window resurrects whatever this
+ * just retired.
+ *
+ * @param prev - What the card is showing.
+ * @param next - What just arrived.
  */
 function foldStatus(
   prev: DesktopUpdateStatus | null,
   next: DesktopUpdateStatus
 ): DesktopUpdateStatus | null {
-  if (next.state === 'downloading' || next.state === 'downloaded') return next;
+  if (prev?.state === 'install-failed') {
+    const replaced = next.state === 'downloaded' && isNewer(next.version, prev.version);
+    return replaced ? next : prev;
+  }
+  if (ACTIONABLE_STATES.has(next.state) || next.state === 'error') return next;
   if (prev && (prev.state === 'downloading' || prev.state === 'downloaded')) return prev;
   return next;
 }
