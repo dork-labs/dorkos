@@ -2,6 +2,10 @@
 covers:
   - 'feat(config): runtimes.dorkosTools experiment leaf (DOR-1613)'
   - 'feat(runtimes): give codex and opencode the DorkOS tools over /mcp (DOR-1613)'
+  # Folded in deliberately, with no bullet of its own: it corrects a defect in
+  # the feature above, on the same branch, before either ever shipped. A
+  # "Fixed" line would describe to people a problem they never had.
+  - 'fix(runtimes): keep codex MCP credentials out of the spawned argv (DOR-1613)'
 ---
 
 ### Added
