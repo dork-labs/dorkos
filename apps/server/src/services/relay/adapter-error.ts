@@ -14,7 +14,14 @@ export type AdapterErrorCode =
   | 'MULTI_INSTANCE_DENIED'
   | 'REMOVE_BUILTIN_DENIED'
   /** The entry failed `AdapterConfigSchema` and was refused rather than persisted. */
-  | 'INVALID_CONFIG';
+  | 'INVALID_CONFIG'
+  /**
+   * The built-in adapter was asked for while the manager holds NO agent
+   * runtimes at all. A composition-root mistake, not a missing runtime: there
+   * is nothing to name and no session involved, so it is refused rather than
+   * built around a guess.
+   */
+  | 'NO_AGENT_RUNTIMES';
 
 /**
  * Error class for adapter CRUD operations.

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { AdapterManager, AdapterError } from '../adapter-manager.js';
+import { AdapterManager, AdapterError, normalizeAgentRuntimes } from '../adapter-manager.js';
 import type { AdapterRegistry, RelayAdapter } from '@dorkos/relay';
 import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager.js';
 import { BridgeStore } from '../chat-bridge/bridge-store.js';
@@ -2191,26 +2191,33 @@ describe('AdapterManager', () => {
     // TestModeRuntime filed under 'claude-code' is invisible to every lookup
     // and the relay goes quiet without erroring.
     it('keys the runtime under its own type', () => {
-      const m = new AdapterManager(registry, configPath, {
-        ...mockDeps,
+      const runtimes = normalizeAgentRuntimes({
         agentManager: { type: 'test-mode', ensureSession: vi.fn(), sendMessage: vi.fn() },
       });
-      expect(m.listRegisteredRuntimeTypes()).toEqual(['test-mode']);
+      expect([...runtimes.keys()]).toEqual(['test-mode']);
     });
 
     it('keeps claude-code for a double that declares no type', () => {
       // Bare doubles mean claude-code; that is the shape the compat path exists
       // for, and changing it would break callers this field is meant to serve.
-      const m = new AdapterManager(registry, configPath, mockDeps);
-      expect(m.listRegisteredRuntimeTypes()).toEqual(['claude-code']);
+      const runtimes = normalizeAgentRuntimes({
+        agentManager: { ensureSession: vi.fn(), sendMessage: vi.fn() },
+      });
+      expect([...runtimes.keys()]).toEqual(['claude-code']);
     });
 
     it('never lets the legacy wrap overwrite an explicit map', () => {
-      const m = new AdapterManager(registry, configPath, {
-        ...mockDeps,
+      const runtimes = normalizeAgentRuntimes({
         agentRuntimes: new Map([['opencode', { ensureSession: vi.fn(), sendMessage: vi.fn() }]]),
+        agentManager: { type: 'claude-code', ensureSession: vi.fn(), sendMessage: vi.fn() },
       });
-      expect(m.listRegisteredRuntimeTypes()).toEqual(['opencode']);
+      expect([...runtimes.keys()]).toEqual(['opencode']);
+    });
+
+    it('is empty when the caller passed neither', () => {
+      // The adapter factory refuses to build the built-in adapter on this,
+      // rather than guessing which runtime it drives.
+      expect(normalizeAgentRuntimes({}).size).toBe(0);
     });
   });
 

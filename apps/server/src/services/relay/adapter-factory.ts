@@ -32,7 +32,7 @@ import type {
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import { AdapterNotRegisteredError } from './adapter-manager.js';
+import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
 /** Dependencies for constructing runtime adapters. */
@@ -40,8 +40,8 @@ export interface AdapterFactoryDeps {
   /**
    * Runtime-type → agent-runtime map. The factory picks the correct
    * runtime when constructing a runtime-specific adapter (e.g., the
-   * ClaudeCodeAdapter receives the `'claude-code'` entry). Throws
-   * {@link AdapterNotRegisteredError} if the needed runtime is absent.
+   * ClaudeCodeAdapter receives its default entry). Throws {@link AdapterError}
+   * `NO_AGENT_RUNTIMES` when the map is empty.
    */
   agentRuntimes: Map<string, AgentRuntimeLike>;
   traceStore: TraceStoreLike;
@@ -75,7 +75,11 @@ export interface AdapterFactoryDeps {
  *
  * @param agentRuntimes - Runtime-type → runtime map held by the AdapterManager.
  * @param adapterId - The adapter being built, for the error message.
- * @throws {AdapterNotRegisteredError} When the map holds no runtimes at all.
+ * @throws {AdapterError} `NO_AGENT_RUNTIMES` when the map holds no runtimes at
+ *   all. Its own code rather than a runtime-not-registered error: an empty map
+ *   names no runtime and involves no session, and reporting it as "runtime
+ *   'claude-code' missing for session '<adapterId>'" — which it used to — sent
+ *   whoever read the log looking for a session that never existed.
  */
 function defaultRuntimeFor(
   agentRuntimes: Map<string, AgentRuntimeLike>,
@@ -85,7 +89,13 @@ function defaultRuntimeFor(
     agentRuntimes.get('claude-code') ??
     agentRuntimes.get(runtimeRegistry.getDefaultType()) ??
     agentRuntimes.values().next().value;
-  if (!runtime) throw new AdapterNotRegisteredError('claude-code', adapterId);
+  if (!runtime) {
+    throw new AdapterError(
+      `Cannot build the built-in adapter '${adapterId}': this server registered no agent ` +
+        `runtimes at all. The composition root must pass 'agentRuntimes' to AdapterManager.`,
+      'NO_AGENT_RUNTIMES'
+    );
+  }
   return runtime;
 }
 
