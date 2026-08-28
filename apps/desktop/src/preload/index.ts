@@ -20,6 +20,18 @@ const CLOSE_TAB_SUBSCRIBE_CHANNEL = 'close-tab:subscribe';
 /** IPC channel this renderer gives `Cmd/Ctrl+W` back on (mirrors `CLOSE_TAB_UNSUBSCRIBE_CHANNEL` in close-tab.ts). */
 const CLOSE_TAB_UNSUBSCRIBE_CHANNEL = 'close-tab:unsubscribe';
 
+/** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
+const ALIVE_CHANNEL = 'renderer:alive';
+
+/** IPC channel the recovery page's "Try Again" goes out on (mirrors `TRY_AGAIN_CHANNEL` in renderer-health/index.ts). */
+const TRY_AGAIN_CHANNEL = 'renderer:try-again';
+
+/** IPC channel the recovery page's "Reset and Relaunch" goes out on (mirrors `RESET_CHANNEL` in renderer-health/index.ts). */
+const RESET_CHANNEL = 'renderer:reset-and-relaunch';
+
+/** IPC channel the recovery page's "Save Diagnostic Report" goes out on (mirrors `DIAGNOSTICS_CHANNEL` in renderer-health/index.ts). */
+const DIAGNOSTICS_CHANNEL = 'renderer:save-diagnostics';
+
 /**
  * How many live `onCloseTab` subscriptions this renderer holds.
  *
@@ -44,6 +56,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * must handle it.
    */
   getServerPort: (): number | null => ipcRenderer.sendSync('get-server-port'),
+  /**
+   * Report that this page really came up — the renderer half of the shell's
+   * renderer supervision (`renderer-health/index.ts`).
+   *
+   * **Call it exactly where the app decides it has booted**, which in the
+   * cockpit is the boot sentinel's `done()` in `apps/client/index.html`. Two
+   * definitions of "the app is up" would eventually disagree, and the one that
+   * decides whether the shell reloads the window has to be the strict one.
+   *
+   * Silence past the shell's deadline starts a recovery ladder that ends in a
+   * static recovery page, so this is not optional decoration: a renderer that
+   * paints and never calls this will be reloaded, then cache-cleared, then
+   * relaunched.
+   */
+  reportAlive: (): void => ipcRenderer.send(ALIVE_CHANNEL),
+  /**
+   * Reload the app from the recovery page, resetting the shell's failure
+   * count.
+   *
+   * The three recovery calls answer **only** the shell's own recovery page —
+   * the main process refuses them from any other document, including the
+   * cockpit. They restart the app and wipe stored state, and the cockpit runs
+   * third-party extension code that must not be able to reach either.
+   */
+  retryRenderer: (): Promise<void> => ipcRenderer.invoke(TRY_AGAIN_CHANNEL),
+  /**
+   * Clear the window's caches and local storage, then relaunch the app. See
+   * {@link retryRenderer} for who may call this.
+   */
+  resetAndRelaunch: (): Promise<void> => ipcRenderer.invoke(RESET_CHANNEL),
+  /**
+   * Write a diagnostic archive to the Desktop and reveal it. See
+   * {@link retryRenderer} for who may call this.
+   */
+  saveDiagnosticReport: (): Promise<void> => ipcRenderer.invoke(DIAGNOSTICS_CHANNEL),
   /** Get the app version from package.json (synchronous). */
   getAppVersion: (): string => ipcRenderer.sendSync('get-app-version'),
   /** The current platform (darwin, win32, linux). */

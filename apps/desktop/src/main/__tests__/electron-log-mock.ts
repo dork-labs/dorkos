@@ -14,8 +14,18 @@ import { vi, type Mock } from 'vitest';
  * as `default`.
  */
 
-/** Where the double claims to be writing, for the "Open Logs" affordance. */
-const LOG_FILE_PATH = '/tmp/dorkos-desktop-test/logs/main.log';
+/**
+ * Where the double claims to be writing.
+ *
+ * Exported because it is now part of the contract two ways: the "Open Logs"
+ * affordance reveals it, and the start-up failure dialogs quote it (see
+ * `log-location.ts`). A test that hardcoded the same string would keep passing
+ * if this one moved.
+ */
+export const LOG_DIRECTORY = '/tmp/dorkos-desktop-test/logs';
+
+/** The file inside {@link LOG_DIRECTORY} the double reports. */
+const LOG_FILE_PATH = `${LOG_DIRECTORY}/main.log`;
 
 /** A level method. `electron-log` takes anything, like `console`. */
 type LogFn = Mock<(...args: unknown[]) => void>;
