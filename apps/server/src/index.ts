@@ -240,6 +240,8 @@ import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.j
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
+  initToolGroupGate,
+  manifestToolGroupGrants,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
@@ -3252,6 +3254,17 @@ async function start() {
       enabled: () => readStandingGrantSettings().enabled,
       findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
     },
+  });
+  // Arm the per-agent tool-group gate beside it (spec `rooms-management-tools`,
+  // DOR-1611). It runs in the same choke point, one step earlier, and answers a
+  // different question: not "is this caller restricted" but "does this caller hold
+  // this grant". Unwired it refuses every capability that declares a group, so an
+  // omission here fails closed. The audit hook is the SAME observer the tier gate
+  // uses, so a refusal shows up in the Activity feed as `capability.denied` — the
+  // operator sees what an agent tried and did not get.
+  initToolGroupGate({
+    grants: manifestToolGroupGrants(),
+    onAttempt: createCapabilityGateAuditObserver(activityService),
   });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a

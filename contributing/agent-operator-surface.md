@@ -150,6 +150,27 @@ In-session identity is derived from the session's working directory rather than 
 
 Both anonymous and identified paths are covered by the same falsifiable mechanism, and it is no longer a list of adapters: the conformance suite drives every `destructive` capability the registry carries through `registry.invoke` itself and requires a refusal. Because the gate is inside `invoke`, that one check covers every adapter at once, including ones that do not exist yet.
 
+### Its companion: a positive per-agent grant fails the other way
+
+The rule above is about the **tier** gate, and reading it as "nothing may ever key on identity" is a mistake worth heading off, because DorkOS now has one gate that does (ADR `260828-123331`, DOR-1611).
+
+The difference is the polarity of the question, not the mechanism:
+
+| Gate                                 | Question                            | An absent identity means | It fails   |
+| ------------------------------------ | ----------------------------------- | ------------------------ | ---------- |
+| Tier (`enforceCapabilityTier`)       | "is this caller restricted?"        | not restricted           | **open**   |
+| Tool group (`enforceToolGroupGrant`) | "does this caller hold this grant?" | holds nothing            | **closed** |
+
+That is why the first must not key on identity presence and the second must. Both obey the invariant the doctrine actually protects — _dropping a credential can never widen what a caller reaches_. Under a negative question, dropping one widens, which is the bypass. Under a positive grant it strictly narrows: `env -u DORKOS_AGENT_TOKEN` buys an anonymous caller that holds nothing.
+
+Three things follow, and each is load-bearing rather than incidental:
+
+- **The grant has to be unwritable by the agent it governs**, or it is not a grant. `updateAgentManifest` — the agent-reachable write path — refuses any patch naming `enabledToolGroups.roomsManage`, before the schema parse and whatever the value. The operator's `PATCH /api/mesh/agents/:id` is the one way in, and does not come through there. This is the narrow half of DOR-1506; the general policy for the rest of the manifest is still open.
+- **It runs before the tier gate**, so a call the caller may never make cannot mint an approval card on its way to being refused. The refusal reuses `TierDeniedPayload` with `reason: 'tool_group_disabled'` and `approvable: false`, so 403 / non-`isError` MCP / `capability.denied` all come free — and a model is told plainly that no approval will ever unlock it.
+- **The grant is read fresh, from the manifest file, on every call.** Never the SQLite `agents` cache: it has no column for `enabledToolGroups` and hands back `{}` for every agent, so a cached read would report everyone as ungranted and ignore a real grant. Fresh is also what makes "turning it off stops the very next call" a property of the code rather than a promise.
+
+Do not read this as a general licence. Adding a second such group is a decision about a boundary, not a toggle: read ADR `260726-171347` on why the four keys beside it deliberately shape documentation only, and ADR-0070 on what happens when a switch appears to be a boundary and is not.
+
 ### The REST doors, and the one way past the gate
 
 Two routes reach a guarded effect without going through a capability, and both shipped ungated:

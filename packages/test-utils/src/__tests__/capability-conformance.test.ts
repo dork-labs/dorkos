@@ -14,6 +14,13 @@
  * requester, one that refuses but records the decision anyway, and a missing probe
  * must each be reported.
  *
+ * The tool-group checker is here for a stronger reason than symmetry (DOR-1611).
+ * The real DorkOS registry declares no tool group until the rooms-management verbs
+ * ship, so its run of that check is legitimately empty and demonstrates nothing.
+ * This file is therefore the ONLY place its ability to fail is shown: a registry
+ * that runs a gated capability anyway, one that refuses with the wrong error, and
+ * one whose refusal claims a person could approve it must each be reported.
+ *
  * The top-level `capabilityConformance(...)` call additionally proves the Vitest
  * wrapper registers green against the conformant baseline (including the async
  * `invoke` assertions).
@@ -23,6 +30,7 @@ import {
   capabilityConformance,
   checkCapabilityConformance,
   checkRegistryGateConformance,
+  checkToolGroupGateConformance,
   type CapabilityConformanceFixtures,
   type ConformanceCapability,
   type ConformanceRegistry,
@@ -347,6 +355,133 @@ describe('checkRegistryGateConformance', () => {
   it('seeded drift: a registry with no destructive capability is not vacuously green', async () => {
     const violations = await checkRegistryGateConformance(conformantRegistry());
     expect(violations.some((v) => v.detail.includes('vacuously green'))).toBe(true);
+  });
+});
+
+/**
+ * The tool-group checker gets the "test the test" treatment too, and it needs it
+ * more than its siblings: the real DorkOS registry declares NO tool group until
+ * the rooms-management verbs ship, so the real-registry run of this check is
+ * legitimately empty and proves nothing on its own (DOR-1611). Its ability to fail
+ * is demonstrated here, against a registry that does declare one.
+ */
+describe('checkToolGroupGateConformance', () => {
+  /** The refusal the tool-group gate throws for a caller holding no grant. */
+  function toolGroupRefusal(payload: unknown = toolGroupDeniedPayload()): Error {
+    const err = new Error('Managing rooms is turned off for this agent.');
+    err.name = 'CapabilityGateRefusal';
+    (err as Error & { decision: unknown }).decision = { outcome: 'denied', payload };
+    return err;
+  }
+
+  /** The structured payload a well-behaved tool-group refusal carries. */
+  function toolGroupDeniedPayload() {
+    return {
+      status: 'denied',
+      capabilityId: 'demo.manage',
+      capabilityTitle: 'Manage demo',
+      tier: 'act',
+      reason: 'tool_group_disabled',
+      approvable: false,
+      message: 'Managing rooms is turned off for this agent. Ask the person who runs this install.',
+    };
+  }
+
+  /** A capability behind a per-agent grant. */
+  function gatedCapability(): ConformanceCapability {
+    return {
+      id: 'demo.manage',
+      title: 'Manage demo',
+      description: OK_DESCRIPTION,
+      tier: 'act',
+      toolGroup: 'roomsManage',
+      surfaces: { mcp: { toolName: 'demo_manage', servers: ['in-session', 'external'] } },
+    };
+  }
+
+  /** A registry that refuses its grant-bearing capability and resolves the rest. */
+  function grantGatingRegistry(refusal: () => unknown = toolGroupRefusal): ConformanceRegistry {
+    const caps = [observeCapability(), actCapability(), gatedCapability()];
+    return {
+      capabilities: caps,
+      invoke: async (id) => {
+        const cap = caps.find((c) => c.id === id);
+        if (cap?.toolGroup !== undefined) throw refusal();
+        return { ok: true };
+      },
+    };
+  }
+
+  it('passes when registry.invoke refuses the capability behind the grant', async () => {
+    expect(await checkToolGroupGateConformance(grantGatingRegistry())).toEqual([]);
+  });
+
+  it('seeded drift: invoke runs the gated capability for a caller holding no grant', async () => {
+    // The defect the whole boundary exists to prevent: a toggle that appears to
+    // restrict and does not — the shape ADR-0070 shipped for three months.
+    const registry: ConformanceRegistry = {
+      capabilities: [observeCapability(), gatedCapability()],
+      invoke: async () => ({ ok: true }),
+    };
+    const violations = await checkToolGroupGateConformance(registry);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations.every((v) => v.check === 'tool-group-gate')).toBe(true);
+    expect(violations.some((v) => v.detail.includes('RAN a capability behind the'))).toBe(true);
+  });
+
+  it('seeded drift: invoke rejects, but not with a gate refusal', async () => {
+    const violations = await checkToolGroupGateConformance(
+      grantGatingRegistry(() => new TypeError('deps missing'))
+    );
+    expect(violations.some((v) => v.detail.includes('not with a gate refusal'))).toBe(true);
+  });
+
+  it('seeded drift: the gate keys on identity PRESENCE and waves named agents through', async () => {
+    // The defect an anonymous-only check cannot see, and the exact shape this
+    // boundary exists to prevent: refusing the caller that named nobody while
+    // letting every agent that named itself straight past the grant.
+    const caps = [observeCapability(), gatedCapability()];
+    const registry: ConformanceRegistry = {
+      capabilities: caps,
+      invoke: async (id, _input, context) => {
+        const cap = caps.find((c) => c.id === id);
+        if (cap?.toolGroup !== undefined && !context?.identity) throw toolGroupRefusal();
+        return { ok: true };
+      },
+    };
+
+    const violations = await checkToolGroupGateConformance(registry);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations.some((v) => v.detail.includes('identified agent holding no grant'))).toBe(
+      true
+    );
+    // And the anonymous row still passes, which is what made it insufficient.
+    expect(violations.some((v) => v.detail.includes('unidentified caller'))).toBe(false);
+  });
+
+  it('seeded drift: the refusal claims a person could approve it', async () => {
+    // `approvable: true` is not a cosmetic slip. It sends a model round the
+    // approval loop forever for a switch only the operator can flip.
+    const violations = await checkToolGroupGateConformance(
+      grantGatingRegistry(() => toolGroupRefusal({ ...toolGroupDeniedPayload(), approvable: true }))
+    );
+    expect(violations.some((v) => v.detail.includes('tool_group_disabled'))).toBe(true);
+  });
+
+  it('seeded drift: the refusal is the TIER gate answering, not the group gate', async () => {
+    const violations = await checkToolGroupGateConformance(
+      grantGatingRegistry(() =>
+        toolGroupRefusal({ ...toolGroupDeniedPayload(), reason: 'tier_ceiling' })
+      )
+    );
+    expect(violations.some((v) => v.detail.includes('tool_group_disabled'))).toBe(true);
+  });
+
+  it('is empty — not violated — for a registry that declares no group at all', async () => {
+    // Deliberately unlike the destructive check, which flags an empty subject set
+    // as vacuous. This mechanism ships one release before its first subject, and
+    // reddening the real registry for that would be a guard crying wolf.
+    expect(await checkToolGroupGateConformance(conformantRegistry())).toEqual([]);
   });
 });
 

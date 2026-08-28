@@ -89,13 +89,13 @@ Console is a browser-based command center built with React 19, Tailwind CSS 4, a
 
 Console connects to Engine via a Transport interface that decouples the UI from its backend. Two adapters exist: `HttpTransport` for standalone web use, and `DirectTransport` for embedded use in Obsidian. This means Console works as a standalone web app, as a plugin inside your knowledge management tool, or as a bundled CLI — same interface, different delivery mechanisms.
 
-Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, and connections, all configurable per-agent. Permission tiers are not: a tier belongs to the action, so the same action is gated the same way whichever agent asks. The one per-agent lever is a standing permission, which a person grants from an approval card for one agent doing one named action, on a clock. That grant is keyed to that agent's path, so two agents can hit the same gate and get different answers.
+Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, and connections, all configurable per-agent. Permission tiers are not: a tier belongs to the action, so the same action is gated the same way whichever agent asks. Two per-agent levers exist. A standing permission, which a person grants from an approval card for one agent doing one named action, on a clock; and a tool-group grant, which a person turns on in an agent's own settings and which the server refuses the call without. That grant is keyed to that agent's path, so two agents can hit the same gate and get different answers.
 
 - Chat with agents in rich markdown with syntax highlighting
 - Approve or deny tool calls before they execute, in the session permission modes that prompt
 - Browse, resume, and sync sessions across devices
 - Command Palette (Cmd+K) for agent navigation with fuzzy search and preview panel
-- Agent settings: identity, persona, per-agent tool group preferences (which decide the tool documentation an agent receives, not what it may call)
+- Agent settings: identity, persona, per-agent tool groups — the four domain groups decide the tool documentation an agent receives rather than what it may call, while the rooms-management grant beside them is enforced and only a person can turn it on
 - Slash command palette for custom workflows
 - Real-time session sync across multiple clients
 

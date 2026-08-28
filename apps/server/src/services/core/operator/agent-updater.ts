@@ -132,6 +132,50 @@ export async function updateAgentManifest(opts: {
 }): Promise<AgentManifest> {
   const { agentPath, body, meshCore } = opts;
 
+  const rawBody = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+
+  // Guard: a grant the governed agent can set for itself is not a grant
+  // (spec `rooms-management-tools` §D6, DOR-1611).
+  //
+  // Same seam, same shape, same reason as the `account` guard below: this is the
+  // AGENT-REACHABLE write path — the `update_agent` MCP tool and the self-edit
+  // route both land here — and `enabledToolGroups` is on its wire
+  // (`UpdateAgentRequestSchema` picks it). Four of that object's five keys decide
+  // what an agent is TOLD about and stay writable here; `roomsManage` is the one
+  // the capability choke point enforces, so an agent that could write it could
+  // turn its own hard filter off and the filter would be theatre.
+  //
+  // **First, before the schema parse**, unlike every guard below it. The refusal
+  // is about WHO may write this field, and that answer cannot be contingent on the
+  // rest of the patch being well-formed: `{"roomsManage": null}` fails the boolean
+  // schema, and reporting that as a validation error would tell an agent to fix
+  // its types and try again at a field it may never write. Present at all —
+  // `true`, `false`, `null`, `undefined` — is refused, because a patch that names
+  // the field is a patch about the field.
+  //
+  // Refused rather than stripped, for the reason the `account` guard gives: an
+  // agent told nothing would report the change as done. All-or-nothing, matching
+  // `operator.config_patch`.
+  //
+  // The operator's own surface, `PATCH /api/mesh/agents/:id`, writes the field
+  // and does not come through here. **A cockpit that edits tool groups must use
+  // that route**: this path refuses the whole patch when the object carries the
+  // key, so a client that spreads the stored object into an unrelated toggle
+  // would be refused too.
+  //
+  // Scope, stated so it is not over-read: this closes the sanctioned agent
+  // surfaces for ONE field. The general caller-identity policy for the manifest
+  // remains DOR-1506, and the `local-trust` residual (a shell-capable agent
+  // curling the operator's route with login off) is unchanged — its remedy is
+  // turning login on (`contributing/agent-operator-surface.md`).
+  const toolGroups = rawBody.enabledToolGroups;
+  if (toolGroups && typeof toolGroups === 'object' && 'roomsManage' in toolGroups) {
+    throw new AgentUpdateError(
+      'OPERATOR_ONLY',
+      "Whether an agent may manage rooms is set by a person, in the agent's Tools settings."
+    );
+  }
+
   const parsed = UpdateAgentRequestSchema.safeParse(body);
   if (!parsed.success) {
     throw new AgentUpdateError('VALIDATION', 'Validation failed', z.flattenError(parsed.error));
@@ -141,8 +185,6 @@ export async function updateAgentManifest(opts: {
   if (!existing) {
     throw new AgentUpdateError('NOT_FOUND', 'No agent registered at this path');
   }
-
-  const rawBody = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
 
   // Guard: billing is the operator's call, never an agent's (spec
   // `billing-account-ladder` invariant 4).
