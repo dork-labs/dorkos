@@ -44,6 +44,7 @@ import {
   answeredReference,
   groupByThread,
   threadRowId,
+  threadRowKey,
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
@@ -106,6 +107,14 @@ interface RoomFlowProps {
    * component and `RoomSurface` is what survives.
    */
   resumeRow?: () => string | undefined;
+  /**
+   * The row a search hit asked this room to open on, asked for at landing time.
+   *
+   * Passed straight through to `Conversation.Timeline`, which outranks every
+   * other landing with it — see `useEntryLanding` for where the answer comes
+   * from and `TimelineLandingInput.landOnRow` for why it wins.
+   */
+  landOnRow?: () => string | undefined;
   /** Told which row is at the top, or `undefined` when the reader is caught up. */
   onTopRow?: (rowId: string | undefined) => void;
   /** The timeline's handle, so the lane's peek can take a reader to a row. */
@@ -193,6 +202,7 @@ export function RoomFlow({
   openThreadId,
   onOpenThread,
   resumeRow,
+  landOnRow,
   onTopRow,
   ref,
 }: RoomFlowProps) {
@@ -267,7 +277,7 @@ export function RoomFlow({
       if (replies) {
         built.push({
           kind: 'thread-reply',
-          id: `thread-${entry.id}`,
+          id: threadRowKey(entry.id),
           rootId: entry.id,
           replies,
         });
@@ -430,6 +440,7 @@ export function RoomFlow({
         onOpenThread={onOpenThread}
         domIdOf={domIdOf}
         {...(resumeRow === undefined ? {} : { resumeRow })}
+        {...(landOnRow === undefined ? {} : { landOnRow })}
         {...(onTopRow === undefined ? {} : { onTopRow })}
         pending={pending}
         viewerAuthorId={viewerAuthorId}

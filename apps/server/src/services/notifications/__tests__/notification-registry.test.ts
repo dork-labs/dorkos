@@ -30,6 +30,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     agentId: 'agent-1',
     proposedBy: 'An agent',
   },
+  'approval.pending': {
+    approvalId: '01J000000000000000000001',
+    capabilityId: 'tasks_delete',
+    capabilityTitle: 'Delete a scheduled task',
+    agentId: 'agent-1',
+    requestedBy: 'Ana',
+  },
   'session.error': {
     sessionId: 'sess-1',
     agentId: 'agent-1',
@@ -94,6 +101,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
 const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'ask.pending': 'blocking',
   'schedule.parked': 'blocking',
+  'approval.pending': 'blocking',
   'session.error': 'blocking',
   'turn.completed': 'notable',
   'run.completed': 'quiet', // the fixture above is a SUCCESS; failures are notable
@@ -106,8 +114,17 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'report.daily': 'quiet',
 };
 
-/** The three kinds ADR 260819-234828 says are standing conditions. */
-const STANDING: NotificationKind[] = ['ask.pending', 'schedule.parked', 'session.error'];
+/**
+ * The kinds ADR 260819-234828 says are standing conditions — the three it named,
+ * plus `approval.pending`, which DOR-1570 brought onto the same discipline so a
+ * destructive capability waiting on a person can reach the escalation ladder.
+ */
+const STANDING: NotificationKind[] = [
+  'ask.pending',
+  'schedule.parked',
+  'approval.pending',
+  'session.error',
+];
 
 describe('notification registry', () => {
   it('declares an entry for every kind', () => {
@@ -165,6 +182,7 @@ describe('notification registry', () => {
     expect([...WIRED_NOTIFICATION_KINDS].sort()).toEqual([
       'agent.note',
       'agent.unreachable',
+      'approval.pending',
       'ask.pending',
       'dead-letter.created',
       'dm.received',
@@ -181,7 +199,7 @@ describe('notification registry', () => {
     expect(reserved).toEqual([]);
   });
 
-  it('stores exactly the three standing kinds only on resolution', () => {
+  it('stores exactly the standing kinds only on resolution', () => {
     const standing = NOTIFICATION_KINDS.filter((k) => notificationEntry(k).storage === 'standing');
     expect([...standing].sort()).toEqual([...STANDING].sort());
   });

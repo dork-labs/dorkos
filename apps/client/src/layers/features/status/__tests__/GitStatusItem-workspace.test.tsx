@@ -24,6 +24,7 @@ const gitOk = {
 } as unknown as GitStatusResponse;
 
 const workspace: Workspace = {
+  owner: null,
   id: 'ws_1',
   projectKey: 'core',
   key: 'DOR-84',

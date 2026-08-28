@@ -13,6 +13,8 @@
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
     "./fake-connector-provider": "./src/fake-connector-provider.ts",
     "./fake-community-adapter": "./src/fake-community-adapter.ts",
+    "./fake-memory-provider": "./src/fake-memory-provider.ts",
+    "./memory-conformance": "./src/memory-conformance.ts",
     "./listening-server": "./src/listening-server.ts"
   },
   "scripts": {
@@ -36,13 +38,13 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@tanstack/react-query": "^5.99.0",
+    "@tanstack/react-query": "^5.102.3",
     "@types/express": "^5.0.6",
-    "@types/react": "^19.2.17",
-    "@types/supertest": "^7.2.0",
-    "react": "^19.2.7",
+    "@types/react": "^19.2.18",
+    "@types/supertest": "^7.2.1",
+    "react": "^19.2.8",
     "supertest": "^7.2.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

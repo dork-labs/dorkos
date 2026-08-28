@@ -125,12 +125,8 @@ Linear-Signature: <hmac-sha256>
   "webhookTimestamp": 1234567890,
   "webhookId": "uuid",
   "actor": { "id": "uuid", "type": "user", "name": "...", "email": "..." },
-  "data": {
-    /* full entity snapshot */
-  },
-  "updatedFrom": {
-    /* previous values of changed fields only */
-  }
+  "data": {/* full entity snapshot */},
+  "updatedFrom": {/* previous values of changed fields only */}
 }
 ```
 
@@ -207,12 +203,13 @@ The newest and most powerful layer — first-party support for custom agents as 
 **Authentication**: OAuth2 with `actor=app` parameter. Agents do not count as billable users. Admin scope is NOT compatible with `actor=app`.
 
 **Available OAuth scopes**:
-| Scope | Purpose |
-|---|---|
-| `app:assignable` | Enable issue delegation and project membership |
-| `app:mentionable` | Enable mentions across all surfaces |
-| `customer:read/write` | Customer data access |
-| `initiative:read/write` | Initiative data access |
+
+| Scope                   | Purpose                                        |
+| ----------------------- | ---------------------------------------------- |
+| `app:assignable`        | Enable issue delegation and project membership |
+| `app:mentionable`       | Enable mentions across all surfaces            |
+| `customer:read/write`   | Customer data access                           |
+| `initiative:read/write` | Initiative data access                         |
 
 **Agent capabilities in the workspace**:
 

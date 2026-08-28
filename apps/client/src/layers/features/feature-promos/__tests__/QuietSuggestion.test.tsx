@@ -136,11 +136,11 @@ function makePromo(
     shouldShow: () => true,
     content: {
       icon: StubIcon,
-      title: 'Run agents while you sleep',
-      shortDescription: 'Set schedules and wake up to results',
+      title: 'Run agents on a schedule',
+      shortDescription: 'Set a schedule and come back to finished work',
       ctaLabel: 'Set up',
       suggestion: {
-        question: 'Want your agents working while you sleep?',
+        question: 'Want your agents working without you at the keyboard?',
         action: 'Set up a schedule',
       },
       ...content,
@@ -172,7 +172,9 @@ describe('QuietSuggestion', () => {
     mockRegistry.push(makePromo({ id: 'schedules' }));
     render(<QuietSuggestion />);
 
-    expect(screen.getByText('Want your agents working while you sleep?')).toBeInTheDocument();
+    expect(
+      screen.getByText('Want your agents working without you at the keyboard?')
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Set up a schedule' })).toBeInTheDocument();
   });
 
@@ -227,7 +229,7 @@ describe('QuietSuggestion', () => {
     render(<QuietSuggestion />);
 
     expect(
-      screen.getByRole('button', { name: 'Dismiss suggestion: Run agents while you sleep' })
+      screen.getByRole('button', { name: 'Dismiss suggestion: Run agents on a schedule' })
     ).toBeInTheDocument();
   });
 

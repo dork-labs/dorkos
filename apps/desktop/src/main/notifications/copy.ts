@@ -1,7 +1,11 @@
 import path from 'node:path';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { PendingInteractionDTO } from '@dorkos/shared/schemas';
-import type { NotificationDTO, NotificationTier } from '@dorkos/shared/notification-schemas';
+import type {
+  NotificationDTO,
+  NotificationTier,
+  StandingPendingEvent,
+} from '@dorkos/shared/notification-schemas';
 
 /**
  * What a desktop notification says, and where its click goes — kept apart
@@ -123,6 +127,23 @@ export function earnsNativeBanner(tier: NotificationTier, isWindowUnfocused: boo
   if (tier === 'quiet') return false;
   if (tier === 'blocking') return true;
   return isWindowUnfocused;
+}
+
+/**
+ * The banner for a standing condition that just started waiting on a person —
+ * a schedule an agent proposed, or an approval it needs for something
+ * irreversible (DOR-1570).
+ *
+ * Both sentences are written on the SERVER, by the notification registry, and
+ * carried on the event. That is deliberate: the registry is where the product's
+ * whole interruption budget is meant to be readable in one screen, and a second
+ * copy of the wording here would let a banner and an inbox row describe one
+ * condition two ways.
+ *
+ * @param event - The `standing_pending` payload.
+ */
+export function standingCopy(event: StandingPendingEvent): NotificationCopy {
+  return { title: event.title, ...(event.body ? { body: event.body } : {}) };
 }
 
 /**

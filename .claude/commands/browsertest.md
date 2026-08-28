@@ -85,7 +85,7 @@ cd apps/e2e && npx playwright test tests/<feature>/<new-test>.spec.ts --repeat-e
 
 #### Phase 5: RECORD
 
-1. Write `explorationNotes` to the test entry in `apps/e2e/manifest.json` — document selectors, timing observations, and gotchas specific to this feature.
+1. Write `explorationNotes` to the test entry in `apps/e2e/manifest.json` — document selectors, timing observations, and gotchas specific to this feature. **Never hand-edit `description`** — it is derived from the test's own titles and kept in sync by `manifest-reporter.ts` on runs that opt into refreshing it (`E2E_REFRESH_MANIFEST=1`, set by the `e2e` package script) and saw the whole file; `explorationNotes` is where curated context belongs instead.
 2. If you discovered any new anti-patterns, append them to `apps/e2e/GOTCHAS.md` under the appropriate category.
 3. Display a summary: test name, phases completed, iterations needed, key observations.
 

@@ -32,10 +32,10 @@
  * @module shared/interaction-events
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { PendingInteractionDTOSchema } from './schemas.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 /**
  * One prompt an agent is parked on, addressed to whoever may answer it.

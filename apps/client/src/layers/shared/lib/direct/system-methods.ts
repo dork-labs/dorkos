@@ -707,7 +707,6 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         dorkHome: services.vaultRoot,
         scheduler: {
           maxConcurrentRuns: 1,
-          timezone: null,
           retentionCount: 100,
         },
         logging: {

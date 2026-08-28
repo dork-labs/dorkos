@@ -60,6 +60,7 @@ function task(id: string): Task {
     timezone: 'UTC',
     agentId: null,
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
     status: 'pending_approval',
@@ -70,6 +71,8 @@ function task(id: string): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
   };
 }

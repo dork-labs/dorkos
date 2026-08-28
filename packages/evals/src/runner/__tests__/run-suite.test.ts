@@ -26,6 +26,7 @@ import { selfTestCase } from '../../suite/selftest.js';
 import { roomsHaltStopsCase } from '../../suite/rooms.js';
 import { widgetRoundTripCase } from '../../suite/ui.js';
 import { runSuite } from '../run-suite.js';
+import { DEFAULT_CHEAP_MODEL } from '../harness-server.js';
 import { evaluateRunGate } from '../../report/summary.js';
 
 // The local-sign-in probe shells out to the real `claude` binary; left real, a
@@ -94,6 +95,50 @@ describe('runSuite', () => {
     // The transcript pointer resolves to a file that is actually there.
     expect(result.transcript).toBe('harness-selftest.jsonl');
     expect((await stat(path.join(runDir, result.transcript ?? ''))).isFile()).toBe(true);
+  });
+});
+
+describe('the recorded model (DOR-1564)', () => {
+  // Red when: `results.json` stops naming the model a credentialed run reached.
+  // The tier does NOT identify it — `claude-code-cheap` answered by haiku-4-5
+  // and by sonnet-5 gave opposite verdicts on the same build — so a run whose
+  // only model evidence is somebody's memory cannot be re-read later.
+  it('records the resolved model on a credentialed run, flag or default', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-model-'));
+    const withFlag = await runSuite([fixtureCase('needs-test-mode', 'test-mode')], {
+      tier: 'claude-code-cheap',
+      outDir,
+      runId: 'model-flag',
+      model: 'claude-sonnet-5',
+      notify: () => {},
+    });
+    expect(withFlag.summary.model).toBe('claude-sonnet-5');
+    // It survives the schema, so it is on disk and not only in memory.
+    expect(
+      RunSummarySchema.parse(JSON.parse(await readFile(withFlag.resultsPath, 'utf8'))).model
+    ).toBe('claude-sonnet-5');
+
+    // No `--model`: the recorded value is the one the boot would apply, never
+    // an empty field that reads as "unknown".
+    const withDefault = await runSuite([fixtureCase('needs-test-mode', 'test-mode')], {
+      tier: 'claude-code-cheap',
+      outDir,
+      runId: 'model-default',
+      notify: () => {},
+    });
+    expect(withDefault.summary.model).toBe(DEFAULT_CHEAP_MODEL);
+  });
+
+  // Red when: a `test-mode` run starts claiming a model. It reaches none, and a
+  // model name there would be a fact about nothing.
+  it('records no model on a test-mode run', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-model-free-'));
+    const { summary } = await runSuite([selfTestCase], {
+      tier: 'test-mode',
+      outDir,
+      runId: 'model-test-mode',
+    });
+    expect(summary.model).toBeUndefined();
   });
 });
 

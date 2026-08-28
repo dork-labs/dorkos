@@ -323,6 +323,45 @@ describe('runHarnessSync', () => {
     );
   });
 
+  it('tells the operator WHY a scheduled plugin skill is linked where no enabled harness reads (DOR-1518)', async () => {
+    // A stock project: claude-code only. The scheduled skill is still linked
+    // into `.agents/skills` for the DorkOS scheduler, and a bare
+    // `[symlink] skill ... (codex)` line in a repo that does not run Codex is
+    // exactly the sort of thing an operator would call arbitrary — so the
+    // action's note has to reach them, not just sit on the object.
+    fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code'] }, null, 2)
+    );
+    const plugin = path.join(tmpDir, '.dork', 'plugins', 'flow');
+    fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+    fs.writeFileSync(
+      path.join(plugin, '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: 'flow',
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A fixture plugin',
+        layers: ['skills'],
+      })
+    );
+    fs.mkdirSync(path.join(plugin, 'skills', 'drain'), { recursive: true });
+    fs.writeFileSync(
+      path.join(plugin, 'skills', 'drain', 'SKILL.md'),
+      "---\nname: drain\ndescription: Drains the queue\nschedule:\n  cron: '0 9 * * *'\n---\nDrain it.\n"
+    );
+    process.chdir(tmpDir);
+
+    const fix = await runHarnessSync({ check: false, fix: true });
+    expect(fix.exitCode).toBe(0);
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('.agents/skills/flow__drain');
+    expect(printed).toMatch(/flow__drain.*—.*scheduler/);
+  });
+
   it('narrows the plan with --harness and rejects an unknown harness', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);

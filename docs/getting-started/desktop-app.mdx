@@ -5,7 +5,7 @@ description: Run DorkOS as a native app that keeps working in the background, wi
 
 # Desktop App
 
-The desktop app is the same DorkOS cockpit you'd get from the CLI or Docker, just wrapped in a native window with its own dock or taskbar icon. Nothing to type in a terminal, and it bundles Claude Code, so there's less to set up first.
+The desktop app is the same DorkOS you'd get from the CLI or Docker, just wrapped in a native window with its own dock or taskbar icon. Nothing to type in a terminal, and it bundles Claude Code, so there's less to set up first.
 
 <Callout type="warn">
   **macOS** is signed, notarized, and ready to use today (Apple Silicon only). **Windows** is an
@@ -17,13 +17,13 @@ The desktop app is the same DorkOS cockpit you'd get from the CLI or Docker, jus
 ## What you get
 
 - **A real window**: a dock icon on macOS or a taskbar entry on Windows, not a browser tab. It remembers its size and position the next time you open it.
-- **Tabs, the way a browser has tabs**: keep several agents open in one window and switch between them. The tab strip sits across the top. A small dot on a tab tells you when that agent is working, waiting on you, or has hit a problem, so you can leave five agents running and see at a glance which one wants you. `Cmd/Ctrl+T` opens a tab, `Cmd/Ctrl+1` through `9` jump to one, `Cmd/Ctrl+Shift+[` and `]` step between them, and `Cmd/Ctrl+W` closes the one you're on. This strip is a desktop-app thing. In the [web cockpit](/docs/getting-started/quickstart) you use your browser's own tabs, which you can bookmark one at a time and drag out into their own window.
+- **Tabs, the way a browser has tabs**: keep several agents open in one window and switch between them. The tab strip sits across the top. A small dot on a tab tells you when that agent is working, waiting on you, or has hit a problem, so you can leave five agents running and see at a glance which one wants you. `Cmd/Ctrl+T` opens a tab, `Cmd/Ctrl+1` through `9` jump to one, `Cmd/Ctrl+Shift+[` and `]` step between them, and `Cmd/Ctrl+W` closes the one you're on. This strip is a desktop-app thing. In the [web app](/docs/getting-started/quickstart) you use your browser's own tabs, which you can bookmark one at a time and drag out into their own window.
 - **It keeps working when you close the window**: your agents carry on. DorkOS moves to the menu bar on macOS, or to the notification area next to the clock on Windows. That icon says how many agents are working and how many are waiting on you, like "2 working" or "1 waiting," and lets you open the window again, jump to Activity, or quit. On macOS the same count also badges the Dock icon. The first time you close the window, DorkOS tells you it's still running, once, and offers to quit if that's what you meant.
 - **Real system notifications, on a Mac**: when an agent needs a yes or no, DorkOS can show a native notification with Allow and Deny buttons right on it, so you can answer without opening the window. For a simple question, you can type your reply straight into the notification. Clicking any notification brings the app forward and opens the session it's about. These stay quiet on their own and only appear for things worth interrupting you for, or for finished work while you're away.
 - **It asks before cutting an agent off**: try to quit while agents are mid-task and DorkOS says how many are still working and lets you keep them going instead.
 - **A second window**: press `Cmd/Ctrl+K`, pick an agent, and choose **Open in New Window** to park it on another screen. **Open Here** and **Open in New Tab** are on the same menu. In a browser you get **Open Here** and **Open in New Tab** only, because there a new window is just another tab.
 - **Links that behave**: a link to another DorkOS page switches pages instantly without reloading the app, so an agent mid-answer keeps streaming while you look around. A link to anywhere else opens in your browser.
-- **An address you can bookmark**: the app serves the cockpit at `http://localhost:4242`, the same address the CLI uses, and asks for that port again every time you open it. That's what lets you bookmark DorkOS in a browser or point another tool at it. See [Find your address](#find-your-address) below.
+- **An address you can bookmark**: the app runs at `http://localhost:4242`, the same address the CLI uses, and asks for that port again every time you open it. That's what lets you bookmark DorkOS in a browser or point another tool at it. See [Find your address](#find-your-address) below.
 - **A native menu**: About DorkOS, Check for Updates, and Settings (`Cmd/Ctrl+,`), plus a Window menu with Close Tab and Close Window, and a Help menu with links to the docs and to report an issue. On Windows the menu follows the standard File/Edit/View/Window/Help layout instead of a Mac-shaped one.
 - **`dorkos://` links**: click one, like `dorkos://agents`, and it opens the app straight to that screen instead of a browser tab.
 - **Automatic updates**: the app checks for a new version on launch and every four hours, downloads it quietly in the background, and asks you to restart when it's ready. Windows updates use the same mechanism, but since the Windows build itself is unverified, treat that as unverified too.
@@ -79,8 +79,8 @@ DorkOS walks you through connecting Claude on first launch: sign in to your Clau
 
 <Callout type="warn">
   This build is new: built and code-reviewed, but not yet confirmed by a real end-user install. If
-  something doesn't work, the [web cockpit](/docs/getting-started/quickstart) is the most reliable
-  way to run DorkOS on Windows today.
+  something doesn't work, the [web app](/docs/getting-started/quickstart) is the most reliable way
+  to run DorkOS on Windows today.
 </Callout>
 
 <Steps>
@@ -115,7 +115,7 @@ Same as macOS: sign in to your Claude account, or paste your Anthropic API key, 
 
 ## Find your address
 
-The desktop app runs the same DorkOS server the CLI does, so it has a web address on your own machine. You need that address to bookmark the cockpit in a browser, to point another app at the [MCP server](/docs/integrations/mcp-server), or to run any of the `curl` examples in these docs.
+The desktop app runs the same DorkOS server the CLI does, so it has a web address on your own machine. You need that address to bookmark DorkOS in a browser, to point another app at the [MCP server](/docs/integrations/mcp-server), or to run any of the `curl` examples in these docs.
 
 Open **Settings → Server**. The **Address** at the top is yours, with a button to copy it and a button to open it in your browser. The **MCP endpoint** right below it is the one to paste into Claude Code, Cursor, or Windsurf.
 
@@ -140,7 +140,7 @@ An update that's waiting also installs itself the next time you quit DorkOS. Clo
 
 If an update doesn't apply for some reason, download the latest installer from the same link you used the first time and run it again. Your sessions, agents, and settings live outside the app itself, so reinstalling doesn't lose anything.
 
-## When to use the CLI or web cockpit instead
+## When to use the CLI or the web app instead
 
 The desktop app is a good fit if you want DorkOS running locally, all the time, without a terminal. A few things it doesn't do:
 
@@ -148,7 +148,7 @@ The desktop app is a good fit if you want DorkOS running locally, all the time, 
 - **Run on an Intel Mac.** The macOS build is Apple Silicon only.
 - **Be reached from another device.** The desktop app only ever listens on your own machine. To reach DorkOS from your phone or another computer, run it with the CLI or [Docker](/docs/self-hosting/docker) and point `DORKOS_HOST` at your network instead; see [Deployment](/docs/self-hosting/deployment).
 
-For any of those, the [web cockpit](/docs/getting-started/installation) is the same DorkOS, just reached through a browser tab.
+For any of those, the [web app](/docs/getting-started/installation) is the same DorkOS, just reached through a browser tab.
 
 ## Uninstalling
 

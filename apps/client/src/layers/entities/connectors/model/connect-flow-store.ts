@@ -17,12 +17,7 @@ import type { PublicConnectedAccount } from '@dorkos/shared/connector-provider';
  * - `failed` — terminal; `error` says why.
  */
 export type ConnectFlowStep =
-  | 'idle'
-  | 'starting'
-  | 'disclosure'
-  | 'waiting'
-  | 'connected'
-  | 'failed';
+  'idle' | 'starting' | 'disclosure' | 'waiting' | 'connected' | 'failed';
 
 /** The connect flow's observable state. */
 export interface ConnectFlowState {

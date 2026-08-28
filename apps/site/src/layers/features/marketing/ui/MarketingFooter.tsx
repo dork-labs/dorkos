@@ -89,8 +89,14 @@ export function MarketingFooter({
           {email}
         </a>
 
-        {/* Trust and legal */}
+        {/* Deciding, then trust and legal */}
         <nav className="mt-6 flex flex-wrap justify-center gap-6">
+          <Link
+            href="/compare"
+            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
+          >
+            Compare
+          </Link>
           <Link
             href="/pricing"
             className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"

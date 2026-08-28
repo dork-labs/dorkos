@@ -32,6 +32,7 @@ const AGENT_PATH = '/projects/alpha';
 const AGENT_MEMBER_ID = '01JALPHAREGISTRYULID';
 
 const ALPHA: TopologyAgent = {
+  workspace: { mode: 'home' },
   id: 'manifest-alpha',
   name: 'Alpha',
   description: '',

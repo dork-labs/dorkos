@@ -82,6 +82,15 @@ const nextConfig: NextConfig = {
         destination: '/docs/integrations/building-integrations',
         permanent: true,
       },
+      // The flagship feature page was /features/multi-runtime-cockpit until the
+      // 2026-08 language sweep (DOR-1517) retired the words "cockpit" and
+      // "mission control" everywhere. Published blog posts and release notes
+      // link to the old path, so it stays alive permanently.
+      {
+        source: '/features/multi-runtime-cockpit',
+        destination: '/features/every-agent-one-place',
+        permanent: true,
+      },
       // docs/connectors/ became docs/connections/ in the 2026-08 Connections
       // rename (DOR-860). Keep every old connector URL alive.
       {

@@ -88,16 +88,18 @@ function gatedRunner(): GatedRunner {
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<void> {
+    interrupt(request): Promise<boolean> {
       interrupted.push(request);
       // A real interrupt ENDS the turn: the runtime stops and the stream closes.
       // A fake that only recorded the call would leave the dispatcher awaiting a
       // turn nothing can finish, which is not what a halt does.
+      let stoppedSomething = false;
       for (const [authorId, queued] of held) {
         for (const settle of queued.splice(0)) settle({ sessionId: 'session-halted', text: null });
         held.delete(authorId);
+        stoppedSomething = true;
       }
-      return Promise.resolve();
+      return Promise.resolve(stoppedSomething);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({

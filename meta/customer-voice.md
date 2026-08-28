@@ -596,7 +596,7 @@ _(No quotes yet. Do not fabricate; collect verbatim with source + date.)_
 
 _Non-developers who own and run their own AI systems: founders shipping apps by directing agents, privacy-sensitive professionals refusing to put work data into consumer chat apps, people choosing local-run over hosted for control. This theme is the evidentiary base for the Ikechi and Lil personas (`personas/the-ai-native-founder.md`, `personas/the-private-professional.md`) and for the anti-persona boundary redrawn 2026-07-09 (operator mentality, not technical skill). Especially wanted: `[aspiration]` quotes — what these users are trying to become._
 
-_Seed sources: interview Ikechi and Lil directly (real DorkOS users; **disclose as founder-adjacent** — he writes for the project, she is the founder's wife — and record what setup help they received). Then look for organic voices: vibe-coding/AI-builder communities, r/ArtificialIntelligence "I built an app without knowing how to code" threads, privacy-forward professional communities. The validation milestone is the first quote from someone we've never met._
+_Seed sources: interview the real DorkOS users these personas are drawn from (**disclose that they are close contacts, not organic users**, and record what setup help they received). Then look for organic voices: vibe-coding/AI-builder communities, r/ArtificialIntelligence "I built an app without knowing how to code" threads, privacy-forward professional communities. The validation milestone is the first quote from someone we've never met._
 
 _(No quotes yet. Do not fabricate; collect verbatim with source + date, matching the format above.)_
 

@@ -1,6 +1,6 @@
 import log from 'electron-log';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
-import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
+import type { NotificationDTO, StandingPendingEvent } from '@dorkos/shared/notification-schemas';
 import {
   parseEventPayload,
   subscribeEventStream,
@@ -13,6 +13,7 @@ import {
   earnsNativeBanner,
   notificationDeepLink,
   replyEligibility,
+  standingCopy,
 } from './copy';
 import { approveTool, denyTool, submitReplyAnswer, type AnswerOutcome } from './answer';
 import {
@@ -27,7 +28,7 @@ import {
  * Blocking, always; Notable, only while no DorkOS window has focus (spec
  * `notification-system`, Desktop section; ADR 260819-234830).
  *
- * Two live signals feed this, both riding the shared connection in
+ * Three live signals feed this, all riding the shared connection in
  * `event-stream.ts`:
  *
  * - `interaction_pending` / `interaction_resolved` — the existing addressed
@@ -36,6 +37,15 @@ import {
  *   module doc), so this is the ONLY live signal for a Blocking Ask, and the
  *   one place actions (Allow/Deny/Reply) apply — they answer a specific
  *   interaction, which only this event names.
+ * - `standing_pending` / `standing_resolved` — every OTHER Attention condition
+ *   (DOR-1570). An Ask was not the only thing that stores nothing while it
+ *   stands: a schedule an agent proposes and an approval it needs for
+ *   something irreversible are both standing conditions too, and until this
+ *   pair existed the desktop app showed NOTHING for either — no banner, no
+ *   dock badge, nothing. The operator had to ask an agent to open the Tasks
+ *   panel to find out something was waiting on them. Click-to-open, with no
+ *   action buttons: deciding an irreversible action, or a schedule that will
+ *   run unattended, deserves the card in front of you.
  * - `notification` / `notification_read` — the Activity pipeline (turn/run
  *   completion, DMs, mentions, and Attention kinds' resolution history). These
  *   arrive pre-built with a title and a tier; a row that resolved because the
@@ -43,11 +53,33 @@ import {
  *   deliberately skipped — popping a banner about a person's own click would
  *   be the exact noise the tiering exists to prevent.
  *
+ * All three are OS banners, which ADR 260819-234830 admits to the periphery.
+ * None of them is an in-app toast: the toast diet (spec `notification-system`
+ * §6) is intact, and nothing here adds one.
+ *
  * @module main/notifications
  */
 
 /** How many shown notifications to remember for de-dupe and close-on-resolve, before the oldest is forgotten. */
 const MAX_TRACKED_NOTIFICATIONS = 200;
+
+/**
+ * Grace added to a standing condition's expiry timer so it fires strictly AFTER
+ * the deadline the server enforces (`now > expiresAt`). Mirrors the same slack
+ * `usePendingApprovals` uses in the React app.
+ */
+const EXPIRY_SLACK_MS = 500;
+
+/**
+ * Longest delay `setTimeout` honors: 2^31 - 1 ms (~24.8 days). A larger value is
+ * silently clamped to 1ms by the platform and would fire immediately, so a
+ * deadline further out than this is left un-timed rather than mis-timed — the
+ * banner then relies on `standing_resolved` alone, which is the pre-fix
+ * behaviour and no worse than it. Nothing a correct server writes gets near this
+ * (the approval window is two hours), but `expiresAt` is an unbounded wire
+ * string and a machine with a badly wrong clock could land here.
+ */
+const MAX_EXPIRY_TIMEOUT_MS = 2_147_483_647;
 
 /** Options for {@link watchNotifications}. */
 export interface NotificationsOptions {
@@ -87,6 +119,21 @@ export function watchNotifications(options: NotificationsOptions): Notifications
   /** Live Ask banners, by interaction id — closed when `interaction_resolved` names them. */
   const shownAsks = new Map<string, NativeNotificationHandle>();
   /**
+   * Live standing-condition banners, by subject key — closed when
+   * `standing_resolved` names them. Keyed on the server's own `dedupeKey`, so
+   * an arrival and its resolution cannot name one condition two ways.
+   */
+  const shownStanding = new Map<string, NativeNotificationHandle>();
+  /**
+   * Self-retirement timers for standing conditions that expire without anybody
+   * acting, by subject key. Expiry is the one ending the server never announces
+   * (see `StandingPendingEvent.expiresAt`), so an approval that runs out of time
+   * with no agent retry and no operator click would otherwise leave its banner
+   * up forever. Cleared when `standing_resolved` arrives first, or when the
+   * timer itself retires the banner.
+   */
+  const standingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
    * Activity banners, by notification id. `null` means the id was seen and
    * deliberately not shown (already read, or its tier didn't earn one) — kept
    * so a duplicate upsert of the same id is never reconsidered.
@@ -100,6 +147,12 @@ export function watchNotifications(options: NotificationsOptions): Notifications
         return;
       case 'interaction_resolved':
         handleAskResolved(frame.data);
+        return;
+      case 'standing_pending':
+        handleStandingPending(frame.data);
+        return;
+      case 'standing_resolved':
+        handleStandingResolved(frame.data);
         return;
       case 'notification':
         handleNotificationUpsert(frame.data);
@@ -145,6 +198,71 @@ export function watchNotifications(options: NotificationsOptions): Notifications
     if (!interactionId) return;
     shownAsks.get(interactionId)?.close();
     shownAsks.delete(interactionId);
+  }
+
+  function handleStandingPending(data: string): void {
+    const event = parseStandingPending(data);
+    if (!event || shownStanding.has(event.subjectKey)) return;
+    // The same tier rule every other banner takes, asked once here rather than
+    // assumed: today every standing kind is Blocking, and a future one that is
+    // not must obey the away-only rule like anything else Notable.
+    if (!earnsNativeBanner(event.tier, options.isWindowUnfocused())) return;
+
+    const copy = standingCopy(event);
+    const handle = host.show({
+      title: copy.title,
+      ...(copy.body ? { body: copy.body } : {}),
+      onClick: () => options.focusAndNavigate(event.deepLink),
+    });
+    trackWithCap(shownStanding, event.subjectKey, handle);
+    armStandingExpiry(event.subjectKey, event.expiresAt);
+  }
+
+  /**
+   * Retire a standing banner, from whichever ending reaches it first — a
+   * `standing_resolved` event or its own expiry deadline. Idempotent: a timer
+   * that fired and a resolution that arrived after it both land here, and the
+   * second is a no-op.
+   */
+  function retireStanding(subjectKey: string): void {
+    shownStanding.get(subjectKey)?.close();
+    shownStanding.delete(subjectKey);
+    const timer = standingExpiryTimers.get(subjectKey);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      standingExpiryTimers.delete(subjectKey);
+    }
+  }
+
+  /**
+   * Arm the self-retirement timer for a condition that expires with nobody
+   * acting. Only `approval.pending` carries an `expiresAt`; a parked schedule
+   * has none and relies on `standing_resolved` alone, which it always sends.
+   *
+   * A deadline already past retires immediately; one further out than the
+   * platform's timer ceiling is left to `standing_resolved` rather than mis-armed
+   * to fire at once.
+   */
+  function armStandingExpiry(subjectKey: string, expiresAt: string | undefined): void {
+    if (!expiresAt) return;
+    const deadline = Date.parse(expiresAt);
+    if (Number.isNaN(deadline)) return;
+    const delay = deadline + EXPIRY_SLACK_MS - Date.now();
+    if (delay <= 0) {
+      retireStanding(subjectKey);
+      return;
+    }
+    if (delay > MAX_EXPIRY_TIMEOUT_MS) return;
+    const timer = setTimeout(() => retireStanding(subjectKey), delay);
+    // Never let a pending banner timer keep the process alive.
+    timer.unref?.();
+    standingExpiryTimers.set(subjectKey, timer);
+  }
+
+  function handleStandingResolved(data: string): void {
+    const subjectKey = parseStandingResolvedKey(data);
+    if (!subjectKey) return;
+    retireStanding(subjectKey);
   }
 
   function handleNotificationUpsert(data: string): void {
@@ -233,6 +351,9 @@ export function watchNotifications(options: NotificationsOptions): Notifications
     stop(): void {
       subscription.unsubscribe();
       shownAsks.clear();
+      shownStanding.clear();
+      for (const timer of standingExpiryTimers.values()) clearTimeout(timer);
+      standingExpiryTimers.clear();
       shownDtos.clear();
     },
   };
@@ -281,6 +402,52 @@ function parseInteractionPending(data: string): InteractionPendingEvent | null {
 function parseInteractionResolvedId(data: string): string | null {
   const payload = parseEventPayload(data);
   return typeof payload?.interactionId === 'string' ? payload.interactionId : null;
+}
+
+/**
+ * Parse a `standing_pending` frame down to the fields this module reads.
+ *
+ * By hand, for the reason {@link parseInteractionPending} gives: validating
+ * with `StandingPendingEventSchema` would pull zod (and zod-to-openapi with it)
+ * into the main-process bundle for a check on five fields.
+ *
+ * `tier` is checked against the enum rather than merely for presence, the same
+ * way that parser checks an interaction's `type`: it is what `earnsNativeBanner`
+ * branches on, and an unrecognised value would fall through to "show it
+ * always", which is the wrong direction to fail in for a banner.
+ */
+function parseStandingPending(data: string): StandingPendingEvent | null {
+  const payload = parseEventPayload(data);
+  if (!payload) return null;
+  const { kind, subjectKey, tier, title, body, deepLink, since, expiresAt } = payload;
+  if (typeof kind !== 'string' || typeof subjectKey !== 'string' || subjectKey.length === 0) {
+    return null;
+  }
+  if (tier !== 'blocking' && tier !== 'notable' && tier !== 'quiet') return null;
+  if (typeof title !== 'string' || title.length === 0) return null;
+  if (typeof deepLink !== 'string' || deepLink.length === 0) return null;
+  if (body !== undefined && typeof body !== 'string') return null;
+  return {
+    kind,
+    subjectKey,
+    tier,
+    title,
+    ...(body ? { body } : {}),
+    deepLink,
+    since: typeof since === 'string' ? since : '',
+    // Carried through so the bridge can arm its own retirement timer for a
+    // condition that expires without anybody acting. A non-string is dropped
+    // rather than passed on — `armStandingExpiry` would `Date.parse` it to
+    // `NaN` and skip it anyway, but failing closed here keeps the shape honest.
+    ...(typeof expiresAt === 'string' ? { expiresAt } : {}),
+  } as StandingPendingEvent;
+}
+
+/** Read the `subjectKey` off a `standing_resolved` payload. */
+function parseStandingResolvedKey(data: string): string | null {
+  const payload = parseEventPayload(data);
+  const subjectKey = payload?.subjectKey;
+  return typeof subjectKey === 'string' && subjectKey.length > 0 ? subjectKey : null;
 }
 
 /**

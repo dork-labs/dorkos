@@ -31,6 +31,7 @@ const plugin: InstalledPlugin = {
       name: 'capturing',
       sourceDir: '.dork/plugins/flow/skills/capturing',
       usesPluginRoot: false,
+      hasSchedule: false,
       frontmatterName: 'capturing-work',
     },
   ],
@@ -132,6 +133,7 @@ describe('planInstalledSkills — opencode', () => {
           name: 'capturing',
           sourceDir: '.dork/plugins/flow/skills/capturing',
           usesPluginRoot: true,
+          hasSchedule: false,
         },
       ],
     });
@@ -264,6 +266,7 @@ describe('planSkillNameCollisions — item C', () => {
     name,
     sourceDir: `.dork/plugins/x/skills/${name}`,
     usesPluginRoot: false,
+    hasSchedule: false,
     frontmatterName,
   });
   const pluginWith = (pkg: string, frontmatterName: string): InstalledPlugin => ({

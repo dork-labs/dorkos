@@ -284,6 +284,17 @@ date with the base**. (The repo must have auto-merge turned on; DorkOS does.)
 review, so an armed auto-merge lands the PR on its required checks alone. The order
 is the whole safeguard: review, then arm.
 
+**In this repo the merge queue owns the strategy.** `gh pr merge --auto --squash`
+prints `! The merge strategy for main is set by the merge queue` — that line
+reads like a refusal and is not; the PR was enqueued (a repeat call answers
+"already queued"). Drop the strategy flag here; `--delete-branch` is rejected
+outright. Confirm with `gh pr view <n>` rather than reacting to stderr.
+
+**A new commit disarms auto-merge.** GitHub drops the armed state on every push to
+the PR branch, silently — the PR then sits green and unarmed forever. Re-arm
+(`gh pr merge --auto <n>`) after every push you make to an armed PR, including
+review-fix rounds and conflict-resolution merges.
+
 **Arming is not the same as walking away.** Read the next section before you treat
 an armed PR as finished.
 
@@ -403,22 +414,33 @@ the merge queue gates on. Chasing it burns the attention the actually-blocking c
 needs. Confirm the required set (`…/branches/main/protection`, above), then act only
 on a **required** check that went red on **this** PR.
 
-Watch with a loop that ends on every terminal outcome — a non-`Vercel` check
-failing, or the PR merging — not one that only knows how to notice success (the
-`Monitor` tool is the ergonomic form of this; the shape is what matters):
+**Do not write the watch loop from memory — run the tested one:**
 
 ```bash
-# emits on the first real failure, the merge, or its own expiry; silent while healthy
-for i in $(seq 1 55); do
-  state=$(gh pr view <number> --json state --jq .state)
-  [ "$state" = MERGED ] && { echo MERGED; exit 0; }
-  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; exit 0; }
-  fails=$(gh pr checks <number> | awk -F'\t' '$2=="fail"{print $1}' | grep -vi '^Vercel')
-  [ -n "$fails" ] && { echo "FAILED: $fails"; exit 0; }
-  sleep 45
-done
-echo "watcher expired; PR <number> still unmerged — check it directly"
+.agents/skills/creating-pull-requests/scripts/watch-prs.sh --interval 60 <number> [<number>...]
+# pipe it into the Monitor tool for hands-free notification; --once for a single probe
 ```
+
+It reports state **transitions** (never a once-per-PR "seen" flag that goes
+blind after the first event — a watcher written that way missed a check failure
+on 2026-08-24), and its event vocabulary is pinned by
+`scripts/test-watch-prs.sh`: `MERGED`, `CLOSED`, `CONFLICTING`,
+`FAILING(names)` (standing `Vercel` reds excluded), `EJECTED(reason)` (the
+merge queue silently dropped the PR — detected via the
+`REMOVED_FROM_MERGE_QUEUE_EVENT` timeline item, the only place that fact
+exists), `STUCK_UNMERGEABLE` (in the queue but its entry state is `UNMERGEABLE`
+— a dead entry that keeps its position and so otherwise reads as a healthy
+`QUEUED`; the remediation is below), `STALLED_IN_QUEUE` (queued with zero checks
+reporting — the classic missing `on: merge_group` trigger),
+`UNRESOLVED_THREADS(n)` (these block merge-tail from arming while everything
+else is green),
+`UNARMED_CLEAN` (arming auto-merge 422s on an already-clean PR — merge it
+directly), `QUEUED(pos)`, `RECOVERED`, and its own expiry. Three semantics it
+gets right that ad-hoc loops get wrong: `mergeStateStatus: UNKNOWN` is
+retry-not-terminal (mergeability is computed async); a rerun of a failed
+`pull_request` job reuses the **original** merge snapshot, so when `main` has
+moved the fix is an empty commit, not another rerun; and checks attach to the
+head SHA, so the rollup stays correct across reruns.
 
 On 2026-08-06 the v0.58.0 release PR sat `OPEN` with a red **required** `typecheck`
 (its prettier `--check` step — see the worktree gotcha below), while a
@@ -437,14 +459,71 @@ Three rules for any PR watcher, Monitor or bash:
   signals it carries.
 - **"Auto-merge armed and zero unresolved threads" proves nothing about checks.**
   It is exactly the state every stuck PR was in when it got stuck.
-- **A watcher that dies must say so.** The loop above echoes its own expiry
-  (~41 minutes); keep that shape, and answer it — an armed PR that outlives its
-  watcher deserves a direct `gh pr checks` look, whatever the watcher reported.
+- **A watcher that dies must say so.** `watch-prs.sh --max-cycles N` announces
+  its own expiry (exit 3); keep that shape, and answer it — an armed PR that
+  outlives its watcher deserves a direct `gh pr checks` look, whatever the
+  watcher reported.
 
 Note the shape of the four traps together: a **conflicting** PR runs nothing, a PR
 missing a **path-filtered** required check hangs pending, a **BEHIND** PR is green
 and armed and still cannot merge, and a **failed-check** PR reads exactly like a
 slow one. All four look like a PR that is fine.
+
+### Clearing a STUCK_UNMERGEABLE queue entry
+
+The merge queue can leave a PR's entry in the state `UNMERGEABLE`: it is still in
+the queue and still shows a position, but the queue will never merge it. Because
+the position is there, a naive watcher reads it as a healthy `QUEUED` — the false
+green `STUCK_UNMERGEABLE` exists to catch. Nothing else surfaces it either: a
+queued PR reports `autoMergeRequest: null`, so it does not look armed, and
+`gh pr merge --auto` just says "already queued" and changes nothing.
+
+The fix is to take the PR out of the queue and put it back. Removing it uses the
+GraphQL `dequeuePullRequest` mutation. Introspecting the live GitHub GraphQL
+schema on 2026-08-27 confirmed its input type is
+`DequeuePullRequestInput { id: ID!, clientMutationId: String }` — the required
+`id` is the PR's **node id**, not its number — and it returns a
+`DequeuePullRequestPayload { mergeQueueEntry, clientMutationId }`. Get the node id
+from `gh pr view <n> --json id`, then re-arm auto-merge so it re-enters the queue
+from a clean start:
+
+```bash
+PR_ID=$(gh pr view <number> --json id --jq .id)
+gh api graphql -f query='
+  mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ mergeQueueEntry { position } } }' \
+  -f id="$PR_ID"
+gh pr merge --auto --squash <number>   # re-arm; it rejoins the queue from a clean start
+```
+
+The watcher stays read-only — it reports `STUCK_UNMERGEABLE` and never mutates.
+Clearing the entry is a deliberate, separate step you run by hand.
+
+## Stacked branches and squash merges
+
+Two recurring conflict shapes when several branches share files and `main` merges
+by squash, each with a recipe that has worked repeatedly:
+
+- **Your own squashed base conflicts with you.** A branch stacked on another
+  branch (or on its own earlier PR) hits "changed in both" conflicts against the
+  squash commit, with byte-identical content on both sides. Verify each conflicted
+  file is identical between the merge base and `origin/main`
+  (`git diff <base>:<file> origin/main:<file>` — empty means the conflict is pure
+  squash noise), then keep the branch side wholesale. Write files out with
+  `git show HEAD:<file> > <file>` — `git checkout -- <path>` is hook-banned here.
+  Confirm with a three-dot diff showing only the branch's own work.
+- **A textually clean merge is not a semantically clean one.** When sibling
+  branches landed on one seam, `git merge origin/main` can resolve cleanly while
+  leaving a new route calling a renamed helper, tests asserting copy another PR
+  changed, or a doc paragraph another PR made false. After merging `main` into any
+  branch whose neighbours touched the same area: run the typecheck, run the
+  neighbouring tests, and regenerate anything derived (OpenAPI export, generated
+  docs) before pushing.
+
+**A push is not landed until the remote says so.** A compound command ending in
+`; echo ...` exits 0 whatever the push did, so a refused pre-push hook reads as
+success — three false "pushed" reports in one night (2026-08-11). Confirm with
+`git ls-remote origin <branch>` showing the SHA; a remote-ref probe cannot report
+a false success.
 
 ## One-time repo setup
 
@@ -515,6 +594,32 @@ gh label create re-review    --description "Request another automated review pas
   `scripts-test` workflow) — DOR-457 was that comment confidently naming the wrong
   cause nine times, and then doing it again for a different shape that had no
   fixture, so add a fixture if you touch it.
+
+- **A red `typecheck` check is often the formatting gate, not types.** The
+  required `typecheck` workflow runs `pnpm format:check` as its first step, so a
+  prettier miss reports under the typecheck name — the log's turbo section can say
+  "31 successful" while the check is red from the step above it. Read the log
+  before assuming type errors. Two related traps: a local whole-repo
+  `format:check` on a branch behind `main` reports files that are not yours
+  (merge `origin/main` in before believing it), and a merge commit made with
+  `LEFTHOOK=0` skips the format hook, so merge-combined files reach CI
+  unformatted — after any hook-skipped commit, `pnpm exec prettier --write` the
+  touched files.
+
+- **A stale local `main` ref makes the pre-push `--affected` gate run everything.**
+  The hook diffs against the local base ref; when the shared `main` checkout is
+  behind origin, the affected set explodes to the whole repo and hits unrelated
+  flakes. `git pull --ff-only` in the clean main checkout before pushing
+  small/docs-only branches (this bit three times in one session, 2026-08-25).
+
+- **A schema or route change owes a regenerated OpenAPI export.** Anything
+  touching `packages/shared` schemas that project into the API, or server routes,
+  needs `pnpm docs:export-api` (and the site's `generate:api-docs`) in the same
+  branch, or `openapi-fresh` goes red.
+
+- **A stalled merge queue may be GitHub, not you.** Before debugging why
+  merge-group runs sit "queued" for hours, check githubstatus.com — a 2026-08-26
+  Actions outage held every queue entry for ~4 hours.
 
 - **Changelog populator.** A `post-commit` hook writes a changelog fragment under
   `changelog/unreleased/` from the commit subject (it dedupes across amend/rebase and

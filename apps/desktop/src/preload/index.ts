@@ -36,8 +36,14 @@ let closeTabSubscriptions = 0;
  * Never expose raw ipcRenderer — only specific invoke/sendSync calls.
  */
 contextBridge.exposeInMainWorld('electronAPI', {
-  /** Get the port the Express server is listening on (synchronous). */
-  getServerPort: (): number => ipcRenderer.sendSync('get-server-port'),
+  /**
+   * Get the port the Express server is listening on (synchronous), or `null`
+   * when it is not serving — during startup, after a crash, between restarts.
+   * The main process answers with exactly what `getServerPort()` in
+   * `server-process.ts` holds, so `null` is a normal answer and every caller
+   * must handle it.
+   */
+  getServerPort: (): number | null => ipcRenderer.sendSync('get-server-port'),
   /** Get the app version from package.json (synchronous). */
   getAppVersion: (): string => ipcRenderer.sendSync('get-app-version'),
   /** The current platform (darwin, win32, linux). */

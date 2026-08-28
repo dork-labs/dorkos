@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import type { Session, StreamEvent, CommandEntry, Task, TaskRun } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
 import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
 import type {
   ObservedChat,
@@ -83,6 +84,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     prompt: 'Review open PRs',
     cron: '0 9 * * 1-5',
     enabled: true,
+    sticky: false,
     status: 'active',
     agentId: null,
     timezone: null,
@@ -95,6 +97,8 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
@@ -133,6 +137,7 @@ const mockAgent: AgentManifest = {
   isSystem: false,
   enabledToolGroups: {},
   mcpServers: [],
+  workspace: { mode: 'home' },
 };
 
 /**
@@ -570,6 +575,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
     }),
     getUnattendedAutonomy: vi.fn().mockResolvedValue({ drivers: [] }),
+    getMemoryProviderStatus: vi.fn().mockResolvedValue({
+      configuredId: BUILTIN_MEMORY_PROVIDER_ID,
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: false,
+      benchReason: null,
+    }),
     provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
@@ -799,6 +810,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // actually in — a default that threw would make every profile test opt out
     // of an error nothing real produces.
     listMemberRooms: vi.fn().mockResolvedValue({ rooms: [] }),
+    // Message search (spec `message-search` §8). The full envelope, `warnings`
+    // included: that array is ALWAYS present on this route by decision, and a
+    // default that omitted it would let a component read `undefined` in every
+    // test and crash only in production.
+    search: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.

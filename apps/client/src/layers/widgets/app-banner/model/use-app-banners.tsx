@@ -1,5 +1,7 @@
+import { useMemoryProviderStatus } from '@/layers/entities/memory-provider-status';
 import { useUnattendedAutonomy } from '@/layers/entities/unattended-autonomy';
 
+import { MemoryProviderBenchedBanner } from '../ui/MemoryProviderBenchedBanner';
 import { UnattendedAutonomyBanner } from '../ui/UnattendedAutonomyBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
 
@@ -24,6 +26,35 @@ function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
     variant: 'info',
     priority: BANNER_PRIORITY.info,
     render: () => <UnattendedAutonomyBanner drivers={state.drivers} />,
+  };
+}
+
+/**
+ * Memory-provider-benched descriptor — warning severity, eligible whenever the
+ * backend actually serving agent memory (`activeId`) is not the one
+ * `memory.provider` names (`configuredId`), per `services/memory/registry.ts`.
+ *
+ * Gated on `configuredId !== activeId`, deliberately NOT on `status.benched`
+ * alone: a benched backend is one cause of the mismatch, but the likelier one
+ * in practice — a typo'd id, or a backend module that never called
+ * `registerMemoryProvider` — leaves nothing for the registry to bench either,
+ * so `benched` stays `false` while the configured backend still never serves a
+ * single call. Gating on the mismatch instead catches both; the banner's own
+ * `benched` prop still carries which one this is, so the copy can say so.
+ *
+ * Warning rather than info in both cases: unlike unattended autonomy, this is
+ * something an operator did not choose.
+ */
+function useMemoryProviderBenchedDescriptor(): BannerDescriptor | null {
+  const status = useMemoryProviderStatus();
+  if (!status || status.configuredId === status.activeId) return null;
+  return {
+    id: 'memory-provider-benched',
+    variant: 'warning',
+    priority: BANNER_PRIORITY.warning,
+    render: () => (
+      <MemoryProviderBenchedBanner configuredId={status.configuredId} benched={status.benched} />
+    ),
   };
 }
 
@@ -63,5 +94,6 @@ function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
  */
 export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
   const unattended = useUnattendedAutonomyDescriptor();
-  return [unattended].filter((d): d is BannerDescriptor => d !== null);
+  const memoryProviderBenched = useMemoryProviderBenchedDescriptor();
+  return [unattended, memoryProviderBenched].filter((d): d is BannerDescriptor => d !== null);
 }

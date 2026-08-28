@@ -131,7 +131,6 @@ function roomHolding(members: RoomRosterEntry[], kind: 'channel' | 'dm' = 'chann
     slug: kind === 'dm' ? null : 'general',
     title: kind === 'dm' ? 'Kai' : 'General',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-10T09:00:00.000Z',

@@ -422,12 +422,26 @@ describe('the long-press sheet (P4 AC-3)', () => {
   it('runs the chosen action and puts itself away', () => {
     renderSurface();
     press({ holdMs: 700 });
-    fireEvent.click(within(sheet()!).getByRole('menuitem', { name: /Pin agent/ }));
+    const open = sheet();
+    expect(open).toHaveAttribute('data-state', 'open');
+
+    fireEvent.click(within(open!).getByRole('menuitem', { name: /Pin agent/ }));
     expect(onPin).toHaveBeenCalledTimes(1);
-    // The sheet is dismissed, which is a state flip rather than an unmount:
-    // vaul keeps the content mounted through its slide-out, and that animation
-    // is driven by frames rather than by the timers this test controls.
-    expect(sheet()).toHaveAttribute('data-state', 'closed');
+    // **The slide-out is a browser fact, and jsdom cannot see it.** vaul
+    // animates the sheet away with a real `@keyframes slideToBottom` it injects
+    // into the document, and Radix's `Presence` holds the content mounted until
+    // that animation ends. jsdom computes no animation for it at all, so
+    // `Presence` has nothing to wait on and unmounts on the spot — which is
+    // exactly what it is supposed to do when there is no exit animation.
+    //
+    // This used to read `data-state="closed"` on a still-mounted sheet. That
+    // was an artifact of `@radix-ui/react-dismissable-layer` <= 1.1.13, whose
+    // ref callback was a fresh arrow every render; 1.1.14 stabilized it and the
+    // dismissed sheet stopped lingering in the document here. Nothing about the
+    // real close animation changed — that claim moved to where it is
+    // observable: "the bottom sheet slides out on dismiss rather than
+    // vanishing", in `apps/e2e/tests/dashboard-sidebar/session-switcher.spec.ts`.
+    expect(sheet()).toBeNull();
   });
 
   it('writes a radio choice back through the node that owns it', () => {

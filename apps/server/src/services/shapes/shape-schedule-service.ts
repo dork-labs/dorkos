@@ -3,16 +3,32 @@
  * the apply-shape flow uses in production.
  *
  * Mirrors the tasks router's create path (`routes/tasks.ts`): resolve the target
- * (a concrete agent's `.dork/tasks/` dir, or the global `tasks/` dir), write the
- * SKILL.md (the source of truth), then sync it to the DB and register it with
- * the scheduler when enabled. Reusing the shared `@dorkos/skills` primitives
- * keeps this consistent with hand-created schedules without duplicating the
- * router's HTTP concerns.
+ * (a concrete agent's `.agents/skills/` dir, or the global `~/.dork/skills/`),
+ * write the SKILL.md (the source of truth), then sync it to the DB and register
+ * it with the scheduler. Reusing the shared `@dorkos/skills` primitives keeps
+ * this consistent with hand-created schedules without duplicating the router's
+ * HTTP concerns.
  *
- * Shape-created schedules are stamped with a provenance marker in their
- * frontmatter (`origin: shape` + `shape: <name>`). The re-bind flow gates on
- * that marker — never on name alone — so a user's own schedule that happens to
- * share a Shape schedule's name is never touched.
+ * Shape-created schedules are stamped with a provenance marker inside their
+ * `schedule:` block (`origin: shape` + `shape: <name>`). The re-bind flow gates
+ * on that marker — never on name alone — so a user's own schedule that happens
+ * to share a Shape schedule's name is never touched.
+ *
+ * ## What DOR-1486 changed here, and why this service still owns it
+ *
+ * The marketplace's own materializer (`services/marketplace/lib/
+ * materialize-schedules.ts`) deliberately skips a Shape's `schedules[]`, because
+ * this service owns them — it has the re-bind and teardown flows that a Shape's
+ * schedules need and a plugin's do not. What changed is the format and the
+ * place: a schedule block in a skills root, exactly like every other schedule,
+ * instead of top-level fields in a `tasks/` directory nothing scans any more.
+ *
+ * The row is written as a DISCOVERY sync, so an applied Shape's schedule PARKS
+ * for approval rather than arming itself — the same answer a package-installed
+ * one gets from the watcher, and the answer never-auto-arm requires (ADR
+ * `260823-200726`). Applying a Shape is a person's decision to INSTALL an
+ * arrangement; it is not, on its own, their decision to let a particular
+ * unattended job start running on a timer.
  *
  * @module services/shapes/shape-schedule-service
  */
@@ -24,11 +40,15 @@ import type { Task } from '@dorkos/shared/types';
 import type { Logger } from '@dorkos/shared/logger';
 import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { hasSchedule, scheduleToFrontmatter, type ScheduleBlock } from '@dorkos/skills';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { slugify } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
+import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from '../tasks/skills-roots.js';
+import { readScheduleFromSkill } from '../tasks/skills-root-discovery.js';
 import type { TaskStore } from '../tasks/task-store.js';
-import type { TaskSchedulerService } from '../tasks/task-scheduler-service.js';
+import type { TaskRegistrar } from '../tasks/task-registrar.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import type {
   ExistingSchedule,
@@ -40,7 +60,12 @@ import type {
 /** Constructor dependencies for {@link ShapeScheduleService}. */
 export interface ShapeScheduleServiceDeps {
   taskStore: TaskStore;
-  scheduler: TaskSchedulerService;
+  /**
+   * The one seam that turns a row into a live cron job. Shared with the tasks
+   * routes, the file watcher, and the reconciler — a Shape's schedule is an
+   * ordinary schedule, and must not have a second opinion about when it runs.
+   */
+  registrar: TaskRegistrar;
   meshCore?: MeshCore;
   dorkHome: string;
   logger: Logger;
@@ -78,61 +103,86 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   /**
    * Create a schedule from a task-creation request. Writes the SKILL.md first
    * (stamped with the Shape provenance marker when `origin` is given), then
-   * syncs to the DB and registers it with the scheduler when enabled. Safe to
-   * call over an existing file — `upsertFromFile` is keyed by file path.
+   * syncs to the DB and registers it with the scheduler when enabled.
+   *
+   * **It will not write over somebody else's skill.** See {@link claimTarget}:
+   * the target directory is checked on DISK before anything is written, because
+   * the apply flow's own existence check is by ROW and a person's hand-written
+   * skill has no row. Re-applying a Shape over its own schedule is still an
+   * ordinary overwrite — that is the marker's other job.
    *
    * @param req - The task-creation request built from a Shape schedule.
    * @param origin - Shape provenance to stamp into the file's frontmatter.
+   * @returns Whether the schedule now exists. `false` means the target was
+   *   somebody else's and nothing was written — the caller must not then delete
+   *   anything on the strength of it (see {@link rebindSchedule}).
    */
-  async createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<void> {
+  async createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<boolean> {
     const slug = slugify(req.name);
-    let tasksDir: string;
+    let skillsDir: string;
     let agentId: string | null = null;
+    let projectPath: string | undefined;
 
     if (req.target === 'global') {
-      tasksDir = path.join(this.deps.dorkHome, 'tasks');
+      skillsDir = globalSkillsRoot(this.deps.dorkHome);
     } else {
-      const projectPath = this.deps.meshCore?.getProjectPath(req.target);
-      if (!projectPath) {
+      const resolved = this.deps.meshCore?.getProjectPath(req.target);
+      if (!resolved) {
         // The agent vanished between resolution and creation — fall back to a
         // global schedule so the arrangement is not silently lost.
-        tasksDir = path.join(this.deps.dorkHome, 'tasks');
+        skillsDir = globalSkillsRoot(this.deps.dorkHome);
         this.deps.logger.warn(
           `[shape-schedule] Agent '${req.target}' has no project path; created schedule '${slug}' globally`
         );
       } else {
-        tasksDir = path.join(projectPath, '.dork', 'tasks');
+        skillsDir = agentSkillsRoot(resolved);
+        projectPath = resolved;
         agentId = req.target;
       }
     }
 
-    const frontmatter: Record<string, unknown> = { name: slug, description: req.description };
-    if (req.cron) frontmatter.cron = req.cron;
-    if (req.timezone) frontmatter.timezone = req.timezone;
-    if (req.enabled === false) frontmatter.enabled = false;
-    if (req.permissionMode && req.permissionMode !== 'acceptEdits') {
-      frontmatter.permissions = req.permissionMode;
-    }
-    if (origin) {
-      frontmatter.origin = 'shape';
-      frontmatter.shape = origin.shape;
-    }
+    // Written through `scheduleToFrontmatter` so the block holds only what a
+    // person would have typed — a default spelled out in the file is a line the
+    // next reader has to decide whether to trust.
+    const block: ScheduleBlock = {
+      ...(req.cron ? { cron: req.cron } : {}),
+      timezone: req.timezone || 'UTC',
+      enabled: req.enabled !== false,
+      // A Shape-declared schedule cannot ask for session-resume yet (DOR-1571):
+      // there is no `sticky` field on a Shape schedule request, so it stays
+      // isolated-per-run. `scheduleToFrontmatter` drops this `false`.
+      sticky: false,
+      ...(req.maxRuntime ? { 'max-runtime': req.maxRuntime } : {}),
+      permissions: req.permissionMode ?? 'acceptEdits',
+      ...(origin ? { origin: 'shape' as const, shape: origin.shape } : {}),
+    };
+    const frontmatter: Record<string, unknown> = {
+      name: slug,
+      description: req.description,
+      schedule: scheduleToFrontmatter(block),
+    };
 
-    // EDGE: `writeSkillFile` writes into `<tasksDir>/<slug>/` and will overwrite
-    // a same-slug task dir already present in the target scope (last write
-    // wins, same as the tasks router's file write). The apply flow's by-name
-    // existence check prevents this within DorkOS-managed schedules; a file
-    // dropped on disk out-of-band between check and write could still be
-    // replaced.
-    const filePath = await writeSkillFile(tasksDir, slug, frontmatter, req.prompt);
+    // Nothing is written until the target is known to be ours to write.
+    if (!(await this.claimTarget(path.join(skillsDir, slug), slug, origin))) return false;
+
+    const filePath = await writeSkillFile(skillsDir, slug, frontmatter, req.prompt);
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema);
+    const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
+    // Keyed on the REAL path, because that is what the watcher reading this same
+    // file moments from now will key its row on.
+    const discovered = parsed.ok
+      ? readScheduleFromSkill(parsed.definition, {
+          scope: projectPath ? 'project' : 'global',
+          projectPath,
+          resolvedPath: path.join(await resolveRootPath(skillsDir), slug, SKILL_FILENAME),
+        })
+      : null;
 
-    const schedule = parsed.ok
-      ? this.deps.taskStore.upsertFromFile(
-          { ...parsed.definition, scope: 'global' as const, projectPath: undefined },
-          agentId ?? undefined
-        )
+    const schedule = discovered
+      ? this.deps.taskStore.upsertFromFile(discovered.def, agentId ?? undefined, {
+          source: 'discovery',
+          problem: discovered.problem,
+        })
       : this.deps.taskStore.createTask({
           name: slug,
           description: req.description,
@@ -146,16 +196,84 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
           filePath,
         });
 
-    if (schedule.enabled && schedule.status === 'active') {
-      this.deps.scheduler.registerTask(schedule);
+    this.deps.registrar.syncTask(schedule.id);
+    return true;
+  }
+
+  /**
+   * Whether `<skillsDir>/<slug>/` is this Shape's to write into.
+   *
+   * ## Why a disk check, when the apply flow already checks for a collision
+   *
+   * Because that check is by ROW, over `taskStore.getTasks()`, and the thing it
+   * has to protect is not in the table. A skills root is where a person's own
+   * skills live — most of them plain, none of them rows — so an apply that
+   * trusted the row check wrote a Shape's schedule straight over a hand-written
+   * skill with no warning anywhere, and the teardown that followed removed the
+   * whole directory, reference files and all. The move from `tasks/` (a
+   * directory DorkOS owned outright) to `.agents/skills/` (a directory a person
+   * owns) is what turned a documented last-write-wins edge into data loss, so
+   * the guard moved with it.
+   *
+   * Three answers:
+   *
+   * - **Nothing there** — free.
+   * - **This Shape's own schedule** — free, and an ordinary re-apply. Decided by
+   *   the provenance marker via {@link readShapeOrigin}, which fails closed, so
+   *   an unreadable file is somebody else's by default.
+   * - **Anything else** — refused, and said out loud. A symlink is refused
+   *   FIRST and unconditionally, marker or no marker: a `pkg__name` link is how
+   *   Harness Sync projects an installed package's skill, and writing through it
+   *   edits the package's own checkout — shared by every agent that installed it,
+   *   invisible in the cockpit, and gone at the next update.
+   *
+   * Refusing rather than renaming aside is deliberate. A suffixed schedule keeps
+   * the arrangement alive at a name the Shape does not know, so the next apply
+   * finds nothing by that name and stands up a second one; and a person who
+   * named a skill has a claim on that name that a package does not get to
+   * out-vote. The Shape is simply short one schedule, and the log says which.
+   *
+   * @param targetDir - The directory the schedule would be written into.
+   * @param slug - Its name, for the log line.
+   * @param origin - The Shape asking, when one is.
+   * @returns Whether to go ahead.
+   */
+  private async claimTarget(
+    targetDir: string,
+    slug: string,
+    origin?: ScheduleOrigin
+  ): Promise<boolean> {
+    let stat;
+    try {
+      stat = await fs.lstat(targetDir);
+    } catch {
+      return true; // Nothing there.
     }
+
+    if (stat.isSymbolicLink()) {
+      this.deps.logger.warn(
+        `[shape-schedule] Refusing to write '${slug}' — ${targetDir} is a link to a skill DorkOS ` +
+          `does not own (an installed package's, most likely)`
+      );
+      return false;
+    }
+
+    const owner = await this.readShapeOrigin(path.join(targetDir, SKILL_FILENAME));
+    if (origin && owner === origin.shape) return true;
+
+    this.deps.logger.warn(
+      `[shape-schedule] Refusing to write '${slug}' — ${targetDir} already holds a skill this ` +
+        `Shape did not create${owner ? ` (it belongs to '${owner}')` : ''}`
+    );
+    return false;
   }
 
   /**
    * Re-target a global (unbound) schedule to a now-present agent and enable it —
    * the second half of the `'global'` → agent flip promised above. The schedule
-   * file physically moves from the global `tasks/` dir into the agent's
-   * `.dork/tasks/` (the on-disk location is what makes a schedule agent-owned),
+   * file physically moves from the global skills root into the agent's
+   * `.agents/skills/` (the on-disk location is what makes a schedule
+   * agent-owned),
    * so this writes the agent-scoped copy first, then removes the old global one
    * to leave exactly one schedule. A no-op — leaving the global copy untouched —
    * when the named schedule is absent, is already agent-bound (respecting an
@@ -201,7 +319,7 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     // Write the agent-scoped copy (new file path → new row) and register it.
     // The provenance marker travels with the schedule — it stays a Shape
     // schedule in its new home.
-    await this.createSchedule(
+    const created = await this.createSchedule(
       {
         name: existing.name,
         description: existing.description ?? '',
@@ -215,6 +333,16 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
       { shape: shapeOrigin }
     );
 
+    // The copy is what makes the teardown below safe to do. If the agent's
+    // skills root already held a skill of that name, nothing was written — and
+    // tearing the global copy down anyway would delete the only copy there is.
+    if (!created) {
+      this.deps.logger.warn(
+        `[shape-schedule] Left '${name}' where it is — the agent's skills root already has a skill by that name`
+      );
+      return;
+    }
+
     // Remove the old global copy (file + row + any scheduler registration) so
     // the schedule is not duplicated across scopes.
     await this.teardownSchedule(existing);
@@ -224,7 +352,7 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * Delete every schedule created by a given Shape (its provenance marker names
    * it), across both global and agent-bound scopes — the teardown that keeps a
    * Shape's schedules from outliving the Shape. Reads each schedule file's
-   * marker directly (agent-bound schedules were moved into their agent's dir by
+   * marker directly (agent-bound schedules were moved into their agent's root by
    * {@link rebindSchedule}, so a scope-blind scan is required) and fails closed:
    * a missing, unreadable, or mismatched marker leaves the schedule alone, so a
    * user's own schedule that collides on name is never deleted.
@@ -262,8 +390,9 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * @param task - The schedule to tear down.
    */
   private async teardownSchedule(task: Task): Promise<void> {
-    this.deps.scheduler.unregisterTask(task.id);
     this.deps.taskStore.deleteTask(task.id);
+    // Row first, then the seam: with no row to read, `syncTask` unregisters.
+    this.deps.registrar.syncTask(task.id);
     // A Shape's schedule can be torn down while still waiting on the operator's
     // approval. Ending the standing condition here is what stops an armed
     // escalation buzzing a phone about a schedule that is gone (DOR-1387
@@ -288,13 +417,12 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   private async readShapeOrigin(filePath: string): Promise<string | null> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema, {
+      const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
         requireNameMatch: false,
       });
-      if (!parsed.ok) return null;
-      return parsed.definition.meta.origin === 'shape'
-        ? (parsed.definition.meta.shape ?? null)
-        : null;
+      if (!parsed.ok || !hasSchedule(parsed.definition.meta)) return null;
+      const { origin, shape } = parsed.definition.meta.schedule;
+      return origin === 'shape' ? (shape ?? null) : null;
     } catch {
       return null;
     }

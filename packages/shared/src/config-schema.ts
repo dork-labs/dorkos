@@ -19,6 +19,8 @@
  */
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
+import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
+import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 
 /**
  * How long a new standing permission lasts by default, in minutes (eight hours —
@@ -1549,13 +1551,11 @@ export const UserConfigSchema = z.object({
        * literal below, because `conf` merges top-level defaults shallowly.
        */
       maxConcurrentRuns: z.number().int().min(1).max(10).default(4),
-      timezone: z.string().nullable().default(null),
       retentionCount: z.number().int().min(1).default(100),
     })
     .default(() => ({
       enabled: true,
       maxConcurrentRuns: 4,
-      timezone: null,
       retentionCount: 100,
     })),
   mesh: z
@@ -1721,6 +1721,79 @@ export const UserConfigSchema = z.object({
        * not lost — they start the next answer.
        */
       collectMaxEntries: z.number().int().min(1).max(200).default(20),
+      /**
+       * A room's own files — its git repo, the standing worktree each agent
+       * works in, and the merges that bring that work back (spec
+       * `project-rooms`).
+       *
+       * Nothing here reaches a room that has no repo, and a room only gets one
+       * when you give it one. Every declaration of these values has to agree,
+       * here and in the section literal below, because `conf` merges top-level
+       * defaults shallowly.
+       */
+      repo: z
+        .object({
+          /**
+           * Whether a room may have files at all.
+           *
+           * On is how it ships. Turning it off makes every room behave like a
+           * room without files: no new repo can be created, and a room that
+           * already has one stops offering it. Nothing on disk is deleted, so
+           * turning it back on returns everything.
+           */
+          enabled: z.boolean().default(true),
+          /**
+           * How many days an agent's working copy may sit untouched before
+           * DorkOS tidies it away.
+           *
+           * **Only a working copy with nothing in it is ever removed.** One
+           * holding unsaved edits, or work that has not been merged back into
+           * the room, is left alone however long it sits there and is shown to
+           * you instead. So this number decides when clutter goes, never when
+           * work does.
+           */
+          worktreeReapDays: z.number().int().min(1).max(365).default(14),
+          /**
+           * The largest single file an agent may merge into the room, in bytes.
+           *
+           * A merge carrying something bigger is refused whole and says which
+           * file it was. Big files belong in the room's attachments, which is
+           * what they are for.
+           */
+          maxFileBytes: z.number().int().positive().default(ROOM_REPO_CAP_DEFAULTS.maxFileBytes),
+          /** How large one room's files may grow in total, in bytes. */
+          maxRepoBytes: z.number().int().positive().default(ROOM_REPO_CAP_DEFAULTS.maxRepoBytes),
+          /**
+           * How much of a room's `ROOM.md` reaches its agents, in bytes.
+           *
+           * The room's conventions ride along with every turn, so a long one
+           * costs money on every message. Past this size the agents are told
+           * the file is too long to send instead of being sent part of it —
+           * half a rule reads like a whole one.
+           */
+          maxRoomMdBytes: z
+            .number()
+            .int()
+            .positive()
+            .default(ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes),
+          /**
+           * How long a merge waits its turn before giving up, in milliseconds.
+           *
+           * Merges into a room run one at a time, so two agents finishing
+           * together queue rather than collide. This is how long the one behind
+           * waits — long enough for an ordinary merge ahead of it, short enough
+           * that an agent is not left hanging.
+           */
+          mergeQueueWaitMs: z.number().int().min(1000).max(600_000).default(30_000),
+        })
+        .default(() => ({
+          enabled: true,
+          worktreeReapDays: 14,
+          maxFileBytes: ROOM_REPO_CAP_DEFAULTS.maxFileBytes,
+          maxRepoBytes: ROOM_REPO_CAP_DEFAULTS.maxRepoBytes,
+          maxRoomMdBytes: ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
+          mergeQueueWaitMs: 30_000,
+        })),
     })
     .default(() => ({
       turnLimitsEnabled: true,
@@ -1734,6 +1807,14 @@ export const UserConfigSchema = z.object({
       engagedWindowPosts: 5,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
+      repo: {
+        enabled: true,
+        worktreeReapDays: 14,
+        maxFileBytes: ROOM_REPO_CAP_DEFAULTS.maxFileBytes,
+        maxRepoBytes: ROOM_REPO_CAP_DEFAULTS.maxRepoBytes,
+        maxRoomMdBytes: ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
+        mergeQueueWaitMs: 30_000,
+      },
     })),
   /**
    * What your agents may say when you come back after being away (spec
@@ -1844,6 +1925,28 @@ export const UserConfigSchema = z.object({
       defaultAgent: z.string().default('dorkbot'),
     })
     .default(() => ({ defaultDirectory: DEFAULT_AGENTS_DIRECTORY, defaultAgent: 'dorkbot' })),
+  /**
+   * Where your agents keep what they remember (spec `agent-memory`, D7).
+   *
+   * `MemoryProvider` is a swappable port, so the backend behind an agent's
+   * memory can be something other than the markdown file DorkOS ships with — a
+   * vector store, a hosted memory service. This is the one setting that
+   * chooses.
+   */
+  memory: z
+    .object({
+      /**
+       * Which memory backend serves every agent on this machine.
+       *
+       * `'builtin'` is the file you can open: one small `MEMORY.md` beside each
+       * agent, on this machine and nowhere else. Any other value names a
+       * backend something registered, and an id nothing registered falls back
+       * to `'builtin'` with one warning rather than leaving agents with no
+       * memory at all — memory is never allowed to take down a turn.
+       */
+      provider: z.string().min(1).default(BUILTIN_MEMORY_PROVIDER_ID),
+    })
+    .default(() => ({ provider: BUILTIN_MEMORY_PROVIDER_ID })),
   extensions: z
     .object({
       // `enabled` and `disabled` record DEVIATIONS from each extension's default

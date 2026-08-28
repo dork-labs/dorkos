@@ -279,8 +279,7 @@ describe('relay → CCA round-trip', () => {
     // Agent delivery is detached — wait for the background turn to finish
     await vi.waitFor(() => {
       const last = receivedPayloads[receivedPayloads.length - 1] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(last?.type).toBe('agent_result');
     });
 
@@ -378,8 +377,7 @@ describe('relay → CCA round-trip', () => {
 
     await vi.waitFor(() => {
       const last = receivedPayloads[receivedPayloads.length - 1] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(last?.type).toBe('agent_result');
     });
 

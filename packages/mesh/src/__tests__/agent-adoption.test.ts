@@ -48,6 +48,7 @@ afterEach(async () => {
 
 function makeManifest(overrides: Partial<AgentManifest> & { id: string }): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     name: 'ana',
     description: '',
     runtime: 'claude-code',

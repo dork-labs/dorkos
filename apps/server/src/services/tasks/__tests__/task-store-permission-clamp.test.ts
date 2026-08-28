@@ -28,10 +28,12 @@ function definition(permissions: string, filePath = FILE_PATH) {
     meta: {
       name: 'sweeper',
       description: 'Sweep the repo overnight',
-      cron: '0 3 * * *',
-      timezone: 'UTC',
-      enabled: true,
-      permissions,
+      schedule: {
+        cron: '0 3 * * *',
+        timezone: 'UTC',
+        enabled: true,
+        permissions,
+      },
     },
     body: 'sweep it',
     filePath,
@@ -140,7 +142,7 @@ describe('a task file cannot arm an unattended bypass run', () => {
       grantBypass();
 
       const rescheduled = definition('bypassPermissions');
-      rescheduled.meta.cron = '* * * * *';
+      rescheduled.meta.schedule.cron = '* * * * *';
       const after = store.upsertFromFile(rescheduled);
 
       expect(after.cron).toBe('* * * * *');

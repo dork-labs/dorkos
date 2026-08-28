@@ -84,6 +84,13 @@ export interface AgentRuntimeLike {
       permissionMode: PermissionMode;
       cwd?: string;
       hasStarted?: boolean;
+      /**
+       * True when nobody is watching — a scheduled task run, which is refused
+       * at the ten-minute countdown rather than parked for four hours waiting
+       * for an answer that is not coming. Mirrors `SessionOpts.unattended`; the
+       * tasks handler is the one caller that sets it.
+       */
+      unattended?: boolean;
     }
   ): void;
   sendMessage(

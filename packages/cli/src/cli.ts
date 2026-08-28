@@ -546,8 +546,8 @@ Options:
   -t, --tunnel           Enable ngrok tunnel
   -d, --dir <path>       Working directory (default: current directory)
   -b, --boundary <path>  Directory boundary (default: home directory)
-      --tasks              Enable Tasks scheduler
-      --no-tasks           Disable Tasks scheduler
+      --tasks              Turn scheduled tasks on
+      --no-tasks           Turn scheduled tasks off
       --no-open            Don't open browser on startup
       --debug-trace        Write a local trace file for bug reports (never sent anywhere)
   -l, --log-level <level>  Log level (fatal|error|warn|info|debug|trace)

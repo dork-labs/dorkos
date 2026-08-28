@@ -205,10 +205,15 @@ export const CONFIG_DISCLOSURE = {
 
   'scheduler.enabled': 'expose',
   'scheduler.maxConcurrentRuns': 'expose',
-  'scheduler.timezone': 'expose',
   'scheduler.retentionCount': 'expose',
 
   'mesh.scanRoots': 'expose',
+
+  // Which backend holds an agent's memory. A provider id, not a credential and
+  // not a path to one — a backend resolves its own secrets server-side, which is
+  // rule 3 of the port. An agent that knows its memory is the builtin file is an
+  // agent that can tell a person why `query` refuses.
+  'memory.provider': 'expose',
 
   'rooms.turnLimitsEnabled': 'expose',
   'rooms.maxAgentDepth': 'expose',
@@ -221,6 +226,18 @@ export const CONFIG_DISCLOSURE = {
   'rooms.engagedWindowPosts': 'expose',
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
+
+  // A room's own files: whether they are available at all, and the bounds a
+  // merge is measured against. Plain numbers and a boolean about the person's
+  // own rooms — none of them names a credential or where one lives, and an
+  // agent that can read them is an agent that can say why its merge was refused
+  // instead of retrying into the same wall.
+  'rooms.repo.enabled': 'expose',
+  'rooms.repo.worktreeReapDays': 'expose',
+  'rooms.repo.maxFileBytes': 'expose',
+  'rooms.repo.maxRepoBytes': 'expose',
+  'rooms.repo.maxRoomMdBytes': 'expose',
+  'rooms.repo.mergeQueueWaitMs': 'expose',
 
   // What agents may say when the person comes back after being away. Three
   // plain numbers about the person's own rooms: nothing here is a credential or

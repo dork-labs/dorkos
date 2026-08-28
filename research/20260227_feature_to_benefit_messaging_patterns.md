@@ -350,14 +350,15 @@ This is striking: they don't quote a productivity metric. They quote an emotiona
 The distinction matters: "saving time" implies you are always measuring and optimizing. "Never wasting it" implies _psychological relief_ — you are never anxious about efficiency. This is a completely different product positioning that resonates far more deeply.
 
 **Feature-to-benefit translations:**
-| Feature | Benefit Translation |
-|---------|-------------------|
-| Fast performance | "Think in milliseconds" |
-| Keyboard-first design | "Ergonomic" workflow |
-| Native architecture | "Pure performance" |
-| 99.8% reliability | "Crash-free rate" (numeric proof, not claim) |
-| Extension ecosystem | "Use your favorite tools without even opening them" |
-| AI integration | "Your Mac just got smarter" |
+
+| Feature               | Benefit Translation                                 |
+| --------------------- | --------------------------------------------------- |
+| Fast performance      | "Think in milliseconds"                             |
+| Keyboard-first design | "Ergonomic" workflow                                |
+| Native architecture   | "Pure performance"                                  |
+| 99.8% reliability     | "Crash-free rate" (numeric proof, not claim)        |
+| Extension ecosystem   | "Use your favorite tools without even opening them" |
+| AI integration        | "Your Mac just got smarter"                         |
 
 **Benefit level:** Level 3-4. "Your shortcut to everything" is an identity benefit — you are someone who has access to _everything_, instantly. The psychological positioning is omnipotence (within your workflow).
 

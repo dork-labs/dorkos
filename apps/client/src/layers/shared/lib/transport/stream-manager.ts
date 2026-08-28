@@ -232,6 +232,15 @@ export const GENERIC_EVENTS = [
   'approval_pending',
   'approval_resolved',
   'approval_grant_changed',
+  // A blocking condition began or stopped standing (DOR-1570). A standing kind
+  // stores no row while it stands, so these are the only live news that a
+  // schedule was proposed or an approval is waiting — which is what the desktop
+  // shell draws its native banner from. No cockpit surface subscribes: the app
+  // already derives both from state it holds (the tasks query, and
+  // `approval_pending`). Listed so the event reaches dispatch rather than being
+  // silently dropped the day a surface does want it.
+  'standing_pending',
+  'standing_resolved',
   // An agent is parked on something only a person can answer — a tool approval,
   // a question, or an MCP elicitation — and the answer is wanted from wherever
   // the reader happens to be, not only inside that session. Raised once when the
@@ -294,8 +303,7 @@ const DEFAULT_BASE_URL = '/api';
 
 /** Where StreamManager sources its streams from (see module doc). */
 type StreamSource =
-  | { kind: 'socket'; baseUrl: string }
-  | { kind: 'transport'; transport: TransportStreams };
+  { kind: 'socket'; baseUrl: string } | { kind: 'transport'; transport: TransportStreams };
 
 /**
  * Build the URL of a session's durable event stream. The `cwd` query is

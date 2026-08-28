@@ -67,7 +67,6 @@ function useJumpBackInFixture() {
       slug: null,
       title: 'Untitled',
       topic: null,
-      workspaceId: null,
       archived: false,
       ambientMaxEntries: 30,
       createdAt: minutesAgo(1440),
@@ -175,8 +174,7 @@ function JumpBackInPopoverShowcase() {
 export function JumpBackInShowcases() {
   const { items } = useJumpBackInFixture();
   const firstChannel = items.find((item) => item.kind === 'channel') as
-    | JumpBackInRoomItem
-    | undefined;
+    JumpBackInRoomItem | undefined;
 
   return (
     <>

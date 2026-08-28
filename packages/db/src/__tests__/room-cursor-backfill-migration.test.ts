@@ -120,9 +120,9 @@ function seedAuthor(raw: Raw, id: string, kind: string, naturalKey: string): voi
 function seedRoom(raw: Raw, id: string): void {
   raw
     .prepare(
-      'INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES (?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES (?,?,?,?,?,?,?,?)'
     )
-    .run(id, 'channel', id.toLowerCase(), id, null, null, 0, T(0), T(0));
+    .run(id, 'channel', id.toLowerCase(), id, null, 0, T(0), T(0));
 }
 
 /** Insert a membership sitting at `lastReadSeq`. */

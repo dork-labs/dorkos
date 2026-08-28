@@ -544,6 +544,16 @@ The agent iteration loop: `create_extension` -> `test_extension` (smoke) -> `rel
 
 One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. The first backend behind it is this machine's own rooms: `LocalCommunityAdapter` (`apps/server/src/services/communities/local/`) wraps the shipped `RoomService` rather than replacing it, and is registered as `LOCAL_COMMUNITY` at startup so the registry always holds the one community that certainly exists. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
 
+## Memory Provider (the fifth seam)
+
+`MemoryProvider` (`packages/shared/src/memory-provider.ts`) is the fifth swappable seam beside `AgentRuntime`, `Transport`, `ConnectorProvider` and `CommunityAdapter`. It is what an agent durably knows: the builtin `MEMORY.md` file today, a vector store or a hosted memory service later, with nothing at a call site learning which. Built by the same four-rule recipe as `CommunityAdapter` — one instance serves one backend, every method is REQUIRED (a capability-gated method whose capability is off rejects with `MemoryUnsupportedError` rather than no-opping), no credential crosses the port, and nothing here executes an agent.
+
+**Scope is the agent identity, never a session or a room.** Every address is `AgentMemoryRef = { agentId, agentPath }`, which carries no session id and no room id, so a provider cannot accidentally shard memory per conversation. That is the feature: an agent in three channels, two DMs and one direct chat is six runtime transcripts and one memory.
+
+`apps/server/src/services/memory/registry.ts` is the dispatcher, and it carries the one behaviour this seam has that the other four do not: **quarantine-and-fallback**. The `memory.provider` config key (default `builtin`) chooses; a provider that FAULTS — throws anything that is not one of the port's own refusals — is benched for the rest of the process, `builtin` takes over the call that faulted and every call after it, and exactly one warning is logged. One, not one per turn. `builtin` itself is never benched, because there is nothing behind it: when the fallback fails, memory degrades to nothing injected and the turn still runs. **Memory must never be able to take down a turn**, and every branch in that module exists to keep that true. Refusals (an ambiguous edit, a write past the cap, "this backend cannot search") are the backend working correctly and bench nobody.
+
+`memoryConformance` in `@dorkos/test-utils` is the gate, with `FakeMemoryProvider` as the second implementation that proves the suite tests the contract rather than the engine. Author guide: [adding-a-memory-provider.md](adding-a-memory-provider.md).
+
 ## Read State (ADR 260808-140956)
 
 **`read_cursors` is the single user-side read-state store.** One table in `@dorkos/db` (`packages/db/src/schema/read-cursors.ts`) answers "how far has this person read" for every kind of thread: `(user_id, thread_kind, thread_id) → last_read_seq, updated_at`, with `thread_kind` constrained to `room | session | inbox`. `last_read_seq` is a position, not a time, so both sides compare integers on a key. `thread_id` is opaque and carries no foreign key: the three kinds live in three stores, one of them (sessions) not in this database at all because session storage is runtime-owned (ADR-0310), and a cursor stays meaningful for a thread that has been deleted.
@@ -1321,6 +1331,14 @@ When both Mesh and Relay are enabled, `RelayBridge` publishes lifecycle events (
 ## Tasks
 
 The Tasks subsystem provides cron-based agent scheduling. It lives entirely in `apps/server/src/services/tasks/` with state persisted to SQLite (`~/.dork/dork.db`) and JSON (`~/.dork/schedules.json`).
+
+### Where a schedule lives
+
+Being scheduled is a property of a FILE, not of a directory (ADR `260823-200724`): any `SKILL.md` carrying a `schedule:` block is a scheduled task. Discovery therefore watches the **skills roots** — `~/.dork/skills/` plus every registered agent's `<projectPath>/.agents/skills/` — and ignores every file in them that has no block. `.claude/skills/` is never watched: it is a projection Harness Sync writes FROM `.agents/skills/`, so watching it would discover every schedule twice.
+
+The old task directories (`~/.dork/tasks/`, `<projectPath>/.dork/tasks/`) are **not scanned or watched** as of DOR-1486. `services/tasks/legacy-migration.ts` rewrites and moves what is in them on the first boot that finds them, re-keying each row (and its approval) in one transaction. A `SKILL.md` appearing in either directory afterwards is not discovered while the server runs — though the next start's migration does move it, since detection is by location and unconditional. Neither directory is a live import path. `~/.dork/tasks/` itself stays, holding the two system files that were never schedules: `scheduler.lock` and `presets.json`. The template gallery moved to `~/.dork/skills/templates/`, which is the one reserved directory name in the global root.
+
+That module carries its own removal date (2027-02 or v1.0, whichever comes first; DOR-1491) and is the only place in the codebase that still knows the pre-block frontmatter shape.
 
 ### Key Components
 

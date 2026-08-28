@@ -53,15 +53,13 @@ export interface MaildirStoreOptions {
  * or failure with an error reason.
  */
 export type DeliverResult =
-  | { ok: true; messageId: string; path: string }
-  | { ok: false; error: string };
+  { ok: true; messageId: string; path: string } | { ok: false; error: string };
 
 /**
  * Result of a claim operation — moves a message from `new/` to `cur/`.
  */
 export type ClaimResult =
-  | { ok: true; envelope: RelayEnvelope; path: string }
-  | { ok: false; error: string };
+  { ok: true; envelope: RelayEnvelope; path: string } | { ok: false; error: string };
 
 /**
  * Result of a fail operation — moves a message from `cur/` to `failed/`.

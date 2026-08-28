@@ -41,10 +41,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 /** Typed failure codes so the route can map to precise HTTP statuses. */
 export type McpAppResourceErrorCode =
-  | 'INVALID_SCHEME'
-  | 'UNSUPPORTED_MIME'
-  | 'NOT_FOUND'
-  | 'READ_FAILED';
+  'INVALID_SCHEME' | 'UNSUPPORTED_MIME' | 'NOT_FOUND' | 'READ_FAILED';
 
 /** Error thrown by {@link resolveAppResource}; `code` drives the HTTP status. */
 export class McpAppResourceError extends Error {

@@ -10,24 +10,44 @@
  * identical to the client, so the endpoint can never be used to probe whether
  * an address is on the list.
  *
+ * The one exception to that shape is the per-IP throttle (DOR-1581): a caller
+ * over the limit gets `429` with a `Retry-After`. It leaks nothing about any
+ * address — only that this IP has posted too often — and without it a `curl`
+ * loop could pump the pending list.
+ *
  * @module app/api/newsletter/subscribe
  */
 import { z } from 'zod';
 
 import { subscribe } from '@/lib/newsletter/service';
+import { consumeSubscribeQuota } from '@/lib/newsletter/subscribe-rate-limit';
 
 export const runtime = 'nodejs';
 
 const SubscribeSchema = z.object({
   email: z.string().email().max(254),
-  source: z.enum(['footer', 'newsletter-page', 'blog', 'unknown']).default('unknown'),
+  source: z
+    .enum(['footer', 'newsletter-page', 'blog', 'tutorials-modal', 'unknown'])
+    .default('unknown'),
 });
 
 /**
- * Handle a subscribe POST. Returns `400` only on malformed JSON or an invalid
- * email; every valid submission returns `200 { ok: true }`.
+ * Handle a subscribe POST. Returns `429` when this IP is over its limit and
+ * `400` on malformed JSON or an invalid email; every other valid submission
+ * returns `200 { ok: true }`.
  */
 export async function POST(request: Request): Promise<Response> {
+  const quota = consumeSubscribeQuota(request);
+  if (!quota.allowed) {
+    // For whoever is calling the endpoint directly. The signup form never reads
+    // this body — it renders its own copy from `use-newsletter-form` — so the
+    // two sentences are independent, not a duplicate waiting to drift.
+    return Response.json(
+      { error: 'Too many requests. Retry after the number of seconds in the Retry-After header.' },
+      { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

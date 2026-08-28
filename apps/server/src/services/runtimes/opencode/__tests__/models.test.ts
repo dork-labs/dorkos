@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ProviderListResponse } from '@opencode-ai/sdk';
-import { projectModelOptions } from '../models.js';
+import { projectModelOptions } from '../providers/models.js';
 
 /** Build a provider-list model entry with just the fields projectModelOptions reads. */
 function model(id: string, name: string, status?: 'deprecated') {

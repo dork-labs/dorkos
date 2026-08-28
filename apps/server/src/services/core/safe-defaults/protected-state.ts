@@ -185,26 +185,28 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     direction: 'boolean',
     protectiveValue: false,
     reason:
-      'Agent-to-agent messaging tools default ON. Someone who took them away from their agents should not have them handed back by a wipe.',
+      'The agent-to-agent messaging tools are documented to every session by default. Turning that off is a deliberate narrowing of what a person tells their agents they can do, and a wipe must not undo it. Stated as documentation rather than as access on purpose: `resolveToolConfig` feeds the context blocks and nothing else, so these four never unregister a tool (DOR-1497).',
   },
   {
     path: 'agentContext.meshTools',
     direction: 'boolean',
     protectiveValue: false,
-    reason: 'Agent discovery tools default ON; turning them off is a deliberate narrowing.',
+    reason:
+      'The agent discovery tools, documented by default; turning them off is the same deliberate narrowing, and the same documentation-only caveat applies.',
   },
   {
     path: 'agentContext.adapterTools',
     direction: 'boolean',
     protectiveValue: false,
     reason:
-      'Chat-adapter tools default ON and are the surface an agent uses to speak on an outside channel.',
+      'The chat-adapter tools — how an agent speaks on an outside channel — documented by default. Narrowing it is a choice about what agents here are told they may reach for.',
   },
   {
     path: 'agentContext.tasksTools',
     direction: 'boolean',
     protectiveValue: false,
-    reason: 'Scheduled-work tools default ON and are how an agent arranges unattended runs.',
+    reason:
+      'The scheduled-work tools, documented by default; how an agent learns it can arrange an unattended run.',
   },
   {
     path: 'harness.autoSync',
@@ -284,6 +286,30 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     direction: 'higher',
     reason:
       'The most messages one gathered-up answer covers. Higher is the tightened bound for the same reason: raising it folds more of a busy room into one turn, and a wipe that lowered it would split that turn back into several.',
+  },
+  {
+    path: 'rooms.repo.enabled',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      "A room's own files default ON, and the surface is a git checkout on this machine that member agents run tools in. Someone who switched that off should not have it resume silently.",
+  },
+  {
+    path: 'rooms.repo.maxFileBytes',
+    direction: 'lower',
+    reason:
+      'A tightened ceiling on the largest file a merge may bring into a room. The default is a real bound, but a person can set a smaller one and a wipe must not raise it back.',
+  },
+  {
+    path: 'rooms.repo.maxRepoBytes',
+    direction: 'lower',
+    reason: "A tightened ceiling on how large one room's files may grow.",
+  },
+  {
+    path: 'rooms.repo.maxRoomMdBytes',
+    direction: 'lower',
+    reason:
+      "A tightened ceiling on how much of a room's ROOM.md rides every turn. Lower is the tightened bound: the conventions block is prompt text that is paid for on every message in the room.",
   },
   {
     path: 'welcomeBack.enabled',

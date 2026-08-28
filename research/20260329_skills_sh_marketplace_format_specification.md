@@ -253,19 +253,20 @@ npx skills add -g vercel-labs/agent-skills      # Global install
 ```
 
 **All commands:**
-| Command | Function |
-|---|---|
-| `npx skills add <source>` | Install skills from repositories |
-| `npx skills add ... --skill <name>` | Install specific skill from multi-skill repo |
-| `npx skills add ... -g` | Install globally (~/.agent-name/skills/) |
-| `npx skills add ... -y` | Skip prompts |
-| `npx skills add ... --list` | Preview without installing |
-| `npx skills list` | Display installed skills |
-| `npx skills find <query>` | Search for skills interactively |
-| `npx skills remove` | Uninstall skills |
-| `npx skills check` | Check for available updates |
-| `npx skills update` | Update all installed skills |
-| `npx skills init` | Create new skill template (SKILL.md scaffold) |
+
+| Command                             | Function                                      |
+| ----------------------------------- | --------------------------------------------- |
+| `npx skills add <source>`           | Install skills from repositories              |
+| `npx skills add ... --skill <name>` | Install specific skill from multi-skill repo  |
+| `npx skills add ... -g`             | Install globally (~/.agent-name/skills/)      |
+| `npx skills add ... -y`             | Skip prompts                                  |
+| `npx skills add ... --list`         | Preview without installing                    |
+| `npx skills list`                   | Display installed skills                      |
+| `npx skills find <query>`           | Search for skills interactively               |
+| `npx skills remove`                 | Uninstall skills                              |
+| `npx skills check`                  | Check for available updates                   |
+| `npx skills update`                 | Update all installed skills                   |
+| `npx skills init`                   | Create new skill template (SKILL.md scaffold) |
 
 **Install paths by agent:**
 

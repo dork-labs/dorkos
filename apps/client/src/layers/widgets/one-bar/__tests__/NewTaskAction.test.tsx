@@ -67,6 +67,6 @@ describe('NewTaskAction', () => {
       </BarHarness>
     );
 
-    expect(screen.getByRole('button', { name: /new task/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /new schedule/i })).toBeInTheDocument();
   });
 });

@@ -30,12 +30,13 @@
   },
   "dependencies": {
     "@dorkos/marketplace": "workspace:*",
-    "zod": "^3.25.76"
+    "@dorkos/skills": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

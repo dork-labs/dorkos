@@ -91,6 +91,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     timezone: null,
     agentId: null,
     enabled: true,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
     status: 'active',
@@ -101,6 +102,8 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
     nextRun: null,
     ...overrides,
@@ -189,8 +192,9 @@ function notificationsByLens(
   options: { activity?: ListNotificationsResponse; report?: NotificationDTO[] } = {}
 ) {
   const empty: ListNotificationsResponse = { notifications: [], nextCursor: null, unreadCount: 0 };
-  return vi.fn().mockImplementation(
-    (query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
+  return vi
+    .fn()
+    .mockImplementation((query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
       query?.kind?.includes('report.daily')
         ? Promise.resolve({
             notifications: options.report ?? [],
@@ -198,7 +202,7 @@ function notificationsByLens(
             unreadCount: options.report?.length ?? 0,
           })
         : Promise.resolve(options.activity ?? empty)
-  );
+    );
 }
 
 /**
@@ -215,7 +219,6 @@ function roomWithCursor(lastReadSeq: number) {
     slug: 'team',
     title: '#team',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     wellKnown: 'team',

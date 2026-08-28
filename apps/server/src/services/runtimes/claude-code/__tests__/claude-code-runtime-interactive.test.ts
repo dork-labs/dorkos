@@ -22,7 +22,10 @@ vi.mock('../../../../lib/boundary.js', () => ({
 // Mock the canonical paths so that ClaudeCodeRuntime's direct imports are intercepted.
 const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
-    buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
+    buildSystemPromptAppend: vi.fn().mockResolvedValue({
+      text: '<env>\nWorking directory: /mock\n</env>',
+      stable: '<env>\nWorking directory: /mock\n</env>',
+    }),
     renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
   toolFilterFactory: () => ({
@@ -95,8 +98,18 @@ function withQueryMethods<T extends object>(obj: T): T {
 describe('ClaudeCodeRuntime interactive tools', () => {
   let manager: ClaudeCodeRuntime;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
+    // Re-arm after the previous case's `vi.resetAllMocks()`, which drops queued
+    // implementations along with call history. Before the append became a typed
+    // object this went unnoticed: an un-armed mock resolved `undefined`, the
+    // resolver interpolated it, and every one of these turns ran with the
+    // literal string "undefined" as its system prompt.
+    const { buildSystemPromptAppend } = await import('../messaging/context-builder.js');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>\nWorking directory: /mock\n</env>',
+      stable: '<env>\nWorking directory: /mock\n</env>',
+    });
     manager = new ClaudeCodeRuntime('/tmp/dorkos-test', '/tmp/test-cwd');
   });
 
@@ -1074,8 +1087,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(manager.approveTool(sessionId, toolCallId, approved, options)).toBe(true);
 
       const resolved = projector.replayFrom(0).find((e) => e.type === 'interaction_resolved') as
-        | { resolution?: string; reasonGiven?: boolean; resolvedBy?: string }
-        | undefined;
+        { resolution?: string; reasonGiven?: boolean; resolvedBy?: string } | undefined;
       disposeProjector(sessionId);
       return { resolved, permission: (await permission) as { behavior: string; message?: string } };
     }

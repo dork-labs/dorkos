@@ -46,12 +46,10 @@ function setup() {
     }),
   };
   const turnTrigger = {
-    trigger: vi.fn(
-      async (): Promise<{ accepted: boolean; canonicalId?: string }> => ({
-        accepted: true,
-        canonicalId: 'sdk-canonical',
-      })
-    ),
+    trigger: vi.fn(async (): Promise<{ accepted: boolean; canonicalId?: string }> => ({
+      accepted: true,
+      canonicalId: 'sdk-canonical',
+    })),
   };
   const services = {
     runtime,

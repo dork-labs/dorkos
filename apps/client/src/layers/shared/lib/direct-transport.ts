@@ -5,6 +5,10 @@
  * Mesh registry, and other server-only subsystems use stub implementations
  * from `embedded-mode-stubs.ts`.
  *
+ * **Message search is a real method here, not a stub** (DOR-691): the host wires
+ * the server's search service in-process, so the embed reads the same index the
+ * route reads, under the same operator scope.
+ *
  * All domain methods are produced by dedicated factory modules under
  * `direct/` and composed here via `Object.assign`. Declaration merging
  * (`interface DirectTransport extends ...`) makes the full method surface
@@ -19,6 +23,7 @@ import { createDirectSessionMethods } from './direct/session-methods';
 import { createDirectSessionStreamMethods } from './direct/session-stream-methods';
 import { createDirectSystemMethods } from './direct/system-methods';
 import { createDirectMeshMethods } from './direct/mesh-methods';
+import { createDirectSearchMethods } from './direct/search-methods';
 import { createDirectFeedbackMethods } from './direct/feedback-methods';
 import { createEmbeddedStubMethods } from './direct/stub-methods';
 
@@ -40,6 +45,7 @@ export interface DirectTransport
     ReturnType<typeof createDirectSessionStreamMethods>,
     ReturnType<typeof createDirectSystemMethods>,
     ReturnType<typeof createDirectMeshMethods>,
+    ReturnType<typeof createDirectSearchMethods>,
     ReturnType<typeof createDirectFeedbackMethods>,
     ReturnType<typeof createEmbeddedStubMethods> {}
 
@@ -60,6 +66,7 @@ export class DirectTransport implements Transport {
       createDirectSessionStreamMethods(services),
       createDirectSystemMethods(services),
       createDirectMeshMethods(),
+      createDirectSearchMethods(services),
       createDirectFeedbackMethods(),
       createEmbeddedStubMethods()
     );

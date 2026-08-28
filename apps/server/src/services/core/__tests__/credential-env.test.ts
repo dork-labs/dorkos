@@ -24,14 +24,12 @@ function okProvider(secret = RESOLVED_SECRET): CredentialProvider {
 /** A provider that reports every reference as dangling. */
 function danglingProvider(): CredentialProvider {
   return {
-    resolve: vi.fn(
-      async (ref: string): Promise<CredentialResolution> => ({
-        ok: false,
-        reason: 'unresolved',
-        ref,
-        message: 'dangling',
-      })
-    ),
+    resolve: vi.fn(async (ref: string): Promise<CredentialResolution> => ({
+      ok: false,
+      reason: 'unresolved',
+      ref,
+      message: 'dangling',
+    })),
   };
 }
 

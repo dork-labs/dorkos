@@ -13,8 +13,12 @@ import { heldProcesses } from '../services/runtimes/test-mode/held-process.js';
 import { interactionGate } from '../services/runtimes/test-mode/interaction-gate.js';
 import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import {
+  getRoomService,
+  getBridgeStore,
+  getRoomAuthors,
+  resolveOperatorAuthor,
+} from '../services/rooms/index.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
@@ -548,6 +552,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     isSystem: false,
     enabledToolGroups: {},
     mcpServers: [],
+    workspace: { mode: 'home' },
   };
   await writeManifest(agentDir, manifest);
 
@@ -563,8 +568,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   // swallowed throw would hand back the same `{ ok: true }` as a working seed
   // and put the hole straight back.
   const meshCore = req.app.locals.meshCore as
-    | { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> }
-    | undefined;
+    { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> } | undefined;
   if (!meshCore) {
     return res.status(500).json({
       error:
@@ -640,8 +644,7 @@ testControlRouter.post('/seed-bridge', async (req, res) => {
     // the agent. Costing one idempotent write to stay correct for any path is
     // the right trade for a test seam.
     const meshCore = req.app.locals.meshCore as
-      | { syncFromDisk(path: string): Promise<unknown> }
-      | undefined;
+      { syncFromDisk(path: string): Promise<unknown> } | undefined;
     if (meshCore) await meshCore.syncFromDisk(result.data.agentPath);
 
     const rooms = getRoomService();
@@ -651,8 +654,7 @@ testControlRouter.post('/seed-bridge', async (req, res) => {
     // production bridge lifecycle uses, so `createBridgedRoom`'s owner check
     // passes on a real (onboarded) server the same way it does in prod.
     const authors = getRoomAuthors();
-    const owner = readOwnerAccount();
-    const operatorAuthorId = owner ? authors.bindOwner(owner.id).id : authors.localHuman().id;
+    const operatorAuthorId = resolveOperatorAuthor(authors).id;
     const adapterId = 'tg-e2e';
     const chatId = ulid();
 
@@ -753,14 +755,14 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
         addedBy: 'operator',
       },
     ],
+    workspace: { mode: 'home' },
   };
   const agentDir = e2eOAuthAgentDir();
   await writeManifest(agentDir, manifest);
   // Register into the mesh cache so `mcp.list`/`mcp.signin` resolve the agent id
   // to this path (ADR-0043 file-first write-through), mirroring seed-bridge.
   const meshCore = req.app.locals.meshCore as
-    | { syncFromDisk(path: string): Promise<unknown> }
-    | undefined;
+    { syncFromDisk(path: string): Promise<unknown> } | undefined;
   if (meshCore) await meshCore.syncFromDisk(agentDir);
   res.json({ ok: true, agentDir, serverUrl });
 });

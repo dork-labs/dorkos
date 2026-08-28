@@ -1,0 +1,29 @@
+{
+  "name": "@dorkos/memory",
+  "version": "0.0.0",
+  "description": "Agent memory engine for DorkOS — the MEMORY.md store behind the MemoryProvider port: capped writes, unique-substring edits, a path jail, and honest snapshots.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@dorkos/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/test-utils": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "vitest": "^4.1.10"
+  }
+}

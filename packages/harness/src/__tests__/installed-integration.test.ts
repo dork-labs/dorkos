@@ -236,6 +236,67 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
+  it('links a plugin’s scheduled skill into `.agents/skills` on a claude-code-only project, and sweeps it on uninstall (DOR-1518)', () => {
+    // The shape that made the flow plugin's schedules undiscoverable: a stock
+    // project enables `claude-code` alone, so the plugin's scheduled skill only
+    // ever reached `.claude/skills`, which the scheduler does not watch.
+    repo = mkdtempSync(join(tmpdir(), 'harness-sched-int-'));
+    mkdirSync(join(repo, '.agents'), { recursive: true });
+    writeFileSync(
+      join(repo, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code'] }, null, 2)
+    );
+
+    const plugin = join(repo, '.dork', 'plugins', 'flow');
+    mkdirSync(join(plugin, '.dork'), { recursive: true });
+    writeFileSync(
+      join(plugin, '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: 'flow',
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'Flow test plugin',
+        layers: ['skills'],
+      })
+    );
+    mkdirSync(join(plugin, 'skills', 'drain'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'drain', 'SKILL.md'),
+      "---\nname: drain\ndescription: Drains the queue\nschedule:\n  cron: '0 9 * * *'\n---\nDrain it.\n"
+    );
+    mkdirSync(join(plugin, 'skills', 'grooming'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'grooming', 'SKILL.md'),
+      '---\nname: grooming\ndescription: Grooms\n---\nGroom it.\n'
+    );
+
+    const plan = project(repo);
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+    expect(result.conflicts).toEqual([]);
+
+    // The scheduled skill is on disk in the watched root, under the NAMESPACED
+    // link name the discovery layer expects, resolving to the plugin's own dir.
+    const link = join(repo, '.agents', 'skills', 'flow__drain');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(realpathSync(link)).toBe(realpathSync(join(plugin, 'skills', 'drain')));
+    expect(readFileSync(join(link, 'SKILL.md'), 'utf8')).toContain('name: drain');
+
+    // The unscheduled sibling is not dragged along — it has no business there.
+    expect(existsSync(join(repo, '.agents', 'skills', 'flow__grooming'))).toBe(false);
+    // Both still reach Claude Code, exactly as before.
+    expect(existsSync(join(repo, '.claude', 'skills', 'flow__drain'))).toBe(true);
+    expect(existsSync(join(repo, '.claude', 'skills', 'flow__grooming'))).toBe(true);
+
+    // Uninstall: the link is an ordinary managed projection, so the existing
+    // orphan sweep removes it with no special casing.
+    rmSync(plugin, { recursive: true, force: true });
+    const plan2 = project(repo);
+    const result2 = applyPlan(repo, plan2, { sweepOrphans: true });
+    expect(result2.swept).toContain('.agents/skills/flow__drain');
+    expect(existsSync(link)).toBe(false);
+  });
+
   it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
     const skillsDir = join(repo, '.agents', 'skills');

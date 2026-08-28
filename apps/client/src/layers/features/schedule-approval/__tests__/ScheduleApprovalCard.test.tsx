@@ -57,6 +57,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     timezone: 'UTC',
     agentId: null,
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     status: 'pending_approval',
@@ -67,6 +68,8 @@ function proposal(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: 'ses-42',
     proposedByAgentPath: '/Users/dev/agents/dorkbot',
     proposedByName: 'DorkBot',
+    origin: null,
+    reasonSource: null,
     nextRuns: [minutesFromLoad(120), minutesFromLoad(1560), minutesFromLoad(3000)],
     ...overrides,
   };
@@ -249,6 +252,70 @@ describe('ScheduleApprovalCard — what it says', () => {
 
     expect(await screen.findByText('Requested without an agent identity')).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
+  });
+
+  // A schedule DorkOS found in a skills root had no asker at all (DOR-1485).
+  // Crediting "an agent" would be inventing a proposer, which is the one thing
+  // the test above exists to forbid.
+  it('names the file a discovered schedule came from instead of a proposer', async () => {
+    renderCard(
+      proposal({
+        origin: 'file',
+        proposedByAgentPath: null,
+        proposedByName: null,
+        proposedBySessionId: null,
+        filePath: '/Users/dev/project/.agents/skills/nightly-sweep/SKILL.md',
+      })
+    );
+
+    // The WHOLE rendered string, so the home-directory shortening is actually
+    // under test: asserting a substring of the path would pass identically if
+    // `shortenHomePath` were dropped.
+    expect((await findSlot('schedule-file-origin'))?.textContent).toBe(
+      '~/project/.agents/skills/nightly-sweep/SKILL.md'
+    );
+    expect(slot('ask-detail')).toHaveTextContent('Found in a file on this computer');
+    expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
+    expect(screen.queryByText('Requested without an agent identity')).toBeNull();
+  });
+
+  // The drift case on a person's OWN schedule: origin is not `file`, but the
+  // words are still ours. Quoting them under "Proposed by an agent" attributed
+  // our prose to an agent that never said it (DOR-1485 review, residual 2).
+  it('does not dress our drift notice as an agent’s quoted case', async () => {
+    renderCard(
+      proposal({
+        origin: null,
+        reasonSource: 'dorkos',
+        proposedByAgentPath: null,
+        proposedByName: null,
+        proposedBySessionId: null,
+        reason: 'This schedule’s file changed since it was last approved.',
+      })
+    );
+
+    const reason = await findSlot('schedule-reason');
+    expect(reason?.textContent).toBe('This schedule’s file changed since it was last approved.');
+    expect(reason).not.toHaveClass('italic');
+    expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
+    expect(screen.queryByText('Requested without an agent identity')).toBeNull();
+  });
+
+  it('shows why a discovered schedule is parked, unquoted — they are our words', async () => {
+    renderCard(
+      proposal({
+        origin: 'file',
+        reason: '"cron" is not a schedule DorkOS can read.',
+      })
+    );
+
+    const reason = await findSlot('schedule-reason');
+    // `textContent`, not `toHaveTextContent`: the matcher normalizes whitespace
+    // and happily matches a substring, so it passes with the curly quotes still
+    // wrapped around our sentence — which is the exact thing this case forbids.
+    expect(reason?.textContent).toBe('"cron" is not a schedule DorkOS can read.');
+    expect(reason?.textContent?.startsWith('“')).toBe(false);
+    expect(reason).not.toHaveClass('italic');
   });
 });
 

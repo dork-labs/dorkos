@@ -16,7 +16,7 @@ export interface HomeTab {
 /**
  * What each home route is called, in the bar.
  *
- * **Label and path are allowed to disagree, and here they do.** "Scheduled"
+ * **Label and path are allowed to disagree, and here they do.** "Schedules"
  * addresses `/tasks`: the word people use for a run that happens later is not
  * the word the route was named after, and a URL is a contract — renaming it
  * would break every bookmark, tour deep link and release note pointing at the
@@ -25,7 +25,7 @@ export interface HomeTab {
 const TAB_NAMES: Record<HomeSurfacePath, { id: HomeTabId; label: string }> = {
   '/': { id: 'home', label: 'Home' },
   '/activity': { id: 'activity', label: 'Activity' },
-  '/tasks': { id: 'scheduled', label: 'Scheduled' },
+  '/tasks': { id: 'scheduled', label: 'Schedules' },
   '/workspaces': { id: 'workspaces', label: 'Workspaces' },
 };
 

@@ -1,0 +1,44 @@
+name: codeql
+
+# Weekly CodeQL scan of main — security-bug hunting (injection, path
+# traversal, unsafe deserialization and friends), free for public repos.
+#
+# SCHEDULE-ONLY, deliberately. The default CodeQL setup runs on every PR and
+# every push, which would add 10+ minutes to every PR wave — the exact cost
+# the 2026-08-23/24 CI restructure removed (see browser-test.yml's header for
+# that story). A weekly scan of main catches the same bug classes with a
+# one-week worst-case delay, which is the right trade for a pre-launch repo
+# whose PR volume is dozens a day and whose CodeQL findings so far are zero.
+# If a scan ever surfaces a real injection bug, THAT is the moment to revisit
+# running it per-PR — with data, not by default.
+#
+# Not a required check anywhere, so no merge_group trigger is needed (ADR
+# 260728-112203 only binds required checks). workflow_dispatch is for running
+# a scan by hand after a scary-looking change or a reported advisory.
+on:
+  schedule:
+    # Monday 06:30 UTC — after Dependabot's 06:00 weekly PR, so a week that
+    # starts with dependency bumps scans the tree that includes them.
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    # Generous ceiling for a large TS monorepo; a healthy scan is well under
+    # this. Hitting it means CodeQL hung, not that the repo grew.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          # No compilation needed for JS/TS analysis.
+          build-mode: none
+
+      - uses: github/codeql-action/analyze@v4

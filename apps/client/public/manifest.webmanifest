@@ -1,7 +1,7 @@
 {
   "name": "DorkOS",
   "short_name": "DorkOS",
-  "description": "Mission control for every coding agent you run.",
+  "description": "All your agents. One place.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",

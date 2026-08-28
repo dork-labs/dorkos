@@ -10,7 +10,7 @@ DorkOS can run inside Obsidian as a sidebar panel, so your coding agent sits nex
 <Callout type="warn">
   This is an early, staged surface. It isn't in Obsidian's Community Plugin directory yet, so
   installing it means cloning the DorkOS repository and building it yourself. If that sounds like
-  more setup than you want today, use the [standalone web cockpit](/docs/getting-started/quickstart)
+  more setup than you want today, use the [standalone web app](/docs/getting-started/quickstart)
   instead. Everything here is built, but it hasn't been tested as widely as the web app — treat it
   as early and verify it yourself before relying on it.
 </Callout>
@@ -52,11 +52,15 @@ The plugin isn't published yet, so you install it by building it from source.
 turbo run build --filter=@dorkos/obsidian-plugin
 ```
 
-This outputs three files to `apps/obsidian-plugin/dist/`:
+This outputs to `apps/obsidian-plugin/dist/`:
 
 - `main.js`: the plugin code
 - `styles.css`: plugin styles
 - `manifest.json`: plugin metadata
+- `better_sqlite3-<platform>-<arch>-abi*.node`: SQLite, one build per Obsidian version the plugin
+  supports, for the machine you built on. The build downloads these the first time and reuses them
+  after. Build on the machine you run Obsidian on — a `dist/` copied from another kind of machine
+  has the wrong binaries in it, and the plugin will tell you so rather than crashing.
 
 **2. Symlink the dist directory** into your vault's plugins folder:
 
@@ -197,6 +201,13 @@ The plugin builds with Vite in library mode, targeting CommonJS so the output wo
 - `copyManifest`: copies `manifest.json` into the dist directory.
 - `safeRequires`: rewrites `require()` calls for Electron's module resolution.
 - `fixDirnamePolyfill`: patches `__dirname` references that break in Electron's bundled context.
+- `sqliteAddon`: downloads SQLite builds for the Electron versions Obsidian ships, puts them beside
+  the bundle, and points the bundle at them. Every download is checked against a SHA-256 pinned in
+  `native-addons.lock.json`; a mismatch fails the build. Regenerate that lockfile with
+  `pnpm --filter @dorkos/obsidian-plugin addons:lock` when the ABI list or `better-sqlite3` changes.
+  Cached in `apps/obsidian-plugin/.native/`, so only the first build reaches the network, and skipped
+  entirely under `CI`. If a download fails the build still succeeds — you get a plugin that cannot
+  read your message history, and it says so in the console.
 - `patchElectronCompat`: applies additional compatibility fixes for Electron's sandboxed environment.
 
 The plugin uses `DirectTransport`: the same services that back the web app's HTTP API run in-process inside Obsidian's Electron environment instead, with no HTTP or SSE layer in between. That's what makes the plugin fast, and it's also why standard Node.js module patterns need the adaptations above to run inside Electron.

@@ -114,7 +114,7 @@ describe('ActivityService', () => {
 
       await service.emit({
         actorType: 'tasks',
-        actorLabel: 'Tasks',
+        actorLabel: 'Scheduled',
         category: 'tasks',
         eventType: 'tasks.task_created',
         resourceType: 'schedule',

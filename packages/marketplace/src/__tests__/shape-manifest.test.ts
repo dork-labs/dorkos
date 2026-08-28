@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import {
   MarketplacePackageManifestSchema,
-  SHAPE_SCHEDULE_PERMISSION_MODES,
+  SCHEDULE_PERMISSION_MODES,
   type MarketplacePackageManifest,
   type ShapePackageManifest,
 } from '../manifest-schema.js';
@@ -67,9 +67,9 @@ function validShapeManifest(): Record<string, unknown> {
   };
 }
 
-describe('ShapeManifestSchema construction (Zod 3 union-member constraint)', () => {
-  // If ShapeManifestSchema were a ZodEffects (e.g. from attaching .superRefine to
-  // the member), z.discriminatedUnion would throw at module load and this import
+describe('ShapeManifestSchema construction (union-member constraint)', () => {
+  // If ShapeManifestSchema were a refined wrapper (e.g. from attaching .superRefine
+  // to the member), z.discriminatedUnion would throw at module load and this import
   // would fail. A reachable schema object here proves construction did not throw
   // — the exact failure the plain-member + top-level-superRefine placement avoids.
   it('constructs the union with the shape member without throwing', () => {
@@ -241,14 +241,13 @@ describe('DependencyDeclarationSchema — shape: prefix', () => {
 
 describe('PermissionMode drift — marketplace mirror vs @dorkos/shared source', () => {
   // What a Shape schedule may declare is re-exported from @dorkos/skills, which
-  // holds the single zod-v3 mirror of @dorkos/shared's PermissionModeSchema (the
-  // zod-version boundary forbids importing the schema itself). This test reads
-  // PermissionModeSchema.options — a plain string array, safe to read across zod
-  // majors — and asserts value-set parity so the chain never silently diverges.
+  // holds the single value mirror of @dorkos/shared's PermissionModeSchema —
+  // inlined there to keep @dorkos/shared/schemas out of the browser bundle for
+  // six strings. That makes this chain a copy of a copy, so this test reads
+  // PermissionModeSchema.options straight from the source and asserts value-set
+  // parity, so the chain never silently diverges.
   it('the two value sets are equal', () => {
-    expect([...SHAPE_SCHEDULE_PERMISSION_MODES].sort()).toEqual(
-      [...PermissionModeSchema.options].sort()
-    );
+    expect([...SCHEDULE_PERMISSION_MODES].sort()).toEqual([...PermissionModeSchema.options].sort());
   });
 
   // The manifest enum must be built FROM that set, not merely equal to a copy of

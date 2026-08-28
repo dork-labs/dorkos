@@ -14,6 +14,18 @@
 @source not '../__tests__/**/*';
 
 /*
+ * Build scripts are not markup either, for the same reason and with the same
+ * bite (DOR-1563). Tailwind's automatic detection starts at this build's root,
+ * so it reads `build-plugins/` — post-bundle rewriters that never render
+ * anything — and pulls candidate classes out of their PROSE. One TSDoc sentence
+ * about a "fixed path under dist/" was enough to emit `position: fixed` into the
+ * stylesheet and trip the guard below. Nothing under here can contribute a
+ * class, so nothing under here should be scanned.
+ */
+@source not '../../build-plugins/**/*';
+@source not '../../*.config.ts';
+
+/*
  * ── The roster's own modules, and NOTHING else in the client (DOR-1080) ──
  *
  * Tailwind's automatic source detection starts at this build's own root, so it

@@ -7,24 +7,94 @@
  * here is a copy that can be thrown away and rebuilt, and deleting the index is
  * a supported recovery.
  *
- * Today it indexes the room log, and {@link searchMessages} is the one way to
- * read it — the room history tool's `search_room_history` calls it inside a scope
- * the rooms domain resolved (room-participation spec §10.3, as amended by
- * DOR-672). The person-facing search route and the palette entry point are still
- * later tasks, and when they land they call the same function: there is exactly
- * one search path over these rows.
+ * Today it indexes four sources over three mechanisms: the room log; every Claude Code transcript
+ * under EVERY Claude account on the machine; every Codex rollout, live and
+ * archived; and every OpenCode conversation. Sessions run inside DorkOS and
+ * sessions run from the bare `claude`, `codex` or `opencode` CLI alike, because
+ * the index reads what each runtime wrote rather than anything DorkOS recorded.
+ * Every Claude account, because reading only the active one covered 67% of the
+ * operator's own history and said nothing about the rest (spec Amendment 2).
+ * OpenCode through a throwaway snapshot of its SQLite store, which structurally
+ * cannot reach the credential tables sitting beside its messages
+ * (ADR 260825-110420) — and never through its sidecar, which an indexer on a
+ * timer must never boot.
+ *
+ * {@link searchMessages} is the one way to read it — the room history tool's
+ * `search_room_history` calls it inside a scope the rooms domain resolved
+ * (room-participation spec §10.3, as amended by DOR-672), and so does
+ * {@link searchForCaller}, which is what `GET /api/search` answers with. There is
+ * exactly one search path over these rows, and neither caller is trusted with an
+ * access rule: both are handed a scope somebody else resolved. Session rows are
+ * owner-only and reachable by no agent (spec §7).
+ *
+ * {@link answerSearch} is everything the route decides ONCE THE CALLER IS KNOWN,
+ * so the two surfaces that answer a search share one decision: `GET /api/search`
+ * over HTTP, and {@link createEmbeddedSearch} in-process for the Obsidian embed,
+ * which has no server to ask (DOR-691).
  *
  * @module server/services/search
  */
-export { SearchIndexer, SEARCH_RECONCILE_INTERVAL_MS, type SweepResult } from './indexer.js';
+export {
+  SearchIndexer,
+  SEARCH_RECONCILE_INTERVAL_MS,
+  SOURCE_FAILURE_KEY,
+  type SweepResult,
+} from './indexer.js';
 export { searchMessages } from './query.js';
-export { SEARCH_SOURCES, roomsSource } from './registry.js';
-export { sweepRowSource, type RowSourceSweep } from './row-frontier.js';
+export { answerSearch } from './answer-search.js';
+export { searchForCaller, type SearchScope } from './search-service.js';
+export { createEmbeddedSearch, type EmbeddedSearch } from './embedded-search.js';
+export {
+  SEARCH_SOURCES,
+  claudeCodeSource,
+  codexSource,
+  createClaudeCodeSource,
+  createCodexSource,
+  createOpenCodeSource,
+  openCodeSource,
+  roomsSource,
+} from './registry.js';
+export { sweepContainers, sweepRowSource, PRUNE_GUARD_KEY } from './row-frontier.js';
+export { DISCOVERY_FAILURE_KEY } from './frontier-store.js';
+export {
+  sweepSnapshotSource,
+  SNAPSHOT_FAILURE_KEY,
+  SNAPSHOT_MIN_LIVE_SHARE,
+} from './snapshot-frontier.js';
+export {
+  buildAllowlistedSelect,
+  openOpenCodeSnapshot,
+  OPENCODE_CREDENTIAL_TABLES,
+  OPENCODE_READ_ALLOWLIST,
+  OPENCODE_VOLATILE_WINDOW_MS,
+  type OpenCodeSnapshot,
+} from './opencode-store.js';
+export { indexRoomEntry } from './write-through.js';
+export { sweepFileSource, DUPLICATE_CONTAINERS_KEY } from './jsonl-frontier.js';
+export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
+export { discoverCodexRollouts } from './codex-discovery.js';
 export { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
+export {
+  projectClaudeCodeLines,
+  type ClaudeCodeProjectionContext,
+} from './projections/claude-code.js';
+export { projectCodexLines, type CodexProjectionContext } from './projections/codex.js';
+export { projectOpenCodeMessages, type OpenCodeMessageRow } from './projections/opencode.js';
 export type {
+  ContainerReader,
+  DiscoveryFailure,
+  FileContainer,
+  FileDiscovery,
+  FileSource,
+  KnownContainer,
   ProjectedMessage,
   Projection,
   RowContainer,
   RowSource,
+  SearchSource,
+  SkipReason,
+  SkippedFile,
+  SnapshotSource,
   SourceFailure,
+  SourceSweep,
 } from './types.js';

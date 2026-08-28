@@ -25,6 +25,22 @@ import type { Task } from '@dorkos/shared/schemas';
 /** Mutable posture the mocked config manager reports. */
 const state = vi.hoisted(() => ({ authEnabled: false }));
 
+/**
+ * The data directory this suite mounts its router on, and the prefix its
+ * `fs.readFile` mock treats as "a file the route just wrote".
+ *
+ * One constant because the two MUST agree. The mock answers a path under this
+ * prefix with empty content and every other path with ENOENT, and the update
+ * route reads those as two different worlds — "a file that is there" versus
+ * "a legacy row with no file" (DOR-1481). If the prefix and the `dorkHome`
+ * argument ever drifted apart, fixtures would quietly cross into the other
+ * branch and the tests would still pass, for the wrong reason.
+ *
+ * `vi.hoisted` because the `vi.mock` factories below are hoisted above ordinary
+ * module scope and could not otherwise see it.
+ */
+const DORK_HOME = vi.hoisted(() => '/tmp/dork-test');
+
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'auth' ? { enabled: state.authEnabled } : undefined),
@@ -36,7 +52,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({
-  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  writeSkillFile: vi.fn().mockResolvedValue(`${DORK_HOME}/tasks/test/SKILL.md`),
   deleteSkillDir: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -51,18 +67,31 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     default: {
       ...(actual.default as Record<string, unknown>),
       access: vi.fn().mockRejectedValue(new Error('ENOENT')),
-      readFile: vi.fn().mockResolvedValue(''),
+      // A path the POST path just "wrote" reads back empty; every other path is
+      // a row fixture with no file behind it, and the honest answer for those is
+      // ENOENT. The update route now tells that apart from a file it cannot read
+      // or parse, and only ENOENT means "legacy DB-only task, edit the row alone"
+      // (DOR-1481) — so a blanket empty read would make every fixture here look
+      // like a file whose contents are unparseable garbage.
+      readFile: vi.fn().mockImplementation(async (p: string) => {
+        if (typeof p === 'string' && p.startsWith(`${DORK_HOME}/`)) return '';
+        throw Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), {
+          code: 'ENOENT',
+        });
+      }),
     },
   };
 });
 
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -113,7 +142,10 @@ describe('operator-only task fields on the REST routes', () => {
       if (resolvedAgentIdentity) res.locals.agentIdentity = resolvedAgentIdentity;
       next();
     });
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    );
   });
 
   afterEach(() => {
@@ -352,8 +384,8 @@ describe('operator-only task fields on the REST routes', () => {
             permissions: 'bypassPermissions',
           },
           body: 'do a thing',
-          filePath: '/tmp/dork-test/tasks/full-autonomy/SKILL.md',
-          dirPath: '/tmp/dork-test/tasks/full-autonomy',
+          filePath: `${DORK_HOME}/tasks/full-autonomy/SKILL.md`,
+          dirPath: `${DORK_HOME}/tasks/full-autonomy`,
         },
       } as unknown as ReturnType<typeof parseSkillFile>);
 
@@ -434,55 +466,177 @@ describe('operator-only task fields on the REST routes', () => {
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
 
-    describe('the DOR-474 cookie bar stops short of here, and that is the decision', () => {
-      /** What `dorkos task create|update` presents, and all it can present. */
-      const CLI_OPERATOR = { userId: 'user_cli', credential: 'api-key' as const };
+    describe('an API key is not a person, so it cannot self-approve a task (DOR-1569)', () => {
+      /**
+       * What an agent's own `curl` presents once it reads the operator's per-user
+       * API key off `~/.dork` — and, identically, what `dorkos task create|update`
+       * presents from the operator's terminal. Under login-on `sessionGate`
+       * accepts an API key as the same identity a browser cookie proves (DOR-474),
+       * so these two are byte-for-byte indistinguishable and MUST get the same
+       * answer: the untrusted one.
+       */
+      const API_KEY_CALLER = { userId: 'user_cli', credential: 'api-key' as const };
 
-      // DOR-474 put a session-cookie bar on answering an approval, and on the
-      // trusted-caller marker that skips the approval entirely. These routes used
-      // to ask for that marker, so they inherited it — and inheriting it here is a
-      // regression, not a hardening, which is why these two cases exist.
+      // The hole this closes: `clearsTheAgentBar` used to rest on
+      // `resolveDecisionAuthority` alone, which an API key clears exactly as a
+      // cookie does. An agent with a shell reads the operator's key off disk,
+      // drops its `X-DorkOS-Agent` header, and is trusted to un-clamp
+      // `bypassPermissions` and arm a live cron task with no approval. So the task
+      // route now composes the SAME second bar the approval, config, and
+      // extension-approval routes do (`requireOperatorCookieUnderLogin`): under
+      // login-on only a session cookie clears the bar; an API key is treated as a
+      // proposer. This is the DOR-553 question, answered for tasks by DOR-1569.
       //
-      // `dorkos task create|update` authenticates with a per-user API key and has
-      // no cookie by design (`packages/cli/src/lib/api-client.ts`). Under the
-      // inherited bar, PATCH hard-403'd with no approval path — a lockout — and
-      // POST silently parked every task at `pending_approval` while the CLI printed
-      // "Created task <name>" and nothing else, so an operator's cron job would be
-      // reported as created and never fire.
-      //
-      // Whether an agent holding that key should schedule unattended work is a real
-      // question, and `services/tasks/task-write-policy.ts` asks to be reconsidered
-      // deliberately rather than swept into an adjacent fix. It is DOR-553's.
+      // It costs the operator's own login-on CLI an extra cockpit approval, which
+      // is the deliberate, conservative trade in a security fix — never a live
+      // full-power cron nobody looked at. Under the default login-OFF posture this
+      // bar is a no-op and the CLI is unchanged; the residual there is the
+      // documented DOR-505 one, closed only by turning login on.
 
-      it('still lets an API key set an operator-only field on PATCH', async () => {
-        signedInUser = CLI_OPERATOR;
+      it('is refused an operator-only field on PATCH, exactly as a named agent is', async () => {
+        signedInUser = API_KEY_CALLER;
         const res = await request(app)
           .patch(`/api/tasks/${existing.id}`)
           .send({ permissionMode: 'bypassPermissions' });
 
-        expect(res.status).toBe(200);
-        expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_only_task_field');
+        expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
       });
 
-      it('still lets an API key create a LIVE task, unparked, on POST', async () => {
-        // The `parksOnCreate` half of the same predicate, and the one a status
-        // assertion alone would miss: a regression here refuses nothing. It answers
-        // 201, says "created", and quietly parks the task so it never runs.
-        signedInUser = CLI_OPERATOR;
+      it('cannot approve a parked task by setting status through an API key', async () => {
+        signedInUser = API_KEY_CALLER;
+        const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+        const res = await request(app)
+          .patch(`/api/tasks/${parked.id}`)
+          .send({ status: 'active', enabled: true });
+
+        expect(res.status).toBe(403);
+        expect(res.body.fields).toEqual(['status']);
+        expect(store.getTask(parked.id)!.status).toBe('pending_approval');
+      });
+
+      it('is refused outright when it names bypassPermissions on POST', async () => {
+        // The strongest outcome, and the most direct read of the exploit: naming
+        // an operator-only field un-clamped a live cron before. Now the whole
+        // create is refused at the field gate and nothing is written.
+        signedInUser = API_KEY_CALLER;
+        const before = store.getTasks().length;
         const res = await request(app).post('/api/tasks').send({
-          name: 'from-the-terminal',
-          description: 'made by dorkos task create',
+          name: 'from-a-stolen-key',
+          description: 'fires later, unattended',
           prompt: 'do a thing',
           cron: '0 3 * * *',
           target: 'global',
+          permissionMode: 'bypassPermissions',
+        });
+
+        expect(res.status).toBe(403);
+        expect(res.body.fields).toEqual(['permissionMode']);
+        expect(store.getTasks()).toHaveLength(before);
+      });
+
+      it('creates a task that PARKS, unarmed, when it omits the power field', async () => {
+        // The parking half, and the one a status assertion alone would miss: the
+        // hole answered 201 "created" and armed the cron. Now an API-key caller
+        // that names no operator-only field still cannot arm its own schedule — it
+        // parks at `pending_approval` for a person to see, and is never handed to
+        // the scheduler.
+        signedInUser = API_KEY_CALLER;
+        const res = await request(app).post('/api/tasks').send({
+          name: 'from-a-stolen-key',
+          description: 'fires later, unattended',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+          // An untrusted proposer must make its case (DOR-1394); without it the
+          // create is refused a step earlier, on the missing reason.
+          reason: 'The overnight run needs to happen.',
         });
 
         expect(res.status).toBe(201);
-        expect(res.body.status, 'a task the operator scheduled must actually be armed').toBe(
-          'active'
-        );
-        expect(scheduler.registerTask).toHaveBeenCalled();
+        expect(res.body.status).toBe('pending_approval');
+
+        const created = store.getTasks().find((t) => t.name === 'from-a-stolen-key')!;
+        expect(created.status).toBe('pending_approval');
+        expect(created.permissionMode).not.toBe('bypassPermissions');
+        expect(scheduler.registerTask).not.toHaveBeenCalled();
       });
+
+      it('cannot trigger a run on demand through an API key', async () => {
+        signedInUser = API_KEY_CALLER;
+        const res = await request(app).post(`/api/tasks/${existing.id}/trigger`);
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_only_task_field');
+        expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
+      });
+    });
+  });
+  describe('a field this route cannot change is refused, never dropped (DOR-1568)', () => {
+    // `parseBody` uses a non-strict `z.object`, so anything the update schema does
+    // not name was stripped and the caller got a 200 with an unchanged task. An
+    // agent that tried to file a task under itself was told that worked. It did not.
+
+    it('refuses agentId by name, and applies nothing else from the call', async () => {
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ prompt: 'an updated prompt', agentId: 'nightly-bot' });
+
+      expect(res.status, 'a silent 200 is the bug').toBe(400);
+      expect(res.body.code).toBe('unknown_task_field');
+      expect(res.body.fields).toEqual(['agentId']);
+      expect(String(res.body.message)).toContain('delete this task and create it again');
+
+      const after = store.getTask(existing.id)!;
+      expect(after.prompt).toBe('the prompt the person approved');
+      expect(after.agentId).toBeNull();
+      expect(after.updatedAt).toBe(existing.updatedAt);
+    });
+
+    it('refuses target, the create-only field, with the same answer', async () => {
+      const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ target: 'global' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['target']);
+    });
+
+    it('names every unknown field at once, and lists what does work', async () => {
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ agentId: 'x', nonsense: 1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['agentId', 'nonsense']);
+      // The list of updatable fields is what turns a refusal into an instruction.
+      expect(String(res.body.message)).toContain('prompt');
+      expect(String(res.body.message)).toContain('cron');
+    });
+
+    it('applies to the operator too — a typo should be loud on their edits as well', async () => {
+      // Not scoped to agents on purpose: the cockpit only ever sends
+      // `UpdateTaskRequest` fields, so nothing legitimate is caught, and a
+      // misspelled field silently doing nothing is a bad afternoon either way.
+      state.authEnabled = true;
+      signedInUser = { userId: 'user_1', credential: 'cookie' };
+
+      const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ promt: 'typo' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['promt']);
+    });
+
+    it('lets an ordinary partial edit straight through', async () => {
+      // The guard has to be provably narrow: a PATCH of two real fields, and only
+      // those, must still work exactly as it did.
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ prompt: 'an updated prompt', enabled: false });
+
+      expect(res.status).toBe(200);
+      const after = store.getTask(existing.id)!;
+      expect(after.prompt).toBe('an updated prompt');
+      expect(after.enabled).toBe(false);
     });
   });
 });

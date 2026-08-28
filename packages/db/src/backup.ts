@@ -40,7 +40,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import type { Db } from './index.js';
-import { MIGRATIONS_FOLDER } from './migrations-folder.js';
+import { migrationsFolder } from './migrations-folder.js';
 
 /**
  * Thrown when a snapshot could not be written.
@@ -336,7 +336,7 @@ interface JournalEntry {
 export function readMigrationState(db: Db): MigrationState {
   const sqlite = db.$client;
   const journal = JSON.parse(
-    fs.readFileSync(path.join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')
+    fs.readFileSync(path.join(migrationsFolder(), 'meta', '_journal.json'), 'utf8')
   ) as { entries: JournalEntry[] };
 
   // The table does not exist until the migrator creates it, so ask sqlite_master

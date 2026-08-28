@@ -40,10 +40,12 @@ secrets, or violate a non-negotiable architectural rule:
     `@anthropic-ai/claude-agent-sdk` → `claude-code/`, `@openai/codex-sdk` →
     `codex/`, `@opencode-ai/sdk` → `opencode/`.
   - **`os.homedir()` ban** — server code resolves the data dir via
-    `lib/dork-home.ts`, never `os.homedir()`. Three carve-outs are declared and
+    `lib/dork-home.ts`, never `os.homedir()`. Five carve-outs are declared and
     are NOT findings: `lib/dork-home.ts`, `lib/boundary.ts` (two inline-disabled
-    call sites), and `claude-code/claude-config-dir.ts`. The full list, with
-    reasons, is `.claude/rules/dork-home.md`.
+    call sites), `claude-code/claude-config-dir.ts`, `codex/codex-home.ts`, and
+    `opencode/opencode-data-dir.ts` — the last three mirror another program's own
+    path resolution rather than DorkOS's. The full list, with reasons, is
+    `.claude/rules/dork-home.md`.
   - **Marketplace rollback safety**: install failures roll back via a file-scoped
     target backup/restore, not git. A test on an install failure path should assert
     the target is restored (overwrite) or removed (fresh install), never that a git
@@ -176,6 +178,38 @@ Also check _where_ a test enters the system. A test that calls a service method
 directly is downstream of every decision the route made — including, on
 DOR-526, the one that was wrong. **The seam an exploit uses is often the seam no
 test crosses.**
+
+### Ask what the check counted, not what it concluded
+
+A checker that answers "clean" having examined nothing is the most dangerous
+green, because it is indistinguishable from success. Shapes that have each
+produced a false green in this repo:
+
+- **A zero-subject pass.** `it.each([])` registers zero tests and reports green;
+  an axe run at a small viewport evaluated 1 node of ~343 and reported no
+  violations; `vi.waitFor(() => expect(x).not.toHaveBeenCalled())` returns on its
+  first poll. For any "X did not happen" assertion, also assert X was observable;
+  for any scanner, assert how much it scanned.
+- **A guard that enumerates from a literal list.** A guard "so a new key cannot
+  be forgotten" that filters through a hardcoded key list discards the new key
+  before comparing. Guards must enumerate from the source of truth
+  (`schema.shape`, `readdirSync`), never from a list that must itself be
+  remembered.
+- **A selector that only exists in a mock.** Before asserting on a
+  `data-testid`, grep where it is stamped — if the only hits are `__tests__/`,
+  the test queries a mock. And when a number is derived from a selector, assert
+  the selector found something first.
+- **A mutation run with no green baseline.** "All mutants red" certifies nothing
+  unless the harness first proves the unmutated suite green and actually
+  collected tests — a bad reporter flag made every batch exit non-zero and read
+  as 12 kills.
+
+For UI diffs, two standing requirements: **run the browser suite** — three UI
+branches in one night each broke `@smoke` specs that were invisible to unit
+tests and typecheck (the e2e page objects are part of the change, not downstream
+of it) — and treat **green browser tests as functional, not visual, evidence**:
+position and clickability survive a visually broken layout, so screenshot the
+designed states and eyeball them.
 
 ## Cross the seam
 

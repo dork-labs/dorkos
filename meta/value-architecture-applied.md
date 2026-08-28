@@ -15,13 +15,13 @@ The July 2026 positioning review updates this document's outputs without rerunni
 **Message House v2** (supersedes Phase 3A's pillars; roof updated 2026-07-09):
 
 - **Roof:** **You, multiplied.** — one person, shipping like a team. _(Changed 2026-07-09: the old roof, "Intelligence doesn't scale. Coordination does.", was a Layer 2 mechanism claim sitting where a Layer 5 identity claim belongs — a defect by this framework's own construction rules. It demotes to the manifesto line and anchors the 4C anti-positioning template, where naming the paradigm is the job. The customer is the subject of the roof.)_
-- **Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
+- **Pillar 1: All your agents, one place.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
 - **Pillar 2: A team, not tabs.** Schedules, messages, discovery; agents that ping your phone and find each other. _Proof:_ the 5-minute path, a real night-run receipt.
 - **Pillar 3: Yours, and safe to run.** Self-hosted, MIT, listens only on your own machine by default, honest data-flow; fully-local sessions via OpenCode local models. _Proof:_ threat model page, localhost defaults, an offline-session demo, readable source. (Not "secure by default", and not "sign-in required the moment you expose it": both are false for the Docker image, which opts out of the bind guard. See the downstream copy rule in `positioning-202607/02-positioning.md` §Pillar 3.)
 
 **Two new value ladders** (full five-layer treatment to be authored in the 1.0 format):
 
-- **VL-11 Multi-Runtime Cockpit.** Feature: three runtimes behind one conformance-tested interface, per-session choice. Mechanism: routes/clients/schemas have zero SDK dependence, so no vendor can be load-bearing. Functional: run every agent from one place; pick the right brain per task. Emotional: never bet your workflow on one vendor again. Identity: "I don't get locked in; my system outlasts their roadmaps." Proof anchor: switch runtimes live in one session list; survive a (simulated) vendor outage.
+- **VL-11 Every Agent In One Place.** Feature: three runtimes behind one conformance-tested interface, per-session choice. Mechanism: routes/clients/schemas have zero SDK dependence, so no vendor can be load-bearing. Functional: run every agent from one place; pick the right brain per task. Emotional: never bet your workflow on one vendor again. Identity: "I don't get locked in; my system outlasts their roadmaps." Proof anchor: switch runtimes live in one session list; survive a (simulated) vendor outage.
 - **VL-12 Marketplace + Ecosystem Judo.** Feature: marketplace is a strict superset of the Claude Code plugin format; harness sync projects installs to every harness; tasks are skills with metadata. Mechanism: one package format, three force multipliers. Functional: install any Claude Code plugin, it works in every tool you use, and any of its skills can run on a schedule. Emotional: your tools compound instead of fragmenting. Identity: "my capability library works everywhere and runs itself." Proof anchor: the 20-second install → sync → schedule demo. _(Verify the superset claim on real plugins before public use.)_
 
 **Status changes:** VL-08 (Wing/persistent memory) is **vision-stage**: activation templates must not draw on it. Autonomy ladders (VL-01) demote from hero to proof in discovery-stage messaging; VL-11 leads. Functional proof placeholders can now use: 3 runtimes / 1 interface, 44 public releases in 5 months, 4 client surfaces, marketplace live. Social-proof fields remain placeholders until launch.
@@ -38,90 +38,100 @@ For each DorkOS module, what would the customer do if we didn't exist?
 
 ```yaml
 # --- ENGINE (Runtime) ---
-capability: "Engine — Agent Runtime"
-alternative: "Run Claude Code directly from the terminal. No unified API. No remote access. No session management beyond what the CLI provides. Each project is a separate terminal tab."
-unique_attribute: "REST+SSE API layer with pluggable agent adapters, remote access via optional tunnel, unified session management that sees all sessions regardless of which client started them (CLI, browser, Obsidian)"
-so_what: "You can build on top of your agents instead of being limited to one terminal window per session. Every session is visible in one place, from anywhere."
+capability: 'Engine — Agent Runtime'
+alternative: 'Run Claude Code directly from the terminal. No unified API. No remote access. No session management beyond what the CLI provides. Each project is a separate terminal tab.'
+unique_attribute: 'REST+SSE API layer with pluggable agent adapters, remote access via optional tunnel, unified session management that sees all sessions regardless of which client started them (CLI, browser, Obsidian)'
+so_what: 'You can build on top of your agents instead of being limited to one terminal window per session. Every session is visible in one place, from anywhere.'
 
 # --- CONSOLE (Web UI) ---
-capability: "Console — Browser-Based Command Center"
-alternative: "Multiple terminal windows or tmux panes, each running a separate Claude Code session. No visual status indicators. No way to check on sessions from your phone. Copy-paste to share session output."
-unique_attribute: "Browser-based UI with rich markdown rendering, visual agent identity (name, color, icon), session status in the tab title (working/done/waiting), cross-device access, tab management for concurrent sessions"
-so_what: "Manage agents the way you manage web apps — with tabs, bookmarks, visual status, and from any device. Decades of browser UX applied to agent management."
+capability: 'Console — Browser-Based Command Center'
+alternative: 'Multiple terminal windows or tmux panes, each running a separate Claude Code session. No visual status indicators. No way to check on sessions from your phone. Copy-paste to share session output.'
+unique_attribute: 'Browser-based UI with rich markdown rendering, visual agent identity (name, color, icon), session status in the tab title (working/done/waiting), cross-device access, tab management for concurrent sessions'
+so_what: 'Manage agents the way you manage web apps — with tabs, bookmarks, visual status, and from any device. Decades of browser UX applied to agent management.'
 
 # --- PULSE (Scheduler) ---
-capability: "Pulse — Autonomous Agent Scheduling"
+capability: 'Pulse — Autonomous Agent Scheduling'
 alternative: "Only run agents when you're at your desk, manually typing prompts. Or: cobble together cron jobs + shell scripts that invoke the Claude CLI, with no run tracking, no overrun protection, no concurrency management."
-unique_attribute: "First-class cron scheduling with overrun protection, isolated agent sessions per run, run history with SQLite persistence, configurable concurrency limits, API for schedule management, integration with Loop for autonomous task selection"
-so_what: "Your agents execute work on schedule — shipping features, triaging issues, running audits. You wake up to progress, not a stale terminal."
+unique_attribute: 'First-class cron scheduling with overrun protection, isolated agent sessions per run, run history with SQLite persistence, configurable concurrency limits, API for schedule management, integration with Loop for autonomous task selection'
+so_what: 'Your agents execute work on schedule — shipping features, triaging issues, running audits. You wake up to progress, not a stale terminal.'
 
 # --- RELAY (Agent Communication) ---
-capability: "Relay — Agent Communication"
+capability: 'Relay — Agent Communication'
 alternative: "Agents can only output to the terminal they're running in. If you want notifications, you build a custom webhook. If you want agents to coordinate, you manually copy-paste context between sessions. There is no standard way for agents to message each other or to reach you outside the terminal."
-unique_attribute: "Built-in messaging between agents and the channels you already use — Telegram, Slack, webhooks, browser. Agents choose where to send notifications. Plugin adapter system makes it easy to add new channels. Messages persist even when terminals close."
-so_what: "Agents can reach you — on Telegram, Slack, wherever you are. They can notify each other. They can coordinate across project boundaries. Like giving your team Slack, but for your agents."
+unique_attribute: 'Built-in messaging between agents and the channels you already use — Telegram, Slack, webhooks, browser. Agents choose where to send notifications. Plugin adapter system makes it easy to add new channels. Messages persist even when terminals close.'
+so_what: 'Agents can reach you — on Telegram, Slack, wherever you are. They can notify each other. They can coordinate across project boundaries. Like giving your team Slack, but for your agents.'
 
 # --- MESH (Agent Network) ---
-capability: "Mesh — Agent Discovery & Network Topology"
-alternative: "You manually track which agents exist, where they are, and what they can do. When one agent needs another, you are the router — copying context between sessions, remembering which project has which capabilities. No discovery, no registry, no access control."
-unique_attribute: "Pluggable discovery strategies that scan for agent-capable project directories, intentional registration workflow with human/agent approval, .dork/agent.json portable identity manifests, network topology with namespace isolation (default-allow within project, default-deny across), access control rules enforced by Relay"
+capability: 'Mesh — Agent Discovery & Network Topology'
+alternative: 'You manually track which agents exist, where they are, and what they can do. When one agent needs another, you are the router — copying context between sessions, remembering which project has which capabilities. No discovery, no registry, no access control.'
+unique_attribute: 'Pluggable discovery strategies that scan for agent-capable project directories, intentional registration workflow with human/agent approval, .dork/agent.json portable identity manifests, network topology with namespace isolation (default-allow within project, default-deny across), access control rules enforced by Relay'
 so_what: "Your agents know about each other — what they can do, where they are, and who they're allowed to message. You go from isolated agents to a coordinated team."
 
 # --- WING (Life Layer) ---
-capability: "Wing — Persistent Memory & Life Context"
-alternative: "Every agent session starts cold. You re-explain your goals, coding preferences, project priorities, and personal context every single time. Or: manually maintain AGENTS.md files per project, which capture project context but not personal context, goals, or life commitments."
-unique_attribute: "Persistent memory that survives across all agent sessions, life coordination and commitment tracking, proactive context surfacing (agents automatically receive relevant context about your goals and priorities)"
-so_what: "Your agents know you. Your goals, your commitments, your priorities — injected into every session without you saying a word. The agent that runs at 3am knows what you care about."
+capability: 'Wing — Persistent Memory & Life Context'
+alternative: 'Every agent session starts cold. You re-explain your goals, coding preferences, project priorities, and personal context every single time. Or: manually maintain AGENTS.md files per project, which capture project context but not personal context, goals, or life commitments.'
+unique_attribute: 'Persistent memory that survives across all agent sessions, life coordination and commitment tracking, proactive context surfacing (agents automatically receive relevant context about your goals and priorities)'
+so_what: 'Your agents know you. Your goals, your commitments, your priorities — injected into every session without you saying a word. The agent that runs at 3am knows what you care about.'
 
 # --- LOOP (Improvement Engine) ---
-capability: "Loop — Autonomous Feedback & Improvement"
-alternative: "You manually decide what to work on next. No systematic feedback collection. No hypothesis testing. No measurement of outcomes. You check analytics, read error logs, and make gut decisions about priorities."
-unique_attribute: "Fully deterministic signal collection from real-world data (analytics, error logs, user feedback), hypothesis formation, prepared task dispatch with detailed instructions, outcome measurement — zero AI in the loop engine itself, purely data and human-authored templates"
-so_what: "Your software improves itself. Loop collects signals, forms hypotheses, dispatches work to agents via Pulse, and measures outcomes. The system closes its own feedback loop."
+capability: 'Loop — Autonomous Feedback & Improvement'
+alternative: 'You manually decide what to work on next. No systematic feedback collection. No hypothesis testing. No measurement of outcomes. You check analytics, read error logs, and make gut decisions about priorities.'
+unique_attribute: 'Fully deterministic signal collection from real-world data (analytics, error logs, user feedback), hypothesis formation, prepared task dispatch with detailed instructions, outcome measurement — zero AI in the loop engine itself, purely data and human-authored templates'
+so_what: 'Your software improves itself. Loop collects signals, forms hypotheses, dispatches work to agents via Pulse, and measures outcomes. The system closes its own feedback loop.'
 ```
 
 ### 1B. Jobs-to-Be-Done Map
 
 ```yaml
 # --- KAI NAKAMURA (Primary — The Autonomous Builder) ---
-persona: "Kai Nakamura — The Autonomous Builder"
+persona: 'Kai Nakamura — The Autonomous Builder'
 core_job: "When I'm sleeping or away from my desk, I want my agents to execute roadmap tasks autonomously, so that my projects make progress 24/7 without burning me out."
 emotional_job: "I want to feel confident that progress is happening even when I'm not working — relief from the pressure of being the sole coordinator of everything."
-social_job: "I want to be perceived as someone who ships at an impossible pace — peers wonder how one person maintains five projects."
+social_job: 'I want to be perceived as someone who ships at an impossible pace — peers wonder how one person maintains five projects.'
 job_steps:
-  - step: "Define what needs to happen"
-    features_that_serve: ["Pulse schedules", "Loop task prioritization", "Console schedule management"]
-  - step: "Assign work to the right agent"
-    features_that_serve: ["Mesh discovery", "Mesh agent registry", "Relay subject routing"]
-  - step: "Provide context without repeating myself"
-    features_that_serve: ["Wing persistent memory", "Engine context builder", "AGENTS.md"]
-  - step: "Execute autonomously"
-    features_that_serve: ["Pulse cron execution", "Engine agent adapters", "Engine isolated sessions"]
-  - step: "Stay informed without being at my desk"
-    features_that_serve: ["Relay Telegram/Slack adapters", "Console browser UI", "Console session status indicators"]
-  - step: "Review what happened"
-    features_that_serve: ["Console session history", "Engine JSONL transcripts", "Loop outcome tracking"]
-  - step: "Coordinate across projects"
-    features_that_serve: ["Mesh network topology", "Relay inter-agent messaging", "Mesh access control"]
+  - step: 'Define what needs to happen'
+    features_that_serve:
+      ['Pulse schedules', 'Loop task prioritization', 'Console schedule management']
+  - step: 'Assign work to the right agent'
+    features_that_serve: ['Mesh discovery', 'Mesh agent registry', 'Relay subject routing']
+  - step: 'Provide context without repeating myself'
+    features_that_serve: ['Wing persistent memory', 'Engine context builder', 'AGENTS.md']
+  - step: 'Execute autonomously'
+    features_that_serve:
+      ['Pulse cron execution', 'Engine agent adapters', 'Engine isolated sessions']
+  - step: 'Stay informed without being at my desk'
+    features_that_serve:
+      ['Relay Telegram/Slack adapters', 'Console browser UI', 'Console session status indicators']
+  - step: 'Review what happened'
+    features_that_serve:
+      ['Console session history', 'Engine JSONL transcripts', 'Loop outcome tracking']
+  - step: 'Coordinate across projects'
+    features_that_serve:
+      ['Mesh network topology', 'Relay inter-agent messaging', 'Mesh access control']
 
 # --- PRIYA SHARMA (Secondary — The Knowledge Architect) ---
-persona: "Priya Sharma — The Knowledge Architect"
+persona: 'Priya Sharma — The Knowledge Architect'
 core_job: "When I'm deep in an architecture document in Obsidian, I want to query my coding agent without leaving my flow, so that my thinking and doing environments stay unified."
-emotional_job: "I want to feel in flow — no friction, no context-switching, no losing my train of thought to check a terminal."
-social_job: "I want to be perceived as someone whose architecture decisions are always grounded in current code reality, not stale mental models."
+emotional_job: 'I want to feel in flow — no friction, no context-switching, no losing my train of thought to check a terminal.'
+social_job: 'I want to be perceived as someone whose architecture decisions are always grounded in current code reality, not stale mental models.'
 job_steps:
-  - step: "Deep thinking — writing architecture docs, ADRs, system designs"
-    features_that_serve: ["Obsidian plugin (DirectTransport)", "Wing life layer (context)"]
-  - step: "Need code context while thinking"
-    features_that_serve: ["Obsidian plugin in-place agent query", "Engine DirectTransport adapter"]
-  - step: "Query agent from thinking environment"
-    features_that_serve: ["Console embedded in Obsidian", "Engine session management"]
-  - step: "Continue thinking without losing flow"
-    features_that_serve: ["Obsidian plugin seamless round-trip", "DirectTransport (no network hop)"]
-  - step: "Review sessions later from different device"
-    features_that_serve: ["Console browser UI", "Engine JSONL as single source of truth", "Session sync across clients"]
-  - step: "Share architectural context across agents"
-    features_that_serve: ["Mesh agent discovery", "Relay messaging", "Wing persistent memory"]
+  - step: 'Deep thinking — writing architecture docs, ADRs, system designs'
+    features_that_serve: ['Obsidian plugin (DirectTransport)', 'Wing life layer (context)']
+  - step: 'Need code context while thinking'
+    features_that_serve: ['Obsidian plugin in-place agent query', 'Engine DirectTransport adapter']
+  - step: 'Query agent from thinking environment'
+    features_that_serve: ['Console embedded in Obsidian', 'Engine session management']
+  - step: 'Continue thinking without losing flow'
+    features_that_serve: ['Obsidian plugin seamless round-trip', 'DirectTransport (no network hop)']
+  - step: 'Review sessions later from different device'
+    features_that_serve:
+      [
+        'Console browser UI',
+        'Engine JSONL as single source of truth',
+        'Session sync across clients',
+      ]
+  - step: 'Share architectural context across agents'
+    features_that_serve: ['Mesh agent discovery', 'Relay messaging', 'Wing persistent memory']
 ```
 
 ### 1C. Identity Territory
@@ -191,7 +201,7 @@ feature: 'Cron-based agent scheduling with overrun protection, isolated sessions
 # Layer 2: Mechanism
 mechanism:
   alternative: 'Manually invoke your agent from the terminal every time you want work done. Or: cobble together shell scripts and cron. Anthropic will schedule Claude for you, but you have to pick a half — a cloud run (Cowork task or Claude Code Routine) that works from files in your Claude account or a fresh GitHub clone and never sees your working copy, or one of the paths that does reach your disk (a Cowork task needing local files, a cloud session on a connected folder, a Claude Code Desktop local task), each of which only runs while the app is open and your computer is awake. Either way it schedules Claude, and only Claude.'
-  differentiator: 'Pulse schedules every runtime you use — Claude Code, Codex, and OpenCode — from one place, and it runs where your code already is, so a scheduled run sees your actual working directory, uncommitted changes included, and your repos never leave your machine. Run it on your laptop, a home server, or a $5 VPS. Every run shows up as a session in the cockpit you can read and steer. Overrun protection prevents duplicate runs. Approval gates prevent runaway autonomous execution.'
+  differentiator: 'Pulse schedules every runtime you use — Claude Code, Codex, and OpenCode — from one place, and it runs where your code already is, so a scheduled run sees your actual working directory, uncommitted changes included, and your repos never leave your machine. Run it on your laptop, a home server, or a $5 VPS. Every run shows up as a session you can read and steer. Overrun protection prevents duplicate runs. Approval gates prevent runaway autonomous execution.'
 
 # Layer 3: Functional Benefit
 functional: 'Your agents ship code, triage issues, and run audits overnight. You wake up to completed pull requests, not a stale terminal waiting for your next prompt.'
@@ -666,42 +676,42 @@ VL-10 Open Foundation          L5 Identity       L4 Emotional
 
 ```yaml
 # --- PILLAR 1: AUTONOMY ---
-pillar: "Autonomy — Your Ideas Keep Moving Forward"
+pillar: 'Autonomy — Your Ideas Keep Moving Forward'
 headlines:
-  identity: "You, Multiplied." # (2026-07-09: replaced the coordination thesis, which is a Layer 2 mechanism claim — it now anchors 4C anti-positioning instead)
-  emotional: "Wake up to progress, not a stale terminal"
-  functional: "Scheduled agent execution that runs independently — not tied to your IDE or terminal"
+  identity: 'You, Multiplied.' # (2026-07-09: replaced the coordination thesis, which is a Layer 2 mechanism claim — it now anchors 4C anti-positioning instead)
+  emotional: 'Wake up to progress, not a stale terminal'
+  functional: 'Scheduled agent execution that runs independently — not tied to your IDE or terminal'
   proof: "One schedule for every agent you run — Claude Code, Codex, OpenCode — working on the code that's already on your disk."
 
   alt_identity: "You've Always Had More Ideas Than Hours. That Ratio Just Changed."
-  alt_emotional: "Your ideas keep moving forward — even when you step away"
-  alt_functional: "Cron scheduling with overrun protection, isolated sessions, and approval gates"
+  alt_emotional: 'Your ideas keep moving forward — even when you step away'
+  alt_functional: 'Cron scheduling with overrun protection, isolated sessions, and approval gates'
   alt_proof: "RedMonk's #1 developer wish for agentic IDEs: background agents. Pulse is the answer."
 
 # --- PILLAR 2: COMMUNICATION ---
-pillar: "Communication — Agents, Connected"
+pillar: 'Communication — Agents, Connected'
 headlines:
-  identity: "Teammates Need a Way to Communicate"
+  identity: 'Teammates Need a Way to Communicate'
   emotional: "Your agents aren't working in isolation anymore"
-  functional: "Built-in messaging between your agents and the channels you already use — Telegram, webhooks, browser. No custom bots required."
-  proof: "Telegram notifications? Built in. Webhooks for Slack? Built in. A new channel? Write an adapter plugin. Connectivity, not complexity."
+  functional: 'Built-in messaging between your agents and the channels you already use — Telegram, webhooks, browser. No custom bots required.'
+  proof: 'Telegram notifications? Built in. Webhooks for Slack? Built in. A new channel? Write an adapter plugin. Connectivity, not complexity.'
 
-  alt_identity: "From Solo Agents to a Team"
-  alt_emotional: "Connected — know what your agents are doing, from anywhere"
-  alt_functional: "Your agents can message you on Telegram, notify each other across projects, and reach you wherever you are. Like Slack for your AI team."
-  proof_alt: "We gave teams Slack. We gave agents Relay. Built-in adapters, plugin system for new channels, messages that persist when terminals close."
+  alt_identity: 'From Solo Agents to a Team'
+  alt_emotional: 'Connected — know what your agents are doing, from anywhere'
+  alt_functional: 'Your agents can message you on Telegram, notify each other across projects, and reach you wherever you are. Like Slack for your AI team.'
+  proof_alt: 'We gave teams Slack. We gave agents Relay. Built-in adapters, plugin system for new channels, messages that persist when terminals close.'
 
 # --- PILLAR 3: CONTROL ---
-pillar: "Control — Trust Your Agents Enough to Let Go"
+pillar: 'Control — Trust Your Agents Enough to Let Go'
 headlines:
-  identity: "Your Agents. Your Machine. Your Rules."
-  emotional: "Confidence — you built the guardrails, now you can actually let go"
-  functional: "Open source. Self-hosted. Configurable permission modes. Every session recorded. The safety net that makes autonomy comfortable."
-  proof: "npm install -g dorkos. MIT license. Run autonomous, review in the morning. Read every line of code that runs your agents."
+  identity: 'Your Agents. Your Machine. Your Rules.'
+  emotional: 'Confidence — you built the guardrails, now you can actually let go'
+  functional: 'Open source. Self-hosted. Configurable permission modes. Every session recorded. The safety net that makes autonomy comfortable.'
+  proof: 'npm install -g dorkos. MIT license. Run autonomous, review in the morning. Read every line of code that runs your agents.'
 
-  alt_identity: "Open Source. On Your Machine. Yours to Change."
-  alt_emotional: "Transparency — you can read the code, change anything, and run it wherever you want"
-  alt_functional: "Choose your permission level — from approve-everything to fully autonomous. Open source, self-hosted, every session recorded. No DROP DATABASE surprises."
+  alt_identity: 'Open Source. On Your Machine. Yours to Change.'
+  alt_emotional: 'Transparency — you can read the code, change anything, and run it wherever you want'
+  alt_functional: 'Choose your permission level — from approve-everything to fully autonomous. Open source, self-hosted, every session recorded. No DROP DATABASE surprises.'
   alt_proof: "46% of developers don't trust AI outputs. DorkOS is built for the other 54% — and the ones who want to join them."
 ```
 
@@ -709,48 +719,48 @@ headlines:
 
 ```yaml
 # --- DISCOVERY: "What is this and why should I care?" ---
-stage: "Discovery"
-lead_layer: "L3 Functional + L5 Identity"
-support_layer: "L2 Mechanism"
+stage: 'Discovery'
+lead_layer: 'L3 Functional + L5 Identity'
+support_layer: 'L2 Mechanism'
 messages:
-  - "DorkOS is the operating system for autonomous AI agents. Scheduling, messaging, agent discovery, and a browser-based command center — for developers who want their agents to work like a team, and ship like one."
+  - 'DorkOS is the operating system for autonomous AI agents. Scheduling, messaging, agent discovery, and a browser-based command center — for developers who want their agents to work like a team, and ship like one.'
   - "Intelligence doesn't scale. Coordination does. An open-source agent OS that turns isolated Claude Code sessions into a coordinated team."
-  - "Intelligence comes from the agents. Everything else — scheduling, communication, coordination — comes from DorkOS."
+  - 'Intelligence comes from the agents. Everything else — scheduling, communication, coordination — comes from DorkOS.'
 
 # --- EVALUATION: "How does it work? Is it credible?" ---
-stage: "Evaluation"
-lead_layer: "L2 Mechanism + L3 Functional"
-support_layer: "L1 Feature"
+stage: 'Evaluation'
+lead_layer: 'L2 Mechanism + L3 Functional'
+support_layer: 'L1 Feature'
 messages:
-  - "Pulse schedules your agents independently — not tied to your IDE or terminal. Relay lets agents message you on Telegram and notify each other. Mesh finds agents across your projects. Console gives you a browser-based command center."
+  - 'Pulse schedules your agents independently — not tied to your IDE or terminal. Relay lets agents message you on Telegram and notify each other. Mesh finds agents across your projects. Console gives you a browser-based command center.'
   - "Built on Claude Code's Agent SDK. Sessions stored as JSONL transcripts — the same format Claude Code uses natively. Every session visible in one place, regardless of which client started it."
-  - "Compare: Remote Control requires Max plan, handles one session, needs an open terminal. DorkOS Console shows all sessions, runs in any browser, terminal-independent."
+  - 'Compare: Remote Control requires Max plan, handles one session, needs an open terminal. DorkOS Console shows all sessions, runs in any browser, terminal-independent.'
 
 # --- TRIAL: "Can I actually use this?" ---
-stage: "Trial"
-lead_layer: "L1 Feature + L3 Functional"
-support_layer: "Proof"
+stage: 'Trial'
+lead_layer: 'L1 Feature + L3 Functional'
+support_layer: 'Proof'
 messages:
   - "npm install -g dorkos. Open localhost. You're looking at every Claude Code session across all your projects."
   - "Set up your first Pulse schedule in 2 minutes. The agent runs tonight. You'll see the results in the morning."
   - "MIT-licensed. Self-hosted. Your code stays on your machine. Read the source — it's all on GitHub."
 
 # --- ADOPTION: "This is working and I feel it" ---
-stage: "Adoption"
-lead_layer: "L4 Emotional"
-support_layer: "L3 Functional"
+stage: 'Adoption'
+lead_layer: 'L4 Emotional'
+support_layer: 'L3 Functional'
 messages:
-  - "You woke up to three completed PRs. The agent that ran overnight knew your priorities because Wing injected them. Pulse handled the scheduling. Relay sent you a Telegram message at 7am."
+  - 'You woke up to three completed PRs. The agent that ran overnight knew your priorities because Wing injected them. Pulse handled the scheduling. Relay sent you a Telegram message at 7am.'
   - "You haven't touched a terminal in two hours. All five agents are visible in your browser tabs — named, colored, status-aware. You approved a tool call from your phone."
-  - "Your research agent found a breaking API change at 2am and notified your frontend agent through Relay. The fix was waiting in a PR when you opened your laptop."
+  - 'Your research agent found a breaking API change at 2am and notified your frontend agent through Relay. The fix was waiting in a PR when you opened your laptop.'
 
 # --- ADVOCACY: "This is part of who I am now" ---
-stage: "Advocacy"
-lead_layer: "L5 Identity"
-support_layer: "L4 Emotional"
+stage: 'Advocacy'
+lead_layer: 'L5 Identity'
+support_layer: 'L4 Emotional'
 messages:
   - "I don't use AI tools. I build with AI teammates."
-  - "I shipped more last month than my old team did in a quarter. Ten agents, one person, running around the clock. I built the team that makes this possible."
+  - 'I shipped more last month than my old team did in a quarter. Ten agents, one person, running around the clock. I built the team that makes this possible.'
   - "DorkOS isn't a product I use. It's how I built my AI team. Open source, on my machine, under my control."
 ```
 
@@ -763,7 +773,7 @@ messages:
 ```
 YOU, MULTIPLIED.
 
-Every coding agent you run — Claude Code, Codex, OpenCode — in one cockpit.
+Every coding agent you run — Claude Code, Codex, OpenCode — in one place.
 Your fleet, scheduled, connected, and reporting back to you.
 You've always had more ideas than hours. That ratio just changed.
 

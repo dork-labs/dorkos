@@ -21,14 +21,7 @@
  * `audio` (HTML5 `<audio>`), and `video` (HTML5 `<video>`).
  */
 export type CanvasViewerType =
-  | 'file'
-  | 'markdown'
-  | 'image'
-  | 'pdf'
-  | 'model3d'
-  | 'csv'
-  | 'audio'
-  | 'video';
+  'file' | 'markdown' | 'image' | 'pdf' | 'model3d' | 'csv' | 'audio' | 'video';
 
 /** The set of valid viewer ids, for validating config-supplied override values. */
 export const CANVAS_VIEWER_TYPES: readonly CanvasViewerType[] = [

@@ -132,7 +132,6 @@ function room(id: string, slug: string): RoomSummary {
     slug,
     title: slug,
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-01T10:00:00.000Z',

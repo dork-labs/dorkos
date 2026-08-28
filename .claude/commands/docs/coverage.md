@@ -45,7 +45,7 @@ For each MDX file found on disk, check if it appears in the INDEX.md coverage ta
 
 ### Untracked Files (need adding to INDEX.md)
 
-| File                    | Suggested Source Patterns |
+| File | Suggested Source Patterns |
 | ----------------------- | ------------------------- | --------- |
 | `docs/path/to/file.mdx` | `suggested                | patterns` |
 

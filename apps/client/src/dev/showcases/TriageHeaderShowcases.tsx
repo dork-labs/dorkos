@@ -57,6 +57,7 @@ const SCHEDULES: Task[] = [
     timezone: 'America/Chicago',
     agentId: '/Users/dev/agents/dorkbot',
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
     status: 'pending_approval',
@@ -67,6 +68,8 @@ const SCHEDULES: Task[] = [
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
   },
 ];

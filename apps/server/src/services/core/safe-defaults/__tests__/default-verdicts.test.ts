@@ -147,7 +147,16 @@ describe('config default verdicts cover the whole schema', () => {
     // Not a style rule. A registry where the permissive list has grown to
     // dozens of entries has stopped being a set of reviewed trades and become
     // a rubber stamp, which is the failure mode this whole mechanism has.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(15);
+    //
+    // Raised 15 -> 16 for `rooms.repo.enabled` (DOR-1591), and the raise is
+    // recorded rather than done quietly because the whole point of the ceiling
+    // is to make the next entry an argument. That one was weighed against the
+    // alternative — filing it `no-risk`, on the reading that the switch grants
+    // nothing until a person enables a room's repo — and the carryover guard
+    // below is what settled it: a leaf a wipe must not silently re-enable is by
+    // this file's own rule not a preference. If a later change makes that
+    // reading wrong, move the entry rather than raising this again.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(16);
   });
 });
 

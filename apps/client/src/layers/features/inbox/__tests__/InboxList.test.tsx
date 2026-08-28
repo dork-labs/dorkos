@@ -44,6 +44,7 @@ function build(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
 /** Build a roster agent, overriding only what a test cares about. */
 function buildAgent(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: 'alpha',
     name: 'alpha',
     displayName: 'Alpha Bot',

@@ -16,7 +16,7 @@ import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { ReadCursorService } from '../../core/read-cursor-service.js';
 import { ReadCursorStore } from '../../core/read-cursor-store.js';
-import { roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
+import { indexRoomEntry, roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
 import { AuthorRegistry, isOwnerRecord } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import type { CollectWindow } from '../room-collect.js';
@@ -24,7 +24,7 @@ import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
-import { RoomService } from '../room-service.js';
+import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import { RoomBroadcaster } from '../room-stream.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from '../limits/room-limits.js';
@@ -149,9 +149,11 @@ export function outcomeRunner(
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<void> {
+    interrupt(request): Promise<boolean> {
       interrupted.push(request);
-      return Promise.resolve();
+      // Nothing is being held here, so nothing was stopped — the honest answer
+      // for a runner whose turns are already over by the time a halt runs.
+      return Promise.resolve(false);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({
@@ -217,11 +219,17 @@ export interface GatedRunner extends ScriptedTurnRunner {
  *   the test lands it. It is the only way to reach `deliverLate`, which is a
  *   whole delivery path with its own claim release — and the one a Stop pressed
  *   during the late window has to reach.
+ * @param opts.interruptFindsNothing - Whether the stop lands on NOTHING: the
+ *   runtime has no turn to aim it at, so `interrupt` answers `false` and the
+ *   held turn keeps running. That is the boot window (DOR-1424) — a Stop
+ *   pressed before the agent's process has bound its turn — and the only shape
+ *   in which the room can honestly say it could not reach the agent (DOR-1425).
  */
 export function gatedRunner({
   interruptEndsTurn = true,
   interruptedTurnStillAnswers = false,
   answersLate = false,
+  interruptFindsNothing = false,
 } = {}): GatedRunner {
   const turns: ScriptedTurnRunner['turns'] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
@@ -238,20 +246,25 @@ export function gatedRunner({
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<void> {
+    interrupt(request): Promise<boolean> {
       interrupted.push(request);
+      // The stop reached a runtime with no turn bound to it — it stopped
+      // nothing, and says so (DOR-1424, DOR-1425).
+      if (interruptFindsNothing) return Promise.resolve(false);
       // A real interrupt ENDS the turn: the runtime stops, the stream closes,
       // and the collector resolves with whatever there was. A fake that only
       // recorded the call would leave the dispatcher awaiting a turn nothing can
       // finish — which is not what a halt does, and would let a halt that never
       // reached the runtime pass.
-      if (!interruptEndsTurn) return Promise.resolve();
+      if (!interruptEndsTurn) return Promise.resolve(true);
+      let stoppedSomething = false;
       for (const [authorId, queued] of held) {
         if (queued[0]?.request.agentPath !== request.agentPath) continue;
         for (const turn of queued.splice(0)) turn.stop();
         held.delete(authorId);
+        stoppedSomething = true;
       }
-      return Promise.resolve();
+      return Promise.resolve(stoppedSomething);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({
@@ -379,11 +392,14 @@ export interface RoomHarness {
    */
   setOwner(userId: string): string;
   /**
-   * Sweep the message index once, so a `searchHistory` test has something to find.
+   * Sweep the message index once.
    *
-   * In production a background indexer does this every few minutes; a test does
-   * it explicitly, which also makes the staleness the tool documents visible
-   * rather than magical — nothing posted after the last call is findable.
+   * Rarely needed now: this harness wires the real write-through, so anything
+   * posted THROUGH the service is already indexed when `post` returns, exactly
+   * as it is in production (message-search spec Amendment 6). What still needs a
+   * sweep is anything written around the service — rows inserted straight into
+   * `room_entries` by a fixture, or a room whose entries predate the index — and
+   * that is what this is for.
    */
   indexMessages(): Promise<void>;
 }
@@ -471,6 +487,26 @@ export function createRoomHarness(opts: {
    * own, over a `Set` it can mutate mid-test the way a real toggle would.
    */
   isRoomMuted?: (roomId: string) => boolean;
+  /**
+   * The message-index write-through, for the one test that needs it to FAIL.
+   *
+   * Defaults to the real one over this harness's own database. A test proving
+   * that a broken index cannot break a room post passes a function that throws
+   * — which is the only way to drive that guard, since the shipped
+   * implementation is the thing that promises never to throw.
+   */
+  indexEntry?: RoomEntryIndexer;
+  /**
+   * The message-index READER, for the tests that need to know whether it was
+   * asked at all.
+   *
+   * Defaults to the real one over this harness's own database — which is what
+   * every scope test wants, since a fake finder would make the scope rules a
+   * test of the fake. A test that asserts a query was SHORT-CIRCUITED passes a
+   * spy instead: "returns nothing" and "never asked" are different claims, and
+   * an empty result cannot tell them apart.
+   */
+  findMessages?: RoomMessageFinder;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -544,14 +580,28 @@ export function createRoomHarness(opts: {
     // `search_room_history` test a test of the fake — including the scope rules,
     // which are the half worth proving. `indexMessages()` below is what puts rows
     // in front of it.
-    findMessages: ({ roomIds, query, limit, afterSeq }) =>
-      searchMessages(db, {
-        sourceId: roomsSource.id,
-        originKeys: roomIds,
-        query,
-        limit,
-        afterOrdinal: afterSeq,
-      }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
+    findMessages:
+      opts.findMessages ??
+      (({ rooms: scoped, query, limit }) =>
+        searchMessages(db, {
+          scopes: [
+            {
+              sourceId: roomsSource.id,
+              visibility: 'containers',
+              containers: scoped.map((room) => ({
+                originKey: room.roomId,
+                afterOrdinal: room.afterSeq,
+              })),
+            },
+          ],
+          query,
+          limit,
+        }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal }))),
+    // The REAL write-through too, for the same reason: it is what puts a posted
+    // entry in front of the finder above without anybody sweeping, and a no-op
+    // here would make every `search_history` test silently depend on the
+    // explicit `indexMessages()` that production does not have.
+    indexEntry: opts.indexEntry ?? (({ roomId, seq }) => indexRoomEntry(db, roomId, seq)),
     limitsFor,
     engagedWindow: () => engagedWindow,
     collect: () => collect,
@@ -579,7 +629,7 @@ export function createRoomHarness(opts: {
       return authors.bindOwner(userId).id;
     },
     async indexMessages() {
-      await new SearchIndexer(db).sweep();
+      await new SearchIndexer(db, [roomsSource]).sweep();
     },
   };
 }

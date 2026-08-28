@@ -216,28 +216,46 @@ describe('LocalCommunityAdapter room visibility', () => {
 
 describe('LocalCommunityAdapter projection', () => {
   it('keeps this machine off the wire', async () => {
-    // Two local-only columns, and neither belongs to a community: `workspaceId`
-    // binds a room to a checkout on THIS machine, and an author's natural key is
-    // an absolute directory.
+    // This used to name `workspaceId`, the one local-only room column, and
+    // assert it was absent. That column is gone (spec `project-rooms` §3.1,
+    // DOR-1591) — a room's own files are now a `room-repo.json` sidecar and a
+    // `room_repos` cache row, further from this port than the column ever was —
+    // and rewriting the assertion as "the serialized room holds no path" would
+    // have been vacuous, because nothing this projection reads carries one any
+    // more.
+    //
+    // So the guard is stated the way it can still fail: the projected room's
+    // fields are pinned exactly. A local-only field added to `CommunityRoom`
+    // later — a repo path, a checkout, anything named after this machine —
+    // reddens this, which a "does not contain a path" check would not.
     const { adapter, harness } = setup();
     await adapter.connect();
     const created = harness.service.createRoom(
-      {
-        kind: 'channel',
-        title: 'Bound',
-        members: [],
-        agentPaths: [],
-        workspaceId: '/Users/planted/checkouts/dorkos',
-      },
+      { kind: 'channel', title: 'Bound', members: [], agentPaths: [AGENT_PATH] },
       harness.human
     );
 
     const room = await adapter.getRoom(created.id);
     expect(room).not.toBeNull();
-    expect(Object.keys(room!), 'no room field names a path on this machine').not.toContain(
-      'workspaceId'
-    );
-    expect(JSON.stringify(room)).not.toContain('/Users/planted');
+    expect(Object.keys(room!).sort()).toEqual([
+      'archived',
+      'community',
+      'createdAt',
+      'kind',
+      'lastActivityAt',
+      'roomId',
+      'slug',
+      'title',
+      'topic',
+      'unreadCount',
+    ]);
+
+    // The member half, which DOES have something to strip: an agent's natural
+    // key is its absolute home directory, and no roster projection may carry
+    // one to another community.
+    const members = await adapter.listMembers(created.id);
+    expect(members.some((m) => m.kind === 'agent')).toBe(true);
+    expect(JSON.stringify(members)).not.toContain('/Users/planted');
   });
 
   it('rolls a thread up onto its root, and counts the root out of its own replies', async () => {

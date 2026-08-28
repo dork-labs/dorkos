@@ -1,12 +1,12 @@
 # DorkOS — Brand & Product Foundation
 
-> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house) and 2026-07-09 by the hero reframe. Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, the villain gained the vendor-silo pattern, and — 2026-07-09 — the primary tagline is now **"You, Multiplied."** with the coordination thesis demoted to manifesto line (the customer is the hero; the roof speaks about them, not about our theory). Persona set expanded the same day: two grounded non-developer operators (Ikechi, Lil — see `personas/`) and an anti-persona boundary redrawn on operator mentality. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections). Amended again 2026-07-17 by the Shapes naming addendum (§19; decision D3 in `plans/shapes-program.md`): the place-noun **Home Base** now supersedes "cockpit" and "mission control" in future copy. Existing occurrences of both terms are inventoried, not yet swapped — the copy-swaps are tracked separately in `plans/shapes-program.md` (site swap: S1; `meta/` swap: S3).
+> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house) and 2026-07-09 by the hero reframe. Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, the villain gained the vendor-silo pattern, and — 2026-07-09 — the primary tagline is now **"You, Multiplied."** with the coordination thesis demoted to manifesto line (the customer is the hero; the roof speaks about them, not about our theory). Persona set expanded the same day: two grounded non-developer operators (Ikechi, Lil — see `personas/`) and an anti-persona boundary redrawn on operator mentality. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections). Amended again 2026-07-17 by the Shapes naming addendum (§19; decision D3 in `plans/shapes-program.md`): the place-noun **Home Base** was to supersede "cockpit" and "mission control" in future copy. **Settled 2026-08-24 (DOR-1517):** the founder retired "mission control" and "cockpit" for good and named the replacement — the category phrase is **"one place"** ("All your agents. One place."), with "one window", "one home" and "your team" as supporting variants. The swap is done: site, both READMEs, `AGENTS.md`, and this file and its siblings under `meta/` now read in the new language. The ban lives in §10 ("Terms to Avoid"); the deliberation that produced it is in `positioning-202607/02-positioning.md` §2.
 
 ## 1. Executive Summary
 
 **DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
 
-It makes AI coding agents more capable — giving them a scheduling engine, a messaging layer that reaches you and other agents, and a mesh that lets agents discover each other. It runs **Claude Code, Codex, and OpenCode today**, per-session, behind one conformance-tested interface: one cockpit, any agent, any vendor, including local models via OpenCode.
+It makes AI coding agents more capable — giving them a scheduling engine, a messaging layer that reaches you and other agents, and a mesh that lets agents discover each other. It runs **Claude Code, Codex, and OpenCode today**, per-session, behind one conformance-tested interface: one place, any agent, any vendor, including local models via OpenCode.
 
 DorkOS is:
 
@@ -50,7 +50,7 @@ Autonomous Agent Operating System
 
 DorkOS is the operating system for autonomous AI agents — scheduling, communication, and coordination so one person can ship like a team.
 
-Category entry point (2026-07): **mission control for every coding agent you run.** "OS for agents" is the vision line; the door is the multi-runtime cockpit.
+Category entry point (2026-07; language settled 2026-08-24): **one place for every AI agent you run.** "OS for agents" is the vision line; the door is running Claude Code, Codex and OpenCode side by side in one window.
 
 ### Vendor Neutrality (added 2026-07-06)
 
@@ -149,7 +149,7 @@ DorkOS is modular and open source. Each module can run independently or together
 
 #### 6.1 DorkOS Engine (Runtime)
 
-The runtime that powers everything. Engine connects your AI agents, exposes a REST API that listens only on your own machine by default, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent: **Claude Code, Codex, and OpenCode are all shipped today**, per-session switchable, each passing a shared conformance suite. OpenCode brings local models, so fully-offline private sessions are possible in the same cockpit.
+The runtime that powers everything. Engine connects your AI agents, exposes a REST API that listens only on your own machine by default, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent: **Claude Code, Codex, and OpenCode are all shipped today**, per-session switchable, each passing a shared conformance suite. OpenCode brings local models, so fully-offline private sessions are possible in the same window.
 
 - Runs locally on your machine
 - Connects AI agents via pluggable adapters (Claude Code first, more coming)
@@ -354,17 +354,18 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 
 #### Terms to Avoid
 
-| Avoid                                                         | Use Instead                                                                                        | Why                                                                                                                                                                |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| "server-side"                                                 | "independently" / "not tied to your IDE or terminal" / "keeps running when you close the terminal" | Most users run DorkOS on their laptop first. "Server-side" sounds enterprise/cloud. The real differentiator is independence from the IDE, not running on a server. |
-| "infrastructure"                                              | "system" / "foundation" / "the layer" / just remove it                                             | Too cold, too enterprise. DorkOS is a tool for builders, not an infrastructure play.                                                                               |
-| "audit trail"                                                 | "every session recorded" / "full session history"                                                  | Enterprise compliance language. Focus on transparency and reviewability instead.                                                                                   |
-| "session locking"                                             | Remove from marketing copy                                                                         | Enterprise term. Keep only in technical API docs.                                                                                                                  |
-| "universal message bus" / "message bus"                       | "built-in messaging" / "your agents can message you and each other"                                | Too technical. Describe the outcome (agents reach you), not the mechanism. Think: how would Apple describe this?                                                   |
-| "agents that can talk" / "talk to each other"                 | "agents, connected" / "message each other" / "communicate"                                         | Confused with voice/speech agents (ElevenLabs, etc.). "Connected" and "message" are unambiguous.                                                                   |
-| "renting" (as metaphor for SaaS)                              | "it runs on your machine, you can read and change every line of code"                              | The rental metaphor is unclear. Be concrete about what ownership means.                                                                                            |
-| "durable delivery" / "dead-letter queue" / "budget envelopes" | Save for technical docs                                                                            | These are real features but they're mechanism language, not benefit language.                                                                                      |
-| "processes" (as in "isolated processes")                      | "solo agents" / "disconnected agents"                                                              | "Processes" is systems-level jargon. Use human-scale language.                                                                                                     |
+| Avoid                                                         | Use Instead                                                                                        | Why                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "server-side"                                                 | "independently" / "not tied to your IDE or terminal" / "keeps running when you close the terminal" | Most users run DorkOS on their laptop first. "Server-side" sounds enterprise/cloud. The real differentiator is independence from the IDE, not running on a server.                                                                                                                                                                                                                                                                          |
+| "infrastructure"                                              | "system" / "foundation" / "the layer" / just remove it                                             | Too cold, too enterprise. DorkOS is a tool for builders, not an infrastructure play.                                                                                                                                                                                                                                                                                                                                                        |
+| "audit trail"                                                 | "every session recorded" / "full session history"                                                  | Enterprise compliance language. Focus on transparency and reviewability instead.                                                                                                                                                                                                                                                                                                                                                            |
+| "session locking"                                             | Remove from marketing copy                                                                         | Enterprise term. Keep only in technical API docs.                                                                                                                                                                                                                                                                                                                                                                                           |
+| "universal message bus" / "message bus"                       | "built-in messaging" / "your agents can message you and each other"                                | Too technical. Describe the outcome (agents reach you), not the mechanism. Think: how would Apple describe this?                                                                                                                                                                                                                                                                                                                            |
+| "agents that can talk" / "talk to each other"                 | "agents, connected" / "message each other" / "communicate"                                         | Confused with voice/speech agents (ElevenLabs, etc.). "Connected" and "message" are unambiguous.                                                                                                                                                                                                                                                                                                                                            |
+| "renting" (as metaphor for SaaS)                              | "it runs on your machine, you can read and change every line of code"                              | The rental metaphor is unclear. Be concrete about what ownership means.                                                                                                                                                                                                                                                                                                                                                                     |
+| "durable delivery" / "dead-letter queue" / "budget envelopes" | Save for technical docs                                                                            | These are real features but they're mechanism language, not benefit language.                                                                                                                                                                                                                                                                                                                                                               |
+| "processes" (as in "isolated processes")                      | "solo agents" / "disconnected agents"                                                              | "Processes" is systems-level jargon. Use human-scale language.                                                                                                                                                                                                                                                                                                                                                                              |
+| "mission control" / "cockpit" _(banned 2026-08-24, DOR-1517)_ | "one place" / "one window" / "one home" / "your team" / "the DorkOS app" / "the app"               | Retired permanently by founder ruling. "Mission control" is borrowed NASA swagger that oversells a laptop tool; "cockpit" names a thing most readers have never sat in. Never use either word in user-facing prose. Two carve-outs: the published changelog (compiled from the frozen `CHANGELOG.md`) keeps its historical occurrences, and GitHub ships a product literally called "Mission Control", so competitive analysis may name it. |
 
 #### Metaphor Guidelines
 
@@ -435,10 +436,10 @@ DorkOS should feel like:
 
 **Identity close:** We built it for ourselves. Now it's yours. _(Changed 2026-07-09 — the predecessor "Built by dorks. For dorks. Run by you." labeled the hero; see §8. "Built by dorks." survives as the short maker-voice form.)_
 
-**Fleet-era lines** (added 2026-07-06, for the mission-control entry point):
+**Fleet-era lines** (added 2026-07-06 for the category entry point; rewritten 2026-08-24 when "mission control" and "cockpit" were retired — see §10):
 
-- Mission Control for Your Agents.
-- One Cockpit. Any Agent.
+- All Your Agents. One Place.
+- Every Agent You Run. One Window.
 - Your Agents, Any Vendor.
 - Your Plugins Already Work Here.
 - Some Code Never Leaves. Now the Agent Doesn't Either. _(local-model/privacy contexts)_
@@ -466,7 +467,7 @@ DorkOS should feel like:
 
 > **YOU, MULTIPLIED.**
 >
-> Every coding agent you run — Claude Code, Codex, OpenCode — in one cockpit.
+> Every coding agent you run — Claude Code, Codex, OpenCode — in one place.
 > Your fleet, scheduled, connected, and reporting back to you.
 > You've always had more ideas than hours. That ratio just changed.
 >
@@ -522,11 +523,13 @@ Open Relay. Add the Telegram adapter. Connect your account.
 
 Now your agents can reach you — on your phone, while you're at lunch, while you're asleep. When your 2am test run finishes, you'll know.
 
-### Minute 5: Close your laptop.
+### Minute 5: Walk away.
 
-This is the moment. The terminal is closed. The browser is closed. Your laptop is sleeping.
+This is the moment. The terminal is closed. The browser is closed. You're done for the night.
 
-Your agent is not.
+DorkOS isn't. It keeps running, and your 2am schedule fires on time.
+
+Want your agents working when your laptop isn't? Put DorkOS on a machine that stays on: a desktop, a home server, a cheap cloud box.
 
 At 2:07am, your phone buzzes. Telegram: "Test suite passed. One flaky test fixed. PR #47 ready for review."
 
@@ -553,7 +556,7 @@ What does "one person, ten agents" actually look like? Here's what Kai runs:
 | **Herald**   | all projects      | Always on        | Routes notifications to Telegram and Slack     |
 | **Loop**     | feedback-engine   | Every 4 hours    | Collects signals, dispatches improvement tasks |
 
-Each agent has a name, a color, an icon, and a Relay address. They appear in Console as browser tabs — you know at a glance who's working, who's done, and who needs you. And they need not share a vendor: Atlas can run on Claude Code while Lens runs on Codex and Patrol runs a local model through OpenCode — same cockpit, same rules _(amended 2026-07-06)_.
+Each agent has a name, a color, an icon, and a Relay address. They appear in Console as browser tabs — you know at a glance who's working, who's done, and who needs you. And they need not share a vendor: Atlas can run on Claude Code while Lens runs on Codex and Patrol runs a local model through OpenCode — same window, same rules _(amended 2026-07-06)_.
 
 This isn't hypothetical. This is what DorkOS makes possible today.
 
@@ -620,9 +623,11 @@ The **game console and cartridge**: same console, different cartridge, different
 
 DorkOS is the shape-shifting **sidekick**. The user is always the hero — this is the same line drawn in §10 ("Guide, not hero"): Shapes multiply what the user can do; DorkOS never becomes the protagonist.
 
-### Place-noun: "Home Base"
+### Place-noun: "Home Base" _(superseded 2026-08-24)_
 
-**"Home Base" replaces "cockpit" and "mission control" in all future copy** — e.g., "your agents report back to base." It passes the hero test (§10, §12): the base is _yours_, not the product's. This is a naming decision, not yet a copy sweep: every existing "cockpit"/"mission control" occurrence in `meta/` stays as written until the follow-up swap lands (in `plans/shapes-program.md`: the site swap is S1; the `meta/` swap is S3).
+The 2026-07-17 decision was that **"Home Base" replaces "cockpit" and "mission control" in all future copy** — e.g., "your agents report back to base." It passed the hero test (§10, §12): the base is _yours_, not the product's.
+
+**Superseded 2026-08-24 (DOR-1517).** The retirement of "cockpit" and "mission control" stands and is now absolute (§10). The replacement is not "Home Base" but **"one place"**: "All your agents. One place." / "DorkOS is one place for every AI agent you run." It carries the same hero property — the place is the customer's, not the product's — while being plainer, and it survives translation into a sentence a non-developer says out loud. "Home Base" is retired as a candidate; the swap it called for is finished.
 
 ### Rejected
 

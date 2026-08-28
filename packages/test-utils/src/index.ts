@@ -9,6 +9,7 @@
 // typechecked program.
 export * from './capability-conformance.js';
 export * from './community-conformance.js';
+export * from './directory-membership-vectors.js';
 export * from './connector-conformance.js';
 export * from './fake-agent-runtime.js';
 export * from './fake-community-adapter.js';
@@ -21,6 +22,8 @@ export * from './fake-community-adapter.js';
 // table) into config.test.ts to reach a 40-line http helper measured +7s across
 // its 41 resets, and pushed its first `beforeEach` past the 10s hook timeout.
 export * from './fake-connector-provider.js';
+export * from './fake-memory-provider.js';
+export * from './memory-conformance.js';
 export * from './mock-factories.js';
 export * from './runtime-conformance.js';
 export * from './sse-helpers.js';

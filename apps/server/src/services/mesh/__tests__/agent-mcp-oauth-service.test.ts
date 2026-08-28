@@ -145,6 +145,7 @@ async function setupWorkspace(): Promise<string> {
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-ws-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: AGENT_ID,
     name: 'test-agent',
     description: '',

@@ -20,17 +20,30 @@ import type { Workspace } from '@dorkos/shared/workspace';
 /** A row as stored in / read from the `workspaces` cache table. */
 type WorkspaceRow = typeof workspaces.$inferSelect;
 
-/** Map a domain entity to a cache row (near-identity; Drizzle handles boolean↔int). */
+/**
+ * Map a domain entity to a cache row (near-identity; Drizzle handles boolean↔int).
+ *
+ * The one non-identity part is `owner`, which is one nullable object on the
+ * entity and two nullable columns on the row. Flattening rather than storing
+ * JSON keeps the column queryable — "which workspace does this agent own?" is a
+ * `WHERE owner_ref = ?`, not a scan.
+ */
 function toRow(ws: Workspace): typeof workspaces.$inferInsert {
-  return { ...ws };
+  const { owner, ...rest } = ws;
+  return { ...rest, ownerKind: owner?.kind ?? null, ownerRef: owner?.ref ?? null };
 }
 
 /** Map a cache row back to a domain entity, narrowing the stringly-typed enums. */
 function fromRow(row: WorkspaceRow): Workspace {
+  const { ownerKind, ownerRef, ...rest } = row;
   return {
-    ...row,
+    ...rest,
     provider: row.provider as Workspace['provider'],
     status: row.status as Workspace['status'],
+    // Half a pair is not an owner: a row with one column set and not the other
+    // is corrupt, and reading it as unowned is the safe direction (it only ever
+    // loses a sweep exemption, never grants one).
+    owner: ownerKind === 'agent' && ownerRef ? { kind: 'agent', ref: ownerRef } : null,
   };
 }
 
@@ -117,7 +130,10 @@ export class WorkspaceStore {
   async readManifest(projectKey: string, key: string): Promise<Workspace | null> {
     try {
       const raw = await fs.readFile(this.manifestPath(projectKey, key), 'utf-8');
-      return JSON.parse(raw) as Workspace;
+      const parsed = JSON.parse(raw) as Workspace;
+      // A sidecar written before ownership existed has no `owner` key at all.
+      // `undefined` would survive into `toRow` untyped; unowned is what it means.
+      return { ...parsed, owner: parsed.owner ?? null };
     } catch {
       return null;
     }

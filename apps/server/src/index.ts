@@ -66,6 +66,7 @@ import {
   type StandingCondition,
 } from './services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
+import { capabilityApprovalPayload } from './services/notifications/emitters/capability-approval.js';
 import {
   NotificationService,
   notify,
@@ -74,13 +75,12 @@ import {
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
-import { notifyRunCompleted } from './services/notifications/emitters/run-completed.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
 import { watchShiftReport } from './services/notifications/emitters/shift-report.js';
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
-import { broadcastRunTerminal } from './services/tasks/run-terminal-broadcaster.js';
+import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
 import {
   TaskSchedulerService,
   type SchedulerAgentManager,
@@ -88,7 +88,16 @@ import {
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
+import { ScheduleIdentityRegistry } from './services/tasks/schedule-identity.js';
+import {
+  agentTaskRoots,
+  ensureGlobalSkillsRoot,
+  globalTaskRoots,
+} from './services/tasks/skills-roots.js';
+import { attachAgentRoots, attachTaskRoot } from './services/tasks/attach-task-roots.js';
+import { TaskRegistrar } from './services/tasks/task-registrar.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
+import { migrateLegacySchedules } from './services/tasks/legacy-migration.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
 import {
@@ -143,6 +152,7 @@ import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
+import { createSearchRouter } from './routes/search.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
@@ -256,11 +266,19 @@ import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import {
   createRoomSubsystem,
+  resolveOperatorAuthor,
   setRoomService,
   setRoomInternals,
   setWelcomeBackGreeter,
   setRoomAttachmentStores,
+  setRoomRepoService,
 } from './services/rooms/index.js';
+import {
+  readRoomRepoConfig,
+  RoomRepoReconciler,
+  RoomRepoService,
+  RoomRepoStore,
+} from './services/rooms/repo/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
 import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
 import {
@@ -364,8 +382,39 @@ let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
+/**
+ * Every registered agent that has a project on disk, as the legacy migration
+ * wants them.
+ *
+ * Lives here rather than inline because the filter is the interesting part: an
+ * agent with no resolvable project path has no `.dork/tasks/` to migrate and no
+ * `.agents/skills/` to migrate into, and asking about it would only produce a
+ * pair of ENOENTs.
+ *
+ * @param meshCore - The registry, absent when Mesh is switched off.
+ */
+function registeredAgentRoots(
+  meshCore: MeshCore | undefined
+): { agentId: string; projectPath: string }[] {
+  if (!meshCore) return [];
+  return meshCore.list().flatMap((agent) => {
+    const projectPath = meshCore.getProjectPath(agent.id);
+    return projectPath ? [{ agentId: agent.id, projectPath }] : [];
+  });
+}
+
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
+let taskRegistrar: TaskRegistrar | undefined;
+/**
+ * Start watching a newly registered agent's schedule roots.
+ *
+ * Set by the tasks bootstrap block and called by the agent-created listener,
+ * which is registered later in this file — so the two cannot simply be one
+ * function. `undefined` when the tasks subsystem is switched off, which is why
+ * the caller uses `?.`.
+ */
+let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -1096,10 +1145,7 @@ async function start() {
   // partway through its life, so a value captured at boot would go stale). The
   // inbound chat bridge acts as this author for its lifecycle writes
   // (chats-as-channels §3.5, §10.9).
-  const resolveOperatorAuthorId = (): string => {
-    const owner = readOwnerAccount();
-    return owner ? roomAuthors.bindOwner(owner.id).id : roomAuthors.localHuman().id;
-  };
+  const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
   // as-channels §6.7, DOR-899). `config.profile.displayName` ("what the user
@@ -1116,6 +1162,47 @@ async function start() {
     if (!raw) return null;
     return sanitizeIdentity(raw) ?? null;
   };
+
+  // A room's own files (spec `project-rooms` §3). Same doctrine as the
+  // attachment store above: WHERE they live is decided here and nowhere else,
+  // and `dorkHome` is handed in rather than resolved downstream —
+  // `os.homedir()` is banned in this tree (Hard Rule 3).
+  //
+  // Unconditional, like the rooms graph itself: the store is an object and the
+  // reconciler is one unref'd timer, and a room only gains files when the
+  // person gives it some. Every config value below is read PER CALL, so
+  // turning the feature on or changing a cap binds the next request rather
+  // than the next server start.
+  const roomRepoStore = new RoomRepoStore(db, dorkHome);
+  setRoomRepoService(
+    new RoomRepoService({
+      store: roomRepoStore,
+      enabled: () => readRoomRepoConfig().enabled,
+      getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
+      isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+      // The person's own name from their profile, which is the only place a
+      // real human name is stored on this machine — never the room registry's
+      // label for them, which `bindOwner` fixes at 'You' forever (right in
+      // their own window, bizarre in `git log`).
+      operatorGitName: resolveOperatorDisplayName,
+      caps: () => {
+        const repo = readRoomRepoConfig();
+        return {
+          maxFileBytes: repo.maxFileBytes,
+          maxRepoBytes: repo.maxRepoBytes,
+          maxRoomMdBytes: repo.maxRoomMdBytes,
+        };
+      },
+      // What may be SENT, as against what `caps` froze onto a room's sidecar
+      // for what may be merged IN. Read per turn, like every other value here.
+      maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+    })
+  );
+  // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
+  // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
+  // a room's files — see its module doc for why an orphaned home directory is
+  // reported and left standing.
+  new RoomRepoReconciler(roomRepoStore).start();
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the
@@ -1647,20 +1734,17 @@ async function start() {
   // Store-level run-terminal hook (DOR-240): the single seam that fires exactly
   // once per non-terminal → terminal transition, for BOTH scheduler-side
   // failures and relay-delivered runs finalized by the receiver's
-  // updateRun('failed'). Two consumers ride it, composed into one listener
-  // because setOnRunTerminal holds a single listener:
-  //   1. Pulse attention broadcast (DOR-403) — always on when Tasks is enabled;
-  //      broadcastRunTerminal fans `task_run_failed` onto /api/events so the
-  //      badge ticks the instant a run fails, on every execution path.
-  //   2. The `run.completed` notification (DOR-240, folded into the pipeline by
-  //      DOR-1383) — always on, unlike the notifier it replaced: the inbox row
-  //      is written whether or not any chat integration can carry the news, and
-  //      the relay leg is what degrades when one cannot.
+  // updateRun(...). Three consumers ride it, composed into one listener (because
+  // setOnRunTerminal holds a single listener) in `createRunTerminalListener`:
+  //   1. Pulse attention broadcast (DOR-403) — the badge ticks the instant a run
+  //      fails, on every execution path.
+  //   2. The `run.completed` notification (DOR-240, DOR-1383) — the inbox row for
+  //      a finished run, plus the chat ping when an integration can carry it.
+  //   3. The activity-feed event (DOR-1573) — a completed or failed run now
+  //      broadcasts to the feed live on BOTH paths, where before the relay path
+  //      reached the feed only on the next poll.
   if (taskStore) {
-    taskStore.setOnRunTerminal((run, task) => {
-      broadcastRunTerminal(run);
-      void notifyRunCompleted(run, task);
-    });
+    taskStore.setOnRunTerminal(createRunTerminalListener(activityService));
   }
 
   // Catch up the escalation ladder on what was already waiting when this process
@@ -1753,6 +1837,33 @@ async function start() {
     logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+  // Catch the escalation ladder up on approvals that were already waiting when
+  // this process started (DOR-1570) — the second standing condition that
+  // outlives a restart, and the more dangerous one: an approval is an agent
+  // asking to do something irreversible. Runs AFTER the purge, so nothing
+  // long-expired is re-armed, and the ladder's own ledger and four-hour
+  // catch-up window keep it idempotent and bounded exactly as they do for
+  // parked schedules.
+  //
+  // No agent path is resolved here, unlike the live edge: `listPending`
+  // returns the operator-facing card, which deliberately keeps
+  // `requestedByPath` off the wire. The consequence is bounded — the path only
+  // chooses WHICH agent's chat binding carries the message, and
+  // `pickRelayAgent` falls back to the newest binding that may initiate, which
+  // is the same person's phone either way.
+  try {
+    const stillPending: StandingCondition[] = approvalService
+      .listPending()
+      .map((approval) => ({
+        kind: 'approval.pending' as const,
+        payload: capabilityApprovalPayload(approval),
+        since: Date.parse(approval.requestedAt),
+      }))
+      .filter((condition) => Number.isFinite(condition.since));
+    getEscalationService()?.rearmFromStandingState(stillPending);
+  } catch (err) {
+    logger.warn('[Escalation] Could not re-arm from pending approvals', logError(err));
   }
   // Standing permissions: the operator's "stop asking about this agent doing
   // this thing", bounded by a clock. The store is injected into the approvals
@@ -2009,6 +2120,10 @@ async function start() {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
+      // Where `tasks_create` writes a global schedule's SKILL.md. Not optional:
+      // a create that cannot find the skills root writes a row with no file
+      // behind it, which is the orphan DOR-1568 closed.
+      dorkHome,
       runtimeRegistry,
       activityService,
       // The approval primitive the in-session hold (DOR-939) waits on, so a fresh
@@ -2024,6 +2139,12 @@ async function start() {
       // allowance is one ceiling across both ways it can reach a person.
       notifyBudget,
       ...(taskStore && { taskStore }),
+      // A getter, not the registrar: these deps are assembled ~120 lines before
+      // `TaskRegistrar` is constructed, so the value read here would be
+      // `undefined` for the life of the process — which is exactly why the task
+      // MCP tools used to write rows the scheduler never heard about
+      // (DOR-1493). Read at call time, by which point it exists.
+      resolveTaskRegistrar: () => taskRegistrar ?? null,
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),
       ...(adapterManager && { bindingStore: adapterManager.getBindingStore() }),
@@ -2132,7 +2253,6 @@ async function start() {
       config: {
         maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
         retentionCount: schedulerConfig.retentionCount,
-        timezone: schedulerConfig.timezone,
         mayFire: firing.mayFire,
         firingReason: firing.reason,
       },
@@ -2141,9 +2261,19 @@ async function start() {
       activityService,
       dorkHome,
     });
+    // The ONE registration seam, shared by every writer that can change what a
+    // task's schedule is: these routes, the file watcher, and the reconciler.
+    taskRegistrar = new TaskRegistrar({ store: taskStore, scheduler: schedulerService });
     app.use(
       '/api/tasks',
-      createTasksRouter(taskStore, schedulerService, dorkHome, meshCore, activityService)
+      createTasksRouter(
+        taskStore,
+        schedulerService,
+        taskRegistrar,
+        dorkHome,
+        meshCore,
+        activityService
+      )
     );
     setTasksEnabled(true);
     mountedRouters.push('tasks');
@@ -2159,31 +2289,88 @@ async function start() {
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
-        // Stop watching and reconciling the agent's task directory
-        const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
-        taskFileWatcher?.stopWatching(agentTasksDir).catch(() => {});
-        taskReconciler?.removeDirectory(agentTasksDir);
+        // Stop watching and reconciling every root that belonged to the agent.
+        for (const root of agentTaskRoots(projectPath, agentId)) {
+          taskFileWatcher?.stopWatching(root.dir).catch(() => {});
+          taskReconciler?.removeDirectory(root.dir);
+        }
       });
     }
 
-    // Wire file watcher and reconciler for file-first task sync
-    const globalTasksDir = path.join(dorkHome, 'tasks');
-    taskFileWatcher = new TaskFileWatcher(taskStore, () => {}, dorkHome);
-    taskFileWatcher.watch(globalTasksDir, 'global');
+    // Wire file watcher and reconciler for file-first schedule sync.
+    //
+    // One identity registry shared by both halves: they are two views of one
+    // discovery pass, and a claim on a real SKILL.md only means anything if
+    // both respect it (`services/tasks/schedule-identity.ts`).
+    const scheduleIdentities = new ScheduleIdentityRegistry();
+    taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
+    taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
+    const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
 
-    taskReconciler = new TaskReconciler(taskStore);
-    taskReconciler.addDirectory(globalTasksDir, 'global');
+    // Schedules written in the old shape move to the new one, once, on the boot
+    // that finds them — files rewritten, directories moved, rows re-keyed with
+    // their approvals intact (`legacy-migration.ts`, ADR `260823-200729`).
+    //
+    // FIRST, and the order is load-bearing twice over: before any watcher, so
+    // discovery never races a file being rewritten under it, and before the
+    // grant backfill below, which reads each row's own content and so has to see
+    // the finished migration rather than the middle of it. A no-op in
+    // microseconds once there is nothing left to migrate.
+    await migrateLegacySchedules({
+      dorkHome,
+      store: taskStore,
+      agents: registeredAgentRoots(meshCore),
+    });
 
-    // Watch each registered agent's task directory
+    // Every schedule that was already live keeps its approval across this
+    // upgrade. The arm grant is a stored key now, and rows written before that
+    // column existed have none — so without this pass the first sync would park
+    // every schedule an alpha user already approved. Runs BEFORE any watcher
+    // starts, and matches nothing on the second boot.
+    const backfilled = taskStore.backfillApprovalGrants();
+    if (backfilled > 0) {
+      logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);
+    }
+
+    // `~/.dork/skills/` is created rather than merely watched, so that a person
+    // looking for where to put a global schedule finds it already there.
+    await ensureGlobalSkillsRoot(dorkHome);
+    for (const root of globalTaskRoots(dorkHome)) attachTaskRoot(discovery, root);
+
     if (meshCore) {
       for (const agent of meshCore.list()) {
         const projectPath = meshCore.getProjectPath(agent.id);
-        if (projectPath) {
-          const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
-          taskFileWatcher.watch(agentTasksDir, 'project', projectPath, agent.id);
-          taskReconciler.addDirectory(agentTasksDir, 'project', projectPath, agent.id);
-        }
+        if (projectPath) attachAgentRoots(discovery, projectPath, agent.id);
       }
+
+      // Agents that register AFTER boot get their roots watched immediately.
+      //
+      // Until DOR-1485 the loop above was the only place roots were ever added,
+      // so a newly registered agent's schedules were invisible until the next
+      // restart — the gap `task-reconciler.ts` documents in its retirement
+      // notes. The agent-created listener further down calls this; that hook is
+      // the one seam every arrival funnels through (create, register,
+      // marketplace install, discovery adoption) and it carries the project
+      // path, so nothing has to be looked up.
+      attachAgentTaskRoots = async (projectPath: string, agentId: string): Promise<void> => {
+        // Migrate BEFORE watching, for the same reason boot does. An agent that
+        // registers after boot brings its own project with it, legacy
+        // `.dork/tasks/` and all — and that directory is no longer watched, so
+        // without this pass its schedules would be neither migrated nor
+        // discovered until the next restart. That is a REGRESSION against the
+        // build before this wave, where the legacy root was attached here and
+        // its schedules started working immediately.
+        //
+        // Safe to call from a hook: it is idempotent, it never throws, and
+        // scoping it to one agent means it reads two directories.
+        await migrateLegacySchedules({
+          dorkHome,
+          store: taskStore,
+          agents: [{ agentId, projectPath }],
+        });
+        attachAgentRoots(discovery, projectPath, agentId);
+        logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
+      };
     }
 
     taskReconciler.start();
@@ -2412,17 +2599,17 @@ async function start() {
   // marketplace block below) so the agent-create re-bind works even when the
   // extension manager is off. Degrades to a no-op stub when Tasks is disabled.
   const shapeScheduleService: ShapeScheduleServiceLike =
-    taskStore && schedulerService
+    taskStore && taskRegistrar
       ? new ShapeScheduleService({
           taskStore,
-          scheduler: schedulerService,
+          registrar: taskRegistrar,
           meshCore,
           dorkHome,
           logger,
         })
       : {
           listSchedules: () => [],
-          createSchedule: async () => undefined,
+          createSchedule: async () => false,
           rebindSchedule: async () => undefined,
           deleteSchedulesForShape: async () => [],
         };
@@ -2448,6 +2635,13 @@ async function start() {
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
+    // Migrate anything this agent's project still keeps in the old shape, then
+    // watch its `.agents/skills/` — NOW rather than at the next restart. Boot
+    // used to be the only place roots were attached, so a schedule shipped with
+    // a just-installed agent was invisible for the rest of the process's life.
+    // Awaited so the roots are live before the Shape re-bind below writes into
+    // them.
+    await attachAgentTaskRoots?.(agent.path, agent.id);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,
@@ -2568,6 +2762,13 @@ async function start() {
       },
     })
   );
+
+  // Message search — "where did we talk about X", over the derived index the
+  // reconciler above keeps caught up (message-search spec §6, §7). Always
+  // mounted and read-only. An install whose index is empty answers `[]`, which is
+  // the honest answer and needs no flag; who may see what is resolved per request
+  // through the rooms domain, never from this line.
+  app.use('/api/search', createSearchRouter({ db }));
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
@@ -3012,6 +3213,11 @@ async function start() {
       // REST routes and the trigger dispatcher hold — one set of membership
       // rules, one cascade guard, one budget, whichever surface reaches them.
       roomDeps: { rooms: roomService },
+      // How a saved note learns which room it was written in (DOR-632). The
+      // room service answers for the CALLING session, so the label is derived
+      // rather than supplied — a model that could name its own provenance could
+      // make a poisoned note claim it came from somewhere trustworthy.
+      memoryDeps: { roomLabelForSession: (id: string) => roomService.roomLabelForSession(id) },
     },
     createCapabilityAttributionObserver(activityService)
   );

@@ -67,8 +67,11 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from './check-dependencies.js';
-import { detectOllama } from './ollama.js';
+import {
+  checkOpenCodeDependencies,
+  getConnectedOpenCodeProvider,
+} from './providers/check-dependencies.js';
+import { detectOllama } from './providers/ollama.js';
 import {
   createOpenCodeEventContext,
   mapOpenCodeTurn,
@@ -98,7 +101,7 @@ import {
   INTERRUPT_ACK_TIMEOUT_MS,
 } from './runtime-constants.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
-import { projectModelOptions } from './models.js';
+import { projectModelOptions } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
@@ -330,7 +333,11 @@ export class OpenCodeRuntime implements AgentRuntime {
     // OpenCode agent knows who it is and how to reach its capabilities. It rides
     // the `synthetic` part with the rest of the injected prefix, so it never
     // renders as user-authored text.
-    const agentContext = await buildAgentContextAppend(cwd);
+    // `.text` — the whole append, memory block included. The `stable` half of
+    // this result exists only for claude-code's relaunch fingerprint; opencode
+    // has no warm process to keep, so it sends everything, every turn (see
+    // `buildMemoryBlock` for what that costs).
+    const agentContext = (await buildAgentContextAppend(cwd)).text;
 
     yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
       const model = parseModelSelection(settings.model);

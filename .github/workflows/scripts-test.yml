@@ -38,15 +38,25 @@ name: scripts-test
 # TWO JOBS, on purpose. `fixtures` needs only bash, jq, iconv and Node, so
 # skipping the pnpm toolchain keeps it a few seconds, which is worth preserving
 # for the reviewer scripts it guards. `harness` covers the TypeScript under
-# scripts/ (the Q3 contention harness, DOR-500) plus the one bash suite that
-# needs a node_modules (the os.homedir() ban fixtures), both of which want pnpm.
+# scripts/ (the Q3 contention harness, DOR-500) plus the two bash suites that
+# need a node_modules — the os.homedir() ban fixtures, which lint through the
+# real server ESLint config, and the format-changed hook fixtures, which run the
+# real prettier — all of which want pnpm.
 # Splitting
 # them keeps the fast signal fast instead of putting a minute of install in front
 # of it.
 #
-# Neither job calls `pnpm test:scripts` even though that script runs all four
-# suites: locally it is one command (and `pnpm verify` calls it), but in CI
-# running it from either job would re-run the other job's suite for nothing.
+# Neither job calls `pnpm test:scripts` even though that script runs every
+# suite: locally it is one command (and `pnpm verify` calls it), but in CI
+# running it from either job would re-run the other job's suites for nothing.
+#
+# THAT is why the same suite list is written out twice, here and in
+# `test:scripts`, and why the two drifted: this workflow ran eleven suites while
+# `test:scripts` ran ten, so `pnpm verify` came back green having never executed
+# `test-process-guard.sh` at all (DOR-1515). If you add a step below, add it to
+# `test:scripts` too — `scripts/__tests__/shell-suite-parity.test.ts` reads both
+# lists and fails naming whichever suite is missing from whichever side, so you
+# will hear about it either way. It rides the `harness` job's `Unit tests` step.
 
 ### The `harness` job depends on files OUTSIDE scripts/: the root package.json
 ### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts,
@@ -68,8 +78,9 @@ name: scripts-test
 ### of bash plus a one-minute harness job is the honest price of a guard that
 ### fires when it matters.
 ###
-### `.claude/hooks/**` is in the filter for the `fixtures` job, which tests the
-### git-guard and process-guard hooks that live there rather than under scripts/.
+### `.claude/hooks/**` is in the filter for the hook suites, which test scripts
+### living there rather than under scripts/: git-guard and process-guard in
+### `fixtures`, and format-changed in `harness` (it needs the real prettier).
 ### The ESLint configs are in the filter for the same reason as
 ### claude-code-review.yml: test-homedir-guard.sh asserts against them. The
 ### os.homedir() ban lives in apps/server/eslint.config.js and its severity
@@ -143,9 +154,9 @@ jobs:
   fixtures:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -224,6 +235,17 @@ jobs:
       - name: Dir-size guard fixtures
         run: bash scripts/test-check-dir-size.sh
 
+      # check-nul-bytes.sh (DOR-1561) is the guard neither round of the raw-NUL-
+      # byte mistake got: DOR-1450 fixed one file with no guard, and the same
+      # mistake reached six more files before this one landed. Hermetic
+      # (throwaway git repos in a temp dir, one per case), so it never reads
+      # this repo's real source — it asserts the guard finds the separator
+      # mistake, ignores genuine binary assets, and respects the
+      # `nul-byte-allow` escape hatch for content that is deliberately under
+      # test rather than a mistake.
+      - name: Raw-NUL-byte guard fixtures
+        run: bash scripts/test-check-nul-bytes.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work
@@ -232,11 +254,11 @@ jobs:
   harness:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -260,6 +282,31 @@ jobs:
       # stops matching exits 0 rather than crashing (DOR-668).
       - name: os.homedir() ban fixtures
         run: bash scripts/test-homedir-guard.sh
+
+      # In `harness` for the same reason as the suite above it: it is the only
+      # job with a node_modules, and this suite needs the REAL prettier. A stub
+      # could prove the hook called something, but not that eligible files come
+      # out formatted and ignored ones do not, which is half of what it pins.
+      #
+      # .claude/hooks/format-changed.sh went from a 13-line PostToolUse
+      # one-liner to a ~126-line Stop hook with real file-collection logic, and
+      # the automated reviewer flagged that it had arrived untested. Its failure
+      # modes are all quiet: it is silent by design, so "formatted nothing this
+      # turn" and "formatted everything" look identical from the outside, and
+      # the two gates behind it (lefthook pre-commit, CI prettier --check) would
+      # absorb the drift without ever naming the hook. The one loud failure is
+      # the one that matters most — a Stop hook exiting 2 blocks the turn from
+      # ending — so every case asserts exit 0.
+      - name: Format-changed hook fixtures
+        run: bash scripts/test-format-changed.sh
+
+      # Pins scripts/check-banned-words.sh, the DOR-1517 prose guard. The guard
+      # itself runs in the `typecheck` workflow (already a required check, and
+      # it reports on merge_group); this step proves the guard still goes red on
+      # a seeded violation and still stays green on all four things that sweep
+      # deliberately kept. A guard nobody has watched fail is not a gate.
+      - name: Banned-words prose guard fixtures
+        run: bash scripts/test-check-banned-words.sh
 
       # check-vocab-gate.ts (DOR-855) rides this step rather than getting a
       # dedicated one: its own pin suite (__tests__/check-vocab-gate.test.ts)

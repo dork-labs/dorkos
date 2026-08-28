@@ -21,9 +21,9 @@
  * @module shared/notification-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 /**
  * How loud a notification is allowed to be.
@@ -55,6 +55,8 @@ export const NOTIFICATION_KINDS = [
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
   'schedule.parked',
+  /** An agent asked to do something irreversible and is waiting on a yes. Standing. */
+  'approval.pending',
   /** A session hit an error and stopped. Standing, per error episode. */
   'session.error',
   /** A turn finished. */
@@ -402,6 +404,95 @@ export const NotificationReadEventSchema = z
 
 /** Payload of the global `notification_read` SSE event. */
 export type NotificationReadEvent = z.infer<typeof NotificationReadEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Standing conditions on the wire — the arrival signal the periphery needs
+// (DOR-1570)
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload of the global `standing_pending` SSE event: something just started
+ * waiting on a person.
+ *
+ * This event exists because a standing kind writes NO row while it stands (ADR
+ * 260819-234828), so nothing goes out on the `notification` channel until it
+ * ends — which left every surface outside the React app blind to the one tier
+ * that is allowed to interrupt. A parked schedule and a pending capability
+ * approval could both sit their whole life with no signal on the desktop shell
+ * at all (DOR-1570).
+ *
+ * It carries what a banner needs and nothing else: a title, a short body, and a
+ * route. Never transcript content, tool input, or the arguments of the action
+ * being approved — this rides to a lock screen.
+ *
+ * An Ask (`ask.pending`) is deliberately NOT announced here: it already has
+ * `interaction_pending`, which names the interaction a banner's Allow/Deny
+ * buttons answer, and a second arrival event for it would be two banners for
+ * one condition.
+ */
+export const StandingPendingEventSchema = z
+  .object({
+    /** Which standing kind began standing. */
+    kind: NotificationKindSchema,
+    /**
+     * The condition's identity — the raising kind's registry `dedupeKey`.
+     *
+     * The same string the escalation ladder files its timer under and that
+     * `standing_resolved` names, so a surface can retire the right banner
+     * without knowing anything about the kind's own payload.
+     */
+    subjectKey: z.string().min(1),
+    /** How loud it is allowed to be. Always `blocking` today. */
+    tier: NotificationTierSchema,
+    /** One line, already written for a person. */
+    title: z.string().min(1),
+    /** An optional second line. */
+    body: z.string().optional(),
+    /** The client route that opens the thing to decide. */
+    deepLink: z.string().min(1),
+    /** When it started standing. ISO 8601 UTC. */
+    since: z.string(),
+    /**
+     * When this condition stops being answerable on its own, ISO 8601 UTC —
+     * present only for a kind that expires WITHOUT anybody acting.
+     *
+     * A capability approval carries one (its two-hour decision window). This is
+     * the one ending the server never announces by itself: expiry is enforced
+     * lazily, when a token is presented, so an approval nobody answered and no
+     * agent retried produces no `standing_resolved` at all (DOR-1570 review).
+     * A surface that drew a banner from the arrival therefore has to retire it
+     * on this deadline itself, exactly as the React app's `usePendingApprovals`
+     * does — otherwise the banner lingers with nothing behind it. A parked
+     * schedule has no expiry and omits this; it resolves only by a decision or
+     * a removal, both of which DO announce.
+     */
+    expiresAt: z.string().optional(),
+  })
+  .openapi('StandingPendingEvent');
+
+/** Payload of the global `standing_pending` SSE event. */
+export type StandingPendingEvent = z.infer<typeof StandingPendingEventSchema>;
+
+/**
+ * Payload of the global `standing_resolved` SSE event: the condition ended,
+ * however it ended.
+ *
+ * Says only WHICH condition, because that is all a surface needs to retire what
+ * it drew. Why it ended is the history row's job.
+ */
+export const StandingResolvedEventSchema = z
+  .object({
+    /** Which standing kind ended. */
+    kind: NotificationKindSchema,
+    /** The condition's identity — the same `subjectKey` its arrival carried. */
+    subjectKey: z.string().min(1),
+    /** When it ended. ISO 8601 UTC. */
+    resolvedAt: z.string(),
+  })
+  .openapi('StandingResolvedEvent');
+
+/** Payload of the global `standing_resolved` SSE event. */
+export type StandingResolvedEvent = z.infer<typeof StandingResolvedEventSchema>;
 
 // ---------------------------------------------------------------------------
 // Web push — the leg that reaches a browser DorkOS is not open in

@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
 import type {
@@ -32,6 +33,8 @@ import {
   publishDispatchProgress,
   publishResponseWithCorrelation,
 } from './publish.js';
+import { isCallerCancel } from './agent-cancel-handler.js';
+import { interruptTurn } from './interrupt.js';
 
 /** Dependencies required by the agent handler. */
 export interface AgentHandlerDeps {
@@ -40,6 +43,19 @@ export interface AgentHandlerDeps {
   agentSessionStore?: AgentSessionStoreLike;
   /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /**
+   * This turn's stop handle, owned by the caller (DOR-791).
+   *
+   * Created and registered in `deliver()` BEFORE the concurrency line and the
+   * per-session queue, because a turn is cancelable from the moment its message
+   * arrives — not from the moment it reaches the head of its queue. Already
+   * aborted on entry means the turn was stopped while it waited, and it must
+   * not start: `sendMessage` is what starts, and bills, it.
+   *
+   * Required, not optional: a handler that ran without one would be a turn
+   * nothing can stop, which is the exact bug this exists to close.
+   */
+  turnController: AbortController;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -90,6 +106,37 @@ const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
  */
 function isNonFatalErrorCode(code: string | undefined): boolean {
   return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
+}
+
+/**
+ * The event source for a turn that never started.
+ *
+ * An empty (synchronous) iterable, which `for await` consumes just as happily
+ * as the runtime's own stream — so a stopped-before-start turn walks the same
+ * path as one stopped mid-stream, and publishes the same terminal error and
+ * done to whoever is reading its replies.
+ */
+const NO_EVENTS: readonly StreamEvent[] = [];
+
+/**
+ * How a stopped turn is described to everything downstream of it.
+ *
+ * A turn ends early for two different reasons and they are not interchangeable:
+ * the message ran out of TTL, or whoever started it stopped waiting. Both used
+ * to read as "TTL budget expired", which sent anyone reading a trace row or a
+ * chat error looking for a budget problem that never happened.
+ *
+ * @param signal - The turn's abort signal.
+ * @returns The reason, or `undefined` for a turn that was not stopped at all.
+ */
+function abortText(signal: AbortSignal): string | undefined {
+  if (!signal.aborted) return undefined;
+  if (isCallerCancel(signal.reason)) {
+    return signal.reason.reason === 'caller_timeout'
+      ? 'Stopped: the caller stopped waiting for this turn'
+      : 'Stopped: the caller cancelled this turn';
+  }
+  return 'TTL budget expired';
 }
 
 /** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
@@ -192,8 +239,7 @@ export async function handleAgentMessage(
 
   // Extract binding-enriched fields from the payload resolved above.
   const bindingPerms = payloadObj?.__bindingPermissions as
-    | { permissionMode?: PermissionMode }
-    | undefined;
+    { permissionMode?: PermissionMode } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
@@ -229,16 +275,25 @@ export async function handleAgentMessage(
       `model=${executionSettings.model ?? '(runtime default)'}`
   );
 
+  // Stopped while it waited — in the concurrency line, or in its session's
+  // queue behind another turn. Nothing about it may start: no session, no
+  // `sendMessage`, no bill. The terminal error and done still go out below, so
+  // whoever is reading the reply stream settles instead of hanging (DOR-791).
+  const controller = deps.turnController;
+  const stoppedBeforeStart = controller.signal.aborted;
+
   // Only mark hasStarted when we have a real SDK session ID from the persistent
   // store.  Without one, the runtime would attempt to resume using the DorkOS-
   // generated UUID (which the SDK never assigned), causing a "No conversation
   // found" error before the self-healing retry creates a fresh session.
-  deps.agentManager.ensureSession(ccaSessionKey, {
-    permissionMode: effectivePermissionMode,
-    hasStarted: !!persistedSdkSessionId,
-    ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-    ...executionSettings,
-  });
+  if (!stoppedBeforeStart) {
+    deps.agentManager.ensureSession(ccaSessionKey, {
+      permissionMode: effectivePermissionMode,
+      hasStarted: !!persistedSdkSessionId,
+      ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+      ...executionSettings,
+    });
+  }
   deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
 
   if (!envelope.replyTo) {
@@ -267,22 +322,40 @@ export async function handleAgentMessage(
 
   // Set up timeout from TTL budget
   const ttlRemaining = envelope.budget.ttl - Date.now();
-  const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
     ttlRemaining > 0 ? ttlRemaining : config.defaultTimeoutMs
   );
+  // Stopping has to reach the RUNTIME, not just the loop below: `sendMessage`
+  // takes no signal, so breaking out of the stream leaves the model running and
+  // billing until it finishes on its own. That was true of the TTL deadline too
+  // — this listener ends both kinds of stop at the agent (DOR-791).
+  //
+  // Interrupting by SESSION KEY is only safe because the adapter runs one turn
+  // per session at a time (`runtimeAdapter.enqueue`, keyed by the same id): the
+  // in-flight turn on this key is necessarily this one, so a stop can never
+  // reach into a bystander's turn. A future change that lets two turns share a
+  // session key concurrently has to give the runtime a narrower handle first.
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      void interruptTurn(deps.agentManager, ccaSessionKey, `turn ${ccaSessionKey}`, deps.logger);
+    },
+    { once: true }
+  );
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
-  const eventStream = deps.agentManager.sendMessage(ccaSessionKey, prompt, {
-    permissionMode: effectivePermissionMode,
-    ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-    ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
-    // Sent again, for the same reason the permission mode and the cwd are: the
-    // runtime contract resolves a turn as per-send override → persisted → its
-    // own default, and a runtime whose sessions are not held in memory sees
-    // this call and not the one above.
-    ...executionSettings,
-  });
+  const eventStream = stoppedBeforeStart
+    ? NO_EVENTS
+    : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
+        permissionMode: effectivePermissionMode,
+        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+        ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
+        // Sent again, for the same reason the permission mode and the cwd are:
+        // the runtime contract resolves a turn as per-send override → persisted
+        // → its own default, and a runtime whose sessions are not held in
+        // memory sees this call and not the one above.
+        ...executionSettings,
+      });
 
   let eventCount = 0,
     collectedText = '',
@@ -373,8 +446,7 @@ export async function handleAgentMessage(
       // bare done as a successful completion and surface the partial streamed
       // text as a finished answer. The `{ type: 'error', data: { message } }`
       // event matches ErrorEventSchema, so those consumers fail the turn.
-      const failureMessage =
-        streamError ?? (controller.signal.aborted ? 'TTL budget expired' : undefined);
+      const failureMessage = streamError ?? abortText(controller.signal);
       if (failureMessage) {
         try {
           await publishResponseWithCorrelation(
@@ -423,10 +495,7 @@ export async function handleAgentMessage(
     // waiter (it settles on the first non-progress payload) but not for a poller:
     // that one reads a list, is told `done:true` ends it, and would otherwise see
     // an error event next to a clean-looking result and have to guess which won.
-    const failure =
-      inStreamError ??
-      streamError ??
-      (controller.signal.aborted ? 'TTL budget expired' : undefined);
+    const failure = inStreamError ?? streamError ?? abortText(controller.signal);
     await publishAgentResult(envelope, collectedText, ccaSessionKey, relay, failure);
   }
 
@@ -454,13 +523,13 @@ export async function handleAgentMessage(
     deps.traceStore.updateSpan(envelope.id, {
       status: aborted ? 'failed' : 'processed',
       processedAt: Date.now(),
-      ...(aborted && { error: 'TTL budget expired' }),
+      ...(aborted && { error: abortText(controller.signal) }),
     });
   }
 
   return {
     success: !failed,
-    error: streamError ?? (aborted ? 'TTL budget expired' : undefined),
+    error: streamError ?? abortText(controller.signal),
     deadLettered: aborted,
     durationMs: Date.now() - startTime,
   };

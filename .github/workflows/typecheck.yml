@@ -113,11 +113,11 @@ jobs:
     # generous headroom for a colder/slower CI runner.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -133,6 +133,33 @@ jobs:
       # `pnpm format` fixes every one of them.
       - name: Formatting gate — prettier --check (DOR-485)
         run: pnpm format:check
+
+      # Retired vocabulary in user-facing prose (DOR-1517). It rides THIS job
+      # for the same reason the formatting gate does: `typecheck` is already a
+      # required status check and already reports on `merge_group`, so a new
+      # workflow would go red without blocking a merge until someone amended
+      # branch protection — and a gate on a non-required check is not a gate.
+      # Needs no node_modules; it is bash and grep over prose files.
+      #
+      # This is the second half of a deliberate split. Render-path strings in
+      # app source are judged by scripts/check-vocab-gate.ts, which parses
+      # TypeScript so it can tell copy from an identifier; it runs in
+      # scripts-test.yml via its own pin suite. This step covers the prose and
+      # data files that gate cannot read: READMEs, docs MDX, blog posts,
+      # context7.json, the PWA manifest, and the generated openapi.json.
+      - name: Retired-vocabulary gate — prose surfaces (DOR-1517)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-banned-words.sh
+
+      # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
+      # the same reason the gate above it does: `typecheck` is already a
+      # required status check that reports on `merge_group`, and a gate on a
+      # non-required check is not a gate. Needs only `git` and `perl`, both on
+      # the runner already — no node_modules, and it runs in ~1-2s over the
+      # whole repo.
+      - name: Raw-NUL-byte gate — text files (DOR-1561)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-nul-bytes.sh
 
       # `!cancelled()` so a formatting failure still reports every type error in
       # the same run, for the same reason the step below passes `--continue`.

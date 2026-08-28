@@ -133,9 +133,11 @@ beforeEach(async () => {
   // The inbound chat bridge, as the router sees it: a `bridge: 'room'` binding
   // routes here (chats-as-channels §5.1) instead of to session dispatch.
   bridgeIngest = {
-    ingest: vi.fn(
-      async (): Promise<IngestResult> => ({ status: 'ingested', entryId: 'e1', joined: false })
-    ),
+    ingest: vi.fn(async (): Promise<IngestResult> => ({
+      status: 'ingested',
+      entryId: 'e1',
+      joined: false,
+    })),
   };
 
   const meshCore = {

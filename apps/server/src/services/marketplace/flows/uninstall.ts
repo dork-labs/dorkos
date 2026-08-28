@@ -29,6 +29,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
 import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
+import { readInstallMetadata } from '../installed-metadata.js';
 
 /** Staging directory prefix used by the uninstall flow. */
 const STAGING_DIR_PREFIX = 'dorkos-uninstall-';
@@ -292,6 +293,58 @@ export class UninstallFlow {
     if (type === 'shape' && req.deactivateShape !== false) {
       await this.teardownShape(located);
     }
+    // Type-agnostic and therefore last: any package type may have generated
+    // schedule files outside its own install root, and removing the package does
+    // not remove those.
+    await this.removeGeneratedSchedules(stagingPath);
+  }
+
+  /**
+   * Delete the skill directories this package's install generated for its inline
+   * `schedules[]` declarations.
+   *
+   * These live outside the install root — in a project's `.agents/skills/` or the
+   * global `<dorkHome>/skills/` — so the package leaving disk does not take them
+   * with it, and a left-behind one is a schedule that keeps firing for a package
+   * that is gone. The list comes from the install receipt
+   * (`InstallMetadata.generatedSchedulePaths`), read out of the STAGED copy: by
+   * this point the package has already been moved aside, so the sidecar is at
+   * `<stagingPath>/.dork/install-metadata.json` and nowhere else.
+   *
+   * Deleting only what the receipt names is the whole safety model. Nothing here
+   * scans a skills root or matches on names: a generated schedule is
+   * indistinguishable from a person's own skill by location, so an uninstall that
+   * went looking would eventually delete somebody's work. A receipt that is
+   * missing, truncated, or (for an install that pre-dates the field) absent
+   * simply removes less.
+   *
+   * Best-effort, like the rest of the janitorial phase: a directory that cannot
+   * be removed is logged, never thrown. Failing here would roll the whole
+   * uninstall back and restore a package the person asked to remove, over a
+   * leftover file.
+   *
+   * @param stagingPath - The staged copy of the package being removed.
+   * @internal
+   */
+  private async removeGeneratedSchedules(stagingPath: string): Promise<void> {
+    const metadata = await readInstallMetadata(stagingPath);
+    const generated = metadata?.generatedSchedulePaths ?? [];
+    if (generated.length === 0) return;
+
+    for (const dirPath of generated) {
+      try {
+        await rm(dirPath, { recursive: true, force: true });
+      } catch (err) {
+        this.deps.logger.warn(
+          '[marketplace/uninstall] could not remove a generated schedule directory',
+          { path: dirPath, error: err instanceof Error ? err.message : String(err) }
+        );
+      }
+    }
+    this.deps.logger.info(
+      `[marketplace/uninstall] Removed ${generated.length} generated schedule(s)`,
+      { paths: generated }
+    );
   }
 
   /**

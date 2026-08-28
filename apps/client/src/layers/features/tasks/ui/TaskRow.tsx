@@ -184,6 +184,34 @@ export function TaskRow({
                 {task.nextRun && <> &middot; Next: {new Date(task.nextRun).toLocaleString()}</>}
               </div>
             )}
+            {/* Why this one is waiting. A schedule DorkOS found in a file says
+                so here — including what is wrong with the file, when something
+                is — because the row is where a person meets it first and the
+                Approve button is right there. Without this line, a schedule
+                parked over a typo in its cron looks identical to one parked
+                only for a look.
+
+                Gated on ORIGIN, not on status. `reason` means two different
+                things depending on where the row came from: DorkOS's own words
+                on a file-found schedule, and an AGENT'S CASE on one an agent
+                proposed. The second belongs on the approval card, which can say
+                who is making it — printing it here as a bare line would put an
+                agent's argument on screen with nothing attributing it (DOR-1485
+                review, I5). `reasonSource` catches the other half: a schedule a
+                person made themselves whose file has drifted also carries our
+                words, not theirs. Both conditions are needed: a schedule that
+                is already running is not waiting for anything, so whatever
+                `reason` it still carries is history. */}
+            {task.status === 'pending_approval' &&
+              (task.origin === 'file' || task.reasonSource === 'dorkos') &&
+              task.reason && (
+                <div
+                  data-slot="task-park-reason"
+                  className="text-muted-foreground min-w-0 text-xs break-words"
+                >
+                  {task.reason}
+                </div>
+              )}
           </div>
 
           {/* Actions — vary by size */}
@@ -295,7 +323,7 @@ export function TaskRow({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete task</DialogTitle>
+              <DialogTitle>Delete scheduled task</DialogTitle>
               <DialogDescription>
                 Delete &ldquo;{task.name}&rdquo;? This will also remove all run history. This action
                 cannot be undone.

@@ -31,7 +31,9 @@ import type { Session } from '@dorkos/shared/types';
 // filtering are irrelevant here and must not touch the filesystem.
 const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
-    buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>mock</env>'),
+    buildSystemPromptAppend: vi
+      .fn()
+      .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
     renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
   toolFilterFactory: () => ({
@@ -139,8 +141,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   /** The permission mode handed to the SDK on the most recent `query()` call. */
   function enforcedMode(): PermissionMode | undefined {
     const call = mockedQuery.mock.calls.at(-1) as
-      | [{ options?: { permissionMode?: PermissionMode } }]
-      | undefined;
+      [{ options?: { permissionMode?: PermissionMode } }] | undefined;
     // Without this, a turn that never reached the SDK would throw a bare
     // TypeError instead of naming what went wrong.
     expect(call, 'the SDK was never queried — there is no enforced mode').toBeDefined();

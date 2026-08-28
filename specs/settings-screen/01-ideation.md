@@ -100,18 +100,19 @@ N/A — New feature, not a bug fix.
 ### Server Config: What to Show vs. Hide
 
 **Safe to display (read-only):**
-| Field | Source | Format |
-|-------|--------|--------|
-| Server version | `package.json` | `1.0.0` |
-| Server port | `GATEWAY_PORT` env | `4242` |
-| Server uptime | `process.uptime()` | Human-readable (e.g., "2h 15m") |
-| Working directory | `process.cwd()` | Full path |
-| Node.js version | `process.version` | `v22.x.x` |
-| Tunnel enabled | `TUNNEL_ENABLED` env | Boolean |
-| Tunnel status | TunnelManager | `connected` / `disconnected` / `disabled` |
-| Tunnel URL | TunnelManager | Full URL (if connected) |
-| Tunnel auth enabled | `TUNNEL_AUTH` env | `true`/`false` (not the credentials) |
-| Claude CLI path | Resolved path | Full path |
+
+| Field               | Source               | Format                                    |
+| ------------------- | -------------------- | ----------------------------------------- |
+| Server version      | `package.json`       | `1.0.0`                                   |
+| Server port         | `GATEWAY_PORT` env   | `4242`                                    |
+| Server uptime       | `process.uptime()`   | Human-readable (e.g., "2h 15m")           |
+| Working directory   | `process.cwd()`      | Full path                                 |
+| Node.js version     | `process.version`    | `v22.x.x`                                 |
+| Tunnel enabled      | `TUNNEL_ENABLED` env | Boolean                                   |
+| Tunnel status       | TunnelManager        | `connected` / `disconnected` / `disabled` |
+| Tunnel URL          | TunnelManager        | Full URL (if connected)                   |
+| Tunnel auth enabled | `TUNNEL_AUTH` env    | `true`/`false` (not the credentials)      |
+| Claude CLI path     | Resolved path        | Full path                                 |
 
 **NEVER display:**
 

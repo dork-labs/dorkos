@@ -168,8 +168,23 @@ export interface RoomTurnRunner {
    * is halting, and a turn that finished a moment earlier is a successful halt,
    * not a failure.
    *
+   * **The answer is whether the stop LANDED ON ANYTHING** — the runtime's own
+   * `interruptQuery` boolean, carried out rather than dropped here (DOR-1425).
+   * `false` means the runtime had no turn to aim it at: either the turn was
+   * already over, or it had not yet reached the point where it can be stopped.
+   * The claim is dropped and the room says the same thing either way, because a
+   * claim held for a turn nobody could interrupt is an indicator with nothing
+   * behind it; what the answer buys is a log an operator can read, and the one
+   * place the room could ever say "we could not reach the agent".
+   *
+   * Deliberately still a boolean and not the five-value receipt of
+   * `specs/runtime-interrupt-receipts` §5.2: that spec replaces this return type
+   * along with every other stop-shaped verb's, and widening one caller ahead of
+   * it would be a second vocabulary to migrate.
+   *
    * @param request.sessionId - The session the turn is running on.
    * @param request.agentPath - The agent's directory, which selects its runtime.
+   * @returns Whether the runtime had a turn to stop.
    */
-  interrupt(request: { sessionId: string; agentPath: string }): Promise<void>;
+  interrupt(request: { sessionId: string; agentPath: string }): Promise<boolean>;
 }

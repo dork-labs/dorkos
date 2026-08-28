@@ -678,6 +678,7 @@ A SOUL.md file has two clearly separated sections:
 - **Caution** (Balanced): Verify before destructive actions. Move confidently on reversible ones. Run tests when relevant.
 - **Communication** (Balanced): Provide status updates for longer tasks. Report blockers promptly.
 - **Creativity** (Balanced): Follow conventions by default. Suggest alternatives when they offer clear, meaningful improvements.
+
 <!-- TRAITS:END -->
 
 ## Identity

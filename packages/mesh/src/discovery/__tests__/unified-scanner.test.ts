@@ -31,6 +31,7 @@ afterEach(async () => {
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01JKABC00001',
     name: 'test-agent',
     description: '',
@@ -245,8 +246,7 @@ describe('unifiedScan', () => {
         timeout: 1,
       });
       const complete = events.find((e) => e.type === 'complete') as
-        | Extract<ScanEvent, { type: 'complete' }>
-        | undefined;
+        Extract<ScanEvent, { type: 'complete' }> | undefined;
       expect(complete).toBeDefined();
       // The scan may or may not timeout in 1ms but always ends
       // We check the complete event is present

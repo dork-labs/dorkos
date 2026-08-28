@@ -69,14 +69,14 @@ describe('UnattendedAutonomyBanner', () => {
   it('names a single driver and what kind of thing it is', () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Running unattended at full power: the Nightly cleanup task.'
+      'Running unattended at full power: the Nightly cleanup scheduled task.'
     );
   });
 
   it('names both drivers when two are running', () => {
     render(<UnattendedAutonomyBanner drivers={[deploys, cleanup_task]} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Running unattended at full power: the Deploys integration and the Nightly cleanup task.'
+      'Running unattended at full power: the Deploys integration and the Nightly cleanup scheduled task.'
     );
   });
 
@@ -92,7 +92,7 @@ describe('UnattendedAutonomyBanner', () => {
       />
     );
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Running unattended at full power: the Deploys integration, the Nightly cleanup task and 2 more.'
+      'Running unattended at full power: the Deploys integration, the Nightly cleanup scheduled task and 2 more.'
     );
   });
 
@@ -115,7 +115,7 @@ describe('UnattendedAutonomyBanner', () => {
 
   it('offers only the surfaces it actually named', () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    expect(screen.getByRole('button', { name: 'Tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Schedules' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Integrations' })).not.toBeInTheDocument();
   });
 
@@ -133,7 +133,7 @@ describe('UnattendedAutonomyBanner', () => {
 
   it('sends a person to the tasks page', async () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Schedules' }));
 
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });
   });

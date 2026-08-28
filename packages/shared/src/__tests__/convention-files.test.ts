@@ -9,6 +9,7 @@ import {
   defaultNopeTemplate,
   SOUL_MAX_CHARS,
   NOPE_MAX_CHARS,
+  MEMORY_MAX_CHARS,
   TRAIT_SECTION_START,
   TRAIT_SECTION_END,
   CONVENTION_FILES,
@@ -20,11 +21,22 @@ describe('convention-files', () => {
     it('has correct character limits', () => {
       expect(SOUL_MAX_CHARS).toBe(4000);
       expect(NOPE_MAX_CHARS).toBe(2000);
+      // ~2K tokens. Red if anyone raises it without re-reading what it costs on
+      // codex and opencode, where the append is re-sent uncached every turn.
+      expect(MEMORY_MAX_CHARS).toBe(8000);
     });
 
     it('has correct file names', () => {
       expect(CONVENTION_FILES.soul).toBe('SOUL.md');
       expect(CONVENTION_FILES.nope).toBe('NOPE.md');
+      expect(CONVENTION_FILES.memory).toBe('MEMORY.md');
+    });
+
+    // Red when: a fourth convention file is added to the record and one of the
+    // sites that enumerates them is missed. The set is small and closed on
+    // purpose — every entry costs prompt budget on every turn.
+    it('is the closed set of three, and the io signatures accept exactly it', () => {
+      expect(Object.values(CONVENTION_FILES).sort()).toEqual(['MEMORY.md', 'NOPE.md', 'SOUL.md']);
     });
   });
 
@@ -178,5 +190,35 @@ describe('convention-files', () => {
 
       expect(result).toBe(content);
     });
+  });
+});
+
+describe('MEMORY.md is a convention file like the other two', () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  // Red when: the closed filename union on `writeConventionFile` is widened
+  // without widening `readConventionFile`, or the reverse. It used to be
+  // declared by hand on both; a derived type is what makes this pass by
+  // construction, and this case is what proves the derivation reaches both.
+  it('round-trips through the shared reader and writer', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'convention-memory-'));
+    await fs.mkdir(path.join(tmpDir, '.dork'), { recursive: true });
+
+    await writeConventionFile(tmpDir, CONVENTION_FILES.memory, '## Notes\n\n- a note\n');
+    expect(await readConventionFile(tmpDir, CONVENTION_FILES.memory)).toBe(
+      '## Notes\n\n- a note\n'
+    );
+    expect(await readConventionFile(tmpDir, 'MEMORY.md')).toBe('## Notes\n\n- a note\n');
+  });
+
+  it('reads as null when the agent has no memory file yet', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'convention-memory-'));
+    await fs.mkdir(path.join(tmpDir, '.dork'), { recursive: true });
+
+    expect(await readConventionFile(tmpDir, 'MEMORY.md')).toBeNull();
   });
 });

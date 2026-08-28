@@ -33,8 +33,7 @@ import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
  * agent.
  */
 export type PaletteScope =
-  | { kind: 'agent'; agent: AgentPathEntry }
-  | { kind: 'room'; room: RoomSummary };
+  { kind: 'agent'; agent: AgentPathEntry } | { kind: 'room'; room: RoomSummary };
 
 /**
  * The key a scope admits rows by — the same `type:id` space

@@ -82,9 +82,10 @@ vi.mock('../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 vi.mock('../messaging/context-builder.js', () => ({
-  buildSystemPromptAppend: vi
-    .fn()
-    .mockResolvedValue('<env>\nWorking directory: /projects/conformance\n</env>'),
+  buildSystemPromptAppend: vi.fn().mockResolvedValue({
+    text: '<env>\nWorking directory: /projects/conformance\n</env>',
+    stable: '<env>\nWorking directory: /projects/conformance\n</env>',
+  }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../tooling/tool-filter.js', () => ({
@@ -417,6 +418,58 @@ runtimeConformance(
         // turn's own message): the CLI coalesces it into one result and closes.
         endTurn: () => process.answer(process.received.at(-1)),
       });
+    },
+    // The `project-rooms` §3.3 gate, on the runtime it was written for: a
+    // caller's append has to reach the NEXT turn of a session whose process is
+    // already WARM. Claude-code delivers the append at LAUNCH — it is part of
+    // `query({ options })` and there is no live setter for it — so the only way
+    // a changed one can reach a warm process is by replacing it, which is
+    // exactly what `PIN_DISPOSITIONS.systemPromptAppend: 'relaunch'` asks
+    // `decideProcessReuse` for. The observation is therefore what each PROCESS
+    // was launched with, read off the fake CLI rather than off the caller.
+    //
+    // `processes.at(-1)` rather than `processes[1]` on purpose: if the append
+    // ever stopped forcing a relaunch there would BE no second process, and the
+    // honest reading of "what the second turn ran under" is the process that was
+    // still live when it dispatched — which is what turns a silently-broken pin
+    // into a red instead of an out-of-range crash.
+    systemPromptAppendTurns: async (runtime: AgentRuntime, sessionId, [first, second]) => {
+      persistent.on = true;
+      warmCli = new FakeCli();
+      mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
+      for await (const _event of runtime.sendMessage(sessionId, 'the first turn', {
+        cwd: '/projects/conformance',
+        systemPromptAppend: first,
+      })) {
+        // Drained: this driver reports what the LAUNCH carried, not what the
+        // model said.
+      }
+      // **Without this the case would prove nothing it claims.** Two COLD
+      // launches also produce two processes with two different appends, so the
+      // whole gate would pass on a runtime that never held a process at all.
+      // What §3.3 needs to know is that the append moves past a process that is
+      // still up, so the warmth is asserted before the second turn asks it to.
+      expect(
+        runtime.getSessionWarmth?.(sessionId),
+        'the second turn was supposed to meet a WARM process — a cold one would prove nothing about a changed append reaching a live session'
+      ).toBe('warm');
+      for await (const _event of runtime.sendMessage(sessionId, 'the second turn', {
+        cwd: '/projects/conformance',
+        systemPromptAppend: second,
+      })) {
+        // Drained for the same reason.
+      }
+      const launchedAppend = (index: number): string => {
+        const systemPrompt = warmCli?.processes.at(index)?.options.systemPrompt;
+        // The SDK's `systemPrompt` is a union — a preset carrying an `append`,
+        // or a whole prompt as a bare string. DorkOS always launches the preset
+        // form; narrowing rather than casting is what would make a change to
+        // that visible here instead of silently reading `undefined`.
+        return typeof systemPrompt === 'object' && !Array.isArray(systemPrompt)
+          ? (systemPrompt.append ?? '')
+          : '';
+      };
+      return [launchedAppend(0), launchedAppend(-1)] as const;
     },
     // C2/C3 are server-owned invariants every runtime inherits by construction,
     // driven through the shared machinery rather than claude-code itself.

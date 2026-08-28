@@ -16,12 +16,18 @@
  * @module a2a-gateway/express-handlers
  */
 import express, { type RequestHandler, type Response } from 'express';
-import { DefaultRequestHandler } from '@a2a-js/sdk/server';
+import { AgentCard } from '@a2a-js/sdk';
+import {
+  DefaultRequestHandler,
+  defaultServerCallContextBuilder,
+  type ServerCallContextBuilder,
+} from '@a2a-js/sdk/server';
 import { jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 import type { RelayCore } from '@dorkos/relay';
+import type { Logger } from '@dorkos/shared/logger';
 import type { Db } from '@dorkos/db';
 import { generateAgentCard, generateFleetCard } from './agent-card-generator.js';
-import { SqliteTaskStore } from './task-store.js';
+import { SqliteTaskStore, BOUND_AGENT_STATE_KEY } from './task-store.js';
 import { DorkOSAgentExecutor } from './dorkos-executor.js';
 import type { AgentRegistryLike, CardGeneratorConfig } from './types.js';
 
@@ -35,6 +41,15 @@ export interface A2aHandlerDeps {
   db: Db;
   /** Card generation configuration (baseUrl, version, authRequired). */
   config: CardGeneratorConfig;
+  /**
+   * Where the executor reports what it could and could not stop.
+   *
+   * Optional, defaulting to `console`. Hosts should pass their own: a turn the
+   * gateway timed out and then failed to stop is invisible on the wire — the
+   * caller has already been told the request timed out — so that warning only
+   * exists in the log the host collects.
+   */
+  logger?: Logger;
 }
 
 /** Express handlers returned by {@link createA2aHandlers}. */
@@ -60,6 +75,36 @@ export interface A2aHandlers {
 /** JSON-RPC 2.0 "invalid params" error code, used for routing rejections. */
 const JSONRPC_INVALID_PARAMS = -32602;
 
+/**
+ * Request header carrying the agent the per-agent endpoint bound from the URL.
+ *
+ * Internal, and **never trusted from a client**: `agentJsonRpc` overwrites it
+ * and `jsonRpc` deletes it, so whatever a caller sent is gone before the SDK
+ * sees the request. A header rather than an async-local: the SDK builds its
+ * call context from the request's own headers, and body parsing crosses a
+ * stream boundary an `AsyncLocalStorage` scope does not survive.
+ */
+const BOUND_AGENT_HEADER = 'x-dorkos-a2a-agent';
+
+/**
+ * The JSON-RPC methods that carry a message needing a target agent.
+ *
+ * Both spellings, deliberately: A2A v1.0 renamed these methods, and the
+ * gateway accepts the v0.3 names too (see {@link createA2aHandlers}). The
+ * routing check below runs before the SDK's own dispatch, so it has to
+ * recognize every name the SDK will go on to accept — miss one and a
+ * v0.3 client's untargeted message sails past the check that exists to
+ * give it an actionable error.
+ */
+const MESSAGE_METHODS = new Set([
+  // v1.0
+  'SendMessage',
+  'SendStreamingMessage',
+  // v0.3
+  'message/send',
+  'message/stream',
+]);
+
 /** JSON-RPC request id extracted for error responses. */
 type JsonRpcId = string | number | null;
 
@@ -77,14 +122,14 @@ function extractRpcId(body: unknown): JsonRpcId {
 }
 
 /**
- * Extract the A2A message from a `message/send` / `message/stream` request
- * body, or `undefined` for any other method (or a malformed body — the SDK
- * produces its own invalid-params error for those).
+ * Extract the A2A message from a message-sending request body, or `undefined`
+ * for any other method (or a malformed body — the SDK produces its own
+ * invalid-params error for those).
  */
 function extractRoutableMessage(body: unknown): RoutableMessage | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const { method, params } = body as { method?: unknown; params?: unknown };
-  if (method !== 'message/send' && method !== 'message/stream') return undefined;
+  if (typeof method !== 'string' || !MESSAGE_METHODS.has(method)) return undefined;
   if (typeof params !== 'object' || params === null) return undefined;
   const message = (params as { message?: unknown }).message;
   if (typeof message !== 'object' || message === null) return undefined;
@@ -97,6 +142,22 @@ function hasTarget(message: RoutableMessage): boolean {
   if (typeof agentId === 'string' && agentId.length > 0) return true;
   return typeof message.taskId === 'string' && message.taskId.length > 0;
 }
+
+/**
+ * Build the SDK's call context, carrying through the agent the URL bound.
+ *
+ * The `ListTasks` request has no field for the endpoint it arrived on, so the
+ * binding rides in the context's state bag — which is what that bag is for —
+ * and {@link SqliteTaskStore.list} reads it there.
+ */
+const contextBuilder: ServerCallContextBuilder = (options) => {
+  const context = defaultServerCallContextBuilder(options);
+  const boundAgentId = options.headers[BOUND_AGENT_HEADER];
+  if (typeof boundAgentId === 'string' && boundAgentId.length > 0) {
+    context.state.set(BOUND_AGENT_STATE_KEY, boundAgentId);
+  }
+  return context;
+};
 
 /** Respond with a JSON-RPC error object (routing-layer rejections). */
 function sendRpcError(res: Response, status: number, id: JsonRpcId, message: string): void {
@@ -118,10 +179,20 @@ function sendRpcError(res: Response, status: number, id: JsonRpcId, message: str
  * @returns Object with card and JSON-RPC handlers ({@link A2aHandlers})
  */
 export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
-  const { agentRegistry, relay, db, config } = deps;
+  const { agentRegistry, relay, db, config, logger } = deps;
 
+  // Cards go out through `AgentCard.toJSON`, never as the raw object. A2A
+  // v1.0's types are protobuf-derived, so the in-memory shape is not the wire
+  // shape: a security scheme is a `{ $case, value }` union in memory and a
+  // `{ httpAuthSecurityScheme: … }` key on the wire, and unset fields are
+  // dropped rather than serialized as empty. Handing the object straight to
+  // `res.json` would publish a card no A2A client can read.
   const taskStore = new SqliteTaskStore(db);
-  const executor = new DorkOSAgentExecutor({ relay, agentRegistry });
+  const executor = new DorkOSAgentExecutor({
+    relay,
+    agentRegistry,
+    ...(logger ? { logger } : {}),
+  });
 
   // Build the fleet card lazily on each request so it reflects current state.
   // The DefaultRequestHandler uses this card for protocol introspection.
@@ -130,8 +201,7 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
 
   const fleetCard: RequestHandler = (_req, res) => {
     const manifests = agentRegistry.list();
-    const card = generateFleetCard(manifests, config);
-    res.json(card);
+    res.json(AgentCard.toJSON(generateFleetCard(manifests, config)));
   };
 
   const agentCard: RequestHandler = (req, res) => {
@@ -145,8 +215,7 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
       res.status(404).json({ error: 'Agent not found' });
       return;
     }
-    const card = generateAgentCard(agent, config);
-    res.json(card);
+    res.json(AgentCard.toJSON(generateAgentCard(agent, config)));
   };
 
   // The SDK's handler is an Express router serving POST '/' with its own
@@ -156,6 +225,14 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
   const sdkJsonRpc = jsonRpcHandler({
     requestHandler,
     userBuilder: UserBuilder.noAuthentication,
+    // Agents built against A2A v0.3 keep working. The SDK routes the older
+    // method names and message shapes through its compat layer and answers in
+    // the shape the caller asked in — so an external peer that has not moved
+    // to v1.0 is not cut off by our upgrading. The cards advertise the v0.3
+    // interface to match (see `agent-card-generator.ts`); the SDK refuses a
+    // protocol version its card does not declare, so the two go together.
+    legacyCompat: { enabled: true },
+    contextBuilder,
   });
   const parseJson = express.json();
 
@@ -166,6 +243,9 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
     '/.well-known/agent-card.json (each skill id is an agent id).';
 
   const jsonRpc: RequestHandler = (req, res, next) => {
+    // Nothing is bound here — this endpoint answers for the whole fleet — and
+    // a client does not get to claim a binding by sending the header itself.
+    delete req.headers[BOUND_AGENT_HEADER];
     parseJson(req, res, (err?: unknown) => {
       if (err) {
         next(err);
@@ -192,6 +272,10 @@ export function createA2aHandlers(deps: A2aHandlerDeps): A2aHandlers {
       );
       return;
     }
+    // The URL is the binding, so it overwrites anything the caller sent. Every
+    // method on this endpoint is about this agent — messages are routed to it
+    // (below), and `ListTasks` is scoped to it (in the task store).
+    req.headers[BOUND_AGENT_HEADER] = agent.id;
     parseJson(req, res, (err?: unknown) => {
       if (err) {
         next(err);

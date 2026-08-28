@@ -149,11 +149,7 @@ export function persistedSectionId(id: SidebarSectionId): PersistedSectionId | n
  * gone (D1).
  */
 export type SidebarSectionId =
-  | LibrarySectionId
-  | 'now'
-  | 'today'
-  | 'getting-started'
-  | `group:${string}`;
+  LibrarySectionId | 'now' | 'today' | 'getting-started' | `group:${string}`;
 
 /** What kind of blockage put an item in Heads up. The only four that may (BC-5). */
 export type NowKind = 'permission-prompt' | 'question' | 'error' | 'schedule-approval';

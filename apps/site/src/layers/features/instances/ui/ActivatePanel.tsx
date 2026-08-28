@@ -25,6 +25,16 @@ type PanelState =
   | { phase: 'denied' }
   | { phase: 'error'; message: string };
 
+/** Looks up a trimmed user code and returns the resulting panel phase — no setState, so callers decide when to apply it. */
+async function resolvePendingCode(trimmedCode: string): Promise<PanelState> {
+  try {
+    const pending = await fetchPendingInstance(trimmedCode);
+    return { phase: 'resolved', pending };
+  } catch {
+    return { phase: 'error', message: 'We could not look up that code. Please try again.' };
+  }
+}
+
 /**
  * `/activate` device-approval panel (accounts-and-auth P2, task 2.3).
  *
@@ -38,7 +48,12 @@ type PanelState =
  */
 export function ActivatePanel({ initialCode }: { initialCode?: string }) {
   const [code, setCode] = useState((initialCode ?? '').toUpperCase());
-  const [state, setState] = useState<PanelState>({ phase: 'entry' });
+  // Starts in `loading` when a code arrived via `?code=`, so the auto-lookup
+  // effect below never has to set that phase itself — it only needs to
+  // resolve to `resolved`/`error` once the fetch settles.
+  const [state, setState] = useState<PanelState>(() =>
+    initialCode?.trim() ? { phase: 'loading' } : { phase: 'entry' }
+  );
   const [actionPending, setActionPending] = useState(false);
 
   const lookup = useCallback(async (userCode: string) => {
@@ -48,18 +63,23 @@ export function ActivatePanel({ initialCode }: { initialCode?: string }) {
       return;
     }
     setState({ phase: 'loading' });
-    try {
-      const pending = await fetchPendingInstance(trimmed);
-      setState({ phase: 'resolved', pending });
-    } catch {
-      setState({ phase: 'error', message: 'We could not look up that code. Please try again.' });
-    }
+    setState(await resolvePendingCode(trimmed));
   }, []);
 
   // Auto-look up a pre-filled code so a click-through from the instance lands
-  // directly on the approval prompt.
+  // directly on the approval prompt. Resolves independently of `lookup`
+  // (rather than calling it) since the initial `loading` phase is already
+  // set above, and this fetch's own setState only fires after it settles.
   useEffect(() => {
-    if (initialCode?.trim()) void lookup(initialCode);
+    const trimmed = initialCode?.trim();
+    if (!trimmed) return;
+    let cancelled = false;
+    void resolvePendingCode(trimmed).then((next) => {
+      if (!cancelled) setState(next);
+    });
+    return () => {
+      cancelled = true;
+    };
     // Only on first mount for the initial code.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

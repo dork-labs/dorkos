@@ -114,6 +114,7 @@ function makeAgent(
     registeredBy: 'test',
     enabledToolGroups: {},
     mcpServers: [],
+    workspace: { mode: 'home' as const },
     personaEnabled: true,
     projectPath: overrides.projectPath ?? '/projects/test',
     healthStatus: overrides.healthStatus ?? ('unreachable' as const),

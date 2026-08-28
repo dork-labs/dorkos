@@ -634,10 +634,10 @@ to `blocks`, which requires the `text` field as accessibility fallback.
 
 ### Feature: Streaming Toggle
 
-| Approach                                | Pros                         | Cons                        | Complexity   |
+| Approach | Pros | Cons | Complexity |
 | --------------------------------------- | ---------------------------- | --------------------------- | ------------ | ---------------------- | ------ |
-| Per-adapter config `streaming: boolean` | Clean, per-workspace control | No per-channel granularity  | Low          |
-| Per-binding config                      | Per-channel control          | Bloats binding schema       | Medium       |
+| Per-adapter config `streaming: boolean` | Clean, per-workspace control | No per-channel granularity | Low |
+| Per-binding config | Per-channel control | Bloats binding schema | Medium |
 | `streaming: 'on'                        | 'off'                        | 'auto'` with auto-detection | Future-proof | Auto rules are complex | Medium |
 
 **Recommended: Per-adapter `streaming: boolean` (default `true`).**

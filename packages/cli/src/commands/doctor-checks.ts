@@ -103,7 +103,7 @@ export function checkClaudeCli(): CheckResult {
   return {
     label: 'Claude Code CLI not found',
     status: 'warn',
-    detail: 'Agent sessions need the Claude Code CLI. The cockpit still opens without it.',
+    detail: 'Agent sessions need the Claude Code CLI. DorkOS still opens without it.',
     fix: `Install it, then sign in:\n  ${installCmd}`,
   };
 }
@@ -264,8 +264,7 @@ export function checkFileDescriptors(softLimit: number | null): CheckResult {
 export function readFileDescriptorLimit(): number | null {
   try {
     const report = process.report?.getReport() as
-      | { userLimits?: { open_files?: { soft?: unknown } } }
-      | undefined;
+      { userLimits?: { open_files?: { soft?: unknown } } } | undefined;
     const soft = report?.userLimits?.open_files?.soft;
     return typeof soft === 'number' && Number.isFinite(soft) ? soft : null;
   } catch {

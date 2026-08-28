@@ -58,7 +58,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/feedback-requests': 'Product feedback',
   '/marketplace': 'Marketplace',
   '/marketplace/sources': 'Marketplace sources',
-  '/tasks': 'Tasks',
+  '/tasks': 'Schedules',
   '/workspaces': 'Workspaces',
 };
 

@@ -4,12 +4,12 @@
  * @module shared/relay-adapter-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 import { ChannelTypeSchema } from './relay-envelope-schemas.js';
 import { PermissionModeSchema } from './schemas.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Adapter Configuration Schemas ===
 

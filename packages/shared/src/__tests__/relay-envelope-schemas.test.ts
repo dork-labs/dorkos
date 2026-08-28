@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { RelayFlowEventSchema, TaskDispatchPayloadSchema } from '../relay-schemas.js';
+import {
+  RelayFlowEventSchema,
+  TaskDispatchPayloadSchema,
+  isTaskDispatchSubject,
+  taskDispatchSubject,
+} from '../relay-schemas.js';
 
 // === Fixtures ===
 
@@ -90,5 +95,73 @@ describe('TaskDispatchPayloadSchema', () => {
       permissionMode: 'yolo',
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('isTaskDispatchSubject', () => {
+  it('accepts exactly one task dispatch subject', () => {
+    expect(isTaskDispatchSubject(taskDispatchSubject('01J8ZQ2K3M4N5P6Q7R8S9T0V'))).toBe(true);
+    expect(isTaskDispatchSubject('relay.system.tasks.sched-1')).toBe(true);
+  });
+
+  it('refuses every subject BENEATH a dispatch subject', () => {
+    // Purpose: the runtime adapter claims `relay.system.tasks.` as a prefix, so
+    // a bare startsWith read a run's own progress stream as a fresh dispatch.
+    // Every event failed to parse and dead-lettered — 279 from one live run
+    // (DOR-1567).
+    expect(isTaskDispatchSubject('relay.system.tasks.sched-1.response')).toBe(false);
+    expect(isTaskDispatchSubject('relay.system.tasks.sched-1.anything.else')).toBe(false);
+  });
+
+  it('refuses the prefix on its own and unrelated subjects', () => {
+    expect(isTaskDispatchSubject('relay.system.tasks.')).toBe(false);
+    expect(isTaskDispatchSubject('relay.system.other.sched-1')).toBe(false);
+    expect(isTaskDispatchSubject('relay.agent.session-abc')).toBe(false);
+  });
+});
+
+describe('TaskDispatchPayloadSchema systemPromptAppend', () => {
+  const base = {
+    type: 'task_dispatch' as const,
+    taskId: 'sched-1',
+    runId: 'run-1',
+    prompt: 'do the thing',
+    cwd: null,
+    permissionMode: 'acceptEdits' as const,
+    taskName: 'Nightly',
+    cron: '0 9 * * *',
+    trigger: 'schedule',
+  };
+
+  it('carries the unattended briefing when one is set', () => {
+    const result = TaskDispatchPayloadSchema.safeParse({
+      ...base,
+      systemPromptAppend: '=== TASK SCHEDULER CONTEXT ===',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.systemPromptAppend).toBe('=== TASK SCHEDULER CONTEXT ===');
+  });
+
+  it('still accepts an envelope written before the field existed', () => {
+    // Purpose: a dead-letter replay carries the old shape.
+    expect(TaskDispatchPayloadSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('carries a sticky session and its resume flag when set (DOR-1571)', () => {
+    const result = TaskDispatchPayloadSchema.safeParse({
+      ...base,
+      sessionId: 'sticky-sched-1',
+      resumeSession: true,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.sessionId).toBe('sticky-sched-1');
+    expect(result.data?.resumeSession).toBe(true);
+  });
+
+  it('leaves both absent on a non-sticky envelope (DOR-1571)', () => {
+    const result = TaskDispatchPayloadSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    expect(result.data?.sessionId).toBeUndefined();
+    expect(result.data?.resumeSession).toBeUndefined();
   });
 });

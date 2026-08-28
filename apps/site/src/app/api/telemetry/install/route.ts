@@ -9,13 +9,25 @@
  *
  * Privacy contract:
  *   - The validated `InstallEvent` shape is the **complete** set of fields the
- *     handler is allowed to persist. Request headers (IP, cookies, user agent)
- *     are intentionally never read or stored.
+ *     handler is allowed to persist. No request header — IP, cookies, user
+ *     agent — is ever stored, logged, or forwarded.
+ *   - The one header read is the client IP, taken by the per-IP throttle below
+ *     (DOR-1586) into a process-local counter that holds nothing but a count
+ *     and a timestamp. It never reaches the row, the logs, or anywhere off this
+ *     instance. See `lib/telemetry/install-rate-limit` and
+ *     `contributing/marketplace-telemetry.md` §7.
  *   - All three outcomes (`success`, `failure`, `cancelled`) are inserted —
  *     failures are debugging signal for the marketplace team.
  *   - Database errors are swallowed and logged so a transient outage cannot
  *     cause a client-side retry storm or block the install pipeline. The
  *     handler always responds `200 { ok: true }` once validation passes.
+ *
+ * Why throttle at all: install counts rank the public marketplace, so an
+ * unthrottled sink lets one loop mint `success` rows for whatever package it
+ * wants featured. The limit is deliberately loose, because a refused event is
+ * an install that never gets counted and legitimate callers share IPs (offices,
+ * CI, VPNs). The reporter in `apps/server` ignores the response entirely, so a
+ * `429` is silent to it and starts no retry.
  *
  * @module app/api/telemetry/install
  */
@@ -24,6 +36,7 @@ import { z } from 'zod';
 
 import { getDb } from '@/db/client';
 import { marketplaceInstallEvents } from '@/db/schema';
+import { consumeInstallTelemetryQuota } from '@/lib/telemetry/install-rate-limit';
 
 export const runtime = 'edge';
 
@@ -54,11 +67,21 @@ const InstallEventSchema = z.object({
 type InstallEvent = z.infer<typeof InstallEventSchema>;
 
 /**
- * Handle a telemetry POST. Returns `400` only on malformed JSON or schema
- * validation failure; all other paths (including database failures) return
- * `200` so the CLI never retries against a degraded backend.
+ * Handle a telemetry POST. Returns `429` when this IP is over its limit and
+ * `400` on malformed JSON or schema validation failure; all other paths
+ * (including database failures) return `200` so the CLI never retries against a
+ * degraded backend.
  */
 export async function POST(request: Request): Promise<Response> {
+  // Charged before the body is read: a flood is a flood whatever it carries.
+  const quota = consumeInstallTelemetryQuota(request);
+  if (!quota.allowed) {
+    return Response.json(
+      { error: 'Too many requests. Retry after the number of seconds in the Retry-After header.' },
+      { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

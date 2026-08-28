@@ -6,9 +6,8 @@
 
 ## 0. Blocking decisions (before the clock starts)
 
-- [x] 2026-07-06 — Founder-hours decision: the Vault "VP" role is symbolic (no role, no paperwork, no comp; Vault is unfunded/pre-revenue); founder is effectively full-time on DorkOS. Gate removed (`11` §6.5/§7).
+- [x] 2026-07-06 — Founder-hours decision: the AI Lab role is honorary and takes minimal time; founder is effectively full-time on DorkOS. Gate removed (`11` §6.5/§7).
 - [ ] Confirm launch-week target on the calendar (Show HN aimed at week of Aug 17) — by Jul 8
-- [ ] Ask Ikechi to soften the Vault blog before it leaves staging: drop or downgrade the "VP of Product" title (symbolic titles conflict with our honesty pillar and muddy vendor neutrality) and verify the "two-time exited founder" phrasing — by Jul 10
 
 ## Phase 0: Stabilize + instrument (Weeks 1-3, Jul 6-26)
 
@@ -23,7 +22,7 @@
 - [x] 2026-07-10 Install + first run, on a machine that isn't the dev machine — Jul 12 · **PASS** (DOR-234; dorkos@0.44.0, clean node:20 + node:22 containers) — but found DOR-245: npm package ships without `core-extensions/`, so the Marketplace tab is missing for every npm install; fix before launch
 - [x] 2026-07-10 Schedule a task end-to-end (fires, history, survives restart) — Jul 12 · **FAIL → FIXED same day** (DOR-235; DOR-248 + DOR-249 shipped in PR #199 with the end-to-end scenario re-verified: fire → completed → restart → history intact + next fire clean). DOR-242 (PR #198), DOR-245 (PR #200), DOR-250 (PR #201) also fixed same day; DOR-256 (packaged-CLI extension compile) fixed 2026-07-11 in PR #208 (esbuild promoted to runtime dep + external in the bundle; post-install-check now verifies compilation)
 - [~] Telegram notification end-to-end (bind → notify → reply routes) — Jul 12 · **code side complete; BLOCKED only on founder phone legs** (bot token + ~10-min checklist on DOR-236). Since first run: DOR-240 shipped auto notify-on-task-completion (PR #223, one-toggle), DOR-239 enforced canInitiate (PR #219), DOR-277 closed the relay_send consent bypass (PR #227). Reply routing + approval buttons already verified
-- [~] Tunnel / mobile (QR → phone cockpit → approve from phone) — Jul 12 · **code blocker cleared; BLOCKED only on founder ngrok token + phone** (DOR-237). DOR-242 fixed (PR #198: fresh-install sign-in works), DOR-244 fixed (PR #214: honest setup copy). Exposure guard + session gate verified correct
+- [~] Tunnel / mobile (QR → open it on your phone → approve from phone) — Jul 12 · **code blocker cleared; BLOCKED only on founder ngrok token + phone** (DOR-237). DOR-242 fixed (PR #198: fresh-install sign-in works), DOR-244 fixed (PR #214: honest setup copy). Exposure guard + session gate verified correct
 - [x] 2026-07-10 Runtime switching x3 + restart persistence — Jul 12 · **FAIL → re-run PASS 2026-07-11** (DOR-238 Done). All four regressions fixed and re-verified: DOR-189 (PR #202 durable event store), DOR-250 (PR #201 CLAUDE_CONFIG_DIR), DOR-251 (PR #216 stable opencode ids), DOR-202 (PR #215 no ghost sessions). Same ids + real transcripts survive restart on all three runtimes; codex turn-completion needs `codex login` on this machine (stale personal OAuth, not a product bug)
 - [ ] Obsidian plugin clean-vault test → **(GATE) Week-2 Path A/B decision recorded** — Jul 19 · _test run 2026-07-11 (DOR-269, live CDP-driven Obsidian 1.12.7): plugin failed to load (DOR-270 createRequire polyfill crash) + DOR-271 wrong ClaudeCodeRuntime args for 3 months. Both **fixed and merged** (PR #222, live CDP load proof: plugin mounts, no cache pollution). **Preliminary Path B stands only until the founder's 10-min hands-on on the fixed build** (checklist on DOR-269, test vault at ~/dorkos-obsidian-smoke-vault) records the final decision — FOUNDER ACTION_
 - [x] 2026-07-11 Multi-agent Mesh+Relay coordination smoke test — Jul 19 · **PASS after fix** (DOR-259): registration, real A→B delivery, truthful topology passed first run; budget enforcement failed (DOR-260: paid adapter dispatch skipped the gate) and was fixed same day in PR #210 with the exact repro re-verified live (budget 0 → zero turn activity). Per `09` §2.0 coordination stays a Script-3 story, not a launch claim; maxCallsPerHour enforcement deferred honestly as DOR-265
@@ -59,7 +58,7 @@
 ### Marketing surfaces, wave 1
 
 - [x] 2026-07-09 — GitHub repo description + topics fixed — Jul 8 (description per `06` tactic #1; swapped 4 stack topics for codex/opencode/orchestration/meta-harness at the 20-topic cap)
-- [x] 2026-07-11 README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 · positioning PR #156; 5-min path verified + fixed PR #224 (DOR-276): removed the ANTHROPIC_API_KEY footgun that broke Claude-Code-authed users, corrected the cross-project-sessions overclaim, added the alpha-status note + prerequisites; applied to repo + npm READMEs. Live walkthrough: cockpit reachable in seconds
+- [x] 2026-07-11 README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 · positioning PR #156; 5-min path verified + fixed PR #224 (DOR-276): removed the ANTHROPIC_API_KEY footgun that broke Claude-Code-authed users, corrected the cross-project-sessions overclaim, added the alpha-status note + prerequisites; applied to repo + npm READMEs. Live walkthrough: the app reachable in seconds
 - [x] 2026-07-06 — Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26 (PR #92)
 - [~] Social-profile coherence (X bio, org page, footer) — Jul 12 · **footer done** (PR #231: Pricing/Security/Privacy/Terms coherent, `/security` added to sitemap); **X bio + GitHub org copy drafted** for the founder (`meta/positioning-202607/12-founder-copy-draft.md`, nothing posted) — **FOUNDER ACTION: post the X bio + org description**
 - [ ] GitHub Sponsors live — Jul 12
@@ -73,7 +72,7 @@
 - [ ] Site fixes wave 2: prelude timing, scroll reveals, install scramble, GitHub-with-stars header, runtimes section (`07` §2-3) — Aug 2 (partial 2026-07-06 PR #92: prelude timing + scroll reveals + install scramble done, plain GitHub header link added w/o stars; still open: star-count header, runtimes section — both gated on verification per Decision 17)
 - [ ] Launch-enabling features (`09` §2.4): cost line — Jul 26 · Telegram reply-steering — Aug 2 · morning briefing view — Aug 9 · FTUE ritual polish — Aug 9 · fleet home screen v1 (or scoped fleet strip) — Aug 9
 - [ ] Tier-1 delight pack (7 easter eggs, `10` §4) — Aug 9
-- [ ] **Cut 0 "The Cockpit" (45s) filmed** → README GIF + interim hero — Jul 26
+- [ ] **Cut 0 "One Place" (45s) filmed** → README GIF + interim hero — Jul 26
 - [x] 2026-07-06 — Screenshot pipeline (Playwright) producing themed money shots — Aug 2 (PR #102, far beyond spec: two-phase record/process pipeline + raw media library + 34 real-UI assets + 9 polished loops + `capturing-product-media` skill; premium features catalog with bento layout shipped alongside)
 - [ ] Script 1 "2:47 AM" filmed in the cut the pillar tests earned (90s + 30s) — Aug 9
 - [ ] Marketplace seeded to ~20 packages — Aug 9

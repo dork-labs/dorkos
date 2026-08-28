@@ -12,7 +12,7 @@ import type { Locator, Page } from '@playwright/test';
  * selector reported itself as a timeout and read like flake. A real locator
  * fails saying what it could not find. It still waits out its timeout — what
  * changed is the diagnosis, not the speed: "waiting for
- * getByRole('option', { name: 'Tasks Scheduler' })" points at the missing
+ * getByRole('option', { name: 'Scheduled tasks' })" points at the missing
  * control, where the old failure pointed at a dialog that was never asked to
  * open.
  *
@@ -24,12 +24,12 @@ import type { Locator, Page } from '@playwright/test';
  *
  * The name is TYPED, never hunted for in the untyped list. Before anyone types,
  * ⌘K is only Continue / Recent / New (`design-decisions.md` §15) — Settings,
- * Tasks Scheduler and Connections are not rows on that first screen and never
+ * Scheduled tasks and Connections are not rows on that first screen and never
  * will be again. They come back on the first keystroke, which is exactly what
  * this does and exactly what a person now does.
  *
  * @param page - The page to drive.
- * @param item - Exact palette entry to pick, e.g. `Tasks Scheduler`. Doubles as
+ * @param item - Exact palette entry to pick, e.g. `Scheduled tasks`. Doubles as
  *   the query typed to bring it back, so it must be the label as rendered.
  */
 export async function openFromCommandPalette(page: Page, item: string): Promise<void> {
@@ -42,6 +42,21 @@ export async function openFromCommandPalette(page: Page, item: string): Promise<
   await search.fill(item);
   await page.getByRole('option', { name: item, exact: true }).first().click();
 }
+
+/**
+ * The identity ⌘K's message-search hand-off row gives cmdk.
+ *
+ * `PaletteSearchHandoffRow` sets `value="search-messages-handoff"` — a fixed
+ * string rather than the query, so the highlight survives typing — and cmdk
+ * writes that verbatim to the DOM as `data-value` (trimmed, never lowercased:
+ * `setAttribute(T, f)` in cmdk 1.1.1, where `T` is `"data-value"`).
+ *
+ * So the row is addressable by identity rather than by its copy. That matters
+ * beyond tidiness: the row draws the typed query back at you, so a text match
+ * would also claim a room genuinely titled "Search messages for fun", and would
+ * go stale the next time the sentence is reworded.
+ */
+const HANDOFF_VALUE = 'search-messages-handoff';
 
 /** The parts of the palette a spec drives, all scoped to its cmdk root. */
 export interface CommandPalette {
@@ -68,6 +83,24 @@ export interface CommandPalette {
    * never carried it.
    */
   archivedMarks: Locator;
+  /**
+   * ⌘K's last row — the hand-off to the surface that searches what was SAID
+   * rather than what things are called (P3 AC-6, DOR-685).
+   *
+   * By its cmdk identity, not its wording: see {@link HANDOFF_VALUE}.
+   */
+  searchHandoff: Locator;
+  /**
+   * The rows the ranking produced — every option except the hand-off.
+   *
+   * Anything a spec says about what ⌘K FOUND belongs here rather than on
+   * `options`, whether it counts rows or takes the `.first()` of them. The
+   * hand-off is not a result and it carries the query, so on `options` it pads
+   * every `filter({ hasText })` count by one and can satisfy a `.first()`
+   * anchor on its own — which would let "this query DID answer" pass on a run
+   * where nothing was actually found.
+   */
+  results: Locator;
 }
 
 /**
@@ -80,12 +113,21 @@ export interface CommandPalette {
  */
 function commandPalette(page: Page): CommandPalette {
   const root = page.locator('[cmdk-root]');
+  const options = root.getByRole('option');
   return {
     root,
     input: page.getByTestId('command-palette-input'),
-    options: root.getByRole('option'),
+    options,
     chip: page.getByTestId('palette-scope-chip'),
     archivedMarks: root.getByTestId('palette-archived-mark'),
+    searchHandoff: options.and(page.locator(`[data-value="${HANDOFF_VALUE}"]`)),
+    // Intersected with a `:not`, NOT `filter({ hasNot })`: `hasNot` asks whether
+    // an element CONTAINS a match, and the attribute is on the hand-off row
+    // itself rather than on anything inside it — so `hasNot` would keep the row
+    // it was written to drop. `and` narrows the same elements `options` already
+    // matched, so `results` stays the accessibility tree's list minus one row
+    // rather than a second, differently-computed list.
+    results: options.and(page.locator(`*:not([data-value="${HANDOFF_VALUE}"])`)),
   };
 }
 

@@ -70,12 +70,10 @@ describe('McpTokenRefresher — one refresh at a time', () => {
 
   it('starts a fresh refresh once the previous one has settled', async () => {
     const { refresher } = makeRefresher();
-    const attempt = vi.fn(
-      async (): Promise<RefreshAttemptOutcome> => ({
-        kind: 'ok',
-        token: token('fresh'),
-      })
-    );
+    const attempt = vi.fn(async (): Promise<RefreshAttemptOutcome> => ({
+      kind: 'ok',
+      token: token('fresh'),
+    }));
 
     await refresher.refresh(KEY, attempt);
     await refresher.refresh(KEY, attempt);
@@ -159,12 +157,10 @@ describe('withRequestTimeout', () => {
 describe('McpTokenRefresher — when to give up', () => {
   it('retries a transient failure with growing backoff before dropping the token', async () => {
     const { refresher, delays } = makeRefresher();
-    const attempt = vi.fn(
-      async (): Promise<RefreshAttemptOutcome> => ({
-        kind: 'transient',
-        reason: 'offline',
-      })
-    );
+    const attempt = vi.fn(async (): Promise<RefreshAttemptOutcome> => ({
+      kind: 'transient',
+      reason: 'offline',
+    }));
 
     // Exhausted, not refused — and the difference is load-bearing: only a
     // `terminal` verdict may cost the operator their STORED grant (DOR-981).
@@ -189,12 +185,10 @@ describe('McpTokenRefresher — when to give up', () => {
 
   it('does not retry a terminal verdict — a revoked grant will not un-revoke', async () => {
     const { refresher, delays } = makeRefresher();
-    const attempt = vi.fn(
-      async (): Promise<RefreshAttemptOutcome> => ({
-        kind: 'terminal',
-        reason: 'invalid_grant',
-      })
-    );
+    const attempt = vi.fn(async (): Promise<RefreshAttemptOutcome> => ({
+      kind: 'terminal',
+      reason: 'invalid_grant',
+    }));
 
     expect(await refresher.refresh(KEY, attempt)).toEqual({ token: null, kind: 'terminal' });
     // The discriminator against retrying everything: treating terminal as

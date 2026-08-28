@@ -7,6 +7,7 @@
  * @module a2a-gateway/types
  */
 import type { RelayCore } from '@dorkos/relay';
+import type { Logger } from '@dorkos/shared/logger';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 /** Configuration for Agent Card generation. */
@@ -44,4 +45,13 @@ export interface ExecutorDeps {
   relay: RelayCore;
   /** Agent registry (or MeshCore) for resolving target agents. */
   agentRegistry: AgentRegistryLike;
+  /**
+   * Where the executor reports what it could and could not stop.
+   *
+   * Optional, defaulting to `console`: a task the gateway gave up on and then
+   * failed to stop is the one outcome nobody sees on the wire — the caller has
+   * already been told the request timed out — so it has to be readable in the
+   * server log.
+   */
+  logger?: Logger;
 }

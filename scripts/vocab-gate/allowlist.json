@@ -42,7 +42,7 @@
       "reason": "The `mcp_add` tool description tells an agent to read `connection.authKind` off the entry the call returns. That is a literal property path on the shipped MCP-server-entry shape (`agent-mcp-server-service.ts` reads `existing.connection.authKind`), addressed to a machine that will parse it — not the network-health sense DOR-855 retires. Rewriting the word here would make the description name a field that does not exist, so this is allowlisted rather than reworded, exactly as openapi-registry.ts is for the same reason."
     },
     {
-      "path": "apps/server/src/services/runtimes/opencode/check-dependencies.ts",
+      "path": "apps/server/src/services/runtimes/opencode/providers/check-dependencies.ts",
       "terms": ["connection"],
       "reason": "\"Your saved {provider} connection didn't work\" reports a stale/invalid stored credential for a model provider — Connections-domain (an attached provider account), not a network-reachability reading."
     },

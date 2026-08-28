@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import {
   TaskSchedulerService,
@@ -23,6 +24,22 @@ import {
 
 /** The directory a proposing agent lives in — the key its identity is stored under. */
 const AGENT_PATH = '/tmp/agents/nightly-bot';
+
+/**
+ * The data directory this suite mounts its router on, and the prefix its
+ * `fs.readFile` mock treats as "a file the route just wrote".
+ *
+ * One constant because the two MUST agree. The mock answers a path under this
+ * prefix with empty content and every other path with ENOENT, and the update
+ * route reads those as two different worlds — "a file that is there" versus
+ * "a legacy row with no file" (DOR-1481). If the prefix and the `dorkHome`
+ * argument ever drifted apart, fixtures would quietly cross into the other
+ * branch and the tests would still pass, for the wrong reason.
+ *
+ * `vi.hoisted` because the `vi.mock` factories below are hoisted above ordinary
+ * module scope and could not otherwise see it.
+ */
+const DORK_HOME = vi.hoisted(() => '/tmp/dork-test');
 
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -49,7 +66,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({
-  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  writeSkillFile: vi.fn().mockResolvedValue(`${DORK_HOME}/tasks/test/SKILL.md`),
   deleteSkillDir: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -64,7 +81,18 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     default: {
       ...(actual.default as Record<string, unknown>),
       access: vi.fn().mockRejectedValue(new Error('ENOENT')),
-      readFile: vi.fn().mockResolvedValue(''),
+      // A path the POST path just "wrote" reads back empty; every other path is
+      // a row fixture with no file behind it, and the honest answer for those is
+      // ENOENT. The update route now tells that apart from a file it cannot read
+      // or parse, and only ENOENT means "legacy DB-only task, edit the row alone"
+      // (DOR-1481) — so a blanket empty read would make every fixture here look
+      // like a file whose contents are unparseable garbage.
+      readFile: vi.fn().mockImplementation(async (p: string) => {
+        if (typeof p === 'string' && p.startsWith(`${DORK_HOME}/`)) return '';
+        throw Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), {
+          code: 'ENOENT',
+        });
+      }),
     },
   };
 });
@@ -83,6 +111,7 @@ function taskInput(
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -142,7 +171,10 @@ describe('Tasks routes', () => {
     scheduler = createMockScheduler();
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    );
     // Error handler to surface errors instead of hanging
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -641,7 +673,6 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -649,7 +680,10 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     });
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    );
   });
 
   afterEach(() => {

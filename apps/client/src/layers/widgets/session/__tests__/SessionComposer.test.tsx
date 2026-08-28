@@ -134,8 +134,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 // assert the container hides the extras rather than greying them.
 const mockCapabilities = vi.hoisted(() => ({
   value: { supportsSteer: true, supportsContextStaging: true } as
-    | { supportsSteer: boolean; supportsContextStaging: boolean }
-    | undefined,
+    { supportsSteer: boolean; supportsContextStaging: boolean } | undefined,
 }));
 vi.mock('@/layers/entities/runtime', () => ({
   useCapabilitiesForRuntime: () => mockCapabilities.value,

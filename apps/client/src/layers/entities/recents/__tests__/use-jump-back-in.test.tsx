@@ -32,7 +32,6 @@ const channel = (id: string, slug: string, lastActivityAt: string): RoomSummary 
   slug,
   title: slug,
   topic: null,
-  workspaceId: null,
   archived: false,
   ambientMaxEntries: 30,
   // Deliberately EARLIER than `lastActivityAt`: a room whose two timestamps are

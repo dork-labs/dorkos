@@ -35,20 +35,20 @@ Slack does not support Markdown tables — not in `mrkdwn` and not in `text` fie
 
 Slack's `mrkdwn` is a non-standard Markdown dialect. It supports:
 
-| Format          | Standard Markdown    | Slack mrkdwn                   |
+| Format | Standard Markdown | Slack mrkdwn |
 | --------------- | -------------------- | ------------------------------ | --- | --- | ----------------- |
-| Bold            | `**text**`           | `*text*`                       |
-| Italic          | `_text_` or `*text*` | `_text_`                       |
-| Strikethrough   | `~~text~~`           | `~text~`                       |
-| Inline code     | `` `code` ``         | `` `code` ``                   |
-| Code block      | ` ```code``` `       | ` ```code``` `                 |
-| Hyperlink       | `[text](url)`        | `<url\|text>`                  |
-| User mention    | N/A                  | `<@U123456>`                   |
-| Channel mention | N/A                  | `<#C123456>`                   |
-| Ordered list    | `1. item`            | Not supported in `text` fields |
-| Unordered list  | `- item`             | Not supported in `text` fields |
-| Tables          | `                    | col                            | col | `   | **Not supported** |
-| Blockquote      | `> text`             | Not supported in `text` fields |
+| Bold | `**text**` | `*text*` |
+| Italic | `_text_` or `*text*` | `_text_` |
+| Strikethrough | `~~text~~` | `~text~` |
+| Inline code | `` `code` `` | `` `code` `` |
+| Code block | ` ```code``` ` | ` ```code``` ` |
+| Hyperlink | `[text](url)` | `<url\|text>` |
+| User mention | N/A | `<@U123456>` |
+| Channel mention | N/A | `<#C123456>` |
+| Ordered list | `1. item` | Not supported in `text` fields |
+| Unordered list | `- item` | Not supported in `text` fields |
+| Tables | `                   | col                            | col |` | **Not supported** |
+| Blockquote | `> text` | Not supported in `text` fields |
 
 Lists and blockquotes are supported only in **Block Kit `rich_text` blocks** — not in plain `mrkdwn` text fields.
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RuntimeProvisionResult } from '@dorkos/shared/transport';
 
 // Mock the provisioning services — never run a real install through the route.
-vi.mock('../../services/runtimes/opencode/provision.js', () => ({
+vi.mock('../../services/runtimes/opencode/providers/provision.js', () => ({
   provisionOpenCode: vi.fn(),
 }));
 
@@ -14,7 +14,7 @@ vi.mock('../../services/runtimes/claude-code/tooling/provision.js', () => ({
   provisionClaudeCode: vi.fn(),
 }));
 
-vi.mock('../../services/runtimes/opencode/ollama-provision.js', () => ({
+vi.mock('../../services/runtimes/opencode/providers/ollama-provision.js', () => ({
   provisionOllama: vi.fn(),
   detectOllamaInstallMethod: vi.fn().mockResolvedValue('manual'),
 }));
@@ -33,10 +33,10 @@ import express from 'express';
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import runtimesRouter from '../runtimes.js';
-import { provisionOpenCode } from '../../services/runtimes/opencode/provision.js';
+import { provisionOpenCode } from '../../services/runtimes/opencode/providers/provision.js';
 import { provisionCodex } from '../../services/runtimes/codex/provision.js';
 import { provisionClaudeCode } from '../../services/runtimes/claude-code/tooling/provision.js';
-import { provisionOllama } from '../../services/runtimes/opencode/ollama-provision.js';
+import { provisionOllama } from '../../services/runtimes/opencode/providers/ollama-provision.js';
 
 const app = createApp();
 

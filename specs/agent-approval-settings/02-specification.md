@@ -189,8 +189,7 @@ The grant is resolved **before** the `act` early-return rather than after, becau
 
 ```ts
 export type GrantedApproval =
-  | { via: 'approval'; approvalId: string }
-  | { via: 'standing-grant'; grantId: string };
+  { via: 'approval'; approvalId: string } | { via: 'standing-grant'; grantId: string };
 ```
 
 Its two consumers both survive the change, but neither is quite "unaffected", so state each:

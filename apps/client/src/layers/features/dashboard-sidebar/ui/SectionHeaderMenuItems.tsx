@@ -37,13 +37,7 @@ import { displayFilterNode } from './DisplayFilterMenu';
  * menus (spec `rooms` §14.1).
  */
 export type SectionHeaderActionId =
-  | 'mark-all-read'
-  | 'collapse'
-  | 'rename'
-  | 'mute'
-  | 'edit-rules'
-  | 'convert-to-manual'
-  | 'delete';
+  'mark-all-read' | 'collapse' | 'rename' | 'mute' | 'edit-rules' | 'convert-to-manual' | 'delete';
 
 /** One thing you can do to a whole section — the shared action node, with this family's ids. */
 export type SectionHeaderAction = Omit<SidebarMenuActionNode, 'id'> & { id: SectionHeaderActionId };
@@ -60,8 +54,7 @@ export type SectionHeaderAction = Omit<SidebarMenuActionNode, 'id'> & { id: Sect
  * them (spec `rooms` §14.1).
  */
 export type SectionHeaderMenuNode =
-  | SectionHeaderAction
-  | Exclude<SidebarMenuNode, SidebarMenuActionNode>;
+  SectionHeaderAction | Exclude<SidebarMenuNode, SidebarMenuActionNode>;
 
 /**
  * **No header below makes anything.** Every "New …" these menus used to carry

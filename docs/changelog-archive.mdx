@@ -1,9 +1,93 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.53.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.55.0), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.55.0] - 2026-07-22
+
+> Smart groups keep a fleet of agents organized, a new connectors foundation brings outside services into your agents, and first-run setup gets shorter and more honest.
+
+### Added
+
+- The file tree now remembers where you were. Open a file, switch panel tabs, or reload the page, and the Files panel comes back exactly as you left it — the same folders open, the same file highlighted, scrolled to the same place. Each working directory keeps its own spot, so moving between projects picks up right where each one was (DOR-404).
+- Give each agent group its own "Show" filter (All, Active, or Needs attention), so a busy fleet collapses to just the agents actually waiting on you. Agents that have been quiet for a week tuck themselves behind an honest "N inactive agents" count instead of cluttering the list; click it to see them. (DOR-339)
+- Mute a noisy agent or an entire group from its right-click menu. A muted agent dims, drops its activity badge, and never lights up a group's activity dot, but it always stays in place and clickable. Unmuting a group restores each member's own mute setting. (DOR-339)
+- Sessions that were not you talking to the agent directly (an automated scheduled run, another agent messaging in, or a message that came through Slack or Telegram) now show a small, quiet icon so you can tell them apart from your own conversations.
+- Your own recent conversations show first in the sidebar. A quiet "+ N automated" line lets you reveal the rest when you want to see them.
+- Opening a session shows the same information at the top of the chat, so you always know where it came from.
+- Build a sidebar group that fills itself in: pick "Active now" or "By runtime · Codex" from the "+" menu, or write your own rule (runtime, namespace, status, how recently active, folder path), and DorkOS keeps the group's members current on its own as agents start work, go idle, or switch projects. Only shows up once you're running 8+ agents or 2+ runtimes, so a small fleet's sidebar looks exactly like it did before. (DOR-338)
+- A smart group always tells you what it's showing: a plain-English rule summary in its menu, and an honest "No agents match these rules" instead of vanishing when nothing qualifies. You can't drag an agent into one, dropping on it shows a reminder to edit the rule instead, and matching agents still show up in their usual group too. (DOR-338)
+- Change your mind any time: "Edit rules" reopens the same rule form, and "Convert to manual group" freezes today's members into a regular group you manage by hand. (DOR-338)
+- Agents now know who they're talking to on Telegram and Slack: the sender's name and the chat title ride along with each incoming message. Session lists and headers show it too — "Telegram · Dorian" or "Slack · #incidents" instead of just the platform name.
+- `dorkos package init` now takes `--categories`, so new packages start with the right marketplace categories instead of an empty list. (DOR-373)
+- Sort the Marketplace by Popular again: packages now show real community install counts, and the sort orders the most-installed first. When you are offline, the Popular option grays out instead of quietly doing nothing.
+- Install the Codex CLI for you with one click. When Codex is set up but not yet on your machine, DorkOS can download it for you and turn the check green, the same way it already handles OpenCode.
+- Sort the Marketplace by Recent again: the sort now orders packages by when they were last updated, read from the registry's real change history, so the most recently touched packages come first. When you are offline, the Recent option grays out instead of quietly doing nothing.
+- New connector setup guides you can read before you turn anything on. They show how to connect a service like Gmail through Composio, or point at your own tool server, and each one says in plain words where your login is kept. Connectors are still in alpha (DOR-371).
+
+### Changed
+
+- Reading an agent's Relay inbox now shows only its real, deliverable messages by default. Before, a message the budget gate rejected could show up right next to real ones, with nothing telling a script apart. Pass `?status=failed` to see rejected messages, or `?status=all` to see everything. (DOR-337)
+- Coming back to the Files panel is now instant: folders you've already opened reappear straight away instead of loading again.
+- Refresh now reloads every folder you have open, not just the top level — so a file added deep in the tree shows up the moment you hit Refresh (DOR-404).
+- The show-hidden-files choice now sticks across a page reload, not only a tab switch.
+- The Shape switcher tidies up after itself: when it takes you to a new agent, it steps aside instead of leaving a dead panel over the view, and it drops the extra "Open" button for the place you're already standing in. "Set up agent" now starts pre-filled from the Shape's own template. (DOR-378)
+- The attention badge now updates the moment a run fails or a message bounces, instead of waiting up to 30 seconds for the next check. When the system notices an agent has gone offline, the badge reflects that right away too.
+- Setup during onboarding now lets you get started the moment one coding agent is ready, instead of waiting until every runtime is connected. If Claude Code is set up, you'll see "You're ready" and a single "Get started" button, with the other agents tucked into a quiet "more agents available" section you can open anytime (or skip and add later from the status bar).
+- Connecting an agent now does the work for you. Instead of copying terminal commands, you sign in right in the app or install an agent with one click. A small line under each button always tells you exactly what runs on your machine, so nothing happens behind your back.
+- If no agent is set up yet, onboarding leads with a warm "Connect your first agent" step instead of a wall of red errors. The moment you connect one, it flips straight to the ready screen.
+- The setup screen now scrolls on short windows and phones, so the connect cards and buttons are always reachable.
+- The Obsidian panel now opens the same Inspector side panel as the web app. It holds Pulse, your agent's profile, and the file tree in one place, and slides in as an overlay so it fits the narrow panel. The terminal tab shows only where it's supported, so it stays hidden in Obsidian.
+- First-run setup is shorter and more honest. It only shows the "import your projects" step when there is actually something on your machine to import, and it drops the separate task-scheduling step (you can still set up scheduled tasks any time from the Tasks page). Once you finish, DorkOS remembers, so setup never pops back up after a refresh. The finish screen now celebrates only what you actually did, with no list of skipped steps. A new "Getting started" card in the sidebar links straight to creating an agent, scheduling a task, or adding more agents. Changed your mind? "Replay setup" in Settings walks you through it again.
+
+### Fixed
+
+- Relay pulses in the mesh topology view no longer pile up when you're zoomed out or have reduced motion on, then burst out all at once the moment you zoom back in. Pulses that can't be shown are dropped right away instead of queuing up for a later flurry. (DOR-342)
+- The mesh network map no longer lists an agent's teammates as if they were external connections (Slack, webhooks, and so on). With two or more agents in the same project, the map used to show each agent's siblings as "adapters" by mistake.
+- The network map now shows the access rules that actually protect your projects from each other, not just the ones you added by hand. Before, the map said there were no rules at all, even though agents in different projects were already blocked from talking to each other by default.
+- Session lists no longer show noise rows: sessions with no conversation in them (like "Session 3f2a…") and agents' internal helper transcripts are now hidden. Opening one directly by its link still works.
+- Selection reveal no longer fights scroll restore on remount (DOR-404).
+- Local folder marketplace sources now work with the standard Claude Code layout, where marketplace.json lives in a .claude-plugin folder.
+- Installing a Shape through the API or an agent tool now tells you when your project choice was ignored: Shapes always install for all projects.
+- Agents checking their relay inbox now see only messages waiting for them by default, even when they poll through the built-in `relay_inbox` tool instead of the HTTP endpoint. Before, that tool showed everything, so a message the budget gate rejected could sit right next to real ones with nothing telling them apart. Pass `status: "failed"` to see rejected messages, or `status: "all"` to see everything. (DOR-406)
+- The setup screen no longer shows the same command twice. Each check now gives its own step: one line to install the CLI, a separate line to sign in. Before, a machine that had the CLI but wasn't signed in showed the full "install and sign in" command in both places for Codex and OpenCode.
+- The connector recommendation flow no longer hangs when a provider is unresponsive: it bounds the wait and surfaces a warning instead of stalling silently. (DOR-371)
+- In first-run setup, pressing Enter while typing in a connect field no longer skips you ahead to the next step before you're done.
+- DorkBot setup works when DorkOS is limited to a workspace folder. When you run DorkOS with agents scoped to a single folder (for example the Docker setup that pins agents to `/workspace`), the "Meet DorkBot" step no longer fails with an access-denied error. DorkOS's own agents — DorkBot and anything you install from the Marketplace — live in DorkOS's data folder, and agent actions now treat that folder as always allowed. Reading and writing your own project files stays limited to the folder you chose.
+
+## [0.54.0] - 2026-07-21
+
+### Added
+
+- A single global banner slot now shows the app's notices just below the header, one at a time — banners take turns by priority (a queue), never a pile. (#367)
+- Extension authors can now scaffold a right-panel tab in one step: `create_extension` offers a `right-panel-tab` template that ships a labelled inspector tab with its own icon. The authoring guide and the built-in extension API reference now document the tab `label` and `icon` options, so a tab can carry a real name and glyph instead of the default puzzle-piece. (#368)
+- After you install a Shape, you can apply it straight away — the "Installed" toast now has an Apply button, and every Shape in your installed list has one too. Both open the Shape switcher, where the change actually happens. (#372)
+- Your installed list now shows an "Active" badge on the Shape you're currently in, so you can tell at a glance which one is running. (#372)
+- When a Shape offers you an agent, the switcher now spells out that agent's schedule in plain words (like "Every weekday at 9:00 AM") instead of leaving it unsaid. (#372)
+- Right after you create an agent, its first chat now shows the newborn agent waking up — its face and name, with a soft pulse — instead of a generic empty screen. The moment it says hello, the greeting takes over. (#374)
+- The right-panel button now keeps a running count of what needs your attention — the same items Pulse surfaces, like stalled sessions and failed runs — and updates it while the panel is closed, so you notice without opening anything. No items, no badge.
+
+### Changed
+
+- That notice leads with a plain one-line summary and tucks the exact data it sends behind a "See what's sent" link — there when you want the details, out of the way when you don't. The same "See what's sent" control now shows the payload in onboarding and in Privacy & Data too, so it reads the same everywhere. (#367)
+- Pulse's Activity feed now updates the moment something happens, off the live event stream instead of waiting on a timer.
+- When the panel is showing only one thing, its header now names that tab (icon + title) instead of sitting there blank.
+- Pulse hides a "View all" link when you're already on the page it points to — no more clicking a link that goes nowhere.
+- Switching from one Shape to another now turns off the previous Shape's extensions (unless the Shape you're switching to also uses them), instead of leaving every Shape's extensions piled on. Uninstalling the Shape you're currently in also turns its extensions back off. (#369)
+
+### Fixed
+
+- The "we share a little anonymous data" notice no longer hides behind the sidebar or shoves the app header down the screen. It now sits in its own row just under the header, where you can actually read it. (#367)
+- When a newborn agent can't say hello — the opening greeting never arrives, or stops halfway through — it now tells you plainly ("couldn't say hello just now — send a message to get started") instead of leaving you on the generic "Start a conversation" screen.
+- Three cockpit papercuts, one per surface: real Marketplace names (with a matching A–Z sort), Cmd+. and Cmd+Shift+A handed back to Obsidian, and the arrival card's emoji face.
+- Marketplace cards, dialogs, and messages now show each package's real name instead of its code-style ID — you see "Security Scanner", not "security-scanner". This covers the browse cards, the install and detail windows, the installed list, and the install, update, and uninstall messages, and the "A–Z" sort now orders by those same names.
+- In Obsidian, two keyboard shortcuts that did nothing there — Cmd+. and Cmd+Shift+A — no longer swallow those keys, so they stay free for Obsidian to use.
+- The "Meet your new agent" card now shows the agent's emoji face — the same one you pick in the picker and see in the live preview — instead of just the first letter of its name.
+- Fixed a case where a Shape's scheduled task — created while its agent didn't exist yet — would never switch on after you added the agent, if the task's name wasn't already lowercase-with-dashes. It now links up and starts running as intended. (#372)
+- Uninstalling a Shape now removes the scheduled tasks it created. Before, those schedules kept firing forever after the Shape was gone, with no trace in the app to find or stop them. (#369)
+- Updating a Shape now cleans up any scheduled tasks the new version dropped or renamed, so an old task can't keep running next to its replacement. (#369)
 
 ## [0.53.0] - 2026-07-20
 

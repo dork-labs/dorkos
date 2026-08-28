@@ -61,8 +61,7 @@ const CLAUDE_BIN = process.platform === 'win32' ? 'claude.exe' : 'claude';
  */
 function isMuslLinux(): boolean {
   const report = process.report?.getReport() as
-    | { header?: { glibcVersionRuntime?: string } }
-    | undefined;
+    { header?: { glibcVersionRuntime?: string } } | undefined;
   if (!report) return false;
   return report.header?.glibcVersionRuntime === undefined;
 }

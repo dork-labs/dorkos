@@ -321,6 +321,58 @@ export interface RuntimeConformanceOpts {
    * wiring {@link userLastMessageAtSession}.
    */
   userLastMessageAtOmittedReason?: string;
+  /**
+   * Drives TWO turns on ONE session with two DIFFERENT
+   * {@link MessageOpts.systemPromptAppend} values, and reports what the backend
+   * was handed each time — the gate behind `project-rooms` §3.3.
+   *
+   * **What it must return is the BACKEND's input, never the caller's.** Each
+   * element is everything the adapter handed its backend for that turn on
+   * whatever channel it delivers the append through: the SDK launch options for
+   * claude-code, the composed prompt for codex, the synthetic part for
+   * opencode. A driver that echoed the string it was given back would assert
+   * only that the suite can pass an argument.
+   *
+   * **The second turn is the whole point.** A room's conventions change when a
+   * merge lands, and the block that carries them has to reach the NEXT turn of
+   * a conversation that is already running — including one whose process is
+   * still warm. A runtime that binds the append at session start and rides it
+   * afterwards fails this case, and the caller has to deliver the block some
+   * other way (a tagged `additionalContext` entry) rather than believe a seam
+   * that quietly stopped moving.
+   *
+   * Wire this, or declare {@link systemPromptAppendUnprovenReason}. A runtime
+   * that supplies neither fails the case rather than skipping it, for the same
+   * reason `userLastMessageAt` does: "nobody decided" is not one of the two
+   * honest answers.
+   *
+   * @param runtime - The runtime under test.
+   * @param sessionId - The session BOTH turns run on.
+   * @param appends - The append for turn one, then the append for turn two.
+   * @returns What the backend received for turn one, then for turn two.
+   */
+  systemPromptAppendTurns?: (
+    runtime: AgentRuntime,
+    sessionId: string,
+    appends: readonly [string, string]
+  ) => Promise<readonly [string, string]>;
+  /**
+   * Why this suite cannot see what this runtime's backend was handed, in a
+   * sentence somebody wrote — required rather than a boolean for the same
+   * reason as {@link autonomyDefaultReason}, and whitespace declares nothing.
+   *
+   * Two legitimate uses, and they are different claims. `test-mode` answers
+   * from a scripted fixture and has no model to give a system prompt to at
+   * all. A LIVE-binary smoke run has a model but no seam to read its input
+   * off, so the same suite that proves the property in mocked mode cannot
+   * prove it there. Both are "unproven here", which is what the field says —
+   * neither is a claim that the append is dropped.
+   *
+   * A production runtime declaring this in its MOCKED run is telling you a
+   * caller's per-run instructions may be silently dropped on it, with nothing
+   * in the suite that would notice.
+   */
+  systemPromptAppendUnprovenReason?: string;
 }
 
 /**
@@ -902,6 +954,8 @@ export function runtimeConformance(
     sessionListSilentReason,
     userLastMessageAtSession,
     userLastMessageAtOmittedReason,
+    systemPromptAppendTurns,
+    systemPromptAppendUnprovenReason,
   } = opts;
 
   /**
@@ -1922,8 +1976,7 @@ export function runtimeConformance(
         // Runtime values can drift from the compile-time type via casts, so the
         // permission-modes contract is re-asserted structurally.
         const modes = capabilities.permissionModes as
-          | RuntimeCapabilities['permissionModes']
-          | undefined;
+          RuntimeCapabilities['permissionModes'] | undefined;
         expect(modes, 'capabilities.permissionModes is required').toBeDefined();
         expect(typeof modes!.supported).toBe('boolean');
         expect(Array.isArray(modes!.values)).toBe(true);
@@ -2466,6 +2519,64 @@ export function runtimeConformance(
           ).rejects.toThrow();
         }
       });
+    });
+
+    describe('systemPromptAppend delivery (project-rooms §3.3)', () => {
+      it('either proves a changed append is delivered or says why it cannot be proven here', () => {
+        if (systemPromptAppendTurns) {
+          expect(
+            (systemPromptAppendUnprovenReason ?? '').trim(),
+            'this run wired `systemPromptAppendTurns`, so the property IS provable here and a reason it is not would be dead copy'
+          ).toBe('');
+          return;
+        }
+        expect(
+          (systemPromptAppendUnprovenReason ?? '').trim().length,
+          'this run wired no `systemPromptAppendTurns` driver and gave no reason it could not, so nothing here proves a caller’s per-run instructions reach the model at all (see RuntimeConformanceOpts.systemPromptAppendTurns)'
+        ).toBeGreaterThan(0);
+      });
+
+      if (systemPromptAppendTurns) {
+        it('a CHANGED append reaches the next turn of a session already running', async () => {
+          // Distinct, unguessable markers rather than prose: the second turn's
+          // input has to be checked for the ABSENCE of the first append too, and
+          // two English sentences can share enough substrings to make that check
+          // pass by accident.
+          const first = `<dorkos_conformance_append_one/> the append this session started under`;
+          const second = `<dorkos_conformance_append_two/> the append a later change asked for`;
+
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          const [firstDelivered, secondDelivered] = await systemPromptAppendTurns(
+            runtime,
+            sessionId,
+            [first, second]
+          );
+
+          expect(
+            firstDelivered,
+            'the first turn’s backend input did not carry its append'
+          ).toContain(first);
+          expect(
+            firstDelivered,
+            'the first turn’s backend input carried an append that had not been asked for yet'
+          ).not.toContain('<dorkos_conformance_append_two/>');
+          // THE GATE. A runtime that binds its append at session start and rides
+          // it afterwards fails exactly here, and it has to: a room's conventions
+          // change when a merge lands, and a block that only ever reaches the
+          // first turn is a block nobody will notice has gone stale.
+          expect(
+            secondDelivered,
+            'the changed append never reached the second turn — this runtime binds it at session start, so a caller whose instructions change mid-conversation is talking to a model that cannot hear the change'
+          ).toContain(second);
+          expect(
+            secondDelivered,
+            'the second turn’s backend input still carried the append the session started under'
+          ).not.toContain('<dorkos_conformance_append_one/>');
+        });
+      }
     });
 
     describe('dependencies', () => {

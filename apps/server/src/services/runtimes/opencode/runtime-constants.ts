@@ -168,16 +168,26 @@ export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
  * instead of recognising any particular page size (`assertLimitHonoured` in
  * `session-mapper.ts`).
  *
- * 1000 is high enough that no real project reaches it — the busiest measured
- * here holds 49 — while still bounding the work one listing can ask of the
- * sidecar inside the 2s per-runtime aggregation budget
- * (`aggregate-session-list.ts`).
+ * **Raised 1000 → 5000 for DOR-674**, because the budget stopped being a
+ * per-project number. The read is now widened with `scope=project` so sessions
+ * in a project's SUBFOLDERS are visible, and on the pinned sidecar every
+ * worktree reports `projectID: "global"`, which makes that read effectively
+ * machine-wide (NOTES.md §8). At 1000 a machine holding a thousand OpenCode
+ * sessions across all its projects would degrade EVERY project's OpenCode list
+ * to a warning — a cliff the old per-project 1000 could not reach, since the
+ * busiest project measured here holds 49.
+ *
+ * 5000 costs nothing worth counting: a 5001-row page measures 1.34 MB and
+ * 2.2 ms to parse, filter and map (10,000 rows: 2.69 MB, 4.3 ms) against the 2s
+ * per-runtime aggregation budget (`aggregate-session-list.ts`), and it travels
+ * over loopback from a sidecar on the same machine. The ceiling exists to bound
+ * an unbounded read, not because the rows are expensive.
  *
  * The adapter requests one MORE than this and treats only a genuine overflow
- * as truncation, so a project holding exactly this many is served normally
+ * as truncation, so a machine holding exactly this many is served normally
  * rather than rejected — see `listSessions` in `session-mapper.ts`.
  */
-export const SESSION_LIST_LIMIT = 1000;
+export const SESSION_LIST_LIMIT = 5000;
 
 /**
  * The same ceiling for the id-binding rebuild in `getMessageHistory`, which

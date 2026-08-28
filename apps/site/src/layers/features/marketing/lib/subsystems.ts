@@ -1,7 +1,7 @@
 export interface Subsystem {
   id: string;
   name: string;
-  /** One-line, user-facing benefit — shown in the PivotSection reveal grid and llms.txt. */
+  /** One-line, user-facing benefit — published in llms.txt. */
   benefit: string;
 }
 

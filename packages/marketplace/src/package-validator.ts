@@ -91,6 +91,29 @@ const SKILL_SOURCE_DIRS = [
 ] as const;
 
 /**
+ * Where a `schedules[].skillRef` may resolve to a shipped skill.
+ *
+ * A deliberate SUBSET of {@link SKILL_SOURCE_DIRS}: the two task directories are
+ * excluded, because a task directory is the legacy home for scheduled tasks and
+ * a schedule pointing INTO one is the arrangement this whole slot replaces.
+ *
+ * The list must stay identical to the installer's resolver
+ * (`SKILL_SEARCH_DIRS` in
+ * `apps/server/src/services/marketplace/lib/validate-package-schedules.ts`),
+ * which is why it is its own constant rather than a reuse of the broader list.
+ * Reusing that one made publish-time accept a `tasks/`-only skill the installer
+ * would then fail to find — a package that validated clean and produced a
+ * schedule that never materialized, with the failure surfacing to the installing
+ * person rather than to the author who could fix it.
+ */
+const SCHEDULE_SKILL_SOURCE_DIRS = [
+  'skills',
+  '.claude/skills',
+  'commands',
+  '.claude/commands',
+] as const;
+
+/**
  * Permissive frontmatter schema used when scanning bundled SKILL.md files.
  *
  * The package validator only cares about structural integrity — it should
@@ -238,8 +261,131 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
   //    that gate, never carried by the package.
   await checkPackagedMcpServers(packagePath, issues);
 
+  // 8. Declared schedules that point at nothing.
+  await checkScheduleSkillRefs(packagePath, manifest, issues);
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest };
+}
+
+/**
+ * Reject a `schedules[].skillRef` that names a skill the package does not ship.
+ *
+ * This is the publish-time half of the schedule gate, and it is here rather than
+ * only on the server so an author hears it while they still have the manifest
+ * open — `dorkos package validate` runs this, and a broken reference caught then
+ * never reaches anybody's install. The server repeats the check at install
+ * (`services/marketplace/lib/validate-package-schedules.ts`) because a package
+ * can arrive from a source that never ran the validator.
+ *
+ * Deliberately NOT extended to cron validity, which is the other half. Deciding
+ * whether a cron expression means anything is croner's question, and croner is a
+ * server dependency this package will not take on: it is browser-safe (both
+ * `apps/client` and `apps/site` import its manifest schema) and holds its
+ * dependency list to zod plus `@dorkos/skills`. A hand-rolled cron grammar here
+ * would be worse than the gap — a second acceptance set that agrees with croner
+ * today and drifts the first time either widens, producing a package this
+ * validator passed and the installer then refuses. The structural half is
+ * checkable here, so it is checked here; the semantic half is checked at the one
+ * seam that can ask the real question.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param manifest - The parsed manifest.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkScheduleSkillRefs(
+  packagePath: string,
+  manifest: MarketplacePackageManifest,
+  issues: ValidationIssue[]
+): Promise<void> {
+  // `adapter` has no schedules slot; anything else may arrive without the key
+  // when it was not produced by a parse.
+  if (manifest.type === 'adapter') return;
+  const schedules = manifest.schedules;
+  if (!Array.isArray(schedules)) return;
+
+  for (const schedule of schedules) {
+    const skillRef = schedule.skillRef;
+    if (typeof skillRef !== 'string' || skillRef === '') continue;
+
+    const found = await packageShipsSkill(packagePath, skillRef);
+    if (!found) {
+      issues.push({
+        level: 'error',
+        code: 'SCHEDULE_SKILL_MISSING',
+        message:
+          `Schedule references the skill '${skillRef}', which this package does not ship. ` +
+          `Add skills/${skillRef}/SKILL.md, or describe the work inline with name, ` +
+          `description and prompt.`,
+        path: PACKAGE_MANIFEST_PATH,
+      });
+    }
+  }
+}
+
+/**
+ * Whether the package ships a skill directory of this name, anywhere in its
+ * conventional skill source directories.
+ *
+ * Matches on DIRECTORY name, which is what every harness keys a skill by — the
+ * same reason a frontmatter/directory mismatch is only a warning above (DOR-263).
+ *
+ * The search descends, because skills nest (`skills/group/my-skill/`) and the
+ * installer's own resolver descends too. The two accept the same set — same
+ * four directories ({@link SCHEDULE_SKILL_SOURCE_DIRS}), same depth, same
+ * `node_modules` exclusion — because disagreeing in either direction is a bug
+ * with a person on the end of it: stricter here rejects a package that would
+ * install perfectly well, and looser here passes a package whose schedule then
+ * fails to materialize after install, which is the report the author never gets.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param skillName - The directory name to find.
+ * @internal
+ */
+async function packageShipsSkill(packagePath: string, skillName: string): Promise<boolean> {
+  for (const dir of SCHEDULE_SKILL_SOURCE_DIRS) {
+    if (await searchForSkill(path.join(packagePath, dir), skillName, 0)) return true;
+  }
+  return false;
+}
+
+/** How deep to descend below a skill source directory. Mirrors the installer's resolver. */
+const MAX_SKILL_SEARCH_DEPTH = 3;
+
+/**
+ * Depth-bounded search for a skill directory containing a `SKILL.md`.
+ *
+ * @param root - Directory to search.
+ * @param skillName - Directory name to find.
+ * @param depth - Current recursion depth.
+ * @internal
+ */
+async function searchForSkill(root: string, skillName: string, depth: number): Promise<boolean> {
+  if (depth > MAX_SKILL_SEARCH_DEPTH) return false;
+
+  let entries;
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return false; // Missing or unreadable — not here.
+  }
+
+  for (const entry of entries) {
+    // A vendored dependency's same-named skill is not this package's skill.
+    if (!entry.isDirectory() || entry.name === 'node_modules') continue;
+    const child = path.join(root, entry.name);
+    if (entry.name === skillName) {
+      try {
+        await fs.access(path.join(child, 'SKILL.md'));
+        return true;
+      } catch {
+        // A directory of the right name with no SKILL.md is not a skill.
+      }
+    }
+    if (await searchForSkill(child, skillName, depth + 1)) return true;
+  }
+  return false;
 }
 
 /**

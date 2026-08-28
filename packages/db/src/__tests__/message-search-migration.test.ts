@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import type BetterSqlite3 from 'better-sqlite3';
 import { createDb, runMigrations } from '../index';
+
+/** The migration that added `message_id` and rebuilt the index (DOR-1579). */
+const MIGRATION_0080 = new URL('../../drizzle/0080_message_search_message_id.sql', import.meta.url);
 
 /**
  * Everything here runs against a database built by the REAL Drizzle migrator
@@ -60,8 +64,16 @@ describe('0037_message_search — messages, search_sources, messages_fts', () =>
         'role',
         'created_at',
         'body',
+        // Added by 0080, so it sits last: SQLite appends an ALTER TABLE column.
+        'message_id',
       ]);
-      expect(columns.filter((c) => c.notnull === 0).map((c) => c.name)).toEqual(['created_at']);
+      expect(columns.filter((c) => c.notnull === 0).map((c) => c.name)).toEqual([
+        'created_at',
+        // Nullable on purpose (DOR-1579): a room needs no message id, and a
+        // transcript record that carries none contributes nothing rather than an
+        // id invented at index time.
+        'message_id',
+      ]);
     });
 
     it('makes messages.id an alias for the rowid', () => {
@@ -298,6 +310,41 @@ describe('0037_message_search — messages, search_sources, messages_fts', () =>
           )
           .all()
       ).not.toThrow();
+    });
+
+    it('empties the index when 0080 runs, so the next sweep rewrites it with ids', () => {
+      // The BACKFILL, and it is a rebuild (DOR-1579). `message_id` arrives empty
+      // on every row already indexed and no statement could fill it — the ids
+      // live in the stores this index is derived from — so 0080 throws the
+      // derived copy away and lets the next sweep write it again.
+      //
+      // Run against the REAL migration file, and against a database that has
+      // been put back into the shape 0080 expects (the column dropped, rows in
+      // the tables). Executing a copy of the SQL would only prove this test's
+      // copy parses; asserting on a freshly-migrated database would prove
+      // nothing at all, since it is empty either way.
+      const raw = migrated();
+      raw.prepare(INSERT).run(1, 'rooms', 'room-1', 1, 'user', null, 'the dog barked');
+      raw
+        .prepare(
+          "INSERT INTO search_sources (source_id, origin_key, last_indexed_at) VALUES ('rooms', 'room-1', '2026-08-26T10:00:00Z')"
+        )
+        .run();
+      raw.exec('ALTER TABLE messages DROP COLUMN message_id');
+      expect(countMatching(raw, 'dog')).toBe(1);
+
+      raw.exec(readFileSync(MIGRATION_0080, 'utf8'));
+
+      expect(raw.prepare('SELECT count(*) AS c FROM messages').get()).toEqual({ c: 0 });
+      expect(raw.prepare('SELECT count(*) AS c FROM search_sources').get()).toEqual({ c: 0 });
+      // The half a `DROP TABLE` or a `DELETE` that skipped the trigger would
+      // leave behind: FTS5 external content keeps no copy of the text, so only
+      // `messages_fts_ad` firing per row retracts its terms. Without it the
+      // index goes on answering for text that exists nowhere.
+      expect(countMatching(raw, 'dog')).toBe(0);
+      expect(
+        (raw.prepare('PRAGMA table_info(messages)').all() as { name: string }[]).map((c) => c.name)
+      ).toContain('message_id');
     });
 
     it('keeps recursive_triggers on, because REPLACE depends on it', () => {

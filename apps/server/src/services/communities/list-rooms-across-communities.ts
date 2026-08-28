@@ -20,7 +20,7 @@
  *    with the operator's rooms — a visibility regression, not a shape change.
  * 2. **`listRooms()` takes no arguments**, so `?kind=` and `?includeArchived=`
  *    cannot cross it.
- * 3. **`CommunityRoom` is narrower than `RoomSummary`** — no `workspaceId`, no
+ * 3. **`CommunityRoom` is narrower than `RoomSummary`** — no
  *    `ambientMaxEntries`, no `participants`, no `working`, no `viewerHasPosted`
  *    — and it names the id half of a `(community, roomId)` pair. Two of those
  *    fields have no honest value for a room on somebody else's server.

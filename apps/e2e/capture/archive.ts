@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ARCHIVE_DIR, OUTPUT_DIR } from './config.js';
+import { writeJsonFile } from './json.js';
 
 /**
  * The archive primitive: freeze the currently published product media under
@@ -137,10 +138,9 @@ export async function runArchive(args: ArchiveArgs, outputDir: string = OUTPUT_D
     totalBytes: assets.reduce((sum, a) => sum + (typeof a.bytes === 'number' ? a.bytes : 0), 0),
     assets,
   };
-  await fs.writeFile(
-    path.join(dest, 'manifest.json'),
-    `${JSON.stringify(archiveManifest, null, 2)}\n`
-  );
+  // Committed alongside the archived assets, so it goes out Prettier-clean —
+  // plain `JSON.stringify` expands arrays Prettier collapses (see `capture/json`).
+  await writeJsonFile(path.join(dest, 'manifest.json'), archiveManifest);
 
   process.stdout.write(
     `▸ Archived ${assets.length} asset(s) to archive/${args.label}/` +

@@ -608,9 +608,10 @@ function generateConfigDocs(schema: ZodObject) {
 ```
 
 **Output**:
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `port` | number | 4242 | Server port |
+
+| Setting | Type                  | Default  | Description    |
+| ------- | --------------------- | -------- | -------------- |
+| `port`  | number                | 4242     | Server port    |
 | `theme` | `'light'` \| `'dark'` | `'dark'` | UI color theme |
 
 ---

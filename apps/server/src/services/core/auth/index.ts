@@ -307,6 +307,51 @@ export function readOwnerAccount(): Account | null {
 }
 
 /**
+ * Point the account readers at a database WITHOUT standing up Better Auth.
+ *
+ * For an embedding host that reads who owns the install but serves no auth
+ * routes — the Obsidian plugin, which opens the message index in-process and
+ * needs {@link readOwnerAccount} to answer truthfully so the rooms domain can
+ * decide what the person at the keyboard may search (DOR-1563).
+ *
+ * **Without it the embed reads as the owner of every install, including ones it
+ * does not own.** `readOwnerAccount()` returns `null` when no database is
+ * attached, and `null` is also how a brand-new install with no accounts answers
+ * — so an unattached reader is indistinguishable from an unowned machine, and
+ * `isOwnerRecord` says yes to the local human either way. On an install with
+ * **Require login** on, that is every room and every session handed to somebody
+ * who has not signed in.
+ *
+ * It deliberately does not build {@link createAuth}: that resolves and writes a
+ * signing secret, mounts handlers and seeds keys, none of which a read-only
+ * reader should cause. A host that needs to SERVE auth calls {@link initAuth}
+ * instead, which does this and the rest.
+ *
+ * @param db - The database to read accounts from.
+ */
+export function attachAccountReader(db: Db): void {
+  activeDb = db;
+}
+
+/**
+ * Let go of a database attached by {@link attachAccountReader}.
+ *
+ * **A host that closes its database must call this, and the reason is not
+ * tidiness.** `activeDb` is module-global. A reader that closed its connection
+ * and left the handle here would have every later {@link readOwnerAccount} throw
+ * on a closed database — and worse, two panels opening and closing in sequence
+ * would have the second one's close poison the first one's still-open handle.
+ *
+ * It is deliberately unconditional rather than "detach only if it is mine": a
+ * host that attached is the only thing that detaches, and a conditional version
+ * would silently keep a stale handle in exactly the two-window case that
+ * motivates this.
+ */
+export function detachAccountReader(): void {
+  activeDb = undefined;
+}
+
+/**
  * Whether at least one Better Auth API key exists (any owner-owned or seeded key).
  *
  * Returns `false` when auth was never initialized. Uses a synchronous

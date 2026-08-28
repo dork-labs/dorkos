@@ -21,7 +21,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
-import { roomsSource, searchMessages } from '../search/index.js';
+import { indexRoomEntry, roomsSource, searchMessages } from '../search/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry, isOwnerRecord } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
@@ -31,6 +31,7 @@ import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
+import type { RoomRepoService } from './repo/room-repo-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
@@ -321,6 +322,15 @@ export function createRoomSubsystem(opts: {
   turns?: RoomTurnRunner;
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
+  /**
+   * Whether this subsystem sits on a database it may not write (DOR-1563).
+   *
+   * Skips the handle reservations below — the one thing construction WRITES.
+   * A reader cannot take them and does not need to: they are already in any
+   * database a DorkOS has booted, which is the only kind a reader is pointed at.
+   * Without this, every Obsidian panel open logs a failed write.
+   */
+  readOnly?: boolean;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
@@ -357,14 +367,26 @@ export function createRoomSubsystem(opts: {
     // The message index, behind its port. Composed here rather than imported by
     // the service so the rooms domain neither knows the index is FTS5 nor which
     // `sourceId` its own rows carry.
-    findMessages: ({ roomIds, query, limit, afterSeq }) =>
+    findMessages: ({ rooms: scoped, query, limit }) =>
       searchMessages(opts.db, {
-        sourceId: roomsSource.id,
-        originKeys: roomIds,
+        scopes: [
+          {
+            sourceId: roomsSource.id,
+            visibility: 'containers',
+            containers: scoped.map((room) => ({
+              originKey: room.roomId,
+              afterOrdinal: room.afterSeq,
+            })),
+          },
+        ],
         query,
         limit,
-        afterOrdinal: afterSeq,
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
+    // The write half of that port: an entry is indexed the moment it is
+    // committed, so a person can find what they just said instead of waiting up
+    // to five minutes for the reconciler (spec Amendment 6). It never throws —
+    // a failure logs and leaves the sweep to catch this room up.
+    indexEntry: ({ roomId, seq }) => indexRoomEntry(opts.db, roomId, seq),
     // Resolved per write, not captured once: changing a ceiling in Settings —
     // or on the room — has to bound the very next cascade, not the next server
     // start. Turning limits back ON is the direction that must never wait for a
@@ -402,9 +424,14 @@ export function createRoomSubsystem(opts: {
   // first would otherwise take it and leave the room's own voice as `dorkos-2`.
   // Wiring it into the subsystem's own construction makes that structural: the
   // registry cannot exist without the reservations existing, on every install
-  // path there is, including the embedded one. The backfill rides along because
-  // it wants the same guarantee — the reservations are taken before it derives.
-  ensureHandles(opts.db, authors);
+  // path that can take them. The backfill rides along because it wants the same
+  // guarantee — the reservations are taken before it derives.
+  //
+  // A READ-ONLY subsystem is the one exception, and it does not weaken the
+  // invariant: it cannot mint a handle either, so there is no race for it to
+  // lose, and the reservations it would take are already in the database that
+  // whichever DorkOS wrote it took them in.
+  if (!opts.readOnly) ensureHandles(opts.db, authors);
   const welcomeBack = new WelcomeBackGreeter({
     settings: readWelcomeBack,
     // Resolved per return rather than captured: #team is seeded during boot and
@@ -510,6 +537,41 @@ export function getAttachmentRowStore(): AttachmentRowStore {
   return activeAttachmentRows;
 }
 
+let activeRepos: RoomRepoService | null = null;
+
+/**
+ * Register the room-repo service at bootstrap, beside
+ * {@link setRoomAttachmentStores} and for the same reason: WHERE a room's files
+ * live is a deployment decision made once in `index.ts`, and this module must
+ * not make it.
+ *
+ * @param service - The wired service.
+ */
+export function setRoomRepoService(service: RoomRepoService): void {
+  activeRepos = service;
+}
+
+/** The active room-repo service (throws if bootstrap has not run). */
+export function getRoomRepoService(): RoomRepoService {
+  if (!activeRepos) throw new Error('RoomRepoService not initialized');
+  return activeRepos;
+}
+
+/**
+ * The active room-repo service, or `null` when bootstrap has not registered
+ * one.
+ *
+ * For callers on a TURN's path rather than a request's. A route that reaches
+ * for a room's files was asked for them and should say so if the service is
+ * missing; a room turn was asked to answer a message, and refusing it because
+ * an optional subsystem is absent would take a room down over a feature it does
+ * not use. The embedded read-only subsystem is the ordinary case: it never
+ * bootstraps one, and every room there is simply a room without files.
+ */
+export function tryGetRoomRepoService(): RoomRepoService | null {
+  return activeRepos;
+}
+
 let activeBridges: BridgeStore | null = null;
 let activeAuthors: AuthorRegistry | null = null;
 
@@ -550,5 +612,6 @@ export function getRoomAuthors(): AuthorRegistry {
 export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export { toAuthorRef, type AuthorRecord } from './author-registry.js';
+export { resolveOperatorAuthor, peekOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './limits/turn-budget.js';

@@ -195,6 +195,13 @@ export const app = {
   quit: vi.fn<() => void>(),
   getPath: vi.fn((_name?: string): string => DEFAULT_USER_DATA_PATH),
   getVersion: vi.fn((): string => '0.1.0'),
+  /**
+   * macOS-only in real Electron, and modelled unconditionally here: the code
+   * that calls it (`diagnostics.ts`) feature-detects rather than branching on
+   * platform, so a mock that omitted it could only ever exercise the absent
+   * arm.
+   */
+  isInApplicationsFolder: vi.fn((): boolean => true),
   setAboutPanelOptions: vi.fn<(options: unknown) => void>(),
   setAsDefaultProtocolClient: vi.fn((): boolean => true),
   dock: {
@@ -423,6 +430,7 @@ export function resetElectronMock(): void {
   app.quit = vi.fn();
   app.getPath = vi.fn((_name?: string) => DEFAULT_USER_DATA_PATH);
   app.getVersion = vi.fn(() => '0.1.0');
+  app.isInApplicationsFolder = vi.fn(() => true);
   app.setAboutPanelOptions = vi.fn();
   app.setAsDefaultProtocolClient = vi.fn(() => true);
   app.dock = { setMenu: vi.fn(), setBadge: vi.fn() };

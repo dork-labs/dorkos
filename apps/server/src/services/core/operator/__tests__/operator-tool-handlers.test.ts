@@ -65,6 +65,7 @@ function buildDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
     notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
+    dorkHome: '/tmp/dorkos-test-home',
     ...overrides,
   };
 }

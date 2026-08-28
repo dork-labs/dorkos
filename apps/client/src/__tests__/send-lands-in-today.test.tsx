@@ -106,7 +106,6 @@ const ROOM = {
   slug: 'general',
   title: '#general',
   topic: null,
-  workspaceId: null,
   archived: false,
   ambientMaxEntries: 50,
   wellKnown: null,

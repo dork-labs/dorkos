@@ -194,7 +194,6 @@ export function createRoomWithRoster(overrides: Partial<RoomWithRoster> = {}): R
     slug: 'general',
     title: 'General',
     topic: 'Where the day starts',
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: minutesBeforeNow(60 * 24 * 12),
@@ -239,6 +238,7 @@ export function createAgentRoster(overrides: Partial<AgentRoster> = {}): AgentRo
 export function createAgentManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   const name = overrides.name ?? 'reviewer';
   return {
+    workspace: { mode: 'home' },
     id: nextId('agent'),
     name,
     description: '',

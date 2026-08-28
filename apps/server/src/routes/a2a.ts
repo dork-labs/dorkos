@@ -3,6 +3,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { RelayCore } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
 import { createA2aHandlers } from '@dorkos/a2a-gateway';
+import { logger } from '../lib/logger.js';
 import type { CardGeneratorConfig } from '@dorkos/a2a-gateway';
 
 /** Dependencies for creating the A2A router. */
@@ -57,6 +58,10 @@ export function createA2aRouter(deps: A2aRouterDeps): {
     relay: deps.relay,
     db: deps.db,
     config,
+    // A cancelled or timed-out turn the gateway could not stop is reported
+    // nowhere else (DOR-791) — it belongs in the server's own log, not on a
+    // bare console.
+    logger,
   });
 
   // GET /agents/:id/card — Per-agent Agent Card

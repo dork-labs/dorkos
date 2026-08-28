@@ -932,14 +932,14 @@ Each module has its own test file in `src/__tests__/`:
 
 ## Security Considerations
 
-| Concern           | Mitigation                                                                          |
+| Concern | Mitigation |
 | ----------------- | ----------------------------------------------------------------------------------- | ----------------------- |
-| Path traversal    | Subject validation rejects special characters; endpoint hash is SHA-256 derived     |
-| File permissions  | Directories: `0o700`, files: `0o600`; `O_CREAT                                      | O_EXCL` prevents TOCTOU |
-| SQLite injection  | All queries use prepared statements via better-sqlite3 (never string interpolation) |
-| Listener flooding | `setMaxListeners(100)` cap; per-endpoint subscription limits possible in future     |
-| Budget tampering  | Budgets can only shrink — enforcement is server-side, not client-controlled         |
-| Cycle attacks     | Ancestor chain tracking detects loops; maxHops provides hard upper bound            |
+| Path traversal | Subject validation rejects special characters; endpoint hash is SHA-256 derived |
+| File permissions | Directories: `0o700`, files: `0o600`; `O_CREAT                                      | O_EXCL` prevents TOCTOU |
+| SQLite injection | All queries use prepared statements via better-sqlite3 (never string interpolation) |
+| Listener flooding | `setMaxListeners(100)` cap; per-endpoint subscription limits possible in future |
+| Budget tampering | Budgets can only shrink — enforcement is server-side, not client-controlled |
+| Cycle attacks | Ancestor chain tracking detects loops; maxHops provides hard upper bound |
 
 ## Documentation
 

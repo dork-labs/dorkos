@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, shell } from 'electron';
 import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
 import { requestCloseTab } from './close-tab';
+import { saveDiagnosticReportInteractive } from './diagnostics';
 
 /**
  * Build the "Settings…" menu item. Shared by every platform's menu —
@@ -71,6 +72,21 @@ function buildWindowClosingItems(): Electron.MenuItemConstructorOptions[] {
   ];
 }
 
+/**
+ * Build the "Save Diagnostic Report…" item every platform's Help menu shares.
+ *
+ * Lives in the menu bar, not in the cockpit, because the failure it exists for
+ * is a window that renders nothing: the native menu is still there when the
+ * renderer is not. Ungated on `app.isPackaged` — a dev build's logs are worth
+ * collecting too, and the report says which kind of build it came from.
+ */
+function buildDiagnosticsItem(): Electron.MenuItemConstructorOptions {
+  return {
+    label: 'Save Diagnostic Report…',
+    click: () => void saveDiagnosticReportInteractive(),
+  };
+}
+
 /** Build the 3 external links every platform's Help menu shares. */
 function buildHelpLinkItems(): Electron.MenuItemConstructorOptions[] {
   return [
@@ -114,6 +130,7 @@ export function setupMenu(
   const settingsItem = buildSettingsItem(getMainWindow, ensureWindow);
   const checkForUpdatesItem = buildCheckForUpdatesItem();
   const helpLinkItems = buildHelpLinkItems();
+  const diagnosticsItem = buildDiagnosticsItem();
   const windowClosingItems = buildWindowClosingItems();
 
   const template: Electron.MenuItemConstructorOptions[] =
@@ -160,7 +177,7 @@ export function setupMenu(
           },
           {
             role: 'help',
-            submenu: helpLinkItems,
+            submenu: [...helpLinkItems, { type: 'separator' }, diagnosticsItem],
           },
         ]
       : [
@@ -208,6 +225,8 @@ export function setupMenu(
             label: 'Help',
             submenu: [
               ...helpLinkItems,
+              { type: 'separator' },
+              diagnosticsItem,
               { type: 'separator' },
               checkForUpdatesItem,
               { type: 'separator' },

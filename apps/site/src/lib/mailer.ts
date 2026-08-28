@@ -101,7 +101,7 @@ export async function sendNewsletterConfirmation({ to, url }: AccountEmail): Pro
     subject: 'Confirm your DorkOS newsletter subscription',
     html: [
       '<p>Thanks for subscribing to the DorkOS newsletter.</p>',
-      '<p>Confirm your email to start receiving release notes and fleet reports, about twice a month:</p>',
+      '<p>Confirm your email to start receiving release notes and agent reports, about twice a month:</p>',
       `<p><a href="${url}">Confirm my subscription</a></p>`,
       "<p>If you didn't sign up, you can ignore this email and you won't be added.</p>",
     ].join(''),

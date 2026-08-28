@@ -18,7 +18,6 @@ import path from 'node:path';
 import os from 'node:os';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Task } from '@a2a-js/sdk';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { RelayCore } from '@dorkos/relay';
 import type { RelayPublisher, AdapterRegistryLike, DeliveryResult } from '@dorkos/relay';
@@ -26,6 +25,33 @@ import type { RelayEnvelope, StandardPayload } from '@dorkos/shared/relay-schema
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createA2aHandlers } from '../express-handlers.js';
 import type { AgentRegistryLike } from '../types.js';
+
+// ---------------------------------------------------------------------------
+// The A2A v0.3 wire shapes — see the sibling suite for why these are spelled
+// out rather than imported: the SDK's types describe v1.0, and this wire is
+// the older dialect the compat layer answers in.
+// ---------------------------------------------------------------------------
+
+/** A v0.3 message part. */
+interface LegacyPart {
+  kind: string;
+  text?: string;
+}
+
+/** A v0.3 message. */
+interface LegacyMessage {
+  role: string;
+  parts: LegacyPart[];
+}
+
+/** A v0.3 task, as returned by `message/send` and `tasks/get`. */
+interface LegacyTask {
+  kind: string;
+  id: string;
+  status: { state: string; message?: LegacyMessage };
+  history?: LegacyMessage[];
+  metadata?: Record<string, unknown>;
+}
 
 // ---------------------------------------------------------------------------
 // CCA-shaped responder: a real RelayCore adapter that streams realistic
@@ -96,6 +122,7 @@ class CcaShapedResponder implements AdapterRegistryLike {
 
 function makeManifest(): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: 'agent-backend',
     name: 'backend-bot',
     description: 'Backend engineering agent',
@@ -118,6 +145,13 @@ function makeRegistry(agents: AgentManifest[]): AgentRegistryLike {
   };
 }
 
+/**
+ * A v0.3 `message/send` param block.
+ *
+ * `blocking: true` is explicit: A2A v0.3 defines the flag's default as
+ * `false`, and v1.0's compat layer honors that spec where the 0.3 SDK used to
+ * block regardless. A caller that wants the settled task asks for it.
+ */
 function sendParams(text: string, agentId: string) {
   return {
     message: {
@@ -127,6 +161,7 @@ function sendParams(text: string, agentId: string) {
       parts: [{ kind: 'text', text }],
       metadata: { agentId },
     },
+    configuration: { blocking: true },
   };
 }
 
@@ -192,7 +227,7 @@ describe('A2A gateway through the real RelayCore', () => {
     const response = await rpc('message/send', sendParams('Say hello.', 'agent-backend'));
     expect(response.error).toBeUndefined();
 
-    const task = response.result as Task;
+    const task = response.result as LegacyTask;
     expect(task.kind).toBe('task');
     expect(task.status.state).toBe('completed');
     expect(task.status.message?.parts[0]).toEqual({
@@ -202,7 +237,7 @@ describe('A2A gateway through the real RelayCore', () => {
 
     // Persisted through the real relay round-trip and retrievable via tasks/get.
     const getResponse = await rpc('tasks/get', { id: task.id, historyLength: 10 });
-    const loaded = getResponse.result as Task;
+    const loaded = getResponse.result as LegacyTask;
     expect(loaded.status.state).toBe('completed');
     const historyTexts = (loaded.history ?? []).map((m) => {
       const part = m.parts[0];
@@ -219,13 +254,13 @@ describe('A2A gateway through the real RelayCore', () => {
     const response = await rpc('message/send', sendParams('Do work.', 'agent-backend'));
     expect(response.error).toBeUndefined();
 
-    const task = response.result as Task;
+    const task = response.result as LegacyTask;
     expect(task.status.state).toBe('failed');
     const part = task.status.message?.parts[0];
     expect(part?.kind).toBe('text');
     expect((part as { text: string }).text).toContain('SDK session crashed');
 
     const getResponse = await rpc('tasks/get', { id: task.id });
-    expect((getResponse.result as Task).status.state).toBe('failed');
+    expect((getResponse.result as LegacyTask).status.state).toBe('failed');
   });
 });

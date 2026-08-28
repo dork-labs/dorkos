@@ -307,7 +307,7 @@ function buildEntryText(payload: IngestPayload): string {
 
 /** The in-process serialization key for one platform chat. */
 function serialKey(adapterId: string, chatId: string): string {
-  return `${adapterId} ${chatId}`;
+  return `${adapterId}\u0000${chatId}`;
 }
 
 /**

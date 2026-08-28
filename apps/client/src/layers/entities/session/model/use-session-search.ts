@@ -4,7 +4,7 @@ import type { SessionSearch } from '@/router';
 /**
  * Read session search params safely from any route — and any platform.
  *
- * Returns `{ session, dir, runtime, prompt, send, seed }` when on
+ * Returns `{ session, dir, runtime, prompt, send, seed, message }` when on
  * `/_shell/session`, empty object otherwise. Routes through
  * {@link useSafeSearch}, so it never throws on a route mismatch
  * (`strict: false`) and degrades to an empty object in the router-less Obsidian
@@ -31,5 +31,10 @@ export function useSessionSearch(): Partial<SessionSearch> {
     // the same reason `send` is: this value decides what a turn is silently told
     // about the operator, so an address bar may not put arbitrary text there.
     seed: search.seed === 'dorkbot-help' ? 'dorkbot-help' : undefined,
+    // The one message a search hit asked this conversation to open on
+    // (DOR-1579). An opaque id from whichever store owns the transcript, so it
+    // is passed through as typed and narrowed nowhere: one that names no
+    // message lands nowhere, which is the ordinary outcome and not an error.
+    message: typeof search.message === 'string' ? search.message : undefined,
   };
 }

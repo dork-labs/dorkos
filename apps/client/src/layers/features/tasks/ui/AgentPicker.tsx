@@ -135,7 +135,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
       <div className="rounded-md border px-4 py-6 text-center">
         <p className="text-muted-foreground text-sm">No agents registered yet</p>
         <p className="text-muted-foreground mt-1 text-xs">
-          Register an agent via the Mesh panel to schedule automated tasks.
+          Register an agent via the Mesh panel to give it scheduled tasks.
         </p>
       </div>
     );

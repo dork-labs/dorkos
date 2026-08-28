@@ -111,8 +111,7 @@ export async function* mapMessageEvent(
     // result reflects the current context-window occupancy. (The result message's
     // modelUsage sums every request in the turn and would over-count.)
     const assistantBody = (message as Record<string, unknown>).message as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const usage = assistantBody?.usage as Record<string, unknown> | undefined;
     if (usage) {
       session.lastRequestUsage = {

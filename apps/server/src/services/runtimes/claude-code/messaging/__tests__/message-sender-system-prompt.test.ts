@@ -17,7 +17,9 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 vi.mock('../context-builder.js', () => ({
-  buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>mock</env>'),
+  buildSystemPromptAppend: vi
+    .fn()
+    .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../../tooling/tool-filter.js', () => ({
@@ -78,7 +80,9 @@ function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts
  * Drive executeSdkQuery against an empty SDK stream and return the `Options`
  * that were passed to the SDK `query()` call.
  */
-async function captureSdkOptions(): Promise<Options> {
+async function captureSdkOptions(
+  messageOpts?: Parameters<typeof executeSdkQuery>[4]
+): Promise<Options> {
   let capturedOptions: Options | undefined;
 
   vi.mocked(query).mockImplementation((args) => {
@@ -88,7 +92,13 @@ async function captureSdkOptions(): Promise<Options> {
     } as unknown as ReturnType<typeof query>;
   });
 
-  for await (const _event of executeSdkQuery('s1', 'hello', makeSession(), makeOpts())) {
+  for await (const _event of executeSdkQuery(
+    's1',
+    'hello',
+    makeSession(),
+    makeOpts(),
+    messageOpts
+  )) {
     // drain
   }
 
@@ -119,5 +129,25 @@ describe('executeSdkQuery — system prompt (DOR-132)', () => {
       append: '<env>mock</env>',
       excludeDynamicSections: true,
     });
+  });
+
+  it('puts a caller’s append AFTER DorkOS’s own, never before it', async () => {
+    // Order is the whole point of the seam, not a formatting detail. What
+    // DorkOS says about the agent — who it is, what it may reach, where it is
+    // working — is the same on every turn of a session, so it belongs at the
+    // FRONT of the append where it stays inside the prompt cache's stable
+    // prefix. A caller's own instructions change more often (a room's `ROOM.md`
+    // moves when a merge lands, spec `project-rooms` §3.3), and putting them
+    // first would push the whole stable half of the prompt down the moment they
+    // did.
+    const options = await captureSdkOptions({
+      systemPromptAppend: '<dorkos_room_conventions/>',
+    });
+
+    const append = (options.systemPrompt as { append?: string }).append ?? '';
+    expect(append.indexOf('<env>mock</env>')).toBeGreaterThanOrEqual(0);
+    expect(append.indexOf('<dorkos_room_conventions/>')).toBeGreaterThan(
+      append.indexOf('<env>mock</env>')
+    );
   });
 });

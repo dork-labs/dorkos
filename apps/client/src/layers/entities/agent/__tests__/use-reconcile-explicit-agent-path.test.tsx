@@ -25,6 +25,7 @@ function createWrapper(transport: Transport) {
 
 function agentAt(id: string): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id,
     name: `agent-${id}`,
     description: '',

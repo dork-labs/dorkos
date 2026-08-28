@@ -229,7 +229,7 @@ export function CreateTaskDialog({
             )}
           </div>
           <ResponsiveDialogDescription className="sr-only">
-            {editTask ? 'Edit an existing Tasks schedule' : 'Create a new Tasks schedule'}
+            {editTask ? 'Edit an existing schedule' : 'Create a new schedule'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -272,7 +272,7 @@ export function CreateTaskDialog({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete schedule</DialogTitle>
+              <DialogTitle>Delete scheduled task</DialogTitle>
               <DialogDescription>
                 Delete &ldquo;{editTask.name}&rdquo;? This will also remove all run history. This
                 action cannot be undone.

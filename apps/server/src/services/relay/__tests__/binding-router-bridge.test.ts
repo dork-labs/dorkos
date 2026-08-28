@@ -99,9 +99,11 @@ describe('BindingRouter → the bridge (chats-as-channels §5.1)', () => {
     };
     mockRuntimeResolver = { getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code') };
     bridgeIngest = {
-      ingest: vi.fn(
-        async (): Promise<IngestResult> => ({ status: 'ingested', entryId: 'e1', joined: false })
-      ),
+      ingest: vi.fn(async (): Promise<IngestResult> => ({
+        status: 'ingested',
+        entryId: 'e1',
+        joined: false,
+      })),
     };
 
     router = new BindingRouter({

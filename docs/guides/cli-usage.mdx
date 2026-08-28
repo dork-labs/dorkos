@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # CLI Usage
 
-The `dorkos` command starts your cockpit: one line in a terminal, and a browser tab opens with your agents ready to go. No separate server to babysit, no client to configure.
+The `dorkos` command starts DorkOS: one line in a terminal, and a browser tab opens with your agents ready to go. No separate server to babysit, no client to configure.
 
 ```bash
 npm install -g dorkos
@@ -47,8 +47,8 @@ Most people never touch the flags, subcommands, and env vars below. They're here
       description: 'Enable ngrok tunnel for remote access',
       default: 'false',
     },
-    '--tasks': { type: 'boolean', description: 'Enable the Task scheduler' },
-    '--no-tasks': { type: 'boolean', description: 'Disable the Task scheduler' },
+    '--tasks': { type: 'boolean', description: 'Turn scheduled tasks on' },
+    '--no-tasks': { type: 'boolean', description: 'Turn scheduled tasks off' },
     '--log-level, -l': {
       type: 'string',
       description: 'Log verbosity: fatal, error, warn, info, debug, trace',
@@ -62,7 +62,7 @@ Most people never touch the flags, subcommands, and env vars below. They're here
   }}
 />
 
-The **boundary** is the fence around your files: DorkOS can read and write inside it, nothing outside. A **tunnel** (via ngrok) lets you reach your cockpit from another device, like your phone, without exposing your whole network.
+The **boundary** is the fence around your files: DorkOS can read and write inside it, nothing outside. A **tunnel** (via ngrok) lets you reach DorkOS from another device, like your phone, without exposing your whole network.
 
 ```bash
 # Start on a custom port
@@ -77,7 +77,7 @@ dorkos --boundary /home/user/projects
 # Enable tunnel for remote access
 dorkos --tunnel
 
-# Enable Task scheduler
+# Turn scheduled tasks on
 dorkos --tasks
 
 # Verbose logging
@@ -278,7 +278,7 @@ When no server is running, `dorkos version --check` still answers: it reports th
 
 By default DorkOS has no login, and these commands just work. If you turned login on (Settings → Security), the server needs to know it is really you, so give the CLI an API key:
 
-1. In the cockpit, open Settings → Security → API keys and create a key. Copy it right away; it is shown once.
+1. In the app, open Settings → Security → API keys and create a key. Copy it right away; it is shown once.
 2. Hand it to the CLI one of two ways:
 
 ```bash

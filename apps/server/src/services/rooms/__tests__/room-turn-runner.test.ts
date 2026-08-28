@@ -35,6 +35,16 @@ const DECLARED_CAPABILITIES = {
 const getCapabilities = vi.fn().mockReturnValue(DECLARED_CAPABILITIES);
 
 /**
+ * The runtime's own Stop, and the reason it is a spy rather than a stub.
+ *
+ * `false` is the shape DOR-1424 is about: the runtime had no turn to aim the
+ * stop at, because the agent's process was still starting. Every call is
+ * recorded, so a test can say WHEN the room re-aimed a stop that landed on
+ * nothing — which is the whole of that fix.
+ */
+const interruptQuery = vi.fn<(sessionId: string) => Promise<boolean>>(() => Promise.resolve(false));
+
+/**
  * What the runtime calls this session. `undefined` — no alias — is the honest
  * default for Codex, OpenCode and test-mode; Claude Code answers with its own
  * id, which is the whole subject of the canonical-id test below.
@@ -50,18 +60,31 @@ let internalSessionId: (sessionId: string) => string | undefined = () => undefin
  */
 let registeredRuntimes: string[] = ['claude-code', 'codex', 'opencode', 'test-mode'];
 
+/**
+ * Whether the registry can hand back a runtime at all.
+ *
+ * The real `runtimeRegistry.get` throws for an unregistered type while the
+ * runner guards with `if (!runtime)`, so "no runtime" is a state only this seam
+ * can model — and it has an answer that matters: a stop nothing could even be
+ * aimed at is not a stop (DOR-1425).
+ */
+let runtimeIsRegistered = true;
+
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     getSessionSettings: () => Promise.resolve(storedSettings),
-    get: () => ({
-      getCapabilities: () => getCapabilities(),
-      acquireLock: () => true,
-      releaseLock: () => undefined,
-      sendMessage: () => undefined,
-      interruptQuery: () => Promise.resolve(false),
-      getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
-    }),
+    get: () =>
+      runtimeIsRegistered
+        ? {
+            getCapabilities: () => getCapabilities(),
+            acquireLock: () => true,
+            releaseLock: () => undefined,
+            sendMessage: () => undefined,
+            interruptQuery: (sessionId: string) => interruptQuery(sessionId),
+            getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
+          }
+        : undefined,
     has: (type: string) => registeredRuntimes.includes(type),
     getDefaultType: () => 'claude-code',
   },
@@ -177,7 +200,6 @@ function request(
     slug: 'backend',
     title: 'Backend',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     wellKnown: null,
@@ -284,6 +306,9 @@ function saysAndCloses(...parts: string[]): typeof turnBehaviour {
 describe('createSessionRoomTurnRunner', () => {
   beforeEach(() => {
     persistSessionRuntime.mockClear();
+    interruptQuery.mockClear();
+    interruptQuery.mockImplementation(() => Promise.resolve(false));
+    runtimeIsRegistered = true;
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
   });
@@ -1038,6 +1063,125 @@ describe('createSessionRoomTurnRunner', () => {
     };
     await expect(createSessionRoomTurnRunner().run(request())).rejects.toThrow('runtime is down');
     expect(persistSessionRuntime).not.toHaveBeenCalled();
+  });
+
+  describe('a stop pressed while the turn is still starting', () => {
+    /**
+     * Start a turn that opens and then produces nothing, the way a turn whose
+     * process is still spawning does, and hand back the levers to drive it.
+     *
+     * @param runner - The runner under test.
+     * @param sessionId - The session the room bound for this turn.
+     */
+    function bootingTurn(
+      runner: ReturnType<typeof createSessionRoomTurnRunner>,
+      sessionId: string
+    ): { answered: Promise<unknown>; produce: () => void; close: () => void } {
+      let opened: TriggerCall | undefined;
+      turnBehaviour = (opts) => {
+        opened = opts;
+        openTurn(opts);
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      const answered = runner.run(request({ sessionId }));
+      return {
+        answered,
+        produce: () => opened?.projector.ingest({ type: 'text_delta', text: 'the essay' }),
+        close: () => opened?.projector.ingest({ type: 'turn_end' }),
+      };
+    }
+
+    it('stops the turn the moment it exists, instead of letting it run', async () => {
+      // **The bug** (DOR-1424, rooms run F2 2026-08-17). Stop was pressed 0.7 s
+      // into a turn whose `bin/claude` was still spawning: the runtime had no
+      // turn to aim the interrupt at, answered that it had stopped nothing, and
+      // the process then ran the prompt to completion — a whole model turn
+      // nobody wanted, billed to the person who pressed Stop. The room already
+      // refuses to POST that answer (DOR-1313); this is about not paying for it.
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      const turn = bootingTurn(runner, 'sess-booting');
+      await settle();
+
+      expect(await runner.interrupt({ sessionId: 'sess-booting', agentPath: '/repo/ana' })).toBe(
+        false
+      );
+      expect(interruptQuery).toHaveBeenCalledTimes(1);
+
+      // The process finishes booting and the turn starts producing — the first
+      // moment there is anything to stop.
+      turn.produce();
+      await settle();
+
+      expect(interruptQuery.mock.calls).toEqual([['sess-booting'], ['sess-booting']]);
+      turn.close();
+      await turn.answered;
+    });
+
+    it('leaves a turn that stops promptly alone, because it was already stopped', async () => {
+      // The counter-assertion: nothing is remembered when the stop landed. A
+      // room that re-aimed every interrupt would send a second one into every
+      // ordinary halt, and the second one would arrive after the claim moved on.
+      interruptQuery.mockImplementation(() => Promise.resolve(true));
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      const turn = bootingTurn(runner, 'sess-prompt');
+      await settle();
+
+      expect(await runner.interrupt({ sessionId: 'sess-prompt', agentPath: '/repo/ana' })).toBe(
+        true
+      );
+      turn.produce();
+      await settle();
+
+      expect(interruptQuery).toHaveBeenCalledTimes(1);
+      turn.close();
+      await turn.answered;
+    });
+
+    it('reports a stop it could not even find a runtime for', async () => {
+      // The narrowest `false` there is, and the one most easily reported as a
+      // success: an agent whose runtime this process does not have registered —
+      // the packaged desktop app ships only one SDK — has nothing behind it at
+      // all. Answering `true` there would tell an operator a turn was stopped by
+      // a call that never happened, which is the exact confusion DOR-1425 exists
+      // to remove.
+      runtimeIsRegistered = false;
+
+      expect(
+        await createSessionRoomTurnRunner().interrupt({
+          sessionId: 'sess-no-runtime',
+          agentPath: '/repo/ana',
+        })
+      ).toBe(false);
+      // And nothing was reached: there was nothing to reach.
+      expect(interruptQuery).not.toHaveBeenCalled();
+    });
+
+    it('never aims it at the NEXT turn, which is the room asking again', async () => {
+      // The lifetime, and the reason it is the claim's rather than the
+      // session's: Stop ends a turn, it does not silence an agent
+      // (`.claude/rules/room-conduct.md`). A stop that found nothing and was
+      // then kept would be delivered into whatever turn came next — a person
+      // pressing Stop and immediately retyping would have their new question
+      // killed by the old stop.
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      const stopped = bootingTurn(runner, 'sess-again');
+      await settle();
+      await runner.interrupt({ sessionId: 'sess-again', agentPath: '/repo/ana' });
+      // It ends without ever producing anything — the stop did reach the
+      // process in the end — so nothing re-aims it and the mark is still there.
+      stopped.close();
+      await stopped.answered;
+      expect(interruptQuery).toHaveBeenCalledTimes(1);
+
+      const next = bootingTurn(runner, 'sess-again');
+      await settle();
+      next.produce();
+      await settle();
+
+      expect(interruptQuery).toHaveBeenCalledTimes(1);
+      next.close();
+      await next.answered;
+    });
   });
 
   it('treats an empty turn as nothing to post', async () => {

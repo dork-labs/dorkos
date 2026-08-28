@@ -256,13 +256,7 @@ interface QuestionPromptProps {
 }
 
 export function QuestionPrompt({ ref, ...props }: QuestionPromptProps) {
-  useImperativeHandle(
-    ref,
-    () => ({
-      /* ... */
-    }),
-    []
-  );
+  useImperativeHandle(ref, () => ({/* ... */}), []);
   // ...
 }
 ```

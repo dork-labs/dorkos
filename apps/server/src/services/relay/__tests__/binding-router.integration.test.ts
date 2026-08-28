@@ -12,6 +12,10 @@
  * crashed turn surfacing as the error+done sequence at the platform.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { initBoundary } from '../../../lib/boundary.js';
+import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
+import type { WorkspaceManager } from '@dorkos/shared/workspace';
+import { setWorkspaceManager } from '../../workspace/index.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -24,7 +28,26 @@ import { createInitiateConsentGate } from '../initiate-consent.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 
 const PLATFORM_SUBJECT = 'relay.human.telegram.tg-bot.12345';
-const PROJECT_PATH = '/proj/agent-a';
+/**
+ * The bound agent's own directory, assigned in `beforeEach`.
+ *
+ * Under a real temp root because the agent-cwd chain boundary-checks the
+ * directory a turn resolves to, and a boundary can only be rooted at a
+ * directory that exists.
+ */
+let PROJECT_PATH: string;
+
+/**
+ * Where a turn for that agent actually RUNS — its private checkout, because the
+ * manifest this test writes to disk carries a `managed` binding.
+ *
+ * `managed` and not `home` on purpose. Under a `home` binding the chain's answer
+ * IS `PROJECT_PATH`, so a router that ignored the chain entirely and went back
+ * to stamping the raw project path would leave this file green — which is
+ * exactly what an earlier version of it did. Making the two paths differ is what
+ * turns "the real chain runs here" from a claim into a test.
+ */
+let WORKTREE_CWD: string;
 
 interface Recorded {
   subject: string;
@@ -110,6 +133,38 @@ async function makeTempDir(): Promise<string> {
 }
 
 beforeEach(async () => {
+  const boundaryRoot = await fs.realpath(os.tmpdir());
+  // Realpath'd: `validateBoundary` canonicalizes what it returns, and on macOS
+  // the temp dir is `/var/...` spelled as a symlink to `/private/var/...`.
+  const agentRoot = await fs.realpath(await makeTempDir());
+  PROJECT_PATH = path.join(agentRoot, 'proj', 'agent-a');
+  WORKTREE_CWD = path.join(agentRoot, 'workspaces', 'dorkos', 'agent-a-checkout');
+  await initBoundary(boundaryRoot);
+
+  // A REAL manifest on disk, carrying a `managed` binding — the chain reads
+  // this file, derives the workspace key from it, and asks the manager below.
+  // Nothing here is stubbed except the provisioning itself, which would
+  // otherwise want a git repo.
+  await fs.mkdir(path.join(PROJECT_PATH, '.dork'), { recursive: true });
+  await fs.writeFile(
+    path.join(PROJECT_PATH, '.dork', 'agent.json'),
+    JSON.stringify(
+      AgentManifestSchema.parse({
+        id: '01HV7KJZZZ0000000000000000',
+        name: 'agent-a',
+        description: '',
+        runtime: 'claude-code',
+        registeredAt: '2026-08-27T00:00:00.000Z',
+        registeredBy: 'test',
+        workspace: { mode: 'managed', source: '/repos/dorkos' },
+      })
+    ),
+    'utf-8'
+  );
+  setWorkspaceManager({
+    ensure: async () => ({ id: 'ws_1', path: WORKTREE_CWD }),
+  } as unknown as WorkspaceManager);
+
   const dataDir = await makeTempDir();
   const relayDir = await makeTempDir();
 
@@ -179,7 +234,7 @@ describe('platform → binding router → agent turn → reply delivery (real re
     // turn it drives runs in the prompting mode. Before DOR-604 an unconfigured
     // binding silently produced 'acceptEdits' — a message from off this machine
     // choosing a permission level nobody had agreed to.
-    expect(createSession).toHaveBeenCalledWith(PROJECT_PATH, 'default');
+    expect(createSession).toHaveBeenCalledWith(WORKTREE_CWD, 'default');
 
     // Dispatched to the runtime-scoped agent subject with the enriched payload.
     await vi.waitFor(() => expect(registry.dispatches.length).toBe(1));
@@ -187,7 +242,10 @@ describe('platform → binding router → agent turn → reply delivery (real re
     expect(dispatch.subject).toBe('relay.agent.claude-code.session-1');
     const payload = dispatch.envelope.payload as Record<string, unknown>;
     expect(payload.content).toBe('Hello from Telegram');
-    expect(payload.cwd).toBe(PROJECT_PATH);
+    expect(payload.cwd).toBe(WORKTREE_CWD);
+    // And it is genuinely a DIFFERENT directory from the agent's own — the
+    // property that makes the two assertions above capable of failing.
+    expect(WORKTREE_CWD).not.toBe(PROJECT_PATH);
     expect(payload.__bindingPermissions).toBeDefined();
 
     // The agent reply reached the platform adapter's deliver() path.

@@ -295,14 +295,12 @@ export class TopologyManager {
         }
       }
 
-      return Array.from(winnerByPattern.values()).map(
-        (spec): CrossNamespaceRule => ({
-          sourceNamespace: spec.sourceNamespace,
-          targetNamespace: spec.targetNamespace,
-          action: spec.action,
-          origin: 'default',
-        })
-      );
+      return Array.from(winnerByPattern.values()).map((spec): CrossNamespaceRule => ({
+        sourceNamespace: spec.sourceNamespace,
+        targetNamespace: spec.targetNamespace,
+        action: spec.action,
+        origin: 'default',
+      }));
     });
   }
 

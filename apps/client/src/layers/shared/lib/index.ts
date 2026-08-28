@@ -17,6 +17,7 @@ export {
 } from './auth-signal';
 export {
   getPlatform,
+  platformCanSearchMessages,
   setPlatformAdapter,
   isMac,
   isDesktopDarwin,

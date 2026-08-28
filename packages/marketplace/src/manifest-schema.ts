@@ -8,7 +8,7 @@
  * agent templates) are validated in a single pass.
  *
  * This module is browser-safe — it imports only `zod`, `@dorkos/skills/schema`,
- * `@dorkos/skills/task-schema` (itself zod-only), and the local `package-types`
+ * `@dorkos/skills/schedule-schema` (itself zod-only), and the local `package-types`
  * module, with no Node.js dependencies. It can therefore be consumed by
  * `apps/client` and `apps/site`.
  *
@@ -17,7 +17,7 @@
 
 import { z } from 'zod';
 import { SkillNameSchema } from '@dorkos/skills/schema';
-import { TASK_PERMISSION_MODES } from '@dorkos/skills/task-schema';
+import { TASK_PERMISSION_MODES } from '@dorkos/skills/schedule-schema';
 import { PackageTypeSchema } from './package-types.js';
 import { MarketplaceCategorySchema } from './categories.js';
 
@@ -142,6 +142,230 @@ const BasePackageManifestSchema = z.object({
   featured: z.boolean().optional(),
 });
 
+// === The shared schedules slot ===========================================
+//
+// A package that ships recurring work declares it here, and the install (or, for
+// a Shape, the apply) turns each declaration into a real scheduled task. The
+// slot started life shape-only (DOR-355) and opened to every type that can carry
+// an agent's work in DOR-1487 (spec `universal-scheduled-tasks` §6): being
+// scheduled is a property of a skill file, not of the package type that shipped
+// it, so a plugin or skill-pack has as much business declaring one as a Shape.
+
+/**
+ * The permission modes a package-declared schedule may run under.
+ *
+ * This is `TASK_PERMISSION_MODES` from `@dorkos/skills/schedule-schema`, not a
+ * second copy of it. A schedule declaration becomes a skill file whose
+ * `schedule.permissions` frontmatter carries this value, so the two sets have to
+ * be the same set: when the manifest allowed a mode the frontmatter did not,
+ * apply-time wrote a file its own parser rejected, and disk and DB disagreed
+ * from then on (DOR-607). This is a plain re-export; the mirror of
+ * `@dorkos/shared`'s `PermissionModeSchema` lives in one place, with the drift
+ * test beside it in `@dorkos/skills`.
+ *
+ * Declaring a mode here is not the same as getting it. `bypassPermissions` is
+ * clamped when the schedule is materialized — a package cannot decide that its
+ * own unattended cron runs with every approval prompt turned off.
+ */
+export const SCHEDULE_PERMISSION_MODES = TASK_PERMISSION_MODES;
+
+/**
+ * One scheduled task a package declares.
+ *
+ * An entry says what to run and how often, in one of two ways:
+ *
+ * - **By reference** — `skillRef` names a skill the package already ships. The
+ *   installed copy of that skill gets a `schedule:` block written into its
+ *   frontmatter, so the file a person can read and the schedule that fires it
+ *   are one file. Nothing else is generated. `description` and `prompt` come
+ *   from the skill itself, so declaring them here would only be a second place
+ *   for them to disagree — they are rejected on a `skillRef` entry.
+ * - **Inline** — `name` + `description` + `prompt` describe work the package
+ *   does not otherwise ship as a skill. Installing generates a new skill
+ *   directory for it, stamped with the package's provenance.
+ *
+ * Exactly one of the two forms per entry; {@link scheduleDeclChecks} enforces
+ * that, because zod cannot express "these three together, or that one instead"
+ * without turning the array element into a union that reports both branches'
+ * errors on every mistake.
+ *
+ * **Nothing here arms anything.** A materialized schedule is a file, and a file
+ * is nobody's approval: a file-discovered schedule parks for a person to approve
+ * before it can ever fire, `startEnabled: true` or not (spec §3, never-auto-arm).
+ * `startEnabled` travels into the file as `schedule.enabled` — the author's
+ * stated intent, which is what the approval is *for*.
+ */
+const BaseScheduleDeclSchema = z.object({
+  /**
+   * Name of a skill this package ships, which this schedule runs. The skill must
+   * exist in the package (checked when the schedule is materialized) — a
+   * reference to a skill that was never shipped is a schedule that can never
+   * run.
+   */
+  skillRef: SkillNameSchema.optional(),
+
+  /**
+   * Schedule name. Required on an inline entry; a `skillRef` entry is named by
+   * its skill.
+   *
+   * Must contain at least one letter or digit, which is a stronger rule than
+   * "non-empty" for a concrete reason: the name is slugified into a DIRECTORY
+   * name when the schedule is materialized, and a name made only of punctuation
+   * or emoji (`!!!`, `..`, `🌟`) slugifies to the empty string. An empty
+   * directory name resolves to the skills root ITSELF, which turned generating
+   * one schedule into replacing the person's entire skills directory. The
+   * materializer refuses an empty slug too — this is the first of the three
+   * places that rule is enforced, and the only one an author sees before
+   * publishing.
+   */
+  name: z
+    .string()
+    .min(1)
+    .regex(/[a-zA-Z0-9]/, 'Must contain at least one letter or number')
+    .optional(),
+
+  /** What this schedule does, in one line. Required on an inline entry. */
+  description: z.string().min(1).optional(),
+
+  /** What to send when the schedule fires. Required on an inline entry. */
+  prompt: z.string().min(1).optional(),
+
+  /**
+   * Cron expression; null = manual-only (created but never auto-fires).
+   *
+   * Checked for being a non-empty string here and for *meaning something* at
+   * install time, where croner lives (`services/marketplace/lib/validate-package-schedules.ts`).
+   * This module is browser-safe and stays that way.
+   */
+  cron: z.string().min(1).nullable().default(null),
+
+  /** IANA timezone the cron is read in. Null = the schedule's own default (UTC). */
+  timezone: z.string().nullable().default(null),
+
+  /**
+   * Permission mode the schedule ASKS to run under. See
+   * {@link SCHEDULE_PERMISSION_MODES} — `bypassPermissions` is clamped when the
+   * schedule is materialized and the operator is told, so declaring it is a
+   * request, not a grant.
+   */
+  permissionMode: z.enum(SCHEDULE_PERMISSION_MODES).default('acceptEdits'),
+
+  /**
+   * The author's stated intent: whether this schedule should be running.
+   * Defaults to `false` — a package does not get to arm its own cron job, so a
+   * manifest that wants one running on arrival has to say so in the file.
+   *
+   * `true` is still only a request. It becomes `schedule.enabled: true` in the
+   * generated file, which a person then approves before anything fires.
+   */
+  startEnabled: z.boolean().default(false),
+
+  /**
+   * RETIRED (DOR-607), and declared here for exactly one reason: so install/apply
+   * time can SEE that a manifest still carries it and tell the author.
+   *
+   * This is not a back-compat shim. Nothing reads its value, and it can never
+   * change what a schedule does — `startEnabled` alone decides that, and a
+   * manifest carrying only the old key gets the safe answer (off). Without this
+   * declaration zod would strip the key, and the author of a package written
+   * against the old schema would get a timer that quietly never fires with no
+   * signal why. Silently ignored is the opposite of the loudness the rename was
+   * chosen for.
+   *
+   * Remove once no package in the wild still declares it.
+   */
+  startDisabled: z.boolean().optional(),
+});
+
+/**
+ * A schedule declared by a `plugin`, `agent`, or `skill-pack` package.
+ *
+ * **There is no `agentRef`.** That field names an agent slug a *Shape* declares
+ * in its own `agents[]`, and no other package type has such a list to point at.
+ * These schedules bind by LOCATION instead, which is the same thing the
+ * scheduler's own discovery uses: a project-scoped install materializes into
+ * `<projectPath>/.agents/skills/`, where the schedule belongs to that project's
+ * agent; a global install materializes into `<dorkHome>/skills/`, where it is
+ * global. The install already knows which one it is doing, so the manifest does
+ * not have to guess, and there is no way for it to name an agent the installing
+ * person never agreed to.
+ */
+export const PackageScheduleSchema = BaseScheduleDeclSchema;
+
+/**
+ * A schedule declared by any package type — narrow on the presence of
+ * `skillRef` to tell the two forms apart.
+ */
+export type PackageScheduleDecl = z.infer<typeof PackageScheduleSchema>;
+
+/**
+ * The one rule that decides a schedule declaration is well-formed: exactly one
+ * of the two declaration forms, with nothing borrowed from the other.
+ *
+ * Exported and shared rather than inlined per package type, because a plugin's
+ * schedule and a Shape's schedule are the same kind of thing and an author who
+ * moves a declaration between manifests must not meet a different rule on the
+ * other side.
+ *
+ * @param schedules - The manifest's `schedules[]` entries.
+ * @param ctx - Zod refinement context used to report field-scoped issues.
+ * @param opts - `allowSkillRef: false` rejects the by-reference form outright
+ *   (Shapes; see {@link ShapeScheduleSchema}).
+ */
+export function scheduleDeclChecks(
+  schedules: readonly PackageScheduleDecl[],
+  ctx: z.RefinementCtx,
+  opts: { allowSkillRef: boolean } = { allowSkillRef: true }
+): void {
+  schedules.forEach((schedule, i) => {
+    const label = schedule.skillRef ?? schedule.name ?? `#${i + 1}`;
+
+    if (schedule.skillRef && !opts.allowSkillRef) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['schedules', i, 'skillRef'],
+        message:
+          `Schedule '${label}' uses 'skillRef', which a Shape cannot: a Shape stands its ` +
+          `schedules up for an agent it names in agents[], from a prompt written here. To ` +
+          `schedule a skill, ship it in a plugin or skill-pack and declare the schedule there.`,
+      });
+      return;
+    }
+
+    if (schedule.skillRef) {
+      // A by-reference entry takes its description and prompt from the skill.
+      // Accepting them here too would create a second place for the same two
+      // strings to live, and the file would win — so say so instead of picking.
+      for (const field of ['description', 'prompt'] as const) {
+        if (schedule[field] !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['schedules', i, field],
+            message:
+              `Schedule '${label}' sets both 'skillRef' and '${field}'. A skillRef schedule ` +
+              `takes its ${field} from the skill it names; remove this one.`,
+          });
+        }
+      }
+      return;
+    }
+
+    // Inline: the three fields that describe the work are all required, because
+    // there is no file to read them out of.
+    for (const field of ['name', 'description', 'prompt'] as const) {
+      if (schedule[field] === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['schedules', i, field],
+          message:
+            `Schedule '${label}' must declare '${field}', or name a skill this package ships ` +
+            `with 'skillRef'.`,
+        });
+      }
+    }
+  });
+}
+
 /**
  * Plugin-specific manifest fields.
  */
@@ -149,6 +373,8 @@ const PluginManifestSchema = BasePackageManifestSchema.extend({
   type: z.literal('plugin'),
   /** Optional list of extension IDs bundled in this package. */
   extensions: z.array(z.string()).default([]),
+  /** Scheduled tasks this plugin stands up when it is installed. */
+  schedules: z.array(PackageScheduleSchema).default([]),
 });
 
 /**
@@ -156,6 +382,8 @@ const PluginManifestSchema = BasePackageManifestSchema.extend({
  */
 const AgentManifestSchema = BasePackageManifestSchema.extend({
   type: z.literal('agent'),
+  /** Scheduled tasks this agent template stands up when it is installed. */
+  schedules: z.array(PackageScheduleSchema).default([]),
   /** Default agent identity values applied during creation. */
   agentDefaults: z
     .object({
@@ -176,10 +404,16 @@ const AgentManifestSchema = BasePackageManifestSchema.extend({
 });
 
 /**
- * Skill-pack-specific manifest fields. (Currently no extra fields beyond base.)
+ * Skill-pack-specific manifest fields.
  */
 const SkillPackManifestSchema = BasePackageManifestSchema.extend({
   type: z.literal('skill-pack'),
+  /**
+   * Scheduled tasks this pack stands up when it is installed. The type most
+   * likely to use the `skillRef` form: a pack ships the skills, and a schedule
+   * says which of them runs on a clock.
+   */
+  schedules: z.array(PackageScheduleSchema).default([]),
 });
 
 /**
@@ -200,9 +434,36 @@ export const CONNECTOR_ADAPTER_TYPE = 'connector';
 
 /**
  * Adapter-specific manifest fields.
+ *
+ * **Deliberately no `schedules` slot**, and the omission is the decision rather
+ * than an oversight. An adapter is a transport: it hands a relay service or a
+ * connector gateway to whatever is already running, and it is the one package
+ * type that ships no skills and installs globally with no project or agent
+ * attached. A schedule needs an agent to run the turn and a skills root to live
+ * in, and an adapter supplies neither — so a declaration here could only be
+ * accepted and then quietly dropped. A declared-and-ignored schedule is the
+ * failure mode DOR-607 was about; zod rejecting the unknown key names the
+ * problem instead. An adapter that wants recurring work belongs in a plugin
+ * that `requires` it.
+ *
+ * The refusal has to be declared, not left implicit: a zod object STRIPS keys it
+ * does not know, so simply omitting the slot would accept the declaration and
+ * drop it without a word — the very thing this is trying to avoid.
  */
 const AdapterManifestSchema = BasePackageManifestSchema.extend({
   type: z.literal('adapter'),
+  /**
+   * Always absent. Present with any value, this fails the parse with the
+   * message below rather than being silently stripped. See the type note above.
+   */
+  schedules: z
+    .never({
+      error:
+        'Adapters cannot declare schedules: an adapter is a transport with no agent to run a ' +
+        'turn and no skills directory to keep one in. Ship the schedule in a plugin that ' +
+        'requires this adapter.',
+    })
+    .optional(),
   /**
    * Adapter type identifier (e.g. `'discord'`, `'slack'`). Free-form; the
    * well-known {@link CONNECTOR_ADAPTER_TYPE} (`'connector'`) marks a
@@ -256,67 +517,38 @@ const ShapeAgentSchema = z.object({
 });
 
 /**
- * The permission modes a Shape schedule may run under.
+ * A scheduled task the Shape stands up — the shared declaration
+ * ({@link PackageScheduleSchema}) plus the two things only a Shape has.
  *
- * This is `TASK_PERMISSION_MODES` from `@dorkos/skills/task-schema`, not a
- * second copy of it. A Shape schedule becomes a task file whose `permissions:`
- * frontmatter carries this value, so the two sets have to be the same set: when
- * the manifest allowed a mode the frontmatter did not, apply-time wrote a task
- * file its own parser rejected, and disk and DB disagreed from then on
- * (DOR-607). Both packages are on zod v3, so this is a plain re-export; the
- * zod-version mirror of `@dorkos/shared`'s `PermissionModeSchema` now lives in
- * one place, with the drift test beside it in `@dorkos/skills`.
+ * A Shape schedule is always the INLINE form: `name`, `description` and
+ * `prompt` are re-required here (they are optional on the shared base, which
+ * also serves the by-reference `skillRef` form), and `skillRef` itself is
+ * refused for a Shape by {@link scheduleDeclChecks}. The result is the same
+ * shape this schema has always had, so every Shape manifest in the wild keeps
+ * parsing unchanged; what is new is that the fields it shares with the other
+ * package types now come from one place.
  *
- * Declaring a mode here is not the same as getting it. `bypassPermissions` is
- * clamped at apply time (`apply-shape.ts`) — a package cannot decide that its
- * own unattended cron runs with every approval prompt turned off.
+ * Shape of `CreateTaskRequestSchema` (`packages/shared/src/schemas.ts`) minus
+ * `target`, which is resolved from `agentRef` at apply time.
  */
-export const SHAPE_SCHEDULE_PERMISSION_MODES = TASK_PERMISSION_MODES;
-
-/**
- * A scheduled task the Shape stands up. Shape of `CreateTaskRequestSchema`
- * (`packages/shared/src/schemas.ts`) minus `target`, which is resolved from
- * `agentRef` at apply time.
- */
-const ShapeScheduleSchema = z.object({
-  name: z.string().min(1),
+const ShapeScheduleSchema = BaseScheduleDeclSchema.extend({
+  // Same slug-able rule as the shared base, re-stated because `.extend()`
+  // REPLACES the field rather than tightening it — dropping the regex here
+  // would leave Shapes as the one type that can still declare a name that
+  // slugifies to nothing.
+  name: z
+    .string()
+    .min(1)
+    .regex(/[a-zA-Z0-9]/, 'Must contain at least one letter or number'),
   description: z.string().min(1),
   prompt: z.string().min(1),
-  /** Cron expression; null = manual-only (created but never auto-fires). */
-  cron: z.string().min(1).nullable().default(null),
-  timezone: z.string().nullable().default(null),
-  /** Which Shape agent (`ShapeAgentSchema.ref`) this schedule runs as. */
+  /**
+   * Which Shape agent (`ShapeAgentSchema.ref`) this schedule runs as. Shape-only:
+   * it points into the Shape's own `agents[]`, which no other package type has.
+   * The other types bind by install location instead — see
+   * {@link PackageScheduleSchema}.
+   */
   agentRef: z.string().regex(/^[a-z][a-z0-9-]*$/),
-  /**
-   * Permission mode the schedule ASKS to run under. See
-   * {@link SHAPE_SCHEDULE_PERMISSION_MODES} — `bypassPermissions` is clamped at
-   * apply time and the operator is told, so declaring it is a request, not a
-   * grant.
-   */
-  permissionMode: z.enum(SHAPE_SCHEDULE_PERMISSION_MODES).default('acceptEdits'),
-  /**
-   * Whether the schedule starts firing the moment the Shape is applied.
-   * Defaults to `false`: a package does not get to arm its own cron job, so a
-   * manifest that wants one running on arrival has to say so in the file.
-   * `true` is still only a request — a schedule whose agent is missing at apply
-   * time is created disabled regardless.
-   */
-  startEnabled: z.boolean().default(false),
-  /**
-   * RETIRED (DOR-607), and declared here for exactly one reason: so apply-time
-   * can SEE that a manifest still carries it and tell the author.
-   *
-   * This is not a back-compat shim. Nothing reads its value, and it can never
-   * change what a schedule does — `startEnabled` alone decides that, and a
-   * manifest carrying only the old key gets the safe answer (off). Without this
-   * declaration zod would strip the key, and the author of a Shape written
-   * against the old schema would get a timer that quietly never fires with no
-   * signal why. Silently ignored is the opposite of the loudness the rename was
-   * chosen for.
-   *
-   * Remove once no Shape in the wild still declares it.
-   */
-  startDisabled: z.boolean().optional(),
 });
 
 /**
@@ -390,10 +622,10 @@ const ShapeLineageSchema = z.object({
 
 /**
  * Shape-specific manifest fields (DOR-355). A plain `ZodObject` member of
- * {@link MarketplacePackageManifestSchema}: `packages/marketplace` pins Zod 3,
- * where a `z.discriminatedUnion` member MUST be a plain object — `.superRefine()`
- * returns a `ZodEffects` with no `.shape`, which cannot be a union member (the
- * codebase documents this same constraint at `packages/shared/src/schemas.ts` on
+ * {@link MarketplacePackageManifestSchema}: a `z.discriminatedUnion` member MUST
+ * be a plain object — `.superRefine()` wraps the schema in one that no longer
+ * exposes `.shape`, which cannot be a union member (the codebase documents this
+ * same constraint at `packages/shared/src/schemas.ts` on
  * `OperationProgressEventShapeSchema`). The four cross-field rules therefore live
  * in {@link shapeCrossFieldChecks}, attached as a TOP-LEVEL `.superRefine` on the
  * union.
@@ -408,8 +640,16 @@ const ShapeManifestSchema = BasePackageManifestSchema.extend({
   activates: z.array(z.string()).default([]),
   /** Extensions embedded inline in this Shape's package dir (like `PluginManifestSchema.extensions`). */
   extensions: z.array(z.string()).default([]),
-  /** The workspace chrome restored on arrival. */
-  layout: ShapeLayoutSchema.default({}),
+  /**
+   * The workspace chrome restored on arrival.
+   *
+   * `.prefault({})`, not `.default({})`: a Zod 4 default must already be the
+   * OUTPUT type, and every field of {@link ShapeLayoutSchema} carries its own
+   * default, so `{}` is only valid as an INPUT. `.prefault` feeds `{}` through
+   * the schema, which then fills each field — the behavior a manifest with no
+   * `layout` key has always had.
+   */
+  layout: ShapeLayoutSchema.prefault({}),
   /** Suggested agents with soft affinity. At most one `default` is used for the arrival offer. */
   agents: z.array(ShapeAgentSchema).default([]),
   /** Schedules the Shape stands up, each bound to a Shape agent by `agentRef`. */
@@ -435,16 +675,23 @@ export type ShapePackageManifest = z.infer<typeof ShapeManifestSchema>;
  * `ctx.addIssue` with a precise `path` (e.g. `['schedules', i, 'agentRef']`) so
  * errors stay field-scoped.
  *
- * The four rules:
+ * The five rules:
  * 1. Every `schedules[].agentRef` resolves to some `agents[].ref`.
  * 2. At most one `agents[]` entry has `affinity: 'default'`.
  * 3. Every `extension-secret` connection's `extension` is in `activates`/`extensions`.
  * 4. Every `agents[]` entry has a `template` or a `matchName` (else unsatisfiable).
+ * 5. The shared schedule-declaration rules ({@link scheduleDeclChecks}), with the
+ *    by-reference `skillRef` form refused — a Shape declares its prompts inline.
  *
  * @param m - The parsed shape manifest to check.
  * @param ctx - Zod refinement context used to report field-scoped issues.
  */
 export function shapeCrossFieldChecks(m: ShapePackageManifest, ctx: z.RefinementCtx): void {
+  // 5) The rules every package type's schedules obey, plus the Shape-only
+  //    refusal of `skillRef`. Run first so a malformed declaration is reported
+  //    on its own terms before the agentRef rule below adds a second complaint.
+  scheduleDeclChecks(m.schedules, ctx, { allowSkillRef: false });
+
   // 1) Every schedules[].agentRef must resolve to some agents[].ref.
   const agentRefs = new Set(m.agents.map((a) => a.ref));
   m.schedules.forEach((schedule, i) => {
@@ -509,8 +756,11 @@ export function shapeCrossFieldChecks(m: ShapePackageManifest, ctx: z.Refinement
  *
  * 1. The primary-category coherence refine (`category === categories[0]` when
  *    both are present).
- * 2. The shape cross-field rules ({@link shapeCrossFieldChecks}), applied only to
- *    `type === 'shape'` manifests.
+ * 2. The schedule-declaration rules ({@link scheduleDeclChecks}) for every type
+ *    that carries the shared slot, and the shape cross-field rules
+ *    ({@link shapeCrossFieldChecks} — which runs the schedule rules itself, with
+ *    `skillRef` refused) for `type === 'shape'`. `adapter` has no slot at all
+ *    and is skipped.
  *
  * The inferred {@link MarketplacePackageManifest} type is unaffected — chained
  * refinement effects on a discriminated union preserve the union, so consumers
@@ -525,14 +775,21 @@ export const MarketplacePackageManifestSchema = z
     AgentManifestSchema,
     SkillPackManifestSchema,
     AdapterManifestSchema,
-    ShapeManifestSchema, // plain ZodObject — Zod 3 union-member constraint
+    ShapeManifestSchema, // plain ZodObject — discriminated-union member constraint
   ])
   .refine((m) => !(m.category && m.categories?.length) || m.category === m.categories[0], {
     message: 'category must equal categories[0] when both are present',
     path: ['category'],
   })
   .superRefine((m, ctx) => {
-    if (m.type === 'shape') shapeCrossFieldChecks(m, ctx);
+    if (m.type === 'shape') {
+      // Runs scheduleDeclChecks itself (with skillRef refused) alongside the
+      // four Shape-only rules.
+      shapeCrossFieldChecks(m, ctx);
+      return;
+    }
+    if (m.type === 'adapter') return; // no schedules slot — see AdapterManifestSchema
+    scheduleDeclChecks(m.schedules, ctx);
   });
 
 /**

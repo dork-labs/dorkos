@@ -1,4 +1,4 @@
-import { eq, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
+import { eq, desc, and, count, inArray, notInArray, lt, isNull, isNotNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -8,7 +8,6 @@ import {
 } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type {
-  PermissionMode,
   Task,
   TaskRun,
   TaskRunStatus,
@@ -18,7 +17,9 @@ import type {
 import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
-import { resolveFilePermissionMode } from './schedule-permission-clamp.js';
+import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
+import { scheduleContentKey, type IncomingTaskContent } from './schedule-permission-clamp.js';
+import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -38,6 +39,8 @@ export interface CreateTaskStoreInput {
   timezone?: string | null;
   agentId?: string | null;
   enabled?: boolean;
+  /** Whether every run resumes one persistent session (DOR-1571). Defaults off. */
+  sticky?: boolean;
   maxRuntime?: number | null;
   permissionMode?: string;
   filePath: string;
@@ -73,6 +76,77 @@ export interface ScheduleReliability {
   p95DurationMs: number | null;
 }
 
+/**
+ * What {@link TaskStore.upsertFromFile} needs to know beyond the file itself:
+ * who is writing, and what is wrong with the file.
+ *
+ * Defined by the module that acts on it — see {@link FileSyncSource}, which
+ * documents both fields — and re-exported here under the name its one caller
+ * uses.
+ */
+export type UpsertFromFileOptions = FileSyncSource;
+
+/**
+ * The provenance columns a discovery sync may write to a row that ALREADY
+ * EXISTS — which is usually none of them.
+ *
+ * Discovery re-reads every file every five minutes, and the legacy roots it
+ * reads hold rows that discovery did not create: an agent's proposal, carrying
+ * the case it made for itself and the session it was proposed from, and an
+ * operator's own schedule, carrying nothing. Writing the arm gate's generic
+ * story over either one destroys real provenance — an agent's reason replaced
+ * by "DorkOS found this schedule in a file", an operator's row stamped
+ * `origin: 'file'` in flat contradiction of what that column means (DOR-1485
+ * review, B2).
+ *
+ * So:
+ *
+ * - `origin` is written only when the row was BORN from discovery. A row that
+ *   arrived through a route is never re-labelled by a later sync of its file.
+ * - `reason` is written only when discovery owns the row, or when the row has
+ *   no story of its own to overwrite.
+ * - `reasonSource` rides with any reason we DO write, marking it as DorkOS's
+ *   own words. Without it the drift sentence on an operator's own schedule
+ *   rendered on the approval card as an agent's quoted case — our words in
+ *   somebody else's mouth.
+ *
+ * The arm STATUS is not conditional and is applied by the caller regardless:
+ * that is the security property, and it holds for every row whatever wrote it.
+ *
+ * @param existing - The row being updated.
+ * @param arm - What the arm gate decided.
+ * @returns The provenance columns to include in the update, possibly none.
+ */
+function fileProvenance(
+  existing: { origin: string | null; reason: string | null },
+  arm: { reason: string | null }
+): { reason?: string | null; origin?: 'file'; reasonSource?: 'dorkos' | null } {
+  const source = arm.reason === null ? null : ('dorkos' as const);
+  if (existing.origin === 'file')
+    return { reason: arm.reason, origin: 'file', reasonSource: source };
+  if (existing.reason === null) return { reason: arm.reason, reasonSource: source };
+  return {};
+}
+
+/**
+ * What {@link TaskStore.rekeyMigratedFile} did with one migrated row.
+ *
+ * `no-row` is not an error — a legacy file that never synced has no row, and a
+ * re-run over an already-migrated file finds none at the old path either.
+ */
+export type RekeyOutcome = 'rekeyed' | 'reparked' | 'moved' | 'no-row';
+
+/**
+ * Why a migrated schedule is waiting for a person again: its file no longer says
+ * what the row it was approved as says.
+ *
+ * Only reachable when the file was edited while DorkOS was not running, since
+ * the migration itself never changes a schedule's prompt or cron.
+ */
+const DRIFTED_DURING_MIGRATION_REASON =
+  'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
+  'Read what it does now, then approve it or delete it.';
+
 /** Fields that can be updated on a run. */
 interface RunUpdate {
   status?: TaskRunStatus;
@@ -96,6 +170,10 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
   'completed',
   'failed',
   'cancelled',
+  // A skipped tick never started, so it is over the instant it is written
+  // (DOR-1482) — and being terminal is what stops anything from later
+  // "finishing" a run that was never run.
+  'skipped',
 ]);
 
 /**
@@ -106,6 +184,17 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
 export function isTerminalRunStatus(status: TaskRunStatus): boolean {
   return TERMINAL_RUN_STATUSES.has(status);
 }
+
+/**
+ * Every status that means a run is OVER, for queries that must not act on a run
+ * that is still going.
+ *
+ * The terminal set plus `timeout`, which exists only in the DB column's enum:
+ * no writer produces it today and the shared `TaskRunStatus` omits it, but a row
+ * carrying it is plainly finished, and both readers below would otherwise treat
+ * it as live for ever.
+ */
+const FINISHED_RUN_STATUSES = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
 
 /**
  * Callback fired exactly once when a run transitions to a terminal status
@@ -130,13 +219,11 @@ export class TaskStore {
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
   /**
-   * The last refused version of each task file that asked for a permission mode
-   * it cannot have (see {@link resolveFilePermissionMode}) — absolute file path
-   * to the declared mode and content that were refused. Dropped when the file
-   * stops asking, when its task is deleted, and when the file goes away, so the
-   * refusal is stated once per standing conflict rather than once per sync.
+   * The content gates every file-sourced write passes: the permission clamp and
+   * the arm gate, plus the memory that keeps a standing refusal from writing a
+   * log line every five minutes (`file-sync-gates.ts`).
    */
-  private readonly refusedFileGrants = new Map<string, string>();
+  private readonly fileGates = new FileSyncGates();
 
   constructor(db: Db) {
     this.db = db;
@@ -186,9 +273,18 @@ export class TaskStore {
         timezone: input.timezone ?? 'UTC',
         agentId: input.agentId ?? null,
         enabled: input.enabled ?? true,
+        sticky: input.sticky ?? false,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
+        // An operator create is itself the approval, so the row arrives armed.
+        // A caller that must not arm anything — an agent — is parked by the
+        // route straight after, and that park withdraws this through
+        // `updateTask`.
+        approvedContentKey: scheduleContentKey({
+          prompt: input.prompt,
+          cron: input.cron ?? '',
+        }),
         filePath: input.filePath,
         reason: input.reason ?? null,
         proposedBySessionId: input.proposedBySessionId ?? null,
@@ -215,9 +311,18 @@ export class TaskStore {
     if (input.displayName !== undefined) updates.displayName = input.displayName ?? null;
     if (input.description !== undefined) updates.description = input.description;
     if (input.prompt !== undefined) updates.prompt = input.prompt;
-    if (input.cron !== undefined) updates.cron = input.cron;
+    // `''`, never `null` — the column is NOT NULL and an empty cron is what
+    // "on demand" means in it, the same way {@link createTask} and
+    // {@link upsertFromFile} both already write it (`registerTask` reads a
+    // falsy cron as "do not schedule this"). A literal null threw a NOT NULL
+    // constraint error straight out of this method, and the cockpit's edit form
+    // sends exactly that on every save of a task with no cron
+    // (`cron: cronTrimmed || null` in `TaskFormInner.tsx`) — so editing an
+    // on-demand task's prompt failed, AFTER its file had already been rewritten.
+    if (input.cron !== undefined) updates.cron = input.cron ?? '';
     if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
     if (input.enabled !== undefined) updates.enabled = input.enabled;
+    if (input.sticky !== undefined) updates.sticky = input.sticky;
     if (input.maxRuntime !== undefined) {
       updates.maxRuntime =
         typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
@@ -227,7 +332,192 @@ export class TaskStore {
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
+    // **Status changes through this method ARE the operator's decision.**
+    //
+    // `status` is operator-only (`task-write-policy.ts`), so anything reaching
+    // here with one has already cleared the agent bar — which makes this the one
+    // place a person's approval can be recorded, and the one place it must be
+    // withdrawn. Doing it centrally rather than in the route is what keeps the
+    // MCP tools, the CLI and any future writer honest without each remembering.
+    //
+    // Read AFTER the update, deliberately: a single PATCH may change the cron
+    // and approve it in the same breath, and what was approved is the content
+    // the caller is leaving behind, not the one they found.
+    if (input.status === 'active') this.recordApproval(id);
+    else if (input.status !== undefined) this.withdrawApproval(id);
+
     return this.getTask(id);
+  }
+
+  /**
+   * Record that a person has approved this schedule's CURRENT content.
+   *
+   * The arm grant (`pulse_schedules.approved_content_key`). Stored positively so
+   * that no amount of status-writing elsewhere can fabricate it — see
+   * {@link resolveFileArmStatus} for the two writers that used to.
+   *
+   * @param id - The schedule a person just armed.
+   */
+  recordApproval(id: string): void {
+    const row = this.db
+      .select({ prompt: pulseSchedules.prompt, cron: pulseSchedules.cron })
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.id, id))
+      .get();
+    if (!row) return;
+    this.db
+      .update(pulseSchedules)
+      .set({ approvedContentKey: scheduleContentKey(row) })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+  }
+
+  /**
+   * Drop the arm grant, because this schedule is no longer approved.
+   *
+   * Called whenever a row leaves `active` through the API — parking it, pausing
+   * it — so an approval can never outlive the decision that made it.
+   *
+   * @param id - The schedule to withdraw approval from.
+   */
+  withdrawApproval(id: string): void {
+    this.db
+      .update(pulseSchedules)
+      .set({ approvedContentKey: null })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+  }
+
+  /**
+   * Move a row onto its file's new home, keeping any approval it holds — the DB
+   * half of the legacy migration (DOR-1486).
+   *
+   * One transaction, because the two writes are one fact: a row whose path moved
+   * without its grant re-keying is a schedule an operator approved that quietly
+   * asks to be approved again, and a grant re-keyed without the path moving is a
+   * grant for a file nothing reads. Either half alone is worse than neither.
+   *
+   * ## Why the key is compared against the ROW, not just taken from the file
+   *
+   * The migration rewrites frontmatter and never touches the body or the cron
+   * line, so the content key it produces is the key the row already had. That is
+   * the ordinary case, and it is why an approved schedule survives the upgrade
+   * without anyone re-approving it.
+   *
+   * The case worth writing code for is the other one: the file was edited while
+   * the server was down. Then the row's `(prompt, cron)` and the file's are
+   * DIFFERENT pieces of work, and stamping the file's key onto an active row
+   * would hand a person's approval to content nobody has read — grant without
+   * review, the one outcome this whole gate exists to prevent. So the two keys
+   * are compared, and a mismatch parks the row instead of re-keying it. That is
+   * the same answer the first sync after boot would reach on its own; reaching it
+   * here just means the schedule never fires the unread content in between.
+   *
+   * A row that is not `active` migrates exactly as it is — parked stays parked,
+   * paused stays paused, and whatever grant it holds is left alone, because
+   * moving a file is not a decision about it. Provenance follows the same rules
+   * every discovery write follows ({@link fileProvenance}): DorkOS never
+   * overwrites an agent's proposal reason with its own prose.
+   *
+   * @param from - The path the row is keyed on now.
+   * @param to - The path its file lives at after the move, symlinks resolved.
+   * @param rewritten - The migrated file's material content.
+   * @param park - A reason to park the row regardless (the name-collision case),
+   *   or `null` to let the comparison above decide.
+   * @returns What happened, for the caller's log and counters.
+   */
+  rekeyMigratedFile(
+    from: string,
+    to: string,
+    rewritten: IncomingTaskContent,
+    park: string | null = null
+  ): RekeyOutcome {
+    return this.db.transaction((tx) => {
+      const existing = tx
+        .select()
+        .from(pulseSchedules)
+        .where(eq(pulseSchedules.filePath, from))
+        .get();
+      // No row is an ordinary outcome, not a failure: a legacy file DorkOS never
+      // managed to sync has none, and a re-run after a crash finds the row
+      // already moved.
+      if (!existing) return 'no-row';
+
+      const now = new Date().toISOString();
+      const fileKey = scheduleContentKey(rewritten);
+      const agrees =
+        scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) === fileKey;
+
+      if (existing.status === 'active' && park === null && agrees) {
+        tx.update(pulseSchedules)
+          .set({ filePath: to, approvedContentKey: fileKey, updatedAt: now })
+          .where(eq(pulseSchedules.id, existing.id))
+          .run();
+        return 'rekeyed';
+      }
+
+      if (existing.status === 'active') {
+        const reason = park ?? DRIFTED_DURING_MIGRATION_REASON;
+        tx.update(pulseSchedules)
+          .set({
+            filePath: to,
+            status: 'pending_approval',
+            approvedContentKey: null,
+            ...fileProvenance(existing, { reason }),
+            updatedAt: now,
+          })
+          .where(eq(pulseSchedules.id, existing.id))
+          .run();
+        return 'reparked';
+      }
+
+      tx.update(pulseSchedules)
+        .set({ filePath: to, updatedAt: now })
+        .where(eq(pulseSchedules.id, existing.id))
+        .run();
+      return 'moved';
+    });
+  }
+
+  /**
+   * Give every already-live schedule a grant for the content it is already
+   * running (DOR-1485).
+   *
+   * Runs once at boot, before any watcher starts. Every alpha user has `active`
+   * rows that predate the grant column, and without this the first sync of each
+   * would find no key, park it, and confront them with a list of schedules they
+   * approved months ago. The row being `active` before this build existed IS the
+   * historical approval; this writes it down in the form the gate now reads.
+   *
+   * Idempotent and cheap: it only touches rows whose key is NULL, so a second
+   * boot matches nothing. Deliberately narrow, too — a `paused` or
+   * `pending_approval` row is not evidence of anything and gets no key, which is
+   * exactly the laundering the positive grant exists to stop.
+   *
+   * The keys are computed in JS, one row at a time, rather than by a single
+   * `UPDATE ... json_array(prompt, cron)`. SQLite's JSON writer and
+   * `JSON.stringify` agree on ordinary text and are not guaranteed to agree on
+   * escaping — a newline or an emoji in a prompt would be enough — and a key
+   * that differs by one byte from the one the gate computes is a grant that
+   * silently never matches. There are tens of these rows, not thousands.
+   *
+   * @returns How many rows were back-filled.
+   */
+  backfillApprovalGrants(): number {
+    const rows = this.db
+      .select({ id: pulseSchedules.id, prompt: pulseSchedules.prompt, cron: pulseSchedules.cron })
+      .from(pulseSchedules)
+      .where(and(eq(pulseSchedules.status, 'active'), isNull(pulseSchedules.approvedContentKey)))
+      .all();
+
+    for (const row of rows) {
+      this.db
+        .update(pulseSchedules)
+        .set({ approvedContentKey: scheduleContentKey(row) })
+        .where(eq(pulseSchedules.id, row.id))
+        .run();
+    }
+    return rows.length;
   }
 
   /**
@@ -262,7 +552,13 @@ export class TaskStore {
     if (!this.getTask(id)) return null;
 
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    if (proposal.reason !== undefined) updates.reason = proposal.reason;
+    if (proposal.reason !== undefined) {
+      updates.reason = proposal.reason;
+      // A proposer's own words, so the card quotes them and names who said it.
+      // Clearing the marker matters on a row DorkOS had written a reason onto
+      // earlier: without it, a real proposal would keep rendering as our prose.
+      updates.reasonSource = null;
+    }
     if (proposal.proposedBySessionId !== undefined)
       updates.proposedBySessionId = proposal.proposedBySessionId;
     if (proposal.proposedByAgentPath !== undefined)
@@ -306,7 +602,7 @@ export class TaskStore {
       return result.changes > 0;
     });
 
-    if (deleted && filePath) this.refusedFileGrants.delete(filePath);
+    if (deleted && filePath) this.fileGates.forget(filePath);
     return deleted;
   }
 
@@ -336,7 +632,7 @@ export class TaskStore {
    * Update fields on an existing run. Returns the updated run or null.
    *
    * A run's outcome is immutable once terminal (`completed`/`failed`/
-   * `cancelled`, see {@link isTerminalRunStatus}): this is a no-op that
+   * `cancelled`/`skipped`, see {@link isTerminalRunStatus}): this is a no-op that
    * returns the run unchanged. This is the durable fix for DOR-248 — the
    * scheduler's post-publish `status: 'running'` write can lose a race with
    * the handler's own terminal write on synchronous (in-process) relay
@@ -432,6 +728,68 @@ export class TaskStore {
     return rows.map(mapRunRow);
   }
 
+  /**
+   * Whether this task already has a run in flight (DOR-1571).
+   *
+   * The single-session serialization a STICKY task needs: it runs everything on
+   * one session, so a fire that arrives while the previous run is still going
+   * must NOT start a second turn on it. The scheduler asks this before claiming
+   * a tick and writes a `skipped` run instead, exactly as it does at the
+   * concurrency cap — the session is left to finish the turn it is on rather
+   * than corrupted with two at once.
+   *
+   * A `running` row is the only non-terminal status a run can hold (every other
+   * status is in {@link TERMINAL_RUN_STATUSES}), so this is the whole test.
+   *
+   * @param taskId - The task to check.
+   * @returns True when a run of this task is currently `running`.
+   */
+  hasRunningRunForTask(taskId: string): boolean {
+    const row = this.db
+      .select({ id: pulseRuns.id })
+      .from(pulseRuns)
+      .where(and(eq(pulseRuns.scheduleId, taskId), eq(pulseRuns.status, 'running')))
+      .limit(1)
+      .get();
+    return row !== undefined;
+  }
+
+  /**
+   * The REAL SDK session id of this task's most recent run that actually ran a
+   * turn — the resume target for the next sticky fire (DOR-1571).
+   *
+   * A run row carries `sessionId` only once it reaches a terminal status, and a
+   * sticky run writes the runtime's OWN session id there (the UUID the SDK minted
+   * or kept), not a synthetic one — because the SDK writes its transcript on disk
+   * under that id, and resume finds `{sessionId}.jsonl` only when the id is the
+   * real one (`launch-resolver.ts` sets `resume = session.sdkSessionId`). So the
+   * most recent run's stored id is exactly the session the next fire must resume
+   * to pick the conversation back up, cold across eviction and restart. The very
+   * first fire finds none and starts fresh; every later fire resumes.
+   *
+   * A `skipped` run never ran and never wrote a `sessionId`, so it is correctly
+   * absent; the current (still-running) run has a NULL `sessionId` too, so it can
+   * never be its own resume target.
+   *
+   * @param taskId - The task whose latest session to resume.
+   * @returns The real SDK session id to resume, or null when none has run yet.
+   */
+  latestStickySessionId(taskId: string): string | null {
+    const row = this.db
+      .select({ sessionId: pulseRuns.sessionId })
+      .from(pulseRuns)
+      .where(and(eq(pulseRuns.scheduleId, taskId), isNotNull(pulseRuns.sessionId)))
+      // `created_at` is an ISO string at millisecond resolution with no
+      // tiebreaker, so two runs written in the same millisecond order
+      // arbitrarily (the same hazard `pruneRuns` documents). Here the tie would
+      // resume the WRONG session, so `rowid` — strict insertion order — breaks
+      // it deterministically toward the run written last.
+      .orderBy(desc(pulseRuns.createdAt), sql`rowid DESC`)
+      .limit(1)
+      .get();
+    return row?.sessionId ?? null;
+  }
+
   /** Count total runs, optionally filtered by task. */
   countRuns(taskId?: string): number {
     if (taskId) {
@@ -446,48 +804,123 @@ export class TaskStore {
     return result?.count ?? 0;
   }
 
-  /** Prune old runs, keeping only the most recent `retentionCount` per task. */
+  /**
+   * Prune old runs, keeping the most recent `retentionCount` per task.
+   *
+   * **A run that has not finished is never deleted, however old it is.**
+   * Retention is about HISTORY, and a live run is not history — deleting its
+   * row mid-flight destroys the only record of work that is still happening:
+   * the scheduler's terminal write then finds nothing to update and the outcome
+   * is discarded, the run-terminal hook never fires (no notification, no
+   * attention badge), and the concurrency slot it was holding is silently
+   * handed back, so the cap quietly grows.
+   *
+   * This guard was not needed while pruning happened once, at startup, directly
+   * after a sweep that had just ended every running row — there was no live run
+   * left for it to hit. Both halves of that changed in DOR-1482: pruning now
+   * runs hourly, and the sweep deliberately leaves other processes' runs alone.
+   * So the protection has to be stated here rather than inherited from when it
+   * is called.
+   *
+   * Written as "delete only what is finished" rather than "skip `running`", so
+   * a status added later is protected by default and has to be opted IN to
+   * deletion.
+   *
+   * ## `retentionCount` counts FINISHED runs
+   *
+   * The keeper query is restricted the same way, so a live run never occupies a
+   * keeper slot. Two things go wrong when it can. `created_at` is an ISO string
+   * at millisecond resolution with no tiebreaker, so runs written in the same
+   * millisecond order arbitrarily — a live run can win a slot on one pass and
+   * lose it on the next, which makes how much history survives depend on a
+   * coin toss. And a slot spent on a run that is protected anyway is a slot not
+   * spent on history, so "keep the last 100" silently kept 99 whenever a run
+   * was in flight.
+   *
+   * @param taskId - The task whose history is being trimmed.
+   * @param retentionCount - How many of the newest FINISHED runs to keep.
+   * @returns How many rows were deleted.
+   */
   pruneRuns(taskId: string, retentionCount: number): number {
     const keepers = this.db
       .select({ id: pulseRuns.id })
       .from(pulseRuns)
-      .where(eq(pulseRuns.scheduleId, taskId))
+      .where(
+        and(eq(pulseRuns.scheduleId, taskId), inArray(pulseRuns.status, FINISHED_RUN_STATUSES))
+      )
       .orderBy(desc(pulseRuns.createdAt))
       .limit(retentionCount)
       .all();
 
     const keeperIds = keepers.map((r) => r.id);
 
-    if (keeperIds.length === 0) {
-      const result = this.db.delete(pulseRuns).where(eq(pulseRuns.scheduleId, taskId)).run();
-      return result.changes;
-    }
+    const conditions = [
+      eq(pulseRuns.scheduleId, taskId),
+      inArray(pulseRuns.status, FINISHED_RUN_STATUSES),
+    ];
+    if (keeperIds.length > 0) conditions.push(notInArray(pulseRuns.id, keeperIds));
 
     const result = this.db
       .delete(pulseRuns)
-      .where(and(eq(pulseRuns.scheduleId, taskId), notInArray(pulseRuns.id, keeperIds)))
+      .where(and(...conditions))
       .run();
     return result.changes;
   }
 
   /**
-   * Atomically claim a scheduled dispatch for `(taskId, scheduledFireTime)`
-   * (ADR-285). Backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
-   * succeeds for exactly one caller per tick across all processes sharing this
-   * DB. Returns `true` if THIS caller won the claim (should fire), `false` if the
-   * tick was already dispatched (skip).
+   * Atomically claim a scheduled tick AND open its run row, in one transaction
+   * (ADR-285; made atomic by DOR-1482).
+   *
+   * The claim is backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
+   * succeeds for exactly one caller per tick across every process sharing this
+   * database. The run row rides in the SAME transaction because the two used to
+   * be consecutive statements, and a process that died between them consumed
+   * the occurrence for the whole seven-day dedup window while leaving no
+   * evidence it had ever happened: no run row, nothing in the history, and a
+   * `nextRun` that had already moved on. Either both rows exist or neither
+   * does, so a crashed dispatch is simply a tick that was never claimed and the
+   * next process to see it may take it.
    *
    * @param taskId - The task being dispatched.
    * @param scheduledFireTime - The cron's intended tick (epoch ms), not wall-clock.
-   * @returns Whether this caller may proceed to fire.
+   * @param outcome - `running` opens a live run; `skipped` records a tick this
+   *   scheduler deliberately did not run, with the reason a person will read.
+   * @returns The new run, or null when another caller already claimed this tick.
    */
-  tryClaimDispatch(taskId: string, scheduledFireTime: number): boolean {
-    const result = this.db
-      .insert(pulseDispatchLog)
-      .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
-      .onConflictDoNothing()
-      .run();
-    return result.changes === 1;
+  claimScheduledRun(
+    taskId: string,
+    scheduledFireTime: number,
+    outcome: { status: 'running' } | { status: 'skipped'; reason: string }
+  ): TaskRun | null {
+    const now = new Date().toISOString();
+    const runId = this.db.transaction((tx) => {
+      const claim = tx
+        .insert(pulseDispatchLog)
+        .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
+        .onConflictDoNothing()
+        .run();
+      if (claim.changes !== 1) return null;
+
+      const id = ulid();
+      tx.insert(pulseRuns)
+        .values({
+          id,
+          scheduleId: taskId,
+          status: outcome.status,
+          startedAt: now,
+          trigger: 'scheduled',
+          createdAt: now,
+          // A skipped tick is over the moment it is recorded: it has an ending,
+          // it took no time, and the reason is the whole point of writing it.
+          ...(outcome.status === 'skipped'
+            ? { finishedAt: now, durationMs: 0, error: outcome.reason }
+            : {}),
+        })
+        .run();
+      return id;
+    });
+
+    return runId ? this.getRun(runId) : null;
   }
 
   /**
@@ -508,8 +941,14 @@ export class TaskStore {
   }
 
   /**
-   * Mark all currently running runs as failed (used on startup for crash
-   * recovery, DOR-249).
+   * Mark NAMED runs as failed because a restart interrupted them (DOR-249).
+   *
+   * Takes explicit ids rather than sweeping every `running` row, which is what
+   * this used to do: the database is shared by every process using one
+   * `dorkHome` (ADR-285), so an unscoped sweep let one process's boot end
+   * another process's live runs. Deciding WHICH runs a crash left behind is a
+   * judgement about leadership and ownership, so it lives in
+   * `crash-recovery.ts`; this method only carries out the decision.
    *
    * Scoped to rows that are genuinely unfinished (`finishedAt IS NULL`) —
    * a `running` row that already carries a real `finishedAt` was completed
@@ -518,8 +957,12 @@ export class TaskStore {
    * this sweep must not assume every writer is patched). Never overwrite an
    * existing `finishedAt`: that timestamp is the only record of when the run
    * actually finished.
+   *
+   * @param runIds - The runs to end. An empty list writes nothing.
+   * @returns How many rows were changed.
    */
-  markRunningAsFailed(): number {
+  markRunsInterrupted(runIds: string[]): number {
+    if (runIds.length === 0) return 0;
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseRuns)
@@ -528,7 +971,13 @@ export class TaskStore {
         finishedAt: now,
         error: 'Interrupted by server restart',
       })
-      .where(and(eq(pulseRuns.status, 'running'), isNull(pulseRuns.finishedAt)))
+      .where(
+        and(
+          inArray(pulseRuns.id, runIds),
+          eq(pulseRuns.status, 'running'),
+          isNull(pulseRuns.finishedAt)
+        )
+      )
       .run();
     return result.changes;
   }
@@ -603,7 +1052,13 @@ export class TaskStore {
     // it): if such a row ever appears, it's a run that ended without
     // success, so it must count against the success rate rather than be
     // silently ignored.
-    const reliabilityTerminalStatuses = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
+    //
+    // 'skipped' is excluded for the mirror-image reason: the agent never ran,
+    // so the schedule neither succeeded nor failed. Counting a busy server
+    // against the task's reliability would blame the task for the queue.
+    const reliabilityTerminalStatuses = FINISHED_RUN_STATUSES.filter(
+      (status) => status !== 'skipped'
+    );
     const conditions = [inArray(pulseRuns.status, reliabilityTerminalStatuses)];
     if (scheduleId) {
       conditions.push(eq(pulseRuns.scheduleId, scheduleId));
@@ -627,6 +1082,8 @@ export class TaskStore {
   /**
    * Upsert a task from a parsed SKILL.md file definition.
    *
+   * @see {@link UpsertFromFileOptions} for what `options` decides.
+   *
    * Looks up existing tasks by `filePath`. If found, updates in place.
    * If not found, inserts a new row with a fresh ULID.
    *
@@ -635,13 +1092,27 @@ export class TaskStore {
    * the primary create path for every task, and a file on disk is nobody's
    * approval. Read that function for what a file may and may not do to the mode.
    *
+   * `options.source` decides whether the SECOND content gate applies. A write
+   * from `discovery` — the watcher or the reconciler finding a file — can never
+   * arm itself and parks at `pending_approval` until a person says otherwise
+   * ({@link resolveFileArmStatus}). A write from `operator` is a person or an
+   * install acting through DorkOS, and the act itself is the approval, so the
+   * status is left exactly as it was. That is the default, because it is what
+   * every caller here did before the gate existed.
+   *
    * @param def - Parsed task definition from a SKILL.md file
    * @param agentId - Agent ID derived from directory location (optional)
+   * @param options - Where the write came from, and what is wrong with the file
    * @returns The upserted Task
    */
-  upsertFromFile(def: TaskDefinition, agentId?: string): Task {
+  upsertFromFile(def: TaskDefinition, agentId?: string, options?: UpsertFromFileOptions): Task {
     const now = new Date().toISOString();
-    const maxRuntimeMs = def.meta['max-runtime'] ? parseDuration(def.meta['max-runtime']) : null;
+    // The schedule block is the only place scheduling lives since DOR-1486.
+    // Until then this read went through a flattened copy of it that discovery
+    // built for the legacy roots' benefit; those roots are gone and so is the
+    // copy.
+    const schedule = def.meta.schedule;
+    const maxRuntimeMs = schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null;
 
     const existing = this.db
       .select()
@@ -649,37 +1120,11 @@ export class TaskStore {
       .where(eq(pulseSchedules.filePath, def.filePath))
       .get();
 
-    const incomingCron = def.meta.cron ?? '';
-    const { mode: permissionMode, clamped } = resolveFilePermissionMode(
-      def.meta.permissions,
-      existing && {
-        permissionMode: existing.permissionMode as PermissionMode,
-        status: existing.status,
-        prompt: existing.prompt,
-        cron: existing.cron,
-      },
-      { prompt: def.body, cron: incomingCron }
-    );
-    // Said once per refused VERSION of a file, not once per sync and not once
-    // per path. The reconciler re-reads every task file every five minutes, so
-    // warning per sync turns one standing refusal into a log line every five
-    // minutes; but keying on the path alone would swallow the line that matters
-    // most — a file rewritten under a grant it used to hold is a NEW refusal,
-    // and it must not be silenced by an earlier one at the same path.
-    //
-    // Serialized rather than concatenated: a prompt can hold any text at
-    // all, and a separator the prompt can also hold lets two different
-    // files share one key — swallowing exactly the warning this keying
-    // exists to preserve.
-    const refusal = JSON.stringify([def.meta.permissions, def.body, incomingCron]);
-    if (clamped && this.refusedFileGrants.get(def.filePath) !== refusal) {
-      this.refusedFileGrants.set(def.filePath, refusal);
-      logger.warn(
-        `TaskStore: ${def.filePath} asked to run with every approval prompt turned off. ` +
-          `DorkOS synced it with the normal prompts instead; you can change that on the task.`
-      );
-    }
-    if (!clamped) this.refusedFileGrants.delete(def.filePath);
+    const incomingCron = schedule.cron ?? '';
+    // What a file on disk may do to this row, decided in one place so the
+    // permission clamp and the arm gate cannot disagree — see
+    // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
+    const { permissionMode, arm } = this.fileGates.resolve(def, existing, options);
 
     if (existing) {
       this.db
@@ -690,9 +1135,10 @@ export class TaskStore {
           description: def.meta.description ?? null,
           prompt: def.body,
           cron: incomingCron,
-          timezone: def.meta.timezone,
+          timezone: schedule.timezone,
           agentId: agentId ?? null,
-          enabled: def.meta.enabled,
+          enabled: schedule.enabled,
+          sticky: schedule.sticky,
           maxRuntime: maxRuntimeMs,
           permissionMode,
           // A `paused` row whose file is back is un-paused here, because
@@ -709,7 +1155,35 @@ export class TaskStore {
           // `enabled: false`, which lands in the file's frontmatter and is
           // re-read above, so their choice holds.
           // `pending_approval` is untouched: that gate is a person's to clear.
-          ...(existing.status === 'paused' ? { status: 'active' as const } : {}),
+          //
+          // Under the arm gate this un-pausing is the gate's call instead: a
+          // returning file keeps its approval when the content key still
+          // matches (a save is an unlink-and-recreate), and re-parks when it
+          // does not.
+          ...(arm
+            ? {
+                status: arm.status,
+                ...fileProvenance(existing, arm),
+                // Parking withdraws the grant, so the next sync has to ask again
+                // rather than finding a key it left lying around.
+                ...(arm.status === 'pending_approval' ? { approvedContentKey: null } : {}),
+              }
+            : existing.status === 'paused'
+              ? {
+                  status: 'active' as const,
+                  // ...and with a grant, because this branch ARMS the row. An
+                  // operator write that un-pauses a schedule is the operator's
+                  // approval of it, exactly as the insert branch treats a create;
+                  // leaving the key null would put the row live and ungranted
+                  // until the next sync noticed and parked it (DOR-1485 review,
+                  // R2). Reachable through `shape-schedule-service` and through a
+                  // route write over a path whose file had been deleted.
+                  approvedContentKey: scheduleContentKey({
+                    prompt: def.body,
+                    cron: incomingCron,
+                  }),
+                }
+              : {}),
           tags: '[]',
           updatedAt: now,
         })
@@ -728,12 +1202,22 @@ export class TaskStore {
         description: def.meta.description ?? null,
         prompt: def.body,
         cron: incomingCron,
-        timezone: def.meta.timezone,
+        timezone: schedule.timezone,
         agentId: agentId ?? null,
-        enabled: def.meta.enabled,
+        enabled: schedule.enabled,
+        sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
         permissionMode,
-        status: 'active',
+        status: arm?.status ?? 'active',
+        reason: arm?.reason ?? null,
+        origin: arm ? 'file' : null,
+        reasonSource: arm?.reason ? 'dorkos' : null,
+        // An operator write IS the approval — the install or the route that
+        // reached here is a person acting through DorkOS — so it arrives with a
+        // grant. A discovered file never does; it has to be looked at first.
+        approvedContentKey: arm
+          ? null
+          : scheduleContentKey({ prompt: def.body, cron: incomingCron }),
         filePath: def.filePath,
         tags: '[]',
         createdAt: now,
@@ -753,12 +1237,23 @@ export class TaskStore {
    * live task in another project that happens to share the name — observed on
    * real data with two `flow-drain` tasks in different checkouts.
    *
+   * The arm grant is deliberately LEFT ALONE here. A schedule whose file went
+   * away has not been un-approved by anybody; if the same content comes back —
+   * which is what an ordinary atomic-rename save looks like from the outside, and
+   * what a package update does — the stored key still matches and the schedule
+   * picks up where it left off. If different content comes back, the key does not
+   * match and it parks. Neither outcome needs this method to have an opinion,
+   * which is the point of storing the grant rather than inferring it from status:
+   * an earlier round of this work had to special-case `pending_approval` here to
+   * stop a pause laundering a missing approval, and that special case is now
+   * unnecessary.
+   *
    * @param filePath - Absolute path to the SKILL.md that is no longer on disk
-   * @returns The number of tasks marked as paused (0 or 1)
+   * @returns The number of tasks marked as removed (0 or 1)
    */
   markRemovedByFilePath(filePath: string): number {
     // A file that came back is a fresh conflict, worth stating again.
-    this.refusedFileGrants.delete(filePath);
+    this.fileGates.forget(filePath);
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)
@@ -792,56 +1287,4 @@ export class TaskStore {
   close(): void {
     logger.debug('[Tasks] TaskStore close() is a no-op — the db lifecycle is managed externally');
   }
-}
-
-/**
- * Convert a Drizzle schedule row to a Task object.
- *
- * `proposedByName` and `nextRuns` are left at their empty values here on
- * purpose. Both are resolved when a task is READ by something that can answer
- * them — the name from the agent-identity service (async, and the store is a
- * synchronous data layer), the run times from the scheduler — so the store
- * never caches an answer that can go stale between a write and a read.
- */
-function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
-  return {
-    id: row.id,
-    name: row.name,
-    displayName: row.displayName ?? null,
-    description: row.description ?? null,
-    prompt: row.prompt,
-    cron: row.cron,
-    timezone: row.timezone,
-    agentId: row.agentId ?? null,
-    enabled: row.enabled,
-    maxRuntime: row.maxRuntime,
-    permissionMode: row.permissionMode,
-    status: row.status as Task['status'],
-    filePath: row.filePath,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    reason: row.reason ?? null,
-    proposedBySessionId: row.proposedBySessionId ?? null,
-    proposedByAgentPath: row.proposedByAgentPath ?? null,
-    proposedByName: null,
-    nextRun: null,
-    nextRuns: [],
-  } as Task;
-}
-
-/** Convert a Drizzle run row to a TaskRun object. */
-function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
-  return {
-    id: row.id,
-    scheduleId: row.scheduleId,
-    status: row.status as TaskRunStatus,
-    startedAt: row.startedAt,
-    finishedAt: row.finishedAt,
-    durationMs: row.durationMs,
-    outputSummary: row.output,
-    error: row.error,
-    sessionId: row.sessionId,
-    trigger: row.trigger as TaskRunTrigger,
-    createdAt: row.createdAt,
-  };
 }

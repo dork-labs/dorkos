@@ -171,12 +171,17 @@ export function DiagramV13({ modules }: { modules: SystemModule[] }) {
   const [persistenceState, setPersistenceState] = useState<number>(0);
   const [showHint, setShowHint] = useState<boolean>(true);
   const [canvasVisible, setCanvasVisible] = useState<boolean>(false);
+  // Mirrors maskRef.current.centers for the label overlays below — refs
+  // cannot be read during render, so the mask rebuild also publishes this.
+  const [labelCenters, setLabelCenters] = useState<Record<string, Point>>({});
 
   // ── Mask rebuild ────────────────────────────────────────────────────────────
 
   const rebuildMask = useCallback(
     (w: number, h: number) => {
-      maskRef.current = buildArchitectureMask(w, h, modules);
+      const mask = buildArchitectureMask(w, h, modules);
+      maskRef.current = mask;
+      setLabelCenters(mask.centers);
     },
     [modules]
   );
@@ -353,10 +358,6 @@ export function DiagramV13({ modules }: { modules: SystemModule[] }) {
     },
     [getCanvasPoint]
   );
-
-  // ── Resolve overlay positions from the current mask ─────────────────────────
-
-  const labelCenters = maskRef.current?.centers ?? {};
 
   // ── Render ──────────────────────────────────────────────────────────────────
 

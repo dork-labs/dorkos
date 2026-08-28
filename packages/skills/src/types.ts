@@ -1,5 +1,5 @@
 import type { SkillFrontmatter } from './schema.js';
-import type { TaskFrontmatter } from './task-schema.js';
+import type { ScheduleBlock } from './schedule-schema.js';
 import type { CommandFrontmatter } from './command-schema.js';
 
 /** Discriminated parse result. */
@@ -40,10 +40,20 @@ export interface SkillDefinition {
   dirPath: string;
 }
 
-/** Parsed task definition with location-derived context. */
+/**
+ * Parsed scheduled task with location-derived context.
+ *
+ * The `meta` is an ordinary skill's frontmatter with its `schedule:` block
+ * NARROWED to a readable one — which is the whole definition of a scheduled
+ * task since DOR-1485: being scheduled is a property of the file, and the block
+ * is the property. Before DOR-1486 this carried the legacy shape instead, with
+ * the scheduling fields at the top level, and discovery flattened every block
+ * back down into it so one store path could serve both roots. There is one
+ * shape now, so nothing is flattened and nothing translates.
+ */
 export interface TaskDefinition extends Omit<SkillDefinition, 'meta'> {
-  meta: TaskFrontmatter;
-  /** Whether the task comes from a project or global tasks directory. */
+  meta: SkillFrontmatter & { schedule: ScheduleBlock };
+  /** Whether the task comes from a project or a global skills root. */
   scope: 'project' | 'global';
   /** Absolute path to the project root (present for project-scoped tasks). */
   projectPath?: string;

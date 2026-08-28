@@ -61,7 +61,7 @@ export default function SecurityPage() {
             Your machine is the line
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is a cockpit for AI agents that run on your own computer. The one idea that
+            DorkOS is one place for every AI agent you run on your own computer. The one idea that
             explains everything else: your machine is the trust boundary. By default there is no
             account and DorkOS answers only to your own computer, the same way other developer tools
             do. It does not try to protect you from other software you already chose to run under

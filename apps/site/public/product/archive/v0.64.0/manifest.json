@@ -1,0 +1,69 @@
+{
+  "label": "v0.64.0",
+  "archivedAt": "2026-08-24T13:34:16.960Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-24T13:34:04.761Z",
+    "runId": "20260824-082608"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "tasks",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "tool-approval",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    }
+  ],
+  "count": 3,
+  "totalBytes": 283539,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 65306,
+      "runId": "20260824-082608",
+      "capturedAt": "2026-08-24T13:31:20.861Z"
+    },
+    {
+      "source": "auto",
+      "file": "tasks-light.png",
+      "surface": "tasks",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 118677,
+      "runId": "20260824-082608",
+      "capturedAt": "2026-08-24T13:31:20.861Z"
+    },
+    {
+      "source": "auto",
+      "file": "tool-approval-light.png",
+      "surface": "tool-approval",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 99556,
+      "runId": "20260824-082608",
+      "capturedAt": "2026-08-24T13:31:20.861Z"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { desc } from 'drizzle-orm';
 
 /** Task definitions cached from .md files. Internal table name retained for migration simplicity. */
 export const pulseSchedules = sqliteTable('pulse_schedules', {
@@ -25,7 +26,55 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * name would outlive both.
    */
   proposedByAgentPath: text('proposed_by_agent_path'),
+  /**
+   * Where this row came from, when that is not a person using DorkOS.
+   *
+   * `file` means discovery found a `schedule:` block in a SKILL.md and made
+   * this row from it (DOR-1485). Nobody asked for it through a route, so the
+   * approval card must not credit an agent with proposing it — it shows the
+   * file instead. NULL is every other row: a person's own schedule, or an
+   * agent's proposal, which is told apart by `proposed_by_agent_path`.
+   */
+  origin: text('origin', { enum: ['file'] }),
+  /**
+   * Who wrote `reason`.
+   *
+   * `dorkos` means DorkOS did — "this file changed since you approved it", or a
+   * validation complaint naming a broken setting. NULL means the words belong to
+   * whoever proposed the schedule, and the approval card quotes them as such.
+   * Rendering our own sentence in quotation marks under "Proposed by an agent"
+   * put words in an agent's mouth that it never said.
+   */
+  reasonSource: text('reason_source', { enum: ['dorkos'] }),
+  /**
+   * The schedule content a person has actually approved, as a content key
+   * (prompt + cron; `scheduleContentKey` in `schedule-permission-clamp.ts`).
+   *
+   * This is the arm grant, and it is POSITIVE on purpose. It used to be inferred
+   * from `status`, and that inference sprang a leak every time some other writer
+   * touched the column: pausing a row for a vanished file, and again for an
+   * unregistered agent, each turned "never approved" into "approved" by writing
+   * a status the gate read as consent. A stored key cannot be forged by a status
+   * write, so the gate no longer consults `status` at all.
+   *
+   * NULL means nobody has approved this schedule's current content — the state
+   * every file-discovered row starts in, and the state a row returns to the
+   * moment its content drifts.
+   */
+  approvedContentKey: text('approved_content_key'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  /**
+   * Whether every fire of this schedule RESUMES one persistent session instead
+   * of starting a fresh one (DOR-1571).
+   *
+   * Off (the default) is today's behavior exactly: each run gets its own session,
+   * keyed by the run's own id, and carries no context from the run before it. On
+   * makes every run of this task share ONE session — `sticky-<taskId>`, derived
+   * and stable — so the agent picks up where it left off and can act on "what
+   * changed since last time". A cache of the file's `schedule.sticky`, like every
+   * other scheduling column here; the SKILL.md is the source of truth.
+   */
+  sticky: integer('sticky', { mode: 'boolean' }).notNull().default(false),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),
   status: text('status', {
@@ -60,7 +109,10 @@ export const pulseRuns = sqliteTable(
       // of a schedule that ever ran into a FOREIGN KEY violation.
       .references(() => pulseSchedules.id, { onDelete: 'cascade' }),
     status: text('status', {
-      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout'],
+      // `skipped` is a tick the scheduler deliberately did not run — the cap was
+      // full when it came round (DOR-1482). `timeout` predates it and no writer
+      // produces it; both are terminal, neither is a failure.
+      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout', 'skipped'],
     }).notNull(),
     startedAt: text('started_at').notNull(), // ISO 8601 TEXT
     finishedAt: text('finished_at'),
@@ -75,7 +127,20 @@ export const pulseRuns = sqliteTable(
       .default('scheduled'),
     createdAt: text('created_at').notNull(),
   },
-  (table) => [index('idx_pulse_runs_session').on(table.sessionId)]
+  (table) => [
+    index('idx_pulse_runs_session').on(table.sessionId),
+    // Every read of run history is newest-first, and this table is the one that
+    // GROWS: a task on a per-minute schedule writes 43,200 rows a month, and
+    // until DOR-1482 nothing pruned it between restarts. Without these two, both
+    // shapes of that read are a full scan plus a sort of everything.
+    //
+    // `created_at` alone answers the unfiltered "show me recent runs"
+    // (`GET /api/tasks/runs`); the composite answers the per-task reads —
+    // `listRuns({ taskId })` and, on the hourly retention sweep, `pruneRuns`,
+    // which asks for one task's newest N by exactly this ordering.
+    index('idx_pulse_runs_created_at').on(desc(table.createdAt)),
+    index('idx_pulse_runs_schedule_created_at').on(table.scheduleId, desc(table.createdAt)),
+  ]
 );
 
 /**

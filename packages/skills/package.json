@@ -19,9 +19,9 @@
       "types": "./src/schema.ts",
       "default": "./dist/schema.js"
     },
-    "./task-schema": {
-      "types": "./src/task-schema.ts",
-      "default": "./dist/task-schema.js"
+    "./schedule-schema": {
+      "types": "./src/schedule-schema.ts",
+      "default": "./dist/schedule-schema.js"
     },
     "./command-schema": {
       "types": "./src/command-schema.ts",
@@ -67,12 +67,12 @@
   "dependencies": {
     "@dorkos/shared": "workspace:*",
     "gray-matter": "^4.0.3",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

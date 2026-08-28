@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
-  "version": "0.63.0",
-  "description": "You, multiplied. Mission control for Claude Code, Codex, and OpenCode: see every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
+  "version": "0.65.0",
+  "description": "You, multiplied. All your agents in one place: Claude Code, Codex, and OpenCode. See every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
@@ -59,30 +59,30 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.224",
-    "@anthropic-ai/sdk": "^0.102.0",
-    "@asteasolutions/zod-to-openapi": "^8.5.0",
-    "@inquirer/prompts": "^8.5.2",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@anthropic-ai/sdk": "^0.120.0",
+    "@asteasolutions/zod-to-openapi": "9.1.0",
+    "@inquirer/prompts": "^8.6.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@ngrok/ngrok": "^1.7.0",
     "@openai/codex": "0.147.0",
     "@openai/codex-sdk": "~0.147.0",
     "@opencode-ai/sdk": "^1.18.15",
-    "@scalar/express-api-reference": "^0.9.8",
+    "@scalar/express-api-reference": "^0.10.16",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.2",
     "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "node-pty": "^1.1.0",
     "qrcode-terminal": "^0.12.0",
-    "uuid": "^13.0.0",
-    "ws": "^8.21.0",
+    "uuid": "^13.0.2",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@better-auth/api-key": "^1.6.23",
+    "@better-auth/api-key": "1.6.23",
     "@dorkos/client": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
@@ -93,9 +93,9 @@
     "@dorkos/typescript-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/qrcode-terminal": "^0.12.2",
-    "better-auth": "^1.6",
-    "tsx": "^4.21.0",
+    "better-auth": "1.6.23",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

@@ -392,11 +392,15 @@ export type CommunityGatedCapability = (typeof COMMUNITY_GATED_CAPABILITIES)[num
  * is a relation between entries (ADR `260728-022013`), so "`listRooms` never
  * returns a thread" is half enforced by the type.
  *
- * `workspaceId` is deliberately absent. It binds a room to a checkout on THIS
- * machine; a remote community has no opinion about a path on someone's laptop,
- * and putting one on the wire would be the same privacy defect the author
- * registry exists to prevent. It stays a local-only column the cache carries
- * beside a remote room.
+ * A room's own FILES are deliberately absent, and always have been. That
+ * binding names a directory on THIS machine; a remote community has no opinion
+ * about a path on someone's laptop, and putting one on the wire would be the
+ * same privacy defect the author registry exists to prevent. It lives in a
+ * `room-repo.json` sidecar under the DorkOS data directory, cached in
+ * `room_repos` (spec `project-rooms` §3.1) — local state the cache carries
+ * beside a remote room, never a field of this port. The `workspaceId` column
+ * this note used to name was the v1 placeholder for the same idea and is gone
+ * (DOR-1591).
  */
 export const CommunityRoomSchema = RoomAddressSchema.extend({
   /** Channel or direct message. There is no thread kind: a thread is an entry relation. */

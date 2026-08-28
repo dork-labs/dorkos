@@ -288,6 +288,193 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('server.boundary')).not.toBe('/');
   });
 
+  describe('settings a config wipe refuses to reverse (DOR-1497)', () => {
+    // The reproduction, kept as the test. Every leaf below is on
+    // `PROTECTIVE_CARRYOVERS`: recovery from a corrupt config carries the
+    // person's value across rather than landing on the shipped default, because
+    // a wipe may lose a preference and must never lose a protection. All nine
+    // were `agent-writable` anyway — so the ACCIDENT was refused and the
+    // DELIBERATE write by an agent was not. Measured before the fix: every one
+    // of these returned 200 and the stored protective value was gone.
+    //
+    // Each case is driven through the real route with the real header, and each
+    // asserts the STORE as well as the status: a refusal that still wrote would
+    // pass a status-only test.
+    //
+    // The nine share ONE test per direction rather than getting a case each.
+    // That is a memory decision, not a style one: every test in this file mints
+    // a fresh app, a fresh config directory and a fresh module graph
+    // (`vi.resetModules()`), and eighteen more of those took the worker past the
+    // heap limit — a `FATAL ERROR: JavaScript heap out of memory` that reads
+    // like a hang rather than a failure. Each leaf still carries its own
+    // assertion message, so a red names the leaf that broke.
+
+    /** One leaf, the value a person tightened it to, and the write an agent tried. */
+    const carried: Array<{
+      path: string;
+      protective: unknown;
+      agentWants: unknown;
+      patch: object;
+    }> = [
+      {
+        path: 'runtimes.claudeCode.persistentSession',
+        protective: false,
+        agentWants: true,
+        patch: { runtimes: { claudeCode: { persistentSession: true } } },
+      },
+      {
+        path: 'agentContext.relayTools',
+        protective: false,
+        agentWants: true,
+        patch: { agentContext: { relayTools: true } },
+      },
+      {
+        path: 'agentContext.meshTools',
+        protective: false,
+        agentWants: true,
+        patch: { agentContext: { meshTools: true } },
+      },
+      {
+        path: 'agentContext.adapterTools',
+        protective: false,
+        agentWants: true,
+        patch: { agentContext: { adapterTools: true } },
+      },
+      {
+        path: 'agentContext.tasksTools',
+        protective: false,
+        agentWants: true,
+        patch: { agentContext: { tasksTools: true } },
+      },
+      {
+        path: 'harness.autoSync',
+        protective: false,
+        agentWants: true,
+        patch: { harness: { autoSync: true } },
+      },
+      {
+        path: 'uploads.maxFileSize',
+        protective: 1024,
+        agentWants: 104857600,
+        patch: { uploads: { maxFileSize: 104857600 } },
+      },
+      {
+        path: 'uploads.maxFiles',
+        protective: 1,
+        agentWants: 20,
+        patch: { uploads: { maxFiles: 20 } },
+      },
+      {
+        path: 'scheduler.maxConcurrentRuns',
+        protective: 1,
+        agentWants: 10,
+        patch: { scheduler: { maxConcurrentRuns: 10 } },
+      },
+    ];
+
+    it('refuses an AGENT every one of them, and writes nothing', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      // Seeded straight into the store, so the seeding is not the thing under
+      // test — this is the state a person who tightened the bound leaves behind.
+      for (const leaf of carried) configManager.setDot(leaf.path, leaf.protective);
+
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      for (const leaf of carried) {
+        const refused = await request(server).patch('/api/config').send(leaf.patch);
+
+        expect(refused.status, leaf.path).toBe(403);
+        expect(refused.body.code, leaf.path).toBe('operator_only_config');
+        expect(refused.body.paths, leaf.path).toContain(leaf.path);
+        expect(configManager.getDot(leaf.path), leaf.path).toBe(leaf.protective);
+        expect(configManager.getDot(leaf.path), leaf.path).not.toBe(leaf.agentWants);
+      }
+    });
+
+    it('lets the PERSON write every one of them through the same door', async () => {
+      // The other half, and the one that decides whether the fix is usable.
+      // Every surface that owns one of these nine writes through THIS route: the
+      // Control Center's 'Warm agents' switch and its 'Scheduled runs at once'
+      // stepper, Settings → Tools for the four tool switches and the same
+      // concurrency stepper, and `dorkos config set` for `uploads.max*` and
+      // `harness.autoSync`, which have no screen of their own. A guard that
+      // refused everybody would break every one of them.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      for (const leaf of carried) configManager.setDot(leaf.path, leaf.protective);
+
+      for (const leaf of carried) {
+        const response = await request(server).patch('/api/config').send(leaf.patch);
+
+        expect(response.status, leaf.path).toBe(200);
+        expect(response.body.success, leaf.path).toBe(true);
+        expect(configManager.getDot(leaf.path), leaf.path).toBe(leaf.agentWants);
+      }
+    });
+
+    it('leaves an agent the ordinary preferences beside them', async () => {
+      // The over-refusal check. `uploads.allowedTypes` sits in the same section
+      // as two newly refused bounds, `defaultModel` beside a newly refused
+      // runtime leaf, and neither is carried across a wipe — so both must still
+      // go through, or the guard has been drawn wider than the rule it enforces.
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const response = await request(server)
+        .patch('/api/config')
+        .send({
+          ui: { theme: 'dark' },
+          uploads: { allowedTypes: ['image/*'] },
+          scheduler: { retentionCount: 50 },
+          runtimes: { claudeCode: { defaultModel: 'opus' } },
+        })
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('uploads.allowedTypes')).toEqual(['image/*']);
+      expect(configManager.getDot('runtimes.claudeCode.defaultModel')).toBe('opus');
+      expect(configManager.getDot('scheduler.retentionCount')).toBe(50);
+    });
+
+    it('refuses the whole patch when one carried leaf rides along with preferences', async () => {
+      // No partial write: an agent must not be able to smuggle a protective
+      // value's reversal in behind a legitimate change and have the legitimate
+      // half land as cover.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.setDot('agentContext.relayTools', false);
+
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ ui: { theme: 'dark' }, agentContext: { relayTools: true } })
+        .expect(403);
+
+      expect(refused.body.paths).toEqual(['agentContext.relayTools']);
+      expect(configManager.getDot('agentContext.relayTools')).toBe(false);
+      expect(configManager.getDot('ui.theme')).not.toBe('dark');
+    });
+
+    it('tells the agent what a tool-group switch is, and nothing more', async () => {
+      // The refusal text lands in a model's context, so it has to be true. These
+      // switches feed the tool-documentation blocks: nothing is loaded, nothing
+      // is attached, nobody gets in, and access is still the tier gate's call
+      // (DOR-1044).
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ agentContext: { relayTools: true } })
+        .expect(403);
+
+      expect(refused.body.message).toContain('Which DorkOS tool groups your agents are told about');
+      expect(refused.body.message).not.toMatch(/who can reach this instance/i);
+    });
+  });
+
   describe('notification settings (DOR-1385)', () => {
     // Every one of these is `operator-only`, because an agent that could write
     // them could turn off the knock, tell DorkOS never to try another way of
@@ -1262,9 +1449,9 @@ describe('GET /api/config', () => {
       // Warm agents used to be the second entry here and are not any more: the
       // flag GRADUATED, which means its registry entry went out in the same
       // change that flipped the default (spec `full-power-defaults`). Its switch
-      // is due in the Control Center (task 2.2); until then the setting is
-      // reachable through `PATCH /api/config` alone. The absence here is the
-      // success state for the REGISTRY, which is what this case is about.
+      // moved to the Control Center rather than disappearing (#1209). The
+      // absence here is the success state for the REGISTRY, which is what this
+      // case is about.
       expect(byKey['runtimes.claudeCode.persistentSession']).toBeUndefined();
     });
 

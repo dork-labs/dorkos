@@ -7,8 +7,8 @@
  * What can be answered here is what the list DRAWS and what it hands its host.
  */
 import { createRef, type ReactNode } from 'react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -21,6 +21,12 @@ import { TransportProvider } from '@/layers/shared/model';
  * stand-in draws every row, which is what a test about WHICH rows are drawn
  * needs; whether virtualization itself works is a browser question.
  */
+/**
+ * The two moves a landing makes, hoisted so a test can read WHICH row it was
+ * taken to — the wrapper's `data-landed-on` says what KIND of landing happened
+ * and cannot tell two `requested` landings apart.
+ */
+const virtual = vi.hoisted(() => ({ scrollToIndex: vi.fn(), scrollToEnd: vi.fn() }));
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getVirtualItems: () =>
@@ -32,8 +38,8 @@ vi.mock('@tanstack/react-virtual', () => ({
       })),
     getTotalSize: () => count * 80,
     measureElement: vi.fn(),
-    scrollToEnd: vi.fn(),
-    scrollToIndex: vi.fn(),
+    scrollToEnd: virtual.scrollToEnd,
+    scrollToIndex: virtual.scrollToIndex,
     isAtEnd: () => true,
   }),
 }));
@@ -41,7 +47,7 @@ import type { PendingPost } from '@/layers/entities/room';
 import { Conversation } from '..';
 import type { ConversationCapabilities } from '../model/capabilities';
 import type { ConversationRow, ConversationRowRenderer } from '../lib/row-kinds';
-import type { ConversationTimelineHandle } from '../ui/Timeline';
+import { LANDING_MARK_MS, type ConversationTimelineHandle } from '../ui/Timeline';
 
 /**
  * A capability table declared here rather than imported from a host.
@@ -84,6 +90,36 @@ const renderRow: ConversationRowRenderer = (row, ctx) => (
   </div>
 );
 
+/**
+ * A `landOnRow` getter that answers ONCE, which is the shipped contract.
+ *
+ * Reading a request consumes it (`TimelineLandingInput.landOnRow`), so a test
+ * handing over `() => 'entry-1'` is testing a thing the product does not do —
+ * and would go on passing after the two defects that contract exists to close
+ * came back.
+ */
+function oneShot(rowId: string): () => string | undefined {
+  let unanswered = true;
+  return () => {
+    if (!unanswered) return undefined;
+    unanswered = false;
+    return rowId;
+  };
+}
+
+/**
+ * A row that can hold the caret, drawn under the DOM id a host addresses it by.
+ *
+ * The plain `renderRow` above draws neither, which is right for the tests about
+ * what the list DECIDES and useless for the one about what it MARKS: an element
+ * with no id cannot be found and one with no tabindex cannot be focused.
+ */
+const focusableRow: ConversationRowRenderer = (row) => (
+  <div id={`room-entry-${row.id}`} tabIndex={-1} data-testid={`focusable-${row.id}`}>
+    {row.kind}
+  </div>
+);
+
 /** One message of this reader's own, waiting under the log. */
 function pendingPost(overrides: Partial<PendingPost> = {}): PendingPost {
   return {
@@ -118,12 +154,17 @@ function Providers({ children }: { children: ReactNode }) {
   );
 }
 
-/** Mount a timeline inside the conversation every part reads. */
-function mount(
+/**
+ * The tree {@link mount} renders, exposed so a test can re-render it.
+ *
+ * A `rerender` needs the whole element again, and the landing's re-arm can only
+ * be seen ACROSS a render — the same getter answering something new.
+ */
+function tree(
   props: Partial<Parameters<typeof Conversation.Timeline>[0]> = {},
   capabilities: Partial<ConversationCapabilities> = {}
 ) {
-  return render(
+  return (
     <Providers>
       <Conversation.Root surface="room" capabilities={{ ...BASE, ...capabilities }}>
         <Conversation.Timeline
@@ -137,6 +178,19 @@ function mount(
     </Providers>
   );
 }
+
+/** Mount a timeline inside the conversation every part reads. */
+function mount(
+  props: Partial<Parameters<typeof Conversation.Timeline>[0]> = {},
+  capabilities: Partial<ConversationCapabilities> = {}
+) {
+  return render(tree(props, capabilities));
+}
+
+afterEach(() => {
+  virtual.scrollToIndex.mockClear();
+  virtual.scrollToEnd.mockClear();
+});
 
 beforeAll(() => {
   // Two DOM methods jsdom does not implement at all. Both are how a scroller
@@ -181,6 +235,173 @@ describe('Conversation.Timeline', () => {
       // could not be honoured, which is a different event from never having had
       // one — and the browser suites tell the two apart by this word alone.
       expect(landedOn({ resumeRow: () => 'entry-gone' })).toBe('end-row-gone');
+    });
+
+    it('opens on the row it was ASKED for', () => {
+      // DOR-687: a search hit addresses one message, and this is the landing
+      // that honours it. Seeded defect: drop the `landOnRow` branch → `end`.
+      expect(landedOn({ landOnRow: oneShot('entry-1') })).toBe('requested');
+    });
+
+    it('puts an UNANSWERED request ahead of a remembered position', () => {
+      // The precedence, and the only assertion that can catch it being wrong:
+      // both getters answer with a row that IS in the page, so whichever branch
+      // runs first decides. Flip the two and this reads 'remembered'.
+      //
+      // "Unanswered" is the whole qualification — see the remount case below.
+      expect(landedOn({ landOnRow: oneShot('entry-1'), resumeRow: () => 'entry-2' })).toBe(
+        'requested'
+      );
+    });
+
+    it('stands down for a remembered position once the request has been answered', () => {
+      // **The remount defect.** On a phone the thread panel is a full-screen
+      // push that UNMOUNTS the timeline, so closing one mounts a fresh landing
+      // with the same getters. A request that kept answering would win that
+      // landing too — throwing a reader who had scrolled to message 300 back to
+      // the message they searched for, every single time they closed a thread.
+      // That is the exact thing `resumeRow` exists to prevent.
+      const landOnRow = oneShot('entry-1');
+      const resumeRow = () => 'entry-2';
+
+      mount({ 'data-testid': 'timeline', landOnRow, resumeRow });
+      expect(screen.getByTestId('timeline')).toHaveAttribute('data-landed-on', 'requested');
+      cleanup();
+
+      // The same getters, a brand new timeline — which is what a remount is.
+      mount({ 'data-testid': 'timeline', landOnRow, resumeRow });
+      expect(screen.getByTestId('timeline')).toHaveAttribute('data-landed-on', 'remembered');
+    });
+
+    it('re-opens the landing for a NEW request in the SAME conversation', () => {
+      // **The blocker.** Clicking a search hit in the room you are already
+      // reading is an in-place search-param navigation: `conversationId` does
+      // not change, so the arm guard never lifts on its own and the room used
+      // to sit exactly where it was while the URL claimed otherwise.
+      //
+      // Asserted on the INDEX the list was taken to, because `data-landed-on`
+      // reads 'requested' both times and cannot tell the two apart.
+      let answer: string | undefined = 'entry-1';
+      const landOnRow = () => {
+        const asked = answer;
+        answer = undefined;
+        return asked;
+      };
+      const { rerender } = mount({ 'data-testid': 'timeline', landOnRow });
+      expect(virtual.scrollToIndex).toHaveBeenLastCalledWith(0, { align: 'center' });
+
+      // A second search, answered in the room already on screen.
+      answer = 'entry-2';
+      rerender(tree({ 'data-testid': 'timeline', landOnRow }));
+
+      expect(virtual.scrollToIndex).toHaveBeenLastCalledWith(1, { align: 'center' });
+    });
+
+    it('leaves a reader where they are when a NEW request names a row that is not here', () => {
+      // The other half of the re-arm: a re-opened landing that cannot be
+      // honoured must not restart the ORDINARY landing. The reader is somewhere
+      // in this history by their own hand, and yanking them to its newest
+      // message because the message they asked for is not here would take away
+      // their place and give nothing back.
+      let answer: string | undefined = 'entry-1';
+      const landOnRow = () => {
+        const asked = answer;
+        answer = undefined;
+        return asked;
+      };
+      const { rerender } = mount({ 'data-testid': 'timeline', landOnRow });
+      virtual.scrollToIndex.mockClear();
+      virtual.scrollToEnd.mockClear();
+
+      answer = 'entry-gone';
+      rerender(tree({ 'data-testid': 'timeline', landOnRow }));
+
+      expect(virtual.scrollToIndex).not.toHaveBeenCalled();
+      expect(virtual.scrollToEnd).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the usual landing when the asked-for row is not in the page', () => {
+      // A room whose history no longer reaches the message a link names. The
+      // link must not swallow the landing — the room still opens somewhere
+      // sensible, and `useEntryLanding` is what says so out loud.
+      expect(landedOn({ landOnRow: oneShot('entry-gone') })).toBe('end');
+    });
+
+    it('leaves a remembered position standing when the asked-for row is not there', () => {
+      expect(landedOn({ landOnRow: oneShot('entry-gone'), resumeRow: () => 'entry-2' })).toBe(
+        'remembered'
+      );
+    });
+
+    it('leaves the caret on the row it was asked for, which is the mark', () => {
+      // "Focus IS the flash" — the same doctrine `scrollToRow` states. Without
+      // it a reader lands somewhere in a wall of messages with nothing saying
+      // which one answered them. Geometry is a browser question (jsdom lays
+      // nothing out); WHICH element ends up focused is answerable here.
+      mount({
+        renderRow: focusableRow,
+        domIdOf: (row) => `room-entry-${row.id}`,
+        landOnRow: oneShot('entry-2'),
+      });
+
+      // A frame later, because the row may have had to be scrolled into
+      // existence first.
+      return waitFor(() =>
+        expect(document.activeElement).toBe(document.getElementById('room-entry-entry-2'))
+      );
+    });
+
+    it('marks the landed row visibly, not only with the caret', async () => {
+      // **`:focus-visible` is why this exists.** A row focused
+      // PROGRAMMATICALLY after a MOUSE click does not match it, and clicking a
+      // search result is the mouse path — so the ring a reader was promised
+      // could be drawn for a keyboard user and never for anybody else.
+      // `data-landed` is styled unconditionally (`index.css`).
+      //
+      // Only the ATTRIBUTE and its removal are asserted here: jsdom computes no
+      // styles and runs no animations, so what the mark LOOKS like was settled
+      // in design (a fading inset ring, with a still one under
+      // `prefers-reduced-motion`) and is a browser's question.
+      vi.useFakeTimers();
+      try {
+        mount({
+          renderRow: focusableRow,
+          domIdOf: (row) => `room-entry-${row.id}`,
+          landOnRow: oneShot('entry-2'),
+        });
+
+        await vi.waitFor(() =>
+          expect(document.getElementById('room-entry-entry-2')).toHaveAttribute(
+            'data-landed',
+            'true'
+          )
+        );
+
+        // And it stops talking on its own. A mark that stayed would be
+        // furniture on every row a reader ever searched for.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(LANDING_MARK_MS + 100);
+        });
+        expect(document.getElementById('room-entry-entry-2')).not.toHaveAttribute('data-landed');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('marks no row when nothing was asked for', () => {
+      // The positive control for the mark: without it, a timeline that marked a
+      // row on every open would pass the test above.
+      mount({ renderRow: focusableRow, domIdOf: (row) => `room-entry-${row.id}` });
+
+      expect(document.querySelector('[data-landed]')).toBeNull();
+    });
+
+    it('leaves the caret alone when nothing was asked for', () => {
+      // The positive control. Without it the test above passes against a
+      // timeline that focuses a row on every open.
+      mount({ renderRow: focusableRow, domIdOf: (row) => `room-entry-${row.id}` });
+
+      expect(document.activeElement).toBe(document.body);
     });
   });
 

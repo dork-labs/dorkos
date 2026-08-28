@@ -33,6 +33,7 @@ import {
   planInstalledCommands,
   planInstalledPluginHooks,
   planOpencodeCommandsGitignore,
+  planScheduledSkillLinks,
   planSkillNameCollisions,
   dropNonPortableLayers,
   dropWholePlugin,
@@ -294,6 +295,11 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * layers drop with reasons. Global-scoped installs and non-plugin package types
  * are dropped (reported, never projected by a project sync).
  *
+ * One projection ignores the harness list: a plugin skill carrying a `schedule:`
+ * block is linked into `.agents/skills` regardless, because that is the only
+ * project skills root the DorkOS scheduler watches (DOR-1518, see
+ * {@link planScheduledSkillLinks}).
+ *
  * `input.allowPluginHooks` is the one lever over WHICH installed packages get to
  * contribute hooks. It gates hooks and nothing else: a package it excludes still
  * projects its skills and commands, it simply contributes no shell commands to any
@@ -382,6 +388,18 @@ export function buildPlan(input: {
     const ocGitignore = planOpencodeCommandsGitignore(projectable);
     if (ocGitignore) all.push(ocGitignore);
   }
+
+  // A schedule-bearing plugin skill reaches `.agents/skills` whatever harnesses
+  // are enabled — it is the only project skills root the DorkOS scheduler
+  // watches, so a schedule that lands anywhere else is a schedule nobody is ever
+  // asked to approve (DOR-1518). Stands down when an enabled harness already
+  // links installed skills there, so the target is planned exactly once.
+  const scheduled = planScheduledSkillLinks({
+    plugins: projectable,
+    harnesses: manifest.harnesses,
+  });
+  all.push(...scheduled.actions);
+  warnings.push(...scheduled.warnings);
 
   // Skill-name collisions (frontmatter-keyed harnesses): warn once per colliding
   // installed skill per affected enabled harness.

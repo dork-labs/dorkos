@@ -63,7 +63,6 @@ describe('listMemberRooms', () => {
         slug: kind === 'channel' ? id : null,
         title,
         topic: null,
-        workspaceId: null,
         createdAt: `2026-08-01T00:0${created}:00.000Z`,
       },
       memberIds.map((authorId) => ({

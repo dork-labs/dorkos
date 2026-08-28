@@ -76,7 +76,7 @@ describe('fallbackTabLabel', () => {
     // ("DorkOS") — the same class of defect DOR-587 fixes for the header, one
     // surface over.
     expect(fallbackTabLabel(parseTabHref('/channels?id=room_1'))).toBe('Channels');
-    expect(fallbackTabLabel(parseTabHref('/tasks'))).toBe('Tasks');
+    expect(fallbackTabLabel(parseTabHref('/tasks'))).toBe('Schedules');
     expect(fallbackTabLabel(parseTabHref('/workspaces'))).toBe('Workspaces');
     expect(fallbackTabLabel(parseTabHref('/marketplace'))).toBe('Marketplace');
     expect(fallbackTabLabel(parseTabHref('/marketplace/sources'))).toBe('Marketplace sources');

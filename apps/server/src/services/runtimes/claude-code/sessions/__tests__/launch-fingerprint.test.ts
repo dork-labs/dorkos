@@ -43,6 +43,11 @@ function params(overrides: Partial<LaunchParams> = {}): LaunchParams {
   return {
     accountRoot: CLIENT_ROOT,
     options: options(),
+    // The append MINUS the agent's own memory block. In production the resolver
+    // assembles this separately from what goes on the prompt; the baseline here
+    // keeps them equal so a case that moves only one of the two is unambiguous
+    // about which one it moved.
+    systemPromptAppendStable: 'base append',
     credentialEnv: { ANTHROPIC_API_KEY: 'sk-client' },
     agentIdentity: { agentPath: '/repo', displayName: 'Scout', attributed: true },
     effortInput: 'high',
@@ -96,6 +101,17 @@ describe('the pin list', () => {
     // (`model`/`effort`/`fastMode`, and `settingSources`/`env`) name more than
     // one field, and each field gets its own verdict here. A launch option
     // added without a decision fails this.
+    //
+    // `systemPromptAppend` stays `'relaunch'` and its SCOPE narrowed
+    // (agent-memory spec D2 §Pinned). It now digests the append minus the
+    // agent's own `<agent_memory>` block, because that block is written DURING
+    // turns by the agent itself: digesting it would tear down the warm process
+    // nearly every time an agent saved a note. Everything else in the append —
+    // persona, boundaries, tool groups, the caller's per-run instructions —
+    // still relaunches, and `the relaunch pins` below asserts BOTH directions,
+    // because a one-direction test passes for a pin that stopped digesting the
+    // append entirely and would let a persona edit ride a stale process
+    // forever.
     expect(PIN_DISPOSITIONS).toEqual({
       cwd: 'relaunch',
       accountRoot: 'relaunch',
@@ -259,6 +275,7 @@ describe('the relaunch pins', () => {
     [
       'systemPromptAppend',
       {
+        systemPromptAppendStable: 'different append',
         options: options({
           systemPrompt: { type: 'preset', preset: 'claude_code', append: 'different append' },
         }),
@@ -283,6 +300,81 @@ describe('the relaunch pins', () => {
     const decision = compareLaunchFingerprints(capture(), capture(overrides));
     expect(decision.action).toBe('relaunch');
     expect(decision.action === 'relaunch' && decision.changed).toContain(pin);
+  });
+
+  // ── The memory exclusion, asserted in BOTH directions ────────────────────
+  //
+  // One direction alone is worthless here. "A memory write does not relaunch"
+  // passes just as well for a pin that stopped digesting the append entirely —
+  // and that failure is invisible and lasting: a persona edit would ride a
+  // stale warm process forever.
+
+  it('does NOT relaunch when only the agent memory block changed', () => {
+    // What moved: the prompt text (the memory block is on it) — and nothing
+    // else. The stable half is byte-identical, because it is assembled without
+    // the memory block rather than cut out of the prompt.
+    const before = capture();
+    const after = capture({
+      options: options({
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          append: 'base append\n\n<agent_memory>a note the agent just saved</agent_memory>',
+        },
+      }),
+    });
+
+    const decision = compareLaunchFingerprints(before, after);
+    expect(decision.action).toBe('reuse');
+    expect(before.pins.systemPromptAppend).toBe(after.pins.systemPromptAppend);
+  });
+
+  it('STILL relaunches when anything else in the append changed', () => {
+    // The other direction, on the same pin, with the memory block present and
+    // unchanged in both — so the only thing that moved is the part that must
+    // still count. A persona edit, a boundary edit, a tool group toggled and a
+    // caller's per-run instructions all take this shape.
+    const memory = '\n\n<agent_memory>the same note in both</agent_memory>';
+    const before = capture({
+      systemPromptAppendStable: 'base append',
+      options: options({
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          append: `base append${memory}`,
+        },
+      }),
+    });
+    const after = capture({
+      systemPromptAppendStable: 'base append, with an edited persona',
+      options: options({
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          append: `base append, with an edited persona${memory}`,
+        },
+      }),
+    });
+
+    const decision = compareLaunchFingerprints(before, after);
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toContain('systemPromptAppend');
+  });
+
+  it('reads the stable half handed to it, never the append sitting on the prompt', () => {
+    // The mechanism, pinned directly. Two launches whose PROMPTS are identical
+    // and whose stable halves differ must be told apart — which is only true if
+    // the digest is taken over the field the resolver assembled. A capture that
+    // read `options.systemPrompt.append` back off the prompt would report these
+    // two as the same launch, and that is exactly the shape a textual
+    // exclusion marker degrades into.
+    const sharedPrompt = options({
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: 'identical on the prompt' },
+    });
+    const a = capture({ systemPromptAppendStable: 'one', options: sharedPrompt });
+    const b = capture({ systemPromptAppendStable: 'two', options: sharedPrompt });
+
+    expect(a.pins.systemPromptAppend).not.toBe(b.pins.systemPromptAppend);
   });
 
   it('does not relaunch when a freshly minted agent token replaces an identical one', () => {

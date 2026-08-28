@@ -68,7 +68,6 @@ function dmWithAna(): RoomWithRoster {
     slug: null,
     title: 'Ana',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-22T09:00:00.000Z',

@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "lucide-react": "1.21.0"
+    "lucide-react": "1.34.0"
   },
   "peerDependencies": {
     "react": "^19.0.0"
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/react": "^19.2.17"
+    "@types/react": "^19.2.18",
+    "react": "^19.2.8"
   }
 }

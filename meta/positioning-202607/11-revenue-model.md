@@ -10,13 +10,13 @@ The MIT core stays whole and free forever; that is the trust anchor, the acquisi
 
 The research question was never "what features can we gate" but "why does the money move." Five validated reasons, mapped to DorkOS:
 
-| #   | Why they pay                                                          | Evidence anchor                                                                                                                         | DorkOS translation                                                                                                                 |
-| --- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Someone else is on call** (hosted convenience)                      | Supabase $25/mo, Plausible $9, Ghost $15; self-host "free" hides 5-10 hrs/mo of ops                                                     | Managed remote access (no ngrok, no config), push notifications, brokered relay bridges                                            |
-| 2   | **Cross-device / remote reach** (the individual's one true pay-point) | Obsidian Sync $5-10/mo, Raycast Pro ~$8, Omnara Pro $9                                                                                  | Control your fleet from your phone from anywhere; laptop + desktop + VPS as one fleet under one account                            |
-| 3   | **Coordinating humans** (the team boundary)                           | Tailscale $8-18/seat (the closest structural analog), Linear $10-16, Cal.com $12-16                                                     | Shared fleet view, shared agents with ACLs, org accounts, private team marketplace                                                 |
-| 4   | **Seeing and controlling spend** (the strongest net-new hook)         | FinOps 2026: AI cost management prioritized by 98% of orgs; LangSmith $39/seat; a whole vendor category (Vantage, Finout, CloudZero...) | Per-agent / per-project / per-person token-spend dashboards, budgets, anomaly alerts, from the cockpit that already sees every run |
-| 5   | **Risk reduction / compliance** (the CISO's budget)                   | The SSO tax: SAML/SCIM/audit gated at 2-4x base price across the entire industry, and accepted                                          | Enterprise tier: SAML/SCIM via WorkOS, audit export, advanced RBAC, policy                                                         |
+| #   | Why they pay                                                          | Evidence anchor                                                                                                                         | DorkOS translation                                                                                                                   |
+| --- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Someone else is on call** (hosted convenience)                      | Supabase $25/mo, Plausible $9, Ghost $15; self-host "free" hides 5-10 hrs/mo of ops                                                     | Managed remote access (no ngrok, no config), push notifications, brokered relay bridges                                              |
+| 2   | **Cross-device / remote reach** (the individual's one true pay-point) | Obsidian Sync $5-10/mo, Raycast Pro ~$8, Omnara Pro $9                                                                                  | Control your fleet from your phone from anywhere; laptop + desktop + VPS as one fleet under one account                              |
+| 3   | **Coordinating humans** (the team boundary)                           | Tailscale $8-18/seat (the closest structural analog), Linear $10-16, Cal.com $12-16                                                     | Shared fleet view, shared agents with ACLs, org accounts, private team marketplace                                                   |
+| 4   | **Seeing and controlling spend** (the strongest net-new hook)         | FinOps 2026: AI cost management prioritized by 98% of orgs; LangSmith $39/seat; a whole vendor category (Vantage, Finout, CloudZero...) | Per-agent / per-project / per-person token-spend dashboards, budgets, anomaly alerts, from the one place that already sees every run |
+| 5   | **Risk reduction / compliance** (the CISO's budget)                   | The SSO tax: SAML/SCIM/audit gated at 2-4x base price across the entire industry, and accepted                                          | Enterprise tier: SAML/SCIM via WorkOS, audit export, advanced RBAC, policy                                                           |
 
 Plus a sixth that gates nothing: **patronage** (Obsidian Catalyst, $25 one-time, "a tip jar" with a badge). It converts devoted individuals at zero trust cost and fits the crew-number identity mechanics we already planned.
 
@@ -34,7 +34,7 @@ What individuals will NOT pay for (research-confirmed, and the ICP doc predicted
 
 ### DorkOS OSS: free forever
 
-Everything that exists today and everything in the Tier-A hardening plan: the cockpit, all three runtimes, Tasks, Relay with self-configured adapters, Mesh, marketplace, self-managed tunnel, MCP, all surfaces. Single operator, full power, offline-capable. _Job: be the best free thing in the category; win the comparison table; feed everything below._
+Everything that exists today and everything in the Tier-A hardening plan: the app, all three runtimes, Tasks, Relay with self-configured adapters, Mesh, marketplace, self-managed tunnel, MCP, all surfaces. Single operator, full power, offline-capable. _Job: be the best free thing in the category; win the comparison table; feed everything below._
 
 ### Founding Crew (patronage, one-time ~$29, at launch)
 
@@ -44,7 +44,7 @@ Gates nothing. Buys: permanent founding-crew badge + low crew number flair, name
 
 The individual's tier, priced in the validated $8-10 band (Omnara $9, Obsidian Sync, Raycast, Tailscale personal→paid), deliberately below the $20+ model subscription it augments.
 
-- **Reach:** managed remote access: your cockpit from any device, no ngrok account, no port math, brokered through DorkOS Cloud with the device-link flow already built (DOR-181/182).
+- **Reach:** managed remote access: your fleet from any device, no ngrok account, no port math, brokered through DorkOS Cloud with the device-link flow already built (DOR-181/182).
 - **Push:** real mobile notifications (beyond Telegram) routed through the cloud.
 - **One fleet:** every machine you run DorkOS on (laptop, desktop, VPS), linked to one account, one aggregate fleet view, per-instance revocation (the Tailscale dashboard pattern; the instance registry is the shipped foundation).
 - **Continuity:** off-site encrypted backup of config/skills/agent manifests (not code, not transcripts by default: privacy posture preserved).
@@ -59,7 +59,7 @@ The team tier, priced in the Tailscale-Standard-to-Linear band, for the 1-10 per
 - **Shared fleet:** the whole team's agents, across everyone's machines, one view: who's running what, what needs a human, what shipped overnight.
 - **Shared agents:** task a teammate's agent (or a team VPS agent) with access control. The primitives already exist and were built for exactly this: Mesh access rules authored per agent, enforced by Relay, budget envelopes preventing runaway loops. The paid feature is the cloud-brokered, org-scoped composition of them.
 - **Private registries:** the team's own marketplace (skills, agents, rules) with scoped installs; the superset format means these registries also serve the team's plain Claude Code users, which makes DorkOS the team's capability-distribution layer even before full adoption.
-- **Team spend:** the FinOps surface: per-agent/per-project/per-person cost dashboards, budgets, anomaly alerts ("Scout burned 4x its normal spend last night"). Reason 4 is the strongest net-new hook in the research and no model vendor offers it cross-vendor. The cockpit already sees every run; this is aggregation plus opinionated presentation.
+- **Team spend:** the FinOps surface: per-agent/per-project/per-person cost dashboards, budgets, anomaly alerts ("Scout burned 4x its normal spend last night"). Reason 4 is the strongest net-new hook in the research and no model vendor offers it cross-vendor. DorkOS already sees every run; this is aggregation plus opinionated presentation.
 - **Team SSO:** Google Workspace / OIDC login included (rule 4).
 
 _Why they pay: reasons 3+4. The seat anchor works: a team already paying $25/seat for Claude pays $15 to coordinate, see, and govern all of it._
@@ -109,23 +109,22 @@ Crew ships at ~$15/seat with design-partner proof. Enterprise remains conversati
 
 ## 6.5 Partnerships: Vault Cloud / Compute Village (added 2026-07-06)
 
-Facts (from vaultcloud.ai and the AI Lab announcement, corrected by founder 2026-07-06): Compute Village is a Texas AI data-center company operating **Vault Cloud** (private AI on dedicated hardware: Vault Gold bare-metal GPU $10K + $599/mo; Workspace $10K + $999/mo with chat/agents; flat-rate, no per-token). Vault Cloud is **unfunded and pre-revenue**. The announced partnership: an "AI Lab" spanning Compute Village + DorkOS + Vault Cloud, an RTX 5090 donated to the DorkOS project. The blog's "Dorian as VP of Product, Agents" is **symbolic**: no formal role, no paperwork, no compensation, and minimal founder time committed. Users can host DorkOS on Vault VPS/hardware or use Vault as an inference endpoint (an OpenRouter alternative) from local machines. Net classification: a friendly ecosystem partnership with a donated test rig, not a strategic commitment; priority accordingly.
+Facts (from vaultcloud.ai and the AI Lab announcement, 2026-07-06): Compute Village is a Texas AI data-center company operating **Vault Cloud** (private AI on dedicated hardware: Vault Gold bare-metal GPU $10K + $599/mo; Workspace $10K + $999/mo with chat/agents; flat-rate, no per-token). The announced partnership: an "AI Lab" spanning Compute Village + DorkOS + Vault Cloud, with an RTX 5090 donated to the DorkOS project. Users can host DorkOS on Vault VPS/hardware or use Vault as an inference endpoint (an OpenRouter alternative) from local machines. Scope: a friendly ecosystem partnership with a shared test rig, which earns calendar space on its results like every other channel (rule 4).
 
 ### Why this fits (cleanly)
 
 - **Lane separation is exact.** DorkOS is the coordination layer and deliberately does not sell compute (§4: hosted instances excluded). Vault sells compute and does not have a coordination layer. Vault-hosted DorkOS + DorkOS Cloud coordination is a _bundle_, not a conflict: they run the box, we run the fleet.
 - **It fills the "hosted" hole without us building it.** The OpenClaw ecosystem showed hosting partners (OneClaw, Hostinger) do real marketing for the OSS project. "Run DorkOS on Vault" answers the always-on/Mac-sleep pain for users who will never manage a VPS, at zero engineering cost to us.
 - **Flat-rate private inference is a genuinely good story for agent fleets.** Fleets burn tokens; flat-rate removes meter anxiety, and it plugs into OpenCode's provider-agnostic support as _one more endpoint_, which strengthens rather than strains vendor neutrality. Pairing: our spend dashboards show the burn; their flat rate caps it.
-- **A possible vertical channel, someday.** Vault aims at legal/finance/healthcare SMBs (not HN readers), but with no revenue or customers yet the channel value is zero today; treat any referral flow as upside, not plan. Revisit if they land real customers.
+- **A possible vertical channel, someday.** Vault aims at legal/finance/healthcare SMBs — a reach DorkOS does not otherwise have, since those buyers are not HN readers. The channel is early on both sides, so treat any referral flow as upside rather than plan, and revisit as it develops.
 - **The 5090 is the local-model test rig**: it directly serves the OpenCode local-model verification and the "Offline" demo clip. This is the partnership's most concrete near-term value.
 
 ### Partner posture (the rules)
 
 1. **Non-exclusive, always.** Vault is _a_ deployment partner and _an_ inference option, never _the_. Vendor neutrality is the moat and it extends to infrastructure: docs list Vault alongside "your own hardware, any VPS, other providers." No Vault default anywhere in the product.
-2. **The demo-claim gate applies to partners.** No co-marketing until a hardened, DorkOS-authored deployment template for Vault passes the same smoke tests as everything else, including a security baseline (localhost-default, auth-on-exposure). A partner-hosted breach with our name on it is the OpenClaw scenario by proxy; the reference deployment must be ours.
-3. **Their claims are theirs.** Vault sells into compliance-heavy verticals while still maturing; DorkOS co-signs only what we verify. Trademark-use guidance (name/logo, "runs DorkOS" vs "powered by DorkOS") should be written down once, lightly.
+2. **The demo-claim gate applies to partners.** No co-marketing until a hardened, DorkOS-authored deployment template for Vault passes the same smoke tests as everything else, including a security baseline (localhost-default, auth-on-exposure). Wherever DorkOS runs, the secure-defaults work is ours to do — so the reference deployment must be ours before we point anyone at it.
+3. **We co-sign only what we verify.** Each side speaks for its own product: DorkOS vouches for what it has tested itself and leaves Vault's claims to Vault. Trademark-use guidance (name/logo, "runs DorkOS" vs "powered by DorkOS") should be written down once, lightly.
 4. **Measure it.** Vault-referred installs get a UTM/heartbeat source tag like every other channel; the partnership earns calendar space by the same rules as any tactic.
-5. **Titles must be true.** The symbolic "VP of Product" title should be softened or dropped from Vault's public materials before they leave staging: DorkOS's honesty pillar extends to claims made _about_ its founder, and a public executive title at an inference/hosting vendor muddies the vendor-neutrality position that is DorkOS's moat. If Vault ever formalizes a real role, re-run this section's analysis (a prior version of this doc treated the role as real and flagged founder bandwidth as the top risk; that analysis is retired, not deleted from git history).
 
 ## 7. Risks
 
@@ -134,7 +133,7 @@ Facts (from vaultcloud.ai and the AI Lab announcement, corrected by founder 2026
 - **First parties bundle remote access for their own agents.** Already happening (Claude Code web). The counter is the same as the whole thesis: they will never do it _cross-vendor_, and Solo's value is the fleet, not one agent.
 - **ToS boundaries:** DorkOS accounts never touch Anthropic/OpenAI auth (spec #268 pre-reading; the delegate-to-host rule stands). Spend dashboards read local run data, never provider account APIs, unless a user explicitly connects billing exports.
 - **Trust tax of announcing money during an alpha.** Mitigated by sequencing (R1 announces _after_ launch goodwill exists) and the pricing-philosophy page (the fence in writing, before the first invoice).
-- **Founder bandwidth vs the Vault role: RETIRED as a risk (2026-07-06).** The founder clarified the "VP" title is symbolic (no role, no paperwork, no compensation; Vault is unfunded/pre-revenue) and minimal time will go to it. The plan's full-time-founder assumption stands. Residual watch item: if Vault ever formalizes the role, this risk returns and §6.5 rule 5 governs. The remaining Vault-related risk is brand accuracy of their public claims, handled in §6.5.
+- **Founder bandwidth vs the AI Lab role: RETIRED as a risk (2026-07-06).** The founder's role in the AI Lab is honorary, with minimal time committed to it, so the plan's full-time-founder assumption stands. Residual watch item: if the role is ever formalized, this risk returns and §6.5 governs.
 
 ## 8. Changes this makes elsewhere
 

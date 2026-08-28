@@ -9,6 +9,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 function makeManifest(overrides?: Partial<AgentManifest>): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HV7KJZZZ0000000000000000',
     name: 'test-agent',
     description: 'A test agent',

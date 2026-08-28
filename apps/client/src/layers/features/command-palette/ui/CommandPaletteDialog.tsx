@@ -6,6 +6,7 @@ import { cachedSessionForCwd } from '@/layers/entities/session';
 import {
   cn,
   getAgentDisplayName,
+  platformCanSearchMessages,
   openLink,
   supportsNewTab,
   supportsSeparateWindow,
@@ -27,7 +28,7 @@ import { usePaletteActions } from '../model/use-palette-actions';
 import { useLeadingRowPin } from '../model/use-leading-row-pin';
 import { PaletteScopeChip } from './PaletteScopeChip';
 import { scopeKey, type PaletteScope } from '../model/palette-scope';
-import { searchHandoffHref } from '../model/search-surface';
+import { searchHandoffTerm } from '../model/search-surface';
 import type { RankedRow } from '../model/palette-ranking';
 import type { SearchResult } from '../model/use-palette-search';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
@@ -127,6 +128,9 @@ function scopableRow(
  */
 export function CommandPaletteDialog() {
   const { globalPaletteOpen, setGlobalPaletteOpen } = useGlobalPalette();
+  // The door to the OTHER search surface — ⌘K's hand-off row opens it with
+  // whatever was typed here, so nobody types the same words twice.
+  const openMessageSearch = useAppStore((s) => s.openMessageSearch);
   const [search, setSearch] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedValue, setSelectedValue] = useState('');
@@ -277,18 +281,27 @@ export function CommandPaletteDialog() {
 
   const isRoomMode = prefix === '#';
 
-  // The one row that leaves ⌘K, and only if there is anywhere to leave for.
-  // `term` rather than the raw search string: `#` and `@` are how a person
-  // narrowed this list, not part of what they want looked for. `openLink`
-  // rather than `navigate`, because that seam already knows what to do in each
-  // shell — and in the Obsidian embed, which mounts no router at all.
-  const handoffHref = searchHandoffHref(term);
-  const searchHandoff = handoffHref
+  // The one row that leaves ⌘K, and only when there is something to hand
+  // across. `term` rather than the raw search string: `#` and `@` are how a
+  // person narrowed this list, not part of what they want looked for.
+  //
+  // It opens a sibling dialog rather than navigating: the message-search box is
+  // a surface, not a page, so there is no href to follow and nothing for the
+  // Obsidian embed's router-less shell to trip over.
+  //
+  // **Only where `MessageSearchDialog` mounts**, and asked the same way it asks
+  // (DOR-1563): a row offering to search messages in a window with no index is a
+  // door onto an empty room, which is the exact dead end this row was built to
+  // avoid pointing at. The two gates read one function so they cannot drift into
+  // a palette that advertises a box that never opens.
+  const handoffTerm = platformCanSearchMessages() ? searchHandoffTerm(term) : null;
+  const searchHandoff = handoffTerm
     ? {
-        term: term.trim(),
+        term: handoffTerm,
+        isScoped: scope !== null,
         onSelect: () => {
-          openLink(handoffHref);
           closePalette();
+          openMessageSearch(handoffTerm);
         },
       }
     : null;

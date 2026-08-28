@@ -20,6 +20,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
@@ -516,6 +517,207 @@ describe('a room says when a turn has stopped', () => {
       stubborn.release(room.agent);
       await room.wired.service.triggersIdle();
       expect(room.answers()).toHaveLength(0);
+    });
+
+    it('refuses a stopped turn a REACTION too, not just a post', async () => {
+      // **The named limit of DOR-1313, closed** (DOR-1426). The stop mark
+      // guarded `post_to_room` and nothing else, on the reasoning that a
+      // reaction writes no entry and takes no turn — but a room that has just
+      // been told everything in it was stopped, and then watches the stopped
+      // agent put a pill on the conversation, has been told something untrue.
+      // It is the same mark, at the same scope, with the same lifetime.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      const asked = room.entries()[0].id;
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      expect(() => room.wired.service.toggleReaction(room.roomId, asked, room.agent, '👍')).toThrow(
+        expect.objectContaining({ code: 'TURN_WAS_STOPPED' })
+      );
+      // Refused, not merely reported as refused: nothing landed.
+      expect(room.wired.service.reactionsFor(room.roomId, asked)).toEqual([]);
+      // And the room said nothing new about it — the `halted` line is the whole
+      // story, exactly as it is for a refused post.
+      expect(room.entries().filter((entry) => entry.kind === 'notice')).toHaveLength(1);
+
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+    });
+
+    it('never refuses the PERSON who pressed Stop a reaction of their own', async () => {
+      // The counter-assertion, and the one that keeps the refusal from being a
+      // freeze on the room: a claim belongs to an agent, so nothing about a
+      // stopped turn touches what the reader may do with the log they are
+      // looking at.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      const asked = room.entries()[0].id;
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      expect(
+        room.wired.service.toggleReaction(room.roomId, asked, room.wired.human, '👍').reacted
+      ).toBe(true);
+
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+    });
+
+    it('lets that agent react again the moment it is given a turn here', async () => {
+      // The lifetime, which is the claim's and not the roster's: Stop ends a
+      // turn, it does not take an agent's hand off the room (room-conduct). The
+      // refusal is lifted by the next claim, exactly as it is for the tool post.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      const asked = room.entries()[0].id;
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      room.wired.service.post(room.roomId, {
+        authorId: room.wired.human,
+        text: '@ana never mind — one line, please',
+      });
+      await settleUntil(() => stubborn.turns.length === 2, 'the follow-up to become a turn');
+
+      expect(room.wired.service.toggleReaction(room.roomId, asked, room.agent, '👍').reacted).toBe(
+        true
+      );
+
+      stubborn.release(room.agent);
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+    });
+
+    it('costs a stopped agent nothing out of its hour of reactions', async () => {
+      // **The placement, which prose alone was pinning.** The refusal is asked
+      // BEFORE the reaction budget, so a reaction that is going to be refused
+      // never has an allowance taken off it on the way out — the same rule every
+      // other refusal in `toggleReaction` keeps. Moving the guard below the
+      // budget passed every other test in this file, including the refusal's
+      // own, because the charge is invisible until the hour runs out.
+      //
+      // So the hour is spent to its edge afterwards: the full allowance lands,
+      // and the ceiling refuses the one after it. Under the wrong order the
+      // refused reaction above would have taken the first unit and the LAST of
+      // these would be the one refused.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      const asked = room.entries()[0].id;
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+      expect(() => room.wired.service.toggleReaction(room.roomId, asked, room.agent, '👍')).toThrow(
+        expect.objectContaining({ code: 'TURN_WAS_STOPPED' })
+      );
+
+      // The room asks again, which is what lifts the mark.
+      room.wired.service.post(room.roomId, {
+        authorId: room.wired.human,
+        text: '@ana never mind — one line, please',
+      });
+      await settleUntil(() => stubborn.turns.length === 2, 'the follow-up to become a turn');
+
+      // Exactly one hour's worth (`AGENT_REACTIONS_PER_ROOM_PER_HOUR`), each a
+      // distinct emoji so every one of them LANDS and therefore spends.
+      const anHourOfReactions = [
+        '👍',
+        '🎉',
+        '👀',
+        '✅',
+        '❤️',
+        '🔥',
+        '🚀',
+        '🙏',
+        '😀',
+        '😄',
+        '😁',
+        '😂',
+        '🤔',
+        '🤝',
+        '💯',
+        '⭐',
+        '🌟',
+        '🥳',
+        '🎯',
+        '📌',
+      ];
+      for (const emoji of anHourOfReactions) {
+        expect(
+          room.wired.service.toggleReaction(room.roomId, asked, room.agent, emoji).reacted
+        ).toBe(true);
+      }
+      expect(() => room.wired.service.toggleReaction(room.roomId, asked, room.agent, '🛑')).toThrow(
+        expect.objectContaining({ code: 'REACTION_RATE_LIMITED' })
+      );
+
+      stubborn.release(room.agent);
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+    });
+
+    it('says in the log when the stop found no turn to stop', async () => {
+      // **The boolean the halt used to throw away** (DOR-1425). A stop that
+      // landed on nothing — the runtime had no turn bound yet, which is the boot
+      // window DOR-1424 is about — logged exactly like one that stopped a turn,
+      // so the one place the room could tell an operator "we could not reach the
+      // agent" said the opposite. The claim is dropped either way; what changes
+      // is that the log is true.
+      const unreachable = gatedRunner({ interruptFindsNothing: true });
+      const room = await roomMidTurn(unreachable);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      try {
+        await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+        expect(warn).toHaveBeenCalledWith(
+          '[rooms] a stop found no turn to stop — it may still be starting',
+          expect.objectContaining({ roomId: room.roomId, authorId: room.agent })
+        );
+      } finally {
+        warn.mockRestore();
+        unreachable.release(room.agent);
+        await room.wired.service.triggersIdle();
+      }
+    });
+
+    it('says the same thing when ONE agent is stopped and the stop finds nothing', async () => {
+      // The per-agent Stop is its own shipped surface — the peek's per-row
+      // button, `POST /api/rooms/:id/halt/:authorId` — and it reads the same
+      // answer through the same seam. Pinned separately because deleting the
+      // report from `haltAgent` alone left every other test in this file green:
+      // the room-wide scope's test cannot see the narrower path at all.
+      const unreachable = gatedRunner({ interruptFindsNothing: true });
+      const room = await roomMidTurn(unreachable);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      try {
+        await room.wired.service.haltAgent(room.roomId, room.agent, room.wired.human);
+
+        expect(warn).toHaveBeenCalledWith(
+          '[rooms] a stop found no turn to stop — it may still be starting',
+          expect.objectContaining({ roomId: room.roomId, authorId: room.agent })
+        );
+      } finally {
+        warn.mockRestore();
+        unreachable.release(room.agent);
+        await room.wired.service.triggersIdle();
+      }
+    });
+
+    it('says nothing of the kind when the stop did reach the turn', async () => {
+      // The other half, and the half that makes the line worth reading: it is
+      // the runtime's own answer being carried out, not a line the halt writes
+      // whenever it interrupts anything.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      try {
+        await room.wired.service.haltRoom(room.roomId, room.wired.human);
+
+        expect(warn).not.toHaveBeenCalledWith(
+          '[rooms] a stop found no turn to stop — it may still be starting',
+          expect.anything()
+        );
+      } finally {
+        warn.mockRestore();
+        stubborn.release(room.agent);
+        await room.wired.service.triggersIdle();
+      }
     });
 
     it('lets that agent post through the tool again the moment it is given a turn here', async () => {

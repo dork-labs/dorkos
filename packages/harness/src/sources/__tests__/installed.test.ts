@@ -65,11 +65,17 @@ describe('scanInstalledPlugins', () => {
     const proj = plugins.find((p) => p.name === 'my-plugin')!;
     expect(proj.relDir).toBe('.dork/plugins/my-plugin');
     expect(proj.skills).toEqual([
-      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha', usesPluginRoot: false },
+      {
+        name: 'alpha',
+        sourceDir: '.dork/plugins/my-plugin/skills/alpha',
+        usesPluginRoot: false,
+        hasSchedule: false,
+      },
       {
         name: 'beta',
         sourceDir: '.dork/plugins/my-plugin/.dork/tasks/beta',
         usesPluginRoot: false,
+        hasSchedule: false,
       },
     ]);
     expect(proj.hooks).toHaveProperty('Stop');
@@ -151,8 +157,44 @@ describe('scanInstalledPlugins', () => {
     expect(plugins.map((p) => `${p.scope}:${p.name}`)).toEqual(['project:my-plugin']);
     const proj = plugins[0]!;
     expect(proj.skills).toEqual([
-      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha', usesPluginRoot: false },
+      {
+        name: 'alpha',
+        sourceDir: '.dork/plugins/my-plugin/skills/alpha',
+        usesPluginRoot: false,
+        hasSchedule: false,
+      },
     ]);
+  });
+
+  it('flags a skill that declares a schedule, readable or not', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+
+    const plugin = join(projectRoot, '.dork', 'plugins', 'flow');
+    writeManifest(plugin, 'flow', ['skills']);
+    // A readable block: the ordinary scheduled task.
+    mkdirSync(join(plugin, 'skills', 'drain'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'drain', 'SKILL.md'),
+      "---\nname: drain\ndescription: drains\nschedule:\n  cron: '0 9 * * *'\n---\n# body\n"
+    );
+    // A block DorkOS cannot read. It still counts: discovery parks it as a row
+    // carrying the complaint, and can only do that if the file is projected.
+    mkdirSync(join(plugin, 'skills', 'broken'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'broken', 'SKILL.md'),
+      '---\nname: broken\ndescription: broken\nschedule:\n  cron: 42\n  timezone: []\n---\n# body\n'
+    );
+    // No block at all — the ordinary skill.
+    mkdirSync(join(plugin, 'skills', 'plain'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'plain', 'SKILL.md'),
+      '---\nname: plain\ndescription: plain\n---\n# body\n'
+    );
+
+    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flow')!;
+    expect(proj.skills.find((s) => s.name === 'drain')?.hasSchedule).toBe(true);
+    expect(proj.skills.find((s) => s.name === 'broken')?.hasSchedule).toBe(true);
+    expect(proj.skills.find((s) => s.name === 'plain')?.hasSchedule).toBe(false);
   });
 
   it('skips a plugin with a missing or invalid manifest', () => {

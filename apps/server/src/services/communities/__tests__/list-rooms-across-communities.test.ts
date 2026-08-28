@@ -24,7 +24,6 @@ function localRoom(id: string, lastActivityAt: string): RoomSummary {
     slug: id,
     title: id,
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 40,
     wellKnown: null,

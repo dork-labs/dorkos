@@ -25,6 +25,10 @@ import type {
 import type { RecentSessionsResponse, SessionDailyCountsResponse } from '@dorkos/shared/types';
 import type { MemberRoomsResponse, TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
+import {
+  BUILTIN_MEMORY_PROVIDER_ID,
+  type MemoryProviderStatus,
+} from '@dorkos/shared/memory-provider';
 import type {
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
@@ -172,19 +176,19 @@ export const tasksStubs = {
   },
 
   async createTask(_opts: CreateTaskInput): Promise<Task> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async updateTask(_id: string, _opts: UpdateTaskRequest): Promise<Task> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async deleteTask(_id: string): Promise<{ success: boolean }> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async triggerTask(_id: string): Promise<{ runId: string }> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async listTaskRuns(_opts?: Partial<ListTaskRunsQuery>): Promise<TaskRun[]> {
@@ -192,11 +196,11 @@ export const tasksStubs = {
   },
 
   async getTaskRun(_id: string): Promise<TaskRun> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async cancelTaskRun(_id: string): Promise<CancelTaskRunResponse> {
-    throw new Error('Tasks scheduler is not supported in embedded mode');
+    throw new Error('Scheduled tasks are not supported in embedded mode');
   },
 
   async getTaskTemplates(): Promise<TaskTemplate[]> {
@@ -594,6 +598,18 @@ export const serverOnlyStubs = {
     // here can be running unattended — the standing banner is correct to be
     // silent rather than merely unwired.
     return { drivers: [] };
+  },
+
+  async getMemoryProviderStatus(): Promise<MemoryProviderStatus> {
+    // The embed has no `memory.provider` config surface of its own and never
+    // registers a custom backend, so `builtin` is the honest, permanent answer
+    // rather than an unwired one.
+    return {
+      configuredId: BUILTIN_MEMORY_PROVIDER_ID,
+      activeId: BUILTIN_MEMORY_PROVIDER_ID,
+      benched: false,
+      benchReason: null,
+    };
   },
 
   async startTunnel(): Promise<{ url: string }> {
@@ -1062,11 +1078,11 @@ export const connectorStubs = {
 
 /** The one honest notice every refused connector write carries (spec OQ4). */
 const EMBEDDED_CONNECTORS_NOTICE =
-  'Connections can only be managed from the web cockpit — open DorkOS in your browser to connect services.';
+  'Connections can only be managed in DorkOS itself. Open DorkOS in your browser to connect services.';
 
 /** The one honest notice every refused managed-MCP write carries. */
 const EMBEDDED_MCP_NOTICE =
-  'MCP servers can only be managed from the web cockpit — open DorkOS in your browser to add or change them.';
+  'MCP servers can only be managed in DorkOS itself. Open DorkOS in your browser to add or change them.';
 
 /**
  * Managed per-agent MCP servers (spec `mcp-server-management`). Server-only: the

@@ -13,15 +13,11 @@ import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type {
-  RelayPublisher,
-  AdapterContext,
-  DeliveryResult,
-  PublishOptions,
-  TraceStoreLike,
-} from '../../types.js';
+import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
-import { OPERATOR_CANCEL, type RunningTasks } from './task-cancel-handler.js';
+import { OPERATOR_CANCEL } from './task-cancel-handler.js';
+import type { AbortRegistry } from '../../lib/abort-registry.js';
+import { interruptTurn } from './interrupt.js';
 
 /** Maximum characters to collect for run output summary. */
 const OUTPUT_SUMMARY_MAX_CHARS = 1000;
@@ -31,17 +27,6 @@ const OUTPUT_SUMMARY_MAX_CHARS = 1000;
  * before the agent produced its next event.
  */
 const RUN_STOPPED = Symbol('run-stopped');
-
-/** Race sentinel: the runtime's interrupt did not settle inside its own bound. */
-const INTERRUPT_TIMEOUT = Symbol('interrupt-timeout');
-
-/**
- * How long to wait for the runtime's interrupt before giving up on learning its
- * outcome. Mirrors `SESSIONS.STALL_INTERRUPT_TIMEOUT_MS` in
- * `apps/server/src/config/constants.ts`, restated here because this package
- * cannot import server config. Keep the two in step.
- */
-const INTERRUPT_TIMEOUT_MS = 30_000;
 
 /**
  * Consume a run's event stream until it ends or the run's budget expires.
@@ -61,8 +46,8 @@ const INTERRUPT_TIMEOUT_MS = 30_000;
  * Deliberately duplicated from `consumeRunStream` in
  * `apps/server/src/services/tasks/run-stream.ts` (the direct-dispatch twin of
  * this path): sharing it would mean a new `@dorkos/shared` subpath for ~20
- * lines, and the two differ in how they forward events (this one awaits an
- * async publish). Fix both if you fix one.
+ * lines. Fix both if you fix one — since DOR-1567 dropped the progress republish
+ * that used to make this copy `await` its `onEvent`, they do the same work.
  *
  * @param stream - The agent's per-turn event stream.
  * @param signal - Aborts when the run is stopped or out of budget.
@@ -111,48 +96,6 @@ async function consumeRunStream(
   }
 }
 
-/**
- * Ask the runtime to end the turn behind a stopped run.
- *
- * Never rejects: it is called from an abort listener, where a rejection would
- * surface as an unhandled rejection, and a runtime that cannot be interrupted
- * must not stop the run from being finalized.
- *
- * Bounded by {@link INTERRUPT_TIMEOUT_MS}: `interruptQuery` reaches the very
- * subprocess being interrupted, so it can hang, and an unobserved dangling
- * await is a leak nobody ever sees. The run is finalized by the caller either
- * way — this bound only decides how long we wait to learn the outcome. Mirrors
- * `interruptRun` in `apps/server/src/services/tasks/run-stream.ts`.
- *
- * @param deps - Handler dependencies (runtime + optional logger).
- * @param runId - The run id, which is also its session key.
- */
-async function interruptRun(deps: TasksHandlerDeps, runId: string): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const expiry = new Promise<typeof INTERRUPT_TIMEOUT>((resolve) => {
-      timer = setTimeout(() => resolve(INTERRUPT_TIMEOUT), INTERRUPT_TIMEOUT_MS);
-      // Never hold the process open for an interrupt we already gave up on.
-      timer.unref();
-    });
-    const outcome = await Promise.race([deps.agentManager.interruptQuery(runId), expiry]);
-    if (outcome === INTERRUPT_TIMEOUT) {
-      deps.logger?.warn(
-        `[tasks] run ${runId}: interrupt did not settle within ${INTERRUPT_TIMEOUT_MS}ms; ` +
-          'the run is finalized anyway'
-      );
-    } else if (!outcome) {
-      // Also the honest answer for a turn that just finished, so this is not
-      // evidence of a leak.
-      deps.logger?.debug(`[tasks] run ${runId}: runtime reported no in-flight turn to interrupt`);
-    }
-  } catch (err) {
-    deps.logger?.error(`[tasks] run ${runId}: interrupting the turn failed`, err);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
-
 /** Dependencies required by the tasks handler. */
 export interface TasksHandlerDeps {
   agentManager: AgentRuntimeLike;
@@ -165,7 +108,7 @@ export interface TasksHandlerDeps {
    * "not found" for a run that is plainly executing, which is the exact bug
    * this registry exists to close.
    */
-  runningTasks: RunningTasks;
+  runningTasks: AbortRegistry;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -180,13 +123,20 @@ export interface TasksHandlerConfig {
  * Validates the TaskDispatchPayload, runs the agent, and updates
  * the TasksStore with the final run status (completed/failed/cancelled).
  *
+ * **A task run publishes nothing while it runs**, unlike an agent turn. The
+ * scheduler that dispatched it does not listen — the run row is the only thing
+ * that knows how the run ends — so the progress stream this used to republish
+ * to `<subject>.response` had no reader at all, and re-entered the adapter's own
+ * tasks prefix as a malformed dispatch, one dead letter per event (DOR-1567).
+ * If a reader for a run's progress is ever wanted, give it a subject OUTSIDE
+ * this prefix, the way the stop path did.
+ *
  * @param _subject - The tasks subject (unused, kept for interface consistency)
  * @param envelope - The relay envelope containing the tasks dispatch payload
  * @param context - Optional adapter context with agent directory info
  * @param startTime - Timestamp when delivery began (for durationMs calculation)
  * @param config - Resolved adapter configuration
  * @param deps - Injected dependencies
- * @param relay - The relay publisher for response streaming (may be null)
  */
 export async function handleTasksMessage(
   _subject: string,
@@ -194,8 +144,7 @@ export async function handleTasksMessage(
   context: AdapterContext | undefined,
   startTime: number,
   config: TasksHandlerConfig,
-  deps: TasksHandlerDeps,
-  relay: RelayPublisher | null
+  deps: TasksHandlerDeps
 ): Promise<DeliveryResult> {
   const traceId = randomUUID();
   const spanId = randomUUID();
@@ -228,8 +177,25 @@ export async function handleTasksMessage(
   }
 
   const payload = parsed.data;
-  const { taskId, runId, prompt, cwd, permissionMode } = payload;
+  const { taskId, runId, prompt, cwd, permissionMode, systemPromptAppend } = payload;
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
+  // The session this run runs on. A STICKY task resolves a resume target on the
+  // scheduler side — the REAL SDK id of its previous run — and carries it here;
+  // every other run falls back to the run id, the isolated-per-run session this
+  // path has always used (DOR-1571). `resumeSession` is that session's
+  // `hasStarted`: resume the existing conversation, or start fresh — false for
+  // every non-sticky run and a sticky task's first fire.
+  const sessionId = payload.sessionId ?? runId;
+  const hasStarted = payload.resumeSession ?? false;
+  // A run carries `payload.sessionId` only when it is sticky. For those, the id
+  // to WRITE on the run row is the runtime's own id after the turn — the id the
+  // SDK actually wrote its transcript under (`getSdkSessionId`), which the next
+  // fire resumes and which makes the run clickable to the real conversation.
+  // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
+  // branch records the freshest answer.
+  const isSticky = payload.sessionId !== undefined;
+  const persistedSessionId = (): string =>
+    isSticky ? (deps.agentManager.getSdkSessionId(sessionId) ?? sessionId) : sessionId;
 
   // Record trace span as delivered
   deps.traceStore.insertSpan({
@@ -270,28 +236,41 @@ export async function handleTasksMessage(
       throw new Error('Run timed out (TTL budget expired)');
     }
 
-    deps.agentManager.ensureSession(runId, {
+    deps.agentManager.ensureSession(sessionId, {
       permissionMode,
       cwd: effectiveCwd,
-      hasStarted: false,
+      // Resume a sticky session that has already run; start fresh otherwise. This
+      // explicit `ensureSession` short-circuits `sendMessage`'s transcript probe,
+      // so the answer is carried on the wire (DOR-1571). The direct-dispatch twin
+      // in `task-scheduler-service.ts` does the same.
+      hasStarted,
+      // Nobody is coming back to a scheduled run, so an unanswered prompt is
+      // refused at ten minutes instead of parking for four hours and stalling
+      // the run (spec `ask-parks-on-timeout` §7). The direct-dispatch twin in
+      // `task-scheduler-service.ts` says the same thing; a run must not depend
+      // on which path carried it.
+      unattended: true,
     });
 
-    const eventStream = deps.agentManager.sendMessage(runId, prompt, {
+    const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
+      permissionMode,
       cwd: effectiveCwd,
+      // Built server-side by `buildTaskAppend` and carried on the wire, because
+      // the pieces it is made of (the task's agent, the run's trigger) do not
+      // otherwise reach this process. Without it a relay-dispatched run was
+      // never told it was unattended and would stop to ask questions nobody
+      // was there to answer (DOR-1567).
+      ...(systemPromptAppend ? { systemPromptAppend } : {}),
     });
 
     const stopped = await consumeRunStream(
       eventStream,
       controller.signal,
-      () => void interruptRun(deps, runId),
-      async (event) => {
+      () => void interruptTurn(deps.agentManager, sessionId, `run ${runId}`, deps.logger),
+      (event) => {
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };
           outputSummary += data.text;
-        }
-
-        if (envelope.replyTo && relay) {
-          await publishResponse(envelope, event, runId, relay);
         }
       }
     );
@@ -311,7 +290,7 @@ export async function handleTasksMessage(
           durationMs,
           outputSummary: truncatedSummary,
           error: stoppedByOperator ? 'Run cancelled' : 'Run timed out (TTL budget expired)',
-          sessionId: runId,
+          sessionId: persistedSessionId(),
         });
       } else {
         deps.taskStore.updateRun(runId, {
@@ -319,7 +298,7 @@ export async function handleTasksMessage(
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          sessionId: runId,
+          sessionId: persistedSessionId(),
         });
       }
     }
@@ -348,7 +327,7 @@ export async function handleTasksMessage(
         durationMs,
         outputSummary: outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS),
         error: errorMsg,
-        sessionId: runId,
+        sessionId: persistedSessionId(),
       });
     }
 
@@ -371,28 +350,4 @@ export async function handleTasksMessage(
     // finds it gone — never a half-finalized run it could stop twice.
     deps.runningTasks.release(runId, controller);
   }
-}
-
-/**
- * Publish a response event for tasks flows (no correlationId).
- *
- * @param originalEnvelope - The original incoming envelope
- * @param event - The StreamEvent to publish
- * @param fromId - The run ID to use as the sender
- * @param relay - The relay publisher
- */
-async function publishResponse(
-  originalEnvelope: RelayEnvelope,
-  event: StreamEvent,
-  fromId: string,
-  relay: RelayPublisher
-): Promise<void> {
-  if (!originalEnvelope.replyTo) return;
-  const opts: PublishOptions = {
-    from: `agent:${fromId}`,
-    budget: {
-      hopCount: originalEnvelope.budget.hopCount + 1,
-    },
-  };
-  await relay.publish(originalEnvelope.replyTo, event, opts);
 }

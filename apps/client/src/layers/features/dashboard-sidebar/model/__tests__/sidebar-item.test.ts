@@ -38,7 +38,6 @@ function room(overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>
     slug: null,
     title: 'Untitled',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-07-01T00:00:00.000Z',

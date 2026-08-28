@@ -5,10 +5,10 @@
  * @module shared/relay-envelope-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { PermissionModeSchema } from './schemas.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Subject grammar (documentation) ===
 
@@ -259,6 +259,46 @@ export type EndpointRegistration = z.infer<typeof EndpointRegistrationSchema>;
 
 // === Task Dispatch ===
 
+/**
+ * Subject prefix one task's dispatch envelope is published to.
+ *
+ * The concrete subject is this prefix plus the task id and NOTHING else — see
+ * {@link isTaskDispatchSubject}, which is the rule a receiver must apply rather
+ * than a bare `startsWith`.
+ */
+export const TASK_DISPATCH_SUBJECT_PREFIX = 'relay.system.tasks.';
+
+/**
+ * The subject one task's dispatch is published to.
+ *
+ * @param taskId - The task being dispatched.
+ */
+export function taskDispatchSubject(taskId: string): string {
+  return `${TASK_DISPATCH_SUBJECT_PREFIX}${taskId}`;
+}
+
+/**
+ * Whether a subject is EXACTLY one task's dispatch subject.
+ *
+ * A receiver claims {@link TASK_DISPATCH_SUBJECT_PREFIX} as a prefix, so every
+ * subject BENEATH a dispatch subject reaches it too — and a prefix test alone
+ * then reads `relay.system.tasks.<id>.<anything>` as a dispatch. That is not
+ * hypothetical: the task path used to stream a run's own progress to
+ * `relay.system.tasks.<id>.response`, every event of which came straight back
+ * in as a malformed dispatch and dead-lettered. One live run produced 279
+ * "could not be delivered" notifications (DOR-1567).
+ *
+ * Task ids are ULIDs, which contain no dot, so "the tail is one segment" is the
+ * whole test.
+ *
+ * @param subject - The subject a message arrived on.
+ */
+export function isTaskDispatchSubject(subject: string): boolean {
+  if (!subject.startsWith(TASK_DISPATCH_SUBJECT_PREFIX)) return false;
+  const tail = subject.slice(TASK_DISPATCH_SUBJECT_PREFIX.length);
+  return tail.length > 0 && !tail.includes('.');
+}
+
 export const TaskDispatchPayloadSchema = z
   .object({
     type: z.literal('task_dispatch'),
@@ -273,6 +313,41 @@ export const TaskDispatchPayloadSchema = z
     taskName: z.string(),
     cron: z.string().nullable(),
     trigger: z.string(),
+    /**
+     * The unattended-run briefing the agent starts with — what job this is,
+     * what schedule raised it, and that nobody is here to answer questions
+     * (`buildTaskAppend` server-side).
+     *
+     * On the wire because the receiver runs in another process and cannot
+     * rebuild it: the task's agent id and the run's trigger are not otherwise
+     * here. Optional so an envelope written before this field existed — a
+     * dead-letter replay, say — still parses; a run without it simply gets no
+     * briefing, which is what every relay-dispatched run got before DOR-1567.
+     */
+    systemPromptAppend: z.string().optional(),
+    /**
+     * The session this run must execute on (DOR-1571).
+     *
+     * Absent means "use `runId`" — the isolated-per-run default every
+     * non-sticky run has always had. A STICKY task resolves this to its stable
+     * `sticky-<taskId>` session on the scheduler side (which has the store to
+     * decide it) and carries it here, so the receiver runs the turn on the
+     * shared session rather than a fresh one and writes that same id onto the
+     * run row. Optional so an envelope written before this field existed still
+     * parses.
+     */
+    sessionId: z.string().optional(),
+    /**
+     * Whether {@link TaskDispatchPayloadSchema.sessionId} already has history to
+     * RESUME rather than start fresh (DOR-1571).
+     *
+     * `hasStarted` at the agent seam. Only meaningful for a sticky run whose
+     * session has run before; the scheduler decides it from the run history and
+     * carries it here, because the receiver cannot see that history. Absent or
+     * false means start fresh, which is every non-sticky run and a sticky task's
+     * first run.
+     */
+    resumeSession: z.boolean().optional(),
   })
   .openapi('TaskDispatchPayload');
 
@@ -318,6 +393,23 @@ export const TASK_CANCEL_SUBJECT_PREFIX = 'relay.control.task-cancel.';
  */
 export const TASK_SCHEDULER_PRINCIPAL = 'relay.system.tasks.scheduler';
 
+/** Every relay subject the scheduler publishes under. */
+export const TASK_SUBJECT_PREFIX = 'relay.system.tasks.';
+
+/**
+ * What a person is shown in place of a `relay.system.tasks.*` subject.
+ *
+ * Lives here because TWO resolvers render it and they must never disagree: the
+ * server's `subject-resolver.ts` (activity rows, trace views) and the client's
+ * `resolve-label.ts` (the relay feed, which resolves locally to avoid a server
+ * round-trip). They sat in separate files saying "Tasks Scheduler" apiece, and
+ * the DOR-1490 rename found exactly the drift that arrangement invites: one
+ * was renamed, the other was not, and the same object had two names on two
+ * screens. A shared constant is the guard — there is no second copy left to
+ * fall out of step.
+ */
+export const TASK_SUBJECT_LABEL = 'Scheduled tasks';
+
 export const TaskCancelPayloadSchema = z
   .object({
     type: z.literal('task_cancel'),
@@ -327,6 +419,60 @@ export const TaskCancelPayloadSchema = z
   .openapi('TaskCancelPayload');
 
 export type TaskCancelPayload = z.infer<typeof TaskCancelPayloadSchema>;
+
+// === Agent Turn Cancel ===
+
+/**
+ * Subject prefix a stop request for one agent turn is published to (DOR-791).
+ *
+ * The same reasoning as {@link TASK_CANCEL_SUBJECT_PREFIX}, for the other kind
+ * of work a runtime adapter executes on somebody else's behalf. A turn started
+ * by an A2A `message/send` runs inside the adapter, so the gateway holds no
+ * handle on it: dropping its reply subscription abandons the stream and leaves
+ * the model running — and billing — for as long as it wants. The stop travels
+ * the bus the message did.
+ *
+ * `relay.control.` for the same two reasons: a stop must not queue behind the
+ * turn it exists to end (so it arrives by subscription, not delivery), and
+ * nothing may attach a watcher to it, because a watcher counts as a delivery
+ * and would make every unanswered stop report success.
+ *
+ * The concrete subject is this prefix plus the A2A task id, so a trace row
+ * names the task it belongs to; the payload's `replyTo` is what actually
+ * identifies the turn.
+ */
+export const AGENT_CANCEL_SUBJECT_PREFIX = 'relay.control.agent-cancel.';
+
+/**
+ * The only principal allowed to stop an agent turn.
+ *
+ * Server-injected on publish and not reachable from a model, exactly like
+ * {@link TASK_SCHEDULER_PRINCIPAL}: a handler that checks it knows the request
+ * came from the A2A gateway acting on its caller's `tasks/cancel`, and not from
+ * an agent with `relay_send` that guessed a reply subject.
+ */
+export const A2A_GATEWAY_PRINCIPAL = 'relay.system.a2a.gateway';
+
+/** Why a turn is being stopped, in the words its runner writes to the log. */
+export const AgentCancelReasonSchema = z.enum(['caller_canceled', 'caller_timeout']);
+
+export type AgentCancelReason = z.infer<typeof AgentCancelReasonSchema>;
+
+export const AgentCancelPayloadSchema = z
+  .object({
+    type: z.literal('agent_cancel'),
+    /**
+     * The reply subject of the turn to stop — authoritative, and the reason
+     * this is not the agent id: a reply subject is minted per execution, so it
+     * names ONE turn even when two turns of the same task run at once.
+     */
+    replyTo: z.string(),
+    /** Whether the caller cancelled or simply stopped waiting. */
+    reason: AgentCancelReasonSchema,
+  })
+  .openapi('AgentCancelPayload');
+
+export type AgentCancelPayload = z.infer<typeof AgentCancelPayloadSchema>;
 
 // === Console Relay Receipt ===
 

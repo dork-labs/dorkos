@@ -214,7 +214,7 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
       "DorkOS couldn't recover its server",
       "DorkOS lost its background server and couldn't offer to start it again, so it can't " +
         'continue. Try opening DorkOS again. If this keeps happening, check ' +
-        `~/Library/Logs/DorkOS for details.\n\n${err instanceof Error ? err.message : String(err)}`
+        `~/Library/Logs/@dorkos/desktop for details.\n\n${err instanceof Error ? err.message : String(err)}`
     );
     app.quit();
   });

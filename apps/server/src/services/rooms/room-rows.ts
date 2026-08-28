@@ -35,7 +35,6 @@ export interface NewRoom {
   slug: string | null;
   title: string;
   topic: string | null;
-  workspaceId: string | null;
   /**
    * The well-known key this room answers to, for the rooms the product itself
    * opens (`'team'`). Omitted — and stored as `null` — for every room a person

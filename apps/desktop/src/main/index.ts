@@ -107,7 +107,7 @@ function startupFailureMessage(err: unknown): string {
   if (err instanceof PortUnavailableError) return detail;
   return (
     "DorkOS couldn't start its background server, so it can't continue. " +
-    'Try restarting the app. If this keeps happening, check ~/Library/Logs/DorkOS for ' +
+    'Try restarting the app. If this keeps happening, check ~/Library/Logs/@dorkos/desktop for ' +
     `details.\n\n${detail}`
   );
 }

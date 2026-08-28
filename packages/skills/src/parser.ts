@@ -50,6 +50,33 @@ export interface ParseSkillFileOptions {
 }
 
 /**
+ * Read a SKILL.md's frontmatter EXACTLY as the author wrote it, with no schema
+ * anywhere near it.
+ *
+ * The base for any rewrite has to be this, never a parsed `meta`. Parsing is
+ * lossy in both directions: it fills defaults in (so a rewrite materializes
+ * `timezone`/`enabled`/`permissions` the author never typed), it strips keys the
+ * schema does not know, and — the reason this exists — it can replace a value
+ * with a DIFFERENT SHAPE. A `schedule:` block that does not validate parses to a
+ * complaint object, and writing that back would replace the author's cron with
+ * `{invalid, problem}` and lose their schedule for good (DOR-1485 review, B1).
+ *
+ * @param content - Raw file content (UTF-8).
+ * @returns The frontmatter mapping and the trimmed body, or `null` when the
+ *   content's frontmatter is malformed enough that gray-matter refuses it.
+ */
+export function readRawFrontmatter(
+  content: string
+): { data: Record<string, unknown>; body: string } | null {
+  try {
+    const parsed = matter(content);
+    return { data: parsed.data, body: parsed.content.trim() };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse a SKILL.md file and validate its frontmatter against a Zod schema.
  *
  * Validates that:
@@ -67,7 +94,7 @@ export interface ParseSkillFileOptions {
 export function parseSkillFile<T>(
   filePath: string,
   content: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T, unknown>,
   options?: ParseSkillFileOptions
 ): ParseResult<ParsedSkill<T>> {
   // Validate filename

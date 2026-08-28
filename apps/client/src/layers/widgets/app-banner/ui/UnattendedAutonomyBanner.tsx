@@ -14,7 +14,7 @@ const NAMED_LIMIT = 2;
 /** The word a person uses for each kind of driver, matching the surface it lives on. */
 const KIND_NOUN: Record<UnattendedDriverKind, string> = {
   binding: 'integration',
-  task: 'task',
+  task: 'scheduled task',
 };
 
 /**
@@ -119,7 +119,7 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
             )}
             {kinds.has('task') && (
               <Button variant="outline" size="sm" onClick={() => navigate({ to: '/tasks' })}>
-                Tasks
+                Schedules
               </Button>
             )}
           </>

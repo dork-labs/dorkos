@@ -14,6 +14,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
+import type { SearchAnswer, SearchQuery } from '@dorkos/shared/search-schemas';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -149,6 +150,26 @@ export interface DirectTransportServices {
    */
   pendingInteractions: {
     list(): Array<{ sessionId: string; cwd: string; interaction: PendingInteractionDTO }>;
+  };
+  /**
+   * The message index, read in this process (DOR-691).
+   *
+   * A host wires `createEmbeddedSearch({ db, rooms })` from the server's search
+   * domain, which resolves the operator's scope through the same rooms domain
+   * and the same owner check `GET /api/search` uses. The seam hands back the
+   * route's decision as data — the envelope, or the refusal — and
+   * `direct/search-methods.ts` raises the refusal the way an HTTP one arrives.
+   *
+   * **Optional, because a host can be running where there is no index to open.**
+   * The Obsidian plugin wires it whenever this machine has one (DOR-1563), and
+   * leaves it out when it does not — a DorkOS that has never run, a database
+   * older than message search, an Obsidian whose Electron the plugin carries no
+   * SQLite build for. An absent seam makes `search` REJECT with a plain sentence
+   * — never `{ results: [], warnings: [] }`, which would tell somebody their
+   * history holds no mention of a word they know they wrote.
+   */
+  search?: {
+    search(query: SearchQuery): SearchAnswer | Promise<SearchAnswer>;
   };
   transcriptReader: {
     listSessions(vaultRoot: string): Promise<Session[]>;

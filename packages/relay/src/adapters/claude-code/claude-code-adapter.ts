@@ -27,6 +27,7 @@
  *                 = agentId (Mesh ULID) on first-ever message to this agent
  */
 import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { TASK_DISPATCH_SUBJECT_PREFIX, isTaskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import type {
   RelayAdapter,
   RelayPublisher,
@@ -38,7 +39,9 @@ import { handleAgentMessage } from './agent-handler.js';
 import { handleTasksMessage } from './task-handler.js';
 import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
-import { RunningTasks, subscribeTaskCancelHandler } from './task-cancel-handler.js';
+import { subscribeTaskCancelHandler } from './task-cancel-handler.js';
+import { subscribeAgentCancelHandler } from './agent-cancel-handler.js';
+import { AbortRegistry } from '../../lib/abort-registry.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { CapacityHold, type SlotOutcome } from './capacity-hold.js';
 import type { ClaudeCodeAdapterConfig, ClaudeCodeAdapterDeps, ResolvedConfig } from './types.js';
@@ -110,9 +113,6 @@ const AGENT_SUBJECT_PREFIX_RUNTIME_SCOPED = 'relay.agent.claude-code.';
  */
 const AGENT_SUBJECT_PREFIX_LEGACY = 'relay.agent.';
 
-/** Subject prefix for Tasks dispatch messages. */
-const TASKS_SUBJECT_PREFIX = 'relay.system.tasks.';
-
 /**
  * What the adapter reports when it never got a slot.
  *
@@ -175,16 +175,25 @@ function slotRefusal(
  * agent message **waits** on rather than being refused by (`capacity-hold.ts`)
  * — TTL budget timeouts, and records trace spans through the delivery lifecycle.
  *
- * Two control signals arrive by SUBSCRIPTION rather than delivery — tool
- * approvals and run stop requests — because each must reach a turn that is
- * already holding one of those concurrency slots.
+ * Three control signals arrive by SUBSCRIPTION rather than delivery — tool
+ * approvals, run stop requests and turn stop requests — because each must reach
+ * work that is already holding one of those concurrency slots, or waiting for
+ * one.
  */
 export class ClaudeCodeAdapter implements RelayAdapter {
   readonly id: string;
+  /**
+   * What reaches this adapter — deliberately wider than what it will run.
+   *
+   * A claim is a PREFIX, so the tasks entry also catches every subject beneath
+   * a dispatch subject. Only `relay.system.tasks.<taskId>` exactly is a
+   * dispatch ({@link isTaskDispatchSubject}); anything deeper is skipped in
+   * {@link ClaudeCodeAdapter.deliver} rather than parsed as one.
+   */
   readonly subjectPrefix = [
     AGENT_SUBJECT_PREFIX_RUNTIME_SCOPED,
     AGENT_SUBJECT_PREFIX_LEGACY,
-    TASKS_SUBJECT_PREFIX,
+    TASK_DISPATCH_SUBJECT_PREFIX,
   ] as const;
   readonly displayName = 'Claude Code';
 
@@ -211,8 +220,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   private approvalUnsub: (() => void) | null = null;
   /** Unsubscribe function for the run stop-request subscription (DOR-808). */
   private taskCancelUnsub: (() => void) | null = null;
+  /** Unsubscribe function for the turn stop-request subscription (DOR-791). */
+  private agentCancelUnsub: (() => void) | null = null;
   /** The task runs this adapter is executing, so a stop can reach them. */
-  private readonly runningTasks = new RunningTasks();
+  private readonly runningTasks = new AbortRegistry();
+  /** The agent turns this adapter is executing, so a cancel can reach them. */
+  private readonly runningTurns = new AbortRegistry();
   private status: AdapterStatus = {
     state: 'disconnected',
     messageCount: { inbound: 0, outbound: 0 },
@@ -267,6 +280,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       this.runningTasks,
       this.deps.logger ?? console
     );
+    this.agentCancelUnsub = subscribeAgentCancelHandler(
+      relay,
+      this.runningTurns,
+      this.deps.logger ?? console
+    );
     this.status = {
       state: 'connected',
       messageCount: { inbound: 0, outbound: 0 },
@@ -284,10 +302,13 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.approvalUnsub = null;
     this.taskCancelUnsub?.();
     this.taskCancelUnsub = null;
+    this.agentCancelUnsub?.();
+    this.agentCancelUnsub = null;
     // The runs themselves are finalized by their own handlers; only the
     // registry is torn down here, so a stop request arriving after a restart
     // is answered with the truth instead of aborting a stranger's run.
     this.runningTasks.clear();
+    this.runningTurns.clear();
     // A hold is a promise that a turn will run, and this adapter is about to
     // stop being able to keep it. Every waiter settles now, as a failed
     // delivery, so an ADAPTER restart tells the chats that were waiting. On a
@@ -333,6 +354,63 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       },
     };
 
+    // A subject under the tasks branch that is not a dispatch subject is not
+    // work this adapter has been given — it is somebody publishing beneath one,
+    // which the prefix claim above cannot distinguish on its own. Answered here,
+    // before a concurrency slot or a turn handle exists, and answered as
+    // `skipped` rather than as a failure: the publish pipeline dead-letters
+    // every unsuccessful adapter delivery, and reading a run's own progress
+    // stream as a malformed dispatch is exactly how one run produced 279 "could
+    // not be delivered" notifications (DOR-1567).
+    if (subject.startsWith(TASK_DISPATCH_SUBJECT_PREFIX) && !isTaskDispatchSubject(subject)) {
+      return { success: true, skipped: true, durationMs: Date.now() - startTime };
+    }
+
+    // The handle on this turn, created HERE rather than inside the handler.
+    // Two things stand between a message arriving and its turn starting — the
+    // concurrency line, and the per-session queue — and a turn stopped while it
+    // is in either of them has to be stoppable, and must never start once it
+    // is. Registering at the head of the queue instead meant a cancel for a
+    // queued turn was refused as "not executing here", and the turn then ran
+    // and billed anyway (DOR-791). Tasks dispatch keeps its own registry, keyed
+    // by run id, and ignores this one.
+    const turnController = new AbortController();
+    const turnKey = isTaskDispatchSubject(subject) ? undefined : envelope.replyTo;
+    if (turnKey) this.runningTurns.register(turnKey, turnController);
+
+    try {
+      return await this.deliverWithTurnHandle(
+        subject,
+        envelope,
+        context,
+        startTime,
+        turnController
+      );
+    } finally {
+      if (turnKey) this.runningTurns.release(turnKey, turnController);
+    }
+  }
+
+  /**
+   * Take a concurrency slot and run the delivery, with the turn's handle in hand.
+   *
+   * Split out from {@link deliver} only so the registration above brackets
+   * every exit from this method — including the slot refusals, which return
+   * early.
+   *
+   * @param subject - The target subject
+   * @param envelope - The relay envelope to deliver
+   * @param context - Optional adapter context
+   * @param startTime - When delivery began, for `durationMs`
+   * @param turnController - The handle a stop request aborts
+   */
+  private async deliverWithTurnHandle(
+    subject: string,
+    envelope: RelayEnvelope,
+    context: AdapterContext | undefined,
+    startTime: number,
+    turnController: AbortController
+  ): Promise<DeliveryResult> {
     // A hold may not outlive the message it holds. `handleAgentMessage` gives
     // the turn whatever is left of the envelope's TTL, and falls back to
     // `defaultTimeoutMs` when nothing is — so a wait that ate the whole TTL
@@ -361,7 +439,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     }
 
     try {
-      if (subject.startsWith(TASKS_SUBJECT_PREFIX)) {
+      if (isTaskDispatchSubject(subject)) {
         return await handleTasksMessage(
           subject,
           envelope,
@@ -374,8 +452,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             taskStore: this.deps.taskStore,
             runningTasks: this.runningTasks,
             logger: this.deps.logger,
-          },
-          this.relay
+          }
         );
       }
 
@@ -398,6 +475,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             traceStore: this.deps.traceStore,
             agentSessionStore: this.deps.agentSessionStore,
             resolveExecutionSettings: this.deps.resolveExecutionSettings,
+            turnController,
             logger: this.deps.logger,
           },
           this.relay

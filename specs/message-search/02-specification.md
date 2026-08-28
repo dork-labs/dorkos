@@ -326,6 +326,8 @@ LIMIT 20;
 
 **The visibility clause is scoped by `source_id` as well as `origin_key`, and that is not cosmetic.** `origin_key` is opaque and composed per source (§4), so it is unique _within_ a source and carries no guarantee across sources — a bare `origin_key IN (...)` would let a room key collide with a session key and leak a session row to an agent. The agent path therefore names its source explicitly. **The owner path omits the clause entirely** rather than building a set of every container: a filter that has to enumerate everything is a filter that silently starts excluding things the day enumeration misses one.
 
+**[Amended 2026-08-24 (DOR-684) — the agent path is not one `IN (...)` list with one floor: the visible set is `(roomId, joinedSeq)` PAIRS, applied as a floor PER container. See Amendment 7.]**
+
 Ranking is `bm25()` alone in v1, with recency available as a tiebreak. Learned ranking and click feedback need data this feature has to ship to collect.
 
 #### 6.2 What the tokenizer buys and costs
@@ -413,6 +415,8 @@ Two new tables and one virtual table, all in §4. **No existing table is altered
 **The precondition for unlocking session search is written down rather than left to be discovered:** `resolveCaller` becomes MCP-aware **and** session membership becomes a defined concept. Until both, this is a decision with a stated trigger, not an omission.
 
 **One access rule this index depends on does not exist yet.** **Correction to the brief:** `joinedSeq` is **specced, not shipped** — `room_members` has `joined_at` (text) and `last_read_seq` (`packages/db/src/schema/rooms.ts:134-149`), and no `joined_seq` column appears in any migration under `packages/db/drizzle/`. RP7's §8.3 specs it and RP3 lands it. The consequence is recorded in `specs/room-participation/02-specification.md` §10.3 and in its phasing table: **RP7 now depends on RP3 as well as on this index**, because an index-backed `search_room_history` shipped before `joinedSeq` exists would hand an agent a fast, ranked reader of everything said in its rooms before it joined.
+
+**[Amended 2026-08-24 (DOR-684) — `joinedSeq` exists now. RP3 landed `room_members.joined_seq`, so this paragraph's premise is false and the floor it describes is the one DOR-684 applies. See Amendment 7.]**
 
 ### 8. Surfaces
 
@@ -612,6 +616,24 @@ A root that does not exist is skipped silently; a root that exists and fails to 
 
 **Consequence for every corpus figure in this document, not only §2's table.** The `claude-code` figures throughout describe `~/.claude` alone. The real v1 corpus on this machine is roughly **1.5× larger** than every count in **§1, §2 and §5**, and the share-of-disk percentages are correspondingly understated. **§5's change-signal figures are single-root too** — the 28-of-2,458 compaction sample, its 74 marker lines and the 543 `relocated` lines are all counted over `~/.claude` only, so each grows with the root set even though the conclusions they support (compaction is append-only; `relocated` is a line and not a file move) are structural and do not. The design is unaffected — the numbers are.
 
+### As shipped (DOR-682, 2026-08-25) — four deltas from the paragraphs above
+
+Recorded here rather than only in the ticket, for the reason the amendment header gives: whoever reads this section next will not read a Linear issue.
+
+**1. No new config field was needed.** This amendment asked for "a Zod field, a semver-keyed migration, default `[]`". `runtimes.claudeCode.accounts` already is that field — DOR-729 shipped it, and ADR `260801-204126` folded it into `resolveClaudeRootSet()` along with the active root, `$CLAUDE_CONFIG_DIR` and `~/.claude`. So the whole of this amendment's scope came down to the registry row calling that function instead of `resolveActiveClaudeRoot()`. The two features now enumerate one set from one derivation and cannot disagree about what history exists.
+
+**2. A root that fails to read reports through `SourceSweep.failures`, not `search_sources.last_error`.** The clause above asked for a row. There is no honest row to write: `search_sources` is keyed by container, so an error about a whole ROOT would need an invented container id — one that discovery can never return, and that the prune would therefore delete on the first healthy sweep, flapping in and out of the frontier every five minutes. DOR-681 had already reached the same conclusion for a discovery that fails outright (`DISCOVERY_FAILURE_KEY`), and the per-root case joins it. The visibility G3 asks for is unchanged: the reconciler logs every failure, naming the root's path. A root that simply does not exist is still silent, because an account nobody has used is not a fault.
+
+**3. A partial enumeration suppresses the prune, and that has a real cost.** Not anticipated here, and load-bearing. Containers are pruned when discovery reports they are gone — and a root that would not open reports the same absence as a root whose files were deleted. Pruning on that would delete an entire account's indexed history the moment its volume hiccupped, then pay a full rebuild to recover it. So the sweep prunes only when every root enumerated.
+
+**Stated plainly rather than softened:** this is not "stale rows survive one extra sweep". A root that is _permanently_ unreadable — a registered account on a disk that never returns, a permission nobody restores — **freezes pruning for every root, indefinitely**. Deleted transcripts from healthy accounts keep answering searches until the broken root is repaired or removed from the config. It is survivable only because the failure is loud: every sweep logs the root by path. The real fix is per-root pruning, which needs a `root` column on `search_sources` so a frontier row can say which account it came from. That is **follow-up work, deliberately not smuggled into this ticket** — the same column also enables a per-root `last_error` (delta 2's missing row) and per-account attribution of a hit, so it is one migration serving three motivations.
+
+**4. A symlinked duplicate root would have blacked out the whole index.** Found in review, fixed here. `resolveClaudeRootSet()` deduplicates lexically, so a registered account that is a _symlink_ to another root survives as two spellings of one directory. Every session id then has a twin; twins are refused rather than preferred; the index indexes nothing, forever, rebuilding nothing every five minutes. Discovery therefore collapses roots on `realpath` rather than on the string, and a duplicated directory now reports **one** summary failure naming the two locations instead of one failure per colliding session id — several hundred identical warnings per sweep is not a report, it is a way to lose the one fact an operator can act on.
+
+**Measured after the change**, on the machine this amendment was written on: 2 roots, **497 files, 19,124 messages**, and — the point of the whole ticket — the identical 19,124 whether `CLAUDE_CONFIG_DIR` is unset or exported as `~/.claude3`.
+
+**On what the bench asserts, and why it is not a message-count floor.** `scripts/search-corpus-bench.ts` asserts coverage by cross-checking its multi-root discovery against an independent per-root enumeration. A floor would work on this machine today — the task text's 18,000 would indeed have caught a single-root regression here — but a floor is the wrong instrument for this property, because it is **machine- and time-dependent while the property is neither**. An operator with one Claude account reds spuriously against any floor derived from two, and `cleanupPeriodDays` shrinks every root's 30-day window without anything being wrong. The cross-check answers "did the source read every root the resolver returned", which is the actual claim, and it answers it identically on one account or five.
+
 ## Amendment 3 — the corpus is clean; the reader was not (DOR-681)
 
 **Amends §2.1's two paragraphs on malformed lines.**
@@ -686,7 +708,7 @@ malformed when split on \n only         : 0
 | FTS5 column-name trap: `snippet()` fails, `MATCH` survives                                      | §4           | verified by running against a deliberate mismatch                                                                                 |
 | `better-sqlite3` declared as the RANGE `^12.11.1`                                               | §Tech deps   | `packages/db/package.json:21` — exact                                                                                             |
 | 37 migrations, zero FTS5 anywhere in `apps/` or `packages/`                                     | §Background  | verified                                                                                                                          |
-| `joinedSeq` does not exist in any migration                                                     | §7           | verified — `room_members` has only `joined_at`, `last_read_seq`                                                                   |
+| `joinedSeq` does not exist in any migration                                                     | §7           | verified 2026-07-29; **no longer true** — RP3 landed `joined_seq` (DOR-684, Amendment 7)                                          |
 | `readFromOffset` advances to `stat.size` unconditionally                                        | §5           | verified, and it has no production consumer                                                                                       |
 
 **Corrected by Amendments 1–3 and 5:** §6.3's latency headroom · §2.1's single root · §2.1's malformed-line explanation · G5/§8/Phase 5's claim on `search_room_history`.
@@ -720,11 +742,15 @@ This document states in three places that `search_room_history` becomes a caller
 
 **RP7 additionally needs `joinedSeq`, which does not exist.** Re-verified 2026-07-29: `grep joined_seq` across `packages/db/` and `apps/server/src/` returns nothing, and `room_members` carries only `joined_at` and `last_read_seq`. **RP3 lands it.** An index-backed `search_room_history` shipped before then would hand an agent a fast, ranked reader of everything said in its rooms before it joined — §7 already says this, and it is the reason the dependency is real rather than bookkeeping.
 
+**[Amended 2026-08-24 (DOR-684) — it exists now; RP3 landed it, and DOR-684 applies it as a per-room floor. See Amendment 7.]**
+
 **G5 as written is therefore not a goal this ticket can meet**, and no task in `03-tasks.json` claims it. What DOR-684 owes RP7 is a query service whose visible-set join is a parameter rather than an assumption, so that RP7 can pass a member-scoped room set without the service needing to know why.
 
 ## Amendment 6 — the room write-through is deferred, and the reconciler is the only path in v1 (DOR-680)
 
 **Amends §5's reconciler paragraph.**
+
+**[Discharged 2026-08-24 (DOR-684) — the write-through is built, on the seam and with the degradation contract this amendment specified. See Amendment 7.]**
 
 §5 promises three things and DOR-680 shipped two: the 300,000 ms reconciler and the startup sweep are in `apps/server/src/services/search/indexer.ts`. **The immediate write-through on the room path is not built.** This amendment exists because a scope removal that lives only in a ticket is exactly the failure Amendment 5 was written to prevent — a reader reaches §5 long before they reach a Linear issue, and §5 as written would have them looking for code that is not there.
 
@@ -739,3 +765,319 @@ This document states in three places that `search_room_history` becomes a caller
 **What it will take to land.** One call in `RoomService.publishEntry` to an indexer method that sweeps a single container, and one wiring line where the room subsystem is constructed. It belongs to whichever ticket can safely edit `services/rooms/` after DOR-634 lands — most naturally DOR-684, which is the first task with a surface that makes the latency visible.
 
 **One thing this amendment does not do is soften §5.** The write-through remains the right design. It is deferred on sequencing and observability, not reconsidered on merit, and a v1 that ships the query surface without it should be read as carrying a known five-minute lag rather than as having settled the question.
+
+## Amendment 7 — the visible set is PAIRS, and the benchmark's floor is derived (DOR-684)
+
+**Amends §6.1's visibility clause, §7's `joinedSeq` paragraph, §5's reconciler paragraph (via Amendment 6), Amendment 5's closing claim, and the benchmark requirement in Amendment 1.**
+
+**One word of SQL was missing, and the narrow scope paid for it.** §6.1's query is written `FROM messages_fts f JOIN messages m ON m.id = f.rowid`, and that is the shape that shipped. With a NARROW visibility clause — one container, which is what `search_room_history` sends and what an agent's search sends — SQLite drives the join from `messages` instead, using the covering index `(source_id, origin_key, ordinal)` and probing FTS5 once per row. **Measured on a 40,000-row index with one room in scope, term `the`: 7,786 ms.** The same query with `CROSS JOIN` — a join-ORDER directive, not a different join — is **4.5 ms**, and the owner path is unchanged (10.3 → 10.2 ms) because it was already on the FTS-driven plan. DorkOS never runs `ANALYZE`, so the planner has no statistics with which to reach that conclusion itself, and the directive is not a hint it may ignore. **`search_room_history` has been on the slow plan since DOR-680**; it shares this function, so it is fixed by the same word. The bench now measures the container-scoped shape as a third statement, and asserts it against the unscoped one rather than against a wall-clock ceiling.
+
+**The minimum query length is not a cost threshold, and the measurement is what says so.** This document and an earlier draft of this amendment both justified `SEARCH_MIN_QUERY_LENGTH` as buying back the cost of a short query. Re-derived over 9,207 real messages: the worst one-character query (`a`) matches **42%** of the index, the worst two-character one (`it`) **47%**, the worst three-character one (`the`) **83%**. **Length does not predict cost.** What survives is the other half of Amendment 1's argument — a one-letter query is certainly useless AND certainly expensive — so the floor stands at two on that ground, and the bench asserts the fact it rests on (the queries the floor refuses are expensive ones) rather than a number. **It is also counted over the TOKENIZED form now**: `a,`, `%20a` and a string of spaces are all refused, and all three were 200s running one-letter ranked queries while the check was a `.min()` on the raw string.
+
+**The room write-through is built, and Amendment 6 named this ticket correctly.** Amendment 6 defers it and says it "belongs to whichever ticket can safely edit `services/rooms/` after DOR-634 lands — most naturally DOR-684, which is the first task with a surface that makes the latency visible." It landed here, in the shape that amendment prescribed: one call at the END of `RoomService.publishEntry` through a `RoomEntryIndexer` port, one wiring line in `createRoomSubsystem`, and one indexer entry point that brings a SINGLE container up to date (`indexRowContainer`) — the sweep's own per-container function, reached with a by-key frontier read instead of the two whole-source scans, so nothing that scales with how many rooms exist sits on a write path.
+
+**The degradation contract is the part worth stating, because it inverts the usual direction.** The room log is the truth and the index is a copy of it, so **an index write that fails must never fail the post**. It logs one warning and returns; the entry is durable, the room already has it, and the reconciler's next pass finds the container's watermark below its `max(seq)` and indexes what was missed — which is not a fallback bolted on, it is the sweep doing what it does for any room nobody has posted in for four minutes. Deliberately no `search_sources.last_error` on this path: a room that is four minutes behind is not a broken source, and warning about it would fill the search envelope with something nobody can act on. Both halves are guarded — the implementation catches, and `publishEntry` catches around the port anyway — and both are driven red before green in `services/search/__tests__/write-through.test.ts`.
+
+**It is synchronous, and the number is the argument — with the precondition the number needs.** `better-sqlite3` has no asynchronous write to defer to, so a `setImmediate` would move identical blocking work later on the same event loop, buy a window in which a crash loses it, and turn "you can find what you just said" into a race. **Measured 2026-08-24 over a file-backed database: 300 posts cost 156.3 ms without the write-through and 227.4 ms with it — 0.237 ms per post**, against roughly half a millisecond for the post itself.
+
+**That figure is the cost on a room the index is CAUGHT UP ON, and it was quoted for a while as though it were the cost of the feature.** It is not. The pass resumes where the index stopped, so the first post into a room with an unindexed backlog projects that whole backlog inside `publishEntry` — **406 ms for one post into a 20,000-entry room** (measured in review, through the room service; the standing bench measures the indexing pass alone at 169 ms for the same depth). So the write-through carries a bound: **a room more than 200 entries behind is left to the reconciler**, which is the same degradation a failed write-through takes and the same one §5 already defines. 200 is read off the curve rather than chosen — cold cost is linear at ~0.009 ms per projected entry, making the bound 2.5 ms of inline work, an order of magnitude under the ~50 ms at which a keystroke starts to feel slow, and far above the backlog a live room accumulates between two posts (which is one). `scripts/search-write-through-bench.ts` (`pnpm search:write-through`) measures both halves, so neither number is inherited again.
+
+**`joinedSeq` exists now.** §7 and Amendment 5 both state, correctly at the time and re-verified on 2026-07-29, that `room_members` carries only `joined_at` and `last_read_seq`. RP3 has since landed the column (`packages/db/src/schema/rooms.ts`, `joined_seq INTEGER NOT NULL DEFAULT 0`), with a backfill and its own migration test. Every claim resting on its absence — that the index-backed room-history tool must wait for it, that DOR-684 could only leave a hole where it goes — is discharged rather than corrected: the floor is real and this task applies it.
+
+**The visible set is `(roomId, joinedSeq)` PAIRS, and a single floor cannot express it.** §6.1 writes the agent path as `origin_key IN (...)` and §7 describes it as "member-only, at or after `joinedSeq`", which reads as one list and one number. It is not: a member joins different rooms at different points, so one floor across a multi-room search is wrong in both directions at once — it leaks what was said before they arrived in the rooms they joined late, and hides what is theirs in the rooms they joined early. `MessageQuery` therefore carries a floor per container, and the clause is emitted as one `origin_key IN (...) AND ordinal > ?` group per DISTINCT floor, so a caller in forty rooms who joined thirty-nine at the beginning costs two groups rather than forty. Both directions are asserted, over the same seeded rows, in `services/search/__tests__/query.test.ts` and `access.test.ts`.
+
+`search_room_history`'s port (`RoomMessageFinder`) was migrated to the same shape rather than left beside it. Its only caller searches one room, so the old `roomIds[] + afterSeq` spelling was correct today and a trap tomorrow; two ways to say the same thing is the tolerated legacy pattern this codebase refuses.
+
+**The benchmark's hit floor is derived on the machine it runs on, and 10,000 is not reachable on this one.** Amendment 1 requires a hit-count assertion before any latency assertion, and DOR-684's task text names 10,000 — a figure from the 18,114-row prototype index. The corpus a single Claude Code root actually holds today is **9,110 messages** (measured 2026-08-24, recorded in `scripts/search-corpus-bench.ts`), because Claude Code rotates transcripts older than `cleanupPeriodDays`: one root is a moving 30-day window, not a growing archive. `scripts/search-latency-bench.ts` therefore floors the commonest term at **5,000 hits**. The NUMBER is taken from its sibling's `MIN_MESSAGES` deliberately; the QUANTITY is not the same one, and saying so matters — that script floors the whole index at 5,000 **messages**, this one floors a single term at 5,000 **hits**, which is the stricter bar on the same corpus (the commonest term matched 7,656 of 9,182 on the run below). Both keep the floor's whole purpose — an empty or broken index answers in microseconds and would sail past a latency-only check — while sitting far enough below today's corpus that ordinary rotation never reddens either. DOR-682 (every root rather than the active one) roughly doubles the corpus and lets it rise.
+
+**Two refinements to what that benchmark fits, both learned by running it.** The linearity fit is taken on `ORDER BY bm25()` **without** `snippet()`: ranking is charged per row that MATCHES and is the term that scales, while `snippet()` is charged per row RETURNED — twenty of them, always — so folding them together measures a constant as if it were slope (R² 0.886 combined, 1.000 split). And the flatness claim is asserted **comparatively** as well as absolutely: the unordered spread must be at least ten times smaller than the ranked spread over the same terms, which is scale-free and survives any load, where a bare ratio ceiling over 8–24 µs measurements is mostly measuring the scheduler.
+
+**One run, 2026-08-24, on a workstation running several agents — illustration, not a budget, per Amendment 1's own instruction:** 9,182 messages indexed; `the` 7,656 hits; unordered p50 0.012–0.013 ms across 3.3 decades of hit count (spread 1.12×); ranked p50 0.032 → 3.476 ms across the same range (spread 109×); ranked slope 0.452 µs/row, inside the 0.375–1.03 µs/row range the three earlier runs bracketed; linearity R² 1.000. **The shape reproduced; no absolute was inherited.**
+
+## Amendment 8 — codex as shipped: the corpus, the authorship gate, and one carve-out (DOR-683)
+
+**Amends §2's source table, §2.2, §4's `origin_key` table, and §Testing Strategy's codex bullet.**
+
+Recorded here rather than only in the ticket, for the reason every amendment header gives: whoever reads this section next will not read a Linear issue.
+
+**The mechanism claim held.** `jsonl-frontier.ts` was not touched. The twin refusal, the shrink rebuild, the partial-line rule, the carry cap and the prune suppression all apply to Codex without a line of new code, which is what ADR `260728-214214` said would happen. What the source needed beyond "one registry row and one pure projection" is its own `discover` — which the `FileSource` port has always had, because a source is what knows where its files are. Calling that a third thing would be honest; calling it a mechanism would not.
+
+**The corpus, re-measured 2026-08-25** (the figures in §2.2 are from 2026-07-28 and have grown): **18 rollout files** — 14 under `sessions/YYYY/MM/DD/`, 4 in the flat `archived_sessions/` — **7.0 MB, 2,200 lines, zero malformed, a top-level `timestamp` on 2,200 of 2,200.** Line types: `response_item` 1,179 · `event_msg` 928 · `turn_context` 68 · `session_meta` 18 · `world_state` 6 · `compacted` 1. Exactly one `session_meta`, always line 1; 18 session ids, none in two files. **The two-families trap reproduced exactly as §2.2 describes it**: 261 `response_item` messages against 219 in the `event_msg` family.
+
+**The archive is a MOVE, and that is load-bearing.** None of the four archived session ids appears under `sessions/`. If a Codex release ever started copying instead, every archived thread would have a twin, and the M1 sweep refuses both — so those threads would drop out of the index loudly, with one failure each, rather than being double-counted. `__tests__/codex-source.test.ts` drives that case.
+
+**§4's `origin_key` says "the session id from `session_meta`"; the shipped source takes the same id from the FILENAME.** The CLI writes it into both — `rollout-<ISO>-<sessionId>.jsonl` — and they agree on **18 of 18** files. The reason is cost, not preference: the frontier is keyed by container id, so an id that only the bytes carry cannot be consulted before reading those bytes, and every rollout would be head-read on every five-minute tick forever. A Codex `session_meta` record carries the CLI's whole `base_instructions` (largest measured: 34,956 bytes), so that is not a cheap read. The working directory still comes from the head record, and that read IS skipped for an unchanged file. A `.jsonl` in a rollout root whose name carries no id is reported as `not-a-rollout` rather than indexed under something invented.
+
+**The authorship gate is new, and §2.2 did not anticipate needing one.** §2.2 says "role at `payload.role`, text at `payload.content[].text`" and stops there, which would index 261 messages. **214 are indexed.** The other 47, measured:
+
+| Dropped                                              | Count | What it is                                                                                                                                        |
+| ---------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `developer` role                                     | 20    | Codex's own instructions — `<permissions instructions>`, `<skills_instructions>`, `<collaboration_mode>`, `<model_switch>`                        |
+| `user` records that are nothing but injected context | 22    | 9 × the `# AGENTS.md instructions for <path>` dump, 7 × `<environment_context>`, 3 × `<recommended_plugins>`, 2 × `<turn_aborted>`, 1 × `<skill>` |
+| `user` records that are a widget click with no words | 5     | The `<ui_action>` block DorkOS injects on a generative-UI button press (five moves of one tic-tac-toe game)                                       |
+
+**Why Codex needs this and claude-code does not**, which reads as an inconsistency until you see where each runtime puts the same text: claude-code delivers `<gen_ui>`, `<agent_identity>`, `<dorkos_context>` and the rest through `systemPromptAppend`, a channel the transcript never records. Codex has no per-turn system channel, so `codex/turn-input.ts` prepends the identical blocks to the user's own message — and they land inside the user's record in the rollout. The gate strips leading machine-written blocks by SHAPE (an opening tag with a newline after it, up to its closing tag) and keeps the remainder, which is the same position-sensitive move `stripRelayContext` already makes for claude-code, and which cannot drift when either side adds a block. Its stated cost: a message that is entirely a tag-shaped block and no prose indexes as nothing — 0 records on this corpus.
+
+**Cross-checked against the family it does not read.** The gate's 214 differ from the `event_msg` family's 219 by exactly the five widget clicks. That is a genuinely independent oracle — a different record family, a different parse path — and it is what makes "we read one family and kept what people said" a measurement rather than a claim.
+
+**§Testing Strategy's benchmark bullet asks the bench to assert equality with an independently computed `response_item` count. It asserts three separate things instead, and the middle one was got wrong first — which is the part worth recording.** `scripts/search-corpus-bench.ts --source codex` counts BOTH message families itself, with its own parser, over the same files, never through the projection.
+
+- **Doubling** fails on `indexed > responseItems`. A projection reading both families lands at **166%** — verified by seeding exactly that defect: 433 rows against 261 records, exit 1.
+- **Reading the WRONG family** fails on an EQUALITY against the `event_msg` count. An earlier version of this amendment, and of the script's own comments, claimed the share floor below caught this. **It does not, and no share floor can**: the two families hold the same messages, so an `event_msg`-reading projection lands at 219 of 261 — 84%, inside any sane band, exit 0. That was found by seeding it. What separates them is that the shipped projection's authorship gate makes its count differ from the other family's — 214 against 219 — while the defect's count matches it exactly. Both directions verified: 214 ≠ 219 passes, the seeded 219 = 219 fails with the message naming both numbers. Its one false positive (a corpus where the gate happens to drop exactly the difference) is written down beside the check; the script is run deliberately by a person who can read both counts off the line above it.
+- **A projection that indexes almost nothing** fails on the share floor, which is what that floor is actually for, and which is derived rather than picked: 82% on this machine, floored at half.
+
+The unit-test half of the same guard is `codex-projection.test.ts`'s two-families case, which asserts the BODIES are the `response_item` texts rather than only counting rows — a count alone passes for a projection that read the other family. Equality with the `response_item` count, as §Testing Strategy words it, would encode today's ratio of plumbing to speech as a rule. A machine with no Codex asserts nothing and says so.
+
+**A head record too big to scan is now loud.** Found in review. Discovery reads a rollout's first 256 KiB for `session_meta.payload.cwd` — seven times the largest head measured (34,956 B) — but `base_instructions` grows with the CLI, so the window can be outgrown. When it was, the file indexed with no working directory and NOTHING said so: every one of that session's hits would open nowhere while the results looked healthy, which is this document's own G4 failure in miniature. The two cases are distinguishable — a window that FILLED without naming a directory is not a conversation that names none — so the first is warned about by path and the second stays silent. The file is still indexed either way: its messages are what search is for, and dropping a whole conversation to protect against an unknown directory is the larger loss. It is a log line rather than a `DiscoveryFailure` because a failure suppresses the prune for the whole source, and a head that is too big stays too big — that would freeze pruning forever over a container path.
+
+**One carve-out was needed.** `os.homedir()` is banned in `apps/server/src` outside three files; this ticket makes it four. `services/runtimes/codex/codex-home.ts` mirrors the Codex CLI's own `$CODEX_HOME ?? ~/.codex` resolution 1:1, exactly as `claude-config-dir.ts` mirrors the Claude Agent SDK's — and for the identical reason: the index reads files another program wrote, so resolving anything else is DOR-250's split-brain in a second runtime. The carve-out is by filename, pinned in `scripts/test-homedir-guard.sh` alongside a case proving a SIBLING in the same directory is still refused.
+
+**Bench, 2026-08-25, both legs on the machine this was written on:** `claude-code` 497 files / **19,211 messages** / 2.5 s; `codex` 18 files / **214 messages** / 33 ms / 1.8 MB. Codex is **1.1%** of the corpus, and §2.2's argument for it stands unchanged: the multi-runtime cockpit is the product's headline differentiator, and a search box covering one runtime undercuts the claim the product leads with.
+
+**One thing this ticket did NOT do.** The client's scope copy (`message-search-scope.ts`) still lists Codex under what search does not cover. It ships in a separate branch (DOR-685) that had not merged when this landed, so the line moves from "not covered" to "covered" in a follow-up commit once both are on `main`.
+
+## Amendment 9 — OpenCode is indexed, and the port promotion is refused (DOR-688)
+
+**Amends §2.3 in full, the `opencode` row of §2's source table, §1's opening paragraph ("**OpenCode is not in that list**"), and §3's port trigger.**
+
+§2.3 deferred OpenCode on four counts. Three of them still hold, and the design here is what
+each of them forced.
+
+**Count 1 — ADR-0308's ban — is narrowed, not dismissed.** The reason for it is real:
+`opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value`
+in the same file as its messages. What changed is that the danger turned out to be
+answerable structurally. Each sweep copies the store and its `-wal`/`-shm` siblings into a
+temp directory, opens the COPY `readonly` + `PRAGMA query_only`, reads through a frozen
+allowlist of three tables and eight columns, and deletes the copy in a `finally`. **The live
+file is never opened**, so DorkOS is not a participant in the WAL concurrency §2.3 worried
+about — a stronger position than the SDK path offers, since the sidecar holds a live
+connection and this does not. §9.1's rule ("every projection selects explicit fields") is
+not weakened; it is enforced by construction, because `SELECT *` is not expressible when the
+column list IS the allowlist. ADR `260825-110420` carries the decision and the amendment to 0308.
+
+**Count 2 — the SDK path — is UNCHANGED and now explicitly forbidden for indexing.** It was
+re-evaluated and still fails on its own merits: nothing boots the sidecar at startup, a cold
+probe spawns a server as a side effect, and a `peekClient()`-gated indexer makes coverage
+nondeterministic. A reconciler on a timer must never spawn somebody else's agent server.
+**Every other source in this design reads bytes already at rest, and this one now does too**
+— which also discharges the whole "SDK-surface decision blocks everything else" paragraph:
+`before`, `start` and `scope: 'project'` are irrelevant to a source that does not use the
+SDK, and neither DOR-673's 100-session cap nor DOR-674's exact-directory filter can be
+inherited by a read that goes to the file.
+
+**Count 3 — the corpus — is unchanged and was never the argument.** Re-measured 2026-08-25:
+**50 messages across 63 top-level sessions**, against 19,124 from Claude Code. The July
+figures (`session` 6, `message` 24, `part` 73) were not re-derived at the time because the
+store was deliberately not opened, which was the rule working as intended. G4 is why size
+does not decide this: a box that silently covers less for one runtime than another is the
+failure this document exists to refuse.
+
+**Count 4 — the port trigger — FIRED, and the promotion is REFUSED.** §3 named the arrival
+of a third mechanism as the trigger, on the prediction that a third mechanism would need
+frontier logic of its own. **It did not.** M3 reuses M2's entire watermark implementation
+through a four-function `ContainerReader` seam and contributes ~40 lines
+(`snapshot-frontier.ts`): the resume rule, the shrink rebuild, the frontier write and the
+prune are shared. A port here would abstract three mechanisms that already share their
+implementation. The re-trigger is written down in the ADR rather than left to taste — **a
+fourth mechanism whose change detection is neither a byte offset nor a monotonic ordinal, or
+a source that lives outside `apps/server`** — the second because the registry is a private
+constant in one file, and the day a source must register from somewhere that cannot edit
+that file, the registration surface IS the port.
+
+**The `Session.time.updated` caveat was NOT discharged, and an earlier draft of this
+amendment wrongly said it was.** §2.3 insisted the watermark be `>=` plus a forced re-read of
+any session last seen non-idle. The shipped source does not read `Session.time.updated` — a
+session's ordinals are its messages' positions in `(time_created, id)` order, so the
+high-water mark is a row count — but **the count inherits the same disease from a different
+direction, and adversarial review caught it.** OpenCode creates the assistant `message` row
+at turn START and streams its `part` rows in underneath it, mutating them in place as tokens
+arrive: measured on the operator's store 2026-08-25, **236 of 236 parts were created after
+their message row, 55 of 80 text parts were updated in place, 91 of 94 message rows were
+updated after creation, and the last part of a turn landed up to 62 seconds behind it.**
+
+So the count rises at turn start and the content lands for a minute afterwards. Three misses
+follow, all reproduced: a sweep landing mid-stream indexes a truncated body and serves it
+forever, because the count never changes again; a revert plus a new turn inside one sweep
+interval leaves the count exactly where it was; and an in-place `part` edit changes no count
+anywhere. §2.3's instinct — force a re-read of anything recently active — was right, and what
+was wrong was only its choice of column.
+
+The shipped answer is `OPENCODE_VOLATILE_WINDOW_MS`: fifteen minutes, three sweep intervals,
+measured against `message.time_updated` and `part.time_updated` (timestamps, both added to
+the read allowlist) rather than the session's turn-start stamp. Any session touched inside
+that window is **re-read from ordinal 1, deleting its rows first**, on every sweep until it
+settles.
+
+**The delete is not optional, and a first version that skipped it was wrong** — caught in
+the verify pass. Letting the upsert rewrite each row in place looks equivalent and is not: a
+message that projects to nothing writes no row, so it cannot overwrite what sits at its
+ordinal, and a container whose count lands exactly on the index's high-water mark also fails
+§5's shrink test (`maxOrdinal < indexedTo` is false at equality). The stale row then answers
+at that ordinal forever. **25 of the 75 messages on the operator's store project to
+nothing**, so it is reachable. The cost of folding is bounded by who raises the flag —
+recently-touched conversations only, never settled ones.
+
+**Two behaviours worth stating because they are the ones a careless version gets wrong.** A
+session with a `parent_id` is a subagent's own transcript and is not a container, for the
+same reason §2.1 walks past `subagents/**`. And **an absent `opencode.db` is not an empty
+one**: it indexes nothing, prunes nothing, and reports no failure, because reading absence as
+"every session is gone" would delete an entire indexed corpus the first time the runtime was
+uninstalled.
+
+**§1's product statement is now false and the client copy is the follow-up, tracked as
+DOR-1556.** The scope copy task 5.2 shipped names OpenCode as not covered. That copy is
+deliberately NOT changed in this ticket — the file is in flight on another branch — and
+flipping it is the one piece of DOR-688 that lands separately.
+
+**Codex landed first, and this amendment sits on top of it.** DOR-683 (Amendment 8 above)
+added the Codex row while this was in review, so the registry is now `rooms`, `claude-code`,
+`codex`, `opencode` — three mechanisms over four sources, and §1's sentence is true of every
+runtime the product names.
+
+## Amendment 10 — the client copy flip landed (DOR-1556, 2026-08-25)
+
+Amendment 8's "did NOT do" note above and §927–930's "deliberately NOT changed" are resolved:
+`message-search-scope.ts` now names Codex and OpenCode in `SEARCH_SCOPE_COVERED`, its pinned
+test moved with it, and §1's product statement is true of every source this index registers.
+
+## Amendment 11 — a channel hit lands on the message; a conversation hit does not (DOR-687, 2026-08-26)
+
+Task 6.2 asked whether §8's coordinates can carry the ideation's headline promise — _"You click one
+and land where it was said"_ — the rest of the way. The answer is **yes for rooms, no for
+transcripts**, and the split is a property of the coordinate rather than a matter of effort.
+
+**Rooms.** `ordinal` for the `rooms` source IS `room_entries.seq` (`projections/rooms.ts:94`), which
+is the number the room's own timeline is built on. So the hit already carries an address, and the
+client half is a `?entry=<seq>` on `/channels` (and on `/`, which is #team; the one-door redirect
+carries it across). The room resolves the `seq` to a ROW, and the shared timeline gained one landing
+precedence for it: an asked-for row outranks a remembered position, an unread rule and the newest
+message, because it is the only one of the four somebody requested. **No field was added to the wire
+and no column to the index**: D11 holds.
+
+Three things that decision dragged in, each of which is a defect if left out:
+
+- **A request is CONSUMED, not held.** The landing is armed once per conversation, and an in-place
+  search-param navigation does not change the conversation — so without consumption, clicking a hit
+  in the room you are already reading changes the URL and moves nothing. And a request that never
+  expired would re-win every REMOUNT, so on a phone, closing a thread panel would throw a reader at
+  message 300 back to the message they searched for — the exact thing `resumeRow` exists to prevent.
+  The marker is keyed on room + `seq`; a new `seq` re-arms the landing exactly once, and an answered
+  one stands down for good. A re-armed landing that cannot be honoured leaves the reader where they
+  are rather than restarting the ordinary landing under them.
+- **A reply opens its thread.** The room's flow draws the "↳ N replies" row rather than the reply,
+  so landing the room and stopping there puts somebody on a collapsed count with the message they
+  searched for nowhere in the document. The panel is opened and lands on the reply; the room behind
+  lands on the thread's row. One request, two consumers, one consumed-marker each.
+- **Focus is not the whole mark.** `scrollToRow`'s "focus IS the flash" holds for a keyboard reader,
+  but a row focused PROGRAMMATICALLY after a MOUSE click does not match `:focus-visible` — and
+  clicking a search result is the mouse path. So the row also wears a transient `data-landed`,
+  styled unconditionally and faded out after ~2s, with a still version under
+  `prefers-reduced-motion`. The caret is the durable mark; this is the one that paints.
+
+**Transcripts.** `ordinal` for `claude-code`, `codex` and `opencode` is a running count of the
+messages the projection KEPT — person-authored user records and non-sidechain assistant text, with
+tool calls, tool results, thinking blocks and command records all skipped
+(`projections/claude-code.ts:111-146`, `readSpeech`). The session view holds what `parseTranscript`
+returns, which is all of those, and then drops one more class again (`filterKickoffHistory`). The two
+numberings are unrelated, so `messages[ordinal]` there is reliably a **different message**. Landing
+on the wrong line is worse than landing in the right conversation, so a transcript hit still opens
+its conversation and nothing else. Closing that half means carrying a stable per-message id end to
+end — the JSONL record `uuid` for Claude Code, and its equivalents elsewhere — rather than
+re-deriving the projection's filter in the client; it is a schema change and its own ticket.
+
+**One limit is stated in the product rather than only here.** A room hydrates its trailing page and
+nothing pages backwards yet (`useRoomEntries`: _"Scrolling further back than that page is `?before=`,
+which the server serves and no client surface asks for yet"_). So a hit older than that page has no
+row to land on, and the room says so in one quiet line instead of opening at the bottom in silence —
+which looks identical to a link that worked. Back-paging a room is the change that would retire that
+sentence, and it is not this one.
+
+## Amendment 12 — a conversation hit lands on the message too (DOR-1579, 2026-08-26)
+
+Amendment 11 closed one half and named the other: _"Closing that half means carrying a stable
+per-message id end to end — the JSONL record `uuid` for Claude Code, and its equivalents elsewhere —
+rather than re-deriving the projection's filter in the client; it is a schema change and its own
+ticket."_ This is that ticket, and the shape is exactly the one it named.
+
+**One nullable column, `messages.message_id`, and it is not an identity.** The dedup key stays
+`(source_id, origin_key, ordinal)` — a re-read of a container has to write over the row it wrote
+last time, and an id is not what makes two reads of one message the same message here. D11 is
+satisfied by a consumer shipping in the same change: the client's `?message=` landing. Nothing is
+searchable that was not before; `messages_fts` still indexes `body` and nothing else.
+
+**The backfill is a rebuild, in the same migration.** `0080_message_search_message_id.sql` adds the
+column and then runs `DELETE FROM messages; DELETE FROM search_sources;`. The ids live in the stores
+this index derives from, so no statement could fill them in — and G2 already says a delete plus a
+rebuild is a complete, supported recovery. `DELETE` rather than `DROP`, because `messages_fts_ad` is
+what retracts a row's terms from an external-content index and it fires per row. The operational
+consequence, stated rather than discovered: **the first sweep after upgrading re-indexes every
+container from scratch**, and older results are missing until it finishes.
+
+**Native ids only, and never a synthesized one.** claude-code carries the JSONL record `uuid`, codex
+the `response_item`'s `item.id`, opencode the `message.id` row it already read for diagnostics;
+rooms carries `null`, because a room hit's `ordinal` IS its `seq` and it has landed since DOR-687. A
+record without an id contributes `null`. The rule matters most where it is most tempting to break:
+`parseTranscript` falls back to `crypto.randomUUID()` for a record with no `uuid`, which mints a
+fresh id per parse — an indexed copy of one would name a message no later read agrees exists, while
+looking exactly like an id that works.
+
+**Carrying an id is not the same as being able to land on it, so the client keeps an allowlist.** The
+two ids agreeing is a claim about two code paths per runtime, verified by reading both:
+
+- **claude-code — verified.** `projections/claude-code.ts` stores the record `uuid`;
+  `transcript-parser.ts` mints `ChatMessage.id` from the same field (`parsed.uuid ||
+crypto.randomUUID()`), and `mapHistoryMessage` carries it to the client unchanged.
+- **opencode — verified.** `opencode-store.ts` reads the `message.id` column and
+  `projections/opencode.ts` carries it; `runtimes/opencode/session-mapper.ts` builds
+  `HistoryMessage.id` from the SDK's `info.id`, which is the same id.
+- **codex — deliberately NOT on the list.** The index stores a real `item.id` from the rollout file,
+  and the session view never reads that file: a Codex conversation is rebuilt from DorkOS's own event
+  log, which numbers messages `user-<seq>` / `assistant-<seq>`
+  (`services/session/event-log-history.ts`). The two id spaces never intersect, so a `message` param
+  would always miss. Codex joins the list the day the event log records the item id it was built
+  from, and the id is stored now so that day is a client change alone.
+
+A hit whose source is off the list, or whose id is `null`, opens its conversation exactly as it did
+before. **That degrade is the design, not a fallback**: an id either names a row or it does not, and
+a miss can never land on a different message, so the failure mode is the behaviour that shipped
+in Amendment 11.
+
+**One thing the ticket did not anticipate: the session view FOLDS an assistant turn and the index does
+not.** `parseTranscript` emits one message per assistant record and then merges consecutive ones into
+a single turn keeping the LAST id, while the projection indexes each record that carries text as its
+own searchable message — which is right for search, since each is a separate thing that was said.
+Carrying each record's own uuid therefore addressed the rendered turn only when the text happened to
+sit in the last record of it, and an agentic turn's rarely does: it ends on a `tool_use` record.
+**Measured over 120 real transcripts, 7,352 indexed messages: 23% of messages carried an id that
+matched a rendered one** — 80% of what a person typed, 14% of what an agent said.
+
+So `projections/claude-code.ts` folds the turn as it goes and gives every message in it the id of the
+record that closes it, which took the same corpus to **90% overall and 92% for assistant messages**.
+The fold reads against `parseTranscript` branch by branch, and **getting it wrong costs a landing
+rather than moving one** — but only in one direction, and the review of this change is what pinned
+down which. A turn folded too SHORT yields an id that matches nothing, because every rendered id is
+the uuid of a record that closed some turn. A turn folded too LONG spans a record the parser drew a
+message for, and the id it hands back is then a real rendered message. So the property rests on a
+precondition worth naming: **every record the index carries must be one the session view also
+draws.** Three ways to break it were found and closed:
+
+- `endsAssistantTurn` read the content shape before `isMeta`, while `parseTranscript` reads `isMeta`
+  first and can flush a slash-command bubble there. It now checks `isMeta` first.
+- It treated any `tool_result` block as transparent, while the parser keys that off `tool_use_id`
+  and emits the record's sibling text when it is missing. It now requires the same field.
+- The projection indexed the CLI's resume-bootstrap reply (`<synthetic>` / "No response
+  requested."), which the parser skips outright, so its text was in the index and nowhere on screen.
+  `isResumeBootstrapReply` now makes it transparent in both senses.
+
+Running both functions over 186 real transcripts and 9,470 indexed messages (2026-08-26) then found
+**0 messages carrying an id that names a different rendered message**, against 1 before those fixes.
+`services/search/__tests__/claude-code-landing-safety.test.ts` pins each one. The remaining misses
+are mostly CLI-internal (`isMeta`) records, treated as turn enders whether or not the parser emits
+for them — the conservative direction on purpose.
+
+**Not done, deliberately.** A conversation says nothing when the id names no row, where a room says
+one quiet line: a room's limit is real and nameable (it holds one trailing page), while a
+conversation holds its history whole, so a miss there means the id no longer addresses anything and
+there is nothing a reader could act on. And there is no browser test for this half: the e2e suite
+reaches transcript search through no runtime it can seed — `test-mode` is not a search source, and
+the three that are read another program's files.

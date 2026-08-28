@@ -50,6 +50,22 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
 const broadcast = vi.fn();
+/**
+ * The data directory this suite mounts its router on, and the prefix its
+ * `fs.readFile` mock treats as "a file the route just wrote".
+ *
+ * One constant because the two MUST agree. The mock answers a path under this
+ * prefix with empty content and every other path with ENOENT, and the update
+ * route reads those as two different worlds — "a file that is there" versus
+ * "a legacy row with no file" (DOR-1481). If the prefix and the `dorkHome`
+ * argument ever drifted apart, fixtures would quietly cross into the other
+ * branch and the tests would still pass, for the wrong reason.
+ *
+ * `vi.hoisted` because the `vi.mock` factories below are hoisted above ordinary
+ * module scope and could not otherwise see it.
+ */
+const DORK_HOME = vi.hoisted(() => '/tmp/dork-test');
+
 vi.mock('../../core/event-fan-out.js', () => ({
   eventFanOut: { broadcast: (...args: unknown[]) => broadcast(...args) },
 }));
@@ -63,7 +79,7 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({
-  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  writeSkillFile: vi.fn().mockResolvedValue(`${DORK_HOME}/tasks/test/SKILL.md`),
   deleteSkillDir: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -78,12 +94,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     default: {
       ...(actual.default as Record<string, unknown>),
       access: vi.fn().mockRejectedValue(new Error('ENOENT')),
-      readFile: vi.fn().mockResolvedValue(''),
+      // A path the POST path just "wrote" reads back empty; every other path is
+      // a row fixture with no file behind it, and the honest answer for those is
+      // ENOENT. The update route now tells that apart from a file it cannot read
+      // or parse, and only ENOENT means "legacy DB-only task, edit the row alone"
+      // (DOR-1481) — so a blanket empty read would make every fixture here look
+      // like a file whose contents are unparseable garbage.
+      readFile: vi.fn().mockImplementation(async (p: string) => {
+        if (typeof p === 'string' && p.startsWith(`${DORK_HOME}/`)) return '';
+        throw Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), {
+          code: 'ENOENT',
+        });
+      }),
     },
   };
 });
 
 import { createTasksRouter } from '../../../routes/tasks.js';
+import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
 import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
@@ -115,6 +143,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -139,16 +168,27 @@ describe('a task write tells the world it happened', () => {
     db = createTestDb();
     store = new TaskStore(db);
     activityService = new ActivityService(db);
+    const scheduler = createMockScheduler();
     app = express();
     app.use(express.json());
     app.use(
       '/api/tasks',
-      createTasksRouter(store, createMockScheduler(), '/tmp/dork-test', undefined, activityService)
+      createTasksRouter(
+        store,
+        scheduler,
+        new TaskRegistrar({ store, scheduler }),
+        DORK_HOME,
+        undefined,
+        activityService
+      )
     );
 
     const deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
+      // The MCP create writes a real SKILL.md now (DOR-1568), and `fs` is mocked
+      // in this suite, so the path only has to be the one the mock recognises.
+      dorkHome: DORK_HOME,
       activityService,
     } as unknown as McpToolDeps;
     tools = Object.fromEntries(
@@ -223,6 +263,7 @@ describe('a task write tells the world it happened', () => {
         name: 'agent-proposed',
         prompt: 'do a thing',
         cron: '0 3 * * *',
+        target: 'global',
         reason: 'The nightly sweep keeps the backlog honest.',
       },
       undefined
@@ -238,6 +279,7 @@ describe('a task write tells the world it happened', () => {
         name: 'agent-proposed',
         prompt: 'do a thing',
         cron: '0 3 * * *',
+        target: 'global',
         reason: 'The nightly sweep keeps the backlog honest.',
       },
       undefined

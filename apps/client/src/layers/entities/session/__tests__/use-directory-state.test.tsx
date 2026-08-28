@@ -66,8 +66,8 @@ vi.mock('@tanstack/react-router', () => ({
 
 // The hook resolves which session a directory opens on, which asks the server
 // whenever this window has nothing cached for it (DOR-928).
-const mockListSessions = vi.fn(
-  (): Promise<{ sessions: { id: string }[] }> => Promise.resolve({ sessions: [] })
+const mockListSessions = vi.fn((): Promise<{ sessions: { id: string }[] }> =>
+  Promise.resolve({ sessions: [] })
 );
 vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: () => ({ listSessions: mockListSessions }),

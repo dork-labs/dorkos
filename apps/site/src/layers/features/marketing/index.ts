@@ -1,16 +1,14 @@
-// UI components — homepage (new narrative arc)
-export { Prelude } from './ui/Prelude';
-export { ActivityFeedHero } from './ui/ActivityFeedHero';
-export { VillainSection } from './ui/VillainSection';
-export { PivotSection } from './ui/PivotSection';
-export { TimelineSection } from './ui/TimelineSection';
-export { HonestySection } from './ui/HonestySection';
+// UI components — sections shared by the home page and the pages below it
 export { InstallMoment } from './ui/InstallMoment';
-export { IdentityClose } from './ui/IdentityClose';
 export { FAQSection } from './ui/FAQSection';
 
-// UI components — chrome
-export { MarketingNav } from './ui/MarketingNav';
+// Data — the one list of site destinations, shared by every marketing surface
+export { NAV_LINKS, isNavLinkActive } from './lib/nav-links';
+export { FOOTER_SOCIAL_LINKS } from './lib/footer-social-links';
+
+// UI components — chrome. `MarketingNav` is deliberately absent: the pill is
+// only ever rendered by `MarketingChrome`, which is its neighbour, and the home
+// page renders its own fork. Nothing outside this slice asks for it.
 export { MarketingHeader } from './ui/MarketingHeader';
 export { MarketingFooter } from './ui/MarketingFooter';
 export { MarketingChrome } from './ui/MarketingChrome';
@@ -58,15 +56,28 @@ export type {
   ProductFrameVariant,
 } from './lib/features';
 
+// Comparison components
+export { ComparisonVerdict } from './ui/compare/ComparisonVerdict';
+export { ComparisonAudience } from './ui/compare/ComparisonAudience';
+export { ComparisonTable } from './ui/compare/ComparisonTable';
+export { ComparisonCriteria } from './ui/compare/ComparisonCriteria';
+export { ComparisonFaq } from './ui/compare/ComparisonFaq';
+export { ComparisonSources } from './ui/compare/ComparisonSources';
+export { CompetitorCard } from './ui/compare/CompetitorCard';
+
+// Data — comparison catalog. Only what the routes outside this slice consume:
+// the dimension list, the scoring helpers and the cell types stay internal,
+// where the comparison components import them by relative path.
+export { comparisons, COMPARISON_FRAMING_COPY } from './lib/comparisons';
+export type { Competitor, ComparisonFraming } from './lib/comparisons';
+
 // Data — product-media shot registry (published in manifest.json)
 export { PRODUCT_SHOTS, PRODUCT_SHOT_IDS, getProductShot, shotHasLoop } from './lib/shots';
 export type { ProductShotMeta, ShotConsumer, ShotKind, ShotFrame } from './lib/shots';
 
 // Data
 export { systemModules } from './lib/modules';
-export { villainCards } from './lib/villain-cards';
 export { subsystems } from './lib/subsystems';
-export { timelineEntries } from './lib/timeline-entries';
 export { faqItems } from './lib/faq-items';
 
 // Data — story page
@@ -93,7 +104,5 @@ export type { Platform } from './lib/use-platform';
 // Types
 export type { NavLink } from './lib/types';
 export type { SystemModule } from './lib/modules';
-export type { VillainCard } from './lib/villain-cards';
 export type { Subsystem } from './lib/subsystems';
-export type { TimelineEntry } from './lib/timeline-entries';
 export type { FaqItem } from './lib/faq-items';

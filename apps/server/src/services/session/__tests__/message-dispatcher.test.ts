@@ -2273,3 +2273,47 @@ describe('the dispatcher asks the runtime to settle an open turn first (DOR-1295
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('systemPromptAppend reaches the runtime, or is absent entirely', () => {
+  // Both layers in one path, deliberately: `dispatchMessage` picks the field
+  // onto its plan and `triggerTurn` forwards it to `sendMessage`, and either one
+  // substituting a default is the failure this pins. Read off the runtime spy,
+  // which is the last hand the value passes through.
+
+  /** The `MessageOpts` the runtime was handed for the turn that just ran. */
+  function optsAtRuntime(): Record<string, unknown> {
+    const call = runtime.sendMessage.mock.calls.at(-1);
+    expect(call, 'no turn reached the runtime').toBeDefined();
+    return (call![2] ?? {}) as Record<string, unknown>;
+  }
+
+  it('carries a caller’s append through both layers unchanged', async () => {
+    runtime.withScenarios([quickTurn()]);
+
+    await send('is the build green?', {
+      systemPromptAppend: '<dorkos_room_conventions room="Release train"/>',
+    });
+    await settle();
+
+    expect(optsAtRuntime().systemPromptAppend).toBe(
+      '<dorkos_room_conventions room="Release train"/>'
+    );
+  });
+
+  it('leaves the field ABSENT when no caller supplied one', async () => {
+    // Absent, never `''`. An empty string is a value that every consumer
+    // downstream has to keep treating as falsy for nothing to change — three
+    // adapters today, each with its own `if (opts?.systemPromptAppend)`, plus
+    // claude-code's launch fingerprint. That is a coincidence holding a
+    // guarantee up. The seam promises the field is not there at all, so no
+    // consumer has to be careful, and this is where that promise is checked:
+    // `'x' in opts` fails on `''`, where a truthiness check would pass and
+    // assert nothing.
+    runtime.withScenarios([quickTurn()]);
+
+    await send('is the build green?');
+    await settle();
+
+    expect('systemPromptAppend' in optsAtRuntime()).toBe(false);
+  });
+});

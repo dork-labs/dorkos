@@ -2,13 +2,11 @@ import { Cron } from 'croner';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
-import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
-import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { createTaggedLogger } from '../../lib/logger.js';
+import { createTaggedLogger, logError } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import { formatDuration } from '../../lib/format-duration.js';
@@ -16,16 +14,21 @@ import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './schedu
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
+import { RunAccounting } from './run-accounting.js';
+import { emitRunActivity } from './run-activity.js';
+import { dispatchRunViaRelay } from './relay-dispatch.js';
+import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
+import { sweepInterruptedRuns } from './crash-recovery.js';
+import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
+import { resolveRunSession } from './session/sticky-session.js';
+import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
 const logger = createTaggedLogger('Tasks');
-
-/** Retention window for the dispatch-dedup log — generous; a tick only needs seconds. */
-const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Derive a stable idempotency key for a scheduled occurrence (ADR-285).
@@ -84,13 +87,22 @@ export interface SchedulerAgentManager {
    * running. Resolves false when the runtime found no in-flight turn to abort.
    */
   interruptQuery(sessionId: string): Promise<boolean>;
+  /**
+   * The runtime's OWN session id for a session key, after the SDK has minted or
+   * kept one (`AgentRuntime.getInternalSessionId`).
+   *
+   * A sticky run reads this once its turn is over to learn the real id the SDK
+   * wrote its transcript under, then persists it as the run's `sessionId` so the
+   * next fire can resume that exact conversation (DOR-1571). Returns undefined
+   * when the session is gone or never started.
+   */
+  getInternalSessionId(sessionId: string): string | undefined;
 }
 
 /** Configuration for the task scheduler service. */
 export interface SchedulerConfig {
   maxConcurrentRuns: number;
   retentionCount: number;
-  timezone: string | null;
   /**
    * Whether this environment may FIRE scheduled tasks (the production gate;
    * ADR-285). When false, crons still register (so next-run display works) but
@@ -135,7 +147,13 @@ export interface SchedulerDeps {
  */
 export class TaskSchedulerService {
   private cronJobs = new Map<string, Cron>();
-  private activeRuns = new Map<string, AbortController>();
+  /**
+   * Every run this process is accountable for, on BOTH dispatch paths — see
+   * {@link RunAccounting}. One registry, because a relay-dispatched run is
+   * exactly as real as a directly-executed one to the concurrency cap, to
+   * `getActiveRunCount()`, and to shutdown.
+   */
+  private runs: RunAccounting;
   private store: TaskStore;
   private agentManager: SchedulerAgentManager;
   private config: SchedulerConfig;
@@ -149,6 +167,18 @@ export class TaskSchedulerService {
   private leaderLock: LeaderLock | null;
   /** Heartbeat timer that keeps the leader lock fresh; cleared on `stop()`. */
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** Retention timer for run history and the dispatch log; cleared on `stop()`. */
+  private pruneTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Whether this process held leadership at the last heartbeat, so a promotion
+   * (the leader died and we took over) can be acted on rather than merely
+   * happening. See {@link start}.
+   */
+  private wasLeader = false;
+  /** Backing field for {@link isStarted}. */
+  private started = false;
+  /** Damps the log when a task's schedule cannot be run. See {@link RefusedScheduleLog}. */
+  private readonly refusedSchedules = new RefusedScheduleLog();
 
   constructor(
     store: TaskStore,
@@ -186,6 +216,7 @@ export class TaskSchedulerService {
       this.activityService = null;
       this.leaderLock = null;
     }
+    this.runs = new RunAccounting(this.store);
   }
 
   /**
@@ -196,7 +227,28 @@ export class TaskSchedulerService {
     return this.leaderLock ? this.leaderLock.isLeaderNow : true;
   }
 
-  /** Start the scheduler: recover from crashes, prune old runs, register enabled tasks. */
+  /**
+   * Whether {@link start} has finished, so registering a job is meaningful.
+   *
+   * Read by {@link TaskRegistrar}, which must not put jobs on the clock during
+   * boot: the server listens and the file watcher delivers its initial `add`
+   * events before `start()` runs, and a job registered then would be firing
+   * ahead of leader election and crash recovery. `start()` registers everything
+   * from the store, so nothing is lost by waiting for it.
+   */
+  get isStarted(): boolean {
+    return this.started;
+  }
+
+  /**
+   * Start the scheduler: elect a leader, recover from crashes, prune old runs,
+   * register enabled tasks, and put retention on a timer.
+   *
+   * Order matters. Crash recovery runs AFTER leader election, because who is
+   * entitled to end an unfinished run depends on who is leader — see
+   * `crash-recovery.ts` for the rule. Registration comes last, so no job is on
+   * the clock while either of those is still deciding.
+   */
   async start(): Promise<void> {
     logger.info(
       this.config.mayFire
@@ -212,51 +264,131 @@ export class TaskSchedulerService {
       logger.info(
         acquired ? 'acquired scheduler leadership' : 'running as scheduler follower (will not fire)'
       );
+      this.wasLeader = acquired;
       // Guard against a re-entrant start() leaking a prior interval.
       if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = setInterval(() => this.leaderLock?.heartbeat(), SCHEDULER_HEARTBEAT_MS);
+      this.heartbeatTimer = setInterval(() => this.onHeartbeat(), SCHEDULER_HEARTBEAT_MS);
       this.heartbeatTimer.unref?.();
     }
 
-    const failed = this.store.markRunningAsFailed();
-    if (failed > 0) {
-      logger.info(`marked ${failed} interrupted run(s) as failed`);
-    }
+    this.recoverInterruptedRuns();
 
+    // Boot must complete. Every task is registered and pruned inside its own
+    // try/catch, because this loop is the last thing standing between one bad
+    // row and a server that cannot start: `index.ts` awaits this call, and a
+    // throw from here ends in `process.exit(1)`. A single unschedulable task —
+    // a cron somebody typo'd in a SKILL.md, a timezone that no longer exists —
+    // used to take the whole install down with it, and every OTHER task with
+    // it. `registerTask` already contains its own failure; this guard is for
+    // everything else in the body, `pruneRuns` most of all.
     const tasks = this.store.getTasks();
     for (const task of tasks) {
-      if (task.enabled && task.status === 'active') {
-        this.registerTask(task);
+      try {
+        if (task.enabled && task.status === 'active') {
+          this.registerTask(task);
+        }
+      } catch (err) {
+        logger.error(`could not start task "${task.name}" — skipping it`, logError(err));
       }
-      this.store.pruneRuns(task.id, this.config.retentionCount);
     }
 
-    // Bound the dispatch-dedup log (ADR-285) — keys only need to outlive a tick.
-    this.store.pruneDispatchLog(DISPATCH_LOG_TTL_MS);
+    // Retention at boot AND on a timer: a server that stays up for a month used
+    // to shed nothing at all (DOR-1482). See `run-retention.ts` for the policy
+    // and why every process runs it. Unref'd so it never holds the process open.
+    const prune = () => pruneRunHistory(this.store, this.config.retentionCount);
+    prune();
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
+    this.pruneTimer = setInterval(prune, PRUNE_INTERVAL_MS);
+    this.pruneTimer.unref?.();
 
+    this.started = true;
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }
 
-  /** Stop the scheduler: cancel all jobs and abort active runs. */
+  /**
+   * One beat of the leader heartbeat: keep our claim fresh, and act on a
+   * PROMOTION.
+   *
+   * A follower that takes over from a leader that died is in exactly the
+   * position a leader is in at boot — there may be runs the dead process left
+   * unfinished, and it is now the process entitled to end them. Without this,
+   * those rows waited for the next restart to be cleaned up, which on a server
+   * that is meant to stay up is "never".
+   */
+  private onHeartbeat(): void {
+    this.leaderLock?.heartbeat();
+    const leaderNow = this.isLeader;
+    if (leaderNow && !this.wasLeader) {
+      logger.info('promoted to scheduler leader — checking for runs the previous leader left');
+      this.recoverInterruptedRuns();
+    }
+    this.wasLeader = leaderNow;
+  }
+
+  /**
+   * End the runs a crash left behind, under the ownership rule in
+   * `crash-recovery.ts` — never the unscoped sweep this used to be.
+   */
+  private recoverInterruptedRuns(): void {
+    // The runs this process is executing go in as an exclusion set. At boot
+    // there are none; on a PROMOTION there may well be, and ending one of those
+    // would be this bug's own mistake made against ourselves.
+    const { swept, left } = sweepInterruptedRuns(
+      this.store,
+      this.leaderLock,
+      this.runs.heldRunIds()
+    );
+    if (swept > 0) logger.info(`marked ${swept} interrupted run(s) as failed`);
+    if (left > 0) {
+      logger.debug(
+        `left ${left} unfinished run(s) alone — this process cannot show they were interrupted`
+      );
+    }
+  }
+
+  /**
+   * Stop the scheduler: cancel all jobs and end the runs it can end.
+   *
+   * ## What draining means on each path
+   *
+   * A DIRECT run is executed here, so it is aborted and then waited on — up to
+   * 30 seconds — which gives its finalizer time to write a real ending.
+   *
+   * A RELAY run is executed inside an adapter this process holds no handle on,
+   * so there is nothing here to abort. What this process CAN do is ask, on the
+   * same bus the dispatch went out on, and that is what it does: one stop
+   * request per run still in flight, best-effort. It does not then wait for
+   * them, because the answer is not this process's to give — the runner may be
+   * elsewhere, may already have finished, or may be going down with us. A run
+   * left unfinished by a shutdown is exactly what the crash sweep on the next
+   * boot is for.
+   */
   async stop(): Promise<void> {
+    // Said first, so nothing registers a job into a scheduler that is on its way
+    // down — a watcher event can land while this is still awaiting active runs.
+    this.started = false;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    if (this.pruneTimer) {
+      clearInterval(this.pruneTimer);
+      this.pruneTimer = null;
+    }
     this.leaderLock?.release();
+    this.wasLeader = false;
 
     for (const [id, cron] of this.cronJobs) {
       cron.stop();
       this.cronJobs.delete(id);
     }
 
-    for (const [, controller] of this.activeRuns) {
-      controller.abort();
-    }
+    this.runs.abortDirect();
+    await this.stopRelayRuns();
 
-    // Wait up to 30s for active runs to finish
+    // Wait up to 30s for the runs this process is actually executing.
     const deadline = Date.now() + 30_000;
-    while (this.activeRuns.size > 0 && Date.now() < deadline) {
+    while (this.runs.directCount() > 0 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
@@ -264,28 +396,84 @@ export class TaskSchedulerService {
     logger.info('scheduler stopped');
   }
 
-  /** Register a cron job for a task. Skips registration for on-demand tasks (no cron). */
-  registerTask(task: Task): void {
+  /**
+   * Ask the bus to stop every relay-dispatched run this process is still
+   * holding, then stop holding them.
+   *
+   * Never throws and never reports: a shutdown that failed to send a stop is
+   * not a shutdown that should hang, and the honest record of a run nobody
+   * ended is the run row itself.
+   */
+  private async stopRelayRuns(): Promise<void> {
+    const relayRunIds = this.runs.relayRunIds();
+    if (relayRunIds.length === 0) return;
+
+    if (this.relay) {
+      logger.info(`asking ${relayRunIds.length} relay-dispatched run(s) to stop`);
+      await Promise.allSettled(relayRunIds.map((runId) => publishRunStop(this.relay!, runId)));
+    } else {
+      logger.warn(
+        `${relayRunIds.length} relay-dispatched run(s) are in flight with no bus to ask — ` +
+          'leaving them to their runner'
+      );
+    }
+    this.runs.forgetRelayRuns();
+  }
+
+  /**
+   * Register a cron job for a task, replacing any job it already has.
+   *
+   * **Total: this never throws.** A task's cron and timezone reach here from
+   * three places — an API request, a SKILL.md somebody hand-edited, a row an
+   * older build wrote — and `croner` throws on an expression or a timezone it
+   * cannot read. Letting that escape made one bad file able to abort server
+   * startup, and able to break whichever writer happened to touch it next. A
+   * task that cannot be scheduled is a task that does not run; it is never
+   * a reason to take the other tasks down.
+   *
+   * The API refuses a bad schedule at the door
+   * (`describeScheduleProblem` in `cron-validation.ts`), so in practice only a
+   * hand-edited file gets this far.
+   *
+   * @param task - The task to schedule.
+   * @returns Whether the task now has a live cron job. `false` covers both an
+   *   on-demand task, which is not meant to have one, and a schedule croner
+   *   refused.
+   */
+  registerTask(task: Task): boolean {
     if (!task.cron) {
       logger.debug(`skipping cron registration for on-demand task "${task.name}"`);
-      return;
+      return false;
     }
 
     if (this.cronJobs.has(task.id)) {
       this.unregisterTask(task.id);
     }
 
-    const tz = task.timezone ?? this.config.timezone ?? undefined;
-    const job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
-      // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
-      // dedups on a value that's identical across processes (ADR-285).
-      this.dispatch(task, self.currentRun()).catch((err) => {
-        logger.error(`dispatch error for ${task.name}:`, err);
+    // The task's own timezone, and nothing else. `pulse_schedules.timezone` is
+    // NOT NULL DEFAULT 'UTC' and every write path fills it, so there was never
+    // anything for a server-wide default to fall through to — the setting that
+    // used to sit here did nothing at all, and was removed (DOR-1482).
+    const tz = task.timezone ?? undefined;
+    let job: Cron;
+    try {
+      job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
+        // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
+        // dedups on a value that's identical across processes (ADR-285).
+        this.dispatch(task, self.currentRun()).catch((err) => {
+          logger.error(`dispatch error for ${task.name}:`, err);
+        });
       });
-    });
+    } catch (err) {
+      this.refusedSchedules.report(task, tz, err);
+      return false;
+    }
 
+    // The schedule reads again, so the next refusal of this task is news.
+    this.refusedSchedules.clear(task.id);
     this.cronJobs.set(task.id, job);
     logger.debug(`registered task "${task.name}" (${task.cron})`);
+    return true;
   }
 
   /** Unregister and stop a cron job. */
@@ -333,7 +521,7 @@ export class TaskSchedulerService {
     // run's own ending — is a plain no-op rather than a message on the bus.
     if (isTerminalRunStatus(run.status)) return { state: 'already_finished' };
 
-    const controller = this.activeRuns.get(runId);
+    const controller = this.runs.directController(runId);
     if (controller) {
       controller.abort(OPERATOR_CANCEL);
       return { state: 'stopping' };
@@ -394,9 +582,14 @@ export class TaskSchedulerService {
     };
   }
 
-  /** Get the number of currently active runs. */
+  /**
+   * How many runs this process has in flight, counting BOTH the ones it is
+   * executing itself and the ones it handed to the relay — see
+   * {@link RunAccounting}. Reading only the direct ones, as this used to, made
+   * the number a flat zero on any install with the relay enabled.
+   */
   getActiveRunCount(): number {
-    return this.activeRuns.size;
+    return this.runs.count();
   }
 
   /** Get the next run time for a task. */
@@ -433,8 +626,28 @@ export class TaskSchedulerService {
   /**
    * Resolve the effective working directory for a task.
    *
-   * When the task is linked to an agent (via agentId), resolves the agent's
-   * projectPath from MeshCore. Falls back to the server default CWD.
+   * When the task is linked to an agent (via agentId), MeshCore turns the agent
+   * id into a directory and the shared precedence chain
+   * (`services/workspace/resolve-session-cwd.ts`) turns that into the directory
+   * the run actually gets — the agent's own folder for the default `home`
+   * binding, its private checkout for `managed`. Before that chain existed this
+   * method WAS the derivation, and it would have kept answering `projectPath`
+   * for an agent that had asked for a checkout of its own.
+   *
+   * Two failures, told apart on purpose:
+   *
+   * - **A missing agent throws**, loudly and unchanged. An unregistered agent is
+   *   a broken LINK a person has to fix — there is no directory to run in, so
+   *   the run must not start.
+   * - **A registered agent whose binding cannot be honored does not throw.** The
+   *   directory exists; only the preference about it is unreadable. The chain
+   *   degrades one rung, to the agent's own folder, and logs the reason
+   *   (`[cwd] resolved` carries `degraded`). Failing the run there would turn a
+   *   typo in `agent.json` into a schedule that silently stops firing.
+   *
+   * So this method is strict about the link and forgiving about the preference,
+   * which is not a contradiction: one of them says WHETHER the run can happen and
+   * the other only says WHERE.
    *
    * @param task - The task to resolve CWD for
    * @returns The absolute path to use as CWD for this run
@@ -449,14 +662,38 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return projectPath;
+      return (await resolveSessionCwd({ agentPath: projectPath })).cwd;
     }
+    // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
+    // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
+    // agent-less task through the chain's default rung would quietly move the
+    // ones where they differ.
     return process.cwd();
   }
 
   /**
-   * Dispatch a scheduled run — checks the firing gate, leadership, concurrency,
-   * task state, and dispatch idempotency before creating a run.
+   * Dispatch a scheduled run — checks the firing gate, leadership, task state
+   * and dispatch idempotency, then either starts the run or records why it did
+   * not.
+   *
+   * ## A tick that is missed is missed
+   *
+   * There is no catch-up. A schedule that came round while this server was off,
+   * or while it was already at its concurrency cap, is not run later — the
+   * occurrence is gone and the next one is the next one. That is deliberate:
+   * these are agent turns that do real work, and a server starting after a
+   * weekend off would otherwise fire a weekend's worth of them at once, all
+   * acting on a world that has moved on. What a person gets instead is a record
+   * that the occurrence was not run (below), which is the part that was missing.
+   *
+   * ## Why the claim comes before the concurrency check
+   *
+   * The claim is what makes a tick happen once across every process sharing
+   * this database. A cap check that returned BEFORE it, as this used to, meant
+   * a busy leader dropped the tick silently while leaving it unclaimed — so
+   * another process could still run it, and nothing anywhere recorded the
+   * decision. Claiming first makes the skip itself idempotent: exactly one
+   * process writes exactly one `skipped` run for that occurrence.
    *
    * @param task - The task whose cron fired.
    * @param scheduledFireTime - The cron's intended tick (from croner `currentRun()`);
@@ -477,11 +714,6 @@ export class TaskSchedulerService {
       return;
     }
 
-    if (this.activeRuns.size >= this.config.maxConcurrentRuns) {
-      logger.debug(`skipping "${task.name}" — at concurrency cap`);
-      return;
-    }
-
     // Re-read task to check current state
     const current = this.store.getTask(task.id);
     if (!current || !current.enabled || current.status !== 'active') {
@@ -489,24 +721,77 @@ export class TaskSchedulerService {
       return;
     }
 
-    // Idempotency gate (ADR-285): atomically claim this scheduled tick. If another
-    // process (or a duplicate fire) already claimed it, skip. The leader lock makes
-    // this rare; this is the durable backstop for the handoff/double-fire window.
-    // The key is the trigger time floored to the cron's resolution (see
-    // scheduledTickKey) so co-located processes firing the same occurrence agree.
+    // Two reasons a tick is recorded but not run, in priority order. The global
+    // cap comes first because it is about the whole machine; sticky
+    // single-session serialization is about this one task (DOR-1571). A sticky
+    // task runs everything on one session, so a fire that lands while its
+    // previous run is still going must NOT open a second turn on it — that would
+    // corrupt the very session sticky exists to keep coherent. Checked here, the
+    // same way `atCap` is, so both end in the same `skipped` run row.
+    const atCap = this.runs.count() >= this.config.maxConcurrentRuns;
+    const stickyBusy = !atCap && current.sticky && this.store.hasRunningRunForTask(current.id);
+    const skipReason = atCap ? this.atCapReason() : stickyBusy ? this.stickyBusyReason() : null;
+
+    // Idempotency gate (ADR-285): atomically claim this scheduled tick, opening
+    // its run row in the same transaction. If another process (or a duplicate
+    // fire) already claimed it, skip. The leader lock makes this rare; this is
+    // the durable backstop for the handoff/double-fire window. The key is the
+    // trigger time floored to the cron's resolution (see scheduledTickKey) so
+    // co-located processes firing the same occurrence agree.
+    let run: TaskRun | null;
     if (current.cron) {
       const firedAt = scheduledFireTime ?? this.cronJobs.get(task.id)?.currentRun() ?? new Date();
       const tickKey = scheduledTickKey(current.cron, firedAt);
-      if (!this.store.tryClaimDispatch(task.id, tickKey)) {
+      run = this.store.claimScheduledRun(
+        task.id,
+        tickKey,
+        skipReason ? { status: 'skipped', reason: skipReason } : { status: 'running' }
+      );
+      if (!run) {
         logger.debug(
           `skipping "${task.name}" — tick ${new Date(tickKey).toISOString()} already dispatched`
         );
         return;
       }
+    } else {
+      // No cron, so no occurrence to claim — an on-demand task can only get
+      // here by being dispatched directly, and the skip reasons still apply.
+      if (skipReason) {
+        logger.warn(`skipped "${task.name}" — ${skipReason}`);
+        return;
+      }
+      run = this.store.createRun(task.id, 'scheduled');
     }
 
-    const run = this.store.createRun(task.id, 'scheduled');
+    if (skipReason) {
+      // The run row above is the artifact a person actually finds: it sits in
+      // the task's own history, at the time the schedule came round, saying why
+      // nothing happened. The operator's mental model is "it runs every hour",
+      // and a dropped occurrence that leaves no trace makes that model quietly
+      // wrong. Deliberately NOT an activity-feed event as well — one record of
+      // a non-event is enough, and the feed is for things that happened.
+      logger.warn(`skipped a scheduled run of "${task.name}" — ${skipReason}`);
+      return;
+    }
+
     await this.executeRun(current, run);
+  }
+
+  /** Why a tick was not run, in the words a person reads on the run row. */
+  private atCapReason(): string {
+    const cap = this.config.maxConcurrentRuns;
+    return `DorkOS was already running ${cap} task${cap === 1 ? '' : 's'} at once, which is its limit`;
+  }
+
+  /**
+   * Why a sticky tick was not run: its own previous run is still going, and a
+   * sticky task keeps everything in one session (DOR-1571).
+   */
+  private stickyBusyReason(): string {
+    return (
+      'This task resumes one session every run, and its previous run was still going when this ' +
+      'one came round — so it was skipped rather than starting a second turn on the same session'
+    );
   }
 
   /**
@@ -527,7 +812,16 @@ export class TaskSchedulerService {
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         try {
           const result = viaRelay
-            ? await this.executeRunViaRelay(task, run)
+            ? await dispatchRunViaRelay(
+                {
+                  store: this.store,
+                  relay: this.relay!,
+                  runs: this.runs,
+                  resolveCwd: (t) => this.resolveEffectiveCwd(t),
+                },
+                task,
+                run
+              )
             : await this.executeRunDirect(task, run);
           recordDispatchEnd(dispatchId, 'answered');
           return result;
@@ -537,91 +831,6 @@ export class TaskSchedulerService {
         }
       })
     );
-  }
-
-  /**
-   * Execute a run by publishing a TaskDispatchPayload via the Relay message bus.
-   *
-   * Builds an envelope with the task/run metadata and publishes to
-   * `relay.system.tasks.{taskId}`. If no receiver is subscribed
-   * (deliveredTo === 0), the run is immediately marked as failed.
-   * Otherwise it is marked as running — the receiver will update
-   * status on completion via a separate response flow.
-   *
-   * DOR-248: in-process relay delivery is synchronous, so by the time
-   * `publish()` resolves here the receiving task handler may have already
-   * run the agent turn to completion and written a terminal status. The
-   * `status: 'running'` write below can therefore race a `completed` write
-   * that already happened — `TaskStore#updateRun`'s terminal-status guard is
-   * what makes that race harmless, not the ordering of these two calls.
-   */
-  private async executeRunViaRelay(task: Task, run: TaskRun): Promise<void> {
-    let effectiveCwd: string;
-    try {
-      effectiveCwd = await this.resolveEffectiveCwd(task);
-    } catch (err) {
-      this.store.updateRun(run.id, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        durationMs: 0,
-        error: (err as Error).message,
-      });
-      logger.error(`run ${run.id} failed: ${(err as Error).message}`);
-      this.emitRunEvent(task, run, 'failed', 0, (err as Error).message);
-      return;
-    }
-
-    const payload: TaskDispatchPayload = {
-      type: 'task_dispatch',
-      taskId: task.id,
-      runId: run.id,
-      prompt: task.prompt,
-      cwd: effectiveCwd,
-      permissionMode: task.permissionMode,
-      taskName: task.name,
-      cron: task.cron,
-      trigger: run.trigger,
-    };
-
-    const subject = `relay.system.tasks.${task.id}`;
-    const result = await this.relay!.publish(subject, payload, {
-      from: TASK_SCHEDULER_PRINCIPAL,
-      replyTo: `relay.system.tasks.${task.id}.response`,
-      budget: {
-        maxHops: 3,
-        ttl: Date.now() + (task.maxRuntime || 3_600_000),
-        callBudgetRemaining: 5,
-      },
-    });
-
-    if (result.deliveredTo === 0) {
-      // "Nobody was listening" and "it ran and was stopped" arrive here
-      // identically: the adapter reports an unsuccessful delivery for a run it
-      // ended on a deadline, and in-process delivery means the whole run has
-      // already happened by the time publish() resolves. The run record is the
-      // tiebreaker — a run that reached a terminal status was plainly received,
-      // and calling it failed would put a lie in the activity feed.
-      const current = this.store.getRun(run.id);
-      if (current && isTerminalRunStatus(current.status)) {
-        logger.debug(`relay dispatch for run ${run.id} finished as ${current.status}`);
-        return;
-      }
-      this.store.updateRun(run.id, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        durationMs: 0,
-        error: 'No receiver for task dispatch',
-      });
-      logger.warn(`no receiver for relay dispatch of run ${run.id}`);
-      this.emitRunEvent(task, run, 'failed', 0, 'No receiver for task dispatch');
-    } else {
-      this.store.updateRun(run.id, {
-        status: 'running',
-      });
-      logger.info(
-        `relay dispatch for run ${run.id} delivered to ${result.deliveredTo} endpoint(s)`
-      );
-    }
   }
 
   /** Execute a run directly via AgentManager — manages AbortController, streams output, updates status. */
@@ -637,12 +846,14 @@ export class TaskSchedulerService {
         error: (err as Error).message,
       });
       logger.error(`run ${run.id} failed: ${(err as Error).message}`);
-      this.emitRunEvent(task, run, 'failed', 0, (err as Error).message);
+      // The activity-feed event for this failure rides the TaskStore run-terminal
+      // hook (DOR-1573), fired by the `updateRun('failed')` above — the one funnel
+      // both dispatch paths share. See `createRunTerminalListener`.
       return;
     }
 
     const controller = new AbortController();
-    this.activeRuns.set(run.id, controller);
+    this.runs.addDirect(run.id, controller);
 
     // Two ways a run stops early: an operator cancels it, or it outlives its
     // maxRuntime. `AbortSignal.any` adopts the reason of whichever fired FIRST,
@@ -656,9 +867,23 @@ export class TaskSchedulerService {
     const startTime = Date.now();
     let outputChars = 0;
     let outputSummary = '';
+    // Which session this run runs on. A non-sticky run is isolated on the run's
+    // own id, exactly as before; a sticky run resumes the real SDK session of the
+    // task's previous run, so context carries across runs (DOR-1571). Declared out
+    // here, not inside the `try`, because the failure finalizer needs it too.
+    const { sessionId, hasStarted } = resolveRunSession(this.store, task, run);
+
+    // What to write as this run's `sessionId`. For a sticky run it is the RUNTIME's
+    // own id after the turn — the id the SDK actually wrote its transcript under —
+    // so the next fire can resume it cold and so clicking the run opens the real
+    // conversation. `sessionId` (the key we passed in) is only a resume request;
+    // the SDK mints or keeps its own, and `getInternalSessionId` reads it back.
+    // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
+    // branch — including the failure finalizer — records the freshest answer.
+    const persistedSessionId = (): string =>
+      task.sticky ? (this.agentManager.getInternalSessionId(sessionId) ?? sessionId) : sessionId;
 
     try {
-      const sessionId = run.id; // Use run ID as session ID for isolation
       // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
       // unreachable through the shipped store: `pulse_schedules.permission_mode`
       // is `NOT NULL DEFAULT 'acceptEdits'`, so a row always carries a mode and
@@ -679,7 +904,12 @@ export class TaskSchedulerService {
       this.agentManager.ensureSession(sessionId, {
         permissionMode,
         cwd: effectiveCwd,
-        hasStarted: false,
+        // Resume a sticky session that has already run, so the turn picks the
+        // conversation back up rather than starting over. This explicit
+        // `ensureSession` short-circuits `sendMessage`'s own transcript probe, so
+        // the answer has to be carried here (DOR-1571). Always false for a
+        // non-sticky run and a sticky task's first fire.
+        hasStarted,
         // Nobody is coming back to a scheduled run, so an unanswered prompt is
         // refused at ten minutes instead of parking for four hours and stalling
         // the run (spec `ask-parks-on-timeout` §7).
@@ -725,23 +955,32 @@ export class TaskSchedulerService {
             timedOut && task.maxRuntime
               ? `Run stopped after passing its ${formatDuration(task.maxRuntime)} time limit`
               : 'Run cancelled',
-          sessionId,
+          sessionId: persistedSessionId(),
         });
-        // The cancel route emits its own `tasks.run_cancelled` the moment the
-        // operator asks, attributed to "You". Emitting again here would put the
-        // same cancel in the activity feed twice, the second time attributed to
-        // Tasks. A deadline or a shutdown abort has no such route emit, so it
-        // still needs this one.
-        if (!operatorCancelled) this.emitRunEvent(task, run, 'cancelled', durationMs);
+        // A cancel is the one terminal status that does NOT ride the run-terminal
+        // hook's activity emit (DOR-1573): the run row cannot say whether an
+        // operator or a deadline ended it, and the two carry different actors. So
+        // it is emitted here, where `operatorCancelled` is known. The cancel route
+        // emits its own `tasks.run_cancelled` the moment the operator asks,
+        // attributed to "You"; emitting again here would double it, the second
+        // time attributed to the Scheduler. A deadline or a shutdown abort has no
+        // such route emit, so it still needs this one. NOTE: this branch is
+        // DIRECT-path only — a relay-dispatched run that hits its deadline is
+        // finalized in `packages/relay` and emits nothing, so that case reaches
+        // no activity feed today (the residual gap tracked by DOR-1580).
+        if (!operatorCancelled)
+          emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
       } else {
         this.store.updateRun(run.id, {
           status: 'completed',
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: outputSummary.slice(0, 500),
-          sessionId,
+          sessionId: persistedSessionId(),
         });
-        this.emitRunEvent(task, run, 'completed', durationMs);
+        // The activity-feed event for a completed run rides the TaskStore
+        // run-terminal hook (DOR-1573), fired by the `updateRun('completed')`
+        // above — the one funnel both dispatch paths share.
       }
     } catch (err) {
       const durationMs = Date.now() - startTime;
@@ -752,60 +991,13 @@ export class TaskSchedulerService {
         durationMs,
         outputSummary: outputSummary.slice(0, 500),
         error: errorMsg,
+        sessionId: persistedSessionId(),
       });
       logger.error(`run ${run.id} failed:`, err);
-      this.emitRunEvent(task, run, 'failed', durationMs, errorMsg);
+      // The activity-feed event for this failure rides the TaskStore run-terminal
+      // hook (DOR-1573), fired by the `updateRun('failed')` above.
     } finally {
-      this.activeRuns.delete(run.id);
+      this.runs.release(run.id);
     }
-  }
-
-  /** Emit an activity event for a completed, failed, or cancelled run. */
-  private emitRunEvent(
-    task: Task,
-    run: TaskRun,
-    status: 'completed' | 'failed' | 'cancelled',
-    durationMs: number,
-    error?: string
-  ): void {
-    // NOTE: the Pulse attention broadcast (`task_run_failed`, DOR-403) is NOT
-    // emitted here. emitRunEvent only covers scheduler-side terminal paths; a
-    // relay-delivered run is finalized by the receiver writing 'failed' through
-    // TaskStore, which never reaches this method. The broadcast rides the
-    // TaskStore run-terminal hook (the single terminal funnel for both paths) —
-    // see run-terminal-broadcaster.ts, wired in index.ts.
-    if (!this.activityService) return;
-
-    const eventType =
-      status === 'completed'
-        ? 'tasks.run_success'
-        : status === 'cancelled'
-          ? 'tasks.run_cancelled'
-          : 'tasks.run_failed';
-
-    const actorType = run.trigger === 'scheduled' ? 'tasks' : 'user';
-    const actorLabel = run.trigger === 'scheduled' ? 'Tasks' : 'You';
-
-    const verb =
-      status === 'completed'
-        ? 'ran successfully'
-        : status === 'cancelled'
-          ? 'was cancelled'
-          : 'failed';
-    const duration = durationMs ? ` (${formatDuration(durationMs)})` : '';
-
-    this.activityService.emit({
-      actorType,
-      actorId: run.trigger === 'scheduled' ? run.scheduleId : null,
-      actorLabel,
-      category: 'tasks',
-      eventType,
-      resourceType: 'schedule',
-      resourceId: run.scheduleId,
-      resourceLabel: task.name,
-      summary: `${task.name} ${verb}${duration}`,
-      linkPath: '/',
-      metadata: error ? { error } : null,
-    });
   }
 }

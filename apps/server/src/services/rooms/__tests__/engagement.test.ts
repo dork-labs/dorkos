@@ -47,7 +47,6 @@ function freshRoom(): { db: Db; store: RoomStore } {
       slug: 'general',
       title: 'General',
       topic: null,
-      workspaceId: null,
       createdAt: minutesAgo(600),
     },
     []

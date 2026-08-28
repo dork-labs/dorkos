@@ -6,7 +6,7 @@ import {
   provisionOllama,
   OLLAMA_WINGET_ID,
   type OllamaProvisionDeps,
-} from '../ollama-provision.js';
+} from '../providers/ollama-provision.js';
 
 /** A recording `runCommand` seam: logs every `[command, ...args]` and returns per-command outcomes. */
 function makeRunCommand(outcomes: Record<string, { ok: boolean; detail?: string }> = {}) {

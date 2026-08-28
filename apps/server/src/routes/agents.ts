@@ -21,8 +21,10 @@ import {
   buildSoulContent,
   defaultSoulTemplate,
   defaultNopeTemplate,
+  CONVENTION_FILES,
 } from '@dorkos/shared/convention-files';
 import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
@@ -61,10 +63,15 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       }
 
       // Include convention file contents alongside manifest data
-      const soulContent = await readConventionFile(agentPath, 'SOUL.md');
-      const nopeContent = await readConventionFile(agentPath, 'NOPE.md');
+      const soulContent = await readConventionFile(agentPath, CONVENTION_FILES.soul);
+      const nopeContent = await readConventionFile(agentPath, CONVENTION_FILES.nope);
+      // Read alongside the other two, so the editor that PATCHes `memoryContent`
+      // can read back what it saved. Without this the round trip is broken in
+      // the direction a person notices last: the save appears to work and the
+      // field comes back empty on the next load.
+      const memoryContent = await readConventionFile(agentPath, CONVENTION_FILES.memory);
 
-      return res.json({ ...manifest, soulContent, nopeContent });
+      return res.json({ ...manifest, soulContent, nopeContent, memoryContent });
     } catch (err) {
       if (err instanceof BoundaryError) {
         return res.status(403).json({ error: err.message, code: err.code });
@@ -136,6 +143,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         isSystem: false,
         enabledToolGroups: {},
         mcpServers: [],
+        workspace: { mode: 'home' },
       };
 
       await writeManifest(agentPath, manifest);
@@ -145,8 +153,18 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       const soulContent = defaultSoulTemplate(manifest.name ?? 'agent', traitBlock);
       const nopeContent = defaultNopeTemplate();
 
-      await writeConventionFile(agentPath, 'SOUL.md', soulContent);
-      await writeConventionFile(agentPath, 'NOPE.md', nopeContent);
+      await writeConventionFile(agentPath, CONVENTION_FILES.soul, soulContent);
+      await writeConventionFile(agentPath, CONVENTION_FILES.nope, nopeContent);
+      // **Write-if-absent, unlike the two above.** This route registers a
+      // directory that may ALREADY have been an agent — a re-register after a
+      // rename, a workspace moved and pointed at again — and `MEMORY.md` is the
+      // one convention file whose contents the AGENT wrote. SOUL.md and NOPE.md
+      // are scaffolds a person edits from a known starting point; notes are not,
+      // and overwriting them here would silently delete everything the agent had
+      // learned, at a moment nobody associates with data loss.
+      if ((await readConventionFile(agentPath, CONVENTION_FILES.memory)) === null) {
+        await writeConventionFile(agentPath, CONVENTION_FILES.memory, defaultMemoryTemplate());
+      }
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
       try {

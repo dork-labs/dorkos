@@ -73,9 +73,7 @@ export interface DeviceCodeResponse {
 
 /** Terminal outcome of the device-token poll loop. */
 export type PollResult =
-  | { status: 'approved'; accessToken: string }
-  | { status: 'denied' }
-  | { status: 'expired' };
+  { status: 'approved'; accessToken: string } | { status: 'denied' } | { status: 'expired' };
 
 /** Outcome of a single heartbeat call. `unauthorized` is the unlink signal. */
 export type HeartbeatResult =

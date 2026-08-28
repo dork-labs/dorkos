@@ -4,9 +4,10 @@ import { sqliteTable, text, integer, uniqueIndex, primaryKey } from 'drizzle-orm
  * One thing someone said, projected out of whichever store actually owns it
  * (message-search spec §4, ADR 260728-214214).
  *
- * **This is a derived index, not a store.** Rooms, Claude Code and Codex each
- * keep their own canonical record and DorkOS never writes to any of them
- * (ADR-0310). Every row here is a copy that can be thrown away and rebuilt in
+ * **This is a derived index, not a store.** Rooms, Claude Code, Codex and
+ * OpenCode each keep their own canonical record and DorkOS never writes to any
+ * of them (ADR-0310; for OpenCode that means reading a throwaway copy of its
+ * SQLite store and never the live file — ADR 260825-110420). Every row here is a copy that can be thrown away and rebuilt in
  * seconds, which is what lets the table be this small: no attachments, no tool
  * calls, no thinking blocks — only what was *said*.
  *
@@ -26,9 +27,10 @@ import { sqliteTable, text, integer, uniqueIndex, primaryKey } from 'drizzle-orm
  *
  * No column ships without a consumer (spec D11): `role` is rendered and
  * filtered, `created_at` orders and displays, `source_id` labels a result and
- * scopes the frontier, and `origin_key` + `ordinal` are the navigation
- * coordinates a hit resolves through. Widening later is a projection change and
- * a rebuild, not a migration.
+ * scopes the frontier, `origin_key` + `ordinal` are the navigation coordinates a
+ * hit resolves through, and `message_id` is what takes a conversation hit to the
+ * message itself rather than to the top of the conversation (spec Amendment 12).
+ * Widening later is a projection change and a rebuild, not a migration.
  */
 export const messages = sqliteTable(
   'messages',
@@ -36,7 +38,7 @@ export const messages = sqliteTable(
     /** Rowid alias. Bound to `messages_fts` via `content_rowid='id'`. */
     id: integer('id').primaryKey(),
 
-    /** `'rooms' | 'claude-code' | 'codex'`. Labels a result and scopes the frontier. */
+    /** `'rooms' | 'claude-code' | 'codex' | 'opencode'`. Labels a result and scopes the frontier. */
     sourceId: text('source_id').notNull(),
 
     /** Opaque container id composed by the projection. Never parsed here. */
@@ -44,6 +46,26 @@ export const messages = sqliteTable(
 
     /** Monotonic position within the container — `room_entries.seq`, or the index in a transcript. */
     ordinal: integer('ordinal').notNull(),
+
+    /**
+     * The message's own id in the store that owns it, when that store gives it
+     * one — the JSONL record `uuid` for Claude Code, the `response_item`
+     * `item.id` for Codex, the `message.id` row for OpenCode (DOR-1579).
+     *
+     * **For landing only, never for identity.** The dedup key stays
+     * `(source_id, origin_key, ordinal)`: a projection re-reading a container
+     * has to write over the row it wrote last time, and an id is not what makes
+     * two reads of one message the same message here.
+     *
+     * **Nullable, and never synthesized.** A room has no id of this kind —
+     * it lands by `seq` already — and a transcript record that carries no id of
+     * its own contributes `null` rather than one invented at index time, which
+     * would differ on the next read and address nothing. `null` means "no exact
+     * landing", and the client degrades to opening the conversation.
+     *
+     * Not searchable text: `messages_fts` indexes `body` and nothing else.
+     */
+    messageId: text('message_id'),
 
     /** `'user' | 'assistant'`. */
     role: text('role').notNull(),
@@ -110,7 +132,7 @@ export const messages = sqliteTable(
 export const searchSources = sqliteTable(
   'search_sources',
   {
-    /** `'rooms' | 'claude-code' | 'codex'`. */
+    /** `'rooms' | 'claude-code' | 'codex' | 'opencode'`. */
     sourceId: text('source_id').notNull(),
 
     /** The opaque container id, same composition as `messages.origin_key`. */
@@ -125,7 +147,16 @@ export const searchSources = sqliteTable(
     /** File-backed sources: mtime at last read — the cheap change signal. */
     mtimeMs: integer('mtime_ms'),
 
-    /** Log-backed sources: the highest `ordinal` already indexed. */
+    /**
+     * The highest `ordinal` this container has contributed, whichever mechanism
+     * owns it: the log watermark for a row-backed source, the last message index
+     * written out of a transcript for a file-backed one. Both write it, and both
+     * read it back to tell "this container has nothing to say" apart from "the
+     * rows this frontier claims are no longer in the index" — the second being
+     * the state that makes a resume position a lie. `NULL` means the container
+     * has produced no message yet, which for a transcript of nothing but tool
+     * results is a permanent and correct answer.
+     */
     lastOrdinal: integer('last_ordinal'),
 
     /** The cwd a hit opens in. NULL for sources with no directory. */

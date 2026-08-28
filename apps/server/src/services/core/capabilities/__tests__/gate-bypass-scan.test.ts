@@ -241,10 +241,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'sets how much a scheduled task may do unattended, and whether it is approved to run',
     call: 'createTask(',
     allowed: {
-      'routes/tasks.ts':
-        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller clears the agent bar, and parks the task at pending_approval when it does not (DOR-504). Deliberately NOT the DOR-474 cookie bar: `dorkos task create` presents an API key, so a cookie demand would park every task the operator schedules while telling them it was created',
-      'services/runtimes/claude-code/mcp-tools/task-tools.ts':
-        'the tasks_create handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
+      'services/tasks/lifecycle/create-task.ts':
+        'the ONE create sequence, shared by `POST /api/tasks` and by `tasks_create` on both MCP servers since DOR-1568 — on its parse-failure FALLBACK branch only, the happy path being upsertFromFile below. Both doors refuse operator-only task fields before reaching it, and it parks the task at pending_approval for any caller that did not clear the agent bar (DOR-504). Deliberately NOT the DOR-474 cookie bar: `dorkos task create` presents an API key, so a cookie demand would park every task the operator schedules while telling them it was created',
       'services/shapes/shape-schedule-service.ts':
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-store.ts': 'the definition itself',
@@ -254,13 +252,15 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: "writes a task's permission mode and status from a SKILL.md file on disk, which is the primary create path",
     call: 'upsertFromFile(',
     allowed: {
-      'routes/tasks.ts':
-        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504); same agent bar as createTask',
+      'services/tasks/lifecycle/create-task.ts':
+        'the shared create sequence, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504); same agent bar as createTask',
       'services/tasks/task-file-watcher.ts':
         'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
       'services/shapes/shape-schedule-service.ts':
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
+      'services/tasks/legacy-migration.ts':
+        'the boot migration (DOR-1486), on ONE branch: a legacy file it could not read, which it leaves on disk and reports as a parked row so the person is told about it. Gated by the strongest gate there is — the call passes `source: discovery`, which cannot arm anything (`resolveFileArmStatus`), and the definition it hands over carries no cron and `enabled: false`, so even an approval produces a schedule with no timer. Every file the migration CAN read goes nowhere near this call: it is rewritten on disk and its row is moved by `rekeyMigratedFile`, which writes a path and a grant and never a permission mode. Deleted with the module at its sunset',
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },
@@ -270,8 +270,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/tasks.ts':
         'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
+      'services/tasks/lifecycle/create-task.ts':
+        'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
       'services/runtimes/claude-code/mcp-tools/task-tools.ts':
-        'the tasks_create and tasks_update handlers shared by both MCP servers — refuse operator-only fields unconditionally (DOR-504)',
+        'the tasks_update handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },

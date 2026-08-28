@@ -7,16 +7,15 @@
  * ## Two sources of paths
  *
  * 1. **Legacy hand-registered paths** — the bulk of this file: each route is
- *    described by a `registry.registerPath(...)` call by hand. Some of these
- *    schemas are Zod-3 mirrors (see the `Local*Schema` block below): the
- *    Zod-3 `@dorkos/marketplace` schemas cannot compose with this Zod-4 /
- *    zod-to-openapi-v8 registry, so they are redeclared here as Zod-4 and kept
- *    in sync by hand.
+ *    described by a `registry.registerPath(...)` call by hand. Several of the
+ *    marketplace and Shape ones use the `Local*Schema` block below: simplified
+ *    documentation shapes, either standing in for a plain TypeScript interface
+ *    that has no schema at all, or modelling just the fields the HTTP API
+ *    surfaces out of a much larger one. They are kept in sync by hand.
  * 2. **Registry-projected paths** — every capability that declares an `http`
  *    surface auto-registers its path via {@link registerCapabilitiesInOpenApi}
  *    at the bottom of this module (spec `capability-registry`, task 2.5). New
- *    capabilities appear in `/api/docs` automatically with no edit here; their
- *    schemas are native Zod-4, so no hand-mirroring is ever needed for them.
+ *    capabilities appear in `/api/docs` automatically with no edit here.
  *
  * The two sets never overlap: the projection throws at generation time if a
  * capability path collides with a hand-registered one. Migrating the legacy
@@ -136,6 +135,13 @@ import {
   ProfileUpdateResponseSchema,
   TeamRosterResponseSchema,
 } from '@dorkos/shared/team-schemas';
+import {
+  SearchQuerySchema,
+  SearchResponseSchema,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_MAX_LIMIT,
+  SEARCH_MIN_QUERY_LENGTH,
+} from '@dorkos/shared/search-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
@@ -172,18 +178,12 @@ import {
   AgentConnectorListResponseSchema,
   AgentConnectorAttachResultSchema,
 } from '@dorkos/shared/connector-provider';
+import { PackageTypeSchema } from '@dorkos/marketplace';
 import { z } from 'zod';
 
 /**
- * Local Zod 4 mirror of `@dorkos/marketplace`'s `PackageTypeSchema`. The
- * package exports a Zod 3 schema that cannot be composed with the server's
- * Zod 4 OpenAPI registry, so we redeclare it here. Keep in sync with
- * `packages/marketplace/src/package-types.ts`.
- */
-const LocalPackageTypeSchema = z.enum(['agent', 'plugin', 'skill-pack', 'adapter', 'shape']);
-
-/**
- * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplaceJsonSchema` shape.
+ * Simplified documentation mirror of `@dorkos/marketplace`'s
+ * `MarketplaceJsonSchema` shape.
  * Only the fields surfaced by the API are modelled — the `passthrough()`
  * behaviour of the source schema is approximated with `.catchall(z.unknown())`
  * so unknown fields still round-trip through OpenAPI.
@@ -205,7 +205,7 @@ const LocalMarketplaceJsonSchema = z
   .catchall(z.unknown());
 
 /**
- * Local Zod 4 mirror of a single marketplace.json entry with the
+ * Simplified documentation mirror of a single marketplace.json entry with the
  * discovered marketplace name tag appended. Returned by
  * `GET /api/marketplace/packages`. Keep in sync with
  * `packages/marketplace/src/marketplace-json-schema.ts` and the
@@ -223,7 +223,7 @@ const LocalAggregatedPackageSchema = z
   .catchall(z.unknown());
 
 /**
- * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
+ * Simplified documentation mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
  * Only the fields surfaced by the HTTP API are modelled. Keep in sync with
  * `packages/marketplace/src/package-manifest-schema.ts`.
  */
@@ -232,13 +232,13 @@ const LocalMarketplacePackageManifestSchema = z
     schemaVersion: z.number(),
     name: z.string(),
     version: z.string(),
-    type: LocalPackageTypeSchema,
+    type: PackageTypeSchema,
     description: z.string().optional(),
   })
   .catchall(z.unknown());
 
 /**
- * Local Zod 4 mirror of the server-side `InstallRequest` minus `name`
+ * Simplified documentation mirror of the server-side `InstallRequest` minus `name`
  * (the package name is taken from the URL `:name` parameter). Keep in sync
  * with `apps/server/src/services/marketplace/types.ts`.
  */
@@ -251,7 +251,7 @@ const LocalInstallRequestBodySchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/types.js').ConflictReport}.
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').ConflictReport}.
  * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
  */
 const LocalConflictReportSchema = z.object({
@@ -262,7 +262,7 @@ const LocalConflictReportSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/types.js').PermissionPreview}.
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').PermissionPreview}.
  * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
  */
 const LocalPermissionPreviewSchema = z.object({
@@ -312,21 +312,21 @@ const LocalPermissionPreviewSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/types.js').InstallResult}.
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').InstallResult}.
  * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
  */
 const LocalInstallResultSchema = z.object({
   ok: z.boolean(),
   packageName: z.string(),
   version: z.string(),
-  type: LocalPackageTypeSchema,
+  type: PackageTypeSchema,
   installPath: z.string(),
   manifest: LocalMarketplacePackageManifestSchema,
   warnings: z.array(z.string()),
   dependencyWarnings: z.array(z.string()).optional(),
 });
 
-/** Local Zod 4 mirror of the update flow's per-package advisory check. */
+/** Simplified documentation mirror of the update flow's per-package advisory check. */
 const LocalUpdateCheckResultSchema = z.object({
   packageName: z.string(),
   installedVersion: z.string(),
@@ -336,7 +336,7 @@ const LocalUpdateCheckResultSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/flows/update.js').UpdateResult}.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/update.js').UpdateResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/update.ts`.
  */
 const LocalUpdateResultSchema = z.object({
@@ -345,7 +345,7 @@ const LocalUpdateResultSchema = z.object({
 });
 
 /**
- * Local Zod 4 mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
  */
 const LocalUninstallResultSchema = z.object({
@@ -573,7 +573,7 @@ registry.registerPath({
     'to the cold snapshot path instead of resuming. A `: keepalive` comment is sent ' +
     'every ~15s and `X-Accel-Buffering: no` defeats proxy buffering. ' +
     '**The same path also answers a WebSocket upgrade** (ADR 260805-041016), which is ' +
-    'what the DorkOS cockpit uses — a browser allows only ~6 connections per origin ' +
+    'what the DorkOS app uses — a browser allows only ~6 connections per origin ' +
     'and an SSE stream holds one open, so a few windows exhaust them. Identical ' +
     'contract; each message is one JSON text frame `{ event, data, id? }`, the resume ' +
     'cursor rides `?resume=` (a browser `WebSocket` cannot set headers), liveness is a ' +
@@ -757,7 +757,7 @@ registry.registerPath({
   description:
     'The messages accepted for this session that have not run yet, head first. The ' +
     'same list rides the session snapshot on `GET /api/sessions/{id}/events`, so a ' +
-    'cockpit never needs this route; it is here for integrations and debugging.',
+    'DorkOS client never needs this route; it is here for integrations and debugging.',
   request: { params: z.object({ id: z.string().uuid() }) },
   responses: {
     200: {
@@ -2006,7 +2006,7 @@ const PackageProvidesSchema = z.object({
 const InstalledPackageSchema = z.object({
   name: z.string(),
   version: z.string(),
-  type: LocalPackageTypeSchema,
+  type: PackageTypeSchema,
   installPath: z.string(),
   installedFrom: z.string().optional(),
   installedAt: z.string().optional(),
@@ -2548,9 +2548,9 @@ registry.registerPath({
 // --- Shapes (DOR-355) ---
 
 /**
- * Local Zod 4 mirror of the resolved Shape chrome (`ShapeLayoutSchema`). The
- * source is the Zod-3 `@dorkos/marketplace` schema, which cannot compose with
- * this Zod-4 registry — keep in sync with `packages/marketplace/manifest-schema.ts`.
+ * Simplified documentation mirror of the resolved Shape chrome
+ * (`ShapeLayoutSchema`) — keep in sync with
+ * `packages/marketplace/manifest-schema.ts`.
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
@@ -2567,14 +2567,14 @@ const LocalShapeLayoutSchema = z.object({
     .describe(
       "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
         "'connections'). The sidebar tab strip exists only in the embedded " +
-        '(Obsidian) app; on the web cockpit switching a sidebar tab is a no-op.'
+        '(Obsidian) app; in the web app switching a sidebar tab is a no-op.'
     )
     .optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
   focusDashboardSections: z.array(z.string()),
 });
 
-/** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').OfferedAgent}. */
+/** Simplified documentation mirror of {@link import('../shapes/apply-shape.js').OfferedAgent}. */
 const LocalOfferedAgentSchema = z.object({
   ref: z.string(),
   affinity: z.enum(['suggested', 'default']),
@@ -2588,7 +2588,7 @@ const LocalOfferedAgentSchema = z.object({
   scheduleSummary: z.string().optional(),
 });
 
-/** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */
+/** Simplified documentation mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */
 const LocalApplyShapeResultSchema = z
   .object({
     ok: z.boolean(),
@@ -2605,7 +2605,7 @@ const LocalApplyShapeResultSchema = z
   })
   .openapi('ApplyShapeResult');
 
-/** Local Zod 4 mirror of {@link import('../shapes/shape-services.js').InstalledShapeSummary}. */
+/** Simplified documentation mirror of {@link import('../shapes/shape-services.js').InstalledShapeSummary}. */
 const LocalInstalledShapeSummarySchema = z.object({
   name: z.string(),
   displayName: z.string().optional(),
@@ -2619,7 +2619,7 @@ const LocalInstalledShapeSummarySchema = z.object({
     .optional(),
 });
 
-/** Local Zod 4 mirror of {@link import('../shapes/fork.js').ForkShapeResult}. */
+/** Simplified documentation mirror of {@link import('../shapes/fork.js').ForkShapeResult}. */
 const LocalForkShapeResultSchema = z
   .object({
     ok: z.literal(true),
@@ -3208,11 +3208,11 @@ registry.registerPath({
     'needs proof of a person rather than the absence of proof of a machine: a caller presenting an ' +
     'agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in ' +
     'every posture, and when local login is enabled an authenticated user is required. With login ' +
-    'disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is ' +
+    'disabled DorkOS cannot tell the app apart from a local script, so every decision is ' +
     'recorded in the Activity feed with the posture it was made under.\n\n' +
     'The body accepts a `standing` flag, which also stops DorkOS asking about this agent doing ' +
     'this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person ' +
-    'signed in to the cockpit, so it needs Require login to be on: with login off there is no ' +
+    'signed in to the DorkOS app, so it needs Require login to be on: with login off there is no ' +
     'session cookie and DorkOS cannot tell the operator from an agent running as the same user. ' +
     'It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes ' +
     'before anything is granted, so a caller that asked for two things and can only have one gets ' +
@@ -3324,14 +3324,14 @@ registry.registerPath({
   description:
     'The standing permissions that are live right now: which agent, which action, and when each ' +
     'one runs out. A permission nobody can find is a dark pattern, so this is the list the ' +
-    'cockpit shows in both places it offers to end one. Expiry is applied here rather than left ' +
-    'to a sweep, so a permission whose window has closed is already gone from this list.\n\n' +
+    'DorkOS app shows in both places it offers to end one. Expiry is applied here rather than ' +
+    'left to a sweep, so a permission whose window has closed is already gone from this list.\n\n' +
     'Authorized like deciding an approval, NOT like reading the pending list, and the difference ' +
     'is deliberate. A pending card is meant to be agent-readable. This list is prospective: it ' +
     'says which irreversible action will go through silently right now and the minute the window ' +
     "shuts, and it names other agents' pairings. So a caller presenting an agent identity or an " +
     'approval token is refused.\n\n' +
-    'It carries what the cockpit renders and nothing more. Who opened each permission, when, ' +
+    'It carries what the DorkOS app renders and nothing more. Who opened each permission, when, ' +
     'under which posture, and which card it came from are recorded in the ' +
     '`approval.grant_created` Activity event instead, which is where an audit question belongs.',
   responses: {
@@ -3431,6 +3431,41 @@ const roomOperatorOnly = {
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
 
+/**
+ * The documentation shape of a room's repo binding — one of the `Local*Schema`
+ * simplifications this module's header describes.
+ *
+ * The authority is `RoomRepoSidecarSchema` in `@dorkos/shared/room-repo`; this
+ * restates it because that schema narrows `mode` through a `refine`, which
+ * zod-to-openapi renders as an unhelpful union rather than as the single value
+ * this build ever writes.
+ *
+ * **Exported so the drift can be tested rather than promised.** A hand-kept
+ * copy is a copy that goes stale the day a field is added, and the symptom
+ * would be an API reference quietly describing a shape the server no longer
+ * sends. `export-openapi.test.ts` asserts this key set equals the real
+ * schema's, so adding a field to the sidecar and not to this reddens.
+ */
+export const LocalRoomRepoSchema = z
+  .object({
+    roomId: z.string(),
+    mode: z.literal('owned').describe("Always 'owned'; linked repos are reserved and refused."),
+    createdAt: z.string(),
+    createdBy: z.string().describe('The author id of the operator who enabled it.'),
+    defaultBranch: z.literal('main'),
+    caps: z.object({
+      maxFileBytes: z.number().int(),
+      maxRepoBytes: z.number().int(),
+      maxRoomMdBytes: z.number().int(),
+    }),
+    lastMergeSeq: z
+      .number()
+      .int()
+      .nullable()
+      .describe('The room entry seq of the last merge, or null when nothing has merged yet.'),
+  })
+  .openapi('RoomRepo');
+
 registry.registerPath({
   method: 'get',
   path: '/api/rooms',
@@ -3517,7 +3552,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Where each of a room's agents does its work",
   description:
-    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a cockpit can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates\' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.',
+    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a DorkOS client can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates\' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.',
   request: { params: RoomIdParams },
   responses: {
     200: {
@@ -3635,7 +3670,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Upload files into a room, before the message that carries them',
   description:
-    "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read — 403 when its token resolves to a live agent, 401 when it does not — because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the cockpit's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
+    "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read — 403 when its token resolves to a live agent, 401 when it does not — because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the DorkOS app's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
   request: {
     params: RoomIdParams,
     body: {
@@ -3950,12 +3985,49 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/repo',
+  tags: ['Rooms'],
+  summary: 'Give a room files of its own',
+  description:
+    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as the person who asked. Takes no body: there is nothing to configure. **Only the person who owns this install may call it.** A caller presenting a valid `X-DorkOS-Agent` is refused 403 `OPERATOR_ONLY`, and one presenting a token this machine cannot verify is refused 401 — an agent that could give its own room a repo could hand itself a writable working directory nobody chose. A room the caller cannot see answers 404, the same way reading it does, so probing room ids tells 403 from 404 nothing. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
+  request: { params: RoomIdParams },
+  responses: {
+    201: {
+      description: 'The room now has files of its own',
+      content: {
+        'application/json': { schema: z.object({ repo: LocalRoomRepoSchema }) },
+      },
+    },
+    401: roomAgentUnverified,
+    403: {
+      description: 'The caller is not the person who owns this install (`OPERATOR_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: roomNotFound,
+    409: {
+      description:
+        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
+      content: {
+        'application/json': {
+          schema: z.object({
+            error: z.string(),
+            code: z.string(),
+            repo: LocalRoomRepoSchema.optional(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/api/rooms/{id}/events',
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE, or WebSocket at the same path)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the cockpit uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
   request: {
     params: RoomIdParams,
     query: z.object({
@@ -4146,6 +4218,57 @@ registry.registerPath({
     },
     500: {
       description: 'The membership read failed (`MEMBER_ROOMS_FAILED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Message search (spec `message-search` §6.1, §7, ADR 260728-214214) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/search',
+  tags: ['Search'],
+  summary: 'Find messages by what was said in them',
+  description:
+    'One ranked read over the derived message index — rooms, Claude Code transcripts, Codex ' +
+    'rollouts and OpenCode conversations alike, in a single relevance order, because "where ' +
+    'did we talk about X" does not know which one X ' +
+    'was said in. A hit is a COORDINATE plus a marked excerpt (source, container, ordinal, role, ' +
+    'timestamp), never the message itself: the index holds a copy of the text and none of the ' +
+    "access rules, so resolving a hit back to a message stays the owning store's job. " +
+    'Matching is by word STEM, not substring: `dogs` finds "dog", "dogs" and "DOGGED", and `ogs` ' +
+    'finds nothing. The index is as fresh as the last five-minute sweep. ' +
+    '**Who sees what**: the operator gets every room and every session; anybody else gets only ' +
+    'the rooms they are on the roster of, each above the point they joined it, and NO sessions at ' +
+    'all — a caller presenting an agent identity, resolved or not, never reaches a transcript. ' +
+    'A search scoped to something the caller may not see returns exactly what a search for words ' +
+    'nobody ever said returns, so neither a room id nor a query string is a capability. ' +
+    `**The calling contract**: at least one WORD of ${SEARCH_MIN_QUERY_LENGTH} characters, and wait ` +
+    `${SEARCH_DEBOUNCE_MS} ms after the last keystroke. Ranking cost grows with how many rows ` +
+    'MATCH rather than with `limit`, so a one-letter search is the most expensive one there is ' +
+    `and the least useful. \`limit\` is clamped to ${SEARCH_MAX_LIMIT} rather than refused. ` +
+    'Degradation follows ADR-0310: a source that could not be fully indexed contributes zero hits ' +
+    'and one `warnings[]` entry naming it — never a failed request. `warnings` is always present, ' +
+    '`[]` included, and names no container, since a container id is a room or a session id.',
+  request: { query: SearchQuerySchema },
+  responses: {
+    200: {
+      description: 'Hits, best first, across every source this caller may read',
+      content: { 'application/json': { schema: SearchResponseSchema } },
+    },
+    400: {
+      description:
+        'The request could not be read (`INVALID_SEARCH_QUERY`), or it named a source that does ' +
+        'not exist (`UNKNOWN_SEARCH_SOURCE`). The `error` sentence says which field was wrong: `q` ' +
+        'holds no WORD of at least the minimum length — counted over the words a search is split ' +
+        'into, so `a,` and a string of spaces are refused exactly as `a` is — or `limit` was not a ' +
+        'whole number above zero.',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description:
+        'The caller presented an agent token this machine could not verify (`AGENT_IDENTITY_UNVERIFIED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

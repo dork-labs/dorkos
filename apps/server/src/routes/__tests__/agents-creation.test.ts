@@ -158,6 +158,7 @@ describe('POST /api/agents/create', () => {
     expect(res.body.conventions).toEqual({
       soul: true,
       nope: true,
+      memory: true,
       dorkosKnowledge: true,
     });
   });
@@ -278,6 +279,7 @@ describe('POST /api/agents/create', () => {
     expect(res.body.conventions).toEqual({
       soul: true,
       nope: true,
+      memory: true,
       dorkosKnowledge: true,
     });
   });
@@ -285,12 +287,16 @@ describe('POST /api/agents/create', () => {
   it('accepts custom conventions', async () => {
     const res = await request(app)
       .post('/api/agents/create')
-      .send({ name: 'my-agent', conventions: { soul: false, nope: true, dorkosKnowledge: false } });
+      .send({
+        name: 'my-agent',
+        conventions: { soul: false, nope: true, memory: false, dorkosKnowledge: false },
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.conventions).toEqual({
       soul: false,
       nope: true,
+      memory: false,
       dorkosKnowledge: false,
     });
   });

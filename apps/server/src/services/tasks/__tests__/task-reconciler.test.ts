@@ -5,6 +5,8 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, pulseRuns, pulseDispatchLog, type Db } from '@dorkos/db';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import { skillsRoot } from './task-root-fixtures.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -12,10 +14,16 @@ vi.mock('../../../lib/logger.js', () => ({
   // reconciler hands the logger, and a stub would let a regression through.
   logError: (err: unknown) =>
     err instanceof Error ? { error: err.message, stack: err.stack } : { error: String(err) },
+  // The registrar (constructed by these suites) builds a tagged child logger at
+  // import time; without this the module mock has no `createTaggedLogger` to
+  // give it and the whole suite fails to load.
+  createTaggedLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 import { logger } from '../../../lib/logger.js';
 import { TaskReconciler } from '../task-reconciler.js';
+import { TaskRegistrar } from '../task-registrar.js';
+import { FakeScheduler } from './fake-scheduler.js';
 import { TaskStore } from '../task-store.js';
 import {
   TASK_TEMPLATES_DIRNAME,
@@ -25,28 +33,46 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Frontmatter + body for a minimal, schema-valid task SKILL.md. */
+/** Frontmatter + body for a minimal, schema-valid scheduled skill. */
 function skillFile(name: string): string {
-  return `---\nname: ${name}\ndescription: A task named ${name}\ncron: '0 9 * * *'\n---\nDo the thing.`;
+  return `---\nname: ${name}\ndescription: A task named ${name}\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.`;
+}
+
+/**
+ * A SKILL.md whose frontmatter does not parse at all.
+ *
+ * `description` is required, so leaving it out is a parse failure rather than a
+ * key the schema shrugs at. It used to be `enabled: yes-please`, which under the
+ * unified schema is simply an unknown key — the file would read as a perfectly
+ * good plain skill and the suites below would be testing nothing.
+ */
+function unparseableFile(name: string): string {
+  return `---\nname: ${name}\n---\nBody`;
 }
 
 describe('TaskReconciler', () => {
   // A throwaway stand-in for `~/.dork`; the real one is never touched.
   let dorkHome: string;
-  let tasksDir: string;
+  let skillsDir: string;
   let db: Db;
   let store: TaskStore;
   let reconciler: TaskReconciler;
+  let scheduler: FakeScheduler;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'task-reconciler-'));
-    tasksDir = path.join(dorkHome, 'tasks');
-    await fs.mkdir(tasksDir, { recursive: true });
+    skillsDir = path.join(dorkHome, 'skills');
+    await fs.mkdir(skillsDir, { recursive: true });
     db = createTestDb();
     store = new TaskStore(db);
-    reconciler = new TaskReconciler(store);
-    reconciler.addDirectory(tasksDir, 'global');
+    scheduler = new FakeScheduler();
+    reconciler = new TaskReconciler(
+      store,
+      new TaskRegistrar({ store, scheduler }),
+      new ScheduleIdentityRegistry()
+    );
+    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
   });
 
   afterEach(async () => {
@@ -54,9 +80,9 @@ describe('TaskReconciler', () => {
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** Write `{tasksDir}/{relativeDir}/SKILL.md` and return its absolute path. */
+  /** Write `{skillsDir}/{relativeDir}/SKILL.md` and return its absolute path. */
   async function writeTask(relativeDir: string, name: string): Promise<string> {
-    const dir = path.join(tasksDir, relativeDir);
+    const dir = path.join(skillsDir, relativeDir);
     await fs.mkdir(dir, { recursive: true });
     const filePath = path.join(dir, 'SKILL.md');
     await fs.writeFile(filePath, skillFile(name), 'utf-8');
@@ -69,7 +95,7 @@ describe('TaskReconciler', () => {
       name: slug,
       description: 'gone from disk',
       prompt: 'gone from disk',
-      filePath: path.join(tasksDir, slug, 'SKILL.md'),
+      filePath: path.join(skillsDir, slug, 'SKILL.md'),
     });
     db.update(pulseSchedules)
       .set({ updatedAt: new Date(Date.now() - 2 * DAY_MS).toISOString() })
@@ -82,7 +108,7 @@ describe('TaskReconciler', () => {
     it('removes an orphan that has run history instead of aborting the pass', async () => {
       const taskId = createExpiredOrphan('gone-task');
       store.createRun(taskId, 'manual');
-      store.tryClaimDispatch(taskId, 1_700_000_000_000);
+      store.claimScheduledRun(taskId, 1_700_000_000_000, { status: 'running' });
 
       await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 1 });
 
@@ -118,7 +144,7 @@ describe('TaskReconciler', () => {
         name: 'recently-gone',
         description: 'gone from disk',
         prompt: 'gone from disk',
-        filePath: path.join(tasksDir, 'recently-gone', 'SKILL.md'),
+        filePath: path.join(skillsDir, 'recently-gone', 'SKILL.md'),
       });
 
       await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
@@ -144,7 +170,7 @@ describe('TaskReconciler', () => {
     });
 
     it('still reports a genuinely malformed task directory', async () => {
-      await fs.mkdir(path.join(tasksDir, 'no-skill-here'), { recursive: true });
+      await fs.mkdir(path.join(skillsDir, 'no-skill-here'), { recursive: true });
 
       await reconciler.reconcile();
 
@@ -178,28 +204,27 @@ describe('TaskReconciler', () => {
       store.createRun(created.id, 'scheduled');
 
       // The user hand-edits SKILL.md and fat-fingers a boolean.
-      await fs.writeFile(
-        filePath,
-        `---\nname: typo-task\ndescription: Broken\nenabled: yes-please\n---\nBody`,
-        'utf-8'
-      );
+      await fs.writeFile(filePath, unparseableFile('typo-task'), 'utf-8');
       expireGracePeriod();
 
       await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
 
-      // Same row, same id, history intact — the file is right there.
+      // Same row, same id, same status, history intact — the file is right
+      // there. The status is compared to what it was rather than named
+      // literally, because the claim is that a failed parse changes NOTHING
+      // about the row, whatever state the arm gate left it in.
       const after = store.getTask(created.id);
       expect(after).not.toBeNull();
-      expect(after?.status).toBe('active');
+      expect(after?.status).toBe(created.status);
       expect(store.countRuns(created.id)).toBe(1);
     });
 
     it('keeps a task in a slot the scan skips by name', async () => {
-      // The watcher accepts any `<tasksDir>/*/SKILL.md`, including one inside
+      // The watcher accepts any `<skillsDir>/*/SKILL.md`, including one inside
       // the reserved templates container, and creates a row for it. The scan
       // skips that slot by name, which used to look exactly like a deletion.
-      await fs.mkdir(path.join(tasksDir, TASK_TEMPLATES_DIRNAME), { recursive: true });
-      const filePath = path.join(tasksDir, TASK_TEMPLATES_DIRNAME, 'SKILL.md');
+      await fs.mkdir(path.join(skillsDir, TASK_TEMPLATES_DIRNAME), { recursive: true });
+      const filePath = path.join(skillsDir, TASK_TEMPLATES_DIRNAME, 'SKILL.md');
       await fs.writeFile(filePath, skillFile(TASK_TEMPLATES_DIRNAME), 'utf-8');
       const task = store.createTask({
         name: TASK_TEMPLATES_DIRNAME,
@@ -217,12 +242,15 @@ describe('TaskReconciler', () => {
 
     it('keeps a task whose directory is a symlink to somewhere else', async () => {
       // `readdir(withFileTypes)` does not follow links, so `entry.isDirectory()`
-      // is false and the scan skips the slot — while the file is right there
-      // and perfectly readable.
+      // is false and the shared scan skips the slot — while the file is right
+      // there and perfectly readable. `scanSymlinkedSkills` is the second look
+      // that finds it (the shape an installed plugin's skill takes), so the pass
+      // now SYNCS this file rather than merely declining to retire it. Both
+      // endings keep the row and its history; this one also keeps it current.
       const realDir = path.join(dorkHome, 'shared', 'nightly-sweep');
       await fs.mkdir(realDir, { recursive: true });
       await fs.writeFile(path.join(realDir, 'SKILL.md'), skillFile('nightly-sweep'), 'utf-8');
-      const linkPath = path.join(tasksDir, 'nightly-sweep');
+      const linkPath = path.join(skillsDir, 'nightly-sweep');
       await fs.symlink(realDir, linkPath);
 
       const filePath = path.join(linkPath, 'SKILL.md');
@@ -235,20 +263,23 @@ describe('TaskReconciler', () => {
       store.createRun(task.id, 'scheduled');
       expireGracePeriod();
 
-      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 1, orphaned: 0 });
 
       expect(store.getTask(task.id)).not.toBeNull();
       expect(store.countRuns(task.id)).toBe(1);
       await expect(fs.access(filePath)).resolves.toBeUndefined();
     });
 
-    it('recovers a task that was paused while its file was missing', async () => {
+    it('switches a waiting schedule off when its file goes, and back on when it returns', async () => {
       const filePath = await writeTask('flaky-file', 'flaky-file');
       await reconciler.reconcile();
       const created = store.getTasks()[0];
 
       await fs.rm(filePath);
       await reconciler.reconcile();
+      // Paused and switched off. This says nothing about approval either way —
+      // the arm grant is a stored key now, so no status write can imply consent,
+      // and this method is free to mean exactly what it says again.
       expect(store.getTask(created.id)?.status).toBe('paused');
       expect(store.getTask(created.id)?.enabled).toBe(false);
 
@@ -256,9 +287,14 @@ describe('TaskReconciler', () => {
       await writeTask('flaky-file', 'flaky-file');
       await reconciler.reconcile();
 
-      // Both gates the scheduler checks must be restored, or the task looks
-      // live in the UI and silently never fires.
-      expect(store.getTask(created.id)?.status).toBe('active');
+      // `paused` is DorkOS's own "the file went away" marker, and it is gone.
+      //
+      // Back to waiting. The content that came back is byte-identical to the
+      // content that left — an unlink followed by a recreate is what an ordinary
+      // atomic save looks like — but this row was never approved, so there is no
+      // grant to match and it waits. `task-registrar.integration.test.ts`
+      // follows an APPROVED file through the same round trip to the clock.
+      expect(store.getTask(created.id)?.status).toBe('pending_approval');
       expect(store.getTask(created.id)?.enabled).toBe(true);
     });
 
@@ -273,21 +309,24 @@ describe('TaskReconciler', () => {
         await writeTask('beta', 'beta');
         await reconciler.reconcile();
         expect(store.getTasks()).toHaveLength(2);
+        const before = store.getTasks().map((t) => [t.id, t.status] as const);
 
         // Simulates EACCES, and equally the EMFILE a file-descriptor squeeze
         // produces — the scan cannot look, which is not evidence of deletion.
-        await fs.chmod(tasksDir, 0o000);
+        await fs.chmod(skillsDir, 0o000);
         expireGracePeriod();
         try {
           await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
         } finally {
-          await fs.chmod(tasksDir, 0o755);
+          await fs.chmod(skillsDir, 0o755);
         }
 
         expect(store.getTasks()).toHaveLength(2);
-        expect(store.getTasks().every((t) => t.status === 'active')).toBe(true);
+        // Untouched, not merely present: a pass that could not look must leave
+        // every row exactly as it found it.
+        expect(store.getTasks().map((t) => [t.id, t.status] as const)).toEqual(before);
         expect(logger.error).toHaveBeenCalledWith(
-          expect.stringContaining(tasksDir),
+          expect.stringContaining(skillsDir),
           expect.objectContaining({ error: expect.any(String) })
         );
       }
@@ -333,7 +372,7 @@ describe('TaskReconciler', () => {
 
     it('leaves a task behind after its directory is removed on agent unregister', async () => {
       const { dir } = await unregisteredProjectTask();
-      reconciler.addDirectory(dir, 'project', path.join(dorkHome, 'late-project'));
+      reconciler.addRoot(skillsRoot(dir, 'project', path.join(dorkHome, 'late-project')));
       await reconciler.reconcile();
       const task = store.getTasks()[0];
       store.createRun(task.id, 'scheduled');
@@ -386,7 +425,7 @@ describe('TaskReconciler', () => {
         skillFile('nightly'),
         'utf-8'
       );
-      reconciler.addDirectory(projectDir, 'project', path.join(dorkHome, 'doomed-project'));
+      reconciler.addRoot(skillsRoot(projectDir, 'project', path.join(dorkHome, 'doomed-project')));
       await reconciler.reconcile();
       const task = store.getTasks()[0];
       store.createRun(task.id, 'scheduled');
@@ -406,13 +445,13 @@ describe('TaskReconciler', () => {
     it('pauses only the task whose own file is gone', async () => {
       // Two projects, each with a task called flow-drain — the exact shape
       // found on real data.
-      const projectDir = path.join(dorkHome, 'project', '.dork', 'tasks');
+      const projectDir = path.join(dorkHome, 'project', '.agents', 'skills');
       await fs.mkdir(path.join(projectDir, 'flow-drain'), { recursive: true });
       const projectFile = path.join(projectDir, 'flow-drain', 'SKILL.md');
       await fs.writeFile(projectFile, skillFile('flow-drain'), 'utf-8');
-      reconciler.addDirectory(projectDir, 'project', path.join(dorkHome, 'project'));
+      reconciler.addRoot(skillsRoot(projectDir, 'project', path.join(dorkHome, 'project')));
 
-      const globalFile = path.join(tasksDir, 'flow-drain', 'SKILL.md');
+      const globalFile = path.join(skillsDir, 'flow-drain', 'SKILL.md');
       store.createTask({
         name: 'flow-drain',
         description: 'global copy whose file is gone',
@@ -422,9 +461,15 @@ describe('TaskReconciler', () => {
 
       await reconciler.reconcile();
 
-      const project = store.getTasks().find((t) => t.filePath === projectFile);
+      // By the REAL path: a row discovered in a skills root is keyed on the
+      // file with its symlinks resolved, and every macOS temp directory sits
+      // under one.
+      const projectReal = await fs.realpath(projectFile);
+      const project = store.getTasks().find((t) => t.filePath === projectReal);
       const global = store.getTasks().find((t) => t.filePath === globalFile);
-      expect(project?.status).toBe('active');
+      // The project one is a live sighting: parked for approval, never paused.
+      // Only the copy whose own file is gone is paused.
+      expect(project?.status).toBe('pending_approval');
       expect(project?.enabled).toBe(true);
       expect(global?.status).toBe('paused');
     });
@@ -498,10 +543,10 @@ describe('TaskReconciler', () => {
 
     /** A task file whose frontmatter does not parse — a fault that never clears. */
     async function writeBrokenTask(slug: string): Promise<string> {
-      const dir = path.join(tasksDir, slug);
+      const dir = path.join(skillsDir, slug);
       await fs.mkdir(dir, { recursive: true });
       const filePath = path.join(dir, 'SKILL.md');
-      await fs.writeFile(filePath, `---\nname: ${slug}\nenabled: yes-please\n---\nBody`, 'utf-8');
+      await fs.writeFile(filePath, unparseableFile(slug), 'utf-8');
       return filePath;
     }
 
@@ -635,7 +680,7 @@ describe('TaskReconciler', () => {
       expect(logger.warn).toHaveBeenCalledTimes(1);
 
       // The user fixes the file, and an hour passes quietly.
-      await fs.writeFile(path.join(tasksDir, 'broken', 'SKILL.md'), skillFile('broken'), 'utf-8');
+      await fs.writeFile(path.join(skillsDir, 'broken', 'SKILL.md'), skillFile('broken'), 'utf-8');
       vi.advanceTimersByTime(HOUR_MS);
       await reconciler.reconcile();
       expect(logger.warn).toHaveBeenCalledTimes(1);

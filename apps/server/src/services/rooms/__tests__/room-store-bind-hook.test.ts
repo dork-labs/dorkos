@@ -55,7 +55,6 @@ describe('appendEntry’s bind hook', () => {
         slug: ROOM_ID,
         title: `#${ROOM_ID}`,
         topic: null,
-        workspaceId: null,
         createdAt: '2026-08-08T11:00:00.000Z',
       },
       []

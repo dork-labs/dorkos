@@ -15,7 +15,7 @@ Every peer that won (OpenClaw most of all) won on this loop. Nothing else (SEO, 
 A launch spike is wasted on a leaky funnel. Before any push:
 
 1. Website fixes and product visuals per `07-website-changes.md` (404s, prelude, reveal timing, hero screenshot/video, runtimes section, GitHub link with stars).
-2. **README as landing page**: the repo README is where launch traffic actually lands. It needs the positioning, the cockpit GIF, the 5-minute path, and honest status. Update the repo description (currently "...for Claude Code").
+2. **README as landing page**: the repo README is where launch traffic actually lands. It needs the positioning, the product GIF, the 5-minute path, and honest status. Update the repo description (currently "...for Claude Code").
 3. **The 5-minute magic path** hardened end-to-end (install → sessions already visible → schedule → Telegram ping). Every launch asset demos this path; it must not have a single rough edge.
 4. **Security pre-work**: threat-model page, secure defaults audit, `dorkos doctor` style self-check. Non-negotiable before traction (see landmines); also a differentiator at launch ("the meta-harness that took OpenClaw's lesson seriously").
 5. Seed the marketplace to ~20 genuinely useful packages so the flywheel surface doesn't look empty on day one.
@@ -25,12 +25,12 @@ A launch spike is wasted on a leaky funnel. Before any push:
 Order matters: each rung builds proof for the next, and each is a separate audience so a miss on one doesn't burn the others.
 
 1. **Obsidian community first** (lowest risk, most concentrated): release the plugin to the Obsidian directory + forum + Discord. Priya's channel. Small, passionate, underserved; generates the first real testimonials and hones the pitch in a friendly room.
-2. **Show HN** (the main event): "Show HN: DorkOS: self-hosted mission control for Claude Code, Codex, and OpenCode." The customer-voice corpus is literally built from HN threads; the audience is pre-qualified. Founder story in the first comment (Section 8 housing → 30M users → built this for myself), demo video, honest limitations list. HN rewards exactly the radical-honesty voice the brand already has.
+2. **Show HN** (the main event): "Show HN: DorkOS: one self-hosted place for Claude Code, Codex, and OpenCode." The customer-voice corpus is literally built from HN threads; the audience is pre-qualified. Founder story in the first comment (Section 8 housing → 30M users → built this for myself), demo video, honest limitations list. HN rewards exactly the radical-honesty voice the brand already has.
 3. **r/ClaudeAI, r/selfhosted, r/LocalLLaMA, r/ExperiencedDevs** (staggered, native tone per sub, days apart, never cross-posted verbatim).
 4. **Product Hunt** (after HN, using its momentum and assets).
 5. **The talk/video flywheel**: one excellent 15-minute "I run a fleet of agents that built this product" talk, pitched to meetups/conferences and cut into clips. Steinberger's talk was worth 10x stars; a solo founder's equivalent is a recorded deep-dive that earns reposts.
 
-**Launch positioning note**: lead with the multi-runtime cockpit + fleet screen (differentiation), prove with the overnight story (emotion), close with self-hosted/MIT/security (trust). Not the other order.
+**Launch positioning note**: lead with every agent in one place + the fleet screen (differentiation), prove with the overnight story (emotion), close with self-hosted/MIT/security (trust). Not the other order.
 
 ## 3. Phase 2: The compounding engines (ongoing, mostly automatable)
 
@@ -64,7 +64,7 @@ The full model now exists: MIT core free forever; DorkOS Cloud (Solo ~$8/mo, Cre
 ## 7. The Jobs lens (what a world-class product marketer would insist on)
 
 1. **One moment, repeated everywhere**: the morning review. Phone buzzes at 2:47am; you read it at 7:00; the work is done and waiting. Every asset (hero video, HN post, talk, stickers) is a variation of this single moment. Simplify until the demo needs no narration.
-2. **Show, never describe**: no asset without the cockpit visible. The site currently describes a control panel while showing none of it; invert that.
+2. **Show, never describe**: no asset without the app visible. The site currently describes a control panel while showing none of it; invert that.
 3. **Say no in public**: the "What DorkOS is NOT" section is the most Jobs thing in the brand corpus. Put it on the site. Confidence through refusal.
 4. **Make the tribe visible to itself**: "Built by dorks" becomes real when users have something to wear/show: stickers at launch, a wall of named agent teams ("meet Atlas, Scout, Sentinel"), users' fleet screenshots retweeted. Identity, not features, is what people share.
 5. **The keynote is the onboarding**: the first five minutes of product use must be as rehearsed as a demo. Jobs would spend the whole budget there, and so should we (it is also the only part of this plan that is pure product work).

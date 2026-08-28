@@ -21,6 +21,7 @@ function minutesAgo(minutes: number): string {
 
 function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEntry {
   return {
+    workspace: { mode: 'home' },
     id: '01JKABC00001',
     name: 'backend',
     description: 'Backend service agent',

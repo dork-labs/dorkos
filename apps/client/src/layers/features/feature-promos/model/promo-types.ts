@@ -41,7 +41,7 @@ export type PromoAction =
  * for simply never speaks there (team-room-home spec D5.3).
  */
 export interface QuietSuggestionCopy {
-  /** What DorkBot asks, e.g. "Want your agents working while you sleep?". */
+  /** What DorkBot asks, e.g. "Want your agents working without you at the keyboard?". */
   question: string;
   /** What pressing it would do, as a verb phrase, e.g. "Set up a schedule". */
   action: string;

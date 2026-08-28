@@ -1,7 +1,7 @@
 ---
 id: 260728-214214
 title: Message search is a derived, rebuildable index, not a second transcript store
-status: proposed
+status: accepted
 created: 2026-07-28
 spec: message-search
 amends: 0310
@@ -12,7 +12,9 @@ superseded-by: null
 
 ## Status
 
-Proposed. **Partially supersedes [ADR-0310](0310-runtime-owned-session-storage-aggregated-listing.md) — one clause of one Negative consequence, and nothing else.**
+Accepted (2026-08-26 — the full programme shipped on this design: rooms + three transcript mechanisms indexed, palette UI, the Obsidian embed reading the same index read-only, and the delete-the-index recovery intact; see specs/message-search/04-implementation.md). **Partially supersedes [ADR-0310](0310-runtime-owned-session-storage-aggregated-listing.md) — one clause of one Negative consequence, and nothing else.**
+
+**2026-08-25**: Amended by [260825-110420](260825-110420-opencode-search-reads-a-snapshot-not-the-live-store.md) (DOR-688) on the two claims below that time has overtaken. **The port trigger fired and the promotion was REFUSED**: OpenCode is now indexed, on a third mechanism (M3, a read-only snapshot of its SQLite store) — but that mechanism turned out to need none of the frontier logic rewritten, reusing M2's watermark implementation through a `ContainerReader` seam, so the registry array held. The re-trigger is recorded there: a FOURTH mechanism whose change detection is neither a byte offset nor a monotonic ordinal, or a source living outside `apps/server`. Consequently **there are now three mechanisms**, and the count of sources this record gives is a snapshot of 2026-07-28 rather than a rule.
 
 **The scope of the supersession is one sentence** — 0310's Consequences → Negative, the cross-runtime-features bullet, quoted here rather than cited by line because this same commit edits that file:
 
@@ -44,9 +46,9 @@ We will build message search as a **derived, read-only, rebuildable SQLite index
 
 **One `messages` table, one FTS5 external-content table (`tokenize='porter unicode61'`), one `search_sources` frontier table.** No new dependency: FTS5, `bm25()` and `snippet()` are present in the pinned `better-sqlite3@12.11.1` / SQLite 3.53.2. External content is **39.9% smaller** than storing the text twice at the measured corpus size, with query time indistinguishable (p50 0.681 ms vs 0.702 ms). Porter is not a preference: `dogs` returns **1** hit under `unicode61` and **3** under `porter unicode61`, and stemming is what makes the user story work.
 
-**Each source gets one small pure projection; nothing else varies.** Discovery, change detection, incremental read and upsert are written once per _mechanism_, not once per source, and a source is a row in a registry array plus a function. Two mechanisms serve three sources: **append-only JSONL tailed at a byte offset** (Claude Code transcripts, Codex rollout files) and **SQLite rows above a monotonic watermark** (the room log). Every projection selects explicit fields — no `SELECT *`, no "index all text columns", no recursive JSON walk.
+**Each source gets one small pure projection; nothing else varies.** Discovery, change detection, incremental read and upsert are written once per _mechanism_, not once per source, and a source is a row in a registry array plus a function. Two mechanisms served three sources at the time of writing: **append-only JSONL tailed at a byte offset** (Claude Code transcripts, Codex rollout files) and **SQLite rows above a monotonic watermark** (the room log). A third — **another program's SQLite store, read through a throwaway snapshot** — landed with OpenCode; see the amendment note in Status. Every projection selects explicit fields — no `SELECT *`, no "index all text columns", no recursive JSON walk.
 
-**OpenCode is deferred, and the deferral is load-bearing rather than incidental.** ADR-0308:24 forecloses the direct read; the SDK alternative then fails on four counts of its own — a background read must **spawn someone else's agent server** on a timer, the corpus is **24 messages**, the pinned SDK surface is provably stale against the server it drives, and an SDK poll is a **third mechanism**: it has no resumption primitive (it pages backwards from newest, so "what is new" is not expressible) and it carries a liveness precondition the other two lack. Under this design's own rule, a third mechanism promotes the shape to a port. **We will not do that for 24 messages** — so there is no port, and **the day OpenCode is indexed the promotion fires.** That trigger is recorded so the next author inherits a decision rather than an accretion.
+**OpenCode is deferred, and the deferral is load-bearing rather than incidental.** ADR-0308:24 forecloses the direct read; the SDK alternative then fails on four counts of its own — a background read must **spawn someone else's agent server** on a timer, the corpus is **24 messages**, the pinned SDK surface is provably stale against the server it drives, and an SDK poll is a **third mechanism**: it has no resumption primitive (it pages backwards from newest, so "what is new" is not expressible) and it carries a liveness precondition the other two lack. Under this design's own rule, a third mechanism promotes the shape to a port. **We will not do that for 24 messages** — so there is no port, and **the day OpenCode is indexed the promotion fires.** That trigger is recorded so the next author inherits a decision rather than an accretion. _(The day came on 2026-08-25, and the promotion was refused with evidence rather than taken automatically — ADR 260825-110420. The direct read was also reopened there, narrowly: a snapshot copy through a table allowlist, never the SDK and never the live file.)_
 
 Nothing here reads Codex rollout files on the strength of silence alone: no ADR forbids it — the phrase "never read or written directly" occurs exactly once in the whole decisions corpus, about OpenCode — but absence of a prohibition is not authorization, which is why the coupling is recorded here.
 

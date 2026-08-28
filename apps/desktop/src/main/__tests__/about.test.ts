@@ -30,7 +30,7 @@ describe('setupAboutPanel (B3)', () => {
       applicationName: 'DorkOS',
       applicationVersion: '1.2.3',
       copyright: '© 2026 DorkOS',
-      credits: 'Mission control for your coding agents.',
+      credits: 'All your coding agents. One place.',
     });
   });
 });

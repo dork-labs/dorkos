@@ -9,17 +9,17 @@ import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 export const metadata: Metadata = {
   title: 'Newsletter | DorkOS',
   description:
-    'Release notes and fleet reports from DorkOS, about twice a month. Double opt-in, one-click unsubscribe, no spam.',
+    'Release notes and agent reports from DorkOS, about twice a month. Double opt-in, one-click unsubscribe, no spam.',
   alternates: { canonical: '/newsletter', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Newsletter | DorkOS',
-    description: 'Release notes and fleet reports, about twice a month.',
+    description: 'Release notes and agent reports, about twice a month.',
     url: '/newsletter',
     siteName: siteConfig.name,
   },
   twitter: twitterFromOpenGraph({
     title: 'Newsletter | DorkOS',
-    description: 'Release notes and fleet reports, about twice a month.',
+    description: 'Release notes and agent reports, about twice a month.',
   }),
 };
 
@@ -36,10 +36,10 @@ export default function NewsletterPage() {
           The DorkOS newsletter
         </p>
         <h1 className="text-charcoal font-mono text-3xl font-bold tracking-tight sm:text-4xl">
-          One person. A fleet of agents. Read the receipts.
+          One person. A team of agents. Read the receipts.
         </h1>
         <p className="text-warm-gray mt-4 text-lg">
-          Release notes and fleet reports, about twice a month: what shipped, what the fleet did
+          Release notes and agent reports, about twice a month: what shipped, what our agents did
           overnight, and the numbers behind it. No hype, no more than we promised.
         </p>
 

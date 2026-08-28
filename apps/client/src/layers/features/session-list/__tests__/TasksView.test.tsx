@@ -102,6 +102,7 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     cron: '* * * * *',
     timezone: null,
     agentId: null,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     filePath: '/tmp/tasks/test.md',
@@ -111,6 +112,8 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
     ...overrides,
   };
@@ -179,7 +182,7 @@ describe('TasksView', () => {
 
   it('shows disabled state when toolStatus is disabled-by-agent', () => {
     render(<TasksView toolStatus="disabled-by-agent" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('Tasks disabled for this agent')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled tasks are off for this agent')).toBeInTheDocument();
   });
 
   it('does not render schedule list when toolStatus is disabled-by-server', () => {
@@ -246,16 +249,16 @@ describe('TasksView', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
-  it('Open Tasks button opens via tasks deep-link in empty state', () => {
+  it('Open Schedules button opens via tasks deep-link in empty state', () => {
     render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
-    const btn = screen.getByText(/Open Tasks/);
+    const btn = screen.getByText(/Open Schedules/);
     fireEvent.click(btn);
     expect(mockOpenTasksDeepLink).toHaveBeenCalled();
   });
 
-  it('Open Tasks button opens via tasks deep-link in disabled-by-agent state', () => {
+  it('Open Schedules button opens via tasks deep-link in disabled-by-agent state', () => {
     render(<TasksView toolStatus="disabled-by-agent" agentId={null} />, { wrapper: Wrapper });
-    const btn = screen.getByText(/Open Tasks/);
+    const btn = screen.getByText(/Open Schedules/);
     fireEvent.click(btn);
     expect(mockOpenTasksDeepLink).toHaveBeenCalled();
   });

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getDb } from '@/db/client';
+import {
+  HEARTBEAT_TELEMETRY_RATE_LIMIT,
+  resetHeartbeatTelemetryRateLimit,
+} from '@/lib/telemetry/heartbeat-rate-limit';
 
 import { POST } from '../route';
 
@@ -51,6 +55,7 @@ beforeEach(() => {
   db = createUpsertStore();
   vi.mocked(getDb).mockReturnValue({ insert: db.insert } as never);
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  resetHeartbeatTelemetryRateLimit();
 });
 
 afterEach(() => {
@@ -165,5 +170,51 @@ describe('POST /api/telemetry/heartbeat', () => {
       expect(serialized).not.toContain('abc');
       expect(serialized).not.toContain('SuperSecretAgent');
     });
+  });
+});
+
+describe('POST /api/telemetry/heartbeat — rate limiting', () => {
+  const ip = { 'x-real-ip': '203.0.113.60' };
+
+  it('lets one IP through up to the limit, then answers 429', async () => {
+    for (let i = 0; i < HEARTBEAT_TELEMETRY_RATE_LIMIT; i += 1) {
+      const body = { ...VALID_HEARTBEAT, dorkosVersion: `0.47.${i}` };
+      expect((await POST(makeRequest(body, { headers: ip }))).status).toBe(200);
+    }
+    const upsertsBefore = db.insert.mock.calls.length;
+
+    const blocked = await POST(makeRequest(VALID_HEARTBEAT, { headers: ip }));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBe('600');
+    // The throttled heartbeat never reaches the table.
+    expect(db.insert.mock.calls.length).toBe(upsertsBefore);
+  });
+
+  it('bounds a UUID spray, which is the abuse the upsert cannot stop', async () => {
+    // Every fake UUID looks like a fresh install, so the upsert mints a row
+    // per spray. The throttle is what makes the spray finite.
+    for (let i = 0; i < HEARTBEAT_TELEMETRY_RATE_LIMIT; i += 1) {
+      const instanceId = `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4${i.toString().padStart(3, '0')}`;
+      await POST(makeRequest({ ...VALID_HEARTBEAT, instanceId }, { headers: ip }));
+    }
+    const sprayed = await POST(
+      makeRequest(
+        { ...VALID_HEARTBEAT, instanceId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4fff' },
+        { headers: ip }
+      )
+    );
+    expect(sprayed.status).toBe(429);
+  });
+
+  it("does not charge one IP for another IP's heartbeats", async () => {
+    for (let i = 0; i <= HEARTBEAT_TELEMETRY_RATE_LIMIT; i += 1) {
+      await POST(makeRequest(VALID_HEARTBEAT, { headers: ip }));
+    }
+    expect((await POST(makeRequest(VALID_HEARTBEAT, { headers: ip }))).status).toBe(429);
+
+    const bystander = await POST(
+      makeRequest(VALID_HEARTBEAT, { headers: { 'x-real-ip': '203.0.113.61' } })
+    );
+    expect(bystander.status).toBe(200);
   });
 });

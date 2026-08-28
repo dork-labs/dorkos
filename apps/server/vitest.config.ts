@@ -268,6 +268,16 @@ export default defineConfig({
         // The rule this entry states: a shared subpath whose module imports
         // another aliased subpath's file must be aliased to source too, or the
         // two resolutions load the same module twice.
+        //
+        // Loading it twice is now merely wasteful rather than fatal. What made
+        // it fatal was a leak underneath: `@asteasolutions/zod-to-openapi`
+        // pinned every `.openapi()`-annotated schema in a strong map that no
+        // `vi.resetModules()` could reach, so each re-evaluation was retained
+        // forever and doubling the copies doubled the bill. That is repaired at
+        // the source in `packages/shared/src/zod-openapi.ts` (DOR-1577), and
+        // the same file's re-import loop now retains ~0.03 MB per iteration
+        // against ~31 MB before. The entry stays because the rule above still
+        // holds on its own terms.
         find: '@dorkos/shared/interaction-events',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/interaction-events.ts', import.meta.url)
@@ -284,6 +294,34 @@ export default defineConfig({
         replacement: fileURLToPath(
           new URL('../../packages/relay/src/adapters/approver-allowlist.ts', import.meta.url)
         ),
+      },
+      {
+        // The memory cap AND the four `<agent_memory>` framing strings, which
+        // back two drift guards: the envelope bound in `agent-context.test.ts`
+        // computes itself from the preamble's length, and `prompt-content`
+        // pins the framing's placement outside the fence. Measured against a
+        // stale dist, both assert against yesterday's strings and pass — the
+        // exact "guard becomes decoration" failure this alias list exists for.
+        // It is also what the client renders in the Injection Preview, so a
+        // drift here is a preview that lies about what the agent is told.
+        find: /^@dorkos\/shared\/convention-files$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/convention-files.ts', import.meta.url)
+        ),
+      },
+      {
+        // The memory engine, at SOURCE for the same reason as the entries
+        // above — and one of its own. `@dorkos/memory` imports
+        // `@dorkos/shared/convention-files` for the cap and the file name;
+        // resolved through its `dist/`, the server's tests would compare a
+        // prompt built from today's engine against yesterday's cap. The
+        // `<agent_memory>` size bound is measured against `MEMORY_MAX_CHARS`,
+        // so a stale dist makes that bound assert the wrong number and pass.
+        //
+        // Exact, not a prefix: the package has one entry point and aliasing a
+        // bare specifier by prefix would also capture any future subpath.
+        find: /^@dorkos\/memory$/,
+        replacement: fileURLToPath(new URL('../../packages/memory/src/index.ts', import.meta.url)),
       },
     ],
   },

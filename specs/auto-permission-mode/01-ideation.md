@@ -48,7 +48,7 @@ status: ideation
 
 **Shared / types / DB**
 
-- `packages/shared/src/schemas.ts` — `SessionSchema.autoMode` (~:114), `SessionSettingsSchema.autoMode` (~:142). Keep `PermissionModeSchema` `'auto'` (Phase 2 needs it).
+- `packages/shared/src/schemas.ts` — `SessionSchema.autoMode` (~~:114), `SessionSettingsSchema.autoMode` (~~:142). Keep `PermissionModeSchema` `'auto'` (Phase 2 needs it).
 - `packages/shared/src/agent-runtime.ts` — `updateSession` opts `autoMode?` (~:228).
 - `packages/db/src/schema/sessions.ts:26` — `auto_mode` column → **new drizzle migration to DROP COLUMN**.
 - `packages/test-utils/src/fake-agent-runtime.ts` — mock session fixtures.

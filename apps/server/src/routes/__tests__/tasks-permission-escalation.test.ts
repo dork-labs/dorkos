@@ -8,7 +8,7 @@
  * parse result. It is wrong for this file, because the vulnerability being
  * pinned here lives precisely in the gap between two schemas — what
  * `CreateTaskRequestSchema` accepts from a caller, and what
- * `TaskFrontmatterSchema` accepts back off the disk the route just wrote. A
+ * the frontmatter schema accepts back off the disk the route just wrote. A
  * mocked parser is the route's own belief about that gap, and the exploit is
  * that the belief was wrong. So the writer, the parser and the filesystem are
  * all real here, and the only seams are the operator's config and the runtime
@@ -76,6 +76,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
@@ -86,6 +87,7 @@ function autonomyRuntimes(): UserConfig['runtimes'] {
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -111,7 +113,11 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, createMockScheduler(), dorkHome));
+    const scheduler = createMockScheduler();
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
+    );
   });
 
   afterEach(() => {

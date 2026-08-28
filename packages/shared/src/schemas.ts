@@ -8,7 +8,7 @@
  * @module shared/schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 // `ClientContextSchema` lives in additional-context.ts (which imports UiStateSchema
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
@@ -34,7 +34,7 @@ import type { WidgetDocument } from './ui-widget.js';
 // only restates it for the wire (see `PermissionStopSchema`).
 import type { PermissionStop } from './agent-runtime.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 // === Enums ===
 
@@ -3438,9 +3438,6 @@ export const ServerConfigSchema = z
           .number()
           .int()
           .openapi({ description: 'Maximum concurrent task runs (1-10)' }),
-        timezone: z.string().nullable().openapi({
-          description: 'IANA timezone for cron expressions, or null for system default',
-        }),
         retentionCount: z
           .number()
           .int()
@@ -3963,13 +3960,11 @@ export type SettableTaskStatus = z.infer<typeof SettableTaskStatusSchema>;
  * that request-vs-frontmatter divergence at the door.
  *
  * DRIFT NOTE: an inlined mirror of `@dorkos/skills`' `SkillNameSchema` by value.
- * `@dorkos/skills` depends on `@dorkos/shared`, so shared cannot import it back,
- * and the two packages are on different zod majors besides (see the same
- * boundary in `packages/skills/src/task-schema.ts`). The rules are restated here
- * and a cross-package agreement test
- * (`packages/skills/src/__tests__/task-schema.test.ts`) feeds one set of sample
- * names to both schemas and asserts they accept and reject exactly the same set,
- * so the two cannot drift apart.
+ * `@dorkos/skills` depends on `@dorkos/shared`, so shared cannot import it back
+ * without a cycle. The rules are restated here and a cross-package agreement
+ * test (`packages/skills/src/__tests__/task-request-drift.test.ts`) feeds one
+ * set of sample names to both schemas and asserts they accept and reject
+ * exactly the same set, so the two cannot drift apart.
  *
  * The CREATE request deliberately does NOT use this: `POST /api/tasks` runs
  * `data.name` through `slugify` before it ever touches the file, so a person can
@@ -3986,8 +3981,17 @@ export const TaskNameSchema = z
   )
   .refine((s) => !s.includes('--'), 'Must not contain consecutive hyphens');
 
+/**
+ * How a task run ended.
+ *
+ * `skipped` is the one that is not about the agent at all: the schedule came
+ * round while this server was already running as many tasks at once as it is
+ * allowed to, so the occurrence was recorded and deliberately not run
+ * (DOR-1482). It is terminal, and it is not a failure — nothing went wrong, the
+ * server was simply busy.
+ */
 export const TaskRunStatusSchema = z
-  .enum(['running', 'completed', 'failed', 'cancelled'])
+  .enum(['running', 'completed', 'failed', 'cancelled', 'skipped'])
   .openapi('TaskRunStatus');
 
 export type TaskRunStatus = z.infer<typeof TaskRunStatusSchema>;
@@ -4009,6 +4013,19 @@ export const TaskSchema = z
     timezone: z.string().nullable(),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
+    /**
+     * Whether every run of this schedule resumes ONE persistent session instead
+     * of starting fresh (DOR-1571).
+     *
+     * `false` (the default) is the isolated-per-run behavior: each fire gets its
+     * own session keyed by the run's id and carries no context forward. `true`
+     * makes every fire share one derived, stable session (`sticky-<taskId>`), so
+     * the agent accumulates context across runs — "here's what changed since last
+     * time". Run history stays per-run either way; a sticky run's `sessionId`
+     * simply points at the shared session, so any run in the history opens the
+     * same growing transcript.
+     */
+    sticky: z.boolean().default(false),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     status: TaskStatusSchema,
@@ -4034,6 +4051,27 @@ export const TaskSchema = z
      * nothing resolves, which is what the "An agent" fallback is for.
      */
     proposedByName: z.string().nullable().default(null),
+    /**
+     * Where this schedule came from, when that is not a person using DorkOS.
+     *
+     * `file` means DorkOS found a `schedule:` block in a SKILL.md on disk and
+     * made this schedule from it — nobody asked for it through the app. The
+     * approval card reads this to say so honestly: a file-found schedule shows
+     * the file it came from, never "an agent proposed this".
+     *
+     * `null` is every other schedule — one a person made, or one an agent
+     * proposed, which `proposedByAgentPath` tells apart.
+     */
+    origin: z.enum(['file']).nullable().default(null),
+    /**
+     * Who wrote `reason`.
+     *
+     * `dorkos` means DorkOS did — "this file changed since you approved it", or
+     * a complaint naming a setting it cannot read. The approval card shows those
+     * words plainly; anything else is the proposer's own case and is quoted as
+     * such. `null` on every schedule a person or an agent explained themselves.
+     */
+    reasonSource: z.enum(['dorkos']).nullable().default(null),
     nextRun: z.string().nullable().optional(),
     /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.
@@ -4106,7 +4144,7 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
  * ## Why this is a security boundary and not tidiness
  *
  * `POST /api/tasks` writes the request into a SKILL.md and immediately reads it
- * back with `TaskFrontmatterSchema`. Whether that re-parse SUCCEEDS decides
+ * back with `SkillFrontmatterSchema`. Whether that re-parse SUCCEEDS decides
  * which of two code paths creates the row, and only one of them ran the
  * permission clamp. So any field this schema accepts and the frontmatter
  * rejects is a switch a caller can flip to choose its own write path — which is
@@ -4120,12 +4158,12 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
  *
  * ## Mirrored by VALUE, on purpose
  *
- * `@dorkos/skills` holds the frontmatter schema, depends on this package, and is
- * still on zod v3 while this one is on v4 — so importing it here would be a
- * cycle AND a cross-version composition, the same boundary
+ * `@dorkos/skills` holds the frontmatter schema and depends on this package —
+ * so importing it here would be a dependency cycle, the same boundary
  * `TASK_PERMISSION_MODES` documents from the other side. The values are
- * therefore restated, and `packages/skills/src/__tests__/task-schema.test.ts`
- * asserts the two sides agree, so they cannot drift apart in silence.
+ * therefore restated, and
+ * `packages/skills/src/__tests__/task-request-drift.test.ts` asserts the two
+ * sides agree, so they cannot drift apart in silence.
  *
  * **`name` is deliberately absent from these mirrors.** The route slugifies it
  * before writing, so the constraint belongs on `slugify(name)` rather than on
@@ -4159,7 +4197,13 @@ export const CreateTaskRequestSchema = z
     description: z.string().min(1).max(TASK_DESCRIPTION_MAX),
     prompt: z.string().min(1),
     cron: z.string().min(1).nullable().optional(),
-    timezone: z.string().nullable().optional(),
+    /**
+     * An IANA timezone like `Europe/Berlin`. Non-empty: the frontmatter
+     * defaults this to `UTC` when the key is absent, so an empty string is not
+     * "use the default" — it writes `timezone: ''` into the file and the row,
+     * which is a timezone nothing can read.
+     */
+    timezone: z.string().min(1).nullable().optional(),
     target: z.string().min(1),
     enabled: z.boolean().optional().default(true),
     /**
@@ -4167,6 +4211,11 @@ export const CreateTaskRequestSchema = z
      * the frontmatter accepts — see {@link TASK_DURATION_PATTERN}.
      */
     maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
+    /**
+     * Whether every run resumes one persistent session (DOR-1571). Omitted means
+     * off — the isolated-per-run default. See {@link TaskSchema.sticky}.
+     */
+    sticky: z.boolean().optional(),
     /**
      * How much this schedule's runs may do without asking.
      *
@@ -4299,9 +4348,31 @@ export const UpdateTaskRequestSchema = z
     description: z.string().min(1).optional(),
     prompt: z.string().min(1).optional(),
     cron: z.string().min(1).nullable().optional(),
-    timezone: z.string().nullable().optional(),
+    /**
+     * An IANA timezone like `Europe/Berlin`. Non-empty: the frontmatter
+     * defaults this to `UTC` when the key is absent, so an empty string is not
+     * "use the default" — it writes `timezone: ''` into the file and the row,
+     * which is a timezone nothing can read.
+     */
+    timezone: z.string().min(1).nullable().optional(),
     enabled: z.boolean().optional(),
-    maxRuntime: z.string().nullable().optional(),
+    /**
+     * A duration like `5m`, `1h`, `30s`, `2h30m`, or `null` to remove the cap.
+     *
+     * Validated exactly as {@link CreateTaskRequestSchema} validates it, which
+     * it was not until DOR-1481 — see {@link TASK_DURATION_PATTERN} for why an
+     * update accepted more loosely than the frontmatter it is written into is a
+     * security bug and not a convenience. Two things went wrong with a value
+     * this used to wave through: `parseDuration('10 minutes')` returns 0, which
+     * takes the run's time limit off altogether, and the same string written to
+     * the SKILL.md makes the file unreadable to every later sync.
+     */
+    maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
+    /**
+     * Turn session-resume on or off for this schedule (DOR-1571). See
+     * {@link TaskSchema.sticky}.
+     */
+    sticky: z.boolean().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
@@ -4597,7 +4668,7 @@ export const UiSidebarTabSchema = z
   .describe(
     "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
       "'connections'). The sidebar tab strip exists only in the embedded " +
-      '(Obsidian) app; on the web cockpit there is no strip, so switching a ' +
+      '(Obsidian) app; in the web app there is no strip, so switching a ' +
       'sidebar tab is a no-op there.'
   )
   .openapi('UiSidebarTab');

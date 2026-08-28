@@ -139,8 +139,22 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * rooms structural cases gate on `--suite rooms --tier test-mode` instead, and
  * the credentialed rooms cases carry `experimental` beside it like every other
  * not-yet-gating case.
+ *
+ * `memory` is the agent-memory suite (DOR-632): the cross-surface probes X-09,
+ * X-12 and X-11b. It is separate from `rooms` even though its cases open a
+ * channel, because what they measure is a fact crossing BETWEEN surfaces rather
+ * than anything about a room, and because `--suite rooms` names the set
+ * `suite/__tests__/rooms.test.ts` enumerates. Every case in it is credentialed
+ * and quarantined, so the tag spends only when somebody selects it.
  */
-export const EvalTagSchema = z.enum(['smoke', 'core', 'connector', 'experimental', 'rooms']);
+export const EvalTagSchema = z.enum([
+  'smoke',
+  'core',
+  'connector',
+  'experimental',
+  'rooms',
+  'memory',
+]);
 
 /** Inferred type for {@link EvalTagSchema}. */
 export type EvalTag = z.infer<typeof EvalTagSchema>;
@@ -743,6 +757,21 @@ export const RunSummarySchema = z.object({
   startedAt: z.string(),
   /** The tier the run was launched on. */
   tier: RuntimeTierSchema,
+  /**
+   * The model every credentialed case in this run was answered by — the
+   * resolved value, `--model` or the default, never the flag as typed. Omitted
+   * on `test-mode`, which reaches no model at all.
+   *
+   * **Recorded because the tier does not identify it and the evidence tables
+   * assume it does** (DOR-1564). `claude-code-cheap` is a cost class, not a
+   * model: the same tier answered by `claude-haiku-4-5` and by
+   * `claude-sonnet-5` produced opposite verdicts on the same build for
+   * `memory-recall-cross-surface`, and every artifact of both runs said only
+   * `claude-code-cheap`. A prose-sensitive case whose run cannot name its model
+   * cannot be re-read later; a README row claiming one is then resting on
+   * somebody's memory.
+   */
+  model: z.string().optional(),
   /**
    * How this run reached a model (see {@link CredentialSourceSchema}). Omitted
    * on `test-mode`, which needs no credential, and on a credentialed run where

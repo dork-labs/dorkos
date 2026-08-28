@@ -9,6 +9,7 @@ import { DirectTransport } from '@dorkos/client/lib/direct-transport';
 import { streamManager } from '@dorkos/client/lib/transport';
 import { createObsidianAdapter } from '../lib/obsidian-adapter';
 import { resolvePluginDorkHome } from '../lib/dork-home';
+import { openEmbeddedIndex, type EmbeddedIndex } from '../lib/embedded-index';
 import { ObsidianProvider } from '../contexts/ObsidianContext';
 import { ObsidianApp } from '../components/ObsidianApp';
 import {
@@ -34,6 +35,8 @@ export class CopilotView extends ItemView {
   root: Root | null = null;
   plugin: CopilotPlugin;
   queryClient: QueryClient;
+  /** This machine's message index, or `null` when there is none to search. */
+  index: EmbeddedIndex | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: CopilotPlugin) {
     super(leaf);
@@ -54,7 +57,12 @@ export class CopilotView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    setPlatformAdapter(createObsidianAdapter(this.app));
+    // First thing, and deliberately: whether this machine has an index is what
+    // decides the shape of the Transport built below, so it is settled before
+    // anything else is. See `openEmbeddedIndex` for every reason it answers
+    // `null`.
+    this.index = openEmbeddedIndex(resolvePluginDorkHome());
+    setPlatformAdapter(createObsidianAdapter(this.app, { canSearchMessages: this.index !== null }));
 
     // Resolve paths: Obsidian vault is workspace/, repo root is its parent
     const vaultPath = (this.app.vault.adapter as unknown as { basePath: string }).basePath;
@@ -81,6 +89,11 @@ export class CopilotView extends ItemView {
       // registry the HTTP route reads. The embed answers prompts for real, so it
       // lists them for real too.
       pendingInteractions: { list: () => listPendingInteractionsAcrossSessions() },
+      // The message index, read in this process (DOR-691, DOR-1563). Left out
+      // when this machine has none — an absent seam makes `search` REJECT with a
+      // plain sentence rather than answer emptily, which is the difference
+      // between "no index here" and "you never said that".
+      ...(this.index && { search: this.index.search }),
     });
 
     // Embedded mode has no HTTP server: source the StreamManager's durable
@@ -109,6 +122,10 @@ export class CopilotView extends ItemView {
     // consumer left, and the next onOpen re-sources the manager anyway.
     streamManager.detachSession();
     streamManager.disconnectList();
+    // The index holds a SQLite connection and a five-minute sweep timer. Both
+    // belong to the open view; the next onOpen makes new ones.
+    this.index?.close();
+    this.index = null;
     this.root?.unmount();
     this.root = null;
   }

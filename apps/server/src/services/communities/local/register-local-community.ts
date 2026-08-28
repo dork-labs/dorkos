@@ -13,8 +13,8 @@
  */
 import type { CommunityAdapter } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../lib/logger.js';
-import { readOwnerAccount } from '../../core/auth/index.js';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
+import { resolveOperatorAuthor } from '../../rooms/operator-author.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';
 import { communityRegistry, type CommunityRegistry } from '../registry.js';
@@ -46,10 +46,7 @@ export const LOCAL_COMMUNITY_LABEL = 'This machine';
  * @param authors - The author registry to resolve through.
  */
 export function localCommunityIdentity(authors: AuthorRegistry): () => string {
-  return () => {
-    const owner = readOwnerAccount();
-    return (owner ? authors.bindOwner(owner.id) : authors.localHuman()).id;
-  };
+  return () => resolveOperatorAuthor(authors).id;
 }
 
 /**

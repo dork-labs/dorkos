@@ -88,6 +88,7 @@ function schedule(overrides: Partial<Task> = {}): Task {
     timezone: 'UTC',
     agentId: null,
     enabled: false,
+    sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
     status: 'pending_approval',
@@ -98,6 +99,8 @@ function schedule(overrides: Partial<Task> = {}): Task {
     proposedBySessionId: null,
     proposedByAgentPath: null,
     proposedByName: null,
+    origin: null,
+    reasonSource: null,
     nextRuns: [],
     ...overrides,
   };

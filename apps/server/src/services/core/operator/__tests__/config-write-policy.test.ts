@@ -16,6 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { configSchemaLeafPaths } from '../config-disclosure.js';
+import { PROTECTIVE_CARRYOVERS } from '../../safe-defaults/protected-state.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
@@ -52,6 +53,14 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // it publishes a card describing every agent here and opens an address
       // outside clients post work to (DOR-1304).
       'a2a.enabled',
+      // The four tool-group switches. Carried across a config wipe, so the
+      // wipe floor makes them operator-only: an agent could otherwise undo a
+      // narrowing the person made to its own tool groups (DOR-1497). They feed
+      // the context blocks rather than tool access — see the module doc.
+      'agentContext.adapterTools',
+      'agentContext.meshTools',
+      'agentContext.relayTools',
+      'agentContext.tasksTools',
       'agents.defaultDirectory',
       'approvals.standingGrants',
       'approvals.standingGrantsVoidBefore',
@@ -68,11 +77,17 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.enabled',
       'harness.approvedHooks',
+      'harness.autoSync',
       'mcp.apiKey',
       'mcp.enabled',
       'mcp.rateLimit.enabled',
       'mcp.rateLimit.maxPerWindow',
       'mcp.rateLimit.windowSecs',
+      // Which backend holds what every agent on this machine remembers (spec
+      // `agent-memory`, D7). One write moves every agent's notes somewhere the
+      // operator did not choose, and memory is the one store an agent writes to
+      // itself.
+      'memory.provider',
       'mesh.scanRoots',
       // Every way the operator finds out something is waiting on them. An agent
       // able to write these could silence its own alarm and then park on a
@@ -93,12 +108,25 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
       'rooms.maxTurnsPerAgentPerCascade',
+      // A room's own files: whether they exist at all, and the bounds a merge
+      // is measured against. `rooms.repo.mergeQueueWaitMs` is deliberately NOT
+      // here — waiting longer for a queued merge buys no file and no byte.
+      'rooms.repo.enabled',
+      'rooms.repo.maxFileBytes',
+      'rooms.repo.maxRepoBytes',
+      'rooms.repo.maxRoomMdBytes',
+      'rooms.repo.worktreeReapDays',
       'rooms.turnLimitsEnabled',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.defaultAccount',
       'runtimes.claudeCode.defaultTrustStop',
+      // Not for the reason its neighbours are here: warm sessions are
+      // safety-neutral and cost memory. It is the wipe floor — a person who
+      // turned it off wanted the gigabyte back, and the Control Center's 'Warm
+      // agents' switch is where they say so (DOR-1497).
+      'runtimes.claudeCode.persistentSession',
       'runtimes.codex.binaryPath',
       'runtimes.codex.credentialRef',
       'runtimes.codex.defaultTrustStop',
@@ -107,6 +135,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.opencode.binaryPath',
       'runtimes.opencode.defaultTrustStop',
       'runtimes.opencode.provider',
+      'scheduler.maxConcurrentRuns',
       'server.boundary',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
@@ -123,6 +152,11 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'ui.autonomyAcknowledgedAt',
       'ui.fullPowerChoice',
       'ui.fullPowerDecidedAt',
+      // Two bounds a person can tighten past the shipped default. `allowedTypes`
+      // is NOT here: it is narrowable too, but carries no carryover rule, so the
+      // wipe floor does not reach it and moving it would be a fresh judgement.
+      'uploads.maxFileSize',
+      'uploads.maxFiles',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.enabled',
       'welcomeBack.maxPosts',
@@ -161,6 +195,55 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       expect(CONFIG_WRITE_POLICY[dotPath as keyof typeof CONFIG_WRITE_POLICY]).toBe(
         'operator-only'
       );
+    }
+  });
+});
+
+describe('the wipe floor: the write policy is at least as protective as recovery (DOR-1497)', () => {
+  it('refuses an agent every leaf a config wipe refuses to reverse', () => {
+    // The invariant, stated once. `PROTECTIVE_CARRYOVERS` is the list of leaves a
+    // person can move to a value MORE protective than the default, and recovery
+    // from a corrupt config carries those values across rather than landing on
+    // the shipped default — because a wipe may lose a preference and must never
+    // lose a protection.
+    //
+    // A leaf on that list and `agent-writable` here is that promise with a hole
+    // in it: the ACCIDENT is refused and the DELIBERATE write by something that
+    // is not the person is not. Nine leaves sat in exactly that state, and an
+    // agent-originated `PATCH /api/config` flipped every one of them back with a
+    // 200 and nothing on screen.
+    //
+    // Written as a set comparison rather than a loop so the failure NAMES the
+    // offenders — the fix is "give this leaf a verdict on both sides", which
+    // needs to be readable from the red.
+    const carryovers = PROTECTIVE_CARRYOVERS.map((entry) => entry.path);
+    expect(carryovers.length).toBeGreaterThan(20);
+    const writableAnyway = carryovers.filter(
+      (path) => CONFIG_WRITE_POLICY[path as keyof typeof CONFIG_WRITE_POLICY] !== 'operator-only'
+    );
+    expect(writableAnyway).toEqual([]);
+  });
+
+  it('names only leaves this table has a verdict for', () => {
+    // The guard above compares two hand-maintained lists, so it passes silently
+    // if a carryover path has drifted out of the schema and out of this table at
+    // the same time: `undefined !== 'operator-only'` would catch that, but a
+    // typo'd path would then read as an unfixable failure rather than as the
+    // stale entry it is. This says which of the two it is.
+    const unclassified = PROTECTIVE_CARRYOVERS.map((entry) => entry.path).filter(
+      (path) => !(path in CONFIG_WRITE_POLICY)
+    );
+    expect(unclassified).toEqual([]);
+  });
+
+  it('actually reaches those leaves from a patch, rather than only classifying them', () => {
+    // A verdict in the table is not enforcement. DOR-1113 is the precedent: six
+    // fields were classified `operator-only` for months while the matcher could
+    // not build the path that names them, so every check found them CLEAN and
+    // "found nothing" is indistinguishable from "allowed". This drives the real
+    // matcher with the real patch shape for each carryover leaf.
+    for (const { path } of PROTECTIVE_CARRYOVERS) {
+      expect(findOperatorOnlyPaths(patchForPath(path)), `unguarded: ${path}`).toContain(path);
     }
   });
 });
@@ -712,6 +795,42 @@ describe('describeOperatorOnlyRefusal', () => {
       'Which account and keys the work runs on, and who pays for it: ' +
         'runtimes.claudeCode.accounts[].path.'
     );
+  });
+
+  it('describes a tool-group switch as what it is, and not as more', () => {
+    // Three ways to get this clause wrong, all guarded here. It is not `code`
+    // (nothing is loaded or attached) and not `reach` (nobody gets in) — and it
+    // must not promise ACCESS either, because `resolveToolConfig` feeds the
+    // context blocks and the tier gate is what decides what a tool may do.
+    const message = describeOperatorOnlyRefusal([
+      'agentContext.relayTools',
+      'agentContext.tasksTools',
+    ]);
+    expect(message).toContain(
+      'Which DorkOS tool groups your agents are told about: ' +
+        'agentContext.relayTools, agentContext.tasksTools.'
+    );
+    expect(message).not.toMatch(/who can reach this instance/i);
+    expect(message).not.toMatch(/which code this server runs/i);
+    // The overstatement this stake was split out to avoid.
+    expect(message).not.toMatch(/tools your agents (are given|may use)/i);
+  });
+
+  it('describes a memory bound as a memory bound, not as a security control', () => {
+    // Warm sessions are safety-neutral — same executable, same permissions, same
+    // per-dispatch boundary check — and the refusal must not imply otherwise
+    // just because the setting is now refused (DOR-1044, applied to DOR-1497).
+    const message = describeOperatorOnlyRefusal([
+      'runtimes.claudeCode.persistentSession',
+      'uploads.maxFiles',
+    ]);
+    expect(message).toContain(
+      'How much of this machine the work may take up: ' +
+        'runtimes.claudeCode.persistentSession, uploads.maxFiles.'
+    );
+    expect(message).not.toMatch(/who can reach this instance/i);
+    expect(message).not.toMatch(/credentials/i);
+    expect(message).not.toMatch(/speak on their own/i);
   });
 
   it('stays honest about a path with no stake on file', () => {

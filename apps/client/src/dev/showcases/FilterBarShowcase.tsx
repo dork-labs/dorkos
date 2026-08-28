@@ -14,6 +14,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 
 const MOCK_AGENTS: TopologyAgent[] = [
   {
+    workspace: { mode: 'home' },
     id: '01HQABC0000000000001',
     name: 'code-reviewer',
     description: 'Reviews pull requests and suggests improvements.',
@@ -38,6 +39,7 @@ const MOCK_AGENTS: TopologyAgent[] = [
     projectPath: '/home/kai/projects/core',
   },
   {
+    workspace: { mode: 'home' as const },
     id: '01HQABC0000000000002',
     name: 'deploy-bot',
     description: 'Handles CI/CD pipeline orchestration.',
@@ -63,6 +65,7 @@ const MOCK_AGENTS: TopologyAgent[] = [
   },
   {
     id: '01HQABC0000000000003',
+    workspace: { mode: 'home' },
     name: 'test-runner',
     description: 'Runs test suites and reports coverage deltas.',
     runtime: 'codex',
@@ -87,6 +90,7 @@ const MOCK_AGENTS: TopologyAgent[] = [
   },
   {
     id: '01HQABC0000000000004',
+    workspace: { mode: 'home' },
     name: 'incident-responder',
     description: 'Monitors alerts and escalates production incidents.',
     runtime: 'claude-code',
@@ -111,6 +115,7 @@ const MOCK_AGENTS: TopologyAgent[] = [
   },
   {
     id: '01HQABC0000000000005',
+    workspace: { mode: 'home' },
     name: 'doc-writer',
     description: 'Generates and maintains technical documentation.',
     runtime: 'cursor',
@@ -135,6 +140,7 @@ const MOCK_AGENTS: TopologyAgent[] = [
   },
   {
     id: '01HQABC0000000000006',
+    workspace: { mode: 'home' },
     name: 'db-optimizer',
     description: 'Analyzes query plans and suggests schema improvements.',
     runtime: 'other',

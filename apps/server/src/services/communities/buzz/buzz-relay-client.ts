@@ -66,9 +66,7 @@ export class BuzzReadRefusedError extends Error {
 
 /** What one subscription delivers. */
 export type BuzzSubscriptionEvent =
-  | { type: 'event'; event: NostrEvent }
-  | { type: 'eose' }
-  | { type: 'closed'; message: string };
+  { type: 'event'; event: NostrEvent } | { type: 'eose' } | { type: 'closed'; message: string };
 
 /** Everything a {@link BuzzRelayClient} is built from. */
 export interface BuzzRelayClientDeps {

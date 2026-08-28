@@ -38,6 +38,7 @@ const activeSchedule: Task = {
   prompt: 'Review code',
   cron: '0 9 * * *',
   enabled: true,
+  sticky: false,
   status: 'active',
   agentId: null,
   timezone: null,
@@ -51,6 +52,8 @@ const activeSchedule: Task = {
   proposedBySessionId: null,
   proposedByAgentPath: null,
   proposedByName: null,
+  origin: null,
+  reasonSource: null,
   nextRuns: [],
 };
 
@@ -160,6 +163,57 @@ describe('ScheduleRow', () => {
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
+  // The Approve button is right here, so the reason to approve — or the reason
+  // this one cannot run as written — has to be here too (DOR-1485).
+  it('says why a parked schedule is waiting', () => {
+    renderScheduleRow({
+      ...pendingSchedule,
+      origin: 'file',
+      reason: 'Its "cron" setting is not something DorkOS can read.',
+    });
+
+    expect(screen.getByText('Its "cron" setting is not something DorkOS can read.')).toBeTruthy();
+  });
+
+  // A schedule a person made themselves, whose file has since drifted, carries
+  // OUR sentence — so it shows, even though its origin is not `file`.
+  it('says why a drifted schedule of your own is waiting', () => {
+    renderScheduleRow({
+      ...pendingSchedule,
+      origin: null,
+      reasonSource: 'dorkos',
+      reason: 'This schedule’s file changed since it was last approved.',
+    });
+
+    expect(
+      screen.getByText('This schedule’s file changed since it was last approved.')
+    ).toBeTruthy();
+  });
+
+  it('says nothing extra about a schedule that is already running', () => {
+    renderScheduleRow({
+      ...activeSchedule,
+      origin: 'file',
+      reason: 'A reason nobody needs to see now.',
+    });
+
+    expect(screen.queryByText('A reason nobody needs to see now.')).toBeNull();
+  });
+
+  // `reason` on an agent's proposal is the AGENT'S case, not DorkOS's. It gets
+  // the approval card, which can say who is making it; a bare line in the row
+  // would be an argument on screen with nobody's name on it.
+  it('does not print an agent’s case as an unattributed line', () => {
+    renderScheduleRow({
+      ...pendingSchedule,
+      origin: null,
+      proposedByAgentPath: '/Users/dev/agents/dorkbot',
+      reason: 'The backlog piles up overnight and nobody sees it.',
+    });
+
+    expect(screen.queryByText('The backlog piles up overnight and nobody sees it.')).toBeNull();
+  });
+
   it('opens dropdown menu with Edit, Run Now, Delete items', async () => {
     renderScheduleRow(activeSchedule);
 
@@ -220,7 +274,7 @@ describe('ScheduleRow', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Delete task')).toBeTruthy();
+      expect(screen.getByText('Delete scheduled task')).toBeTruthy();
     });
 
     // Dialog body mentions the schedule name — allow multiple matches (schedule row + dialog)
@@ -269,6 +323,7 @@ describe('ScheduleRow', () => {
         mcpServers: [],
         personaEnabled: true,
         isSystem: false,
+        workspace: { mode: 'home' as const },
       };
 
       const scheduleWithAgent: Task = {
@@ -308,6 +363,7 @@ describe('ScheduleRow', () => {
         registeredBy: 'test',
         enabledToolGroups: {},
         mcpServers: [],
+        workspace: { mode: 'home' as const },
         personaEnabled: true,
         isSystem: false,
       };

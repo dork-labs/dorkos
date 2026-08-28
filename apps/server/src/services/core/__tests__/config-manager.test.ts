@@ -54,6 +54,8 @@ import {
   seedFullPowerDecision,
   raiseSchedulerConcurrencyFloor,
   warmClaudeCodeSessionsByDefault,
+  seedMemoryProviderDefault,
+  seedRoomRepoDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -248,6 +250,67 @@ describe('ConfigManager', () => {
       notifyOnTurnCompleteWhileAway: false,
       browserPermissionPrimerDismissed: true,
     });
+  });
+
+  it('lands memory.provider on disk for a config written before memory existed', () => {
+    // The upgrade path over a real file and the real conf/Ajv seam (spec
+    // `agent-memory`, D7; migration key 0.69.0).
+    //
+    // **What this proves, and what it deliberately does not.** `memory` is a
+    // whole TOP-LEVEL section, and conf merges `defaults` under the stored file
+    // and WRITES the result before it runs its first migration key. So the
+    // section lands on disk whether or not `seedMemoryProviderDefault` runs, and
+    // no assertion at this seam can attribute it to the body — the anchor is
+    // unreachable by construction and its docblock says so. Suppress the body
+    // and this test stays green, which is the honest outcome for this shape and
+    // is exactly what `.claude/rules/safe-defaults.md` says to write down rather
+    // than imply otherwise (DOR-1496).
+    //
+    // The claim that IS load-bearing here: an install that predates the section
+    // ends up with `memory.provider: 'builtin'` in `config.json` rather than a
+    // file Ajv condemns, and nothing the person had chosen is disturbed.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.68.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      memory?: { provider?: string };
+      ui?: { theme?: string };
+    };
+    expect(onDisk.memory?.provider).toBe('builtin');
+    expect(onDisk.ui?.theme).toBe('dark');
+    // …and a running DorkOS reads back the same thing, which is a different
+    // claim and not a substitute for the one above.
+    expect(configManager.getDot('memory.provider')).toBe('builtin');
+  });
+
+  it('keeps a memory provider a person already chose across a real load', () => {
+    // The case the anchor's absence guard exists for even though it never
+    // reaches it: an upgrade must never move somebody off a backend they picked.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        memory: { provider: 'acme-vectors' },
+        __internal__: { migrations: { version: '0.68.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.getDot('memory.provider')).toBe('acme-vectors');
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      memory?: { provider?: string };
+    };
+    expect(onDisk.memory?.provider).toBe('acme-vectors');
   });
 
   it('gets top-level config section', () => {
@@ -550,6 +613,63 @@ describe('backfillPromoDismissals migration (sidebar-simplification D4)', () => 
     backfillPromoDismissals(store);
     expect(store.data.ui).toBeUndefined();
   });
+
+  it('a real pre-0.63.0 config file gains ui.promos on disk (full conf path)', () => {
+    // The half the mock store cannot reach, and the half a `getDot` assertion
+    // cannot reach either. `backfillPromoDismissals` was documented for a while
+    // as a no-op anchor — something Ajv's `useDefaults` would supply whether or
+    // not it ran — and no test contradicted that, because none of them looked at
+    // the file. Measured in DOR-1496, the claim is false: conf's `store` getter
+    // re-parses `config.json` on every access and validates the throwaway copy
+    // it is about to return, so `useDefaults` fills `ui.promos` into that copy
+    // and the copy is discarded, and conf's own `defaults` merge is shallow, so
+    // a `ui` object already on disk never gains a new member from it. This body
+    // is the only thing that puts the section on the file.
+    //
+    // The counterfactual, measured both ways: suppress the body and this case
+    // goes red, while the same upgrade boot read back as `store.get('ui').promos`
+    // still answers `{ dismissedIds: [] }`. That in-memory form is what the
+    // "anchor" belief rested on, and it could not have told the two apart.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-promos-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          ui: { theme: 'dark', statusBar: { pins: ['git'] } },
+          __internal__: { migrations: { version: '0.62.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        // The shipped schema, tolerances included — never rebuilt here (see CONF_JSON_SCHEMA).
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.63.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        ui: Record<string, unknown>;
+      };
+      expect(onDisk.ui.promos).toEqual({ dismissedIds: [] });
+      // The upgrade adds a section; it changes nothing the person had set.
+      expect(onDisk.ui.theme).toBe('dark');
+      expect(onDisk.ui.statusBar).toEqual({ pins: ['git'] });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('backfillNotificationDefaults migration (notification-system, DOR-1385)', () => {
@@ -581,6 +701,117 @@ describe('backfillNotificationDefaults migration (notification-system, DOR-1385)
     const store = createMockStore({ notifications: chosen });
     backfillNotificationDefaults(store);
     expect(store.data.notifications).toBe(chosen);
+  });
+});
+
+describe('seedMemoryProviderDefault migration (agent-memory, DOR-1533)', () => {
+  it('seeds the whole section on a config that predates it', () => {
+    // Same shape as `backfillNotificationDefaults` above, and the same caveat:
+    // `memory` is a new TOP-LEVEL section, so conf's own defaults pre-write
+    // lands it on a real file whatever this body does. What is asserted here is
+    // the body's own behaviour in isolation — that it writes the schema's
+    // default rather than a literal of its own, so the table can never document
+    // an intent that differs from what ships.
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    seedMemoryProviderDefault(store);
+    expect(store.data.memory).toEqual({ provider: 'builtin' });
+  });
+
+  it('never overwrites a backend somebody chose (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // moving an operator off the memory backend they configured, which would
+    // point every agent at an empty file and read to them as amnesia.
+    const chosen = { provider: 'acme-vectors' };
+    const store = createMockStore({ memory: chosen });
+    seedMemoryProviderDefault(store);
+    expect(store.data.memory).toBe(chosen);
+  });
+});
+
+describe('seedRoomRepoDefaults migration (project-rooms §3.12, DOR-1591)', () => {
+  it('reserves rooms.repo on a `rooms` block that predates it', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `rooms` block never inherits the new
+    // nested section on its own. Drop the body and this reads `undefined`.
+    const store = createMockStore({ rooms: { turnLimitsEnabled: true, maxAgentDepth: 30 } });
+    seedRoomRepoDefaults(store);
+    expect(store.data.rooms).toEqual({
+      turnLimitsEnabled: true,
+      maxAgentDepth: 30,
+      repo: USER_CONFIG_DEFAULTS.rooms.repo,
+    });
+  });
+
+  it('never overwrites bounds somebody set (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // slackening a ceiling the person tightened, which is exactly the wipe the
+    // operator-only verdict on these paths exists to prevent.
+    const chosen = { enabled: false, maxFileBytes: 1024 };
+    const store = createMockStore({ rooms: { repo: chosen } });
+    seedRoomRepoDefaults(store);
+    expect((store.data.rooms as Record<string, unknown>).repo).toBe(chosen);
+  });
+
+  it('does nothing when there is no `rooms` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `rooms` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    seedRoomRepoDefaults(store);
+    expect(store.data.rooms).toBeUndefined();
+  });
+
+  it('a real pre-0.70.0 config file gains rooms.repo on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach — see
+    // the `backfillPromoDismissals` case above for the measurement this shape
+    // comes from (DOR-1496). `rooms` is a nested-leaf case, so this body is the
+    // ONLY thing that puts `repo` on the file: suppress it and this goes red
+    // while `store.get('rooms').repo` still answers from Ajv's discarded copy.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-room-repo-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          rooms: { turnLimitsEnabled: true, maxAgentDepth: 12, replyWaitMinutes: 25 },
+          __internal__: { migrations: { version: '0.69.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.70.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        rooms: Record<string, unknown>;
+      };
+      expect(onDisk.rooms.repo).toEqual({
+        enabled: true,
+        worktreeReapDays: 14,
+        maxFileBytes: 5 * 1024 * 1024,
+        maxRepoBytes: 500 * 1024 * 1024,
+        maxRoomMdBytes: 24 * 1024,
+        mergeQueueWaitMs: 30_000,
+      });
+      // The upgrade adds a section; it changes nothing the person had set.
+      expect(onDisk.rooms.maxAgentDepth).toBe(12);
+      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -3268,6 +3499,14 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // file from an earlier version, run through the real migration chain.
     // projectVersion is stated explicitly because SERVER_VERSION lags the
     // unreleased key this migration is filed under.
+    //
+    // What this does NOT prove is that `backfillApprovalsDefaults` ran: suppress
+    // that body and every assertion here still passes (measured, DOR-1496).
+    // `approvals` is a whole TOP-LEVEL section, and conf merges `defaults` under
+    // the parsed file and WRITES the result before its first migration key, so
+    // the section reaches disk either way — unlike a nested seed such as
+    // `ui.promos`, where the body is the only writer. The body is pinned by the
+    // mock-store cases above; this one is about the upgrade boot surviving.
     const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
@@ -3294,7 +3533,11 @@ describe('approvals section — standing permissions (DOR-501)', () => {
       migrations: CONFIG_MIGRATIONS,
     });
 
-    expect(store.get('approvals')).toEqual({
+    const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+      approvals: unknown;
+      ui: Record<string, unknown>;
+    };
+    expect(onDisk.approvals).toEqual({
       standingGrants: false,
       trustWindowMinutes: 480,
       standingGrantsVoidBefore: null,
@@ -3303,9 +3546,15 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // setting standing permissions depend on.
     expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
     expect((store.get('server') as { port: number }).port).toBe(5000);
-    expect((store.get('ui') as { theme: string }).theme).toBe('dark');
+    expect(onDisk.ui.theme).toBe('dark');
     // The composite key's other body still ran, so composing did not drop it.
-    expect(store.get('ui')).toMatchObject({ statusBar: { pins: [] } });
+    // Read off the FILE, unlike the rest: `ui.statusBar` is a NESTED seed into a
+    // `ui` object the stored config already has, so `store.get('ui')` would show
+    // it whether or not `migrateStatusBarToPins` ran — Ajv fills it into the copy
+    // conf's getter is about to hand back, and the copy is thrown away. That form
+    // could not have detected the composition being dropped, which is the one
+    // thing this line is here to detect.
+    expect(onDisk.ui.statusBar).toEqual({ pins: [] });
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

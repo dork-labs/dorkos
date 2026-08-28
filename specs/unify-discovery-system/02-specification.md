@@ -579,44 +579,47 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 ### 8. File Changes Summary
 
 **Files to CREATE:**
-| File | Purpose |
-|------|---------|
-| `packages/mesh/src/discovery/unified-scanner.ts` | Unified BFS scanner |
-| `packages/mesh/src/discovery/types.ts` | ScanEvent, ScanProgress, UnifiedScanOptions |
-| `packages/mesh/src/discovery/index.ts` | Barrel exports |
-| `apps/client/src/layers/entities/discovery/model/discovery-store.ts` | Zustand store |
-| `apps/client/src/layers/entities/discovery/model/use-discovery-scan.ts` | Shared hook |
-| `apps/client/src/layers/entities/discovery/ui/CandidateCard.tsx` | Unified discovery card (moved from mesh feature) |
-| `apps/client/src/layers/entities/discovery/index.ts` | Barrel exports |
+
+| File                                                                    | Purpose                                          |
+| ----------------------------------------------------------------------- | ------------------------------------------------ |
+| `packages/mesh/src/discovery/unified-scanner.ts`                        | Unified BFS scanner                              |
+| `packages/mesh/src/discovery/types.ts`                                  | ScanEvent, ScanProgress, UnifiedScanOptions      |
+| `packages/mesh/src/discovery/index.ts`                                  | Barrel exports                                   |
+| `apps/client/src/layers/entities/discovery/model/discovery-store.ts`    | Zustand store                                    |
+| `apps/client/src/layers/entities/discovery/model/use-discovery-scan.ts` | Shared hook                                      |
+| `apps/client/src/layers/entities/discovery/ui/CandidateCard.tsx`        | Unified discovery card (moved from mesh feature) |
+| `apps/client/src/layers/entities/discovery/index.ts`                    | Barrel exports                                   |
 
 **Files to DELETE:**
-| File | Reason |
-|------|--------|
-| `apps/server/src/services/discovery/discovery-scanner.ts` | Replaced by unified scanner |
-| `apps/client/src/layers/features/onboarding/model/use-discovery-scan.ts` | Replaced by shared hook |
-| `apps/client/src/layers/features/onboarding/ui/AgentCard.tsx` | Replaced by shared `CandidateCard` |
-| `apps/client/src/layers/features/mesh/ui/CandidateCard.tsx` | Moved to `entities/discovery/` |
-| `apps/client/src/layers/entities/mesh/model/use-mesh-discover.ts` | Replaced by shared hook |
+
+| File                                                                     | Reason                             |
+| ------------------------------------------------------------------------ | ---------------------------------- |
+| `apps/server/src/services/discovery/discovery-scanner.ts`                | Replaced by unified scanner        |
+| `apps/client/src/layers/features/onboarding/model/use-discovery-scan.ts` | Replaced by shared hook            |
+| `apps/client/src/layers/features/onboarding/ui/AgentCard.tsx`            | Replaced by shared `CandidateCard` |
+| `apps/client/src/layers/features/mesh/ui/CandidateCard.tsx`              | Moved to `entities/discovery/`     |
+| `apps/client/src/layers/entities/mesh/model/use-mesh-discover.ts`        | Replaced by shared hook            |
 
 **Files to MODIFY:**
-| File | Change |
-|------|--------|
-| `packages/mesh/src/discovery-engine.ts` | Delete (logic moved to unified-scanner.ts) |
-| `packages/mesh/src/mesh-core.ts` | `discover()` delegates to `unifiedScan()`, returns `ScanEvent` |
-| `packages/mesh/src/index.ts` | Re-export from `discovery/` |
-| `packages/shared/src/transport.ts` | Add `scan()` method to Transport interface |
-| `packages/shared/src/mesh-schemas.ts` | Add `ScanProgress`, `TransportScanEvent`, `TransportScanOptions` |
-| `apps/client/src/layers/shared/lib/http-transport.ts` | Implement `scan()` via SSE |
-| `apps/client/src/layers/shared/lib/direct-transport.ts` | Implement `scan()` via direct import |
-| `apps/server/src/routes/discovery.ts` | Use unified scanner via meshCore, fix default root |
-| `apps/server/src/routes/mesh.ts` | Filter `ScanEvent` for `candidate` type in batch endpoint |
-| `apps/client/src/layers/features/onboarding/ui/AgentDiscoveryStep.tsx` | Replace AgentCard with CandidateCard, remove checkbox model, use shared hook |
-| `apps/client/src/layers/features/onboarding/index.ts` | Remove `AgentCard` export |
-| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | Delete `DiscoverAgentsSection`, remove "Discover Agents" button, remove `OnboardingAgentCard` import |
-| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx` | Use shared hook, import CandidateCard from entities/discovery |
-| `apps/client/src/layers/entities/mesh/index.ts` | Remove `useDiscoverAgents` export |
-| `apps/server/src/services/core/mcp-tools/mesh-tools.ts` | Filter `ScanEvent` for `candidate` type |
-| `@dorkos/test-utils` | Add `createMockTransport` scan method |
+
+| File                                                                   | Change                                                                                               |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `packages/mesh/src/discovery-engine.ts`                                | Delete (logic moved to unified-scanner.ts)                                                           |
+| `packages/mesh/src/mesh-core.ts`                                       | `discover()` delegates to `unifiedScan()`, returns `ScanEvent`                                       |
+| `packages/mesh/src/index.ts`                                           | Re-export from `discovery/`                                                                          |
+| `packages/shared/src/transport.ts`                                     | Add `scan()` method to Transport interface                                                           |
+| `packages/shared/src/mesh-schemas.ts`                                  | Add `ScanProgress`, `TransportScanEvent`, `TransportScanOptions`                                     |
+| `apps/client/src/layers/shared/lib/http-transport.ts`                  | Implement `scan()` via SSE                                                                           |
+| `apps/client/src/layers/shared/lib/direct-transport.ts`                | Implement `scan()` via direct import                                                                 |
+| `apps/server/src/routes/discovery.ts`                                  | Use unified scanner via meshCore, fix default root                                                   |
+| `apps/server/src/routes/mesh.ts`                                       | Filter `ScanEvent` for `candidate` type in batch endpoint                                            |
+| `apps/client/src/layers/features/onboarding/ui/AgentDiscoveryStep.tsx` | Replace AgentCard with CandidateCard, remove checkbox model, use shared hook                         |
+| `apps/client/src/layers/features/onboarding/index.ts`                  | Remove `AgentCard` export                                                                            |
+| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx`                | Delete `DiscoverAgentsSection`, remove "Discover Agents" button, remove `OnboardingAgentCard` import |
+| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx`            | Use shared hook, import CandidateCard from entities/discovery                                        |
+| `apps/client/src/layers/entities/mesh/index.ts`                        | Remove `useDiscoverAgents` export                                                                    |
+| `apps/server/src/services/core/mcp-tools/mesh-tools.ts`                | Filter `ScanEvent` for `candidate` type                                                              |
+| `@dorkos/test-utils`                                                   | Add `createMockTransport` scan method                                                                |
 
 ## User Experience
 

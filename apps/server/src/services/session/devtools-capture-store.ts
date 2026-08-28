@@ -48,8 +48,7 @@ export interface DevtoolsScreenshotEntry {
  * injected rasterizer).
  */
 export type ScreenshotOutcome =
-  | { ok: true; screenshot: DevtoolsScreenshotEntry }
-  | { ok: false; error: string };
+  { ok: true; screenshot: DevtoolsScreenshotEntry } | { ok: false; error: string };
 
 /** An entry retained with its approximate serialized size (byte accounting). */
 interface Sized<T> {

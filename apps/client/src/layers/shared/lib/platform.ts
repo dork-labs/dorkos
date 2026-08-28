@@ -3,6 +3,23 @@ export interface PlatformAdapter {
   isEmbedded: boolean;
   /** Open a file by path (no-op in standalone) */
   openFile: (path: string) => Promise<void>;
+  /**
+   * Whether this window has a searchable copy of the message history behind it
+   * (DOR-1563).
+   *
+   * **A capability, not a shell.** It used to be answered by `isEmbedded`, which
+   * was right only for as long as no embed could open the index — and that
+   * stopped being true when the Obsidian plugin started shipping SQLite. A
+   * browser always has one, because there is a server on the other end of the
+   * Transport. An embed has one only if it opened a database at bootstrap, which
+   * it can fail to do for reasons that have nothing to do with being an embed: a
+   * DorkOS that has never run, a database older than message search, an Obsidian
+   * whose Electron the plugin carries no SQLite build for.
+   *
+   * Optional so every host that predates the question keeps the answer it had —
+   * see {@link platformCanSearchMessages} for the fallback and why it is safe.
+   */
+  canSearchMessages?: boolean;
 }
 
 // Default: standalone web adapter
@@ -21,6 +38,25 @@ export function setPlatformAdapter(adapter: PlatformAdapter) {
 /** Return the current platform adapter. */
 export function getPlatform(): PlatformAdapter {
   return currentAdapter;
+}
+
+/**
+ * Whether the message-search surfaces should exist in this window (DOR-1563).
+ *
+ * **The gate for ⌘⇧F and for ⌘K's hand-off row.** A surface that cannot do the
+ * thing should not be offered: a search box with no index behind it takes two
+ * characters and a debounce to admit it, states four kinds of coverage that are
+ * all false, and is advertised from the palette on the way in.
+ *
+ * A host that does not answer falls back to "a browser can, an embed cannot",
+ * which is exactly what this used to be — so every caller that predates the
+ * capability keeps the answer it already had, and only a host that has actually
+ * opened an index says otherwise.
+ *
+ * @returns `true` when there is something behind the search box.
+ */
+export function platformCanSearchMessages(): boolean {
+  return currentAdapter.canSearchMessages ?? !currentAdapter.isEmbedded;
 }
 
 /** Whether the current platform is macOS/iOS (used for shortcut display). */

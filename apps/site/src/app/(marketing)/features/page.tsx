@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { features, PRODUCT_LABELS, type FeatureProduct } from '@/layers/features/marketing';
@@ -44,12 +45,19 @@ export default async function FeaturesPage(props: {
         <header className="mb-12">
           <h1 className="text-charcoal font-mono text-4xl font-bold tracking-tight">Features</h1>
           <p className="text-warm-gray mt-3 max-w-2xl text-lg">
-            Mission control for every coding agent you run: the full catalog, organized by what each
-            part does.
+            Everything DorkOS does, grouped by the part of your day it helps with.
           </p>
         </header>
 
         <FeatureCatalog features={features} initialProduct={initialProduct} />
+
+        <p className="text-warm-gray-light mt-12 text-sm">
+          Weighing DorkOS against something else?{' '}
+          <Link href="/compare" className="text-brand-orange hover:text-charcoal transition-smooth">
+            See the comparisons
+          </Link>
+          .
+        </p>
       </div>
 
       {/* Closing exit ramp — the established install pattern */}

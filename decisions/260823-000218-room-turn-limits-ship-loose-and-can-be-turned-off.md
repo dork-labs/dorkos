@@ -1,7 +1,7 @@
 ---
 id: 260823-000218
 title: Room turn limits ship loose, and a person may turn them off entirely
-status: proposed
+status: accepted
 created: 2026-08-23
 spec: null
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed.
+Accepted. Verified in code: `packages/shared/src/config-schema.ts` sets `maxAgentDepth: 30`, `maxTurnsPerAgentPerCascade: 10`, `maxAutomaticTurnsPerRoomPerHour: 1000`, `maxAutomaticTurnsTotalPerHour: 5000`, and `turnLimitsEnabled: true` by default — matching this decision's table exactly.
 
 ## Context
 

@@ -161,6 +161,7 @@ function seededSelfEditProse(): string {
 async function seedSelfEditAgent(sandbox: EvalSandbox): Promise<void> {
   const traitBlock = renderTraits(DEFAULT_TRAITS);
   const manifest: AgentManifest = {
+    workspace: { mode: 'home' },
     id: '01JQXYZDORKBOTSELFEDIT0001',
     name: SELF_EDIT_AGENT_SLUG,
     displayName: 'DorkBot',
@@ -171,7 +172,7 @@ async function seedSelfEditAgent(sandbox: EvalSandbox): Promise<void> {
     namespace: 'system',
     behavior: { responseMode: 'always' },
     traits: { ...DEFAULT_TRAITS },
-    conventions: { soul: true, nope: true, dorkosKnowledge: true },
+    conventions: { soul: true, nope: true, memory: true, dorkosKnowledge: true },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-evals',
     personaEnabled: true,

@@ -1,0 +1,193 @@
+name: dependabot-lockfile-format
+
+# Reformats `pnpm-lock.yaml` on Dependabot PRs so the required `typecheck`
+# workflow's formatting gate (DOR-485) doesn't fail on them. DOR-1554.
+#
+# THE PROBLEM: `pnpm install`/`pnpm update` regenerates pnpm-lock.yaml in
+# pnpm's own compact style (single-line flow mappings, double-quoted keys),
+# not Prettier's. `pnpm format:check` (`prettier --check .`) in
+# typecheck.yml gates every PR on the WHOLE repo being Prettier-formatted,
+# lockfile included — see the "ALSO RUNS THE FORMATTING GATE (DOR-485)"
+# comment there for why that gate exists and why it lives in a required
+# check rather than its own workflow. Dependabot always regenerates the
+# lockfile compact, so every Dependabot PR lands red on `typecheck`, and
+# Dependabot has no way to run `pnpm format` on its own output. Observed on
+# PR #1286: a routine electron bump, red on nothing but this, diffing
+# 3,430/-8,893 lines of pure whitespace noise against the real change.
+#
+# THE ALTERNATIVE CONSIDERED AND REJECTED: add `pnpm-lock.yaml` to
+# `.prettierignore` and stop formatting it at all. That's simpler and has
+# no CI-workflow surface, but it was rejected: the formatted style is what
+# keeps a real dependency bump reviewable — a single-package patch bump is a
+# 3-6 line diff formatted, the same bump is thousands of lines of
+# quote/indentation churn compact (verified: PR #1286 is 3,430+/-8,893- for
+# one package). That reviewability paid for itself repeatedly during this
+# repo's August 2026 dependency-upgrade programs. This workflow is the
+# smaller cost.
+#
+# WHY `pull_request_target`, NOT `pull_request`: GitHub gives workflows
+# triggered by Dependabot via `push`, `pull_request`,
+# `pull_request_review`, or `pull_request_review_comment` a **read-only**
+# `GITHUB_TOKEN` with **no access to repository secrets at all** —
+# regardless of what `permissions:` this file declares (GitHub's own
+# troubleshooting doc: "the only secrets available to the workflow are
+# Dependabot secrets... GitHub Actions secrets are not available"). A
+# `pull_request`-triggered version of this job could never authenticate a
+# push, PAT or not. `pull_request_target` is GitHub's documented escape
+# from exactly this restriction: it runs with the base branch's workflow
+# definition (never a PR-modified one) and normal token/secret access.
+#
+# WHAT THAT TRADES AWAY, AND HOW THIS JOB STAYS SAFE ANYWAY:
+# `pull_request_target` is the trigger behind most "PR pwns CI" writeups,
+# because the usual mistake is checking out PR HEAD and then BUILDING it —
+# running `npm install`/test scripts/etc. against attacker-controlled code
+# while holding real secrets and write access. This job checks out PR HEAD
+# too (needed, see below), but never executes anything the PR authored:
+#
+#   - The PR's own `pnpm-lock.yaml` is passed to Prettier as YAML *text*
+#     to reformat, not installed. No `pnpm install`/`--frozen-lockfile`
+#     runs here, so none of the PR's (Dependabot-proposed, but still
+#     externally-influenced) dependency graph's postinstall scripts ever
+#     execute in this job. That matters because THIS job holds
+#     MERGE_TAIL_TOKEN; typecheck.yml's `pull_request` job also runs
+#     `pnpm install --frozen-lockfile` against the same untrusted lockfile,
+#     but only ever holds the secret-less, read-only Dependabot token —
+#     see above.
+#   - Prettier itself runs via `pnpm dlx`, pinned to an exact version
+#     fetched fresh from the npm registry — not the version (if any) the
+#     PR's own lockfile would resolve — so a compromised transitive
+#     dependency in the PR's proposed graph can't substitute itself in.
+#   - No `--config`/`.prettierrc` is loaded (which would need
+#     `prettier-plugin-tailwindcss` on the module path — irrelevant to
+#     YAML and not worth installing here). The four Prettier options that
+#     actually affect YAML output are passed explicitly on the CLI instead
+#     of read from a file, so nothing PR-controlled is loaded as config.
+#     Verified byte-identical to `pnpm exec prettier --config .prettierrc`
+#     against this repo's real lockfile before relying on it.
+#   - The actor gate below keeps this job from ever running, with secrets,
+#     against a human-authored (and therefore adversarial-fork-capable) PR.
+#
+# WHY THE ACTOR GATE: `pull_request_target` fires for every PR touching
+# `pnpm-lock.yaml`, not just Dependabot's. Scoping to
+# `github.event.pull_request.user.login == 'dependabot[bot]'` keeps the
+# elevated-permission path exclusive to the one PR author this job trusts
+# not to hand-author `pnpm-lock.yaml` content designed to attack the
+# formatter. (`dependabot[bot]`'s login can't be spoofed by an external
+# contributor.)
+#
+# WHY `secrets.MERGE_TAIL_TOKEN`, NOT `github.token`, FOR THE PUSH: this is
+# not a style choice, it changes whether the fix actually un-blocks the PR.
+# GitHub does not create new workflow runs for events triggered by the
+# default `GITHUB_TOKEN` (documented, and load-bearing for merge-tail.yml's
+# own design — see its header). If this job pushed the reformatted commit
+# with `github.token`, the push would silently succeed but the
+# `typecheck` `pull_request` trigger would NOT re-fire on the new commit —
+# the required check would keep showing the OLD (failing) commit's result,
+# or nothing at all, and the PR would be stuck exactly as before, just less
+# visibly. A push authenticated with a real PAT is not treated as
+# actions-originated and does re-trigger `pull_request` workflows normally,
+# which is what actually flips `typecheck` green. `MERGE_TAIL_TOKEN` is
+# this repo's one existing "PAT with repo-write scope for a bot-shaped
+# job" secret (see merge-tail.yml); reusing it avoids provisioning a
+# second credential for the same class of problem. If it is ever unset,
+# this job fails loudly (see the guard step) rather than pushing an inert
+# commit that looks like a fix and isn't — same philosophy merge-tail.yml
+# uses for its own missing-PAT case.
+#
+# IDEMPOTENT BY CONSTRUCTION: reformatting an already-formatted lockfile
+# is a no-op (verified), so the second run this job's own push triggers
+# (synchronize, same path filter) finds nothing to commit and exits at the
+# `git diff --quiet` check below. No self-trigger loop, no extra commit.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'pnpm-lock.yaml'
+
+# One in flight per PR — if two events land in quick succession (e.g. a
+# force-push right after open), the later run's format+push subsumes the
+# earlier one; no need for both to race a push at the same branch.
+concurrency:
+  group: dependabot-lockfile-format-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # Kept in sync with the `prettier`/`prettier-plugin-tailwindcss` versions
+  # in the root package.json. Only the plain `prettier` version matters for
+  # correctness (see the no-`--config` note above); bump this alongside any
+  # `prettier` upgrade so a future PR isn't reformatted with a stale binary.
+  PRETTIER_VERSION: '3.9.6'
+
+jobs:
+  format-lockfile:
+    # Elevated-permission gate: only Dependabot's own PRs reach a job that
+    # holds `contents: write` + `MERGE_TAIL_TOKEN` under `pull_request_target`.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check MERGE_TAIL_TOKEN is available
+        run: |
+          if [ -z "${{ secrets.MERGE_TAIL_TOKEN }}" ]; then
+            echo "::error::MERGE_TAIL_TOKEN is not set. Pushing the reformatted lockfile with the default GITHUB_TOKEN would not re-trigger the typecheck required check (GitHub suppresses workflow runs for GITHUB_TOKEN-authored pushes), leaving the PR stuck red with no visible fix. Add a repo-scoped PAT as MERGE_TAIL_TOKEN (same secret merge-tail.yml uses) to enable this workflow."
+            exit 1
+          fi
+
+      # Check out the PR's exact head commit (a SHA, not the floating
+      # branch) with the PAT so the later push is pre-authenticated. Nothing
+      # from this checkout is ever executed — see the header comment.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          token: ${{ secrets.MERGE_TAIL_TOKEN }}
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # No `pnpm install` — deliberately. See header: this job never installs
+      # or executes the PR's proposed dependency graph, only reformats its
+      # lockfile as text via a pinned, registry-fetched Prettier.
+      - name: Reformat pnpm-lock.yaml with Prettier
+        run: |
+          pnpm dlx "prettier@${PRETTIER_VERSION}" \
+            --no-config \
+            --tab-width 2 \
+            --print-width 100 \
+            --end-of-line lf \
+            --single-quote \
+            --write pnpm-lock.yaml
+
+      - name: Commit and push if changed
+        env:
+          # Routed through an env var rather than interpolated directly into
+          # the script (actionlint flags the direct form): a branch name is
+          # PR-author-influenced text and, unquoted in an inline expression,
+          # is a script-injection vector. `head.ref` is trustworthy here
+          # (Dependabot branch names, and this job already gates on
+          # `dependabot[bot]` authorship) but the indirection costs nothing.
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "pnpm-lock.yaml already Prettier-formatted — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          # Two `-m` flags rather than one embedded multi-line string: keeps
+          # every line of this step at the same YAML block-scalar indent
+          # (a dedented line here would break the `run: |` block).
+          git commit \
+            -m "style: prettier-format pnpm-lock.yaml" \
+            -m "Dependabot regenerates this file in pnpm's compact style; this repo's required typecheck workflow gates on Prettier formatting (DOR-485). Reformatted automatically by .github/workflows/dependabot-lockfile-format.yml (DOR-1554)."
+          # Push to the PR's actual branch name, not the detached HEAD this
+          # job checked out (see the checkout step: we checked out a SHA).
+          git push origin "HEAD:${HEAD_REF}"

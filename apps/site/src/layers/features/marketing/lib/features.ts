@@ -9,17 +9,11 @@ export type FeatureStatus = 'ga' | 'beta' | 'alpha' | 'coming-soon';
 
 /**
  * DorkOS product subsystem — used for tab filtering on /features.
- * `runtimes` leads because the multi-runtime cockpit is the headline story;
- * `marketplace` is the distribution flywheel.
+ * `runtimes` leads because running every agent tool in one place is the headline
+ * story; `marketplace` is the distribution flywheel.
  */
 export type FeatureProduct =
-  | 'runtimes'
-  | 'console'
-  | 'tasks'
-  | 'relay'
-  | 'marketplace'
-  | 'mesh'
-  | 'core';
+  'runtimes' | 'console' | 'tasks' | 'relay' | 'marketplace' | 'mesh' | 'core';
 
 /**
  * Display labels for each product tab on /features.
@@ -130,7 +124,12 @@ export type ProductSurface =
   | 'canvas'
   | 'canvas-editing'
   | 'chat-streaming'
+  // Internal media key only, never rendered as words. DOR-1517 retired
+  // "cockpit" from everything a visitor reads, but this name keys
+  // `cockpit-light.png` in `public/product/manifest.json` and in every
+  // archived per-version manifest, so renaming it would orphan that media.
   | 'cockpit'
+  | 'control-center'
   | 'gen-ui-tictactoe'
   | 'gen-ui-widgets'
   | 'marketplace'
@@ -253,21 +252,21 @@ export interface Feature {
 export const features: Feature[] = [
   // === RUNTIMES ===
   {
-    slug: 'multi-runtime-cockpit',
-    name: 'Multi-runtime Cockpit',
+    slug: 'every-agent-one-place',
+    name: 'Every Agent, One Place',
     product: 'runtimes',
     category: 'agent-control',
-    tagline: 'Run Claude Code, Codex, and OpenCode from one screen, any session',
+    tagline: 'Claude Code, Codex, and OpenCode, all on one screen',
     description:
       'Claude Code, Codex, and OpenCode are three different AI coding tools. DorkOS puts all three in one place, so you pick the right one for each job.',
     status: 'ga',
     featured: true,
     benefits: [
       'Run Claude Code, Codex, and OpenCode side by side',
-      'Pick a different tool per session, not just at setup',
-      'Switch tools without leaving your screen',
-      'See every session in one list, with how much room each has left before it needs a fresh start',
-      "Never build your whole workflow around one company's tool",
+      'Pick a different tool for each job, not just at setup',
+      'One list shows every session and how much room it has left',
+      'They write the code, send the email, and plan the week',
+      "Never build your week around one company's tool",
     ],
     moment:
       'You open the same screen you always do. One session runs on Claude Code, the next on Codex, a third on OpenCode, and you never had to leave the tab to switch.',
@@ -279,6 +278,27 @@ export const features: Feature[] = [
     docsUrl: '/docs/guides/runtimes',
     relatedFeatures: ['chat-interface', 'session-durability', 'agent-identity'],
     sortOrder: 1,
+  },
+  {
+    slug: 'runtime-accounts',
+    name: 'Claude Accounts',
+    product: 'runtimes',
+    category: 'agent-control',
+    tagline: 'Bill one agent, or one chat, to a different Claude account',
+    description:
+      'Work and personal on one machine gets awkward. Add more than one Claude account, then say which one an agent bills, or which one a single chat bills.',
+    status: 'ga',
+    benefits: [
+      'Add more than one Claude account in Settings',
+      'Pin an agent to the account that should pay for it',
+      'Send one chat to a different account, just this once',
+      'Switch accounts without restarting anything',
+      'Once a chat has started, its account never changes',
+    ],
+    moment:
+      'Your work agent bills the work account, and your side project bills your own. You choose once per agent, and every session it starts follows that choice.',
+    relatedFeatures: ['every-agent-one-place', 'control-center', 'workspaces'],
+    sortOrder: 2,
   },
 
   // === CONSOLE ===
@@ -338,19 +358,20 @@ export const features: Feature[] = [
   },
   {
     slug: 'mobile',
-    name: 'Mobile Cockpit',
+    name: 'DorkOS on Your Phone',
     product: 'console',
     category: 'agent-control',
     tagline: 'Real work from your phone, not just a screen to watch',
     description:
-      'Most tools give your phone a read-only view. The Mobile Cockpit runs real sessions in any phone browser: watch live, and approve agent actions on the go.',
+      'Most tools give your phone a read-only view. DorkOS runs real sessions in any phone browser, so you can watch live and answer your agents on the go.',
     status: 'ga',
     featured: true,
     benefits: [
       'Watch sessions stream live from your phone',
       'Approve or say no to an agent action on the go',
-      'Works the same in any phone browser',
-      'No app to download',
+      'Add DorkOS to your home screen, like an app',
+      'Get a push alert when an agent needs you',
+      'Stop a run from your phone if it goes wrong',
     ],
     moment:
       "You're on the train when an agent stops to ask before touching something risky. You read what it wants to do on your phone, say yes, and it keeps going.",
@@ -369,7 +390,7 @@ export const features: Feature[] = [
     category: 'infrastructure',
     tagline: 'Refresh, restart, reconnect: your session is right where you left it',
     description:
-      'Close your laptop, reopen on your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives a refresh.',
+      'Refresh the tab, swap to your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives the interruption.',
     status: 'ga',
     featured: true,
     benefits: [
@@ -379,7 +400,7 @@ export const features: Feature[] = [
       'Every open tab stays in sync automatically',
     ],
     moment:
-      'You close the laptop mid-run and finish dinner. Reopen the tab on your phone and the session is exactly where it was, every message still in place.',
+      'You lose Wi-Fi mid-run and the tab goes quiet. A minute later it reconnects, and the session is exactly where it was, every message still in place.',
     media: {
       surface: 'chat-streaming',
       alt: 'A DorkOS session streaming output that survives a refresh or reconnect',
@@ -387,7 +408,7 @@ export const features: Feature[] = [
       crop: 'top',
     },
     docsUrl: '/docs/concepts/sessions',
-    relatedFeatures: ['chat-interface', 'multi-runtime-cockpit', 'canvas'],
+    relatedFeatures: ['chat-interface', 'every-agent-one-place', 'canvas'],
     sortOrder: 3,
   },
   {
@@ -434,6 +455,7 @@ export const features: Feature[] = [
     ],
     moment:
       'Your agent says the tests pass. You pop open the Terminal tab, run one command to double-check, and close it, without ever leaving the session.',
+    docsUrl: '/docs/guides/workbench',
     relatedFeatures: ['canvas', 'chat-interface'],
     sortOrder: 5,
   },
@@ -449,7 +471,7 @@ export const features: Feature[] = [
     benefits: [
       'See the exact file and action before you decide',
       'Approve one action, or approve everything for a session',
-      'Answer from anywhere in DorkOS: the header, the sidebar, or the home screen',
+      'Answer from the header, the sidebar, or the home screen',
       'If you step away, the agent keeps going after a short wait',
       'Get the same prompt in Slack or Telegram',
     ],
@@ -474,11 +496,11 @@ export const features: Feature[] = [
       'Removing a package, deleting a scheduled task, removing an agent: before any of those run, DorkOS puts a card in front of you and waits for your answer.',
     status: 'ga',
     benefits: [
-      'A marker in the header when an agent is waiting',
       'Read what would run, in plain words, before deciding',
       'One yes covers one exact action, then it is spent',
-      'Requests run out after two hours, so none linger',
-      'Turn on sign-in so only your account can answer a card',
+      'Answer from a Telegram or Slack message, not just the app',
+      'Only the person you name gets asked, not every chat',
+      'Say yes right from the notification banner on your Mac',
     ],
     moment:
       'Your agent wants to remove a package, saved data and all. A marker appears in the header wherever you happen to be, you read the one sentence describing it, and you decide.',
@@ -522,6 +544,7 @@ export const features: Feature[] = [
       'Every past answer is saved in the conversation',
       'The agent picks up the moment you answer',
     ],
+    docsUrl: '/docs/concepts/answering-agents',
     relatedFeatures: ['chat-interface', 'tool-approval'],
     sortOrder: 6,
   },
@@ -560,7 +583,7 @@ export const features: Feature[] = [
     moment:
       'You open a session for the API project and the right agent is already loaded. You never had to point it at the folder again; the workspace remembered for you.',
     docsUrl: '/docs/guides/workspaces',
-    relatedFeatures: ['chat-interface', 'multi-runtime-cockpit'],
+    relatedFeatures: ['chat-interface', 'every-agent-one-place'],
     sortOrder: 8,
   },
   {
@@ -610,35 +633,172 @@ export const features: Feature[] = [
     relatedFeatures: ['team-room', 'tool-approval', 'task-scheduler', 'question-prompts'],
     sortOrder: 10,
   },
+  {
+    slug: 'control-center',
+    name: 'Control Center',
+    product: 'console',
+    category: 'agent-control',
+    tagline: "Check and change every agent's power settings, in one panel",
+    description:
+      'Power settings hide across Settings, Runtimes, and Tasks. Control Center puts every dial in one panel, open with ⌘⇧L from anywhere in DorkOS.',
+    status: 'ga',
+    benefits: [
+      'See where new sessions stop for approval, at a glance',
+      'Let agents message across projects with one switch',
+      "Make 'stop asking' stick for one agent, one action",
+      'Keep agents warm between messages, and cap concurrent scheduled runs',
+      'An Exceptions list links straight to what to fix',
+    ],
+    moment:
+      "You open Control Center to check who's running at full power. Two sessions show up in Exceptions, each one a click from the setting that put them there.",
+    media: {
+      surface: 'control-center',
+      alt: 'The DorkOS Control Center panel open over the main screen, showing where new sessions stop for approval and the switches under it',
+      crop: 'top',
+    },
+    relatedFeatures: [
+      'tool-approval',
+      'action-approvals',
+      'every-agent-one-place',
+      'task-scheduler',
+    ],
+    sortOrder: 11,
+  },
+  {
+    slug: 'notification-inbox',
+    name: 'Inbox',
+    product: 'console',
+    category: 'agent-control',
+    tagline: 'One list of everything waiting on you, and everything that happened',
+    description:
+      'Alerts spread across tabs are easy to miss. One bell holds every question, approval and finished run, and what you have read stays read on every device.',
+    status: 'ga',
+    benefits: [
+      'One bell holds every question, approval, and finished run',
+      'Read it on your laptop, and your phone agrees',
+      'Things waiting on you sit above things that merely happened',
+      'Press ⌘⇧Y to jump to the next thing waiting on you',
+      'Every agent has its own page of alerts, if you want it',
+    ],
+    moment:
+      'You come back to a bell with a number on it. Two agents finished, one is waiting on an answer, and the waiting one is at the top. You clear it on your laptop, and your phone already agrees.',
+    relatedFeatures: ['notifications', 'escalation-ladder', 'action-approvals', 'activity-feed'],
+    sortOrder: 12,
+  },
+  {
+    slug: 'escalation-ladder',
+    name: 'Alerts That Reach You',
+    product: 'console',
+    category: 'agent-control',
+    tagline: 'If nobody answers, the alert moves to your phone',
+    description:
+      'An agent stuck waiting on you is easy to miss. When a question sits unanswered for a few minutes, DorkOS sends it to your phone and your chat apps.',
+    status: 'ga',
+    benefits: [
+      'A question nobody answers rings your phone',
+      'You pick the wait: one, two, five, or fifteen minutes',
+      'Turn the chasing off entirely if you would rather not be chased',
+      'Answering inside DorkOS calls off the chase',
+      'A daily Shift Report sums up the last day',
+    ],
+    moment:
+      'You step away and miss a question. Two minutes later your phone buzzes with it. You open DorkOS, answer, and the chasing stops.',
+    relatedFeatures: ['notification-inbox', 'notifications', 'mobile', 'telegram-adapter'],
+    sortOrder: 13,
+  },
+  {
+    slug: 'activity-feed',
+    name: 'Activity Feed',
+    product: 'console',
+    category: 'visualization',
+    tagline: 'A running record of what your agents did, and when',
+    description:
+      'With several agents on one machine, "something changed" is no answer. The feed lists what happened, grouped by day, with the past week drawn at the top.',
+    status: 'ga',
+    benefits: [
+      'See what happened, newest first, grouped by day',
+      'Narrow it to tasks, messages, agents, settings, or system',
+      'A small bar chart shows the last seven days at a glance',
+      'A banner catches you up on what changed since your last visit',
+      'Send someone a filtered view: the address carries the filter',
+    ],
+    moment:
+      'You open the feed after a day away. A bar chart shows the week, a banner sums up what changed since you last looked, and the list below says who did what.',
+    relatedFeatures: ['agent-attribution', 'notification-inbox', 'team-room'],
+    sortOrder: 14,
+  },
+  {
+    slug: 'message-search',
+    name: 'Message Search',
+    product: 'console',
+    category: 'discovery',
+    tagline: 'Find any message by what was said in it, across every agent',
+    description:
+      'You remember the sentence, not where you said it. One search reads your channels, your DMs, and every Claude Code, Codex and OpenCode conversation.',
+    status: 'ga',
+    benefits: [
+      'Press Cmd-Shift-F and type what you remember somebody saying',
+      'Covers rooms, Claude Code, Codex and OpenCode at once',
+      'Reads chats you had outside DorkOS, in the plain CLI',
+      'Click a result and land on that exact message',
+      'Never indexes tool output or file contents, only what was said',
+    ],
+    moment:
+      'You half-remember deciding something about retries, weeks ago, in some chat. One search finds the sentence, and one click puts you on the line that said it.',
+    relatedFeatures: ['team-room', 'chat-interface', 'agent-memory', 'activity-feed'],
+    sortOrder: 15,
+  },
 
   // === TASKS ===
   {
     slug: 'task-scheduler',
-    name: 'Tasks Scheduler',
+    name: 'Scheduled Tasks',
     product: 'tasks',
     category: 'scheduling',
     tagline: "Schedule agents to run on their own, so they work while you don't",
     description:
-      'Stop manually starting every agent run. Tasks lets you schedule any agent on any timetable, with a visual builder, ready-made presets, and a full history.',
+      'Stop manually starting every agent run. A scheduled task puts any agent on any timetable, with a visual builder, ready-made presets, and a full history.',
     status: 'ga',
     featured: true,
     benefits: [
       'Build a schedule by picking days and times, no code needed',
-      'Ready-made presets for common jobs, like a nightly test run',
-      'See every run: its status, how long it took, and what happened',
-      'Schedules respect your timezone automatically',
-      'Point each schedule at the right project folder',
+      'Every schedule says which agent asked for it, and why',
+      'A scheduled run never gets more power than you allowed',
+      'See every run: its status, how long it took, what happened',
+      'A crash or a restart does not lose your schedules',
     ],
     moment:
       'At 2:47am a dependency alert lands. Your nightly check has already read it, opened the fix, and left a note waiting for you at breakfast.',
     docsUrl: '/docs/guides/task-scheduler',
     media: {
       surface: 'tasks',
-      alt: 'The Tasks list showing schedules with their next run time and history',
+      alt: 'The Scheduled tasks list showing each task with its next run time and history',
       crop: 'top',
     },
     relatedFeatures: ['relay-message-bus', 'mesh-agent-discovery'],
     sortOrder: 1,
+  },
+  {
+    slug: 'schedule-approvals',
+    name: 'Schedule Approvals',
+    product: 'tasks',
+    category: 'scheduling',
+    tagline: 'An agent has to ask before it books itself a repeating job',
+    description:
+      'An agent that can schedule itself is a surprise bill waiting to happen. Here it has to ask first, and you see who asked, why, and what would run.',
+    status: 'ga',
+    benefits: [
+      'See which agent asked, and the reason it gave',
+      'Read the exact instructions before you agree',
+      'See the next three run times, worked out for you',
+      'Run it once, supervised, before you agree to it forever',
+      'Reject by mistake and you get a few seconds to undo',
+    ],
+    moment:
+      'An agent proposes a nightly clean-up. The card names it, quotes the reason it gave, shows the next three run times, and lets you try it once before you decide.',
+    docsUrl: '/docs/guides/task-scheduler',
+    relatedFeatures: ['task-scheduler', 'action-approvals', 'control-center', 'notification-inbox'],
+    sortOrder: 2,
   },
 
   // === RELAY ===
@@ -655,8 +815,8 @@ export const features: Feature[] = [
     benefits: [
       'Agents can message you, or message each other',
       'If an agent is offline, the message waits and delivers later',
-      'See every message that was sent, and when',
-      'Add new platforms through plugins, not just Telegram and Slack',
+      'Cap how often your agents may ping you, so it stays quiet',
+      'See every message that was sent, and every one that failed',
       'Point specific agents at specific chats',
     ],
     moment:
@@ -673,12 +833,12 @@ export const features: Feature[] = [
     tagline: 'Talk with several agents at once, in channels and direct messages',
     description:
       'One chat with one agent only goes so far. Rooms give you channels and direct messages where you and several agents talk in one place.',
-    status: 'alpha',
+    status: 'ga',
     benefits: [
       'Make a channel and invite the agents you want',
       'Ask one agent, or the whole room, in one message',
       'Reply in a thread so a side topic stays put',
-      'See who is working on your message, and for how long',
+      'Set how often agents can reply, per room, or turn it off',
       'Direct-message a single agent when it is just the two of you',
     ],
     moment:
@@ -688,9 +848,31 @@ export const features: Feature[] = [
       'relay-message-bus',
       'team-room',
       'mesh-agent-discovery',
-      'agent-attribution',
+      'room-reply-limits',
     ],
     sortOrder: 2,
+  },
+  {
+    slug: 'room-reply-limits',
+    name: 'Reply Limits',
+    product: 'relay',
+    category: 'agent-control',
+    tagline: 'Agents talk to each other without running up a bill',
+    description:
+      'Agents answering agents can loop all night. Four dials cap the replies they may trade: in a row, from one agent, per room each hour, and everywhere each hour.',
+    status: 'ga',
+    benefits: [
+      'Cap how many replies your agents may trade in a row',
+      'Cap how much of one conversation a single agent may take',
+      'Cap replies per room each hour, and across every room',
+      'Set the dials once, or set them room by room',
+      'No room can skip the hourly cap that covers everything',
+    ],
+    moment:
+      'Two agents get into a back-and-forth in a channel. The chain hits the limit you set, DorkOS stops it there, and leaves a note in the room saying why.',
+    docsUrl: '/docs/concepts/rooms',
+    relatedFeatures: ['rooms', 'relay-message-bus', 'control-center'],
+    sortOrder: 3,
   },
   {
     slug: 'slack-adapter',
@@ -700,7 +882,7 @@ export const features: Feature[] = [
     tagline: 'Chat with your agents in Slack, with no tab-switching',
     description:
       'The Slack adapter connects Relay to your Slack workspace. Send messages, get updates, and approve agent actions without ever leaving Slack.',
-    status: 'beta',
+    status: 'ga',
     benefits: [
       'Message agents from any Slack channel',
       'Watch agent replies stream in, right in Slack',
@@ -708,7 +890,7 @@ export const features: Feature[] = [
       'Point specific agents at specific Slack channels',
     ],
     relatedFeatures: ['relay-message-bus', 'tool-approval'],
-    sortOrder: 3,
+    sortOrder: 4,
   },
   {
     slug: 'telegram-adapter',
@@ -726,7 +908,7 @@ export const features: Feature[] = [
       'Works anywhere: check on agents from your phone',
     ],
     relatedFeatures: ['relay-message-bus', 'tool-approval'],
-    sortOrder: 4,
+    sortOrder: 5,
   },
 
   // === MARKETPLACE ===
@@ -744,7 +926,7 @@ export const features: Feature[] = [
       'Browse agents, plugins, skills, and connectors',
       'Install from the screen or straight from the command line',
       'Each install stays scoped to one project, so nothing leaks',
-      'Tools like Claude Code and Cursor can browse and install from it too',
+      'Claude Code and Cursor can browse and install from it too',
     ],
     moment:
       "You read about a code-review agent over coffee and install it before the cup is empty. One command later, it's running, with nothing to set up by hand.",
@@ -754,8 +936,30 @@ export const features: Feature[] = [
       crop: 'top',
     },
     docsUrl: '/docs/marketplace',
-    relatedFeatures: ['mcp-server', 'cli'],
+    relatedFeatures: ['mcp-server', 'cli', 'shapes'],
     sortOrder: 1,
+  },
+  {
+    slug: 'shapes',
+    name: 'Shapes',
+    product: 'marketplace',
+    category: 'marketplace',
+    tagline: 'Install a whole DorkOS setup, not just one piece of it',
+    description:
+      'Setting DorkOS up the way someone else did takes ages. A Shape packs the layout, the add-ons, the suggested agents and the schedules into one install.',
+    status: 'ga',
+    benefits: [
+      'One install brings a layout, add-ons, agents, and schedules',
+      'Installing changes nothing until you choose to apply it',
+      'Agents are offered to you, never created behind your back',
+      'Schedules arrive switched off, so nothing runs by surprise',
+      'Make your own version of any Shape, and pass it on',
+    ],
+    moment:
+      'You install a Shape someone built for writing. Nothing changes until you apply it. Then the panels and add-ons land, two agents are offered, and you take the one you want.',
+    docsUrl: '/docs/marketplace/shapes',
+    relatedFeatures: ['marketplace', 'control-center', 'task-scheduler'],
+    sortOrder: 2,
   },
 
   // === MESH ===
@@ -797,10 +1001,10 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'A map of every agent you run',
-      'See which platform connects to which agent, and watch messages pulse along the wire as they arrive',
+      'Watch messages travel along the wire as they arrive',
       'Agents group by project, so a big team stays readable',
       'Click any agent to see its details and settings',
-      'One switch in Team → Access lets every agent on this machine reach every other',
+      'One switch lets every agent on this machine reach every other',
     ],
     moment:
       "You open the map and see your whole team at once. Who's talking to whom, grouped by project, with the quiet ones easy to spot.",
@@ -916,7 +1120,7 @@ export const features: Feature[] = [
       'Each one says how risky it is up front',
       'Run any of them by name with `dorkos call`',
       'Reaches DorkOS from Codex and OpenCode, which get no in-app tools',
-      'Says what it leaves out, so an agent looks in the right place',
+      'It says what it leaves out, so an agent looks elsewhere',
     ],
     moment:
       'Your Codex agent has no DorkOS tools at all. It runs one command, reads back the current list of actions, and gets to work, without you pasting anything out of the docs.',
@@ -932,9 +1136,9 @@ export const features: Feature[] = [
     tagline: 'Connect Gmail or Slack once, then let your agents act for you',
     description:
       "Your agents can't touch your email or chat until you let them. Connect a service like Gmail or Slack once, and you always see where your sign-in lives.",
-    // Alpha per the demo-claim gate (meta/positioning-202607/09-gtm-plan.md
-    // §2.0): built, not yet verified by real users — no "works" claims in copy.
-    status: 'alpha',
+    // Beta, not GA: the sign-in itself is brokered by third parties (Composio,
+    // Nango), so the last mile is not ours to call proven.
+    status: 'beta',
     benefits: [
       'Connect Gmail, Slack, or another service with one sign-in',
       'See where your sign-in lives before you connect',
@@ -966,14 +1170,39 @@ export const features: Feature[] = [
     relatedFeatures: ['mcp-server', 'connections', 'marketplace'],
     sortOrder: 6,
   },
+  {
+    slug: 'agent-memory',
+    name: 'Agent Memory',
+    product: 'core',
+    category: 'agent-control',
+    tagline: 'Tell an agent something once, and it still knows next week',
+    description:
+      'An agent that forgets every conversation makes you repeat yourself forever. Each one now keeps a short notes file it reads before every turn.',
+    status: 'ga',
+    benefits: [
+      'Say it once in a DM, and a channel next week knows it',
+      'Plain markdown you can open, correct, or delete by hand',
+      'Every note records the conversation that taught it',
+      'Small on purpose, so the agent tidies rather than hoards',
+      'Lives on your machine, beside the agent it belongs to',
+    ],
+    moment:
+      'You tell your agent in a DM that you deploy on Tuesdays, never Fridays. Next week, in a team channel, it plans around Friday without being asked.',
+    docsUrl: '/docs/guides/agent-memory',
+    relatedFeatures: ['agent-identity', 'message-search', 'team-room'],
+    sortOrder: 7,
+  },
 ];
 
 /**
- * Slug of the catalog's flagship feature — the multi-runtime cockpit, the
- * headline story (AGENTS.md market entry point: "mission control for every
- * coding agent you run"). It earns the wide, living hero tile in the bento.
+ * Slug of the catalog's flagship feature — one place for every coding agent you
+ * run, which is the headline story the whole site leads with. It earns the wide,
+ * living hero tile in the bento.
+ *
+ * The slug is deliberately older than the name it renders: renaming it means
+ * redirecting a published URL, which is scoped to DOR-1517.
  */
-export const FLAGSHIP_SLUG = 'multi-runtime-cockpit';
+export const FLAGSHIP_SLUG = 'every-agent-one-place';
 
 /**
  * Bento tile footprint for a feature card. A *presentation hint derived from

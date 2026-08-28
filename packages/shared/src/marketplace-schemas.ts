@@ -185,7 +185,7 @@ export interface MarketplaceManifestSummary {
  *
  * Aliased to this package's own {@link PermissionMode} rather than redeclared:
  * `PermissionModeSchema` lives one file over in `schemas.ts`, and
- * `@dorkos/marketplace` already pins its `SHAPE_SCHEDULE_PERMISSION_MODES`
+ * `@dorkos/marketplace` already pins its `SCHEDULE_PERMISSION_MODES`
  * against it with a drift test. A fourth hand-written copy of the same six
  * strings could only ever go stale. The import is type-only, so it erases at
  * compile time and this file stays browser-safe.
@@ -752,7 +752,7 @@ export interface InstalledShapeSummary {
 /**
  * Response body for `POST /api/shapes/:name/fork` — the browser-safe view of the
  * server's `ForkShapeResult`. The forked `manifest` rides along opaquely: no
- * client surface reads it, and typing it here would drag the Zod-3
+ * client surface reads it, and typing it here would drag the
  * `@dorkos/marketplace` manifest union into the browser bundle.
  */
 export interface ForkShapeResult {

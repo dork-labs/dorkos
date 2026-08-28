@@ -28,6 +28,15 @@
  *   first (see {@link rewritePluginRootInHooks}). OpenCode has no declarative
  *   hook config (only a code-based TS plugin API), so its hooks drop honestly.
  *
+ * One projection is NOT for a harness at all. A plugin skill that carries a
+ * `schedule:` block is a scheduled task, and the DorkOS scheduler watches exactly
+ * one project skills root — `.agents/skills` — so such a skill is linked there
+ * whatever harnesses the project enables (see
+ * {@link planScheduledSkillLinks}). Without it, the stock project (harnesses
+ * `['claude-code']`) projected the flow plugin's scheduled skills only into
+ * `.claude/skills`, which nothing watches, and their schedules were never offered
+ * for approval (DOR-1518).
+ *
  * A cross-harness caveat the projector also warns on: Claude Code keys a skill by
  * its DIRECTORY name (so `<pkg>__<name>` namespacing protects it), but OpenCode
  * and Codex key a skill by its `SKILL.md` frontmatter `name`, so two skills that
@@ -134,6 +143,21 @@ const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
 
 /** The harness a plugin-level (harness-agnostic) drop is attributed to for display. */
 const DROP_ATTRIBUTION: HarnessId = 'codex';
+
+/**
+ * The harness a scheduler-driven `.agents/skills` link is attributed to.
+ *
+ * The link exists for the DorkOS scheduler, not for a harness, but every
+ * {@link ProjectionAction} must name one and `HarnessId` has no "DorkOS" member.
+ * Codex is the honest answer available: `.agents/skills` is the directory it
+ * reads, so the link genuinely serves Codex too whenever Codex is enabled — and
+ * when it is not, {@link SCHEDULE_LINK_REASON} on the action says plainly why the
+ * link is there anyway.
+ */
+const SCHEDULE_LINK_ATTRIBUTION: HarnessId = 'codex';
+
+/** The note carried on a scheduler-driven link, so the report never looks arbitrary. */
+const SCHEDULE_LINK_REASON = `skill declares a schedule; linked into ${AGENTS_SKILLS_DIR} so the DorkOS scheduler can find it (the only project skills root it watches)`;
 
 /** The marker comment inserted into a generated command wrapper. */
 function generatedCommandMarkerLine(relDir: string): string {
@@ -372,12 +396,10 @@ function toManagedHooks(
   if (!rewritten) return undefined;
   const out: ClaudeHooksConfig = {};
   for (const [event, groups] of Object.entries(rewritten)) {
-    out[event] = groups.map(
-      (group): ManagedHookGroup => ({
-        ...group,
-        [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
-      })
-    );
+    out[event] = groups.map((group): ManagedHookGroup => ({
+      ...group,
+      [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
+    }));
   }
   return out;
 }
@@ -465,6 +487,78 @@ export function planInstalledSkills(
     ],
     warnings: [],
   };
+}
+
+/**
+ * Link every schedule-bearing installed skill into `.agents/skills`, whatever
+ * harnesses the project enables.
+ *
+ * A skill's `schedule:` block makes it a scheduled task, and the DorkOS
+ * scheduler watches exactly two roots: `<dorkHome>/skills` and
+ * `<project>/.agents/skills` (`specs/universal-scheduled-tasks` §DD2). Never
+ * `.claude/skills`. So on the stock project — manifest `harnesses` defaults to
+ * `['claude-code']` — a plugin's scheduled skills projected only into a directory
+ * nothing watches, and the person was never offered the schedule to approve
+ * (DOR-1518). This rule is the fix: the schedule, not the harness list, decides
+ * that the link exists.
+ *
+ * It runs ONCE per plan, not per harness, and stands down entirely when an
+ * enabled harness already links installed skills into `.agents/skills` (Codex
+ * does) — the per-harness pass then plans the identical target, and planning it
+ * twice would make apply write it twice and the drift check compare it twice.
+ * The dedup is derived from {@link INSTALLED_SKILL_TARGET_DIRS} rather than
+ * hardcoding "codex", so it stays correct if another harness adopts the
+ * directory.
+ *
+ * Only project-scoped plugins reach here; a globally installed plugin's
+ * scheduled skill is still undiscoverable, because no projection stage targets
+ * `<dorkHome>/skills` at all (see `sources/installed.ts`).
+ *
+ * One interaction worth knowing: `dorkos harness sync --harness <id> --fix`
+ * narrows the plan by action `harness`, so a run narrowed to anything but
+ * {@link SCHEDULE_LINK_ATTRIBUTION} filters these links out and does not write
+ * them. That is the flag behaving as asked — it projects one harness's files —
+ * and every default path (a bare sync, `--fix`, DorkOS's own install-triggered
+ * projection) passes an unfiltered plan and is unaffected.
+ *
+ * @param input - the projectable project-scoped plugins and the enabled harnesses.
+ * @returns the scheduler-driven symlink actions and any plugin-root warnings for
+ *   them (both empty when an enabled harness already covers the directory).
+ */
+export function planScheduledSkillLinks(input: {
+  plugins: readonly InstalledPlugin[];
+  harnesses: readonly HarnessId[];
+}): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
+  const alreadyLinked = input.harnesses.some(
+    (harness) => INSTALLED_SKILL_TARGET_DIRS[harness] === AGENTS_SKILLS_DIR
+  );
+  if (alreadyLinked) return { actions: [], warnings: [] };
+
+  const actions: ProjectionAction[] = [];
+  const warnings: ProjectionWarning[] = [];
+  for (const plugin of input.plugins) {
+    for (const skill of plugin.skills) {
+      if (!skill.hasSchedule) continue;
+      const namespaced = `${plugin.name}__${skill.name}`;
+      actions.push({
+        kind: 'symlink',
+        artifact: 'skill',
+        harness: SCHEDULE_LINK_ATTRIBUTION,
+        provenance: 'installed',
+        name: namespaced,
+        source: skill.sourceDir,
+        target: `${AGENTS_SKILLS_DIR}/${namespaced}`,
+        reason: SCHEDULE_LINK_REASON,
+      });
+      const warning = pluginRootSkillWarning(
+        SCHEDULE_LINK_ATTRIBUTION,
+        namespaced,
+        skill.usesPluginRoot
+      );
+      if (warning) warnings.push(warning);
+    }
+  }
+  return { actions, warnings };
 }
 
 /**

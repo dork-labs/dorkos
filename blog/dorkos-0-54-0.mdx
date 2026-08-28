@@ -4,12 +4,12 @@ description: Pulse goes live with a running attention count, Shapes get easier t
 date: 2026-07-21
 author: DorkOS Team
 category: release
-tags: [release, pulse, shapes, cockpit]
+tags: [release, pulse, shapes, app]
 ---
 
 Pulse stops being a snapshot and starts keeping watch. It now shows a running count of what needs you, updates the moment something happens, and Shapes get easier to apply and tidier when you remove them. New agents even get a visible waking-up moment in their first chat.
 
-![The DorkOS cockpit with the agent fleet and recent activity](/product/archive/v0.54.0/cockpit-light.png)
+![The DorkOS app with the agent fleet and recent activity](/product/archive/v0.54.0/cockpit-light.png)
 
 ## Highlights
 
@@ -25,7 +25,7 @@ After you install a Shape, you can apply it right away: the "Installed" toast ha
 
 Right after you create an agent, its first chat now shows the agent waking up, its face and name with a soft pulse, instead of a generic empty screen. The moment it says hello, the greeting takes over. And if it can't say hello, it tells you plainly instead of leaving you on a blank "Start a conversation" screen.
 
-**Cockpit papercuts, fixed**
+**Interface papercuts, fixed**
 
 The Marketplace now shows each package's real name instead of its code-style ID, so you see "Security Scanner", not "security-scanner", everywhere from the browse cards to the install messages, with a matching A–Z sort. In Obsidian, two keyboard shortcuts that did nothing there are handed back so Obsidian can use them, and the "Meet your new agent" card shows the agent's emoji face.
 
@@ -55,7 +55,7 @@ The Marketplace now shows each package's real name instead of its code-style ID,
 
 - The "we share a little anonymous data" notice no longer hides behind the sidebar or shoves the app header down the screen. It now sits in its own row just under the header, where you can actually read it. (#367)
 - When a newborn agent can't say hello — the opening greeting never arrives, or stops halfway through — it now tells you plainly ("couldn't say hello just now — send a message to get started") instead of leaving you on the generic "Start a conversation" screen.
-- Three cockpit papercuts, one per surface: real Marketplace names (with a matching A–Z sort), Cmd+. and Cmd+Shift+A handed back to Obsidian, and the arrival card's emoji face.
+- Three interface papercuts, one per surface: real Marketplace names (with a matching A–Z sort), Cmd+. and Cmd+Shift+A handed back to Obsidian, and the arrival card's emoji face.
 - Marketplace cards, dialogs, and messages now show each package's real name instead of its code-style ID — you see "Security Scanner", not "security-scanner". This covers the browse cards, the install and detail windows, the installed list, and the install, update, and uninstall messages, and the "A–Z" sort now orders by those same names.
 - In Obsidian, two keyboard shortcuts that did nothing there — Cmd+. and Cmd+Shift+A — no longer swallow those keys, so they stay free for Obsidian to use.
 - The "Meet your new agent" card now shows the agent's emoji face — the same one you pick in the picker and see in the live preview — instead of just the first letter of its name.

@@ -1,41 +1,53 @@
 /**
- * Default task templates seeded on first server run.
+ * Default schedule templates seeded on first server run.
  *
- * Templates are SKILL.md files in `{dorkHome}/tasks/templates/{name}/SKILL.md`.
+ * Templates are SKILL.md files in `{dorkHome}/skills/templates/{name}/SKILL.md`.
  * Users can edit, add, or delete template directories.
+ *
+ * The gallery moved out of `{dorkHome}/tasks/templates/` in DOR-1486, along with
+ * everything else that was ever a schedule; the legacy migration moves any
+ * templates a person had written themselves. It is a CONTAINER, not a schedule,
+ * so the global skills root reserves the name — see `reservedDirsFor`, and the
+ * comment in `task-file-watcher.ts` for what a row pointing at a container does
+ * to a person's templates when they delete it.
  *
  * @module services/tasks/task-templates
  */
 import path from 'node:path';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
-import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { hasSchedule } from '@dorkos/skills';
 import { logger } from '../../lib/logger.js';
 
 /**
- * Name of the templates container inside a tasks directory.
+ * Name of the templates container inside the global skills root.
  *
- * This directory holds template directories, so it is never a task itself and
- * has no SKILL.md of its own. Anything scanning a tasks directory for tasks
- * must skip it — see {@link RESERVED_TASK_DIRNAMES}.
+ * This directory holds template directories, so it is never a schedule itself
+ * and has no SKILL.md of its own. Anything scanning the global root for
+ * schedules must skip it — see {@link RESERVED_TASK_DIRNAMES}.
  */
 export const TASK_TEMPLATES_DIRNAME = 'templates';
 
 /**
- * Directory names inside a tasks directory that are containers, not tasks.
+ * Directory names inside the global skills root that are containers, not
+ * schedules.
  *
- * The task reconciler passes this to the skill scanner so a container is
- * never mistaken for a task directory that forgot its SKILL.md.
+ * The reconciler and the watcher pass this to the skill scanner so a container
+ * is never mistaken for a skill directory that forgot its SKILL.md. Reserved in
+ * the GLOBAL root only (`reservedDirsFor`): a project may legitimately have a
+ * skill called `templates`, and hiding it to protect a directory that is not in
+ * that tree would cost a real schedule.
  */
 export const RESERVED_TASK_DIRNAMES: readonly string[] = [TASK_TEMPLATES_DIRNAME];
 
 /**
- * Resolve the task-templates directory for a data directory.
+ * Resolve the templates directory for a data directory.
  *
  * @param dorkHome - Resolved data directory path
  */
-function resolveTemplatesDir(dorkHome: string): string {
-  return path.join(dorkHome, 'tasks', TASK_TEMPLATES_DIRNAME);
+export function resolveTemplatesDir(dorkHome: string): string {
+  return path.join(dorkHome, 'skills', TASK_TEMPLATES_DIRNAME);
 }
 
 interface TemplateDefinition {
@@ -44,7 +56,7 @@ interface TemplateDefinition {
   prompt: string;
 }
 
-/** Built-in task templates seeded on first run. */
+/** Built-in schedule templates seeded on first run. */
 const DEFAULT_TEMPLATES: TemplateDefinition[] = [
   {
     slug: 'daily-health-check',
@@ -52,10 +64,7 @@ const DEFAULT_TEMPLATES: TemplateDefinition[] = [
       name: 'daily-health-check',
       'display-name': 'Daily Health Check',
       description: 'Run lint, test, and typecheck across the project',
-      cron: '0 9 * * 1-5',
-      timezone: 'UTC',
-      enabled: true,
-      permissions: 'acceptEdits',
+      schedule: { cron: '0 9 * * 1-5' },
     },
     prompt: `Run the following checks and report results:
 
@@ -71,10 +80,7 @@ Summarize the results concisely. If everything passes, say so. If anything fails
       name: 'weekly-dependency-audit',
       'display-name': 'Weekly Dependency Audit',
       description: 'Check for outdated or vulnerable dependencies',
-      cron: '0 10 * * 1',
-      timezone: 'UTC',
-      enabled: true,
-      permissions: 'acceptEdits',
+      schedule: { cron: '0 10 * * 1' },
     },
     prompt: `Audit project dependencies:
 
@@ -90,10 +96,7 @@ Provide a prioritized list of recommended updates with risk assessment (safe, mo
       name: 'activity-summary',
       'display-name': 'Activity Summary',
       description: 'Summarize recent agent activity across all sessions',
-      cron: '0 18 * * 1-5',
-      timezone: 'UTC',
-      enabled: true,
-      permissions: 'acceptEdits',
+      schedule: { cron: '0 18 * * 1-5' },
     },
     prompt: `Summarize today's agent activity:
 
@@ -110,10 +113,7 @@ Keep the summary concise — aim for a quick daily digest.`,
       name: 'code-review-digest',
       'display-name': 'Code Review Digest',
       description: 'Review recent commits for quality and patterns',
-      cron: '0 11 * * 5',
-      timezone: 'UTC',
-      enabled: true,
-      permissions: 'acceptEdits',
+      schedule: { cron: '0 11 * * 5' },
     },
     prompt: `Review commits from the past week:
 
@@ -127,7 +127,7 @@ Provide a brief weekly code quality report.`,
 ];
 
 /**
- * Seed default task templates if the templates directory is empty.
+ * Seed default schedule templates if the templates directory is empty.
  *
  * @param dorkHome - Resolved data directory path
  */
@@ -135,7 +135,7 @@ export async function ensureDefaultTemplates(dorkHome: string): Promise<void> {
   const templatesDir = resolveTemplatesDir(dorkHome);
 
   try {
-    const results = await scanSkillDirectory(templatesDir, TaskFrontmatterSchema);
+    const results = await scanSkillDirectory(templatesDir, SkillFrontmatterSchema);
     if (results.length > 0) return; // Already seeded
   } catch {
     // Directory didn't exist, that's fine
@@ -149,7 +149,7 @@ export async function ensureDefaultTemplates(dorkHome: string): Promise<void> {
 }
 
 /**
- * Load task templates from the templates directory.
+ * Load schedule templates from the templates directory.
  *
  * @param dorkHome - Resolved data directory path
  * @returns Array of parsed templates
@@ -167,7 +167,7 @@ export async function loadTemplates(dorkHome: string): Promise<
   const templatesDir = resolveTemplatesDir(dorkHome);
 
   try {
-    const results = await scanSkillDirectory(templatesDir, TaskFrontmatterSchema);
+    const results = await scanSkillDirectory(templatesDir, SkillFrontmatterSchema);
     const templates = [];
 
     for (const result of results) {
@@ -179,7 +179,10 @@ export async function loadTemplates(dorkHome: string): Promise<
         displayName: def.meta['display-name'],
         description: def.meta.description ?? '',
         prompt: def.body,
-        cron: def.meta.cron ?? '',
+        // A template with an unreadable block offers no cron rather than
+        // failing the gallery: the person is picking a starting point, and one
+        // bad line in one template must not empty the list.
+        cron: hasSchedule(def.meta) ? (def.meta.schedule.cron ?? '') : '',
       });
     }
 

@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { initBoundary } from '../../../lib/boundary.js';
 import {
   TaskSchedulerService,
   scheduledTickKey,
@@ -27,7 +31,84 @@ function createMockAgentManager(): SchedulerAgentManager {
       // Default: no events (immediate completion)
     }),
     interruptQuery: vi.fn().mockResolvedValue(true),
+    // The bare mock never remaps, so a sticky run persists the key it was given.
+    // The sticky tests that care about the SDK's id remap use RemapFakeAgent below.
+    getInternalSessionId: vi.fn(() => undefined),
   } as unknown as SchedulerAgentManager;
+}
+
+/**
+ * A scheduler agent-manager that MODELS the Claude Code SDK's session-id remap
+ * (DOR-1571), so a test can cross the real resume-by-id seam a bare `vi.fn()`
+ * cannot.
+ *
+ * The runtime mints (or, on a genuine resume, keeps) its OWN session id on the
+ * first turn and writes the transcript on disk under THAT id — never the key
+ * passed to `ensureSession`. Resume finds a session only when its key names a
+ * transcript that exists. This fake reproduces exactly that: `sendMessage` mints
+ * a fresh SDK id and records a transcript for it, unless the caller asked to
+ * resume a key that already has one — in which case it keeps that id and marks
+ * the turn as having loaded history. `getInternalSessionId` reports the id the
+ * turn actually ran under. {@link evict} drops the in-memory sessions while the
+ * transcripts survive, modelling idle-reap or a restart — the exact condition
+ * under which the old synthetic-id approach silently lost all context.
+ */
+class RemapFakeAgent {
+  /** Live session key → the SDK id its last turn ran under. */
+  private live = new Map<string, string>();
+  /** SDK ids that have a transcript on disk (survive {@link evict}). */
+  readonly transcripts = new Set<string>();
+  private counter = 0;
+  private pendingHasStarted = new Map<string, boolean>();
+  /** One record per turn, newest last. */
+  readonly turns: Array<{
+    key: string;
+    hasStarted: boolean;
+    resumedFrom: string | null;
+    loadedHistory: boolean;
+    ranAs: string;
+  }> = [];
+
+  ensureSession(sessionId: string, opts: { hasStarted?: boolean }): void {
+    if (!this.live.has(sessionId)) this.live.set(sessionId, sessionId);
+    this.pendingHasStarted.set(sessionId, opts.hasStarted ?? false);
+  }
+
+  async *sendMessage(sessionId: string): AsyncGenerator<StreamEvent> {
+    const hasStarted = this.pendingHasStarted.get(sessionId) ?? false;
+    // Resume succeeds ONLY if the key names a transcript that exists on disk.
+    const resuming = hasStarted && this.transcripts.has(sessionId);
+    let ranAs: string;
+    if (resuming) {
+      // Claude Code continues the same session file — the id is kept.
+      ranAs = sessionId;
+    } else {
+      // Fresh session: the SDK mints its own id and writes a new transcript.
+      ranAs = `sdk-${++this.counter}`;
+      this.transcripts.add(ranAs);
+    }
+    this.live.set(sessionId, ranAs);
+    this.turns.push({
+      key: sessionId,
+      hasStarted,
+      resumedFrom: resuming ? sessionId : null,
+      loadedHistory: resuming,
+      ranAs,
+    });
+    // No events → immediate completion.
+  }
+
+  getInternalSessionId(sessionId: string): string | undefined {
+    return this.live.get(sessionId);
+  }
+
+  interruptQuery = vi.fn().mockResolvedValue(true);
+
+  /** Idle-reap / restart: forget in-memory sessions; transcripts persist on disk. */
+  evict(): void {
+    this.live.clear();
+    this.pendingHasStarted.clear();
+  }
 }
 
 /**
@@ -110,7 +191,6 @@ function taskInput(
 const DEFAULT_CONFIG = {
   maxConcurrentRuns: 1,
   retentionCount: 100,
-  timezone: null,
   mayFire: true,
   firingReason: 'test',
 };
@@ -120,10 +200,15 @@ describe('TaskSchedulerService', () => {
   let db: Db;
   let mockAgent: ReturnType<typeof createMockAgentManager>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
     store = new TaskStore(db);
     mockAgent = createMockAgentManager();
+    // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`) refuses a
+    // directory outside `DORKOS_BOUNDARY`, and this file's agent paths are
+    // absolute stand-ins. A boundary of `/` states what these tests assume:
+    // every path here is in bounds, so a case fails for its own reason.
+    await initBoundary('/');
   });
 
   describe('start()', () => {
@@ -158,6 +243,53 @@ describe('TaskSchedulerService', () => {
       expect(service.isRegistered(tasks[1].id)).toBe(false);
 
       await service.stop();
+    });
+
+    // One unschedulable row used to be able to stop the server booting at all:
+    // `index.ts` awaits start(), croner throws on a pattern it cannot read, and
+    // the rejection ends in process.exit(1). A task file is a plain text file a
+    // person edits, so this is a typo away at any time.
+    it('boots past a task whose cron croner cannot read, and registers the rest', async () => {
+      store.createTask(taskInput({ name: 'Broken', prompt: 'test', cron: 'banana' }));
+      store.createTask(taskInput({ name: 'Fine', prompt: 'test', cron: '0 * * * *' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      await expect(service.start()).resolves.toBeUndefined();
+
+      const [broken, fine] = store.getTasks();
+      expect(service.isRegistered(broken!.id)).toBe(false);
+      expect(service.isRegistered(fine!.id)).toBe(true);
+
+      await service.stop();
+    });
+
+    // Croner reads a timezone lazily, so this one throws from a different place
+    // than a bad pattern does — and the row reaches the scheduler the same way.
+    it('boots past a task whose timezone croner cannot resolve', async () => {
+      store.createTask(
+        taskInput({ name: 'Off world', prompt: 'test', cron: '0 * * * *', timezone: 'Mars/Phobos' })
+      );
+      store.createTask(taskInput({ name: 'Fine', prompt: 'test', cron: '0 * * * *' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      await expect(service.start()).resolves.toBeUndefined();
+
+      const [offWorld, fine] = store.getTasks();
+      expect(service.isRegistered(offWorld!.id)).toBe(false);
+      expect(service.isRegistered(fine!.id)).toBe(true);
+
+      await service.stop();
+    });
+
+    it('is not started before start() runs, and is not started after stop()', async () => {
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.isStarted).toBe(false);
+
+      await service.start();
+      expect(service.isStarted).toBe(true);
+
+      await service.stop();
+      expect(service.isStarted).toBe(false);
     });
 
     it('skips tasks with pending_approval status', async () => {
@@ -631,6 +763,487 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('the concurrency cap counts BOTH dispatch paths (DOR-1482)', () => {
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+    /** A relay that takes the dispatch and never reports an ending. */
+    let mockRelay: { publish: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(true);
+      mockRelay = {
+        publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+      };
+    });
+
+    afterEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(false);
+    });
+
+    function relayScheduler(maxConcurrentRuns = 1): TaskSchedulerService {
+      return new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG, maxConcurrentRuns },
+        relay: mockRelay as unknown as RelayCore,
+      });
+    }
+
+    it('a relay-dispatched run is counted as active', async () => {
+      // It used to be invisible: only `executeRunDirect` recorded anything, so
+      // with the relay enabled this number was a flat zero however many runs
+      // were in flight.
+      const task = store.createTask(taskInput({ name: 'Busy relay', cron: '0 * * * *' }));
+      const service = relayScheduler();
+
+      await service.triggerManualRun(task.id);
+
+      expect(service.getActiveRunCount()).toBe(1);
+      await service.stop();
+    });
+
+    it('a second tick at the cap is refused while a relay run is in flight', async () => {
+      // The defect: with the relay enabled, `maxConcurrentRuns` never tripped,
+      // so a slow hourly task could pile up unbounded concurrent agent turns.
+      const first = store.createTask(taskInput({ name: 'First', cron: '0 * * * *' }));
+      const second = store.createTask(taskInput({ name: 'Second', cron: '0 * * * *' }));
+      const service = relayScheduler(1);
+
+      await service.triggerManualRun(first.id); // takes the only slot
+      await (service as unknown as Dispatchable).dispatch(second, new Date(1_700_000_040_000));
+
+      // The second task was NOT published — it never ran.
+      expect(mockRelay.publish).toHaveBeenCalledOnce();
+      const [secondRun] = store.listRuns({ taskId: second.id });
+      expect(secondRun.status).toBe('skipped');
+      await service.stop();
+    });
+
+    it('a relay run that reaches a terminal status frees its slot', async () => {
+      const first = store.createTask(taskInput({ name: 'Frees', cron: '0 * * * *' }));
+      const second = store.createTask(taskInput({ name: 'Then runs', cron: '0 * * * *' }));
+      const service = relayScheduler(1);
+
+      const held = await service.triggerManualRun(first.id);
+      expect(service.getActiveRunCount()).toBe(1);
+
+      // The receiver finishes it — the row is the only thing that says so.
+      store.updateRun(held!.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      expect(service.getActiveRunCount()).toBe(0);
+
+      await (service as unknown as Dispatchable).dispatch(second, new Date(1_700_000_040_000));
+      expect(mockRelay.publish).toHaveBeenCalledTimes(2);
+      expect(store.listRuns({ taskId: second.id })[0].status).toBe('running');
+      await service.stop();
+    });
+
+    it('a non-sticky relay dispatch carries no session on the wire (DOR-1571)', async () => {
+      const task = store.createTask(taskInput({ name: 'Plain relay', cron: '0 * * * *' }));
+      const service = relayScheduler();
+      await service.triggerManualRun(task.id);
+
+      const [, payload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.sessionId).toBeUndefined();
+      expect(payload.resumeSession).toBeUndefined();
+      await service.stop();
+    });
+
+    it("a sticky relay dispatch carries the prior run's REAL session as the resume target (DOR-1571)", async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Sticky relay', cron: '0 * * * *', sticky: true })
+      );
+      const service = relayScheduler();
+
+      // First fire: no prior run, so it starts fresh under the run's own id.
+      const first = await service.triggerManualRun(task.id);
+      const [, firstPayload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(firstPayload.sessionId).toBe(first!.id);
+      expect(firstPayload.resumeSession).toBe(false);
+
+      // The receiver finishes the turn and records the RUNTIME's own session id
+      // (a UUID it minted), not the key it was handed — only the run row knows
+      // how a relay run ends.
+      const realId = 'sdk-real-uuid-1';
+      store.updateRun(first!.id, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        sessionId: realId,
+      });
+
+      // A later scheduled fire resumes that REAL id — the one whose transcript
+      // exists on disk — so the runtime can rehydrate it cold.
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_100_000));
+      const [, secondPayload] = mockRelay.publish.mock.calls[1] as [string, TaskDispatchPayload];
+      expect(secondPayload.sessionId).toBe(realId);
+      expect(secondPayload.resumeSession).toBe(true);
+      await service.stop();
+    });
+
+    it('shutdown asks the bus to stop the relay runs it cannot abort itself', async () => {
+      const task = store.createTask(taskInput({ name: 'Left running', cron: '0 * * * *' }));
+      const service = relayScheduler();
+      const run = await service.triggerManualRun(task.id);
+
+      await service.stop();
+
+      const stop = mockRelay.publish.mock.calls.find(([subject]) =>
+        String(subject).includes('cancel')
+      );
+      expect(stop, 'a stop request went out for the in-flight relay run').toBeDefined();
+      expect(JSON.stringify(stop![1])).toContain(run!.id);
+    });
+  });
+
+  describe('a tick dropped at the cap is recorded, not silently lost (DOR-1482)', () => {
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+
+    it('writes a skipped run saying why, at the time the schedule came round', async () => {
+      const busy = store.createTask(taskInput({ name: 'Slow one', cron: '* * * * *' }));
+      const waiting = store.createTask(taskInput({ name: 'Waiting', cron: '* * * * *' }));
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 1,
+      });
+      void service.triggerManualRun(busy.id);
+      await parked;
+
+      await (service as unknown as Dispatchable).dispatch(waiting, new Date(1_700_000_040_000));
+
+      const [skipped] = store.listRuns({ taskId: waiting.id });
+      expect(skipped.status).toBe('skipped');
+      expect(skipped.error).toContain('limit');
+      expect(skipped.finishedAt).not.toBeNull();
+      // Nothing was started: the agent was never asked to run this one.
+      expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
+
+      await service.stop();
+    });
+
+    it('claims the tick, so two processes at the cap record ONE skip', async () => {
+      // Without the claim, every process that fired this occurrence wrote its
+      // own skip — and, worse, an unclaimed tick could still be run by another
+      // process after this one had decided not to.
+      const busy = store.createTask(taskInput({ name: 'Occupier', cron: '* * * * *' }));
+      const waiting = store.createTask(taskInput({ name: 'Contended', cron: '* * * * *' }));
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      const capped = { ...DEFAULT_CONFIG, maxConcurrentRuns: 1 };
+      const bothLeader = {
+        tryAcquire: () => true,
+        heartbeat: () => {},
+        release: () => {},
+        isLeaderNow: true,
+      };
+      const s1 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: capped,
+        leaderLock: bothLeader,
+      });
+      const s2 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: capped,
+        leaderLock: bothLeader,
+      });
+      void s1.triggerManualRun(busy.id);
+      await parked;
+
+      const tick = new Date(1_700_000_040_000);
+      await (s1 as unknown as Dispatchable).dispatch(waiting, tick);
+      await (s2 as unknown as Dispatchable).dispatch(waiting, tick);
+
+      expect(store.listRuns({ taskId: waiting.id })).toHaveLength(1);
+
+      await s1.stop();
+      await s2.stop();
+    });
+  });
+
+  describe('sticky sessions resume one session across runs (DOR-1571)', () => {
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+
+    /**
+     * The critical test (DOR-1571 review, finding #1): sticky must survive the
+     * loss of the in-memory session — idle-reap or a restart — which is the norm
+     * for the hourly/daily schedules sticky targets. It fails against a synthetic
+     * derived id (which has no transcript on disk to resume) and passes only when
+     * the resume target is the runtime's REAL session id, captured from the prior
+     * run and persisted.
+     */
+    it("resumes the prior run's REAL SDK session AFTER eviction, loading its history", async () => {
+      const fake = new RemapFakeAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Sticky cold', cron: '* * * * *', sticky: true })
+      );
+      const service = new TaskSchedulerService(store, fake as unknown as SchedulerAgentManager, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 5,
+      });
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      // First fire: fresh. The SDK mints its own id; the run row records THAT id.
+      await dispatch(task, new Date(1_700_000_040_000));
+      const firstRun = store.listRuns({ taskId: task.id })[0];
+      const realId = fake.turns[0].ranAs;
+      expect(firstRun.sessionId).toBe(realId);
+      expect(realId).not.toBe(firstRun.id); // the key we passed in was remapped
+      expect(fake.turns[0].loadedHistory).toBe(false);
+
+      // The in-memory session is reaped / the process restarts — only the
+      // transcript on disk survives. This is where the derived-id approach died.
+      fake.evict();
+
+      // Second fire: resume the FIRST run's real id, and genuinely load history.
+      await dispatch(task, new Date(1_700_000_100_000));
+      const secondTurn = fake.turns[1];
+      expect(secondTurn.key).toBe(realId); // resumed the real transcript, not a synthetic id
+      expect(secondTurn.hasStarted).toBe(true);
+      expect(secondTurn.loadedHistory, 'the runtime resumed and loaded prior context').toBe(true);
+      // Every run in the history points at the resumed conversation.
+      const runs = store.listRuns({ taskId: task.id });
+      expect(runs.every((r) => r.sessionId === realId)).toBe(true);
+
+      await service.stop();
+    });
+
+    it('a non-sticky task still gets a fresh session per run (unchanged)', async () => {
+      const fake = new RemapFakeAgent();
+      const task = store.createTask(taskInput({ name: 'Fresh each time', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, fake as unknown as SchedulerAgentManager, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 5,
+      });
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      await dispatch(task, new Date(1_700_000_040_000));
+      await dispatch(task, new Date(1_700_000_100_000));
+
+      const runs = store.listRuns({ taskId: task.id });
+      expect(runs).toHaveLength(2);
+      // Non-sticky keeps writing the run's own id (byte-for-byte the old behaviour),
+      // and the two runs differ. Neither ever resumes.
+      expect(runs[0].sessionId).toBe(runs[0].id);
+      expect(runs[1].sessionId).toBe(runs[1].id);
+      expect(runs[0].sessionId).not.toBe(runs[1].sessionId);
+      expect(fake.turns.every((t) => t.loadedHistory === false)).toBe(true);
+
+      await service.stop();
+    });
+
+    it('a sticky fire while its session is busy is skipped, not run in parallel', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Sticky busy', cron: '* * * * *', sticky: true })
+      );
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      // Cap set high so the ONLY reason to skip is sticky single-session
+      // serialization, not the global concurrency cap. Reverting the stickyBusy
+      // clause turns the second fire into a SECOND sendMessage on the same
+      // session (this assertion reddens), not merely a missing skipped row.
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        maxConcurrentRuns: 5,
+      });
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      void dispatch(task, new Date(1_700_000_040_000));
+      await parked;
+
+      // The second fire must NOT open a turn. If the stickyBusy guard is removed,
+      // it does — and that second `sendMessage` parks forever, so we cannot simply
+      // await this dispatch. Race it against a short deadline: with the guard it
+      // resolves at once (skipped, no await); without it, it hangs on the second
+      // turn and the deadline wins — either way we then assert on the call count.
+      const secondFire = dispatch(task, new Date(1_700_000_100_000));
+      await Promise.race([secondFire, new Promise((r) => setTimeout(r, 100))]);
+
+      // No second turn was ever started on the session (the RIGHT reason to skip,
+      // not merely a missing row): reverting stickyBusy reddens THIS.
+      expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
+      const skipped = store.listRuns({ taskId: task.id }).find((r) => r.status === 'skipped');
+      expect(skipped, 'the second fire wrote a skipped run').toBeDefined();
+      expect(skipped!.error).toContain('one session');
+
+      await service.stop();
+    });
+  });
+
+  describe('retention runs on a timer, not only at startup (DOR-1482)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** A run that is over — the only kind retention may ever delete. */
+    function finishedRun(taskId: string): string {
+      const run = store.createRun(taskId, 'scheduled');
+      store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      return run.id;
+    }
+
+    it('prunes finished run history and the dispatch log every hour', async () => {
+      vi.useFakeTimers();
+      const task = store.createTask(taskInput({ name: 'Chatty', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        retentionCount: 2,
+      });
+      await service.start();
+
+      // Four runs land AFTER boot — exactly what a per-minute task does to a
+      // server that is never restarted.
+      for (let i = 0; i < 4; i++) finishedRun(task.id);
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(4);
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
+      await service.stop();
+    });
+
+    it('leaves a run that is still going, however far behind the window it is', async () => {
+      // Retention on a timer meets a long run: a relay-dispatched hourly task
+      // that takes 40 minutes is still `running` when the sweep comes round,
+      // and a per-minute task can bury it under a hundred newer rows. Deleting
+      // it would discard the outcome, silence the terminal hook, and hand back
+      // the concurrency slot it is holding (DOR-1482 review).
+      vi.useFakeTimers();
+      const task = store.createTask(taskInput({ name: 'Slow', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        retentionCount: 2,
+      });
+      await service.start();
+
+      const live = store.createRun(task.id, 'scheduled');
+      for (let i = 0; i < 6; i++) finishedRun(task.id);
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+      expect(store.getRun(live.id)).not.toBeNull();
+      expect(store.getRun(live.id)!.status).toBe('running');
+      // Its real ending still lands, and still counts.
+      expect(store.updateRun(live.id, { status: 'completed' })!.status).toBe('completed');
+      await service.stop();
+    });
+
+    it('stops pruning once the scheduler has stopped', async () => {
+      vi.useFakeTimers();
+      const task = store.createTask(taskInput({ name: 'Stopped', cron: '* * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        retentionCount: 1,
+      });
+      await service.start();
+      await service.stop();
+
+      finishedRun(task.id);
+      finishedRun(task.id);
+      await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+      expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
+    });
+  });
+
+  describe('crash recovery is the leader job alone (DOR-1482)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a promotion never ends the scheduled run this process is executing', async () => {
+      // The scenario (DOR-1482 review): this process WAS the leader and is
+      // running a scheduled task. It stalls past the lock's stale TTL — a closed
+      // laptop is enough — so another process steals the lock; then it comes
+      // back and is promoted again. The sweep that promotion triggers must not
+      // fail the run this process still has an AbortController for.
+      const task = store.createTask(taskInput({ name: 'Ours', cron: '0 * * * *' }));
+      const orphan = store.createRun(task.id, 'scheduled');
+      const { impl, parked } = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
+
+      // Leadership is scripted by the test: `heartbeat()` is where a real lock
+      // re-reads the file and steps up or down, and these flips are what it
+      // would have found.
+      let leaderNow = true;
+      const flakyLock = {
+        tryAcquire: () => leaderNow,
+        heartbeat: () => {},
+        release: () => {},
+        get isLeaderNow() {
+          return leaderNow;
+        },
+      };
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: flakyLock,
+      });
+      await service.start();
+      // The boot sweep ended the orphan already; a fresh one stands in for what
+      // the process that held the lock in between leaves behind.
+      expect(store.getRun(orphan.id)!.status).toBe('failed');
+      const strandedByTheOtherProcess = store.createRun(task.id, 'scheduled');
+
+      // Our own scheduled run, in flight.
+      void (
+        service as unknown as {
+          dispatch(t: typeof task, when?: Date | null): Promise<void>;
+        }
+      ).dispatch(task, new Date(1_700_000_040_000));
+      await parked;
+      expect(service.getActiveRunCount()).toBe(1);
+      const mine = store
+        .listRuns({ taskId: task.id })
+        .find((run) => run.status === 'running' && run.id !== strandedByTheOtherProcess.id)!;
+
+      // Lock stolen while we were stalled, then handed back.
+      leaderNow = false;
+      const beat = (service as unknown as { onHeartbeat(): void }).onHeartbeat.bind(service);
+      beat();
+      leaderNow = true;
+      beat();
+
+      // Ours survives — and the other process's stranded run is swept, so this
+      // is not passing because the sweep did nothing.
+      expect(store.getRun(mine.id)!.status).toBe('running');
+      expect(store.getRun(strandedByTheOtherProcess.id)!.status).toBe('failed');
+
+      await service.stop();
+    });
+
+    it('a follower boot leaves another process runs running', async () => {
+      const task = store.createTask(taskInput({ name: 'Someone elses', cron: '0 * * * *' }));
+      const live = store.createRun(task.id, 'scheduled');
+
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: {
+          tryAcquire: () => false,
+          heartbeat: () => {},
+          release: () => {},
+          isLeaderNow: false,
+        },
+      });
+      await service.start();
+
+      expect(store.getRun(live.id)!.status).toBe('running');
+      await service.stop();
+    });
+  });
+
   describe('getNextRun()', () => {
     it('returns null for unregistered task', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
@@ -741,6 +1354,62 @@ describe('TaskSchedulerService', () => {
       service.registerTask(task); // Should not throw
       expect(service.isRegistered(task.id)).toBe(true);
     });
+
+    // `registerTask` is reachable from a file somebody hand-edited, so it has to
+    // answer rather than throw: the caller is a watcher event or a reconciler
+    // pass, and neither has anywhere to put an exception.
+    it('refuses a schedule croner cannot read, and says so instead of throwing', () => {
+      const task = store.createTask(taskInput({ name: 'Broken', prompt: 'test', cron: 'banana' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(false);
+      expect(service.isRegistered(task.id)).toBe(false);
+    });
+
+    it('reports an on-demand task as unregistered rather than scheduled', () => {
+      const task = store.createTask(taskInput({ name: 'On demand', prompt: 'test' }));
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(false);
+      expect(service.isRegistered(task.id)).toBe(false);
+    });
+
+    // A pattern that parses but never matches is a REGISTERED job, not a refused
+    // one. `apps/e2e` calls this expression `NEVER_FIRES_CRON` and seeds its task
+    // fixtures with it precisely because it renders as a live, enabled schedule
+    // while being unable to spawn a (real, billed) agent on that suite's leg.
+    it('registers a schedule that never comes round, and never fires it', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Manual only', prompt: 'test', cron: '0 0 31 2 *', timezone: 'UTC' })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      expect(service.registerTask(task)).toBe(true);
+      expect(service.isRegistered(task.id)).toBe(true);
+      // Held by croner with no occurrence to wait for — the honest answer to
+      // "when does this run?" is nothing, not an error.
+      expect(service.getNextRun(task.id)).toBeNull();
+
+      // Nothing dispatches: no run row, and the agent was never asked to work.
+      expect(store.listRuns()).toHaveLength(0);
+      expect(mockAgent.ensureSession).not.toHaveBeenCalled();
+      expect(mockAgent.sendMessage).not.toHaveBeenCalled();
+
+      await service.stop();
+    });
+
+    // A task edited from a good cron to a bad one must lose its old job, not
+    // keep firing on the schedule nobody asked for any more.
+    it('drops the old job when a re-register is refused', () => {
+      const task = store.createTask(
+        taskInput({ name: 'Drifts', prompt: 'test', cron: '0 * * * *' })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      service.registerTask(task);
+      expect(service.registerTask({ ...task, cron: 'banana' })).toBe(false);
+      expect(service.isRegistered(task.id)).toBe(false);
+    });
   });
 
   describe('executeRunViaRelay (via triggerManualRun)', () => {
@@ -815,10 +1484,18 @@ describe('TaskSchedulerService', () => {
       expect(dispatch.taskName).toBe('Payload Test');
       expect(dispatch.cron).toBe('30 2 * * *');
       expect(dispatch.trigger).toBe('manual');
+      // The unattended briefing the direct path builds, carried on the wire so
+      // the receiving process can hand it to the agent (DOR-1567).
+      expect(dispatch.systemPromptAppend).toContain('Job: Payload Test');
+      expect(dispatch.systemPromptAppend).toContain('Do not ask questions');
 
       // Verify publish options
       expect(options.from).toBe('relay.system.tasks.scheduler');
-      expect(options.replyTo).toBe(`relay.system.tasks.${task.id}.response`);
+      // NO replyTo. Nothing subscribes to a run's progress, and the subject
+      // this used to name sits under the tasks prefix the runtime adapter
+      // claims — so every progress event came back in as a malformed dispatch
+      // and dead-lettered (DOR-1567).
+      expect(options.replyTo).toBeUndefined();
       expect(options.budget.maxHops).toBe(3);
       expect(options.budget.callBudgetRemaining).toBe(5);
 
@@ -848,7 +1525,7 @@ describe('TaskSchedulerService', () => {
 
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
-      expect(updatedRun?.error).toBe('No receiver for task dispatch');
+      expect(updatedRun?.error).toBe('No receiver for the scheduled run');
 
       await service.stop();
     });
@@ -1182,14 +1859,22 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
   let store: TaskStore;
   let db: Db;
   let mockAgent: ReturnType<typeof createMockAgentManager>;
+  /** The mesh-registered agent's directory — see the boundary note below. */
+  let agentDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
     store = new TaskStore(db);
     mockAgent = createMockAgentManager();
     vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
       // no events
     });
+    // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`)
+    // boundary-checks the directory a turn resolves to, so the agent directory
+    // below sits under a real temp root and that root is the boundary.
+    const root = await realpath(tmpdir());
+    agentDir = path.join(root, 'projects', 'agent-dir');
+    await initBoundary(root);
   });
 
   it('records failed run when agent not found in registry', async () => {
@@ -1209,7 +1894,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1226,6 +1910,31 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     await service.stop();
   });
 
+  it('leaves a failed direct run pointing at its own transcript', async () => {
+    // Purpose: a run that failed is exactly when somebody wants to read what it
+    // was saying, and the run-history panel opens the transcript from
+    // `sessionId`. The completed and cancelled rows carried it and the failed
+    // one did not, so the one run worth opening was the one you could not
+    // (DOR-1567).
+    const task = store.createTask(
+      taskInput({ name: 'Boom', prompt: 'explode please', cron: '0 * * * *' })
+    );
+    vi.mocked(mockAgent.sendMessage).mockImplementation((() => {
+      throw new Error('the runtime fell over');
+    }) as unknown as SchedulerAgentManager['sendMessage']);
+
+    const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+    const run = await service.triggerManualRun(task.id);
+    await new Promise((r) => setTimeout(r, 100));
+
+    const updated = store.getRun(run!.id);
+    expect(updated!.status).toBe('failed');
+    expect(updated!.error).toContain('the runtime fell over');
+    expect(updated!.sessionId).toBe(run!.id);
+
+    await service.stop();
+  });
+
   it('uses agent projectPath as CWD when agentId is set', async () => {
     const task = store.createTask(
       cwdTaskInput({
@@ -1236,14 +1945,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       })
     );
 
-    const mockMesh = createMockMeshCore({ 'agent-123': '/projects/agent-dir' });
+    const mockMesh = createMockMeshCore({ 'agent-123': agentDir });
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1255,7 +1963,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/projects/agent-dir' })
+      expect.objectContaining({ cwd: agentDir })
     );
     // A scheduled run is UNATTENDED, and the runtime reads that: an unanswered
     // prompt is refused at the ten-minute countdown instead of waiting four
@@ -1267,7 +1975,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     expect(mockAgent.sendMessage).toHaveBeenCalledWith(
       expect.any(String),
       'test',
-      expect.objectContaining({ cwd: '/projects/agent-dir' })
+      expect.objectContaining({ cwd: agentDir })
     );
 
     await service.stop();
@@ -1289,7 +1997,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1324,7 +2031,6 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,
-        timezone: null,
         mayFire: true,
         firingReason: 'test',
       },
@@ -1355,6 +2061,7 @@ describe('buildTaskAppend', () => {
       timezone: null,
       agentId: null,
       enabled: true,
+      sticky: false,
       maxRuntime: null,
       permissionMode: 'acceptEdits',
       status: 'active',
@@ -1365,6 +2072,8 @@ describe('buildTaskAppend', () => {
       proposedBySessionId: null,
       proposedByAgentPath: null,
       proposedByName: null,
+      origin: null,
+      reasonSource: null,
       nextRun: null,
       nextRuns: [],
     };

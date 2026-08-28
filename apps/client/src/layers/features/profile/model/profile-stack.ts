@@ -29,6 +29,7 @@ export type ProfilePageId =
   | 'connections'
   | 'instructions'
   | 'boundaries'
+  | 'memory'
   | 'manages'
   | 'appearance'
   | 'name'
@@ -47,6 +48,7 @@ const PROFILE_PAGE_IDS: readonly ProfilePageId[] = [
   'connections',
   'instructions',
   'boundaries',
+  'memory',
   'manages',
   'appearance',
   'name',
@@ -73,8 +75,7 @@ export function asProfilePageId(raw: string | null | undefined): ProfilePageId |
  * (the owner above it, an agent it manages).
  */
 export type ProfileStackEntry =
-  | { kind: 'page'; page: ProfilePageId }
-  | { kind: 'profile'; memberId: string };
+  { kind: 'page'; page: ProfilePageId } | { kind: 'profile'; memberId: string };
 
 /** A profile and everything pushed on top of it. */
 export interface ProfileStackState {

@@ -37,7 +37,7 @@ vi.mock('../ui/HomeRoomChips', () => ({
   HomeRoomChips: () => <span data-testid="home-members-chip" />,
 }));
 vi.mock('../ui/NewTaskAction', () => ({
-  NewTaskAction: () => <button type="button">New Task</button>,
+  NewTaskAction: () => <button type="button">New Schedule</button>,
 }));
 
 import { HomeSurfaceBar } from '../ui/HomeSurfaceBar';
@@ -149,7 +149,7 @@ describe('HomeSurfaceBar', () => {
     expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Home',
       'Activity',
-      'Scheduled',
+      'Schedules',
       'Workspaces',
     ]);
   });
@@ -163,23 +163,23 @@ describe('HomeSurfaceBar', () => {
     expect(screen.getAllByText('Home')).toHaveLength(1);
   });
 
-  it('labels the /tasks tab "Scheduled" and links it to /tasks', async () => {
+  it('labels the /tasks tab "Schedules" and links it to /tasks', async () => {
     renderAt('/');
 
     await screen.findByTestId('home-page');
-    expect(screen.getByRole('link', { name: 'Scheduled' })).toHaveAttribute('href', '/tasks');
+    expect(screen.getByRole('link', { name: 'Schedules' })).toHaveAttribute('href', '/tasks');
   });
 
   it.each([
     ['/', 'Home', 'home'],
     ['/activity', 'Activity', 'activity'],
-    ['/tasks', 'Scheduled', 'tasks'],
+    ['/tasks', 'Schedules', 'tasks'],
     ['/workspaces', 'Workspaces', 'workspaces'],
     // The router serves these spellings too — it tolerates a trailing slash and
     // matches case-insensitively — and reports the pathname back exactly as
     // typed. A hand-edited or copied link must still light its tab.
     ['/activity/', 'Activity', 'activity'],
-    ['/tasks//', 'Scheduled', 'tasks'],
+    ['/tasks//', 'Schedules', 'tasks'],
     ['/Activity', 'Activity', 'activity'],
   ])('draws exactly one tab active at %s', async (url, label, testId) => {
     renderAt(url);
@@ -210,16 +210,16 @@ describe('HomeSurfaceBar', () => {
     );
   });
 
-  it('navigates to /tasks when the Scheduled tab is clicked', async () => {
+  it('navigates to /tasks when the Schedules tab is clicked', async () => {
     const user = userEvent.setup();
     const router = renderAt('/');
     await screen.findByTestId('home-page');
 
-    await user.click(screen.getByRole('link', { name: 'Scheduled' }));
+    await user.click(screen.getByRole('link', { name: 'Schedules' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/tasks'));
     expect(await screen.findByTestId('tasks-page')).toBeInTheDocument();
-    expect(activeTabLabels()).toEqual(['Scheduled']);
+    expect(activeTabLabels()).toEqual(['Schedules']);
   });
 
   it('keeps the health dot last on every surface, behind the page action', async () => {
@@ -251,16 +251,16 @@ describe('HomeSurfaceBar', () => {
     }
   });
 
-  it('gives Home the members chip and Scheduled the New Task action — and not the other way round', async () => {
+  it('gives Home the members chip and Schedules the New Schedule action — and not the other way round', async () => {
     renderAt('/');
     await screen.findByTestId('home-page');
     expect(screen.getByTestId('home-members-chip')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'New Task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Schedule' })).not.toBeInTheDocument();
     cleanup();
 
     renderAt('/tasks');
     await screen.findByTestId('tasks-page');
-    expect(screen.getByRole('button', { name: 'New Task' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New Schedule' })).toBeInTheDocument();
     expect(screen.queryByTestId('home-members-chip')).not.toBeInTheDocument();
     cleanup();
 
@@ -269,7 +269,7 @@ describe('HomeSurfaceBar', () => {
     renderAt('/workspaces');
     await screen.findByTestId('workspaces-page');
     expect(screen.queryByTestId('home-members-chip')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'New Task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Schedule' })).not.toBeInTheDocument();
   });
 
   it('keeps ONE tab strip mounted across a tab press — the node survives', async () => {
@@ -294,7 +294,7 @@ describe('HomeSurfaceBar', () => {
     await screen.findByTestId('home-page');
     const before = screen.getByTestId('home-tabs');
 
-    await user.click(screen.getByRole('link', { name: 'Scheduled' }));
+    await user.click(screen.getByRole('link', { name: 'Schedules' }));
     await screen.findByTestId('tasks-page');
 
     expect(screen.getByTestId('home-tabs')).toBe(before);
@@ -305,7 +305,7 @@ describe('HomeSurfaceBar', () => {
  * The bar holds more than a phone shows, and has to say so (DOR-1180).
  *
  * At 390×844 the four labels want 430px, so a cold load drew
- * `Home | Activity | Scheduled | Workspac` with nothing to suggest the word was
+ * `Home | Activity | Schedules | Workspac` with nothing to suggest the word was
  * cut rather than misspelled — macOS draws no scrollbar until you have already
  * scrolled. jsdom lays nothing out, so every number below is stubbed: what these
  * pin is what the component DOES with a measurement. The pixels are

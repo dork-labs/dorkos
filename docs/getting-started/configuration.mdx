@@ -114,14 +114,14 @@ Relay is the messaging layer that lets agents reach you on Telegram, notify each
   }}
 />
 
-### Tasks Configuration
+### Scheduled Tasks Configuration
 
-Tasks runs agent jobs on a schedule (like "every night at 2am"), on their own, without you keeping a terminal open. See the [Task Scheduler guide](/docs/guides/task-scheduler) for setup details.
+A scheduled task runs an agent job on a timer (like "every night at 2am"), on its own, without you keeping a terminal open. See the [Scheduled tasks guide](/docs/guides/task-scheduler) for setup details.
 
 <TypeTable
   type={{
     DORKOS_TASKS_ENABLED: {
-      description: 'Enable the Tasks scheduler for autonomous cron-based agent execution.',
+      description: 'Let scheduled tasks fire on their timers.',
       type: 'boolean',
       default: 'true',
     },
@@ -150,6 +150,23 @@ It is still early alpha. Only turn it on when you know what is on the other side
 ### Mesh
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.
+
+### Memory
+
+Each of your agents keeps a small file of notes — things it learned that are
+worth keeping — and reads it at the start of every conversation it joins. The
+file lives beside the agent, on this machine, and you can open it in any editor.
+
+<TypeTable
+  type={{
+    'memory.provider': {
+      description:
+        'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log — your agents keep working either way, though while that is happening they read the notes file, so anything kept only in the backend that stopped answering is out of view until you fix it and restart. Changing this takes effect the next time DorkOS starts. Only you can change this.',
+      type: 'string',
+      default: 'builtin',
+    },
+  }}
+/>
 
 ### Rooms
 
@@ -409,9 +426,9 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
 
 Changing it applies to the next message you send in each chat — nothing you have open changes underneath you. That is true in both directions, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps at most twelve of these running at once and gives back the one you have used least when it needs room.
 
-**What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, set `runtimes.claudeCode.persistentSession` to `false` and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
+**What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, turn **Warm agents** off in the Control Center (`⌘⇧L`, or `Ctrl+Shift+L`) and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
 
-There is no switch for this one on any screen yet — it used to sit in Settings under Experiments, and it left that list when it stopped being an experiment. Until its new switch arrives, change it with `dorkos config set runtimes.claudeCode.persistentSession false`, or edit `~/.dork/config.json`. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
+The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off — your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
 
 **And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 

@@ -6,6 +6,12 @@
       "issue": "DOR-855",
       "note": "\"Connection\" stops meaning network health in user copy — the word belongs to the Connections domain only (plan D2). Legitimate Connections-domain usage is allowlisted per file in allowlist.json, not exempted here.",
       "terms": ["connection"]
+    },
+    {
+      "id": "wave-2",
+      "issue": "DOR-1517",
+      "note": "\"Mission control\" and \"cockpit\" are retired for good — the operator ruled both out on 2026-08-24 and the category phrase became \"one place\" (meta/website-copy/decisions.md, Decision 18; meta/brand-foundation.md §10). This wave covers render-path strings in app source. The prose surfaces an AST walk cannot see — READMEs, docs MDX, blog posts, context7.json, the PWA manifest — are guarded by scripts/check-banned-words.sh instead. GitHub ships a product literally named \"Mission Control\", so a genuine reference to it is allowlisted per file rather than exempted here.",
+      "terms": ["mission control", "cockpit"]
     }
   ]
 }

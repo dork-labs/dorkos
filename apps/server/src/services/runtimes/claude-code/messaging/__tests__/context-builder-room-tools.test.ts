@@ -27,7 +27,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 describe('the claude-code system prompt append', () => {
   it('teaches react_to_room_entry with the ack-only nudge, in the room_tools block', async () => {
-    const prompt = await buildSystemPromptAppend('/tmp/dor-1234-probe-cwd');
+    const prompt = (await buildSystemPromptAppend('/tmp/dor-1234-probe-cwd')).text;
     expect(prompt).toContain('<room_tools>');
     expect(prompt).toContain('react_to_room_entry');
     expect(prompt).toContain('"no reply needed", "just ack this"');
@@ -40,7 +40,7 @@ describe('the claude-code system prompt append', () => {
     // four takes an opaque id, the room context is the only place those are
     // said, and the failure when it did not say them was not silence — it was
     // an agent passing the channel's #name and getting ROOM_NOT_FOUND.
-    const prompt = await buildSystemPromptAppend('/tmp/dor-1263-probe-cwd');
+    const prompt = (await buildSystemPromptAppend('/tmp/dor-1263-probe-cwd')).text;
     expect(prompt).toContain('<room_context> block for the turn is where they are');
     expect(prompt).toContain('[id · <marker>: ...]');
     expect(prompt).toContain("A room's name (#build) is not a roomId");

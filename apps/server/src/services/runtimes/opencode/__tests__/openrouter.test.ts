@@ -13,7 +13,7 @@ import {
   OpenRouterError,
   type ConfigReadWrite,
   type FetchFn,
-} from '../openrouter.js';
+} from '../providers/openrouter.js';
 
 /** Build a fetch double resolving one canned Response. */
 function resp(status: number, body: unknown): Response {

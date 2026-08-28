@@ -16,7 +16,7 @@ import type { NpmDependency } from './lib/npm-dependencies.js';
  * How much a scheduled job may do on its own once it fires.
  *
  * Derived from the Shape manifest's own schedule schema
- * (`SHAPE_SCHEDULE_PERMISSION_MODES` in `@dorkos/marketplace`) so a mode added
+ * (`SCHEDULE_PERMISSION_MODES` in `@dorkos/marketplace`) so a mode added
  * there is picked up here without a second list to keep in sync. Task
  * SKILL.md files (`.dork/tasks/<name>/SKILL.md`) declare a narrower set
  * (`acceptEdits` | `bypassPermissions`) that is a subset of these.

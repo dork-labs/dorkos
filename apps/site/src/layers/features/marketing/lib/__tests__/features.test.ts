@@ -98,7 +98,7 @@ describe('features catalog data integrity', () => {
     expect(featuredCount).toBeLessThanOrEqual(6);
   });
 
-  it('features the intended six: Mobile Cockpit is in, Tool Approval is out', () => {
+  it('features the intended six: DorkOS on Your Phone is in, Tool Approval is out', () => {
     const featured = features.filter((f) => f.featured).map((f) => f.slug);
     expect(featured).toHaveLength(6);
     expect(featured).toContain('mobile');
@@ -224,7 +224,7 @@ describe('deriveFeatureSpan', () => {
   });
 
   it('sizes a portrait phone capture tall', () => {
-    // The Mobile Cockpit is the catalog's only phone-framed capture.
+    // DorkOS on Your Phone is the catalog's only phone-framed capture.
     expect(deriveFeatureSpan(bySlug('mobile'))).toBe('tall');
   });
 

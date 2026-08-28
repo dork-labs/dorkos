@@ -41,6 +41,7 @@ const NOW = new Date().toISOString();
 
 /** Fully-materialized agent manifest fixture (all schema defaults applied). */
 const MANIFEST: AgentManifest = {
+  workspace: { mode: 'home' },
   id: '01JXAMPLE0000000000000TEST',
   name: 'structured-output-bot',
   description: 'Fixture agent for structured-output tests',
@@ -92,6 +93,7 @@ const TASK: Task = {
   name: 'Nightly verify',
   displayName: null,
   description: null,
+  sticky: false,
   prompt: 'Run the verification suite',
   cron: '0 2 * * *',
   timezone: null,
@@ -107,6 +109,8 @@ const TASK: Task = {
   proposedBySessionId: null,
   proposedByAgentPath: null,
   proposedByName: null,
+  origin: null,
+  reasonSource: null,
   nextRuns: [],
 };
 
@@ -140,6 +144,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         listSessions: async () => [],
       } as unknown as McpToolDeps['transcriptReader'],
       defaultCwd: agentDir,
+      dorkHome: '/tmp/dorkos-test-home',
       taskStore: {
         getTasks: () => [TASK],
       } as unknown as McpToolDeps['taskStore'],
@@ -239,6 +244,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         listSessions: async () => [],
       } as unknown as McpToolDeps['transcriptReader'],
       defaultCwd: agentDir,
+      dorkHome: '/tmp/dorkos-test-home',
       meshCore: {
         list: () => [MANIFEST],
         getStatus: () => ({ ...MESH_STATUS, totalAgents: 'drifted' }),

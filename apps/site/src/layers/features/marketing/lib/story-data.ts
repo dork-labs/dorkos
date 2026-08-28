@@ -83,7 +83,7 @@ export const evolutionSteps: EvolutionStep[] = [
     product: 'DorkOS',
     duration: 'A few weeks',
     description: 'One command layer across all my agents.',
-    ceiling: 'Still had to be awake for any of it to run.',
+    ceiling: 'Still had to kick off every single run myself.',
     color: 'charcoal',
   },
   {
@@ -116,7 +116,7 @@ export const futureCards: FutureCard[] = [
     id: 'autonomous',
     label: 'Autonomous',
     title: 'Agents that run',
-    description: 'Tasks. Already shipping. Your agents work while you sleep.',
+    description: 'Tasks. Already shipping. Your agents run on a schedule, without you.',
     color: 'orange',
   },
   {

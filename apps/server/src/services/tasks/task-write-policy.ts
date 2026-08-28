@@ -17,15 +17,22 @@
  * The parking half of that sentence used to be true of the MCP tool only. Both
  * store insert paths hardcode `status: 'active'`, and `tasks_create` patched it
  * afterwards in the TOOL HANDLER — so `POST /api/tasks`, which is what
- * `dorkos task create` calls, armed a live cron task for the same agent. The
- * route now parks too, on the same trust answer it uses below (`parksOnCreate`
- * in `routes/tasks.ts`).
+ * `dorkos task create` calls, armed a live cron task for the same agent. Both
+ * doors now park on the same trust answer, in the one create sequence they share
+ * (`services/tasks/lifecycle/create-task.ts`).
  *
  * This module is the classification, and it is deliberately the same shape as
  * `core/operator/config-write-policy.ts`: a table with a verdict per field, the
  * operator-only set derived from the table so the two cannot drift, and one
  * function that tells a caller which fields a write body reached for. Read that
  * module first — the reasoning there is the reasoning here, one level down.
+ *
+ * It also answers the adjacent question, added by DOR-1568: what happens to a
+ * field neither schema has ever heard of. Both doors used to drop those in
+ * silence and report success, so a caller could not tell a change that landed
+ * from one that evaporated. {@link refuseUnknownTaskUpdateFields} refuses them
+ * instead, and gives re-homing (`target`, `agentId`) its own answer because it is
+ * the one people actually try.
  *
  * ## How the two surfaces use it, and why they use it differently
  *
@@ -74,26 +81,29 @@
  *   operator, and a manifest can no longer declare that its schedule starts
  *   enabled by default either.
  *
- * ## Why not the cookie bar, given a cron task IS a standing grant
+ * ## The cookie bar, under login-on (DOR-1569)
  *
- * `routes/config.ts` puts a STRICTER bar on `approvals.standingGrants`: a real
- * session cookie, checked before the trust question and regardless of its
- * answer, reasoning that a standing permission keeps saying yes for hours. A
- * cron task carrying `bypassPermissions` has exactly that character, so the
- * divergence is worth naming rather than leaving as an omission.
+ * A cron task carrying `bypassPermissions` is a standing grant of the same
+ * character as `approvals.standingGrants`: it keeps saying yes, on its own, for
+ * as long as it is armed. So `clearsTheAgentBar` (in `routes/tasks.ts`) composes
+ * `requireOperatorCookieUnderLogin` — the SAME second bar the approval, config,
+ * and extension-approval routes run — before the agent bar. Under login-on that
+ * refuses every credential but a session cookie, so a per-user API key no longer
+ * clears the bar: an agent that reads the operator's key off disk and drops its
+ * `X-DorkOS-Agent` header can no longer un-clamp `bypassPermissions` or arm a
+ * live cron without approval.
  *
- * It is deliberate. `requireOperatorCookie` refuses OUTRIGHT when login is off,
- * which is the default posture, and the cockpit's own task form writes
- * `permissionMode` through this route. Adopting that bar would break creating a
- * task in the shipped default configuration, a much larger blast radius than the
- * one config subtree it was introduced for, where the cockpit had another path.
- * The honest summary: for tasks the guarantee is "an agent that names itself
- * cannot", not "only a proven person can". If DOR-505 generalizes the cookie
- * requirement for operator-only writes, tasks should be reconsidered along with
- * it rather than separately.
+ * It is the `...UnderLogin` half, NOT the full `requireOperatorCookie` (which
+ * refuses OUTRIGHT when login is off). With login off — the shipped default —
+ * this bar allows, the cockpit's own task form keeps working, and nothing
+ * changes: the residual there is the documented DOR-505 one, closed only by
+ * turning login on. The honest summary: for tasks the guarantee is now "a named
+ * agent cannot, and under login-on only a proven person can". This answers, for
+ * tasks, the DOR-553 question the earlier note deferred.
  *
  * @module services/tasks/task-write-policy
  */
+import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
 
 /**
  * Whether an agent may write one field of a scheduled task.
@@ -140,6 +150,11 @@ export const TASK_WRITE_POLICY = {
   // `mcp-tools/task-tools.ts` for the separate fact that `tasks_create` accepts
   // this argument and ignores it.
   maxRuntime: 'agent-writable',
+  // Whether runs resume one session or start fresh each time (DOR-1571). A
+  // behavior choice, not a power one: sticky grants no capability an isolated run
+  // lacks, and a sticky schedule an agent proposes still parks for approval like
+  // any other. So an agent may set it on the user's word, same as `enabled`.
+  sticky: 'agent-writable',
   // The case FOR the schedule, in the proposer's own words (DOR-1394). Writable
   // by definition: it is the agent's own sentence, and the whole point is that
   // an agent must supply it. An operator-only verdict here would refuse every
@@ -162,6 +177,26 @@ export const OPERATOR_ONLY_TASK_ERROR = 'Only a person can decide how a schedule
 
 /** The machine-readable code every operator-only task refusal carries. */
 export const OPERATOR_ONLY_TASK_CODE = 'operator_only_task_field';
+
+/**
+ * The refusal an agent reads when it tries to run a scheduled task on demand
+ * (DOR-1481).
+ *
+ * Running a task now is not a FIELD, so it has no row in the table above — but
+ * it is the same decision the table is about, reached through a different door.
+ * `POST /api/tasks/:id/trigger` had no caller check at all, which made the
+ * parking on create decorative: an agent could propose a schedule, watch it
+ * park at `pending_approval`, and then trigger it anyway.
+ *
+ * Written for the model, like {@link describeOperatorOnlyTaskRefusal}: it says
+ * what did not happen, why, and what to do instead, because a model that is
+ * only told "no" tries again.
+ */
+export const OPERATOR_ONLY_TRIGGER_REFUSAL =
+  "DorkOS did not run this task. Whether a scheduled task runs is the person's to decide, " +
+  'not yours — and that goes double for one still waiting to be approved, since running it ' +
+  'now would do most of what approving it would allow. Ask the person to open the task in ' +
+  'DorkOS and run it there.';
 
 /**
  * Find the operator-only fields a task write body reaches for.
@@ -188,6 +223,111 @@ export function findOperatorOnlyTaskFields(body: unknown): string[] {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return [];
   const keys = new Set(Object.keys(body));
   return OPERATOR_ONLY_TASK_FIELDS.filter((field) => keys.has(field)).sort();
+}
+
+/**
+ * Every field `PATCH /api/tasks/:id` and `tasks_update` accept.
+ *
+ * Read from the request schema rather than restated, so a field added there is
+ * accepted here on the same commit and cannot become an accidental refusal.
+ */
+const UPDATABLE_TASK_FIELDS: readonly string[] = Object.keys(UpdateTaskRequestSchema.shape).sort();
+
+/**
+ * The fields that decide WHERE a task lives. Set once, at create, and never by
+ * an update (DOR-1568).
+ *
+ * `target` is what `POST /api/tasks` and `tasks_create` take; `agentId` is what
+ * the resulting row carries. Neither is in the update schema, so before this
+ * both were STRIPPED in silence: `parseBody` uses a non-strict `z.object`, and
+ * the MCP SDK drops an argument the tool never declared. An agent that tried to
+ * file its own task under itself was told the update succeeded and nothing had
+ * changed — which is how a file-less orphan came to be adopted by nobody.
+ */
+const IMMUTABLE_TASK_FIELDS: readonly string[] = ['agentId', 'target'];
+
+/** The `error` every unknown-or-immutable update-field refusal carries. */
+const UNKNOWN_TASK_FIELD_ERROR = 'DorkOS does not know how to change that on a task';
+
+/** The machine-readable code every unknown-or-immutable update-field refusal carries. */
+const UNKNOWN_TASK_FIELD_CODE = 'unknown_task_field';
+
+/** A whole-call refusal, in the shape both the route and the MCP tools answer with. */
+export interface TaskFieldRefusal {
+  /** The one-line summary. */
+  error: string;
+  /** The machine-readable code. */
+  code: string;
+  /** Which fields stopped the call, sorted. */
+  fields: string[];
+  /** The paragraph a person or a model reads. */
+  message: string;
+}
+
+/**
+ * Refuse an update that names a field this surface cannot change — or return
+ * `null` to let it through (DOR-1568).
+ *
+ * ## Why refusing beats stripping
+ *
+ * Both doors used to strip quietly and answer 200. A caller cannot tell a change
+ * that landed from one that evaporated, so it believes the wrong thing about its
+ * own task and acts on it — the exact failure `findOperatorOnlyTaskFields` exists
+ * to prevent, one class down: not "you may not", but "there is no such thing".
+ *
+ * The check reads the RAW body, before Zod, for the reason the operator-only
+ * guard does: after parsing there is nothing left to see. Callers that pass
+ * arguments alongside the body (`tasks_update` carries `id`) strip those first.
+ *
+ * @param body - The update body a caller supplied; a non-object names nothing.
+ * @returns The refusal envelope, or `null` when every named field is updatable.
+ */
+export function refuseUnknownTaskUpdateFields(body: unknown): TaskFieldRefusal | null {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return null;
+  const fields = Object.keys(body)
+    .filter((key) => !UPDATABLE_TASK_FIELDS.includes(key))
+    .sort();
+  if (fields.length === 0) return null;
+  return {
+    error: UNKNOWN_TASK_FIELD_ERROR,
+    code: UNKNOWN_TASK_FIELD_CODE,
+    fields,
+    message: describeUnknownTaskUpdateRefusal(fields),
+  };
+}
+
+/**
+ * The refusal a caller reads when it named a field an update cannot change.
+ *
+ * Re-homing gets its own paragraph because it is the one people actually try, and
+ * "unknown field" would be a true sentence that teaches nothing: a task IS filed
+ * under an agent, the caller is asking a reasonable question, and the honest
+ * answer is that the filing is decided at create and moving it means making it
+ * again. Everything else gets the list of fields that do work, because a model
+ * told only "no" tries again.
+ *
+ * @param fields - The offending fields, from {@link refuseUnknownTaskUpdateFields}.
+ * @returns One paragraph, written for whoever reads it.
+ */
+function describeUnknownTaskUpdateRefusal(fields: readonly string[]): string {
+  const rehoming = fields.filter((field) => IMMUTABLE_TASK_FIELDS.includes(field));
+  const unknown = fields.filter((field) => !IMMUTABLE_TASK_FIELDS.includes(field));
+  const parts = [`DorkOS changed nothing — not one field of this task.`];
+  if (rehoming.length > 0) {
+    parts.push(
+      `A task is filed under one agent (or under none at all) when it is created, and it stays ` +
+        `there: ${rehoming.join(', ')} cannot be changed afterwards, because the task's file ` +
+        `lives in that agent's folder. To move it, delete this task and create it again with the ` +
+        `target you want.`
+    );
+  }
+  if (unknown.length > 0) {
+    parts.push(
+      `There is no such field on a task as ${unknown.join(', ')}. You can change: ` +
+        `${UPDATABLE_TASK_FIELDS.join(', ')}.`
+    );
+  }
+  return parts.join(' ');
 }
 
 /**

@@ -16,11 +16,12 @@ import { join, relative } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { TaskFrontmatterSchema } from '@dorkos/skills';
+import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import { readNpmDependencies } from './lib/npm-dependencies.js';
+import { packageSchedules, scheduleDisplayName } from './lib/package-schedules.js';
 import type {
   ConflictReport,
   PermissionPreview,
@@ -156,12 +157,14 @@ async function readExtensionManifests(
 
 /**
  * Read every `SKILL.md` under `<packagePath>/.dork/tasks/<name>/` via the
- * shared `@dorkos/skills` parser. Invalid SKILL files are skipped.
+ * shared `@dorkos/skills` parser. Files without a readable `schedule:` block are
+ * skipped, as are invalid ones.
  *
- * A task SKILL.md declares its own permission mode (`permissions`, default
- * `acceptEdits`) and whether it is active on arrival (`enabled`, default
- * `true`), so a scheduled job from this source is disclosed with exactly the
- * same detail as a Shape's `schedules[]` entry — including the clamp. A file on
+ * A skill declares its schedule's permission mode (`schedule.permissions`,
+ * default `acceptEdits`) and whether it is active on arrival
+ * (`schedule.enabled`, default `true`), so a scheduled job from this source is
+ * disclosed with exactly the same detail as a Shape's `schedules[]` entry —
+ * including the clamp. A file on
  * disk cannot arm an unattended bypass any more than a manifest can
  * (`services/tasks/schedule-permission-clamp.ts`), so reporting the raw
  * declaration would warn a person about a job the install would never create.
@@ -198,13 +201,18 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
     if (!(await pathExists(skillPath))) continue;
     try {
       const content = await readFile(skillPath, 'utf-8');
-      const parsed = parseSkillFile(skillPath, content, TaskFrontmatterSchema);
-      if (parsed.ok) {
+      // Read with the UNIFIED schema since DOR-1486: scheduling lives in the
+      // `schedule:` block, and a package still shipping the retired top-level
+      // fields declares no schedule at all — nothing materializes it, nothing
+      // discovers it, so there is nothing to disclose.
+      const parsed = parseSkillFile(skillPath, content, SkillFrontmatterSchema);
+      if (parsed.ok && hasSchedule(parsed.definition.meta)) {
+        const { schedule } = parsed.definition.meta;
         results.push({
           name: parsed.definition.meta.name,
-          cron: parsed.definition.meta.cron ?? null,
-          permissionMode: clampSchedulePermissionMode(parsed.definition.meta.permissions).mode,
-          startsEnabled: parsed.definition.meta.enabled,
+          cron: schedule.cron ?? null,
+          permissionMode: clampSchedulePermissionMode(schedule.permissions).mode,
+          startsEnabled: schedule.enabled,
         });
       }
     } catch {
@@ -241,12 +249,24 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
  * `true` here remains the more permissive of the two possible outcomes.
  */
 function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSchedule[] {
-  if (manifest.type !== 'shape') return [];
-  return manifest.schedules.map((schedule) => ({
-    name: schedule.name,
-    cron: schedule.cron,
-    permissionMode: clampSchedulePermissionMode(schedule.permissionMode).mode,
-    startsEnabled: schedule.startEnabled,
+  // Every type that can declare a schedule is disclosed, not just Shapes
+  // (DOR-1487). The gate here used to be `type !== 'shape'` because the slot was
+  // Shape-only; leaving it would have made a plugin's cron the one kind of
+  // unattended work a person approves an install without being shown.
+  // `packageSchedules` also answers for `adapter`, which has no slot at all.
+  return packageSchedules(manifest).map((schedule, index) => ({
+    // A by-reference schedule is named by the skill it runs; an inline one
+    // carries its own name.
+    name: scheduleDisplayName(schedule, index),
+    cron: schedule.cron ?? null,
+    // Coalesced to the schema's own defaults, exactly as the materializer does.
+    // Not every manifest reaching the preview was parsed — one read off disk by
+    // an older build arrives with these keys missing — and this is the consent
+    // surface: an `undefined` here renders as a blank where a permission mode
+    // should be, which reads as "nothing to worry about" for the one field that
+    // says what an unattended job may do.
+    permissionMode: clampSchedulePermissionMode(schedule.permissionMode ?? 'acceptEdits').mode,
+    startsEnabled: schedule.startEnabled ?? false,
   }));
 }
 

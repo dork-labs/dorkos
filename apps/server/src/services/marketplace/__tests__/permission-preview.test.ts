@@ -18,7 +18,7 @@ import type {
   ShapePackageManifest,
   SkillPackPackageManifest,
 } from '@dorkos/marketplace';
-import { TASK_PERMISSION_MODES } from '@dorkos/skills/task-schema';
+import { TASK_PERMISSION_MODES } from '@dorkos/skills/schedule-schema';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { ConflictDetector } from '../conflict-detector.js';
 import { AgentInstallFlow, type AgentCreatorLike } from '../flows/install-agent.js';
@@ -66,6 +66,7 @@ function pluginManifest(
     layers: [],
     requires: [],
     extensions: [],
+    schedules: [],
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ function agentManifest(name: string): AgentPackageManifest {
     tags: [],
     layers: [],
     requires: [],
+    schedules: [],
   };
 }
 
@@ -113,6 +115,7 @@ function skillPackManifest(name: string): SkillPackPackageManifest {
     tags: [],
     layers: [],
     requires: [],
+    schedules: [],
   };
 }
 
@@ -180,10 +183,19 @@ async function createFixturePackage(
   for (const task of options.tasks ?? []) {
     const taskDir = join(pkgPath, '.dork', 'tasks', task.name);
     await mkdir(taskDir, { recursive: true });
-    const fmLines: string[] = [`name: ${task.name}`, `description: ${task.description}`];
-    if (task.cron) fmLines.push(`cron: '${task.cron}'`);
-    if (task.permissions) fmLines.push(`permissions: ${task.permissions}`);
-    if (task.enabled !== undefined) fmLines.push(`enabled: ${task.enabled}`);
+    // The `schedule:` block, because that is what makes a shipped skill a
+    // schedule since DOR-1486 — a package still writing these at the top level
+    // declares nothing the preview could disclose.
+    const fmLines: string[] = [
+      `name: ${task.name}`,
+      `description: ${task.description}`,
+      'schedule:',
+    ];
+    if (task.cron) fmLines.push(`  cron: '${task.cron}'`);
+    if (task.permissions) fmLines.push(`  permissions: ${task.permissions}`);
+    if (task.enabled !== undefined) fmLines.push(`  enabled: ${task.enabled}`);
+    // An all-default block still has to be a MAPPING, not an empty key.
+    if (fmLines.length === 3) fmLines[2] = 'schedule: {}';
     const skillContent = `---\n${fmLines.join('\n')}\n---\n\nTask body for ${task.name}.\n`;
     await writeFile(join(taskDir, 'SKILL.md'), skillContent);
   }
@@ -489,6 +501,94 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.schedules).toEqual([
         { name: 'tidy', cron: '@daily', permissionMode: 'acceptEdits', startsEnabled: true },
       ]);
+    });
+
+    // DOR-1487: the slot opened past Shapes, and the preview is the CONSENT
+    // surface — the last thing a person reads before approving unattended work.
+    // A schedule the preview omits is one nobody agreed to.
+    it.each(['plugin', 'agent', 'skill-pack'] as const)(
+      'discloses the schedules a %s manifest declares',
+      async (type) => {
+        const manifest = {
+          ...(type === 'plugin'
+            ? pluginManifest('sched-pkg')
+            : type === 'agent'
+              ? agentManifest('sched-pkg')
+              : skillPackManifest('sched-pkg')),
+          schedules: [
+            {
+              name: 'nightly-tidy',
+              description: 'Tidy overnight.',
+              prompt: 'Tidy.',
+              cron: '0 3 * * *',
+              timezone: null,
+              permissionMode: 'acceptEdits' as const,
+              startEnabled: true,
+            },
+          ],
+        } as unknown as PluginPackageManifest;
+        const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+        const preview = await builder.build(pkgPath, manifest);
+
+        expect(preview.schedules).toEqual([
+          {
+            name: 'nightly-tidy',
+            cron: '0 3 * * *',
+            permissionMode: 'acceptEdits',
+            startsEnabled: true,
+          },
+        ]);
+      }
+    );
+
+    it('names a skillRef schedule by the skill it runs', async () => {
+      const manifest = {
+        ...pluginManifest('ref-pkg'),
+        schedules: [
+          {
+            skillRef: 'daily-report',
+            cron: '0 9 * * *',
+            timezone: null,
+            permissionMode: 'acceptEdits' as const,
+            startEnabled: false,
+          },
+        ],
+      } as unknown as PluginPackageManifest;
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules).toEqual([
+        {
+          name: 'daily-report',
+          cron: '0 9 * * *',
+          permissionMode: 'acceptEdits',
+          startsEnabled: false,
+        },
+      ]);
+    });
+
+    it('discloses the mode a declared schedule GETS, not the one it asked for', async () => {
+      const manifest = {
+        ...pluginManifest('greedy-pkg'),
+        schedules: [
+          {
+            name: 'sweep',
+            description: 'Sweep.',
+            prompt: 'Sweep.',
+            cron: '0 3 * * *',
+            timezone: null,
+            permissionMode: 'bypassPermissions' as const,
+            startEnabled: true,
+          },
+        ],
+      } as unknown as PluginPackageManifest;
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules[0]?.permissionMode).toBe('acceptEdits');
     });
 
     it("reads a Shape manifest's declared schedules, which no preview used to show", async () => {

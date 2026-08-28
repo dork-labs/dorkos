@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { TASK_SUBJECT_LABEL } from '@dorkos/shared/relay-schemas';
 import { resolveSubjectLabel, resolveSubjectLabels } from '../subject-resolver.js';
 
 describe('resolveSubjectLabel', () => {
@@ -12,9 +13,16 @@ describe('resolveSubjectLabel', () => {
     expect(result).toEqual({ label: 'System Console', raw: 'relay.system.console' });
   });
 
-  it('resolves relay.system.tasks.* to "Tasks Scheduler"', async () => {
+  // The server half of the twin-resolver guard (DOR-1490). The client's
+  // `resolve-label.ts` renders the same subject on the relay feed and cannot be
+  // imported here, so the shared constant is what keeps the two saying one
+  // thing. Its suite asserts this same equality from the other side.
+  it('names a scheduler subject with the shared label, not a local copy of it', async () => {
     const result = await resolveSubjectLabel('relay.system.tasks.sched-1', {});
-    expect(result).toEqual({ label: 'Tasks Scheduler', raw: 'relay.system.tasks.sched-1' });
+    expect(result).toEqual({ label: TASK_SUBJECT_LABEL, raw: 'relay.system.tasks.sched-1' });
+    // And the words themselves, so a rename of the constant still has to be a
+    // deliberate act rather than a silent one.
+    expect(TASK_SUBJECT_LABEL).toBe('Scheduled tasks');
   });
 
   it('resolves relay.agent.{sessionId} to agent name when available', async () => {

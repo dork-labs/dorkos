@@ -145,8 +145,16 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'relay.enabled',
   'relay.dataDir',
   'scheduler.enabled',
-  'scheduler.timezone',
   'scheduler.retentionCount',
+  // When an idle agent working copy is tidied away, and how long a queued merge
+  // waits its turn. Neither enforces a safety bound: the reap sweep spares
+  // anything dirty or unmerged BY CONSTRUCTION, so no value of the first can
+  // lose work, and the second buys patience rather than any file, byte or turn.
+  // Both are operator-only to WRITE — one governs a deletion on disk — which is
+  // a different question from what their defaults do, and the module docs above
+  // say so.
+  'rooms.repo.worktreeReapDays',
+  'rooms.repo.mergeQueueWaitMs',
   'onboarding.completedSteps',
   'onboarding.skippedSteps',
   'onboarding.startedAt',
@@ -235,6 +243,14 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'tunnel.auth': null,
   // Nothing is scanned until a person names a root.
   'mesh.scanRoots': [],
+  // Which backend holds what an agent remembers (spec `agent-memory`, D7). A
+  // real axis rather than a preference: `'builtin'` is one markdown file beside
+  // the agent, on this machine, and every other value this key could name is a
+  // backend that holds the same notes somewhere else. The default lands on the
+  // one that keeps them here. No PROTECTIVE_CARRYOVERS rule: a wipe lands back
+  // on `'builtin'`, which IS the protective value, so there is nothing a
+  // carryover could restore that recovery does not already give.
+  'memory.provider': 'builtin',
   // Automatic replies are limited by default (DOR-1428). The three numbers
   // beneath this switch are permissive at the values they now ship — see
   // PERMISSIVE_DEFAULTS — but the switch itself is the protective side of a
@@ -269,6 +285,14 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
+  // The three ceilings a merge into a room's own files is refused against (spec
+  // `project-rooms` §3.6). Real bounds at their defaults, on the same footing as
+  // the upload caps above: what they hold back is content member agents wrote,
+  // arriving in a tree the server owns. A person can tighten any of them, so all
+  // three carry across a wipe.
+  'rooms.repo.maxFileBytes': 5242880,
+  'rooms.repo.maxRepoBytes': 524288000,
+  'rooms.repo.maxRoomMdBytes': 24576,
   // No user extension runs its code until a person approves it (DOR-516).
   'extensions.enabled': [],
   'extensions.disabled': [],
@@ -372,6 +396,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     reason:
       'Accepts every MIME type, because an agent working on a real codebase receives arbitrary file types and a curated allowlist would reject legitimate work. The size and count caps stay on and are the real bound.',
   },
+  'rooms.repo.enabled': {
+    value: true,
+    reason:
+      "A room may have files of its own by default: a git checkout under the DorkOS data directory that member agents run tools in. The narrow reading is that shipping ON grants nothing on the day it lands — no room has files until a person gives them to it, and enabling a room's repo is operator-only and never an agent capability — but the switch is what decides whether that surface can exist at all, and calling it a preference would make the carryover rule beside it read as ceremony. So it is argued here instead. The relaxation is bounded rather than open: every merge is server-mediated and serialized, refused for an escaping symlink or an over-cap file, and nothing in a room's files executes at sync or merge time (git does not clone hooks). Nothing in a room can widen what an agent is permitted to do — permission mode, capability tiers and standing grants stay member-owned and unreachable from room content. Turning it off is one setting that puts every room back to behaving exactly as it does today, nothing on disk is deleted, and PROTECTIVE_CARRYOVERS keeps that off through a wipe.",
+  },
   'welcomeBack.enabled': {
     value: true,
     reason:
@@ -408,7 +437,7 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
   'runtimes.claudeCode.persistentSession': {
     value: true,
     reason:
-      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one `PATCH /api/config` away — a switch for it lands with the Control Center (task 2.2), which is the one thing this default is currently missing.',
+      'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
   },
   'scheduler.maxConcurrentRuns': {
     value: 4,

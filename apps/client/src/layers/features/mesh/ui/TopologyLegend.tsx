@@ -83,7 +83,7 @@ export function TopologyLegend({ namespaces }: TopologyLegendProps) {
           <span className="flex h-2.5 w-6 items-center justify-center">
             <Clock className="h-3 w-3 text-blue-500" />
           </span>
-          <span>Tasks schedules</span>
+          <span>Scheduled tasks</span>
         </div>
 
         {/* Namespace colors (only when multiple namespaces) */}

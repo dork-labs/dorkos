@@ -226,6 +226,42 @@ describe('CreateTaskDialog', () => {
     });
   });
 
+  it('sends sticky when the toggle is on, and omits it otherwise (DOR-1571)', async () => {
+    const transport = createMockTransport({
+      createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-sticky' })),
+    });
+    const Wrapper = createWrapper(transport);
+
+    render(
+      <Wrapper>
+        <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+      </Wrapper>
+    );
+
+    fireEvent.click(screen.getByText('Start from scratch'));
+    fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
+      target: { value: 'Standup digest' },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+      { target: { value: 'Summarise what changed' } }
+    );
+    fireEvent.click(screen.getByText('Use a cron expression'));
+    fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
+      target: { value: '0 9 * * *' },
+    });
+
+    // Flip the sticky toggle on, then create.
+    fireEvent.click(screen.getByRole('switch', { name: /sticky/i }));
+    fireEvent.click(screen.getByText('Create'));
+
+    await waitFor(() => {
+      expect(transport.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Standup digest', sticky: true })
+      );
+    });
+  });
+
   it('submits update with correct ID in edit mode', async () => {
     const schedule = createMockSchedule({
       id: 'sched-42',
@@ -381,7 +417,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
 
-      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+      await waitFor(() => expect(screen.getByRole('switch', { name: /schedule/i })).toBeChecked());
       return transport;
     }
 
@@ -390,16 +426,16 @@ describe('CreateTaskDialog', () => {
       // left the dialog saying a schedule was off while its cron kept firing.
       const transport = await renderWithFailingToggle();
 
-      fireEvent.click(screen.getByRole('switch'));
+      fireEvent.click(screen.getByRole('switch', { name: /schedule/i }));
       // Optimistic: it reads "off" straight away.
-      expect(screen.getByRole('switch')).not.toBeChecked();
+      expect(screen.getByRole('switch', { name: /schedule/i })).not.toBeChecked();
 
       await waitFor(() =>
         expect(transport.updateTask).toHaveBeenCalledWith('sched-1', {
           enabled: false,
         })
       );
-      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+      await waitFor(() => expect(screen.getByRole('switch', { name: /schedule/i })).toBeChecked());
     });
 
     it('cannot issue a second change while the first is still in flight', async () => {
@@ -430,24 +466,24 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
 
-      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
+      await waitFor(() => expect(screen.getByRole('switch', { name: /schedule/i })).toBeChecked());
 
       // First toggle: off. It hangs, so the change is in flight.
-      fireEvent.click(screen.getByRole('switch'));
-      expect(screen.getByRole('switch')).not.toBeChecked();
-      await waitFor(() => expect(screen.getByRole('switch')).toBeDisabled());
+      fireEvent.click(screen.getByRole('switch', { name: /schedule/i }));
+      expect(screen.getByRole('switch', { name: /schedule/i })).not.toBeChecked();
+      await waitFor(() => expect(screen.getByRole('switch', { name: /schedule/i })).toBeDisabled());
 
       // Second toggle, mid-flight. The disabled switch must swallow it — this is
       // the click that used to detach the first mutation's observer.
-      fireEvent.click(screen.getByRole('switch'));
+      fireEvent.click(screen.getByRole('switch', { name: /schedule/i }));
       expect(updateTask).toHaveBeenCalledTimes(1);
 
       // Now let the first one fail.
       rejectFirst(new Error('Server said no'));
 
       // The switch goes back to what the server actually holds: ON.
-      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
-      expect(screen.getByRole('switch')).not.toBeDisabled();
+      await waitFor(() => expect(screen.getByRole('switch', { name: /schedule/i })).toBeChecked());
+      expect(screen.getByRole('switch', { name: /schedule/i })).not.toBeDisabled();
       expect(updateTask).toHaveBeenCalledTimes(1);
       expect(updateTask).toHaveBeenCalledWith('sched-1', { enabled: false });
     });
@@ -467,11 +503,11 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
 
-      await waitFor(() => expect(screen.getByRole('switch')).toBeChecked());
-      fireEvent.click(screen.getByRole('switch'));
+      await waitFor(() => expect(screen.getByRole('switch', { name: /schedule/i })).toBeChecked());
+      fireEvent.click(screen.getByRole('switch', { name: /schedule/i }));
 
       await waitFor(() => expect(transport.updateTask).toHaveBeenCalled());
-      expect(screen.getByRole('switch')).not.toBeChecked();
+      expect(screen.getByRole('switch', { name: /schedule/i })).not.toBeChecked();
     });
   });
 

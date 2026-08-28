@@ -82,6 +82,7 @@ function createMockDeps(): McpToolDeps {
     notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
+    dorkHome: '/tmp/dorkos-test-home',
     meshCore: {
       syncFromDisk: vi.fn().mockResolvedValue(true),
     } as unknown as McpToolDeps['meshCore'],

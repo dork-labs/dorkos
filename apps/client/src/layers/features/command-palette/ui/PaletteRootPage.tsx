@@ -48,13 +48,14 @@ interface PaletteRootPageProps {
   /** The whole room list, for its load state. */
   rooms: PaletteRooms;
   /**
-   * The hand-off to the surface that searches what was said, or `null`.
+   * The hand-off to the surface that searches what was said, or `null` when
+   * nothing has been typed to hand across.
    *
-   * `null` is the shipping state and it means the row is ABSENT — no disabled
-   * row, no placeholder. Only a cockpit that actually serves a message-search
-   * page produces one (`model/search-surface`).
+   * `null` means the row is ABSENT — no disabled row, no placeholder. A row
+   * offering to search for nothing is a dead end dressed as a destination
+   * (`model/search-surface`).
    */
-  searchHandoff: { term: string; onSelect: () => void } | null;
+  searchHandoff: { term: string; isScoped: boolean; onSelect: () => void } | null;
   onFeatureAction: (action: string) => void;
   onQuickAction: (action: string) => void;
   onGoToAgentActions: (agent: AgentPathEntry) => void;
@@ -233,10 +234,9 @@ export function PaletteRootPage({
       )}
 
       {/*
-       * The boundary of what ⌘K can answer, drawn last and only when there is
-       * somewhere to send the question. Until a message-search surface exists
-       * this is nothing at all — the list simply ends at its last result, which
-       * is the truth about what this cockpit can find (§15).
+       * The boundary of what ⌘K can answer, drawn last: this list holds what
+       * things are CALLED, and the row below it is where the question "what was
+       * said" goes instead (§15).
        *
        * No `isZeroQuery` guard, deliberately: the hand-off is already `null`
        * whenever nothing has been typed, because a row offering to search for
@@ -245,7 +245,11 @@ export function PaletteRootPage({
        */}
       {searchHandoff && (
         <CommandGroup>
-          <PaletteSearchHandoffRow term={searchHandoff.term} onSelect={searchHandoff.onSelect} />
+          <PaletteSearchHandoffRow
+            term={searchHandoff.term}
+            isScoped={searchHandoff.isScoped}
+            onSelect={searchHandoff.onSelect}
+          />
         </CommandGroup>
       )}
 

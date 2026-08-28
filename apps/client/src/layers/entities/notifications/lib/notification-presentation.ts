@@ -50,6 +50,11 @@ export interface NotificationLink {
 export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'ask.pending': ShieldQuestion,
   'schedule.parked': Clock,
+  // Reserved: a capability approval keeps its history in the `approvals` table,
+  // so no row of this kind is ever stored today (DOR-1570). The entry exists
+  // because this record is exhaustive over `NotificationKind` — which is what
+  // makes a future emitter a compile error here rather than a blank icon.
+  'approval.pending': ShieldQuestion,
   'session.error': CircleAlert,
   'turn.completed': CheckCircle2,
   'run.completed': CheckCircle2,

@@ -30,6 +30,22 @@ const state = vi.hoisted(() => ({
   registered: true,
 }));
 
+/**
+ * The data directory this suite mounts its router on, and the prefix its
+ * `fs.readFile` mock treats as "a file the route just wrote".
+ *
+ * One constant because the two MUST agree. The mock answers a path under this
+ * prefix with empty content and every other path with ENOENT, and the update
+ * route reads those as two different worlds — "a file that is there" versus
+ * "a legacy row with no file" (DOR-1481). If the prefix and the `dorkHome`
+ * argument ever drifted apart, fixtures would quietly cross into the other
+ * branch and the tests would still pass, for the wrong reason.
+ *
+ * `vi.hoisted` because the `vi.mock` factories below are hoisted above ordinary
+ * module scope and could not otherwise see it.
+ */
+const DORK_HOME = vi.hoisted(() => '/tmp/dork-test');
+
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => {
@@ -51,7 +67,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({
-  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/nightly/SKILL.md'),
+  writeSkillFile: vi.fn().mockResolvedValue(`${DORK_HOME}/tasks/nightly/SKILL.md`),
   deleteSkillDir: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -66,7 +82,18 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     default: {
       ...(actual.default as Record<string, unknown>),
       access: vi.fn().mockRejectedValue(new Error('ENOENT')),
-      readFile: vi.fn().mockResolvedValue(''),
+      // A path the POST path just "wrote" reads back empty; every other path is
+      // a row fixture with no file behind it, and the honest answer for those is
+      // ENOENT. The update route now tells that apart from a file it cannot read
+      // or parse, and only ENOENT means "legacy DB-only task, edit the row alone"
+      // (DOR-1481) — so a blanket empty read would make every fixture here look
+      // like a file whose contents are unparseable garbage.
+      readFile: vi.fn().mockImplementation(async (p: string) => {
+        if (typeof p === 'string' && p.startsWith(`${DORK_HOME}/`)) return '';
+        throw Object.assign(new Error(`ENOENT: no such file or directory, open '${p}'`), {
+          code: 'ENOENT',
+        });
+      }),
     },
   };
 });
@@ -74,6 +101,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
@@ -84,6 +112,7 @@ function runtimes(overrides: Partial<UserConfig['runtimes']> = {}): UserConfig['
 
 function createMockScheduler(): TaskSchedulerService {
   return {
+    isStarted: true,
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
@@ -110,17 +139,31 @@ function mockParsedFile(permissions: string | undefined): void {
       meta: {
         name: 'nightly',
         description: 'sweep the repo',
-        cron: '0 3 * * *',
-        timezone: 'UTC',
-        enabled: true,
-        ...(permissions !== undefined ? { permissions } : {}),
+        schedule: {
+          cron: '0 3 * * *',
+          timezone: 'UTC',
+          enabled: true,
+          permissions: permissions ?? 'acceptEdits',
+        },
       },
       body: 'sweep it',
-      filePath: '/tmp/dork-test/tasks/nightly/SKILL.md',
-      dirPath: '/tmp/dork-test/tasks/nightly',
+      filePath: `${DORK_HOME}/skills/nightly/SKILL.md`,
+      dirPath: `${DORK_HOME}/skills/nightly`,
       scope: 'global',
     },
   } as unknown as ReturnType<typeof parseSkillFile>);
+}
+
+/**
+ * The `schedule:` mapping the route just wrote.
+ *
+ * Scheduling fields live inside the block since DOR-1486, so a test that read
+ * the top level would report `undefined` for every one of them and pass by
+ * accident wherever it expected an absence.
+ */
+function writtenSchedule(): Record<string, unknown> {
+  const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+  return (frontmatter.schedule ?? {}) as Record<string, unknown>;
 }
 
 /** The body a person's task form sends, minus whatever a case overrides. */
@@ -155,7 +198,10 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    );
   });
 
   afterEach(() => {
@@ -176,7 +222,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
     // format leaves unsaid, so the default must not start writing it out.
     await request(app).post('/api/tasks').send(createBody());
 
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
   });
 
@@ -187,7 +233,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
 
     expect(res.status).toBe(201);
     expect(store.getTasks()[0]!.permissionMode).toBe('bypassPermissions');
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBe('bypassPermissions');
   });
 
@@ -246,7 +292,10 @@ describe('the guards that stand between an agent and a raised task', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    );
   });
 
   afterEach(() => {
@@ -292,7 +341,7 @@ describe('the guards that stand between an agent and a raised task', () => {
 
     // The file agrees: `acceptEdits` is the level the format leaves unsaid, so
     // the clamped write means no `permissions:` line at all.
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
   });
 });
@@ -320,7 +369,10 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+    app.use(
+      '/api/tasks',
+      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    );
   });
 
   afterEach(() => {
@@ -337,7 +389,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     const res = await request(app).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBe('bypassPermissions');
     // The store clamped the file-declared mode down to `acceptEdits`; the
     // route's un-clamp put it back, because a trusted caller's own configured
@@ -358,7 +410,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     const res = await request(app).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
-    const frontmatter = vi.mocked(writeSkillFile).mock.calls[0]![2] as Record<string, unknown>;
+    const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
     expect(store.getTasks()[0]!.permissionMode).toBe('acceptEdits');
   });

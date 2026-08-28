@@ -89,7 +89,6 @@ function room(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
     slug: 'general',
     title: 'general',
     topic: null,
-    workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-10T09:00:00.000Z',

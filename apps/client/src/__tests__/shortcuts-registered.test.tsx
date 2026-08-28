@@ -44,6 +44,7 @@ import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
 import { useNewSessionShortcut } from '@/layers/features/dashboard-sidebar';
 import { useControlCenterShortcut } from '@/layers/widgets/control-center';
+import { useMessageSearchShortcut } from '@/layers/features/command-palette';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
@@ -107,6 +108,14 @@ const PROVED: Record<string, Prover> = {
     // is on screen, which is what lets the Control Center open from anywhere.
     renderHook(() => useControlCenterShortcut());
     return press({ key: 'l', code: 'KeyL', metaKey: true, shiftKey: true });
+  },
+  'message-search': () => {
+    // Unconditional window-level chord, like the Control Center's: the box
+    // opens from anywhere, so the hook installs its listener whatever is on
+    // screen. `code` rather than `key`, because with Shift held `key` depends
+    // on the keyboard layout and the physical key is what the chord means.
+    renderHook(() => useMessageSearchShortcut());
+    return press({ key: 'F', code: 'KeyF', metaKey: true, shiftKey: true });
   },
   'answer-next-ask': () => {
     // Unconditional: the hook installs its listener whatever is waiting, which

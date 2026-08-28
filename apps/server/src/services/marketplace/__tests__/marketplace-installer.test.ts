@@ -11,6 +11,9 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import nodePath from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type {
   AdapterPackageManifest,
@@ -1070,6 +1073,205 @@ describe('MarketplaceInstaller', () => {
       expect(err.conflicts).toHaveLength(2);
       expect(err.message).toContain('slot collision');
       expect(err.message).not.toContain('cosmetic warning');
+    });
+  });
+
+  // === Declared schedules (DOR-1487) ====================================
+  //
+  // The slot opened from Shape-only to plugin/agent/skill-pack, which put two
+  // new things on the installer's path: a validation gate that can refuse an
+  // install before anything touches disk, and a materialization step that runs
+  // after the flow and records what it generated.
+  describe('declared schedules', () => {
+    /** A plugin manifest carrying the given schedule declarations. */
+    function withSchedules(schedules: Record<string, unknown>[]): PluginPackageManifest {
+      return buildPluginManifest({
+        name: 'scheduled-plugin',
+        schedules,
+      } as Partial<PluginPackageManifest>);
+    }
+
+    /** Wire a successful resolve + validate + preview for a manifest. */
+    function wireInstall(
+      deps: ReturnType<typeof buildDeps>,
+      manifest: PluginPackageManifest,
+      localPath = '/tmp/scheduled-plugin'
+    ): void {
+      wireLocalResolution(deps.resolver, manifest.name, localPath);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      deps.previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      deps.pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+    }
+
+    it('refuses the install when a declared cron is one croner cannot read', async () => {
+      const built = buildDeps();
+      const manifest = withSchedules([
+        { name: 'tick', description: 'Ticks.', prompt: 'Tick.', cron: 'every second tuesday' },
+      ]);
+      wireInstall(built, manifest);
+
+      const installer = new MarketplaceInstaller(built.deps);
+      await expect(installer.install({ name: 'scheduled-plugin' })).rejects.toBeInstanceOf(
+        InvalidPackageError
+      );
+
+      // Refused BEFORE the flow ran — nothing touched disk, which is the whole
+      // point of validating here rather than discovering it at boot.
+      expect(built.pluginFlow.install).not.toHaveBeenCalled();
+    });
+
+    it('names the schedule and the bad value in the refusal', async () => {
+      const built = buildDeps();
+      wireInstall(
+        built,
+        withSchedules([
+          { name: 'tick', description: 'Ticks.', prompt: 'Tick.', cron: 'every second tuesday' },
+        ])
+      );
+
+      const installer = new MarketplaceInstaller(built.deps);
+      const err = await installer.install({ name: 'scheduled-plugin' }).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(InvalidPackageError);
+      expect((err as InvalidPackageError).message).toContain("'tick'");
+      expect((err as InvalidPackageError).message).toContain('every second tuesday');
+    });
+
+    it('refuses the install when a skillRef names a skill the package does not ship', async () => {
+      const built = buildDeps();
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-skillref-'));
+      try {
+        wireInstall(built, withSchedules([{ skillRef: 'never-shipped' }]), localPath);
+
+        const installer = new MarketplaceInstaller(built.deps);
+        await expect(installer.install({ name: 'scheduled-plugin' })).rejects.toBeInstanceOf(
+          InvalidPackageError
+        );
+        expect(built.pluginFlow.install).not.toHaveBeenCalled();
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+      }
+    });
+
+    it('installs normally when every declared schedule reads', async () => {
+      const built = buildDeps();
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-ok-'));
+      const projectPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-project-'));
+      try {
+        const skillDir = nodePath.join(localPath, 'skills', 'daily-report');
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          nodePath.join(skillDir, 'SKILL.md'),
+          '---\nname: daily-report\ndescription: Reports.\n---\n\nBody.\n',
+          'utf-8'
+        );
+        wireInstall(
+          built,
+          withSchedules([{ skillRef: 'daily-report', cron: '0 9 * * *' }]),
+          localPath
+        );
+
+        const installer = new MarketplaceInstaller(built.deps);
+        const result = await installer.install({ name: 'scheduled-plugin', projectPath });
+
+        expect(result.ok).toBe(true);
+        expect(built.pluginFlow.install).toHaveBeenCalled();
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+        await rm(projectPath, { recursive: true, force: true });
+      }
+    });
+
+    it('records generated schedule directories on the install receipt', async () => {
+      const built = buildDeps();
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-gen-'));
+      const projectPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-genproj-'));
+      try {
+        wireInstall(
+          built,
+          withSchedules([
+            { name: 'nightly', description: 'Runs at night.', prompt: 'Go.', cron: '0 3 * * *' },
+          ]),
+          localPath
+        );
+
+        const installer = new MarketplaceInstaller(built.deps);
+        await installer.install({ name: 'scheduled-plugin', projectPath });
+
+        const generatedDir = nodePath.join(projectPath, '.agents', 'skills', 'nightly');
+        // The file is really there...
+        expect(await readdir(generatedDir)).toContain('SKILL.md');
+        // ...and the receipt names it, so uninstall can find it later.
+        expect(mockedWriteInstallMetadata).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ generatedSchedulePaths: [generatedDir] })
+        );
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+        await rm(projectPath, { recursive: true, force: true });
+      }
+    });
+
+    it('names the orphaned folders when the receipt cannot be written', async () => {
+      // The receipt is the ONLY record of what was generated outside the
+      // package. Losing it silently leaves those folders running forever with
+      // the install still reporting success.
+      const built = buildDeps();
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-orphan-'));
+      const projectPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-orphanproj-'));
+      try {
+        wireInstall(
+          built,
+          withSchedules([
+            { name: 'nightly', description: 'Runs at night.', prompt: 'Go.', cron: '0 3 * * *' },
+          ]),
+          localPath
+        );
+        mockedWriteInstallMetadata.mockRejectedValueOnce(new Error('disk full'));
+
+        const installer = new MarketplaceInstaller(built.deps);
+        const result = await installer.install({ name: 'scheduled-plugin', projectPath });
+
+        const generatedDir = nodePath.join(projectPath, '.agents', 'skills', 'nightly');
+        // The install still succeeds — the package is on disk and working.
+        expect(result.ok).toBe(true);
+        // But the person is told what will be left behind, and where.
+        const warning = result.warnings.join(' ');
+        expect(warning).toMatch(/leave its scheduled tasks behind/);
+        expect(warning).toContain(generatedDir);
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+        await rm(projectPath, { recursive: true, force: true });
+      }
+    });
+
+    it('does not validate schedules on the preview path, so a bad cron still browses', async () => {
+      // The preview backs the marketplace package DETAIL page. Refusing there
+      // would turn one package's bad cron into a page nobody can open to read
+      // about it.
+      const built = buildDeps();
+      wireInstall(
+        built,
+        withSchedules([
+          { name: 'tick', description: 'Ticks.', prompt: 'Tick.', cron: 'every second tuesday' },
+        ])
+      );
+
+      const installer = new MarketplaceInstaller(built.deps);
+      const preview = await installer.preview({ name: 'scheduled-plugin' });
+
+      expect(preview.manifest.name).toBe('scheduled-plugin');
+    });
+
+    it('leaves the receipt field off entirely when nothing was generated', async () => {
+      const built = buildDeps();
+      wireInstall(built, buildPluginManifest({ name: 'scheduled-plugin' }));
+
+      const installer = new MarketplaceInstaller(built.deps);
+      await installer.install({ name: 'scheduled-plugin' });
+
+      const metadata = mockedWriteInstallMetadata.mock.calls[0]?.[1];
+      expect(metadata).not.toHaveProperty('generatedSchedulePaths');
     });
   });
 });

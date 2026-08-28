@@ -1,6 +1,6 @@
 ---
 title: Threat Model
-description: What DorkOS trusts, what changes when you expose it, and how to reason about the risks of running an agent cockpit
+description: What DorkOS trusts, what changes when you expose it, and how to reason about the risks of running agents on your own machine
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,7 +8,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Threat Model
 
-DorkOS is a cockpit for autonomous agents that run on your own machine. That is powerful, and power is worth reasoning about. This page lays out what DorkOS trusts, what each choice changes, and where the sharp edges are, so you can decide what is safe for your setup. It is written to be read, not to reassure. No "bank-grade" claims here.
+DorkOS is one place for the autonomous agents that run on your own machine. That is a lot of reach, and reach is worth reasoning about. This page lays out what DorkOS trusts, what each choice changes, and where the sharp edges are, so you can decide what is safe for your setup. It is written to be read, not to reassure. No "bank-grade" claims here.
 
 <Callout type="info">
   DorkOS is a fast-moving alpha. This page describes how it works today. When the model changes,
@@ -93,7 +93,7 @@ Three actions carry the last label today: removing an installed package, deletin
 
 The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a session's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these three. A new tool with no declared label fails the server build rather than running unlabelled.
 
-There is a third, much smaller tool server, for Codex sessions, and it is outside that gate. It carries exactly one tool, for changing what the cockpit is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
+There is a third, much smaller tool server, for Codex sessions, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
 
 <Callout type="warn">
   **How much that gate is worth depends on whether login is on, and the two answers are genuinely
@@ -134,7 +134,7 @@ What DorkOS does not do yet: it does not verify a package signature or pin it to
 Being honest about the edges:
 
 - DorkOS does not defend against other software running as your own user. That is your machine's job.
-- It is not a multi-tenant server. One instance is one operator's cockpit.
+- It is not a multi-tenant server. One instance belongs to one operator.
 - The local edition sends no email and has no "forgot password" flow. Password recovery is a command you run on the machine, because machine access already implies owner trust.
 
 ## Found something?

@@ -23,6 +23,7 @@ import { z } from 'zod';
 
 import { getDb } from '@/db/client';
 import { feedbackSubmission } from '@/db/feedback-schema';
+import { consumeFeedbackStatusQuota } from '@/lib/feedback/status-rate-limit';
 
 export const runtime = 'edge';
 
@@ -43,14 +44,25 @@ function notFound(): Response {
 /**
  * Look up one submission's public status.
  *
- * `404` for a malformed id or one that matches no row — the two cases are
- * indistinguishable on the wire on purpose (enumeration-safe: a syntactically
- * valid but non-existent id carries no more information than a garbled one).
+ * `429` when this IP is over its limit. Otherwise `404` for a malformed id or
+ * one that matches no row — the two cases are indistinguishable on the wire on
+ * purpose (enumeration-safe: a syntactically valid but non-existent id carries
+ * no more information than a garbled one).
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  // Charged before the id is parsed: a loop guessing uuids is the traffic this
+  // exists to slow, and a malformed id costs a request either way.
+  const quota = consumeFeedbackStatusQuota(request);
+  if (!quota.allowed) {
+    return Response.json(
+      { error: 'Too many requests. Retry after the number of seconds in the Retry-After header.' },
+      { status: 429, headers: { 'retry-after': String(quota.retryAfterSeconds) } }
+    );
+  }
+
   const { id } = await params;
   const parsedId = IdSchema.safeParse(id);
   if (!parsedId.success) return notFound();

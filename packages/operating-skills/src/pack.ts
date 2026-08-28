@@ -127,8 +127,14 @@ export interface OperatingSkill {
  *   It still does NOT reach an agent registered at a path of the person's own — a
  *   boot is not permission to write into somebody's repository, and a user-initiated
  *   repair for those is DOR-664.
+ * - 12: `tasks_create` now REQUIRES a `target` and honors `maxRuntime` (DOR-1568),
+ *   and `tasks_update` refuses `target`/`agentId` instead of dropping them. Same
+ *   reasoning as the bump above, and the same failure without it: the tool used to
+ *   write a row with no SKILL.md and no owner, so an agent seeded at 11 would keep
+ *   prose that omits a now-required argument, have its next `tasks_create` refused
+ *   by the schema parse, and have no idea a task even HAS a home.
  */
-export const OPERATING_SKILLS_VERSION = 11;
+export const OPERATING_SKILLS_VERSION = 12;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

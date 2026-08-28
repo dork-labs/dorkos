@@ -59,7 +59,7 @@ function gatedTurn(): { runner: ScriptedTurnRunner; handed(): boolean; release()
   const runner: ScriptedTurnRunner = {
     turns: [],
     interrupted: [],
-    interrupt: () => Promise.resolve(),
+    interrupt: () => Promise.resolve(false),
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       handedFlag = true;
       const sessionId = request.sessionId ?? `session-${request.authorId}`;

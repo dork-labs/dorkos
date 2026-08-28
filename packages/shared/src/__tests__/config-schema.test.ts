@@ -69,7 +69,7 @@ describe('UserConfigSchema', () => {
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
-      scheduler: { enabled: true, maxConcurrentRuns: 4, timezone: null, retentionCount: 100 },
+      scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -83,6 +83,14 @@ describe('UserConfigSchema', () => {
         engagedWindowPosts: 5,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
+        repo: {
+          enabled: true,
+          worktreeReapDays: 14,
+          maxFileBytes: 5 * 1024 * 1024,
+          maxRepoBytes: 500 * 1024 * 1024,
+          maxRoomMdBytes: 24 * 1024,
+          mergeQueueWaitMs: 30_000,
+        },
       },
       welcomeBack: {
         enabled: true,
@@ -103,6 +111,7 @@ describe('UserConfigSchema', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      memory: { provider: 'builtin' },
       extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,
@@ -426,7 +435,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       // Ships closed: nothing outside DorkOS reaches these agents over A2A
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
-      scheduler: { enabled: true, maxConcurrentRuns: 4, timezone: null, retentionCount: 100 },
+      scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -440,6 +449,14 @@ describe('USER_CONFIG_DEFAULTS', () => {
         engagedWindowPosts: 5,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
+        repo: {
+          enabled: true,
+          worktreeReapDays: 14,
+          maxFileBytes: 5 * 1024 * 1024,
+          maxRepoBytes: 500 * 1024 * 1024,
+          maxRoomMdBytes: 24 * 1024,
+          mergeQueueWaitMs: 30_000,
+        },
       },
       welcomeBack: {
         enabled: true,
@@ -460,6 +477,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      memory: { provider: 'builtin' },
       extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,

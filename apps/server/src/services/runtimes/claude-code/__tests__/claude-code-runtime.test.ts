@@ -12,7 +12,10 @@ const {
   contextBuilderFactory,
   toolFilterFactory,
 } = vi.hoisted(() => {
-  const bspa = vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>');
+  const bspa = vi.fn().mockResolvedValue({
+    text: '<env>\nWorking directory: /mock\n</env>',
+    stable: '<env>\nWorking directory: /mock\n</env>',
+  });
   const rtc = vi.fn().mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true });
   return {
     _mockBuildSystemPromptAppend: bspa,

@@ -7,7 +7,9 @@
  *
  * @module relay/adapters/slack-adapter
  */
-import { App, LogLevel } from '@slack/bolt';
+import { App, LogLevel, SocketModeReceiver } from '@slack/bolt';
+import { WebAPIPlatformError, WebClient } from '@slack/web-api';
+import type { Dispatcher } from 'undici';
 import type { RelayEnvelope, SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
@@ -33,9 +35,87 @@ import type { SlackPresenceState } from './presence.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
 import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
+import { createSlackProxyTransport } from './proxy.js';
 
 // Re-export for consumers that import from this module
 export { SLACK_MANIFEST };
+
+/** How far to walk a wrapped error chain before giving up (also breaks cycles). */
+const MAX_ERROR_UNWRAP_DEPTH = 5;
+
+/**
+ * Find the Slack platform error inside whatever Bolt hands its error handler.
+ *
+ * Bolt rarely delivers a {@link WebAPIPlatformError} directly, and the wrapped
+ * path is the one that matters most: an `authorize()` failure arrives as an
+ * `AuthorizationError` carrying the real error on `.original`. Because Bolt
+ * authorizes every incoming event, a revoked or de-scoped token funnels EVERY
+ * event through that wrapper — so a check that only tests the top-level error
+ * never sees the platform error, never matches a fatal code, and leaves the
+ * adapter retrying forever against a token that will never work again.
+ *
+ * Listener failures nest too: `UnknownError` wraps on `.original`,
+ * `MultipleListenerError` on `.originals` (an array), and a non-Error throw is
+ * re-thrown with the value on `.cause`. All three are walked here.
+ *
+ * @param error - The error Bolt passed to `app.error`.
+ * @param depth - Internal recursion counter; callers should omit it.
+ * @returns The platform error if one is nested anywhere, else `null`.
+ */
+export function findPlatformError(error: unknown, depth = 0): WebAPIPlatformError | null {
+  if (error instanceof WebAPIPlatformError) return error;
+  if (depth >= MAX_ERROR_UNWRAP_DEPTH || typeof error !== 'object' || error === null) return null;
+
+  const { original, originals, cause } = error as {
+    original?: unknown;
+    originals?: unknown;
+    cause?: unknown;
+  };
+
+  for (const nested of [original, cause, ...(Array.isArray(originals) ? originals : [])]) {
+    if (nested === undefined) continue;
+    const found = findPlatformError(nested, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** What {@link classifySlackError} decided about an error Bolt passed to `app.error`. */
+export interface SlackErrorClassification {
+  /**
+   * The Slack error string that drove the decision — a nested platform
+   * error's `data.error` first, then a duck-typed `data.error`, then Bolt's
+   * own `.code`. `undefined` when none of those were present.
+   */
+  errorCode: string | undefined;
+  /** Whether {@link errorCode} names a fatal install problem (see {@link FATAL_SLACK_ERRORS}). */
+  fatal: boolean;
+}
+
+/**
+ * Classify an error Bolt passed to `app.error` as fatal or recoverable.
+ *
+ * The string that names a fatal install problem ('invalid_auth',
+ * 'token_revoked', …) is Slack's *platform* error, which lives in
+ * `data.error` — usually nested inside a Bolt wrapper, hence
+ * {@link findPlatformError}. A platform error also carries a `code`, but it
+ * is always the SDK-level constant 'slack_webapi_platform_error', so it can
+ * never be the fatal string and must not be consulted first (it used to be,
+ * which is why no fatal error ever matched — DOR-1528). Only when no
+ * platform error is nested anywhere do we fall back to a duck-typed
+ * `data.error` and then to Bolt's own `code`.
+ *
+ * @param error - The error Bolt passed to `app.error`.
+ */
+export function classifySlackError(error: unknown): SlackErrorClassification {
+  const platformError = findPlatformError(error);
+  const errorCode =
+    platformError?.data.error ??
+    (error as { data?: { error?: string } }).data?.error ??
+    (error as { code?: string }).code;
+
+  return { errorCode, fatal: Boolean(errorCode && FATAL_SLACK_ERRORS.has(errorCode)) };
+}
 
 /**
  * Slack adapter for the Relay message bus.
@@ -59,6 +139,15 @@ export class SlackAdapter extends BaseRelayAdapter {
   /** Instance-scoped inbound caches (dedup + name resolution). */
   private readonly inboundState: SlackInboundState = createSlackInboundState();
   private platformClient: SlackPlatformClient | null = null;
+  /** Set once a fatal Slack error has queued a teardown, so only one runs. */
+  private fatalStopScheduled = false;
+  /**
+   * The corporate-proxy dispatcher `_start()` built, if any — held so `_stop()`
+   * can close it. `createSlackProxyTransport()` opens real sockets/connection
+   * pools (via `EnvHttpProxyAgent`) that outlive a single request, so nothing
+   * else closes them once the adapter stops.
+   */
+  private proxyDispatcher: Dispatcher | null = null;
   private readonly codec: SlackThreadIdCodec;
   private readonly threadTracker: ThreadParticipationTracker;
 
@@ -117,25 +206,65 @@ export class SlackAdapter extends BaseRelayAdapter {
    * No side effects (no Socket Mode connection, no event listeners).
    */
   async testConnection(): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
+    // A short-lived transport of its own — not `this.proxyDispatcher`, which
+    // `_start()` owns for the running connection's lifetime. This one is
+    // scoped to the single auth.test() call below and closed in `finally`,
+    // so validating credentials never leaks a socket pool.
+    const proxyTransport = createSlackProxyTransport();
     try {
-      // Import WebClient directly to avoid starting a full Bolt app
-      const { WebClient } = await import('@slack/web-api');
-      const tempClient = new WebClient(this.config.botToken);
+      // A bare WebClient, so validating credentials never starts a Bolt app.
+      const tempClient = new WebClient(
+        this.config.botToken,
+        proxyTransport ? { fetch: proxyTransport.fetch } : undefined
+      );
       const result = await SlackAdapter.withInitTimeout(tempClient.auth.test());
       return { ok: true, botUsername: result.user as string | undefined };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      await proxyTransport?.dispatcher.close().catch(() => {
+        // best-effort — nothing waits on a clean close here
+      });
     }
   }
 
   /** Connect to Slack via Socket Mode and register event listeners. */
   protected async _start(relay: RelayPublisher): Promise<void> {
+    // @slack/web-api 8 and @slack/socket-mode moved from axios to native
+    // fetch, which does not read HTTP_PROXY/HTTPS_PROXY/NO_PROXY the way
+    // axios did — so an install behind a corporate proxy silently lost
+    // connectivity on that upgrade (DOR-1542). When one of those vars is set,
+    // route both the REST client and the Socket Mode transport through the
+    // same undici dispatcher; when none is set, pass nothing and behave
+    // exactly as before this existed.
+    const proxyTransport = createSlackProxyTransport();
+    // Tracked on `this` (independent of the transport `testConnection()` builds
+    // for itself) so `_stop()` can close it — see the field's own comment.
+    this.proxyDispatcher = proxyTransport?.dispatcher ?? null;
     const app = new App({
       token: this.config.botToken,
       appToken: this.config.appToken,
       signingSecret: this.config.signingSecret,
       socketMode: true,
       logLevel: LogLevel.WARN,
+      ...(proxyTransport ? { clientOptions: { fetch: proxyTransport.fetch } } : {}),
+      // `App` only forwards `clientOptions`/a dispatcher to `app.client`
+      // (used for every REST call bolt makes on our behalf); its
+      // `socketMode: true` convenience path builds its own SocketModeReceiver
+      // internally and does NOT forward either one to it. Supplying the
+      // receiver ourselves is the only way to proxy the Socket Mode
+      // connection itself (the `apps.connections.open` handshake and the
+      // WSS socket) — Bolt explicitly allows a custom receiver alongside
+      // `socketMode: true` as long as it's a SocketModeReceiver.
+      ...(proxyTransport
+        ? {
+            receiver: new SocketModeReceiver({
+              appToken: this.config.appToken,
+              dispatcher: proxyTransport.dispatcher,
+              logLevel: LogLevel.WARN,
+            }),
+          }
+        : {}),
     });
 
     // Cache bot's own user ID for echo prevention
@@ -214,19 +343,38 @@ export class SlackAdapter extends BaseRelayAdapter {
     // Surface unhandled listener errors through adapter status.
     // Fatal auth errors stop the adapter to prevent retry loops.
     app.error(async (error) => {
-      const errorCode =
-        (error as { code?: string }).code ?? (error as { data?: { error?: string } }).data?.error;
+      const { errorCode, fatal } = classifySlackError(error);
 
-      if (errorCode && FATAL_SLACK_ERRORS.has(errorCode)) {
+      if (fatal) {
         this.logger.error('fatal Slack error — stopping adapter', { errorCode });
-        this.recordError(
-          `Fatal Slack error: ${errorCode}. Re-check your bot token and app configuration.`
-        );
-        try {
-          await app.stop();
-        } catch {
-          // best-effort — app may already be disconnected
-        }
+        // One fatal error is enough: with a dead token every subsequent event
+        // fails the same way, and each would otherwise queue its own teardown.
+        if (this.fatalStopScheduled) return;
+        this.fatalStopScheduled = true;
+
+        // Tear down on a later tick rather than inline. We are inside Bolt's
+        // own error handler, which it awaits while still processing the event,
+        // and stopping disconnects the very socket that delivered it — so
+        // deferring lets Bolt finish (ack included) before the transport goes
+        // away, and avoids re-entering the adapter from within its own handler.
+        setImmediate(() => {
+          void (async () => {
+            try {
+              // The full stop path, not `app.stop()` alone: it also clears the
+              // approval timers and presence timers, which would otherwise keep
+              // firing against a token that is already dead.
+              await this.stop();
+            } catch {
+              // best-effort — the socket may already be gone
+            }
+            // Recorded AFTER stopping: `stop()` rebuilds status as
+            // 'disconnected' and drops `lastError`, so recording first would
+            // erase the one message the operator needs to see.
+            this.recordError(
+              `Fatal Slack error: ${errorCode}. Re-check your bot token and app configuration.`
+            );
+          })();
+        });
         return;
       }
 
@@ -259,6 +407,14 @@ export class SlackAdapter extends BaseRelayAdapter {
     if (this.platformClient) {
       await this.platformClient.destroy();
       this.platformClient = null;
+    }
+    if (this.proxyDispatcher) {
+      try {
+        await this.proxyDispatcher.close();
+      } catch {
+        // best-effort — may already be closed alongside the socket it proxied
+      }
+      this.proxyDispatcher = null;
     }
     this.botUserId = '';
     this.streamState.clear();

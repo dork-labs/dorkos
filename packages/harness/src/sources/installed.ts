@@ -22,6 +22,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
+import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
+import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 
@@ -45,6 +47,22 @@ export interface InstalledSkill extends SkillEntry {
    * directory namespacing. The projector reads this to warn on such collisions.
    */
   frontmatterName?: string;
+  /**
+   * True when the skill's `SKILL.md` declares a `schedule:` block — readable or
+   * not.
+   *
+   * This is what makes a skill a scheduled task, and it changes where the skill
+   * has to be projected: the DorkOS scheduler watches `.agents/skills`, never
+   * `.claude/skills`, so a schedule-bearing skill that only reached the Claude
+   * Code dir would never be offered for approval (DOR-1518). The projector reads
+   * this to link such a skill into `.agents/skills` whatever harnesses the
+   * project enables.
+   *
+   * An UNREADABLE block counts too: discovery turns it into a parked row
+   * carrying the complaint, which is only possible if the file is reachable
+   * from a watched root at all.
+   */
+  hasSchedule: boolean;
 }
 
 /** A portable slash command (`commands/<name>.md`) from an installed plugin. */
@@ -176,31 +194,33 @@ function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
 }
 
 /**
- * Read the frontmatter `name` from a `SKILL.md` body, if it declares one.
+ * Whether a `SKILL.md`'s frontmatter declares a `schedule:` block, readable or
+ * not.
  *
- * A minimal single-line scalar read of the leading `---` … `---` YAML block —
- * enough to recover the effective skill identity for the collision check without
- * a YAML dependency. Returns `undefined` when there is no frontmatter or no
- * `name` key.
+ * Asked through the skills package's own {@link readScheduleField}, so this
+ * answers exactly the question `skills-root-discovery.ts` will later ask of the
+ * same bytes. A hand-rolled `^schedule:` match could disagree with the scheduler
+ * about what a file is, and a schedule that silently does not exist because a
+ * scanner misread frontmatter is the worst outcome the design has (ADR
+ * `specs/universal-scheduled-tasks` §DD2).
  *
- * @param skillMd - the raw `SKILL.md` file contents.
- * @returns the trimmed `name` value, or `undefined`.
+ * A block DorkOS cannot read still counts. Discovery parks such a file as a row
+ * carrying the complaint rather than dropping it, and it can only do that if the
+ * file reached a watched root — so an unreadable block must still be projected.
  */
-function frontmatterName(skillMd: string): string | undefined {
-  const lines = skillMd.split('\n');
-  if (lines[0]?.trim() !== '---') return undefined;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i]?.trim() === '---') return undefined; // end of frontmatter, no name found
-    const match = /^name:\s*(.+?)\s*$/.exec(lines[i] ?? '');
-    if (match) return match[1].replace(/^["']|["']$/g, '');
-  }
-  return undefined;
+function declaresSchedule(frontmatter: Record<string, unknown>): boolean {
+  const schedule = readScheduleField(frontmatter.schedule);
+  return hasSchedule({ schedule }) || isInvalidSchedule(schedule);
 }
 
 /**
- * Enrich a scanned skill entry from its `SKILL.md` (read once): the
- * `${CLAUDE_PLUGIN_ROOT}` usage flag and the frontmatter `name` (the effective
- * identity in frontmatter-keyed harnesses).
+ * Enrich a scanned skill entry from its `SKILL.md` (read and parsed once): the
+ * `${CLAUDE_PLUGIN_ROOT}` usage flag, the frontmatter `name` (the effective
+ * identity in frontmatter-keyed harnesses), and whether it carries a schedule.
+ *
+ * A non-string frontmatter `name` (e.g. `name: 12`) is treated as absent: the
+ * field exists only to compare against other skills' names, and a non-string
+ * there is not one.
  */
 function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSkill {
   let skillMd = '';
@@ -209,10 +229,12 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
   } catch {
     skillMd = '';
   }
+  const frontmatter = readRawFrontmatter(skillMd)?.data ?? {};
   return {
     ...entry,
     usesPluginRoot: skillMd.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
-    frontmatterName: frontmatterName(skillMd),
+    ...(typeof frontmatter.name === 'string' ? { frontmatterName: frontmatter.name } : {}),
+    hasSchedule: declaresSchedule(frontmatter),
   };
 }
 
@@ -282,6 +304,15 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
     if (scope === 'global') {
       // Global installs are reported but not projected by a project sync, so we
       // record identity only — no path resolution or asset enumeration.
+      //
+      // KNOWN GAP (DOR-1518): this is also why a schedule-bearing skill in a
+      // GLOBALLY installed plugin (`<dorkHome>/plugins/<pkg>`) stays invisible to
+      // the scheduler. The scheduler's global watched root is `<dorkHome>/skills`,
+      // and no projection stage targets it — `buildPlan` is repo-relative end to
+      // end, and every apply/sweep path resolves against a `repoRoot`. The
+      // project-scope fix below (`planScheduledSkillLinks`) therefore has no
+      // global twin; giving it one means building a global sync first, not
+      // widening this scan.
       plugins.push({
         name: manifest.name,
         type: manifest.type,

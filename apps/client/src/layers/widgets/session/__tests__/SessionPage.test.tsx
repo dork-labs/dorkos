@@ -18,12 +18,14 @@ vi.mock('../ui/ChatPanel', () => ({
     launchPrompt,
     launchSend,
     onLaunchConsumed,
+    landOnRow,
   }: {
     sessionId: string | null;
     launchRuntime?: string;
     launchPrompt?: string;
     launchSend?: boolean;
     onLaunchConsumed?: () => void;
+    landOnRow?: () => string | undefined;
   }) => {
     lastConsume = onLaunchConsumed;
     return (
@@ -33,6 +35,10 @@ vi.mock('../ui/ChatPanel', () => ({
         data-launch-runtime={launchRuntime ?? ''}
         data-launch-prompt={launchPrompt ?? ''}
         data-launch-send={String(launchSend ?? false)}
+        // The getter itself is `useMessageLanding`'s to test; what this file
+        // answers is whether the page HANDED one over at all, and which row it
+        // asks for.
+        data-land-on-row={landOnRow?.() ?? ''}
       >
         ChatPanel
       </div>
@@ -48,9 +54,9 @@ vi.mock('@/layers/features/right-panel', () => ({
   useRightPanelLayoutPersistence: () => {},
 }));
 
-const mockUseSessionSearch = vi.fn<() => { runtime?: string; prompt?: string; send?: '1' }>(
-  () => ({})
-);
+const mockUseSessionSearch = vi.fn<
+  () => { runtime?: string; prompt?: string; send?: '1'; message?: string }
+>(() => ({}));
 vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => ['session-abc', vi.fn()],
   useSessionSearch: () => mockUseSessionSearch(),
@@ -120,6 +126,46 @@ describe('SessionPage', () => {
     mockUseSessionSearch.mockReturnValue({ prompt: 'do the thing' });
     render(<SessionPage />);
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-launch-send', 'false');
+  });
+
+  it('hands the transcript the row a search hit named', () => {
+    // `?message=` is the conversation's half of DOR-687 (DOR-1579). The page
+    // owns it because a route param belongs to the route — the transcript is
+    // also what the router-less Obsidian embed renders. The row id, not the
+    // bare message id: the timeline matches `ConversationRow.id`.
+    mockUseSessionSearch.mockReturnValue({ message: 'uuid-9' });
+    render(<SessionPage />);
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-land-on-row', 'msg-uuid-9');
+  });
+
+  it('hands over nothing when no message was named', () => {
+    // The paired control: every way into a conversation except a search hit
+    // must leave its ordinary landing entirely alone.
+    mockUseSessionSearch.mockReturnValue({});
+    render(<SessionPage />);
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-land-on-row', '');
+  });
+
+  it('does not drop ?message= from the URL, because it is an address', () => {
+    // Unlike the launch params, which are instructions and must stop describing
+    // one the moment they are carried out. This one is where you are: a refresh
+    // or a shared link has to land in the same place, and `useMessageLanding` is
+    // what stops it re-answering.
+    mockUseSessionSearch.mockReturnValue({ prompt: 'do the thing', send: '1', message: 'uuid-9' });
+    render(<SessionPage />);
+
+    lastConsume?.();
+
+    const call = mockInPlaceNavigate.mock.calls[0][0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(call.search({ session: 's1', message: 'uuid-9', prompt: 'p', send: '1' })).toEqual({
+      session: 's1',
+      message: 'uuid-9',
+      prompt: undefined,
+      send: undefined,
+      seed: undefined,
+    });
   });
 
   it('drops both launch params in place, replacing the history entry', () => {

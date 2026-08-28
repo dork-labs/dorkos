@@ -80,6 +80,32 @@ export interface NotificationPayloads {
     /** What to call whoever proposed it. */
     proposedBy: string;
   };
+  /**
+   * An agent asked to do something irreversible and is waiting on a yes.
+   *
+   * The `approvals` table's own pending row is the state; this describes it to
+   * the operator. Deliberately carries NO argument values — the approval card
+   * shows those, and this payload is what a phone push and a desktop banner are
+   * built from.
+   */
+  'approval.pending': {
+    /** ULID of the pending approval. */
+    approvalId: string;
+    /** The capability or tool that would run, e.g. `tasks_delete`. */
+    capabilityId: string;
+    /**
+     * Its human-facing title, from the capability registry — never from the
+     * requester (`approval-service.ts`'s `CapabilityDescriptorLookup`).
+     */
+    capabilityTitle: string;
+    /**
+     * The Mesh agent that asked, when its project path resolves to one. The
+     * lens key, and what routes the escalation's chat leg.
+     */
+    agentId?: string;
+    /** What to call whoever asked. */
+    requestedBy: string;
+  };
   /** A session stopped on an error. */
   'session.error': {
     sessionId: string;
@@ -228,7 +254,8 @@ export type NotificationStorageRule = 'event' | 'standing';
  * `notification-registry.test.ts` pins this against the `storage` field, so the
  * two cannot drift.
  */
-export type StandingNotificationKind = 'ask.pending' | 'schedule.parked' | 'session.error';
+export type StandingNotificationKind =
+  'ask.pending' | 'schedule.parked' | 'approval.pending' | 'session.error';
 
 /** The kinds that record something that happened. Every kind that is not standing. */
 export type EventNotificationKind = Exclude<NotificationKind, StandingNotificationKind>;
@@ -370,6 +397,27 @@ const ENTRIES: NotificationRegistryMap = {
     body: (p) => `${p.taskName} will not run until you approve it.`,
     actions: () => SCHEDULE_ACTIONS,
     dedupeKey: (p) => `schedule:${p.taskId}`,
+    relay: 'never',
+  },
+
+  'approval.pending': {
+    kind: 'approval.pending',
+    tier: 'blocking',
+    storage: 'standing',
+    // `system`, not `task`: an approval is not about one schedule — the same
+    // condition covers a marketplace uninstall, a `mesh_unregister`, or any
+    // future destructive capability. The bell on `/` is where every one of them
+    // is decided, and `system` is the subject type that opens there.
+    subjectType: 'system',
+    locate: (p) => ({ subjectId: p.approvalId, agentId: p.agentId }),
+    title: (p) => `${p.requestedBy} needs your approval`,
+    // The capability's TITLE and nothing else. The approval's own summary
+    // carries the argument values an agent asked to run something with, and
+    // this body reaches a lock screen and a Telegram thread — the card in the
+    // app is where those belong.
+    body: (p) => `${p.capabilityTitle} cannot be undone, so it will not run until you decide.`,
+    actions: () => OPEN_ACTION,
+    dedupeKey: (p) => `approval:${p.approvalId}`,
     relay: 'never',
   },
 
@@ -597,15 +645,25 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * `services/rooms/room-service.ts` (W4 task T11, DOR-1388); `report.daily` via
  * `emitters/shift-report.ts` (W4 task T12, DOR-1389).
  *
- * The three STANDING kinds are listed here on their RESOLUTION edge, which is
- * the only edge that writes a row. Their raise edge is wired too — it starts an
- * escalation clock instead of storing anything (W3 task T10, DOR-1387), so a
- * blocking condition nobody answers reaches a phone. See
- * `escalation-service.ts`.
+ * The STANDING kinds are listed here on their RESOLUTION edge, which is the
+ * only edge that writes a row. Their raise edge is wired too — it announces the
+ * arrival (`standing_pending`, DOR-1570) and starts an escalation clock instead
+ * of storing anything (W3 task T10, DOR-1387), so a blocking condition nobody
+ * answers reaches a phone. See `standing-events.ts` and `escalation-service.ts`.
+ *
+ * **`approval.pending` is the one standing kind with no resolution row**, and
+ * that is deliberate rather than missing (DOR-1570): the `approvals` table
+ * already records how every approval ended (`state`, `decidedAt`, `consumedAt`)
+ * and `approval_resolved` already retires its card in every open window, so a
+ * second history row would be a second source of truth for something that has
+ * one. Its resolution edge disarms the ladder and announces
+ * `standing_resolved`, and writes nothing — see
+ * `emitters/capability-approval.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
   'schedule.parked',
+  'approval.pending',
   'session.error',
   'turn.completed',
   'run.completed',

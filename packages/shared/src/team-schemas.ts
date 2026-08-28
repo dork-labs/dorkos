@@ -26,11 +26,11 @@
  * @module shared/team-schemas
  */
 import { z } from 'zod';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AuthorKindSchema, AuthorOriginSchema, RoomKindSchema } from './room-schemas.js';
 import { AgentHealthStatusSchema, AgentRuntimeSchema } from './mesh-schemas.js';
 
-extendZodWithOpenApi(z);
+extendZodWithOpenApiOnce();
 
 /**
  * What one agent is doing, as a profile says it out loud (spec

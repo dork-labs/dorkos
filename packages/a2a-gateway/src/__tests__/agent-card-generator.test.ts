@@ -18,6 +18,7 @@ const PASSTHROUGH_CONFIG: CardGeneratorConfig = { ...BASE_CONFIG, authRequired: 
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
+    workspace: { mode: 'home' },
     id: '01HZB1AGENTULID0000001',
     name: 'backend-bot',
     description: 'An expert in REST API design',
@@ -46,16 +47,26 @@ describe('generateAgentCard', () => {
     expect(card.description).toBe('An expert in REST API design');
   });
 
-  it('sets protocolVersion to 0.3.0', () => {
+  it('advertises the JSON-RPC endpoint at both the current and the legacy protocol version', () => {
     const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
-    expect(card.protocolVersion).toBe('0.3.0');
-  });
-
-  it('constructs a per-agent url so clients talk to exactly this agent', () => {
-    const card = generateAgentCard(makeManifest(), BASE_CONFIG);
-
-    expect(card.url).toBe('https://dorkos.example.com/a2a/agents/01HZB1AGENTULID0000001');
+    // Both entries, deliberately: the SDK refuses a protocol version the card
+    // does not declare, so dropping the 0.3 entry would lock out every peer
+    // that has not upgraded.
+    expect(card.supportedInterfaces).toEqual([
+      {
+        url: 'https://dorkos.example.com/a2a/agents/01HZB1AGENTULID0000001',
+        protocolBinding: 'JSONRPC',
+        tenant: '',
+        protocolVersion: '1.0',
+      },
+      {
+        url: 'https://dorkos.example.com/a2a/agents/01HZB1AGENTULID0000001',
+        protocolBinding: 'JSONRPC',
+        tenant: '',
+        protocolVersion: '0.3',
+      },
+    ]);
   });
 
   it('uses config.version as card version', () => {
@@ -64,18 +75,12 @@ describe('generateAgentCard', () => {
     expect(card.version).toBe('1.2.3');
   });
 
-  it('sets preferredTransport to JSONRPC', () => {
+  it('advertises streaming and no push notifications', () => {
     const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
-    expect(card.preferredTransport).toBe('JSONRPC');
-  });
-
-  it('advertises streaming=true and stateTransitionHistory=true', () => {
-    const card = generateAgentCard(makeManifest(), BASE_CONFIG);
-
-    expect(card.capabilities.streaming).toBe(true);
-    expect(card.capabilities.stateTransitionHistory).toBe(true);
-    expect(card.capabilities.pushNotifications).toBe(false);
+    expect(card.capabilities?.streaming).toBe(true);
+    expect(card.capabilities?.pushNotifications).toBe(false);
+    expect(card.capabilities?.extendedAgentCard).toBe(false);
   });
 
   it('includes default input and output modes', () => {
@@ -88,25 +93,24 @@ describe('generateAgentCard', () => {
   it('advertises the spec-standard http/bearer scheme and a requirement when auth is enforced', () => {
     const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
-    expect(card.securitySchemes?.['bearerAuth']).toEqual({
-      type: 'http',
-      scheme: 'bearer',
-      description: 'API key sent as `Authorization: Bearer <key>`.',
+    expect(card.securitySchemes['bearerAuth']).toEqual({
+      scheme: {
+        $case: 'httpAuthSecurityScheme',
+        value: {
+          scheme: 'bearer',
+          bearerFormat: '',
+          description: 'API key sent as `Authorization: Bearer <key>`.',
+        },
+      },
     });
-    expect(card.security).toEqual([{ bearerAuth: [] }]);
+    expect(card.securityRequirements).toEqual([{ schemes: { bearerAuth: { list: [] } } }]);
   });
 
   it('describes the bearer scheme but advertises no requirement in pass-through mode', () => {
     const card = generateAgentCard(makeManifest(), PASSTHROUGH_CONFIG);
 
-    expect(card.securitySchemes?.['bearerAuth']).toBeDefined();
-    expect(card.security).toBeUndefined();
-  });
-
-  it('sets supportsAuthenticatedExtendedCard to false', () => {
-    const card = generateAgentCard(makeManifest(), BASE_CONFIG);
-
-    expect(card.supportsAuthenticatedExtendedCard).toBe(false);
+    expect(card.securitySchemes['bearerAuth']).toBeDefined();
+    expect(card.securityRequirements).toEqual([]);
   });
 
   // ---------------------------------------------------------------------------
@@ -212,16 +216,23 @@ describe('generateFleetCard', () => {
     expect(card.name).toBe('DorkOS Agent Fleet');
   });
 
-  it('sets protocolVersion to 0.3.0', () => {
+  it('advertises the fleet endpoint at both the current and the legacy protocol version', () => {
     const card = generateFleetCard([alpha], BASE_CONFIG);
 
-    expect(card.protocolVersion).toBe('0.3.0');
-  });
-
-  it('constructs url from baseUrl + /a2a', () => {
-    const card = generateFleetCard([alpha], BASE_CONFIG);
-
-    expect(card.url).toBe('https://dorkos.example.com/a2a');
+    expect(card.supportedInterfaces).toEqual([
+      {
+        url: 'https://dorkos.example.com/a2a',
+        protocolBinding: 'JSONRPC',
+        tenant: '',
+        protocolVersion: '1.0',
+      },
+      {
+        url: 'https://dorkos.example.com/a2a',
+        protocolBinding: 'JSONRPC',
+        tenant: '',
+        protocolVersion: '0.3',
+      },
+    ]);
   });
 
   it('uses config.version as card version', () => {
@@ -280,21 +291,24 @@ describe('generateFleetCard', () => {
   it('advertises the http/bearer scheme with a requirement when auth is enforced', () => {
     const card = generateFleetCard([alpha], BASE_CONFIG);
 
-    expect(card.securitySchemes?.['bearerAuth']).toMatchObject({ type: 'http', scheme: 'bearer' });
-    expect(card.security).toEqual([{ bearerAuth: [] }]);
+    expect(card.securitySchemes['bearerAuth']?.scheme).toMatchObject({
+      $case: 'httpAuthSecurityScheme',
+      value: { scheme: 'bearer' },
+    });
+    expect(card.securityRequirements).toEqual([{ schemes: { bearerAuth: { list: [] } } }]);
   });
 
   it('describes the bearer scheme but advertises no requirement in pass-through mode', () => {
     const card = generateFleetCard([alpha], PASSTHROUGH_CONFIG);
 
-    expect(card.securitySchemes?.['bearerAuth']).toBeDefined();
-    expect(card.security).toBeUndefined();
+    expect(card.securitySchemes['bearerAuth']).toBeDefined();
+    expect(card.securityRequirements).toEqual([]);
   });
 
   it('advertises streaming capability', () => {
     const card = generateFleetCard([alpha], BASE_CONFIG);
 
-    expect(card.capabilities.streaming).toBe(true);
+    expect(card.capabilities?.streaming).toBe(true);
   });
 
   // ---------------------------------------------------------------------------

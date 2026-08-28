@@ -30,6 +30,17 @@ const PRE_ATTACHMENT_URL_MIGRATION_IDX = 58;
  */
 const PRE_MESSAGE_QUEUE_MIGRATION_IDX = 63;
 
+/**
+ * Journal index of the last migration BEFORE a workspace could be OWNED
+ * (`owner_kind`/`owner_ref`, migration 0082, DOR-1589).
+ *
+ * A database built through this index is what every existing install is coming
+ * from: workspaces that predate ownership entirely, which is why both columns
+ * are nullable and NULL means "unit of work" — today's semantics, needing no
+ * backfill.
+ */
+const PRE_WORKSPACE_OWNER_IDX = 81;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -178,6 +189,10 @@ describe('Database Migrations', () => {
       'room_entries',
       'room_entry_reactions',
       'room_members',
+      // The cache of which rooms have a git repo of their own. Truth is the
+      // `room-repo.json` sidecar in each room's home directory; this table is
+      // rebuildable from it (migration 0081, DOR-1591).
+      'room_repos',
       // The two coordination counters a restart used to erase: which session ids
       // a runtime has renamed away from, and the hour of automatic turns already
       // spent (migration 0067, DOR-1205).
@@ -412,6 +427,43 @@ describe('Database Migrations', () => {
     expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
   });
 
+  it('adds workspace ownership to an install that predates it, without touching its rows', () => {
+    // The upgrade path, not the fresh-install one: a workspace row written
+    // before ownership existed must survive the migration unchanged and read as
+    // unowned. `sweep()` keys its exemption on `owner`, so a row that came out
+    // of this the wrong way would either lose its exemption or gain one nobody
+    // asked for.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_WORKSPACE_OWNER_IDX) });
+    db.$client
+      .prepare(
+        `INSERT INTO workspaces
+           (id, project_key, key, path, source, branch, provider, status,
+            port_base, port_block_size, pinned, created_at, last_used_at)
+         VALUES ('ws_legacy', 'core', 'DOR-1', '/r/core/DOR-1', '/r', 'dork/DOR-1',
+                 'worktree', 'ready', 4250, 10, 0, '2026-08-01', '2026-08-01')`
+      )
+      .run();
+
+    runMigrations(db);
+
+    const columns = db.$client.prepare('PRAGMA table_info(workspaces)').all() as {
+      name: string;
+      notnull: number;
+    }[];
+    // Both nullable: NULL/NULL is a unit-of-work checkout, which is what every
+    // pre-change row is. A NOT NULL column here would have needed a backfill.
+    expect(columns.find((c) => c.name === 'owner_kind')?.notnull).toBe(0);
+    expect(columns.find((c) => c.name === 'owner_ref')?.notnull).toBe(0);
+
+    const row = db.$client
+      .prepare('SELECT key, owner_kind, owner_ref FROM workspaces WHERE id = ?')
+      .get('ws_legacy') as { key: string; owner_kind: string | null; owner_ref: string | null };
+    expect(row.key).toBe('DOR-1');
+    expect(row.owner_kind).toBeNull();
+    expect(row.owner_ref).toBeNull();
+  });
+
   it('gives room_attachments a nullable entry link, behind a partial index', () => {
     // The columns and the index that carry an attachment, asserted off the
     // migrated database rather than off the schema file — same rationale as the
@@ -437,6 +489,44 @@ describe('Database Migrations', () => {
     // Partial: "unbound" is the rare state, so a full index would carry a row
     // per posted file to serve a lookup that only asks for a null entry.
     expect(index?.sql).toContain('WHERE "entry_id" IS NULL');
+  });
+
+  it('gives pulse_runs the newest-first indexes its two read shapes need (DOR-1482)', () => {
+    // Run history is the table that grows without bound — a per-minute task
+    // writes ~43k rows a month — and every read of it is newest-first. Both
+    // shapes are asserted off the MIGRATED database rather than the schema
+    // file, same rationale as the indexes above: the two can disagree.
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    const byCreated = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_pulse_runs_created_at') as { sql: string } | undefined;
+    expect(byCreated?.sql).toMatch(/created_at.*desc/i);
+
+    const byScheduleCreated = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_pulse_runs_schedule_created_at') as { sql: string } | undefined;
+    expect(byScheduleCreated?.sql).toContain('schedule_id');
+    expect(byScheduleCreated?.sql).toMatch(/created_at.*desc/i);
+
+    // The planner actually picks them for the two queries that matter:
+    // the unfiltered run list (`GET /api/tasks/runs`)…
+    const listPlan = db.$client
+      .prepare('EXPLAIN QUERY PLAN SELECT * FROM pulse_runs ORDER BY created_at DESC LIMIT 50')
+      .all() as { detail: string }[];
+    expect(listPlan.some((row) => row.detail.includes('idx_pulse_runs_created_at'))).toBe(true);
+
+    // …and the retention sweep's "newest N for one schedule" (`pruneRuns`),
+    // which now runs on an hourly timer rather than once at startup.
+    const prunePlan = db.$client
+      .prepare(
+        'EXPLAIN QUERY PLAN SELECT id FROM pulse_runs WHERE schedule_id = ? ORDER BY created_at DESC LIMIT 100'
+      )
+      .all('01SCHEDULE') as { detail: string }[];
+    expect(prunePlan.some((row) => row.detail.includes('idx_pulse_runs_schedule_created_at'))).toBe(
+      true
+    );
   });
 
   it('gives relay_index the sender/created_at index ADR-0014 committed to', () => {
@@ -473,7 +563,7 @@ describe('Database Migrations', () => {
 
     raw
       .prepare(
-        "INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES ('01ROOM', 'channel', 'backend', '#backend', NULL, NULL, 0, '2026-08-08T10:00:00Z', '2026-08-08T10:00:00Z')"
+        "INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES ('01ROOM', 'channel', 'backend', '#backend', NULL, 0, '2026-08-08T10:00:00Z', '2026-08-08T10:00:00Z')"
       )
       .run();
     raw

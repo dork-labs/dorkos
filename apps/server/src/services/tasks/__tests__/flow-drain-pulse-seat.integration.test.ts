@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { initBoundary } from '../../../lib/boundary.js';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Cron } from 'croner';
 import { TaskFileWatcher } from '../task-file-watcher.js';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import { skillsRoot } from './task-root-fixtures.js';
+import { TaskRegistrar } from '../task-registrar.js';
+import { FakeScheduler } from './fake-scheduler.js';
 import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -35,11 +40,12 @@ const FLOW_DRAIN_SKILL = `---
 name: flow-drain
 display-name: /flow — drain ready queue
 description: Claim the top-ranked eligible issue and carry it to its review gate.
-cron: "*/10 * * * *"
-timezone: America/Los_Angeles
-enabled: true
-max-runtime: 2h
-permissions: acceptEdits
+schedule:
+  cron: "*/10 * * * *"
+  timezone: America/Los_Angeles
+  enabled: true
+  max-runtime: 2h
+  permissions: acceptEdits
 ---
 
 Run one tick of the /flow autonomous loop:
@@ -65,8 +71,11 @@ function meshWith(pathMap: Record<string, string>): MeshCore {
 /** Poll until the task defined by `filePath` resolves in the store. */
 async function waitForTask(store: TaskStore, filePath: string, label: string): Promise<Task> {
   const deadline = Date.now() + 5000;
+  // By the REAL path: a row discovered in a skills root is keyed on the file
+  // with its symlinks resolved, and every macOS temp directory is under one.
+  const identity = await realpath(filePath);
   while (Date.now() < deadline) {
-    const task = store.getByFilePath(filePath);
+    const task = store.getByFilePath(identity);
     if (task) return task;
     await new Promise((r) => setTimeout(r, 25));
   }
@@ -75,25 +84,45 @@ async function waitForTask(store: TaskStore, filePath: string, label: string): P
 
 describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
   let dorkHome: string;
-  let tasksDir: string;
+  let skillsDir: string;
   let db: Db;
   let store: TaskStore;
   let watcher: TaskFileWatcher;
   let scheduler: TaskSchedulerService | undefined;
+  /** Stands in for the scheduler behind the WATCHER's registrar; the real one
+   * this test drives is built inside each case. */
+  let watcherScheduler: FakeScheduler;
 
   // The agent the project task is linked to, and its provisioned worktree cwd.
   const AGENT_ID = 'agent-flow-project';
-  const WORKTREE_CWD = '/Users/test/.dork/workspaces/core/spec-flow';
+  /**
+   * The worktree the linked agent works in. Assigned per case, under the test's
+   * own temp root: the agent-cwd chain boundary-checks the directory a turn
+   * resolves to, so a fixed path off in `/Users/test` would be refused.
+   */
+  let WORKTREE_CWD: string;
 
   beforeEach(async () => {
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'flow-drain-pulse-'));
+    // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`)
+    // boundary-checks the directory a turn resolves to. Everything this test
+    // builds lives under the temp root, so that is the boundary — and the temp
+    // dir is realpath'd, because the chain returns canonical paths and macOS
+    // spells `/var` as a symlink to `/private/var`.
+    await initBoundary(await realpath(tmpdir()));
+    dorkHome = await realpath(await mkdtemp(path.join(tmpdir(), 'flow-drain-pulse-')));
+    WORKTREE_CWD = path.join(dorkHome, 'workspaces', 'core', 'spec-flow');
     // Project-scoped tasks live at `<project>/.dork/tasks/`.
-    tasksDir = path.join(dorkHome, 'project', '.dork', 'tasks');
-    await mkdir(tasksDir, { recursive: true });
+    skillsDir = path.join(dorkHome, 'project', '.agents', 'skills');
+    await mkdir(skillsDir, { recursive: true });
 
     db = createTestDb();
     store = new TaskStore(db);
-    watcher = new TaskFileWatcher(store, () => {}, dorkHome);
+    watcherScheduler = new FakeScheduler();
+    watcher = new TaskFileWatcher(
+      store,
+      new TaskRegistrar({ store, scheduler: watcherScheduler }),
+      new ScheduleIdentityRegistry()
+    );
   });
 
   afterEach(async () => {
@@ -107,17 +136,17 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     const projectPath = path.join(dorkHome, 'project');
 
     // 1. Drop the flow-drain SKILL.md into the project tasks dir.
-    const skillDir = path.join(tasksDir, 'flow-drain');
+    const skillDir = path.join(skillsDir, 'flow-drain');
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
 
     // 2. Watch the project tasks dir — real chokidar, linked to a project agent.
-    watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
+    watcher.watch(skillsRoot(skillsDir, 'project', projectPath, AGENT_ID));
 
     // 3. The watcher syncs the file into the pulseSchedules cache (file-first).
     const task = await waitForTask(
       store,
-      path.join(tasksDir, 'flow-drain', 'SKILL.md'),
+      path.join(skillsDir, 'flow-drain', 'SKILL.md'),
       'flow-drain to sync to pulseSchedules'
     );
 
@@ -191,13 +220,13 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
 
   it('registers a non-overlapping (protect:true) croner job in the task timezone', async () => {
     const projectPath = path.join(dorkHome, 'project');
-    const skillDir = path.join(tasksDir, 'flow-drain');
+    const skillDir = path.join(skillsDir, 'flow-drain');
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
-    watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
+    watcher.watch(skillsRoot(skillsDir, 'project', projectPath, AGENT_ID));
     const task = await waitForTask(
       store,
-      path.join(tasksDir, 'flow-drain', 'SKILL.md'),
+      path.join(skillsDir, 'flow-drain', 'SKILL.md'),
       'flow-drain to sync'
     );
 
@@ -236,13 +265,13 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
 
   it('each tick is a fresh session keyed by its run id (fresh-session-per-issue, §7.7)', async () => {
     const projectPath = path.join(dorkHome, 'project');
-    const skillDir = path.join(tasksDir, 'flow-drain');
+    const skillDir = path.join(skillsDir, 'flow-drain');
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
-    watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
+    watcher.watch(skillsRoot(skillsDir, 'project', projectPath, AGENT_ID));
     const task = await waitForTask(
       store,
-      path.join(tasksDir, 'flow-drain', 'SKILL.md'),
+      path.join(skillsDir, 'flow-drain', 'SKILL.md'),
       'flow-drain to sync'
     );
 

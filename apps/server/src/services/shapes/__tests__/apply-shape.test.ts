@@ -91,6 +91,11 @@ function makeDeps(opts: {
   setSecrets?: [string, string][];
   registeredAgents?: RegisteredAgentView[];
   existingSchedules?: FakeSchedule[];
+  /**
+   * Make every `createSchedule` REFUSE, the way the real service does when the
+   * target name on disk already belongs to somebody else's skill.
+   */
+  refusesCreate?: boolean;
   autoFollowAgent?: boolean;
   /** The currently-active Shape name — the swap turns off its extensions. */
   activeShape?: string;
@@ -107,6 +112,9 @@ function makeDeps(opts: {
   const schedules: FakeSchedule[] = (opts.existingSchedules ?? []).map((s) => ({ ...s }));
 
   const createSchedule = vi.fn(async (req: CreateTaskRequest, origin?: { shape: string }) => {
+    // A refusal writes NOTHING and records nothing — the real service returns
+    // early, before the file and before the row.
+    if (opts.refusesCreate) return false;
     // Mirror production: the real service stores each schedule under
     // `slugify(req.name)` and upserts by file path (slug + scope), so a manifest
     // that declares "Inbox Tick" lands as "inbox-tick" and re-creating it is
@@ -122,6 +130,9 @@ function makeDeps(opts: {
     const existing = schedules.find((s) => s.name === name && s.agentId === agentId);
     if (existing) Object.assign(existing, entry);
     else schedules.push(entry);
+    // The real service answers `false` when the target name on disk belongs to
+    // somebody else's skill; this fake has no disk, so it always succeeds.
+    return true;
   });
   const rebindSchedule = vi.fn(
     async (name: string, rebind: { agentId: string; enabled: boolean }) => {
@@ -711,6 +722,31 @@ describe('applyShape', () => {
     expect(result.warnings).toContainEqual(
       expect.stringContaining("Schedule 'inbox-tick' asked to run with every approval prompt")
     );
+  });
+
+  it('reports a schedule the service refused to create, and does not claim it exists', async () => {
+    // `createSchedule` refuses when the target name on disk belongs to somebody
+    // else's skill — the guard between a Shape and a person's own file. This
+    // apply used to discard that answer: `ok: true`, no warnings, and the
+    // schedule's name in `schedulesCreated`, so the operator was told they had a
+    // job on a clock that had never been written (review, PROBE-C).
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'acceptEdits', startEnabled: true }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      refusesCreate: true,
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    // Said out loud, naming the schedule and what to do about it.
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining("Schedule 'inbox-tick' was not created")
+    );
+    // ...and never claimed as created.
+    expect(result.ok && result.applied.schedulesCreated).toEqual([]);
+    // Nor recorded as existing, which is what the rest of the apply reads.
+    expect(shared.schedules).toEqual([]);
   });
 
   it('tells the author when a manifest still carries the retired startDisabled key', async () => {

@@ -140,7 +140,7 @@ function OtherWaysToInstall({
           )}
           <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
             <span className="text-charcoal">Linux</span> — install with the one-liner or npm; the
-            web cockpit runs the same everywhere.
+            web app runs the same everywhere.
           </li>
           <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
             <span className="text-charcoal">Server</span> — running DorkOS somewhere other than your
@@ -307,7 +307,16 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
         ))}
       </div>
 
-      {/* Terminal mockup */}
+      {/*
+        Terminal mockup. The #7A756A literals below are deliberate and do NOT
+        follow `--warm-gray-light`: this mockup's ground is #1A1814, and the
+        muted token was darkened for the cream grounds (DOR-1503), which on a
+        dark ground moves the wrong way. Pointing these at the token would drop
+        them from 3.87:1 to 2.97:1. They are terminal chrome rendered at low
+        contrast on purpose, and they are part of the dark-ground muted-text
+        debt audited under DOR-1512 — if that audit settles on a dark-surface
+        idiom, these move to it rather than to the light-ground token.
+      */}
       <div className="mb-3">
         <div
           className="mx-auto max-w-lg overflow-hidden rounded-lg"
@@ -437,7 +446,7 @@ export function InstallMoment() {
           variants={REVEAL}
           className="text-warm-gray mb-6 text-lg leading-[1.5] md:text-xl"
         >
-          Your fleet is one step away.
+          Your whole team is one step away.
         </motion.p>
 
         <motion.p
@@ -480,7 +489,7 @@ export function InstallMoment() {
               className="rounded-[3px] px-2 py-0.5 font-mono text-[9px] tracking-[0.08em] uppercase"
               style={{
                 background: 'rgba(232, 93, 4, 0.06)',
-                color: '#7A756A',
+                color: 'var(--warm-gray-light)',
                 border: '1px solid rgba(232, 93, 4, 0.12)',
               }}
             >
