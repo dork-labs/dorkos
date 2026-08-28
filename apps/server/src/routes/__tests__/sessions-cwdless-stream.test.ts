@@ -194,8 +194,7 @@ describe('a window that opened the session without the folder', () => {
     // It connected at all — the observed failure was a boundary refusal here.
     expect(secondRes.status).toBe(200);
     const snapshot = secondRes.frames.find((f) => f.event === 'snapshot')?.data as
-      | SessionSnapshot
-      | undefined;
+      SessionSnapshot | undefined;
     expect(snapshot).toBeDefined();
     // The Stop button and the streaming text both hang off these two facts.
     expect(snapshot!.status.lifecycle).toBe('streaming');
