@@ -82,6 +82,21 @@ effort?} }` by the ladder in `01-ideation.md` §2.4. Compose from
   spreads them into `ensureSession`/`sendMessage` (mirror how
   `agent-handler.ts` spreads `executionSettings`). Conformance/relay tests.
 
+> **Handshake with PR3 (DOR-1614), which landed first.** PR3 shipped the
+> receiving half and deliberately built no task-runtime resolution, so two lines
+> are PR1's to close and nothing else in the repo will fail without them:
+>
+> 1. **`apps/server/src/services/tasks/relay-dispatch.ts` must set
+>    `payload.runtime`** to the runtime the scheduler resolved for the task.
+>    `TaskDispatchPayloadSchema` already carries the optional field, and
+>    `ClaudeCodeAdapter` already routes on it; absent, every dispatch keeps
+>    running on the relay's default runtime.
+> 2. **Widen the `viaRelay` guard** above from "resolved runtime is claude-code"
+>    to "resolved runtime is present in the relay adapter map" — the map the
+>    composition root now fills from `runtimeRegistry.listRuntimes()`. A runtime
+>    the relay does not hold is refused by name at the adapter, so the guard is
+>    what keeps such a task on the direct path instead.
+
 ### 5. Doors: MCP + CLI
 
 - `apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts` (and

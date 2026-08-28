@@ -4,13 +4,18 @@ covers:
   - "feat(server): the relay carries every registered runtime, and a chat session takes its agent's (DOR-1614)"
   - 'docs(contributing): the relay adapter drives every runtime, and the guides say so (DOR-1614)'
   - 'refactor(relay): keep the TTL comment with the TTL it explains'
+  - 'fix(relay): parse a subject against the runtimes the adapter actually holds (DOR-1614)'
+  - 'refactor(server): delete the relay dispatch seam nothing ever called (DOR-1614)'
+  - "docs(server): say what the relay's default runtime entry actually guarantees (DOR-1614)"
+  - 'docs(adr): the shipped relay shape is one adapter with a runtime map (260828-175910)'
+  - 'docs(spec): name the two lines PR1 owes the relay leg (DOR-1615, DOR-1614)'
 ---
 
 ### Fixed
 
-- An agent you set up to run on Codex or OpenCode now answers Telegram and
-  Slack on that program, the same one it already used in rooms and in the app.
-  Before, every chat message was answered by Claude Code no matter what the
+- An agent you set up to run on Codex or OpenCode is now handed its Telegram and
+  Slack messages on that program, the same one it already used in rooms and in
+  the app. Before, every chat message went to Claude Code no matter what the
   agent was set to — the wrong program replying under the right agent's name,
   with nothing anywhere saying so. Which program owns a chat conversation is now
   decided the moment the conversation starts, from the agent's own settings, and
