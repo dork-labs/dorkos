@@ -101,6 +101,23 @@
 export type ToolDomainKey = 'tasks' | 'relay' | 'mesh' | 'adapter';
 
 /**
+ * A per-agent grant the server ENFORCES — the other kind of key in
+ * `EnabledToolGroups` (DOR-1611, ADR 260828-123331).
+ *
+ * Deliberately a separate union from {@link ToolDomainKey} rather than a wider
+ * one, because the two answer different questions and widening would invite a
+ * caller to treat them alike. A `ToolDomainKey` decides what an agent is TOLD
+ * about and has a global default; one of these decides whether the call RUNS,
+ * has no global default, and cannot be set by the agent it governs.
+ *
+ * Which capabilities sit behind a grant is NOT listed here, and must not be:
+ * each capability declares its own `toolGroup`, and the catalog is where the
+ * cockpit and the docs read it. A list here would be the fourth copy of the fact
+ * this module exists to keep in one place.
+ */
+export type CapabilityToolGroupKey = 'roomsManage';
+
+/**
  * A named slice of the hand-registered tool surface.
  *
  * Finer-grained than {@link ToolDomainKey} — see the module TSDoc for why.

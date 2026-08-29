@@ -43,6 +43,14 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // response only if one is ever added; it is mapped because the table is total
   // by type, and 400 because a DM is the wrong room to ask this of.
   TOOL_POST_NOT_IN_DM: 400,
+  // The `leave_room` twin, and the same story again: an MCP-only verb, mapped
+  // because the table is total by type. 400 for the same reason — a direct
+  // message is the wrong kind of room to ask this of, and no retry fixes it.
+  TOOL_LEAVE_NOT_IN_DM: 400,
+  // The `update_room` twin, mapped for the same reason the two above are: the
+  // table is total by type. 400 because a direct message is the wrong kind of
+  // room to ask this of, and no retry fixes it.
+  TOOL_RENAME_NOT_IN_DM: 400,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.

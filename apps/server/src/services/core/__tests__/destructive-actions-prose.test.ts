@@ -354,9 +354,74 @@ const UNGATED_CLAIM =
  *    `slash-commands.mdx` is accurate and must stay. The `commands?` subject is
  *    therefore gone; only `agents?` remains. A guard that reddens true sentences
  *    about a neighbouring mechanism teaches people that it cries wolf.
+ *
+ * ## The third narrowing, and the reason it is a carve-out rather than a rewrite
+ *
+ * Since DOR-1611 there IS a tool group that controls access: `roomsManage`, the
+ * per-agent grant on the five room-management verbs. It is read fresh off the
+ * agent's manifest at `registry.invoke`, the call does not run without it, and
+ * the agent cannot set it for itself (ADR 260828-123331). A sentence saying that
+ * switch decides what an agent may do is TRUE, and it is exactly the sentence the
+ * two Tools tabs now have to say.
+ *
+ * So the claim is carved out when the sentence carrying it NAMES that grant —
+ * the same shape as the `commands?` fix above, for the same reason: reddening a
+ * true sentence about a neighbouring mechanism is how a guard earns a reputation
+ * for crying wolf, and the next person silences it instead of reading it.
+ *
+ * **The carve-out is deliberately narrow.** It keys on the grant being named in
+ * the same sentence, so a blanket claim about "tool groups" is still caught with
+ * `roomsManage` documented three paragraphs away. The four documentation toggles
+ * are untouched by it, which is the whole point: the Class A defect was, and
+ * still is, a page telling somebody they have sandboxed an agent when they have
+ * not.
  */
 const TOOL_ACCESS_CLAIM =
-  /(?<!not )(?<!never )control which tools[^.]{0,50}agents?[^.]{0,20}can (?:use|access|call)|which tools[^.]{0,40}agents? can (?:use|access|call)|tool groups?[^.]{0,30}available to|(?<!not )(?<!never )restricts? which tools/i;
+  /(?<!not )(?<!never )control which tools[^.]{0,50}agents?[^.]{0,20}can (?:use|access|call)|which tools[^.]{0,40}agents? can (?:use|access|call)|tool groups?[^.]{0,30}available to|(?<!not )(?<!never )restricts? which tools/gi;
+
+/**
+ * The one tool group whose access claim is TRUE (DOR-1611).
+ *
+ * Matched against the SENTENCE a claim sits in, never the whole page: naming the
+ * grant somewhere else on the page must not license a blanket claim about the
+ * four toggles that still only shape documentation.
+ */
+const ROOMS_GRANT_SUBJECT = /manage rooms|roomsmanage/i;
+
+/**
+ * The sentence a match sits in, for the carve-out to read.
+ *
+ * Sentence-bounded rather than a fixed character window, so a long true sentence
+ * about the grant is carved out whole and a short false one beside it is not
+ * accidentally covered by its neighbour.
+ *
+ * @param text - The whole (lowercased) page.
+ * @param index - Where the claim matched.
+ * @returns The sentence containing that offset.
+ */
+function sentenceAround(text: string, index: number): string {
+  const start = Math.max(text.lastIndexOf('.', index), text.lastIndexOf('\n', index)) + 1;
+  const dot = text.indexOf('.', index);
+  const newline = text.indexOf('\n', index);
+  const ends = [dot, newline].filter((at) => at !== -1);
+  const end = ends.length > 0 ? Math.min(...ends) : text.length;
+  return text.slice(start, end);
+}
+
+/**
+ * Every tool-access claim on a page that is NOT carved out as true.
+ *
+ * Exported shape rather than an inline scan so the carve-out itself has a test:
+ * a guard whose exception nobody checks is an exception that quietly grows.
+ *
+ * @param text - The whole (lowercased) page.
+ * @returns The matched claims that remain false.
+ */
+function uncarvedToolAccessClaims(text: string): string[] {
+  return [...text.matchAll(TOOL_ACCESS_CLAIM)]
+    .filter((match) => !ROOMS_GRANT_SUBJECT.test(sentenceAround(text, match.index)))
+    .map((match) => match[0]);
+}
 
 /**
  * Trees whose text a stranger reads: the docs site, the blog, the marketing site's
@@ -719,19 +784,35 @@ describe('destructive actions vs the docs that describe them (DOR-509)', () => {
 
   it('no page promises control over which tools an agent can use', () => {
     const offenders = withoutMarkedFiles([...userDocs, ...devDocs])
-      .flatMap((doc) => {
-        const claim = TOOL_ACCESS_CLAIM.exec(doc.lower);
-        return claim ? [`${doc.rel}: "${claim[0]}"`] : [];
-      })
+      .flatMap((doc) =>
+        uncarvedToolAccessClaims(doc.lower).map((claim) => `${doc.rel}: "${claim}"`)
+      )
       .sort();
     expect(
       offenders,
-      'Tool group toggles decide what an agent is TOLD ABOUT, not what it may call. ' +
-        'Every group is registered unconditionally (mcp-tools/index.ts) and allowedTools ' +
-        'auto-approves rather than restricting (ADR-260726-171347). A sentence promising ' +
-        'control over tool access is the one a user acts on when they believe they have ' +
-        'sandboxed an agent.'
+      'The FOUR documentation toggles decide what an agent is TOLD ABOUT, not what it may ' +
+        'call: every group is registered unconditionally (mcp-tools/index.ts) and ' +
+        'allowedTools auto-approves rather than restricting (ADR-260726-171347). A sentence ' +
+        'promising control over tool access is the one a user acts on when they believe ' +
+        'they have sandboxed an agent. ' +
+        'The `roomsManage` grant is the exception and IS enforced (ADR 260828-123331) — say ' +
+        'so in the same sentence and this guard carves it out.'
     ).toEqual([]);
+  });
+
+  it('carves out a TRUE access claim about the rooms grant, and only that one', () => {
+    // The carve-out's own test (spec `rooms-management-tools` §Testing, D16). An
+    // exception nobody checks is one that quietly widens until the guard is off.
+    const trueClaim = 'manage rooms decides which tools this agent can call, and it is enforced.';
+    const falseClaim = 'tool groups control which tools an agent can call.';
+
+    // True about the grant, because it names it: allowed.
+    expect(uncarvedToolAccessClaims(trueClaim)).toEqual([]);
+    // The identical framing WITHOUT the grant named: still the Class A defect.
+    expect(uncarvedToolAccessClaims(falseClaim)).not.toEqual([]);
+    // And naming the grant elsewhere on the page does not license the blanket
+    // claim — the carve-out is per sentence, not per page.
+    expect(uncarvedToolAccessClaims(`manage rooms is a lock. ${falseClaim}`)).not.toEqual([]);
   });
 
   it('reads published copy outside the docs tree', () => {

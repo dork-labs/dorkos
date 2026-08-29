@@ -394,6 +394,14 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Capable model' },
     ]),
     getSubagents: vi.fn().mockResolvedValue([]),
+    // An empty catalog by default: a test that cares about a capability's
+    // declaration overrides this, and one that does not must not be handed
+    // invented tool names it would then assert against.
+    getCapabilityCatalog: vi.fn().mockResolvedValue({
+      catalogVersion: 'mock',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      capabilities: [],
+    }),
     getCapabilities: vi.fn().mockResolvedValue({
       capabilities: {
         'claude-code': {

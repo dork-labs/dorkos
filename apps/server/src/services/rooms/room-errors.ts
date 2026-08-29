@@ -106,6 +106,44 @@ export type RoomErrorCode =
    */
   | 'TOOL_POST_NOT_IN_DM'
   /**
+   * `leave_room` was aimed at something that is not a channel (spec
+   * `rooms-management-tools` §D9, DOR-1611).
+   *
+   * **A channel can be re-entered and a direct message cannot**, and that
+   * asymmetry is the whole refusal. Leaving a channel loses nothing that cannot
+   * be handed back: the row, its `#slug` and its whole history stay, the owner
+   * sees every room on the install whether or not she is a member, and she can
+   * add the agent again. Leaving a DM is one-way — `findDmByMemberSet` needs an
+   * EXACT member-set match, so `{owner, agent}` matches nothing once one of them
+   * has gone, and re-opening mints a SECOND conversation beside the first rather
+   * than returning to it. The same trap the cockpit already warns a person about
+   * before they leave a DM.
+   *
+   * Spelled `kind !== 'channel'`, never `kind === 'dm'`, for the reason its
+   * `post` twin above gives: an unrecognized kind takes the narrower branch and
+   * never gets more reach than a DM (`.claude/rules/room-conduct.md`).
+   */
+  | 'TOOL_LEAVE_NOT_IN_DM'
+  /**
+   * `update_room` was asked to rename a direct message (spec
+   * `rooms-management-tools` §D12 amendment, DOR-1611).
+   *
+   * **A DM's name is its roster, not a field.** Its title is derived from who is
+   * in it and re-derived when that changes (`dm-title-follows-roster`), so a
+   * title an agent wrote there is a label that survives only until the next
+   * membership change — and in the meantime it has renamed a conversation
+   * belonging to whoever else is in it. A channel is the opposite: its name is
+   * the thing people type, and fixing a wrong one is the verb's whole purpose.
+   *
+   * The TOPIC stays writable in both, for `requireSystemRoomWritable`'s reason:
+   * describing a room you are in is ordinary participation.
+   *
+   * Spelled `kind !== 'channel'`, never `kind === 'dm'`, for the reason its two
+   * `TOOL_*_NOT_IN_DM` siblings above give: an unrecognized kind takes the
+   * narrower branch (`.claude/rules/room-conduct.md`).
+   */
+  | 'TOOL_RENAME_NOT_IN_DM'
+  /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).
    *
