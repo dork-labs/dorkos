@@ -54,8 +54,18 @@ lists_dir=${1:-}
 [ -n "$lists_dir" ] || fail 'usage: assert-shard-union.sh <dir-of-shard-lists>'
 [ -d "$lists_dir" ] || fail "shard-list directory not found: $lists_dir"
 
-union=$(cat "$lists_dir"/*.txt 2>/dev/null | sort -u)
-[ -n "$union" ] || fail "no shard lists (or only empty ones) under $lists_dir.
+# The union lives in a FILE, and each package's membership test greps that
+# file directly. The obvious pipe — printf "$union" | grep -q — is a bug under
+# this script's own `set -o pipefail`: grep -q exits at the first match, printf
+# takes SIGPIPE if it is still writing, and the pipeline reports failure for
+# precisely the packages that DID match early. On the first live run that
+# marked every apps/* package missing (they sort first in a ~600-line union)
+# while every packages/* package passed (printf had drained by then). The
+# fixture suite pins this with a union large enough to overflow a pipe buffer.
+union_file=$(mktemp -t shard-union.XXXXXX)
+trap 'rm -f "$union_file"' EXIT
+cat "$lists_dir"/*.txt 2>/dev/null | sort -u > "$union_file"
+[ -s "$union_file" ] || fail "no shard lists (or only empty ones) under $lists_dir.
 Every shard uploads a shard-files-*.txt naming the test files vitest collected;
 an empty union means no shard collected anything, which is not a passing sweep."
 
@@ -66,7 +76,7 @@ while IFS= read -r manifest; do
     checked=$((checked + 1))
     pkg_dir=$(dirname "$manifest")
     pkg_rel=${pkg_dir#"$workspace_root"/}
-    if ! printf '%s\n' "$union" | grep -q "^$pkg_rel/"; then
+    if ! grep -q -- "^$pkg_rel/" "$union_file"; then
       missing="$missing  $pkg_rel"$'\n'
     fi
   fi
@@ -87,6 +97,6 @@ include globs, whether its __tests__ files still exist, and whether the shard
 collect step is reading its report."
 fi
 
-total=$(printf '%s\n' "$union" | wc -l | tr -d ' ')
+total=$(wc -l < "$union_file" | tr -d ' ')
 printf 'assert-shard-union: %s package(s) all contributed to a union of %s collected test file(s).\n' \
   "$checked" "$total"

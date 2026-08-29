@@ -111,5 +111,24 @@ printf 'apps/only/src/x.test.ts\n' > "$lists6/shard-1.txt"
 result=$(WORKSPACE_ROOT="$ws_empty" bash "$assert" "$lists6" >/dev/null 2>&1; echo $?)
 check 'a workspace with no test-script packages fails' 1 "$result"
 
+# Case 7: a LARGE union whose matches come early. Pins the SIGPIPE/pipefail
+# regression from the first live merge-group run: with printf|grep -q, a match
+# on line 1 of a union bigger than a pipe buffer made grep exit while printf
+# was still writing, the pipeline reported failure under pipefail, and every
+# early-sorted package was declared missing. A file-based grep cannot fail
+# this way; this case fails loudly if anyone reintroduces the pipe.
+lists7="$work_dir/case7"
+mkdir -p "$lists7"
+{
+  printf 'apps/alpha/src/__tests__/a.test.ts\n'
+  printf 'packages/beta/src/__tests__/c.test.ts\n'
+  i=0
+  while [ "$i" -lt 40000 ]; do
+    printf 'zz-filler/not-a-package/file-%d.test.ts\n' "$i"
+    i=$((i + 1))
+  done
+} > "$lists7/shard-1.txt"
+check 'a large union with early matches passes' 0 "$(run_case "$lists7")"
+
 printf 'test-assert-shard-union: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
