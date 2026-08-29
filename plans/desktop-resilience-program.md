@@ -1,7 +1,8 @@
 # Desktop Resilience Program — never a black screen, never a silent failed update
 
-**Status:** proposed (2026-08-23, rev 2 — both root causes now CONFIRMED with user
-evidence). Investigation triggered by an early desktop user whose DorkOS desktop app shows
+**Status:** shipped 2026-08-29 (proposed 2026-08-23, rev 2 — both root causes CONFIRMED with
+user evidence). See §6 for what landed and what is left.
+Investigation triggered by an early desktop user whose DorkOS desktop app shows
 a permanent black screen after updating to v0.63.0, and whose auto-updates have quit
 without installing for ten days.
 
@@ -243,3 +244,25 @@ ladder semantics and updater state machine deserve written contracts); 3 and 4 a
 DECOMPOSE-ready (4.1/4.3 need design assets from the brand side). Post-mortem ADR
 candidate: "two vite configs build one client" — either unify or permanently share the
 define/build settings (`/adr:create`).
+
+## 6. Outcome
+
+**Shipped 2026-08-29 across ~20 PRs. Every workstream above is delivered.**
+
+- Originals: DOR-1448 through DOR-1458. Follow-ups: DOR-1470 through DOR-1476, DOR-1494,
+  DOR-1495, DOR-1509.
+- Specs `desktop-renderer-supervision` and `desktop-updater-overhaul` are `implemented`.
+  Decisions extracted: `260829-085851` (a window is alive only while it keeps saying so),
+  `260829-085852` (an update is not installed until the next launch says so), `260829-085854`
+  (the installer's quit is the one quit we never intercept), `260829-085855` (a delete path
+  names its target by identity).
+- **Workstream 5 landed as mechanism, not intent.** The packaged smoke asserts a real render
+  through the heartbeat, and the un-substituted-define gate runs in the required checks — the
+  two gates that would have caught v0.63.0 before a user did.
+
+**Remaining, deliberately outside the program:**
+
+- **DOR-1459** — cut the release that carries all of this. Human-owned; affected v0.63.0 users
+  install it by fresh DMG (§4 item 0.7).
+- **DOR-1473** — ops.
+- Open sweep items: **DOR-1631**, **DOR-1632**, **DOR-1633**, **DOR-1635**.

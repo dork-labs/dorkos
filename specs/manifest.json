@@ -50,7 +50,7 @@
       "slug": "desktop-updater-overhaul",
       "title": "Desktop updater overhaul: self-verifying installs, honest failure surfaces",
       "created": "2026-08-23",
-      "status": "specified",
+      "status": "implemented",
       "project": "Desktop Resilience"
     },
     {
@@ -58,7 +58,7 @@
       "slug": "desktop-renderer-supervision",
       "title": "Desktop renderer supervision: heartbeat, recovery ladder, fallback page",
       "created": "2026-08-23",
-      "status": "specified",
+      "status": "implemented",
       "project": "Desktop Resilience"
     },
     {
