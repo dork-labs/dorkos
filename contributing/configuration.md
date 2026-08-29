@@ -968,7 +968,7 @@ dorkos config set rooms.repo.enabled false
 dorkos config set rooms.repo.worktreeReapDays 30
 ```
 
-**These six leaves are deliberately NOT yet in `docs/getting-started/configuration.mdx`**, which is the one place this guide's mirroring rule is knowingly suspended. The schema fields landed with the spec's P1 groundwork (DOR-1591) and nothing reads them yet: no room can be given files until the enable route and the merge path ship. Publishing a settings table for a feature a reader cannot use would state that it works, which is the demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0). The mirror lands with the docs rewrite in the programme's P3, alongside `docs/concepts/rooms.mdx` and `contributing/room-repos.md` — **whoever does that work owns adding these rows**, and the copy to start from is in this section.
+These six leaves are now mirrored in `docs/getting-started/configuration.mdx`: the enable route (DOR-1592), the merge path (DOR-1598), and human file editing (DOR-1600/1601) all shipped after the P1 groundwork (DOR-1591) landed the schema, so a reader can now actually use the feature the table describes. `docs/concepts/rooms.mdx` covers the feature itself; a dedicated `contributing/room-repos.md` internals guide is not written yet — see that page's own coverage gap.
 
 ### rooms.responseGate
 

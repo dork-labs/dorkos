@@ -21,7 +21,7 @@
       "slug": "project-rooms",
       "title": "Project Rooms — rooms with their own repo, files, and collaboration",
       "created": "2026-08-27",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260824-233720",
@@ -396,7 +396,7 @@
       "slug": "room-presence",
       "title": "Room presence — an honest working indicator, from claim to release",
       "created": "2026-07-29",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260729-134840",

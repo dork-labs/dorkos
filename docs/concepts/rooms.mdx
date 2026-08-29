@@ -326,6 +326,38 @@ A few things worth knowing:
 - **How big and how many** come from the same limits as chat — see
   [Configuration](/docs/getting-started/configuration#uploads).
 
+## A room's own files
+
+A channel can also hold a git repository its agents work in together — real code, not just the
+attachments above. Turn it on for a room and every agent that answers there gets its own working
+copy, so two agents editing at once never step on each other. When one is ready, it brings its
+work into the room's shared copy with a merge, one at a time, and posts a line in the room saying
+what landed.
+
+**You can edit those files too.** Open a room's panel — the member count in its header, or
+**Members…** on its row in the sidebar — and its **Files** section lists everything the room's
+copy holds, read from the same commit every agent works from, never a half-finished edit in
+progress. Click a file to open, edit, and save it, and DorkOS commits the save under your name.
+If somebody else — a person, or an agent's merge — changed the file while you had it open, DorkOS
+says so before it lets you overwrite anything: open their version, or save yours over it anyway.
+
+**Outside changes get caught, not ignored.** A room's files have exactly one writer: DorkOS
+itself. If a change shows up any other way — someone edited the room's copy directly with a
+terminal — every save and every merge stops and says so, with a choice to keep the change as a
+commit or throw it away, file by file. Only you can make that call.
+
+**A room's files stay bounded on purpose.** Caps on file size and total size keep a room's
+project from growing without limit, and an agent's working copy is cleared away automatically
+once it has sat untouched for two weeks — anything still unsaved or not yet merged is left alone,
+however long it sits. All of it is configurable; see
+[Configuration](/docs/getting-started/configuration#rooms).
+
+<Callout type="info">
+  Giving a room its own files isn't a button in the app yet — it's a direct API call (`POST
+  /api/rooms/:id/repo`), and only you, never an agent, can make it. See the [API
+  reference](/docs/api) for the shape.
+</Callout>
+
 ## Saving a room as a file
 
 Rooms live inside DorkOS, which means you can't open one in a text editor, search it with the
@@ -401,19 +433,26 @@ mark moving on another device) without needing a subscription to every room at o
 
 ### REST surface
 
-| Method   | Path                               | Purpose                                          |
-| -------- | ---------------------------------- | ------------------------------------------------ |
-| `GET`    | `/api/rooms`                       | List your rooms, optionally filtered by kind.    |
-| `POST`   | `/api/rooms`                       | Create a channel or a direct message.            |
-| `GET`    | `/api/rooms/:id`                   | One room, with its member list.                  |
-| `PATCH`  | `/api/rooms/:id`                   | Update a room's title, topic, or archived state. |
-| `GET`    | `/api/rooms/:id/entries`           | Paginated message history.                       |
-| `GET`    | `/api/rooms/:id/export`            | The whole room as JSONL, as a download.          |
-| `POST`   | `/api/rooms/:id/entries`           | Post a message.                                  |
-| `POST`   | `/api/rooms/:id/members`           | Add a member.                                    |
-| `PATCH`  | `/api/rooms/:id/members/:authorId` | Change a member's response mode.                 |
-| `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                 |
-| `GET`    | `/api/rooms/:id/events`            | The room's live event stream.                    |
+| Method   | Path                               | Purpose                                                    |
+| -------- | ---------------------------------- | ---------------------------------------------------------- |
+| `GET`    | `/api/rooms`                       | List your rooms, optionally filtered by kind.              |
+| `POST`   | `/api/rooms`                       | Create a channel or a direct message.                      |
+| `GET`    | `/api/rooms/:id`                   | One room, with its member list.                            |
+| `PATCH`  | `/api/rooms/:id`                   | Update a room's title, topic, or archived state.           |
+| `GET`    | `/api/rooms/:id/entries`           | Paginated message history.                                 |
+| `GET`    | `/api/rooms/:id/export`            | The whole room as JSONL, as a download.                    |
+| `POST`   | `/api/rooms/:id/entries`           | Post a message.                                            |
+| `POST`   | `/api/rooms/:id/members`           | Add a member.                                              |
+| `PATCH`  | `/api/rooms/:id/members/:authorId` | Change a member's response mode.                           |
+| `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                           |
+| `GET`    | `/api/rooms/:id/events`            | The room's live event stream.                              |
+| `POST`   | `/api/rooms/:id/repo`              | Give a room files of its own.                              |
+| `GET`    | `/api/rooms/:id/repo/status`       | What a room's files hold, and whose work isn't merged yet. |
+| `POST`   | `/api/rooms/:id/repo/merge`        | Bring an agent's work into the room.                       |
+| `POST`   | `/api/rooms/:id/repo/main/repair`  | Deal with changes made outside DorkOS.                     |
+| `GET`    | `/api/rooms/:id/files`             | List one directory of a room's files.                      |
+| `GET`    | `/api/rooms/:id/files/content`     | Read one of a room's files.                                |
+| `PUT`    | `/api/rooms/:id/files/content`     | Save one of a room's files.                                |
 
 The full request and response shapes are in the [API reference](/docs/api).
 

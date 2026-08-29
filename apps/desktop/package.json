@@ -1,6 +1,6 @@
 {
   "name": "@dorkos/desktop",
-  "version": "0.65.0",
+  "version": "0.66.0",
   "description": "DorkOS desktop app - all your coding agents in one place",
   "author": "Dorian Collier",
   "private": true,

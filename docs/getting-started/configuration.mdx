@@ -260,6 +260,41 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
       type: 'integer (1--10)',
       default: '3',
     },
+    'rooms.repo.enabled': {
+      description:
+        'Whether a room may have files of its own: a git repo your agents can read, write, and run commands in together. Off, every room behaves the way it always has, and nothing already saved is deleted — turn it back on and everything is still there. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'rooms.repo.worktreeReapDays': {
+      description:
+        "How many days an agent's own working copy of a room's files may sit untouched before DorkOS clears it away. Only a copy with nothing unsaved and nothing unmerged is ever removed — work in progress is left alone, however long it sits. Only you can change this.",
+      type: 'integer (1--365)',
+      default: '14',
+    },
+    'rooms.repo.maxFileBytes': {
+      description:
+        'The largest single file an agent may bring into a room. A bigger file is refused, and the room says which one. Only you can change this.',
+      type: 'integer',
+      default: '5242880 (5 MB)',
+    },
+    'rooms.repo.maxRepoBytes': {
+      description: "How large one room's files may grow in total. Only you can change this.",
+      type: 'integer',
+      default: '524288000 (500 MB)',
+    },
+    'rooms.repo.maxRoomMdBytes': {
+      description:
+        "How much of a room's shared notes file, ROOM.md, actually reaches your agents. Past this size, an agent is told the file is too long rather than being handed part of it. Only you can change this.",
+      type: 'integer',
+      default: '24576 (24 KB)',
+    },
+    'rooms.repo.mergeQueueWaitMs': {
+      description:
+        "How long one agent's work waits its turn to be brought into a room's files before giving up. Two agents finishing at the same moment queue instead of colliding. Waiting longer costs nothing extra, so agents can set this too.",
+      type: 'integer (1000--600000)',
+      default: '30000',
+    },
   }}
 />
 

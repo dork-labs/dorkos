@@ -18,6 +18,8 @@ import {
 } from './lib.js';
 import { driveMultiSession, shootMultiSession } from './surfaces-desktop-fleet.js';
 import { shootControlCenter, shootSettingsRooms } from './surfaces-desktop-power.js';
+import { shootRoomFiles } from './surfaces-desktop-rooms.js';
+import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
 
 /**
  * Desktop surface drives: every 1280×800 still and loop, including the
@@ -651,6 +653,10 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
     shootMultiSession(page, theme, rec)
   );
   await attemptShot('personality', 'personality-light', () => shootPersonality(page, theme, rec));
+  await attemptShot('room-files', 'room-files-light', () => shootRoomFiles(page, theme, rec));
+  await attemptShot('task-runtime-picker', 'task-runtime-picker-light', () =>
+    shootTaskRuntimePicker(page, theme, rec)
+  );
   // Canvas (and Files/Canvas workbench) surfaces run last: opening the right
   // panel pins it open (per-agent, persisted) for the rest of the context,
   // which would bleed an open panel into later shots.

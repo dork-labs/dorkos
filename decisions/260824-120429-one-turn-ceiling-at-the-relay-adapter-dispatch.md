@@ -1,7 +1,7 @@
 ---
 id: 260824-120429
 title: One turn ceiling at the relay adapter dispatch, not one per surface
-status: proposed
+status: accepted
 created: 2026-08-24
 spec: null
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed.
+Accepted. Shipped in the relay turn-ceiling work (DOR-791).
 
 ## Context
 

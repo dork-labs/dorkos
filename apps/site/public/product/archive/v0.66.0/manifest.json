@@ -1,0 +1,51 @@
+{
+  "label": "v0.66.0",
+  "archivedAt": "2026-08-29T13:13:38.061Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-29T13:12:23.477Z",
+    "runId": "20260829-080548"
+  },
+  "shots": [
+    {
+      "id": "room-files",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["changelog"]
+    },
+    {
+      "id": "task-runtime-picker",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["changelog"]
+    }
+  ],
+  "count": 2,
+  "totalBytes": 250035,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "room-files-light.png",
+      "surface": "room-files",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 116040,
+      "runId": "20260829-080548",
+      "capturedAt": "2026-08-29T13:10:42.759Z"
+    },
+    {
+      "source": "auto",
+      "file": "task-runtime-picker-light.png",
+      "surface": "task-runtime-picker",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 133995,
+      "runId": "20260829-080548",
+      "capturedAt": "2026-08-29T13:10:42.759Z"
+    }
+  ]
+}
