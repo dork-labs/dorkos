@@ -21,9 +21,29 @@ name: test
 # tip catches it. `--continue` so one red package still reports every other
 # package's result instead of hiding behind the first failure.
 #
+# SHARDED ACROSS FOUR RUNNERS (2026-08-29). The queue leg previously ran as a
+# single serialized job and took 19–29 minutes wall clock — the ceiling comment
+# below said "split the job rather than raising this again", and this is that
+# split. Every shard runs the FULL `turbo test` task graph; the split happens
+# inside vitest (`--shard=N/4`), which partitions each package's test FILES
+# across the four runners. Coverage is unchanged: the union of the four shards
+# is exactly the old single run, and each shard still executes every package's
+# suite (so the per-shard assert step below keeps its "all 18 packages ran"
+# guarantee). File-level sharding was chosen over package-level filters because
+# the suite's wall clock is dominated by one package (apps/server); a
+# package-level split cannot divide it, a file-level split can.
+#
+# `--passWithNoTests` rides ONLY the sharded queue leg: a package with three
+# test files legitimately contributes zero files to one of four shards, and
+# without the flag vitest exits 1 on an empty selection. The flag cannot hide
+# a vanished suite: the assert step still requires every package's test task
+# to have EXECUTED on every shard, so a package whose tests stopped being
+# collected at all still fails the count check.
+#
 # NO separate build step: `test` declares `dependsOn: ["^build"]` in turbo.json,
 # so `turbo test` builds every dependency package first. Turbo computes that
-# from the task graph.
+# from the task graph. (Each shard pays that build; that is the price of the
+# split and it is a few minutes against the ~20 it buys back.)
 #
 # `-- --run` is REQUIRED, not decoration. Five packages' `test` scripts are a
 # bare `vitest` (@dorkos/db, harness, marketplace, operating-skills, skills),
@@ -47,7 +67,7 @@ name: test
 # in a merge group and the entries merged anyway (one of those reds WAS a real
 # two-PR clash, and it landed).
 #
-# On `pull_request` the same job runs `--affected` only. This is NOT for
+# On `pull_request` the `test` job runs `--affected` only. This is NOT for
 # thoroughness — the queue owns thoroughness — it exists because a required
 # check must SUCCEED ON THE PULL REQUEST before GitHub lets the PR into the
 # queue at all. That is measured, not assumed: PR #1246 removed the
@@ -58,9 +78,18 @@ name: test
 # signal: the same `turbo test --affected` the lefthook pre-push gate runs,
 # minutes not half-hours, and it reports the `test` context the ruleset
 # requires. The full-monorepo sweep, the `--concurrency=1` discipline and the
-# cache-replay assertion below stay with the queue run, which tests `main`
+# cache-replay assertion stay with the queue run, which tests `main`
 # plus everything ahead in the queue plus this PR — the #488/#489 class two
 # branches cannot see alone.
+#
+# ONE REQUIRED CONTEXT, TWO PRODUCERS. The ruleset requires a check named
+# `test`. On `pull_request` the `test` job below produces it; on `merge_group`
+# the `test-verdict` fan-in job produces it (same rendered name, mutually
+# exclusive job-level `if`s). The event that does not produce the real one
+# still emits a SKIPPED check run under that name, and a skipped job satisfies
+# a required check — the same GitHub semantics `no-fragment-under-skip-label`
+# already relies on. Do not rename either job's `name:` without updating the
+# ruleset.
 #
 # The old push-to-main trigger stays dropped: the queue already tested the
 # byte-identical tree (squash rewrites the SHA, not the content), and the
@@ -90,16 +119,18 @@ permissions:
   contents: read
 
 jobs:
+  # The PR leg. Affected packages only — the same scope the lefthook pre-push
+  # gate runs, for the same reason (fast, survivable), except on a clean runner
+  # instead of a loaded dev machine. Its job is to catch a red the author's own
+  # diff causes and to report the required `test` context so the PR can enter
+  # the merge queue (see the header); the full sweep is the queue leg below.
   test:
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
-    # MEASURED, not guessed: on 2026-08-19 the last eight green runs on main
-    # took 19-29 minutes wall clock on ubuntu-latest (the suite has grown, and
-    # a busy runner adds a few more), and one run finished its 30/30 turbo
-    # tasks and was then CANCELLED by the previous 30-minute ceiling before
-    # the assert step could run (DOR-1363). 45 keeps a hung watch-mode suite
-    # from burning an hour while leaving real headroom above the measured
-    # ceiling. If a healthy run ever crosses ~35 minutes, split the job
-    # rather than raising this again.
+    # A shared-touching PR expands `--affected` to ~20 packages — effectively
+    # the full suite on one runner — so this keeps the old single-job ceiling.
+    # (Measured 2026-08-19: 19-29 minutes for the full sweep; DOR-1363 was a
+    # run cancelled by a 30-minute ceiling with the work finished.)
     timeout-minutes: 45
     # Raise the V8 old-space ceiling for every Node process this job spawns —
     # pnpm, turbo, and each `vitest run` worker inherit NODE_OPTIONS. A PR that
@@ -109,7 +140,7 @@ jobs:
     # limit — JavaScript heap out of memory", failing the required `test`
     # context nondeterministically and stalling the PR out of the merge queue
     # (DOR-1576; measured repeatedly on shared-touching PRs). ubuntu-latest has
-    # 16GB, and `--concurrency=1` above means only one suite runs at a time, so
+    # 16GB, and `--concurrency=1` means only one suite runs at a time, so
     # 8GB for that one process is safe headroom, not oversubscription.
     env:
       NODE_OPTIONS: --max-old-space-size=8192
@@ -138,8 +169,60 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # `--concurrency=1` for the DOR-121 reason the pre-push gate already
+      # gives: ubuntu-latest has 4 cores and a fanned-out vitest starves
+      # itself into timeout flakes ("dev child #0 was never spawned", "Test
+      # timed out in 5000ms" — measured on this workflow's first two runs at
+      # the default concurrency). TURBO_SCM_BASE names the comparison base
+      # explicitly — the checkout is a detached merge ref with no local
+      # `main`, so turbo's default base does not resolve here.
+      - name: Run the affected packages' test suites
+        env:
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run
+
+  # The queue leg: the full monorepo sweep, split four ways at the vitest file
+  # level (see the header). Each shard is the OLD single job with one extra
+  # passthrough flag; nothing else may drift between them.
+  test-shard:
+    if: ${{ github.event_name == 'merge_group' }}
+    strategy:
+      # All four shards report even when one is red — the matrix equivalent of
+      # `--continue`, and the same reason: one red package must not hide the
+      # other seventeen packages' results.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: test-shard (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    # A quarter of the measured 19-29 minute sweep plus ~5 minutes of
+    # checkout/install/build. 30 keeps a hung watch-mode suite from burning
+    # the old 45; if a healthy shard ever crosses ~20 minutes, raise the shard
+    # count rather than this number.
+    timeout-minutes: 30
+    # Same DOR-1576 heap reasoning as the PR leg above: one vitest process at
+    # a time inherits this, on a 16GB runner.
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      # fetch-depth: 0 for the tags — the DOR-884 reasoning on the PR leg
+      # applies to every shard, because every shard runs the server suite that
+      # contains the DOR-339 tag guard.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       # --summarize writes a machine-readable record of the run to
-      # .turbo/runs/<id>.json. The next step is the only reason it is here.
+      # .turbo/runs/<id>.json. The assert step is the only reason it is here.
       #
       # --concurrency=1 for the DOR-121 reason the pre-push gate already gives,
       # which applies harder here, not less. Turbo's default is to fan out ten
@@ -147,34 +230,19 @@ jobs:
       # ~CPU-count worker pool. That is ~10x oversubscription on a 14-core
       # developer machine; ubuntu-latest has 4 cores, so it is worse. Suites run
       # one at a time and each keeps its internal parallelism, which is the
-      # right shape for a small runner.
+      # right shape for a small runner. This is not a preference: the first two
+      # runs of this workflow at the default concurrency failed on a DIFFERENT
+      # pair of timing-sensitive tests each time, on code neither run had
+      # changed. Starving a suite of CPU and then reporting its timeouts as
+      # failures makes the gate a coin toss, and a gate people cannot trust is
+      # a gate people route around.
       #
-      # This is not a preference. The first two runs of this workflow at the
-      # default concurrency failed on a DIFFERENT pair of timing-sensitive tests
-      # each time, on code neither run had changed — "dev child #0 was never
-      # spawned", "Test timed out in 5000ms". Starving a suite of CPU and then
-      # reporting its timeouts as failures makes the gate a coin toss, and a
-      # gate people cannot trust is a gate people route around. Retries would
-      # have hidden this; running the work properly fixes it.
-      - name: Run every package's test suite
-        if: ${{ github.event_name == 'merge_group' }}
-        run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run
-
-      # The PR leg: affected packages only — the same scope the lefthook
-      # pre-push gate runs, for the same reason (fast, survivable), except on a
-      # clean runner instead of a loaded dev machine. Its job is to catch a red
-      # the author's own diff causes and to report the required `test` context
-      # so the PR can enter the merge queue (see the header); the full sweep is
-      # the queue run above. `--concurrency=1` for the DOR-121 reason on that
-      # run: ubuntu-latest has 4 cores and a fanned-out vitest starves itself
-      # into timeout flakes. TURBO_SCM_BASE names the comparison base
-      # explicitly — the checkout is a detached merge ref with no local `main`,
-      # so turbo's default base does not resolve here.
-      - name: Run the affected packages' test suites
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          TURBO_SCM_BASE: origin/${{ github.base_ref }}
-        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run
+      # `--shard` and `--passWithNoTests` are vitest flags, not turbo flags —
+      # they ride the same `--` passthrough as `--run`, so every package's
+      # suite (including the five bare-`vitest` scripts and obsidian-plugin's
+      # chained script, where pnpm appends to the final command) receives them.
+      - name: Run every package's test suite (shard ${{ matrix.shard }}/4)
+        run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 29 successful, 29 total" (18 test tasks plus the 11 builds they
@@ -186,12 +254,31 @@ jobs:
       # script. See scripts/assert-tests-executed.sh for why this rather than
       # --force, and scripts/test-assert-tests-executed.sh for its fixtures.
       #
-      # Merge-group only, twice over: the run it audits is the merge-group one
-      # (the PR leg deliberately runs a SUBSET, which this script would rightly
-      # refuse as "fewer packages ran than declare a test script"), and it
-      # runs only when that step succeeded — a red suite is already a red job,
-      # and "did anything actually run" only matters when the answer looks
-      # like yes.
+      # Per SHARD, unchanged from the single-job era: every shard runs the full
+      # task graph (the split is inside vitest, not across packages), so "all
+      # 18 packages executed, none from cache" holds on each of the four
+      # runners independently. It runs only when the suite step succeeded — a
+      # red suite is already a red job, and "did anything actually run" only
+      # matters when the answer looks like yes.
       - name: Prove the suite actually executed
-        if: ${{ github.event_name == 'merge_group' && success() }}
+        if: ${{ success() }}
         run: bash scripts/assert-tests-executed.sh
+
+  # The fan-in. This is what the ruleset actually requires on merge_group: a
+  # check named `test` (see ONE REQUIRED CONTEXT, TWO PRODUCERS in the
+  # header). `always()` because a skipped fan-in after a failed shard would
+  # otherwise read as a satisfied required check — the exact false green this
+  # workflow exists to prevent. It fails unless every shard succeeded;
+  # cancelled or skipped shards fail it too.
+  test-verdict:
+    if: ${{ always() && github.event_name == 'merge_group' }}
+    needs: test-shard
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all four shards green
+        run: |
+          result="${{ needs.test-shard.result }}"
+          echo "shard matrix result: $result"
+          [ "$result" = "success" ]
