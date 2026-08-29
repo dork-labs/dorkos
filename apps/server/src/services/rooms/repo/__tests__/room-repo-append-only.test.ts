@@ -135,6 +135,18 @@ describe('a room’s repo is append-only', () => {
       'search_room_history',
       'list_member_rooms',
       'search_member_rooms',
+      'get_room',
+      'find_room',
+      // The five that ARRANGE rooms (DOR-1611). They are here because the pin is
+      // the WHOLE hand, not because they touch a room's files — none of them
+      // does, which is the point: the repo verbs are still exactly the two
+      // above. These five are additionally off until a person turns them on,
+      // behind the `roomsManage` grant.
+      'create_room',
+      'add_room_members',
+      'remove_room_members',
+      'update_room',
+      'leave_room',
     ]);
     // And nothing in the domain offers to give a room files: enabling a repo is
     // operator-only over HTTP (spec §3.2), because an agent that could hand

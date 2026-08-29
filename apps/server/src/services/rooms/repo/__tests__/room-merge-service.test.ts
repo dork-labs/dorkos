@@ -205,6 +205,7 @@ describe('RoomMergeService', () => {
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => 'Dorian',
       caps: () => caps,
+      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
     worktrees = new RoomWorktreeManager({
       store,
