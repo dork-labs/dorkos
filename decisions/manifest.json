@@ -2,6 +2,86 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260829-115621",
+      "slug": "a-rooms-files-are-a-git-repo-with-one-integration-tree-and-a-worktree-per-agent",
+      "title": "A room's files are a git repo with one integration tree and a standing worktree per agent",
+      "status": "accepted",
+      "created": "2026-08-29",
+      "extractedFrom": "project-rooms",
+      "specSlug": "project-rooms",
+      "amends": null,
+      "affects": [
+        "apps/server/src/services/rooms/repo/room-worktree-manager.ts",
+        "apps/server/src/services/rooms/repo/room-repo-service.ts",
+        "apps/server/src/services/workspace/resolve-session-cwd.ts",
+        "apps/server/src/services/workspace/session-cwd-rung.ts"
+      ]
+    },
+    {
+      "id": "260829-115622",
+      "slug": "the-room-repo-sidecar-is-file-first-truth-outside-the-repo-it-describes",
+      "title": "The room-repo sidecar is file-first truth, and it lives outside the repo it describes",
+      "status": "accepted",
+      "created": "2026-08-29",
+      "extractedFrom": "project-rooms",
+      "specSlug": "project-rooms",
+      "amends": null,
+      "affects": [
+        "packages/shared/src/room-repo.ts",
+        "apps/server/src/services/rooms/repo/room-repo-store.ts",
+        "apps/server/src/services/rooms/repo/room-repo-reconciler.ts",
+        "packages/db/src/schema/rooms.ts",
+        "packages/db/drizzle/0081_nappy_phil_sheldon.sql"
+      ]
+    },
+    {
+      "id": "260829-115623",
+      "slug": "room-md-rides-a-pinned-system-prompt-append-from-the-repo-root",
+      "title": "ROOM.md rides a pinned system-prompt append, and lives at the repo root",
+      "status": "accepted",
+      "created": "2026-08-29",
+      "extractedFrom": "project-rooms",
+      "specSlug": "project-rooms",
+      "amends": null,
+      "affects": [
+        "apps/server/src/services/rooms/repo/room-conventions.ts",
+        "apps/server/src/services/rooms/repo/room-md.ts",
+        "packages/test-utils/src/runtime-conformance.ts"
+      ]
+    },
+    {
+      "id": "260829-115625",
+      "slug": "merging-is-the-only-way-an-agent-writes-a-rooms-files-and-a-merge-wakes-nobody",
+      "title": "Merging is the only way an agent writes a room's files, and a merge wakes nobody",
+      "status": "accepted",
+      "created": "2026-08-29",
+      "extractedFrom": "project-rooms",
+      "specSlug": "project-rooms",
+      "amends": null,
+      "affects": [
+        "apps/server/src/services/rooms/repo/room-merge-service.ts",
+        "apps/server/src/services/rooms/repo/room-repo-mutex.ts",
+        "apps/server/src/services/rooms/room-capabilities.ts",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts"
+      ]
+    },
+    {
+      "id": "260829-115626",
+      "slug": "a-person-writes-a-rooms-files-through-the-server-in-the-files-own-bytes",
+      "title": "A person writes a room's files through the server, in the file's own bytes, and an outside edit stops everything loudly",
+      "status": "accepted",
+      "created": "2026-08-29",
+      "extractedFrom": "project-rooms",
+      "specSlug": "project-rooms",
+      "amends": null,
+      "affects": [
+        "apps/server/src/services/rooms/repo/room-file-editor.ts",
+        "apps/server/src/services/rooms/repo/room-main-checkout.ts",
+        "apps/client/src/layers/features/file-explorer/ui/FilePreviewDialog.tsx",
+        "apps/client/src/layers/features/file-explorer/ui/RoomMainWarning.tsx"
+      ]
+    },
+    {
       "id": "260828-175910",
       "slug": "one-relay-adapter-holding-a-runtime-map-not-a-subclass-per-runtime",
       "title": "One relay adapter holding a runtime map, not a subclass per runtime",
