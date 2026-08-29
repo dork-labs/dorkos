@@ -17,6 +17,7 @@ import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { OracleContext, RoomFacts } from '../../types.js';
 import { emptyApprovalLog } from '../../types.js';
 import {
+  agentPostCount,
   agentPostedInRoom,
   agentReactedInRoom,
   agentStayedQuietInRoom,
@@ -30,6 +31,7 @@ import {
   roomTurnBudgetSpent,
   roomTurnRanFor,
   roomTurnsRanFor,
+  somethingVisibleLanded,
 } from '../rooms.js';
 
 const ADA = 'author-ada';
@@ -56,6 +58,8 @@ function entry(opts: {
   text: string;
   kind?: string;
   notice?: string;
+  /** Who a notice is ABOUT, which is not who wrote it — the system author does. */
+  subjectAuthorId?: string;
 }): SseFrame {
   return {
     event: 'entry',
@@ -66,7 +70,11 @@ function entry(opts: {
         id: opts.id,
         authorId: opts.authorId,
         kind: opts.kind ?? 'post',
-        body: { text: opts.text, ...(opts.notice ? { notice: opts.notice } : {}) },
+        body: {
+          text: opts.text,
+          ...(opts.notice ? { notice: opts.notice } : {}),
+          ...(opts.subjectAuthorId ? { subjectAuthorId: opts.subjectAuthorId } : {}),
+        },
       },
     },
   };
@@ -385,5 +393,151 @@ describe('the turn-budget oracles', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+const BO = 'author-bo';
+const SYSTEM = 'author-system';
+
+/** Room facts seating a SECOND agent, for the cases that must tell them apart. */
+function factsWithBo(notes: Record<string, unknown> = {}): RoomFacts {
+  const base = facts(notes);
+  return {
+    ...base,
+    members: {
+      ...base.members,
+      [BO]: { authorId: BO, handle: 'bo', kind: 'agent', responseMode: 'mention-only' },
+    },
+    agents: { ...base.agents, bo: BO },
+  };
+}
+
+describe('agentPostCount', () => {
+  it('passes on the exact count', async () => {
+    const result = await agentPostCount('ada', 1)(ctx(ONE_TURN));
+    expect(result.passed).toBe(true);
+  });
+
+  it('fails when the agent said it in three messages instead of one', async () => {
+    // The shape `rooms.maxPostsPerTurn` bounds, and the one an oracle can see
+    // without a judge model.
+    const frames = [
+      ...ONE_TURN,
+      entry({ id: 'e3', authorId: ADA, text: 'Also: the CSV fix shipped.' }),
+      entry({ id: 'e4', authorId: ADA, text: 'And Priya is on call.' }),
+    ];
+    const result = await agentPostCount('ada', 1)(ctx(frames));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('observed 3');
+  });
+
+  it('fails when it said nothing at all', async () => {
+    const result = await agentPostCount('ada', 1)(ctx([ONE_TURN[0]!]));
+    expect(result.passed).toBe(false);
+  });
+
+  it('does not count NOTICES as the agent speaking', async () => {
+    // The room's own voice is not the agent saying something, and a notice
+    // carries the agent's id in `subjectAuthorId` rather than in `authorId` —
+    // so counting by author is right and this pins that it stays that way.
+    const frames = [
+      ONE_TURN[0]!,
+      entry({
+        id: 'n1',
+        authorId: SYSTEM,
+        kind: 'notice',
+        notice: 'agent_declined',
+        subjectAuthorId: ADA,
+        text: 'Ada read this and did not reply.',
+      }),
+    ];
+    const result = await agentPostCount('ada', 0)(ctx(frames));
+    expect(result.passed).toBe(true);
+  });
+
+  it('fails honestly when the case collected no room', async () => {
+    const result = await agentPostCount('ada', 1)(ctx(ONE_TURN, null));
+    expect(result.passed).toBe(false);
+  });
+});
+
+describe('somethingVisibleLanded', () => {
+  /** The trigger and the indicator, with nothing to show for them. */
+  const NOTHING: SseFrame[] = [
+    entry({ id: 'e1', authorId: OPERATOR, text: '@ada what did Priya say?' }),
+    presence({ authorId: ADA, entryId: 'e1', state: 'working' }),
+    presence({ authorId: ADA, entryId: 'e1', state: 'done' }),
+  ];
+
+  it('passes on a post', async () => {
+    expect((await somethingVisibleLanded('ada')(ctx(ONE_TURN))).passed).toBe(true);
+  });
+
+  it('passes on a standing reaction', async () => {
+    const frames = [...NOTHING, reaction({ entryId: 'e1', emoji: '✅', authorIds: [ADA] })];
+    expect((await somethingVisibleLanded('ada')(ctx(frames))).passed).toBe(true);
+  });
+
+  it('passes on the room writing the decline line', async () => {
+    const frames = [
+      ...NOTHING,
+      entry({
+        id: 'n1',
+        authorId: SYSTEM,
+        kind: 'notice',
+        notice: 'agent_declined',
+        subjectAuthorId: ADA,
+        text: 'Ada read this and did not reply.',
+      }),
+    ];
+    expect((await somethingVisibleLanded('ada')(ctx(frames))).passed).toBe(true);
+  });
+
+  it('FAILS when the indicator went with nothing to show — the outcome it exists for', async () => {
+    const result = await somethingVisibleLanded('ada')(ctx(NOTHING));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('posted nothing');
+  });
+
+  it('FAILS on a reaction that was taken back', async () => {
+    // A reaction frame carries the entry's COMPLETE current set, so successive
+    // frames are states rather than events. Folding them together reads
+    // "reacted and took it back" as "reacted" — which this oracle did before
+    // `reactorsAnywhere`, and which leaves a reader looking at an empty message.
+    const frames = [
+      ...NOTHING,
+      reaction({ entryId: 'e1', emoji: '✅', authorIds: [ADA] }),
+      reaction({ entryId: 'e1', emoji: '✅', authorIds: [] }),
+    ];
+    expect((await somethingVisibleLanded('ada')(ctx(frames))).passed).toBe(false);
+  });
+
+  it('FAILS when the decline line was about a DIFFERENT agent', async () => {
+    // The reason `subjectAuthorId` is read at all. A room seating two agents
+    // writes a line naming one of them, and "the room said something" is not
+    // "the room said something about the agent this case is asking about".
+    const frames = [
+      ...NOTHING,
+      entry({
+        id: 'n1',
+        authorId: SYSTEM,
+        kind: 'notice',
+        notice: 'agent_declined',
+        subjectAuthorId: BO,
+        text: 'Bo read this and did not reply.',
+      }),
+    ];
+    const result = await somethingVisibleLanded('ada')(ctx(frames, factsWithBo()));
+    expect(result.passed).toBe(false);
+  });
+
+  it("FAILS when somebody ELSE's reaction is the only one standing", async () => {
+    const frames = [...NOTHING, reaction({ entryId: 'e1', emoji: '✅', authorIds: [BO] })];
+    const result = await somethingVisibleLanded('ada')(ctx(frames, factsWithBo()));
+    expect(result.passed).toBe(false);
+  });
+
+  it('fails honestly when the case collected no room', async () => {
+    expect((await somethingVisibleLanded('ada')(ctx(ONE_TURN, null))).passed).toBe(false);
   });
 });

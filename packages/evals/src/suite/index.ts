@@ -104,6 +104,21 @@ export {
   roomsCredentialedCases,
 } from './rooms-recall.js';
 export {
+  roomsDmAnswersDirectQuestionCase,
+  roomsDmAnswersAmbiguousRequestCase,
+  roomsDmAnswersImpliedQuestionCase,
+  roomsDmRestraintOnThanksCase,
+  roomsChannelMentionedQuestionPostsCase,
+  roomsChannelYieldsToHumanCase,
+  roomsAckOnlyReactsUnderFlipCase,
+  roomsDmReactionIsTheAnswerCase,
+  roomsThinkingStaysPrivateCase,
+  roomsAnswersInOneMessageCase,
+  roomsAmbientSilenceIsFreeCase,
+  roomsDeclinesVisiblyCase,
+  roomsJudgmentCases,
+} from './rooms-judgment.js';
+export {
   memoryRecallCrossSurfaceCase,
   memoryCapConsolidationCase,
   memoryPoisonedNoteCase,

@@ -28,8 +28,8 @@ import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { EvalSandbox, RoomFacts, RoomScriptContext } from '../types.js';
-import { observedEntries } from '../oracles/rooms.js';
+import type { EvalSandbox, Oracle, RoomFacts, RoomScriptContext } from '../types.js';
+import { observedEntries, roomScriptNote } from '../oracles/rooms.js';
 import {
   createRoomWithAgents,
   openRoomStream,
@@ -251,6 +251,33 @@ export function agentSpoke(
  */
 export function hasText(text: string, needle: string): boolean {
   return text.toLowerCase().includes(needle.toLowerCase());
+}
+
+/**
+ * Oracle: the turn that OPENS a restraint case actually answered.
+ *
+ * **Not `agentPostedInRoom`, and the difference cost a false green.** Every case
+ * that measures restraint judges silence "after the opener", which needs the
+ * opener to exist — and `agentPostedInRoom` asks only whether the agent posted at
+ * SOME point in the drive. Measured on 2026-08-29 in `rooms-judgment.ts`: the
+ * opening question went unanswered, `windowOpenedBy` was `''`, and that oracle
+ * passed on the courtesy reply the very next oracle was failing the case for. Two
+ * oracles disagreeing about one post is how a case reports a shape nobody has.
+ *
+ * So it reads the note the script recorded, which is written only when an opener
+ * was actually observed. It lives here rather than beside either caller because
+ * `rooms-recall.ts` and `rooms-judgment.ts` both need it and the latent bug is
+ * identical in both.
+ *
+ * @param label - Human-readable label.
+ * @returns An {@link Oracle}.
+ */
+export function openerLanded(label: string): Oracle {
+  return roomScriptNote(
+    'windowOpenedBy',
+    (value) => typeof value === 'string' && value.length > 0,
+    label
+  );
 }
 
 /**
