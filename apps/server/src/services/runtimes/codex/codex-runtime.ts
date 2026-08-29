@@ -30,7 +30,7 @@
  *
  * @module services/runtimes/codex/codex-runtime
  */
-import { Codex, type CodexOptions } from '@openai/codex-sdk';
+import { Codex } from '@openai/codex-sdk';
 import type {
   StreamEvent,
   PermissionMode,
@@ -82,6 +82,13 @@ import {
 import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
+import {
+  resolveDorkosMcpInjection,
+  type DorkosMcpInjection,
+} from '../shared/dorkos-mcp-injection.js';
+import { buildCodexOptions } from './codex-options.js';
+import { CODEX_DORKOS_TOOL_PREFIX, DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
+import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
@@ -129,84 +136,6 @@ export interface CodexRuntimeOptions {
    * the server's resolved workspace root.
    */
   defaultCwd?: string;
-}
-
-/**
- * Build the {@link CodexOptions} for the SDK `Codex` client.
- *
- * `codexPathOverride` is set whenever a binary path is given, and every DorkOS
- * caller now gives one ({@link CodexRuntime} resolves it through the shared
- * ladder first) — leaving it unset falls back to the SDK's own binary discovery,
- * which THROWS when it finds nothing rather than reporting it. `config.mcp_servers` carries the
- * agent's enabled managed servers (`managedServers`, spec
- * `mcp-server-management`) plus the scoped `dorkos_ui` bridge when a UI MCP URL
- * is provided — see {@link buildMcpServersConfig} for the merge and the
- * shadowing guarantee. `config` is omitted entirely when neither source
- * contributes a server.
- *
- * `extraEnv` is the ONLY reason to set `CodexOptions.env`: when provided the SDK
- * stops inheriting `process.env` wholesale, so this function spreads the parent
- * environment back in explicitly (see {@link inheritedEnv}) before layering the
- * extra keys on top. Omit it and `env` stays unset, which is the SDK's own
- * inherit-everything path.
- *
- * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
- * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
- * @param extraEnv - Extra environment entries for the `codex exec` subprocess
- *   (the agent's identity token). Omitted or empty leaves `env` unset.
- * @param managedServers - The agent's enabled managed MCP servers, already
- *   converted to Codex config shape. Omitted or empty adds none.
- */
-export function buildCodexOptions(
-  binaryPath?: string | null,
-  mcpUiUrl?: string,
-  extraEnv?: Record<string, string>,
-  managedServers?: CodexMcpServerRecord
-): CodexOptions {
-  const hasExtraEnv = extraEnv !== undefined && Object.keys(extraEnv).length > 0;
-  const mcpServers = buildMcpServersConfig(mcpUiUrl, managedServers);
-  return {
-    ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
-    ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
-    ...(hasExtraEnv ? { env: { ...inheritedEnv(), ...extraEnv } } : {}),
-  };
-}
-
-/**
- * Merge the agent's managed MCP servers with the scoped `dorkos_ui` bridge into
- * one `mcp_servers` config record, or `undefined` when neither contributes.
- *
- * The `dorkos_ui` entry is written LAST, so a managed server can never shadow
- * the UI bridge whatever its name — the same ordering guarantee the claude-code
- * adapter's `mergeSessionMcpServers` gives, and defense in depth on top of the
- * converter already dropping the reserved name.
- *
- * @param mcpUiUrl - Loopback URL of the `dorkos_ui` server, or undefined.
- * @param managedServers - Enabled managed servers in Codex config shape.
- */
-function buildMcpServersConfig(
-  mcpUiUrl?: string,
-  managedServers?: CodexMcpServerRecord
-): CodexMcpServerRecord | undefined {
-  const servers: CodexMcpServerRecord = { ...(managedServers ?? {}) };
-  if (mcpUiUrl) servers[CODEX_UI_MCP_SERVER] = { url: mcpUiUrl };
-  return Object.keys(servers).length > 0 ? servers : undefined;
-}
-
-/**
- * The parent environment as a `Record<string, string>`, dropping unset keys.
- *
- * Reproduces exactly what the Codex SDK does when `CodexOptions.env` is absent,
- * so passing this plus one extra key is equivalent to inheritance plus that key,
- * never a narrowed environment that loses PATH, HOME, or CODEX_HOME.
- */
-function inheritedEnv(): Record<string, string> {
-  const result: Record<string, string> = {};
-  // eslint-disable-next-line no-restricted-syntax -- full env needed for the codex subprocess to inherit PATH/HOME/CODEX_HOME
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) result[key] = value;
-  }
-  return result;
 }
 
 /**
@@ -333,16 +262,22 @@ export class CodexRuntime implements AgentRuntime {
    *
    * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
    * @param managedServers - Enabled managed servers in Codex config shape, `{}` when none.
+   * @param dorkosTools - The resolved `dorkos` tool server, or null when it is
+   *   not injected this turn. It carries a freshly minted identity token, so a
+   *   client holding one can never be shared across turns.
    */
   private async clientForTurn(
     tokenEnv: Record<string, string>,
-    managedServers: CodexMcpServerRecord
+    managedServers: CodexMcpServerRecord,
+    dorkosTools: DorkosMcpInjection | null
   ): Promise<Codex> {
     const binary = await this.resolveTurnBinary();
     const hasToken = Object.keys(tokenEnv).length > 0;
     const hasManaged = Object.keys(managedServers).length > 0;
-    if (hasToken || hasManaged) {
-      return new Codex(buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managedServers));
+    if (hasToken || hasManaged || dorkosTools) {
+      return new Codex(
+        buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managedServers, dorkosTools)
+      );
     }
     if (this.sharedClient?.binary !== binary) {
       this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };
@@ -359,15 +294,47 @@ export class CodexRuntime implements AgentRuntime {
    *
    * @param cwd - The session's working directory (the agent's workspace path).
    */
-  private resolveManagedMcpServers(cwd: string): CodexMcpServerRecord {
+  private resolveManagedMcpServers(
+    cwd: string,
+    injectingDorkosTools: boolean
+  ): CodexMcpServerRecord {
     if (!this.managedMcpServers) return {};
     const neutral = this.managedMcpServers.injectableServersForCwd(cwd);
-    const { servers, skipped } = toCodexMcpServers(neutral, new Set([CODEX_UI_MCP_SERVER]));
+    // `dorkos_ui` is always ours — it is injected on every turn. `dorkos` is
+    // ours only on the turns we actually inject it, which is why the set is
+    // built per turn rather than being a constant.
+    //
+    // Reserving it unconditionally was a REGRESSION on the default path: with
+    // the experiment off DorkOS wants nothing called `dorkos`, so dropping a
+    // person's own server of that name took something and gave nothing back,
+    // and it made the flag-OFF path stop being byte-identical to the one that
+    // shipped before this feature. It also disagreed with OpenCode, where the
+    // desired set simply has no `dorkos` entry when the experiment is off and a
+    // user's server of that name is therefore never touched. Same experiment,
+    // same name, two runtimes: they have to answer this the same way.
+    const reservedNames = new Set([CODEX_UI_MCP_SERVER]);
+    if (injectingDorkosTools) reservedNames.add(DORKOS_MCP_SERVER_NAME);
+    const { servers, skipped, reserved } = toCodexMcpServers(neutral, reservedNames);
     if (skipped.length > 0) {
       logger.debug('[CodexRuntime] skipped SSE managed MCP servers — Codex has no SSE transport', {
         cwd,
         skipped,
       });
+    }
+    if (reserved.length > 0) {
+      // A WARN, not a debug: this is somebody's own server disappearing. The
+      // drop itself is correct and stays — DorkOS must own these names — but a
+      // person watching their tools vanish needs a line naming the collision
+      // and the remedy, which is the whole of DOR-1613's complaint about the
+      // silent version of this branch.
+      logger.warn(
+        `[CodexRuntime] managed MCP server(s) ${reserved
+          .map((name) => `"${name}"`)
+          .join(
+            ', '
+          )} use a name DorkOS reserves and were NOT injected — rename them to inject them`,
+        { cwd, reserved }
+      );
     }
     return servers;
   }
@@ -614,14 +581,9 @@ export class CodexRuntime implements AgentRuntime {
     // carries the first turn's metadata with the row instead.
     this.persistSessionMetadata(sessionId);
 
-    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
-    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
-    // Codex agent knows who it is and how to reach its capabilities.
-    // `.text` — the whole append, memory block included. The `stable` half of
-    // this result exists only for claude-code's relaunch fingerprint; codex has
-    // no warm process to keep, so it sends everything, every turn (see
-    // `buildMemoryBlock` for what that costs).
-    const agentContext = (await buildAgentContextAppend(cwd)).text;
+    // Does this working directory host a registered agent? Everything below
+    // that mints, injects or names a tool is gated on the answer.
+    const meshAgent = this.meshCore?.getByPath(cwd);
 
     // Mint this session's agent identity token when this cwd hosts a registered
     // agent. It rides the subprocess env, never the prompt, so it stays a
@@ -632,8 +594,25 @@ export class CodexRuntime implements AgentRuntime {
     // Minted under the name a PERSON reads, never the slug: the token's label
     // is replayed onto the agent's author row by every room tool it calls, so
     // the slug there renames a live agent mid-conversation (DOR-1264).
-    const meshAgent = this.meshCore?.getByPath(cwd);
     const agentTokenEnv = await resolveAgentTokenEnv(
+      meshAgent ? cwd : undefined,
+      meshAgent?.displayName ?? meshAgent?.name
+    );
+
+    // The `dorkos` tool server, when the experiment is on and this cwd hosts a
+    // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
+    // like the env token above and for the same reason: it carries a freshly
+    // minted identity token, so a per-session or per-boot resolve would let the
+    // 30-day fuse arm on a long-lived agent. `null` injects nothing, which is
+    // exactly today's behaviour.
+    //
+    // Scoped to every agent-bound session rather than to room turns: the runtime
+    // cannot know why it was called, and these tools are worth having outside a
+    // room anyway.
+    //
+    // Resolved BEFORE the managed servers because it decides whether the name
+    // `dorkos` is reserved against them this turn — see below.
+    const dorkosTools = await resolveDorkosMcpInjection(
       meshAgent ? cwd : undefined,
       meshAgent?.displayName ?? meshAgent?.name
     );
@@ -642,9 +621,30 @@ export class CodexRuntime implements AgentRuntime {
     // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
     // at turn time because the resolver keys on the session cwd; a non-agent
     // session has no manifest and contributes none.
-    const managedMcpServers = this.resolveManagedMcpServers(cwd);
+    const managedMcpServers = this.resolveManagedMcpServers(cwd, dorkosTools !== null);
+
+    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
+    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
+    // Codex agent knows who it is and how to reach its capabilities.
+    // `.text` — the whole append, memory block included. The `stable` half of
+    // this result exists only for claude-code's relaunch fingerprint; codex has
+    // no warm process to keep, so it sends everything, every turn (see
+    // `buildMemoryBlock` for what that costs).
+    const neutralContext = (await buildAgentContextAppend(cwd)).text;
+
+    // The room verbs, and ONLY when this turn actually carries them — gated on
+    // the resolved injection itself, not on a second guess at it, so the prose
+    // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
+    // Named under codex's own MCP prefix, never claude-code's: a bare or
+    // wrongly-prefixed name is uncallable, which is the DOR-1292 defect. With
+    // nothing injected this is byte-identical to what a codex turn carried
+    // before.
+    const agentContext = dorkosTools
+      ? `${neutralContext}\n\n${buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX)}`
+      : neutralContext;
+
     const threadOptions = projectThreadOptions(settings, cwd);
-    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers);
+    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers, dorkosTools);
     const thread =
       boundThreadId !== undefined
         ? client.resumeThread(boundThreadId, threadOptions)

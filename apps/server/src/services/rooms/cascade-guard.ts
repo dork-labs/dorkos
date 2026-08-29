@@ -74,14 +74,27 @@ export interface CascadeProvenance {
   turnsByAuthor: ReadonlyMap<string, number>;
 }
 
-/** The verdict on one prospective trigger. */
-export interface CascadeDecision {
-  allowed: boolean;
-  /** The depth the triggered turn would carry (`provenance.depth + 1`). */
-  depth: number;
-  /** Set only when `allowed` is false. */
-  reason?: CascadeRefusalReason;
-}
+/**
+ * The verdict on one prospective trigger.
+ *
+ * A union rather than one shape with an optional `reason`, so that a refusal
+ * always carries the rule that made it. The optional field was reachable as
+ * `undefined` only in a state this module cannot produce, and every caller that
+ * wanted to report the reason had to invent a fallback for it.
+ */
+export type CascadeDecision =
+  | {
+      allowed: true;
+      /** The depth the triggered turn would carry (`provenance.depth + 1`). */
+      depth: number;
+    }
+  | {
+      allowed: false;
+      /** The depth the refused turn would have carried. */
+      depth: number;
+      /** Which rule refused it. */
+      reason: CascadeRefusalReason;
+    };
 
 /**
  * Decide whether `targetAuthorId` may be triggered from an entry with this

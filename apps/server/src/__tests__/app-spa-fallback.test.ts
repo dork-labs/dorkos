@@ -97,6 +97,45 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
   });
 
   /**
+   * A missing hashed bundle under /assets/ must 404, not fall through to the
+   * SPA shell (DOR-1474). Before this, a stale reference to a bundle a new
+   * build no longer ships presented as a silent blank window instead of a
+   * diagnosable 404 -- the exact way the v0.63.0 class of bug hid.
+   */
+  describe('missing assets 404 instead of falling back to the SPA shell', () => {
+    it('404s a missing hashed bundle instead of serving the SPA shell', async () => {
+      const res = await request(app).get('/assets/nope-abc123.js');
+      expect(res.status).toBe(404);
+      expect(res.text).not.toContain('id="root"');
+      expect(res.headers['cache-control']).not.toBe('no-store');
+    });
+
+    it('still serves an existing hashed bundle as 200 immutable', async () => {
+      const res = await request(app).get(`/assets/${HASHED_ASSET}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    });
+
+    it('404s a HEAD request for a missing hashed bundle', async () => {
+      const res = await request(app).head('/assets/nope-abc123.js');
+      expect(res.status).toBe(404);
+    });
+
+    it('still serves a genuine deep client route as 200 index.html no-store', async () => {
+      const res = await request(app).get('/agents/deep/route');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('id="root"');
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+
+    it('404s the exact /assets/ directory (no matching index file within it)', async () => {
+      const res = await request(app).get('/assets/');
+      expect(res.status).toBe(404);
+      expect(res.text).not.toContain('id="root"');
+    });
+  });
+
+  /**
    * Cache hygiene (DOR-1452). A shell held in a browser's HTTP cache across an
    * app update names hashed bundles the new build no longer ships — the blank
    * window every Electron shell eventually hits. `no-store` on the shell and

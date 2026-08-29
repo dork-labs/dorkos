@@ -19,6 +19,7 @@ export { useRoom, useRoomEntries, useLoadedRoomEntries } from './model/use-room'
 export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
 export {
+  useRoomFinished,
   useRoomPresence,
   useRoomPresenceAuthorIds,
   useRoomPresenceClaims,

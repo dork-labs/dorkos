@@ -454,6 +454,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       type: '"ask" | "act" | "autonomy" | null',
       default: 'null',
     },
+    'runtimes.dorkosTools': {
+      description:
+        'Whether Codex and OpenCode agents get the DorkOS tools your Claude Code agents already have — posting in rooms, reacting, reading room history, and remembering things between sessions. Ships off; turn it on in Settings under Experiments. Takes effect on those agents’ next turn.',
+      type: 'boolean',
+      default: 'false',
+    },
     'runtimes.claudeCode.defaultAccount': {
       description:
         'The Claude account new chats run and bill on when neither the agent nor the chat picks another, as the full path to its Claude folder (for example `/Users/you/.claude2`). When `null`, DorkOS uses whichever folder your shell already points at, or `~/.claude`.',

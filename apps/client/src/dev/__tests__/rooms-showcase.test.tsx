@@ -26,6 +26,15 @@ import { RoomsPage } from '../pages/RoomsPage';
 import { RoomPanelDemo, type RoomPanelDemoProps } from '../showcases/rooms-showcase-helpers';
 import { ARCHIVED_ROOM, CHANNEL_ROOM, DM_ROOM, EMPTY_ROOM } from '../showcases/rooms-showcase-data';
 
+// **The budget here is a sum, not any one wait.** Every case mounts a real panel
+// (or, twice, the whole seven-showcase page) and then chains several Testing
+// Library waits, each with its own one-second ceiling. A case that genuinely
+// breaks still fails at the wait that broke, in under a second, with the element
+// it could not find — so this ceiling never hides a defect. It only ever fires
+// when a loaded machine stretches four honest waits past the five-second default,
+// which is what took this file red in the pre-push gate while it passed alone.
+vi.setConfig({ testTimeout: 30_000 });
+
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // The room panel reads route state to decide where each member row's face leads

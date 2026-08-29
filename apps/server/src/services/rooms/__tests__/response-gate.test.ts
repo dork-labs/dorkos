@@ -534,3 +534,55 @@ describe('R2 — being named in a question survives one hop', () => {
     expect(skips).toEqual([]);
   });
 });
+
+describe('what the 202 promised when the gate later chose silence (DOR-786)', () => {
+  it('reports the overhearing agent as triggered, then quietly does not run it', async () => {
+    // **The interaction between this gate and `PostToRoomResponse.triggered`.**
+    // The field is the ACCEPT-TIME answer: dispatch selects Ana because she is
+    // inside her engaged window, and says so on the 202. The gate then judges the
+    // collected burst — after the response has been sent — and routes her to
+    // silence.
+    //
+    // Both halves are pinned together because the schema now says exactly this,
+    // and a doc claim nothing executes is how the last review found this field
+    // over-promising. `triggered` is what the room ASKED; it is not a receipt.
+    const w = open();
+    await engageAna(w);
+
+    const posted = w.service.post(w.room.id, {
+      authorId: w.human,
+      text: '@nova can you ship the release?',
+    });
+    // Ana is named on the 202 — she was selected, and nothing had refused her yet.
+    expect(posted.dispatch?.triggered.map((author) => author.id)).toContain(w.ana);
+    expect(posted.dispatch?.skipped).toEqual([]);
+
+    await w.service.triggersIdle();
+
+    // And she never ran. The gate's verdict lands after the 202, and it is
+    // DELIBERATELY silent: no notice, because a line every time an agent
+    // tactfully says nothing is the over-participation this gate exists to stop.
+    expect(turnsFor(w, w.ana)).toBe(0);
+    expect(
+      w.service.listEntries(w.room.id, w.human, { limit: 200 }).some((e) => e.kind === 'notice')
+    ).toBe(false);
+  });
+
+  it('keeps its promise for the agent the message actually named', async () => {
+    // The reassuring half, and the reason the schema draws the line where it
+    // does: the gate cannot touch an addressed message, so for the case a person
+    // is most likely to be watching — "I asked Nova something" — `triggered` and
+    // what happens agree.
+    const w = open();
+    await engageAna(w);
+
+    const posted = w.service.post(w.room.id, {
+      authorId: w.human,
+      text: '@nova can you ship the release?',
+    });
+    expect(posted.dispatch?.triggered.map((author) => author.id)).toContain(w.nova);
+
+    await w.service.triggersIdle();
+    expect(turnsFor(w, w.nova)).toBe(1);
+  });
+});

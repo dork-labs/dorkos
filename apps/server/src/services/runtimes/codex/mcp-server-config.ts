@@ -70,6 +70,17 @@ export interface CodexMcpConversion {
   servers: Record<string, CodexConfigObject>;
   /** Names skipped because Codex has no matching transport (`sse`), for a one-line diagnostic. */
   skipped: string[];
+  /**
+   * Names dropped because DorkOS reserves them — a user's own server called
+   * `dorkos` or `dorkos_ui`.
+   *
+   * Reported rather than merely dropped, and that is the whole reason this field
+   * exists. The drop used to be silent, which was survivable while `dorkos_ui`
+   * was the only reserved name (nobody names a server that). `dorkos` is a name
+   * a person plausibly gave their own server, and watching their tools vanish
+   * with no diagnostic anywhere is the failure this closes (DOR-1613).
+   */
+  reserved: string[];
 }
 
 /**
@@ -78,10 +89,13 @@ export interface CodexMcpConversion {
  * record.
  *
  * A `reservedNames` set is dropped so a managed server can never occupy a name
- * DorkOS owns (e.g. the `dorkos_ui` UI bridge); the caller also writes the
- * reserved entries LAST when merging, so shadowing is impossible on either
- * count. `sse` servers land in {@link CodexMcpConversion.skipped} rather than
- * the output — absence withholds (safe-default), never a silent mismap.
+ * DorkOS owns (the `dorkos_ui` UI bridge, and the injected `dorkos` tool server);
+ * the caller also writes the reserved entries LAST when merging, so shadowing is
+ * impossible on either count. Dropped names are REPORTED in
+ * {@link CodexMcpConversion.reserved} so the caller can say so — see that field
+ * for why silence was not good enough. `sse` servers land in
+ * {@link CodexMcpConversion.skipped} rather than the output — absence withholds
+ * (safe-default), never a silent mismap.
  *
  * @param connections - Enabled managed servers by name, from the resolver.
  * @param reservedNames - Names DorkOS reserves and this converter must not emit.
@@ -92,8 +106,12 @@ export function toCodexMcpServers(
 ): CodexMcpConversion {
   const servers: Record<string, CodexConfigObject> = {};
   const skipped: string[] = [];
+  const reserved: string[] = [];
   for (const [name, connection] of Object.entries(connections)) {
-    if (reservedNames.has(name)) continue;
+    if (reservedNames.has(name)) {
+      reserved.push(name);
+      continue;
+    }
     const config = toCodexMcpServerConfig(connection);
     if (config === null) {
       skipped.push(name);
@@ -101,5 +119,5 @@ export function toCodexMcpServers(
     }
     servers[name] = config;
   }
-  return { servers, skipped };
+  return { servers, skipped, reserved };
 }

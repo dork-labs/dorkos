@@ -14,6 +14,7 @@
  *
  * @module server/services/rooms/room-claims
  */
+import type { RoomWorkingClaim } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
@@ -387,6 +388,10 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // agent is gone never becomes a target. It is a `refused` because that is
   // what it would be: no turn ran, and none was going to.
   gone: 'refused',
+  // Also refused before any claim was taken: the batch was gathered, its member
+  // left the room while it waited, and the drop is judged when the batch finally
+  // comes round (DOR-786). No turn ran and none was going to.
+  left: 'refused',
   // Same shape as `gone`: refused before a claim was ever taken, because the
   // bind that would have preceded the claim failed first (DOR-1206).
   unavailable: 'refused',
@@ -427,19 +432,31 @@ export function deepestClaimOf(
  * Who is working in one room, and since when — what `room_context.working` and
  * the presence fan-out are given.
  *
+ * **Oldest claim first, and stated rather than inherited.** The map's own
+ * iteration order is the order claims were TAKEN, which is nearly the same thing
+ * and not quite: an agent that finishes and is claimed again moves to the end,
+ * so a room could report a two-second-old turn above a four-minute-old one. The
+ * agent that has been working longest is the one a reader most needs at the top,
+ * and it is the order the app's own presence line already uses — so it is
+ * sorted here, once, rather than re-sorted by each reader that cares.
+ *
  * @param claims - The live claim map.
  * @param roomId - The room being asked about.
- * @returns One entry per agent holding a claim there.
+ * @returns One entry per agent holding a claim there, oldest claim first.
  */
 export function claimsWorkingIn(
   claims: ReadonlyMap<string, ActiveClaim>,
   roomId: string
-): Array<{ authorId: string; since: string }> {
-  const working: Array<{ authorId: string; since: string }> = [];
+): RoomWorkingClaim[] {
+  const working: RoomWorkingClaim[] = [];
   for (const claim of claims.values()) {
     if (claim.roomId === roomId) working.push({ authorId: claim.authorId, since: claim.claimedAt });
   }
-  return working;
+  // The author id breaks ties so two turns claimed in the same millisecond
+  // cannot swap places between two reads of the same unchanged room.
+  return working.sort(
+    (a, b) => Date.parse(a.since) - Date.parse(b.since) || a.authorId.localeCompare(b.authorId)
+  );
 }
 
 /**

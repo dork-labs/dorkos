@@ -238,6 +238,13 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,
+  // Whether Codex and OpenCode agents reach this server's own `/mcp`, holding
+  // its bearer and an agent identity (spec `tool-only-room-replies` §D5). The
+  // same shape as `a2a.enabled` directly above and safe for the same reason:
+  // `false` is the withholding side of a real axis, not a preference. Off, two
+  // more programs are simply not callers of this instance. A wipe landing back
+  // here restores that, so it needs no carryover rule.
+  'runtimes.dorkosTools': false,
   'tunnel.domain': null,
   'tunnel.authtoken': null,
   'tunnel.auth': null,

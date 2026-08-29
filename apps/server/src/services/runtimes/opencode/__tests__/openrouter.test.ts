@@ -38,6 +38,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
     runtimes: {
       default: 'claude-code',
       defaultTrustStop: null,
+      dorkosTools: false,
       claudeCode: {
         defaultAccount: null,
         accounts: [],

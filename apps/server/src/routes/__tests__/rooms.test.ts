@@ -549,9 +549,19 @@ describe('/api/rooms', () => {
       const res = await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
 
       // Trigger-only, mirroring POST /api/sessions/:id/messages: delivery is
-      // the SSE stream's job, so the body carries identity and nothing else.
+      // the SSE stream's job, so the body carries identity — plus who the
+      // message reached, which is the one thing delivery cannot tell the writer
+      // in time to be useful (DOR-786). This room has no agents in it, so both
+      // lists are empty, and empty is an ANSWER: absent would mean the server
+      // could not say, which is a different thing a client must not confuse.
       expect(res.status).toBe(202);
-      expect(res.body).toEqual({ accepted: true, entryId: expect.any(String), seq: 1 });
+      expect(res.body).toEqual({
+        accepted: true,
+        entryId: expect.any(String),
+        seq: 1,
+        triggered: [],
+        skipped: [],
+      });
       expect(res.body.entry).toBeUndefined();
     });
 
