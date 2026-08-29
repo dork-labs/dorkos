@@ -2948,6 +2948,57 @@ export function seedDorkosToolsDefault(store: {
 }
 
 /**
+ * Seed `rooms.toolOnlyReplies` and `rooms.maxPostsPerTurn` — whether an agent
+ * decides for itself when to speak in a room, and how much it may say in one
+ * turn (spec `tool-only-room-replies` §D5; DOR-1613).
+ *
+ * **This body is the mechanism, not an anchor**, for the reason
+ * {@link seedRoomRepoDefaults} states at length: both are nested leaves inside a
+ * section every stored config already carries, and conf's pre-migration
+ * `Object.assign({}, defaults, fileStore)` is SHALLOW — a stored `rooms` object
+ * wins wholesale and never gains a member. Nothing else writes either leaf to
+ * disk, so deleting this body leaves them absent on every upgraded install.
+ *
+ * Both in ONE body because they arrive together and neither is useful alone: the
+ * ceiling exists because posting becomes the agent's only voice, and the flip is
+ * what makes that true. Two keys for two leaves that ship in one PR would freeze
+ * two bodies where one is the whole change.
+ *
+ * Safety-neutral: `false` and `3` are what every existing install already
+ * behaves as — the flip is off, and nothing counted posts before, so a ceiling
+ * that only ever refuses a fourth post inside one turn refuses nothing that used
+ * to happen.
+ *
+ * Additive + idempotent: each leaf is written only when absent, so a re-run after
+ * corrupt recovery leaves an operator's own choice alone. Reads
+ * {@link USER_CONFIG_DEFAULTS} rather than literals, so it cannot drift from the
+ * schema.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedToolOnlyReplyDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = rooms as Record<string, unknown>;
+  const next = { ...current };
+  let changed = false;
+  if (current.toolOnlyReplies == null) {
+    next.toolOnlyReplies = USER_CONFIG_DEFAULTS.rooms.toolOnlyReplies;
+    changed = true;
+  }
+  if (current.maxPostsPerTurn == null) {
+    next.maxPostsPerTurn = USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
+    changed = true;
+  }
+  if (!changed) return;
+  store.set('rooms', next);
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3599,6 +3650,24 @@ export const CONFIG_MIGRATIONS = {
     // tools (spec `tool-only-room-replies` §D5). A nested leaf, so this body is
     // the only thing that writes it; see `seedDorkosToolsDefault`.
     seedDorkosToolsDefault(store);
+  },
+  // 0.71.0 has merged (the DorkOS tools on codex/opencode), so 0.72.0 is the
+  // next key. Frozen from merge, not from the release bump, for the reason
+  // `'0.60.0'` above states; anything further opens `'0.73.0'`.
+  //
+  // Disjoint from every other key here: it writes two nested leaves under
+  // `rooms` that no other key names. `'0.66.0'` and `'0.70.0'` also touch that
+  // section — the first rewrites three sibling numbers, the second adds `repo` —
+  // so sequencing them any way round lands the same config.
+  '0.72.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.toolOnlyReplies` and `rooms.maxPostsPerTurn` — whether an agent
+    // decides when to speak, and how much it may say in one turn (spec
+    // `tool-only-room-replies` §D5). Nested leaves, so this body is the only
+    // thing that writes them; see `seedToolOnlyReplyDefaults`.
+    seedToolOnlyReplyDefaults(store);
   },
 } as const;
 

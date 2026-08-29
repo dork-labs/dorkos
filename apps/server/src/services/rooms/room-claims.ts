@@ -19,6 +19,7 @@ import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
 import type { CascadeStamp, RoomTurnUnanswered } from './notices/notice-log.js';
+import type { RoomReplyMode } from '@dorkos/shared/additional-context';
 import type { EngagementWindow } from './engagement.js';
 
 /**
@@ -48,13 +49,17 @@ import type { EngagementWindow } from './engagement.js';
  *    longer in hand, and `cascadeRoot` is not a substitute for it (room-presence
  *    spec §3.1).
  *
- * The session the turn runs on is deliberately NOT here. A claim used to carry
- * it, and nothing ever read it: the presence signal does not carry a session id
- * (room-presence spec §15), and every writer that needs one — the reply post,
- * the runtime binding — takes it from the turn's own result, which is the only
- * place it is known to be correct. A second copy taken at claim time could only
- * ever be the id the room GUESSED with, which is exactly the stale id that used
- * to cost an agent its memory of a room.
+ * The session the turn runs on is here, and the WAY it gets here is the whole
+ * point. A claim used to take it at claim time, and that copy could only ever be
+ * the id the room GUESSED with — the stale id that used to cost an agent its
+ * memory of a room, since a first turn's binding is a placeholder the runtime
+ * renames mid-flight. So {@link ActiveClaim.sessionId} is REPORTED by the runner
+ * once the runtime has named it ({@link RoomTurnRequest.onSessionBound}) and is
+ * `undefined` until then. Its one reader is a mid-turn `post_to_room`, which
+ * needs to stamp the entry with the session that wrote it (spec
+ * `tool-only-room-replies` §D8); the presence signal still carries no session id
+ * (room-presence spec §15), and the reply post still takes it from the turn's
+ * own result.
  */
 export interface ActiveClaim {
   roomId: string;
@@ -122,6 +127,74 @@ export interface ActiveClaim {
    * this room still lands.
    */
   spokeViaTool: boolean;
+  /**
+   * The agent has put a reaction on a message in this room, from inside this
+   * turn, and the reaction landed (spec `tool-only-room-replies` §D10).
+   *
+   * {@link ActiveClaim.spokeViaTool}'s sibling, and it exists for the outcome the
+   * operator named: **a thumbs-up can BE the answer.** Under
+   * `rooms.toolOnlyReplies` a turn that reacts and says nothing has still put
+   * something in front of the reader, so it is `'answered'` and it must not earn
+   * an `agent_declined` line.
+   *
+   * **Only a SUCCESSFUL reaction sets it.** One refused by the hourly
+   * `ReactionBudget`, or by the `stoppedIn` mark, put nothing on any message and
+   * must not buy silence — both refuse by throwing, so the mark is set after the
+   * write rather than before it. A retraction does not set it either: taking a
+   * pill back leaves the entry with nothing on it, which is not an answer.
+   *
+   * Per `(room, agent)` like its sibling, and CONSUMED by the delivery it was set
+   * for ({@link RoomTriggerDispatcher.takeReactedViaTool}), because a claim
+   * outlives its answer under RP8's park-and-resume and a standing mark would
+   * swallow the next one.
+   */
+  reactedViaTool: boolean;
+  /**
+   * How many messages this agent has posted into this room from inside this turn
+   * (spec `tool-only-room-replies` §D9).
+   *
+   * The counter behind `rooms.maxPostsPerTurn`, and it is a MECHANISM rather than
+   * a prompt on purpose: under the flip, posting is the only voice an agent has,
+   * and `.claude/rules/room-conduct.md` is unambiguous that a bound belongs in
+   * code. Etiquette E8 ("one message, not three") is exactly the kind of prompt
+   * that does not hold.
+   *
+   * Counted on the claim, so its grain is `(room, agent, dispatch)`: an agent
+   * mid-turn here that posts a note into a DIFFERENT room holds no claim there
+   * and spends nothing against this, and the count starts over with the next
+   * turn. A post made with no claim at all is not counted and not bounded — it
+   * already costs a turn against the cascade budget on its own.
+   */
+  postsThisTurn: number;
+  /**
+   * How this turn's words reach the room, once the runner has resolved it, or
+   * `undefined` before the turn starts and for a claim no runner ever ran under
+   * (spec `tool-only-room-replies` §D2).
+   *
+   * Read by exactly one thing: `postFromTool`'s DM refusal. In text mode the
+   * refusal stands — the reply genuinely IS the message in a DM — and in a
+   * tool-only turn it is false, because nothing the turn writes is posted.
+   *
+   * `undefined` reads as `'text'`, which is the fail-open direction: a post made
+   * with no turn behind it, or before the mode was known, is refused in a DM
+   * exactly as it was before this feature existed.
+   */
+  replyMode?: RoomReplyMode;
+  /**
+   * The session this turn is actually running on, once the runtime has named it.
+   *
+   * **Deliberately reported rather than taken at claim time.** The room binds a
+   * `(room, agent)` session before the claim, but on a first turn that id is a
+   * PLACEHOLDER: the runtime names the session itself, mid-turn, and the binding
+   * is moved onto that name afterwards. A copy taken at claim time would
+   * therefore be the id the room GUESSED with — which is exactly the stale id
+   * that used to cost an agent its memory of a room.
+   *
+   * So it is filled by {@link RoomTurnRequest.onSessionBound}, and `undefined`
+   * until then. A tool post made before it lands carries no session id rather
+   * than a wrong one (spec `tool-only-room-replies` §D8).
+   */
+  sessionId?: string;
   /** When the claim was taken — what `room_context.working` reports as `since`. */
   claimedAt: string;
   /**
@@ -395,6 +468,37 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // Same shape as `gone`: refused before a claim was ever taken, because the
   // bind that would have preceded the claim failed first (DOR-1206).
   unavailable: 'refused',
+};
+
+/**
+ * What a released `done` presence frame says about how the turn finished, or
+ * `undefined` for an outcome that already has a durable line explaining it
+ * (spec `tool-only-room-replies` §D7).
+ *
+ * **Only two outcomes are worth an ephemeral statement.** `answered` and `quiet`
+ * are the two where the indicator would otherwise drop into nothing a reader can
+ * interpret — and under `rooms.toolOnlyReplies` the second stops being rare, so
+ * a pill that appears and vanishes many times a day reads as a crash rather than
+ * as an agent exercising judgment. Every other outcome writes a room notice of
+ * its own; a second, ephemeral version of the same news beside it would be the
+ * room saying one thing twice.
+ *
+ * A total map for the reason `DISPATCH_OUTCOMES` above is one: a new
+ * {@link ClaimOutcome} has to state which of the three it is here, rather than
+ * silently inheriting a marker that describes a different turn.
+ */
+export const PRESENCE_OUTCOMES: Record<ClaimOutcome, 'answered' | 'silent' | undefined> = {
+  answered: 'answered',
+  quiet: 'silent',
+  // The `halted` line is the whole story and it is already on the log; an
+  // ephemeral marker under it would be the room narrating a stop the person
+  // pressed themselves.
+  halted: undefined,
+  busy: undefined,
+  failed: undefined,
+  gone: undefined,
+  left: undefined,
+  unavailable: undefined,
 };
 
 /**

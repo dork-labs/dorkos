@@ -671,6 +671,22 @@ export class WelcomeBackGreeter {
       // The same guarded path the status line took, and un-provenanced for the
       // same reason: `deriveCascade` stamps it at the ceiling, so an offer
       // cannot start a conversation and the fallback seat stands down for it.
+      //
+      // **The tool-only flip does not reach here, and that is a decision rather
+      // than an oversight** (spec `tool-only-room-replies` §D12). Everywhere else
+      // in the product, `rooms.toolOnlyReplies` stops a turn's text being the
+      // room's message; this is the one path where it still is, because this turn
+      // is not the agent choosing to speak. Three reasons, and they hold together:
+      //
+      // - A welcome-back offer is the ROOM asking a closed question on the
+      //   person's behalf — "is there a next step worth a decision?" — so the
+      //   answer is the room's to post, not the agent's to volunteer.
+      // - Four of `askAside`'s outcomes are already silent by design, which makes
+      //   this the one refusal nobody is told about (`.claude/rules/room-conduct.md`).
+      //   Routing it through a tool would give it a FIFTH way to produce nothing,
+      //   while the person is owed exactly one line.
+      // - The agent is still free to call `post_to_room` mid-offer-turn if it
+      //   wants to say something else; nothing here takes that away.
       this.deps.post(roomId, post);
       return post;
     } catch (err) {

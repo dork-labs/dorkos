@@ -115,26 +115,76 @@ function resolveMcpBearer(): string | null {
 }
 
 /**
+ * Whether this instance would inject the `dorkos` server for a directory, and
+ * when it would not, which of the four configuration answers says so.
+ *
+ * Everything except the mint, which is the one precondition that cannot be
+ * answered without doing it (see {@link dorkosToolsPosture}).
+ */
+export type DorkosToolsPosture =
+  { wired: true } | { wired: false; why: 'experiment-off' | 'no-agent' | 'mcp-off' | 'no-bearer' };
+
+/**
+ * Ask whether this instance is configured to hand a directory's sessions the
+ * DorkOS tools.
+ *
+ * **One decision site, two consumers.** {@link resolveDorkosMcpInjection} builds
+ * the entry from it, and a room asks it — through
+ * `AgentRuntime.carriesRoomTools` — before deciding whether a turn's own text is
+ * posted. Two copies of these four conditions is how a room comes to suppress a
+ * turn's words for a session that never got the tool, which is the mute state
+ * this whole design is arranged around.
+ *
+ * Four answers, each a state a person can actually be in:
+ *
+ * 1. `experiment-off` — `runtimes.dorkosTools` is off, the default.
+ * 2. `no-agent` — this working directory hosts no registered agent. There is no
+ *    identity to present, and these tools act as somebody.
+ * 3. `mcp-off` — `mcp.enabled` is off, so `/mcp` answers a clean 503
+ *    (`requireMcpEnabled`) and the entry would be a server that never connects.
+ * 4. `no-bearer` — see {@link resolveMcpBearer}.
+ *
+ * **The fifth withhold is not here, and cannot be**: minting the identity token
+ * can fail, and finding that out means minting one. A caller that only wants to
+ * KNOW (rather than to inject) would pay a write per turn to close a gap whose
+ * one reachable cause is a database error that the next turn clears. So a room
+ * reading `wired: true` is reading "configured to carry them", which is the most
+ * that can be known before the turn starts.
+ *
+ * Both config hops are optional-chained on purpose. `configManager` is a `let`
+ * binding that `initConfigManager` assigns at boot, so it is genuinely
+ * `undefined` before that — and the section under it can be absent on a
+ * partially configured store (`mcp-auth.ts` reads `mcp` the same way). An
+ * experiment that THROWS when read would take the turn down with it, which is a
+ * far worse failure than the experiment staying off.
+ *
+ * @param agentPath - The session's working directory, when it hosts a registered
+ *   agent. `undefined` is `no-agent`.
+ * @returns Whether the entry would be built, and why not when it would not.
+ */
+export function dorkosToolsPosture(agentPath: string | undefined): DorkosToolsPosture {
+  if (configManager?.get('runtimes')?.dorkosTools !== true) {
+    return { wired: false, why: 'experiment-off' };
+  }
+  if (agentPath === undefined) return { wired: false, why: 'no-agent' };
+  if (configManager?.get('mcp')?.enabled !== true) return { wired: false, why: 'mcp-off' };
+  if (!resolveMcpBearer()) return { wired: false, why: 'no-bearer' };
+  return { wired: true };
+}
+
+/**
  * Resolve the `dorkos` MCP entry for one agent-bound session, or `null` when it
  * must not be injected.
  *
- * Five ways this withholds, each of them a state a person can actually be in:
- *
- * 1. `runtimes.dorkosTools` is off — the default, and the whole point of the
- *    flag.
- * 2. `mcp.enabled` is off — `/mcp` answers a clean 503 (`requireMcpEnabled`), so
- *    the entry would be a server that never connects.
- * 3. This working directory hosts no registered agent — there is no identity to
- *    present, and these tools act as somebody.
- * 4. No bearer exists (see {@link resolveMcpBearer}).
- * 5. Minting the identity token failed.
+ * Five ways this withholds: the four {@link dorkosToolsPosture} decides, plus a
+ * failed mint, which is the one that can only be found out by trying.
  *
  * Every one of them logs, because a person who turned the experiment on and sees
- * no new tools needs to be able to find out why. Failures 4 and 5 warn; the
- * rest are ordinary configuration and stay at debug.
+ * no new tools needs to be able to find out why. A missing bearer and a failed
+ * mint warn; the rest are ordinary configuration and stay at debug.
  *
  * @param agentPath - The session's working directory, when it hosts a registered
- *   agent. `undefined` withholds (case 3).
+ *   agent. `undefined` withholds.
  * @param displayName - The agent's human-readable name. Minted onto the token's
  *   label, which every room tool replays onto the agent's author row — so this
  *   must be the name a PERSON reads, never the slug (DOR-1264).
@@ -144,31 +194,20 @@ export async function resolveDorkosMcpInjection(
   agentPath: string | undefined,
   displayName: string | undefined
 ): Promise<DorkosMcpInjection | null> {
-  // Both hops are optional-chained on purpose. `configManager` is a `let`
-  // binding that `initConfigManager` assigns at boot, so it is genuinely
-  // `undefined` before that — and the section under it can be absent on a
-  // partially configured store (`mcp-auth.ts` reads `mcp` the same way). An
-  // experiment that THROWS when read would take the turn down with it, which is
-  // a far worse failure than the experiment staying off.
-  if (configManager?.get('runtimes')?.dorkosTools !== true) return null;
-
-  if (agentPath === undefined) return null;
-
-  if (configManager?.get('mcp')?.enabled !== true) {
-    logger.debug(
-      '[dorkos-mcp] not injecting the DorkOS tools — the MCP endpoint is off (config `mcp.enabled`)',
-      { agentPath }
-    );
-    return null;
-  }
-
-  const bearer = resolveMcpBearer();
-  if (!bearer) {
-    logger.warn(
-      '[dorkos-mcp] not injecting the DorkOS tools — this instance has no MCP bearer to present. ' +
-        'Login is on and no MCP_API_KEY is set, so /mcp would refuse every call.',
-      { agentPath }
-    );
+  const posture = dorkosToolsPosture(agentPath);
+  if (!posture.wired) {
+    if (posture.why === 'mcp-off') {
+      logger.debug(
+        '[dorkos-mcp] not injecting the DorkOS tools — the MCP endpoint is off (config `mcp.enabled`)',
+        { agentPath }
+      );
+    } else if (posture.why === 'no-bearer') {
+      logger.warn(
+        '[dorkos-mcp] not injecting the DorkOS tools — this instance has no MCP bearer to present. ' +
+          'Login is on and no MCP_API_KEY is set, so /mcp would refuse every call.',
+        { agentPath }
+      );
+    }
     return null;
   }
 
@@ -186,6 +225,13 @@ export async function resolveDorkosMcpInjection(
     );
     return null;
   }
+
+  const bearer = resolveMcpBearer();
+  // Re-read rather than carried out of the posture, and it cannot be `null`
+  // here: `wired` is what proves one exists, and a config change between the two
+  // reads is a window the next turn closes. Guarded anyway, because withholding
+  // is what this module does when it cannot present both headers.
+  if (!bearer) return null;
 
   return {
     url: dorkosMcpUrl(),

@@ -172,6 +172,7 @@ export const RoomNoticeCodeSchema = z
     'agent_gone',
     'agent_unavailable',
     'agent_left',
+    'agent_declined',
     'awaiting_approval',
     'halted',
     'addressing_changed',
@@ -1860,6 +1861,29 @@ export const RoomSignalEventSchema = z
      * and on no other, because nothing else is waiting on another room.
      */
     heldBehind: RoomHeldBehindSchema.optional(),
+    /**
+     * How a `state: 'done'` turn finished: it put something in front of the room,
+     * or it ran and deliberately said nothing (spec `tool-only-room-replies` §D7).
+     *
+     * **An optional field, deliberately not a fifth {@link RoomPresenceStateSchema}
+     * member.** That enum is parsed by every client and reused by the
+     * `CommunityAdapter` presence payload, and `useRoomPresenceStore.observe`
+     * DROPS a frame it cannot parse — so a new member would make an older client
+     * fail to parse the release frame and leave the working pill spinning
+     * forever. An optional field degrades to exactly today's behaviour on any
+     * build that predates it.
+     *
+     * It exists because a working pill that appears and vanishes with nothing to
+     * show reads as a crash, and under `rooms.toolOnlyReplies` that happens many
+     * times a day rather than rarely. It rides the ephemeral lane on purpose:
+     * the fact is past tense, so a reload forgetting it costs nothing, and
+     * etiquette E16a is what makes a mechanical presence signal legal without it
+     * counting as the agent participating.
+     *
+     * Absent on every other state, and absent on `done` from a producer that has
+     * nothing to say about it.
+     */
+    outcome: z.enum(['answered', 'silent']).optional(),
   })
   .openapi('RoomSignalEvent');
 
@@ -1958,14 +1982,15 @@ export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
  * the three, so an unkeyable indicator is never rendered and never has to be
  * cleared.
  *
- * `activity` and `heldBehind` are the two fields that stay OPTIONAL for the
- * producer, and that is capability-honest rather than a hole: the dispatcher
- * always knows which entry a claim answers and when it was taken, genuinely does
- * not know what a turn is doing before its first tool call, and has nothing to
- * point at unless the indicator is `held`.
+ * `activity`, `heldBehind` and `outcome` are the three fields that stay OPTIONAL
+ * for the producer, and that is capability-honest rather than a hole: the
+ * dispatcher always knows which entry a claim answers and when it was taken,
+ * genuinely does not know what a turn is doing before its first tool call, has
+ * nothing to point at unless the indicator is `held`, and has nothing to say
+ * about how a turn finished until it does.
  */
 export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>> &
-  Pick<RoomSignalEvent, 'activity' | 'heldBehind'>;
+  Pick<RoomSignalEvent, 'activity' | 'heldBehind' | 'outcome'>;
 
 /**
  * The same presence, with the one field that names a person's work removed.

@@ -27,6 +27,7 @@ import {
   presenceCountSentence,
   presenceElapsed,
   presenceSentence,
+  silentFinishSentence,
   type PresenceCopyState,
 } from '@/layers/entities/room';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
@@ -93,6 +94,25 @@ export interface LaneHeldAuthor {
   behind: { roomId: string; title: string | null };
   /** True when this agent is holding a message in at least one other conversation. */
   othersWaiting: boolean;
+}
+
+/**
+ * A turn that just released here with nothing to show, while its line is
+ * still worth drawing.
+ *
+ * **Singular, unlike {@link LanePresenceAuthor} and {@link LaneHeldAuthor}.**
+ * Those name a LIST because a room can have several agents working or waiting
+ * at once and the sentence counts past a naming limit; this is one fading
+ * line about one release; the host that feeds it (`useRoomSilentFinish`)
+ * already collapses to at most one per room-scope-half, and a second turn
+ * releasing silently while this one is still fading REPLACES it rather than
+ * joining it — see that hook for why.
+ */
+export interface LaneSilentFinish {
+  /** The agent whose turn released with nothing to show. */
+  authorId: string;
+  /** What to call it. Resolved by the host, which is the only layer holding a roster. */
+  name: string;
 }
 
 /** One agent working in this conversation, as the lane reads it. */
@@ -192,6 +212,24 @@ export interface LaneStateInput {
    * that has no such thing.
    */
   held?: readonly LaneHeldAuthor[];
+  /**
+   * A turn that just released here with nothing to show, while its line is
+   * still worth drawing.
+   *
+   * Gated by the same capability as `presence` and `held`, for the same
+   * reason: it rides the same store and the same stream (D7,
+   * `RoomSignalEvent.outcome`). Defaults to `null` for every surface that has
+   * no such thing — a session's own turn ending is `turn.showComplete`, a
+   * different fact answered a different way.
+   *
+   * **The HOST owns the fade, not this function.** `null` means "nothing
+   * currently worth drawing", not "nothing ever happened" — a release still
+   * inside {@link SILENT_FINISH_DISPLAY_MS} of its own store, everything past
+   * it. This function reads no clock (see the module doc), so it trusts
+   * whatever the host hands it for this render exactly as `turn.showComplete`
+   * is trusted rather than re-derived from a timestamp.
+   */
+  silentFinish?: LaneSilentFinish | null;
   /** This conversation's own turn, or `null` on a surface that has none. */
   turn: LaneTurn | null;
 }
@@ -245,6 +283,17 @@ export type LaneState =
       authorIds: readonly string[];
       /** ISO 8601 — the OLDEST wait's start, which is what the elapsed time measures. */
       since: string;
+    }
+  | {
+      kind: 'silent-finish';
+      /**
+       * The one sentence, past tense: who finished, and that there was nothing
+       * to add. No elapsed time and no live region beyond the sentence itself —
+       * unlike `presence` and `held`, nothing here is still happening.
+       */
+      sentence: string;
+      /** The agent it speaks for. */
+      authorId: string;
     }
   | { kind: 'turn-waiting'; waitingType: 'approval' | 'question'; elapsed: string }
   | { kind: 'turn-progress'; message: string; determinate: boolean; percent: number | null }
@@ -306,16 +355,18 @@ export function laneElapsed(since: string, now: number): string | null {
  * 3. `presence` — `capabilities.presence`. Somebody else is working here.
  * 4. `held` — `capabilities.presence`. An answer this conversation is owed has
  *    not started, because the agent is working somewhere else.
- * 5. `turn-waiting` — `capabilities.turnStatus`. This turn is parked.
- * 6. `turn-progress` — `capabilities.turnStatus`. A long operation is running.
- * 7. `turn-system` — `capabilities.turnStatus`. An informational runtime event.
- * 8. `turn-streaming` — `capabilities.turnStatus`. A turn in flight.
- * 9. `turn-complete` — `capabilities.turnStatus`. The summary, auto-dismissing.
- * 10. `empty` — nothing to say, and the lane looks like it.
+ * 5. `silent-finish` — `capabilities.presence`. A turn just released here with
+ *    nothing to show (D7).
+ * 6. `turn-waiting` — `capabilities.turnStatus`. This turn is parked.
+ * 7. `turn-progress` — `capabilities.turnStatus`. A long operation is running.
+ * 8. `turn-system` — `capabilities.turnStatus`. An informational runtime event.
+ * 9. `turn-streaming` — `capabilities.turnStatus`. A turn in flight.
+ * 10. `turn-complete` — `capabilities.turnStatus`. The summary, auto-dismissing.
+ * 11. `empty` — nothing to say, and the lane looks like it.
  *
  * **There is no `queued` rung, and that is a decision.** One sat below every
  * `turn-*` rung, and a queue only ever exists BECAUSE a turn is in flight — so
- * rung 8 always won and a person with two messages held saw no mention of them
+ * rung 9 always won and a person with two messages held saw no mention of them
  * at all. Reordering it above the turn would be worse: it would hide what the
  * agent is doing in order to report a number. The composer's own queue panel is
  * where held drafts live, and it is where they stay.
@@ -324,10 +375,21 @@ export function laneElapsed(since: string, now: number): string | null {
  * reports a different fact — `queued` counted the person's own undelivered
  * drafts, and this is about a message already on the room's log that the room
  * owes an answer to. It is reachable: a room's `turnStatus` is off, so rungs
- * 5-9 do not exist there, and in the case this describes the agent is busy
+ * 6-10 do not exist there, and in the case this describes the agent is busy
  * ELSEWHERE, so nobody is working here and rung 3 is empty. And it hides
  * nothing: when somebody genuinely is working here, `presence` still wins the
  * headline and the wait shows as a row in the peek that rung already opens.
+ *
+ * **`silent-finish` sits below `held`, never above it.** A message this
+ * conversation is still owed an answer to (`held`) is a live concern; a report
+ * that a DIFFERENT turn already released with nothing to show is a past-tense
+ * footnote by comparison, and a room can be in both states from two different
+ * agents at once. It sits above every `turn-*` rung for the opposite reason:
+ * those describe THIS conversation's own turn on a surface that has one (a
+ * session), where `silent-finish` never fires at all — `capabilities.presence`
+ * is off wherever `turnStatus` is on today, so the two have never had to be
+ * ordered against each other in practice, and this is the order that would
+ * hold if they ever did.
  *
  * Three of those orderings are decisions rather than arbitrary, and none of them
  * may be collapsed:
@@ -341,7 +403,7 @@ export function laneElapsed(since: string, now: number): string | null {
  *   off the stream. A stalled line that hid a live Ask would recreate the exact
  *   failure this programme exists to remove.
  * - **`turn-waiting` survives even though rung 1 exists.** They are different
- *   facts. Rung 1 is "there is a prompt OBJECT here you can answer"; rung 4 is
+ *   facts. Rung 1 is "there is a prompt OBJECT here you can answer"; rung 6 is
  *   "this session's turn is parked" in a state the projector reported with no
  *   prompt in hand — a capability hold, or a runtime that said `blocked` and sent
  *   nothing else. Collapsing them makes the second silently invisible.
@@ -376,13 +438,25 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
   const held = input.held ?? NO_HELD;
   if (capabilities.presence && held.length > 0) return heldRung(held);
 
+  // 5. A turn that just released here with nothing to show (D7). `null` covers
+  // both "nothing has" and "the host's own fade window ended" — this function
+  // reads no clock, so it trusts whichever the host is currently reporting.
+  const silentFinish = input.silentFinish ?? null;
+  if (capabilities.presence && silentFinish !== null) {
+    return {
+      kind: 'silent-finish',
+      sentence: silentFinishSentence(silentFinish.name),
+      authorId: silentFinish.authorId,
+    };
+  }
+
   if (capabilities.turnStatus && turn !== null) {
-    // 5. Parked on the person.
+    // 6. Parked on the person.
     if (turn.status === 'streaming' && turn.isWaitingForUser) {
       return { kind: 'turn-waiting', waitingType: turn.waitingType, elapsed: turn.elapsed };
     }
 
-    // 6. A long operation — the structured, runtime-agnostic progress treatment
+    // 7. A long operation — the structured, runtime-agnostic progress treatment
     // (DOR-110), shown whatever the turn's status. The producer supplies the
     // label, so there is no status string to match.
     if (turn.operationProgress) {
@@ -395,15 +469,15 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
       };
     }
 
-    // 7. An informational runtime event, also whatever the turn's status.
+    // 8. An informational runtime event, also whatever the turn's status.
     if (turn.systemStatus) return { kind: 'turn-system', message: turn.systemStatus.message };
 
-    // 8. A turn in flight.
+    // 9. A turn in flight.
     if (turn.status === 'streaming') {
       // Through the honesty ladder, not around it (BC-37): one entry point, one
       // phrasing, everywhere. `'streaming'` is a fact this branch has already
       // established rather than a guess — the ladder's `blocked` rung belongs to
-      // rung 5 above — which also buys the non-null overload, so there is no
+      // rung 6 above — which also buys the non-null overload, so there is no
       // fallback here to drift into a second way of saying "Working…".
       const verb = activityVerb('streaming', turn.activity);
       return {
@@ -418,13 +492,13 @@ export function deriveLaneState(input: LaneStateInput): LaneState {
       };
     }
 
-    // 9. The finished turn's summary, on its way out.
+    // 10. The finished turn's summary, on its way out.
     if (turn.showComplete) {
       return { kind: 'turn-complete', elapsed: turn.lastElapsed, tokens: turn.lastTokens };
     }
   }
 
-  // 10. Nothing to say.
+  // 11. Nothing to say.
   return EMPTY;
 }
 

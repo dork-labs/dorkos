@@ -348,4 +348,73 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(warned.some((line) => line.includes('reserve'))).toBe(false);
     });
   });
+
+  describe('what the ROOM is told, and whether it matches what was injected', () => {
+    it('answers true exactly when the entry was injected', async () => {
+      const runtime = makeRuntime();
+      await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+      expect(lastMcpServers()['dorkos']).toBeDefined();
+      expect(await runtime.carriesRoomTools({ cwd: agentDir })).toBe(true);
+    });
+
+    it('answers FALSE for a directory hosting no registered agent — the mute this closes', async () => {
+      // **The divergence, and it was a silent mute rather than an untidy room.**
+      // `sendMessage` gates the injection on `meshAgent ? cwd : undefined`, so a
+      // `getByPath` miss withholds the entry. `carriesRoomTools` was handing the
+      // posture a bare `cwd` string, which made the `'no-agent'` answer
+      // structurally unreachable from that caller — so it said `true` for a
+      // session the runtime was about to leave with no tools at all. The room
+      // read that as tool-capable, suppressed the turn's text, and the agent
+      // said nothing, anywhere, with nothing on the log to explain it.
+      const runtime = makeRuntime();
+      const stranger = path.join(agentDir, 'not-an-agent');
+      await drain(runtime.sendMessage('s1', 'hello', { cwd: stranger }));
+
+      expect(lastMcpServers()['dorkos']).toBeUndefined();
+      expect(await runtime.carriesRoomTools({ cwd: stranger })).toBe(false);
+    });
+
+    it('answers FALSE with no registry wired at all', async () => {
+      // The other half of the same gate: `meshCore` is injected by the
+      // composition root, so a runtime built without one has no way to identify
+      // anybody and injects nothing.
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(db),
+        resolveBinary: async () => '/bin/codex',
+        defaultCwd: agentDir,
+        mcpUiUrl: 'http://localhost:4242/codex-ui-mcp',
+      });
+      await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+      expect(lastMcpServers()['dorkos']).toBeUndefined();
+      expect(await runtime.carriesRoomTools({ cwd: agentDir })).toBe(false);
+    });
+
+    it('answers FALSE whenever the injection is withheld, across every configuration', async () => {
+      // The property rather than four separate cases: whatever the config says,
+      // what the ROOM is told and what the RUNTIME did must agree. Two readings
+      // of one gate is how a room comes to suppress a turn's words for a session
+      // that never got the tool.
+      const runtime = makeRuntime();
+      let asserted = 0;
+      for (const config of [
+        { runtimes: { dorkosTools: true }, mcp: { enabled: true } },
+        { runtimes: { dorkosTools: true }, mcp: { enabled: false } },
+        { runtimes: { dorkosTools: false }, mcp: { enabled: true } },
+        {},
+      ]) {
+        configState.value = config;
+        // `lastMcpServers` reads the newest constructed client, so each case
+        // needs its own turn on its own session rather than a cleared mock.
+        await drain(runtime.sendMessage(`s-${asserted}`, 'hello', { cwd: agentDir }));
+        const injected = lastMcpServers()['dorkos'] !== undefined;
+        expect(await runtime.carriesRoomTools({ cwd: agentDir }), JSON.stringify(config)).toBe(
+          injected
+        );
+        asserted += 1;
+      }
+      expect(asserted).toBe(4);
+    });
+  });
 });

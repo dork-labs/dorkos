@@ -301,6 +301,26 @@ export class TestModeRuntime implements AgentRuntime {
     }));
   }
 
+  /**
+   * Whether this session's scripted turn declares itself as carrying the DorkOS
+   * room tools (spec `tool-only-room-replies` §D14).
+   *
+   * **`false` by default, and that default is what keeps the suite green.** Every
+   * scenario that predates the flip reaches a room through the auto-post path, so
+   * a runtime that claimed tool-capability unconditionally would redden six e2e
+   * specs and three eval cases the moment `rooms.toolOnlyReplies` went on. A
+   * scenario opts IN instead (`room-reply-scenarios.ts`), so the flip's blast
+   * radius on the suite is additive rather than a round of edits.
+   *
+   * @param session.sessionId - The session about to run a turn; the scenario
+   *   selection is per session, unlike the two production runtimes whose MCP
+   *   configuration is per directory.
+   * @returns Whether the selected scenario opted in.
+   */
+  async carriesRoomTools(session: { sessionId: string }): Promise<boolean> {
+    return scenarioStore.isToolCapable(session.sessionId);
+  }
+
   async listSessions(projectDir: string): Promise<Session[]> {
     return this.registry.list(projectDir);
   }

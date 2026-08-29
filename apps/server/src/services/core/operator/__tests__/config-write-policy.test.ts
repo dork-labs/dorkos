@@ -109,6 +109,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
+      'rooms.maxPostsPerTurn',
       'rooms.maxTurnsPerAgentPerCascade',
       // A room's own files: whether they exist at all, and the bounds a merge
       // is measured against. `rooms.repo.mergeQueueWaitMs` is deliberately NOT
@@ -119,6 +120,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.repo.maxRoomMdBytes',
       'rooms.repo.worktreeReapDays',
       'rooms.responseGate',
+      'rooms.toolOnlyReplies',
       'rooms.turnLimitsEnabled',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',

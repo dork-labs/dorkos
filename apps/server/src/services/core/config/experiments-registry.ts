@@ -109,4 +109,13 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
       'Every turn those agents take carries a longer tool list, which costs a little more of each turn.',
     graduationIssue: 'DOR-1613',
   },
+  {
+    path: 'rooms.toolOnlyReplies',
+    title: 'Agents decide when to speak',
+    description:
+      'Right now, whatever your agent writes during a room turn gets posted. With this on, it chooses: it can answer, it can just react with an emoji, or it can decide nothing needs saying and stay quiet — and its thinking stays in its own session instead of landing in the room. For Codex and OpenCode agents, turn on DorkOS tools in every runtime first.',
+    costNote:
+      'An agent that forgets to answer says nothing. The room tells you when that happens, but it is a new way for a reply to go missing, so watch a few conversations after you turn it on.',
+    graduationIssue: 'DOR-1613',
+  },
 ];

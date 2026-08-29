@@ -461,6 +461,43 @@ export function buildAgentLeftNotice(agentName: string, subjectAuthorId: string)
 }
 
 /**
+ * The durable `notice` for an agent that was asked, ran a turn, and chose not to
+ * reply (spec `tool-only-room-replies` §D6; room-participation spec §10.2.2).
+ *
+ * **The ninth code, and it exists because silence became a real outcome.** Under
+ * `rooms.toolOnlyReplies` a turn's words are not posted for it, so an agent that
+ * decides nothing needs saying produces nothing at all. That is correct where
+ * nobody asked — etiquette E7, silence must be free — and it is not correct
+ * where somebody did: E1 says being asked creates an obligation, discharged
+ * visibly or not at all. This line is how it is discharged when the agent
+ * declines, and it is written only for a message `directlyAsked` recognises.
+ *
+ * **It states the fact and does not apologise.** The room is not sorry, nothing
+ * is broken, and nothing is waiting on the reader — an agent with judgment is
+ * the feature. What the reader needs is to know their message was read, so they
+ * can ask again, ask somebody else, or let it go. "Did not reply" rather than
+ * "had nothing to add", because the room does not know which of those it was and
+ * the agent's own session is where the reasoning is.
+ *
+ * This is the floor rather than the goal: an agent with nothing useful to say
+ * should post one sentence in its own voice (etiquette E21). The prompt and the
+ * evals push toward that; this line guarantees the reader is never left guessing.
+ *
+ * @param agentName - Display name of the agent that declined.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ */
+export function buildAgentDeclinedNotice(
+  agentName: string,
+  subjectAuthorId: string
+): RoomEntryBody {
+  return {
+    text: `${agentName} read this and did not reply.`,
+    notice: 'agent_declined',
+    subjectAuthorId,
+  };
+}
+
+/**
  * The durable `notice` for a second agent refused on a bridged room
  * (chats-as-channels spec §3.4, D-6 Q3).
  *

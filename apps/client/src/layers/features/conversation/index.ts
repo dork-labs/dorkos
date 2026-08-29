@@ -43,6 +43,7 @@ export type {
   LaneOperationProgress,
   LaneHeldAuthor,
   LanePresenceAuthor,
+  LaneSilentFinish,
   LaneState,
   LaneStateInput,
   LaneTurn,

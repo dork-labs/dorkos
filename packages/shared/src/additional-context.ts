@@ -348,6 +348,22 @@ export interface RoomContextAcknowledgment extends RoomContextAuthor {
  * the wire, and a roster a caller could supply would be a roster a caller could
  * forge.
  */
+/**
+ * How one room turn's words reach the room it was triggered from (spec
+ * `tool-only-room-replies` §D2).
+ *
+ * - `'text'` — whatever the turn writes back to its own session is posted into
+ *   the room for it. Today's behaviour, and what every turn gets while
+ *   `rooms.toolOnlyReplies` is off.
+ * - `'tool-only'` — nothing the turn writes is posted. The agent answers by
+ *   calling the posting tool, reacts, or deliberately says nothing.
+ *
+ * Declared here, in the runtime-neutral layer, because both sides of the seam
+ * need the vocabulary: the room resolves it per turn, and each runtime adapter
+ * renders a prompt that has to agree with it.
+ */
+export type RoomReplyMode = 'text' | 'tool-only';
+
 export interface RoomContextData {
   /**
    * The room itself — a channel or a direct message, never a thread. A thread is
@@ -608,6 +624,31 @@ export interface RoomContextData {
      */
     repliesLeftInThisChain: number | null;
   };
+  /**
+   * How this turn's words reach the room — the resolved reply mode (spec
+   * `tool-only-room-replies` §D2).
+   *
+   * - `'text'` — whatever the turn writes back is posted into the room for it.
+   *   Today's behaviour, and what every turn gets while `rooms.toolOnlyReplies`
+   *   is off.
+   * - `'tool-only'` — nothing the turn writes is posted. The agent answers by
+   *   calling the posting tool, reacts, or deliberately says nothing.
+   *
+   * **On the context because the model has to be told, and told the truth.** The
+   * worst reachable outcome of this feature is an agent told "whatever you say is
+   * posted" while the mode drops what it says, so the rendered block branches on
+   * this rather than stating one of them unconditionally.
+   *
+   * **Resolved per turn, never per install**, and it FAILS OPEN: a session that
+   * is not known to carry the posting tool reads `'text'` whatever the setting
+   * says, because an agent that goes silently mute is a worse failure than one
+   * whose narration lands untidily.
+   *
+   * Absent means `'text'`, so every caller that predates the field — a
+   * `CommunityAdapter`, a test harness, an older producer — describes exactly
+   * the behaviour it already had.
+   */
+  replyMode?: RoomReplyMode;
 }
 
 /**

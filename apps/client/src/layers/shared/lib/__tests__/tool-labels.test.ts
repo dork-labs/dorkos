@@ -222,6 +222,31 @@ describe('parseMcpToolName', () => {
     expect(parseMcpToolName('mcp__context7__get_context')?.serverLabel).toBe('Context7');
   });
 
+  it("reads OpenCode's single-underscore spelling of a DorkOS tool (DOR-1613)", () => {
+    // What this catches: OpenCode does not spell an MCP tool `mcp__server__tool`
+    // — it builds `sanitize(server) + '_' + sanitize(tool)` and hands that key
+    // straight through. Keyed on `mcp__` alone, every DorkOS tool an OpenCode
+    // agent called rendered as its raw wire name, with no badge and no label.
+    const result = parseMcpToolName('dorkos_post_to_room');
+    expect(result).toEqual({
+      server: 'dorkos',
+      serverLabel: 'DorkOS',
+      tool: 'post_to_room',
+      toolLabel: 'Post To Room',
+    });
+  });
+
+  it('does not mistake another server for the DorkOS one', () => {
+    // The prefix is scoped to the one server DorkOS itself injects, deliberately:
+    // `a_b_c` cannot be split into a server and a tool without guessing, and a
+    // guess would relabel somebody's own tool under a server that does not exist.
+    expect(parseMcpToolName('slack_send_message')).toBeNull();
+    expect(parseMcpToolName('dorkos_')).toBeNull();
+    // And the two spellings cannot collide: the qualified one does not start
+    // with the bare prefix.
+    expect(parseMcpToolName('mcp__dorkos__post_to_room')?.tool).toBe('post_to_room');
+  });
+
   it('joins extra segments into the tool name', () => {
     const result = parseMcpToolName('mcp__slack__channel__send');
     expect(result?.tool).toBe('channel__send');

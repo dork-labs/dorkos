@@ -1821,6 +1821,43 @@ export const UserConfigSchema = z.object({
        */
       responseGate: z.enum(['off', 'routing']).default('routing'),
       /**
+       * Whether an agent decides for itself when to speak in a room (spec
+       * `tool-only-room-replies`, D5; DOR-1613).
+       *
+       * Right now, whatever your agent writes during a room turn gets posted.
+       * With this on it chooses instead: it can answer, it can just react with an
+       * emoji, or it can decide nothing needs saying and stay quiet — and its
+       * thinking stays in its own session rather than landing in the room.
+       *
+       * The cost is real and it ships OFF because of it: an agent that forgets to
+       * answer says nothing. The room writes a line when somebody asked and got
+       * silence, so it is never invisible, but it is a new way for a reply to go
+       * missing. For Codex and OpenCode agents, turn on `runtimes.dorkosTools`
+       * first — an agent that never got the posting tool keeps posting its text,
+       * whatever this says, because going mute is the worse failure.
+       *
+       * Every declaration of this value has to agree — here and in the `rooms`
+       * section literal below — because `conf` merges top-level defaults
+       * shallowly.
+       */
+      toolOnlyReplies: z.boolean().default(false),
+      /**
+       * How many messages one agent may post into a room inside a single turn.
+       *
+       * Three is room for "on it", the answer, and a correction — and a refusal
+       * for the tenth, so one turn cannot serialise an essay across nine bubbles.
+       * It counts only what an agent posts through the tool while a turn of its
+       * own is running here; nothing you write is ever counted.
+       *
+       * It matters most with `toolOnlyReplies` on, where posting is the only
+       * voice an agent has. Like every number in this area, it is a judgement
+       * rather than a measurement — see `meta/agent-etiquette.md` §9.
+       *
+       * Every declaration of this value has to agree — here and in the `rooms`
+       * section literal below — for the reason above.
+       */
+      maxPostsPerTurn: z.number().int().min(1).max(10).default(3),
+      /**
        * A room's own files — its git repo, the standing worktree each agent
        * works in, and the merges that bring that work back (spec
        * `project-rooms`).
@@ -1907,6 +1944,12 @@ export const UserConfigSchema = z.object({
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,
+      // Agents decide when to speak, OFF (spec `tool-only-room-replies`, D5).
+      // Two declarations carry each of these values — the per-field ones above
+      // and these — and both have to agree or the shallow defaults-merge lands
+      // somebody on the other value.
+      toolOnlyReplies: false,
+      maxPostsPerTurn: 3,
       repo: {
         enabled: true,
         worktreeReapDays: 14,

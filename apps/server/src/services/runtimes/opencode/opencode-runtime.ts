@@ -822,6 +822,34 @@ export class OpenCodeRuntime implements AgentRuntime {
     return this.mcp.getStatus(cwd);
   }
 
+  /**
+   * Whether the `dorkos` tool server is registered on this directory's sidecar
+   * right now (spec `tool-only-room-replies` §D2).
+   *
+   * The reconcile's own answer, not a configuration read: OpenCode surfaces a
+   * name collision as a `failed` roster entry rather than overwriting a user's
+   * server, and an add can simply fail, so "we are configured to inject it" and
+   * "it is there" are genuinely different facts here. A room asking whether to
+   * suppress a turn's words needs the second one.
+   *
+   * **That is also why this cannot drift from its injection gate the way codex's
+   * did.** `resolveDorkosServer` withholds the entry for a directory hosting no
+   * registered agent, so the name never reaches `mcp.add` and never lands in the
+   * record this reads — the mesh gate is upstream of the answer rather than
+   * restated beside it. There is no second reading of the gate here to keep in
+   * step, which is the strongest form of the property.
+   *
+   * `false` until this directory has reconciled once, which keeps the first turn
+   * on text-as-reply rather than betting an answer on a registration that has not
+   * happened yet.
+   *
+   * @param session.cwd - The session's working directory.
+   * @returns Whether the tools are reachable from a turn there.
+   */
+  async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
+    return this.mcp.dorkosApplied(session.cwd);
+  }
+
   // --- Lifecycle ---
 
   /**

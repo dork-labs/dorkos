@@ -11,7 +11,10 @@ import { configManager } from '../../../core/config-manager.js';
 import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
-import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
+import {
+  buildRoomToolsBlock,
+  roomReplyModeForToolCapableSession,
+} from '../../shared/room-tools-context.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
@@ -641,7 +644,24 @@ export async function buildSystemPromptAppend(
   // Rendered under THIS runtime's prefix. The body moved to `runtimes/shared/`
   // when the DorkOS tools reached codex and opencode (DOR-1613); claude-code
   // always carries them in-process, so it is always rendered here.
-  const roomBlock = buildRoomToolsBlock(IN_SESSION_TOOL_PREFIX);
+  //
+  // **Read HERE, at append time, and that costs nothing — the fingerprint is
+  // what makes it safe** (spec `tool-only-room-replies` §D11). This append is
+  // built once per session launch rather than per turn, which looks like it
+  // would leave a warm session holding the block it launched with. It does not:
+  // `stable` below is assembled from these same `toolDocs`, so the room block is
+  // digested into the relaunch fingerprint, and flipping the experiment changes
+  // the digest and forces the relaunch. A warm session cannot carry a menu
+  // written in the wrong tense past the next turn.
+  //
+  // (An earlier revision of this comment claimed a one-relaunch lag and argued
+  // it was survivable because the per-turn `<room_context>` block is mode-aware
+  // anyway. The second half is true and the first half was not — the mechanism
+  // that closes it was three lines below.)
+  const roomBlock = buildRoomToolsBlock(
+    IN_SESSION_TOOL_PREFIX,
+    roomReplyModeForToolCapableSession()
+  );
   const uiBlock = buildUiToolsBlock();
   const genUiBlock = GEN_UI_CONTEXT;
 

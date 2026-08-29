@@ -37,6 +37,8 @@ export const ALL_CASES: EvalCase[] = [
   marketplaceInstallCase,
   capabilityDiscoveryCase,
   ...governanceCases,
+  // The tool-only cases are IN `roomsStructuralCases` — they are the same
+  // tier, and spreading them again here would register each one twice.
   ...roomsStructuralCases,
   ...roomsCredentialedCases,
   ...memoryCases,
@@ -81,6 +83,15 @@ export {
   roomsHaltStopsCase,
   roomsStructuralCases,
 } from './rooms.js';
+export {
+  roomsToolPostIsTheOnlyReplyCase,
+  roomsAddressedSilenceWritesOneNoticeCase,
+  roomsAmbientSilenceWritesNothingCase,
+  roomsReactionDischargesTheAnswerCase,
+  roomsDmToolPostLandsAndTriggersNobodyCase,
+  roomsTextFallbackWhenNotWiredCase,
+  roomsToolOnlyCases,
+} from './rooms-tool-only.js';
 export {
   roomsRecallMemberSaidCase,
   roomsRecallRosterCase,

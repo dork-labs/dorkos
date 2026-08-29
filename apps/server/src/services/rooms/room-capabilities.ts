@@ -131,13 +131,26 @@
  * always takes its `context.identity` branch for these five, and the login-off
  * owner fallback is unreachable from them.
  *
- * ## The runtime constraint (§10.2.1)
+ * ## The runtime constraint (§10.2.1), dissolved
  *
- * Only claude-code declares `supportsMcp: true`, so only a claude-code agent gets
- * these in-session. Codex and OpenCode agents reach the same fifteen through the
- * external `/mcp` server if their owner wires it up, and keep today's behaviour if
- * not: the turn's text is the message. That is a difference in who DECIDES, not in
- * whether posting is possible, which is why nothing here is a mute.
+ * It used to be that only claude-code declared `supportsMcp: true`, so only a
+ * claude-code agent got these in-session and the other two kept text-as-reply.
+ * DOR-1613's wiring removed the premise: behind `runtimes.dorkosTools`, Codex and
+ * OpenCode sessions reach the same fifteen verbs over this server's own `/mcp`,
+ * with per-agent identity. Whether a given session actually carries them is now a
+ * property of that SESSION rather than of its runtime, which is what the reply
+ * mode reads (spec `tool-only-room-replies` §D2) — and a session that does not is
+ * never muted: its turn's text posts, exactly as it always did.
+ *
+ * ## Every description here is mode-NEUTRAL, and has to be
+ *
+ * A capability description is minted once at boot and is install-wide, so it
+ * cannot say anything that is true in only one reply mode — not "your reply is
+ * already the message in a DM", and not "the text you write back is not posted as
+ * well". Both were true when written and each is false in one of the two modes
+ * now. So a description says what the verb DOES and lets the refusal carry the
+ * condition; what changes per turn is said in the per-turn context block, which
+ * is the only surface that can be honest about it (§D13).
  *
  * ## Untrusted text crosses this seam
  *
@@ -633,21 +646,28 @@ export const roomsDomain: CapabilityDomain = {
     defineCapability({
       id: 'rooms.post',
       title: 'Post to a room',
+      // **Mode-NEUTRAL, deliberately** (spec `tool-only-room-replies` §D13). A
+      // capability description is minted once at boot and is install-wide, so it
+      // cannot be per-session — and a description that contradicts the running
+      // mode is exactly the drift this feature is most exposed to. So it says
+      // what the verb DOES, in a sentence that is true in both modes and both
+      // room kinds, and lets the refusal carry the condition. The two clauses
+      // that were mode-specific are gone: "does NOT apply to direct messages" is
+      // true in neither mode once §2.6 is reversed, and the promise about the
+      // narration is true only in one.
       description:
-        'Say something in a channel you are a member of, when you decide it is worth saying. ' +
+        'Say something in a room you are a member of, when you decide it is worth saying. ' +
         'Use it to post an update while you work, to answer in a specific thread, or to say ' +
-        'something in a channel other than the one you were just triggered from. ' +
-        'It does NOT apply to direct messages: there your reply is already the message. ' +
-        'If you call it during a turn, and post into the SAME room that triggered you, what you ' +
-        'post here is your answer for that room — the text you write back to your own session is ' +
-        'not posted as well. Posting into a different room leaves your answer here untouched. ' +
+        'something in a room other than the one you were just triggered from. ' +
+        'Posting into the room that triggered your turn is how you answer it; posting into a ' +
+        'different room leaves your answer here untouched. ' +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
       input: z.object({
         roomId: z
           .string()
           .describe(
-            'The channel to post in, by its id — not its #name. Inside a room turn your room ' +
+            'The room to post in, by its id — not its #name. Inside a room turn your room ' +
               'context names it. You must be a member of it.'
           ),
         text: z.string().min(1).max(8000).describe('What to say. Mention someone with @handle.'),
@@ -692,7 +712,7 @@ export const roomsDomain: CapabilityDomain = {
         '"seen", "agreed" or "thanks" without adding a message everyone has to read. ' +
         'When a message only needs acknowledgment ("no reply needed", "just ack this"), react ' +
         '(✅ seen, 👍 agreed, 👀 looking) rather than posting a word like "Ack" — and then say ' +
-        'nothing else about it, because a reply that reports the reaction is the message the ' +
+        'nothing else about it, because a message that reports the reaction is the message the ' +
         'reaction was meant to replace. ' +
         'Nobody is interrupted by it: it starts no turn and notifies no one. ' +
         'Calling it again with the same emoji takes the reaction back. ' +

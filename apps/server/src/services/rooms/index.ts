@@ -273,6 +273,23 @@ function readMaxAttachmentsPerEntry(): number {
 }
 
 /**
+ * How many messages one agent may post into a room inside one turn, read live
+ * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
+ * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
+ *
+ * Failing to the default keeps the limit BOUNDED, which is the only safe
+ * direction here: an unreadable config must never let one turn serialise an
+ * essay across the room.
+ */
+function readMaxPostsPerTurn(): number {
+  try {
+    return configManager.get('rooms').maxPostsPerTurn;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
+  }
+}
+
+/**
  * Whether the operator has muted one room, read live from `ui.sidebar.muted`
  * and degrading to "not muted" the same way {@link readMaxAgentDepth} degrades
  * to its own default (spec `notification-system` task T11).
@@ -435,6 +452,11 @@ export function createRoomSubsystem(opts: {
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
+    // Read per post, for the same reason and one more: posting is the agent's
+    // only voice once `rooms.toolOnlyReplies` is on, so an operator who feels
+    // this number is wrong must be able to move it without waiting for anything
+    // to restart.
+    maxPostsPerTurn: readMaxPostsPerTurn,
     // Read per check for the same reason, and for one more: an install becomes
     // owned partway through its life (the enable-login flow), so a value
     // captured at boot would leave the rooms domain believing forever that the
