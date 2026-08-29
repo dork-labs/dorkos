@@ -608,6 +608,13 @@ function launchApp(appPath: string, home: string, loginShell: FakeLoginShell): L
       ELECTRON_ENABLE_LOGGING: '1',
       PATH: LAUNCHD_PATH,
       SHELL: loginShell.shell,
+      // This app is launched from `release/`, which is exactly the
+      // not-in-Applications state the install-location guard offers to fix —
+      // and it offers with a modal dialog raised *before* the server starts.
+      // With nobody here to answer it, the app would never reach
+      // `/api/health` and every run would fail as a 120s timeout with no
+      // output, which is indistinguishable from the Gatekeeper hang above.
+      DORKOS_DESKTOP_SUPPRESS_INSTALL_PROMPT: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
