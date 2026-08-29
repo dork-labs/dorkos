@@ -13,6 +13,7 @@ covers:
   - 'docs(api): regenerate the OpenAPI spec and reference pages (DOR-1615, DOR-1347)'
   - 'feat(client): a scheduled task picks its runtime, model and effort in the app (DOR-1615, DOR-1347)'
   - 'feat(operating-skills): agents learn that a task can name its runtime, model and effort (DOR-1615, DOR-1347)'
+  - "fix(client): a task's stored effort stays readable when its model's ladder is shorter (DOR-1347)"
 ---
 
 ### Added
