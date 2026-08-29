@@ -312,6 +312,15 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // so no prose tells a model to call a tool it would have to search for
     // first. The `bare` assertion below is what keeps that true — the day a
     // block teaches either one, it fails here until the tool is always-loaded.
+    //
+    // Both are now named in prose that a project-room turn reads, and both stay
+    // deferred (DOR-1599). `<room_context>` names the merge verb and the seeded
+    // `working-in-room-repos` skill names both, in the one form that survives
+    // deferral: a searchable ENDING, under the rule the case below enforces for
+    // every runtime-neutral module. That is a lookup the model is TOLD to make,
+    // not a name it is invited to call and cannot — which is the DOR-1292 defect
+    // this file exists for. See `ALWAYS_LOADED_TOOLS` for why merging is a turn
+    // that can afford one and a room REPLY is not.
     expect(advertised.size).toBe(95);
     expect(advertised.has('react_to_room_entry')).toBe(true);
 
@@ -649,6 +658,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'reading-activity',
       'scheduling-tasks',
       'using-the-marketplace',
+      'working-in-room-repos',
     ]);
 
     const offenders: string[] = [];

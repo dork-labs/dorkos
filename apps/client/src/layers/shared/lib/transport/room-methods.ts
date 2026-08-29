@@ -39,6 +39,7 @@ import {
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type { RoomFileContentResponse, RoomFileListResponse } from '@dorkos/shared/room-files';
+import type { RoomRepoStatus } from '@dorkos/shared/room-repo';
 import type { UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
 import { SSE_RESILIENCE } from '../constants';
@@ -163,6 +164,11 @@ export function createRoomMethods(baseUrl: string) {
         baseUrl,
         `/rooms/${encodeURIComponent(id)}/files/content${qs}`
       );
+    },
+
+    /** Where the room's files stand, and who is holding work it has not got. */
+    readRoomRepoStatus(id: string): Promise<RoomRepoStatus> {
+      return fetchJSON<RoomRepoStatus>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo/status`);
     },
 
     /**

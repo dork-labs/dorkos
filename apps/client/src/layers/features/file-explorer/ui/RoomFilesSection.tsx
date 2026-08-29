@@ -25,6 +25,7 @@ import { explorerDirQueryOptions } from '../model/source';
 import { ROOT_KEY } from '../model/tree';
 import { FileExplorer } from './FileExplorer';
 import { HiddenEntriesToggle } from './HiddenEntriesToggle';
+import { PendingWorkBadge } from './PendingWorkBadge';
 
 /** What {@link RoomFilesSection} browses. */
 export interface RoomFilesSectionProps {
@@ -77,9 +78,14 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
     <section aria-label="Room files" className="space-y-2">
       <header className="flex items-center gap-2">
         <FolderGit2 className="text-muted-foreground size-(--size-icon-sm) flex-shrink-0" />
-        <h3 className="text-muted-foreground flex-1 text-xs font-medium tracking-wide uppercase">
-          Files
-        </h3>
+        <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Files</h3>
+        {/* Beside the heading rather than over the tree: what it reports is not
+            in the tree at all. The tree lists what the room HAS; this names the
+            work it has not got yet, which lives in a working copy no file row
+            can point at. */}
+        <div className="min-w-0 flex-1">
+          <PendingWorkBadge roomId={roomId} />
+        </div>
         <HiddenEntriesToggle />
       </header>
       {/* Bounded rather than free-growing: this is one section of a scrolling

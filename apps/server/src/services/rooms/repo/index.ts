@@ -30,11 +30,14 @@ export {
 } from './room-repo-service.js';
 export {
   RoomMergeService,
-  type RoomBranchStatus,
   type RoomMergeResult,
   type RoomMergeServiceDeps,
-  type RoomRepoStatus,
 } from './room-merge-service.js';
+// The status shapes are declared in `@dorkos/shared/room-repo`, because the
+// file explorer reads them over HTTP and a client cannot import a server module
+// (spec `project-rooms` §3.9). Re-exported here so a reader inside this domain
+// still finds them beside the service that computes them.
+export type { RoomBranchStatus, RoomRepoStatus } from '@dorkos/shared/room-repo';
 export { RoomRepoMutex, MAX_QUEUE_DEPTH } from './room-repo-mutex.js';
 export { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 export { RoomConventions, ROOM_CONVENTIONS_TAG } from './room-conventions.js';

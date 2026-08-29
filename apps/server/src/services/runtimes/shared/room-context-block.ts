@@ -81,6 +81,7 @@ import {
   type RoomContextAuthor,
   type RoomContextData,
   type RoomContextEntry,
+  type RoomContextFiles,
   type RoomContextMember,
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
@@ -461,6 +462,108 @@ function attachmentPath(file: { name: string; path: string }): string {
     });
   }
   return printable;
+}
+
+/**
+ * A directory the agent is told to work in, safe to put in a line DorkOS wrote.
+ *
+ * The same treatment {@link attachmentPath} gives a file, for the same reason
+ * and with the same residual: this is a path a model will hand to `cd`, `git`
+ * and `Read`, so a sanitizer that changes one character has handed out a
+ * directory that does not exist. Sanitizing anyway is right — this region is
+ * trusted only because everything in it went through `sanitizeIdentity`, and a
+ * room home is under DorkOS's own data directory, which a person may have put
+ * anywhere. What is not acceptable is doing it in silence.
+ *
+ * Neither of these paths is member-written: DorkOS chose the data directory,
+ * the room id, and the worktree slug. The one component it did not choose is
+ * the person's own home directory, which is also the one that can hold a space.
+ *
+ * @param what - Which path this is, for the log line.
+ * @param value - The absolute path, as the server resolved it.
+ */
+function directoryPath(what: string, value: string): string {
+  const printable = label(value, WORKING_DIRECTORY_MAX);
+  if (printable !== value) {
+    logger.warn('[rooms] a room-files path was changed by sanitizing and may not open', {
+      what,
+      path: value,
+      rendered: printable,
+    });
+  }
+  return printable;
+}
+
+/**
+ * How many commits, as a sentence fragment: `1 commit` or `4 commits`.
+ *
+ * @param count - The number of commits.
+ */
+function commits(count: number): string {
+  return count === 1 ? '1 commit' : `${count} commits`;
+}
+
+/**
+ * The room's files, and what this agent has to do about them (spec §3.7).
+ *
+ * **Three lines at most, and the third is the only one that changes.** The two
+ * standing lines are where the agent works and how work gets out of its tree;
+ * they are the same on every turn, which is what makes them cheap to keep and
+ * safe to rely on. The live line is the numbers, and it is silent when both are
+ * zero — a turn that starts in step with the room needs no sentence saying so.
+ *
+ * **It says the prohibition, not just the location.** A room's integration
+ * checkout is one `git worktree list` away from any agent holding Bash, so
+ * hiding the path buys nothing; saying where it is AND that it is not this
+ * agent's to write in is the only version that helps. One writer per tree is
+ * the whole of DOR-500 applied to rooms (spec §3.4), and the server is the
+ * writer on `main`.
+ *
+ * **The merge tool is named as a searchable ENDING**, which is the one form
+ * that is true on claude-code, codex and opencode at once — each puts its own
+ * prefix in front (`context-tool-names.test.ts` enforces exactly this shape in
+ * every runtime-neutral module). It stays deferred rather than joining
+ * `ALWAYS_LOADED_TOOLS`: merging is never the first act of a turn — it follows
+ * work the agent has already committed — so the one lookup it costs lands in a
+ * turn that has room for it, where a room REPLY does not. See the note on that
+ * set for the rule this is read against.
+ *
+ * Syncing is deliberately not a tool at all (spec §3.7): it is `git merge main`
+ * in a tree the agent owns, and a tool for it would make the server a writer in
+ * somebody else's working copy.
+ *
+ * @param files - Where the agent works and how it stands against the room.
+ */
+function filesLines(files: RoomContextFiles): string[] {
+  const lines = [
+    `This room has files of its own. You are working in your own copy of them at ` +
+      `${directoryPath('worktree', files.worktreePath)}, on branch ${label(files.branch)}. The ` +
+      `room's own copy is at ${directoryPath('repo', files.repoPath)}: read it if you need to, ` +
+      `and never write in it.`,
+    'Sync before you edit: run `git merge main` in your own copy, so anything that clashes is ' +
+      "sorted out in your tree rather than everybody's. To put work into the room, commit it " +
+      'first, then use the tool whose name ends in `merge_to_room_main` — whatever you have not ' +
+      'committed is left behind.',
+  ];
+  // **`null` says nothing, and that is the point.** It means git could not be
+  // asked, not that the branch is level — and "0" would be the second of those.
+  // An agent told it is up to date when nothing checked edits without syncing,
+  // which puts a conflict that belonged in its own tree into everybody's. The
+  // two standing lines above hold either way: where it works, and that the
+  // room's own copy is not its to write in.
+  const { behind, ahead } = files;
+  if (behind === null || ahead === null) return lines;
+  if (behind > 0 && ahead > 0) {
+    lines.push(
+      `Right now the room is ${commits(behind)} ahead of your branch, and your branch has ` +
+        `${commits(ahead)} the room does not.`
+    );
+  } else if (behind > 0) {
+    lines.push(`Right now the room is ${commits(behind)} ahead of your branch.`);
+  } else if (ahead > 0) {
+    lines.push(`Right now your branch has ${commits(ahead)} the room does not.`);
+  }
+  return lines;
 }
 
 /**
@@ -987,6 +1090,12 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
       .join('; ');
     lines.push(`Working right now: ${working}.`);
   }
+
+  // The room's files, after who is in it and before what is left to spend. A
+  // room without files of its own renders nothing here at all — most rooms are
+  // conversations, and a line explaining an absence on every message is a line
+  // spent for nothing.
+  if (data.files) lines.push(...filesLines(data.files));
 
   // **A number here is a claim, so "no limit" is said as itself.** A headroom
   // field is `null` when nothing is counting that particular ceiling, and

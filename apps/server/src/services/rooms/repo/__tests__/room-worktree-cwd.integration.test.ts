@@ -199,6 +199,72 @@ describe('a room turn runs in the room’s repo', () => {
     expect(existsSync(repoStore.worktreesPath(room.id))).toBe(false);
   });
 
+  it('tells the turn where its own copy is, and how far the room has moved', async () => {
+    // Spec §3.7 end to end. The files section is measured against the tree the
+    // resolver just chose, so the two cannot describe different directories —
+    // which is the same lockstep the attachment paths are held to.
+    const runner = scriptedRunner(() => null);
+    standUp(runner);
+    const room = await openRoom('Release train', true);
+
+    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
+    await harness.service.triggersIdle();
+
+    const files = runner.turns[0]!.roomContext?.files;
+    expect(files).toBeDefined();
+    expect(files!.worktreePath).toBe(anaWorktree(room.id));
+    expect(files!.worktreePath).toBe(runner.turns[0]!.cwd);
+    expect(files!.repoPath).toBe(repoStore.repoPath(room.id));
+    expect(files!.branch).toBe(`room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`);
+    // A tree just branched off `main` is level with it in both directions.
+    expect(files).toMatchObject({ ahead: 0, behind: 0 });
+  });
+
+  it('counts the commits the room gained while an agent was away', async () => {
+    // The number the section exists for: "sync before you edit" is advice
+    // without it, because an agent cannot see what landed on `main` from inside
+    // its own tree.
+    const runner = scriptedRunner(() => null);
+    standUp(runner);
+    const room = await openRoom('Release train', true);
+
+    // First turn: Ana's worktree is created off main.
+    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
+    await harness.service.triggersIdle();
+
+    // The room moves on without her — two commits on `main`, as a merge would
+    // leave it.
+    const repoDir = repoStore.repoPath(room.id);
+    for (const name of ['CHECKLIST.md', 'NOTES.md']) {
+      await writeFile(path.join(repoDir, name), `# ${name}\n`, 'utf-8');
+      await runGit(['add', name], repoDir, dorkHome);
+      await runGit(
+        ['-c', 'user.name=E', '-c', 'user.email=e@dorkos.local', 'commit', '-q', '-m', name],
+        repoDir,
+        dorkHome
+      );
+    }
+
+    harness.service.post(room.id, { authorId: harness.human, text: '@ana and now?' });
+    await harness.service.triggersIdle();
+
+    const forAna = runner.turns.filter((turn) => turn.agentPath === anaPath);
+    expect(forAna.at(-1)!.roomContext?.files).toMatchObject({ behind: 2, ahead: 0 });
+  });
+
+  it('tells a room with no files of its own nothing about files', async () => {
+    // The additive promise: a conversation-only room renders a context
+    // byte-identical to the one it rendered before this field existed.
+    const runner = scriptedRunner(() => null);
+    standUp(runner);
+    const room = await openRoom('Backend', false);
+
+    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
+    await harness.service.triggersIdle();
+
+    expect(runner.turns[0]!.roomContext).not.toHaveProperty('files');
+  });
+
   it('gives each agent its own working copy, and reuses it across turns', async () => {
     const runner = scriptedRunner(() => null);
     standUp(runner);

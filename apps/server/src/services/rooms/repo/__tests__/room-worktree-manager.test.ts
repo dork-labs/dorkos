@@ -65,6 +65,7 @@ import {
   removeWorktree,
   runGit,
 } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -158,6 +159,9 @@ describe('RoomWorktreeManager', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    // Before anything makes a repo: keep git's detached maintenance child from
+    // racing this suite's teardown into the directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     // The DorkOS home sits inside a git repository on purpose — see the header.
     scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-worktree-'));
     await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
@@ -222,7 +226,8 @@ describe('RoomWorktreeManager', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await rm(scratch, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+    await removeFixtureTree(scratch);
   });
 
   describe('slugFor', () => {
@@ -516,6 +521,85 @@ describe('RoomWorktreeManager', () => {
         dirty: true,
         aheadOfMain: 1,
       });
+    });
+  });
+
+  describe('turnFilesContext', () => {
+    it('is null for a room with no files of its own', async () => {
+      // No repo, no section: a conversation-only room renders a context
+      // byte-identical to the one it rendered before this field existed.
+      await expect(
+        manager.turnFilesContext(ROOM_ID, agentPath('ana'), 'Ana', '/anywhere')
+      ).resolves.toBeNull();
+    });
+
+    it('names both trees and measures the branch against main', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+
+      const files = await manager.turnFilesContext(ROOM_ID, agentPath('ana'), 'Ana', handle.path);
+
+      expect(files).toEqual({
+        // The caller's directory verbatim: the section must describe the tree
+        // the turn is standing in, never one rebuilt here.
+        worktreePath: handle.path,
+        branch: handle.branch,
+        repoPath: store.repoPath(ROOM_ID),
+        behind: 0,
+        ahead: 0,
+      });
+    });
+
+    it('counts the commits each side has that the other has not', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+      await writeFile(path.join(handle.path, 'mine.md'), 'mine', 'utf-8');
+      await commitAll(
+        handle.path,
+        'mine',
+        { name: 'Ana', email: 'ana@dorkos.local' },
+        store.homeDir(ROOM_ID)
+      );
+      // And the room moves on without her.
+      const repoDir = store.repoPath(ROOM_ID);
+      await writeFile(path.join(repoDir, 'theirs.md'), 'theirs', 'utf-8');
+      await commitAll(
+        repoDir,
+        'theirs',
+        { name: 'Bo', email: 'bo@dorkos.local' },
+        store.homeDir(ROOM_ID)
+      );
+
+      await expect(
+        manager.turnFilesContext(ROOM_ID, agentPath('ana'), 'Ana', handle.path)
+      ).resolves.toMatchObject({ ahead: 1, behind: 1 });
+    });
+
+    it('still says where the agent works when git cannot answer', async () => {
+      // DEGRADES rather than disappearing (DOR-1599 review). Here the branch does
+      // not exist, so `rev-list main...room/<slug>` fails — but the paths and the
+      // branch name are derived, not measured, so the one-writer prohibition the
+      // block builds on them survives. Nulling the whole section would drop that
+      // rule exactly when the repo is in a state nobody understands.
+      await service.enable(ROOM_ID, OPERATOR);
+
+      const files = await manager.turnFilesContext(
+        ROOM_ID,
+        agentPath('ana'),
+        'Ana',
+        '/where/the/turn/runs'
+      );
+
+      expect(files).toMatchObject({
+        worktreePath: '/where/the/turn/runs',
+        repoPath: store.repoPath(ROOM_ID),
+        // Not zero. "Not measured" and "level with the room" must never collapse:
+        // an agent told it is up to date when nothing checked edits without
+        // syncing.
+        behind: null,
+        ahead: null,
+      });
+      expect(files?.branch).toMatch(/^room\//);
     });
   });
 

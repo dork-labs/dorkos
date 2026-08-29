@@ -123,6 +123,10 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/room-export-schemas';
 import {
+  RoomBranchStatusSchema as SharedRoomBranchStatusSchema,
+  RoomRepoStatusSchema as SharedRoomRepoStatusSchema,
+} from '@dorkos/shared/room-repo';
+import {
   RoomFileContentQuerySchema,
   RoomFileContentResponseSchema,
   RoomFileListResponseSchema,
@@ -4028,40 +4032,38 @@ registry.registerPath({
   },
 });
 
-/** One agent's branch, as the room-repo status reports it. */
+/**
+ * One agent's branch, and what the room's files hold, as
+ * `GET /api/rooms/{id}/repo/status` reports them.
+ *
+ * **Derived from `@dorkos/shared/room-repo` rather than restated here**, which
+ * is the same thing this file does for the room-files responses above. The
+ * hand-rolled copies these replace had already drifted: `authorId` has been in
+ * the response since DOR-1598 and was documented nowhere, so a client author
+ * reading the spec could not join a branch row to a member. A duplicate schema
+ * cannot be kept honest by anything, and this one was not.
+ *
+ * **Rebuilt from `.shape` rather than annotated in place**, and that is not
+ * style. `.openapi()` is a method this package teaches `zod`, and the shared
+ * schemas reach the server through `packages/shared/dist` — which vitest loads
+ * as an external module with its own `zod` instance, so the prototype this file
+ * patched is not the one those objects have. Calling `.openapi()` on an
+ * imported schema threw `not a function` under the test runner while passing
+ * under the export script, which is the worst version of an order dependency.
+ * Re-wrapping the SHAPE keeps the anti-drift property whole — a field added in
+ * shared still flows through — while the annotated object is one this module
+ * made.
+ *
+ * `branches` is re-wrapped around the NAMED branch schema so the generated
+ * document keeps its `$ref` rather than inlining the row nine times.
+ */
 const RoomBranchStatusSchema = z
-  .object({
-    slug: z.string().describe('The working copy’s directory name, and the tail of the branch.'),
-    branch: z.string(),
-    agent: z.string().describe('The agent’s display name, sanitized.'),
-    mine: z.boolean().describe('Whether this row is the caller’s own branch.'),
-    hasWorktree: z.boolean().describe('Whether the working copy is on disk right now.'),
-    ahead: z.number().int().describe('Commits the branch holds that `main` does not.'),
-    behind: z.number().int().describe('Commits `main` holds that the branch does not.'),
-    dirty: z.boolean().describe('Whether the working copy has changes nobody committed.'),
-    stranded: z
-      .boolean()
-      .describe('Work `main` has not got — `dirty || ahead > 0`. Drives the explorer’s badge.'),
-  })
+  .object(SharedRoomBranchStatusSchema.shape)
   .openapi('RoomBranchStatus');
 
 /** What `GET /api/rooms/{id}/repo/status` answers. */
 const RoomRepoStatusSchema = z
-  .object({
-    mainCommit: z.string(),
-    mainCommittedAt: z.string().nullable(),
-    branches: z.array(RoomBranchStatusSchema),
-    strandedWorktrees: z
-      .array(z.string())
-      .describe(
-        'Working copies holding work `main` has not got, including ones no current member maps to.'
-      ),
-    size: z.object({
-      usedBytes: z.number().int(),
-      maxRepoBytes: z.number().int(),
-      maxFileBytes: z.number().int(),
-    }),
-  })
+  .object({ ...SharedRoomRepoStatusSchema.shape, branches: z.array(RoomBranchStatusSchema) })
   .openapi('RoomRepoStatus');
 
 /** What a completed merge answers. */

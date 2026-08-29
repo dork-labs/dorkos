@@ -63,7 +63,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import type { RoomRepoCaps } from '@dorkos/shared/room-repo';
+import type { RoomBranchStatus, RoomRepoCaps, RoomRepoStatus } from '@dorkos/shared/room-repo';
 import { MERGE_SUMMARY_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
@@ -125,75 +125,6 @@ export interface RoomMergeResult {
   deletions: number;
   /** The `seq` of the room entry announcing it. */
   seq: number;
-}
-
-/** One agent's branch, as `room_repo_status` reports it. */
-export interface RoomBranchStatus {
-  /** The worktree directory name, and the tail of the branch name. */
-  slug: string;
-  /** The branch itself. */
-  branch: string;
-  /** The agent's display name, sanitized. */
-  agent: string;
-  /**
-   * The author id of the agent whose branch this is.
-   *
-   * An id rather than a path: it is the same id the room's roster and its
-   * entries carry, so a client can join this row to a member without learning
-   * where that agent lives on disk.
-   */
-  authorId: string;
-  /** Whether this row is the caller's own. */
-  mine: boolean;
-  /** Whether the agent has a working copy on disk right now. */
-  hasWorktree: boolean;
-  /** Commits on the branch that `main` does not have. */
-  ahead: number;
-  /** Commits on `main` that the branch does not have. */
-  behind: number;
-  /** Whether the working copy holds changes nobody committed. */
-  dirty: boolean;
-  /**
-   * Whether this branch holds work `main` has not got — `dirty || ahead > 0`.
-   *
-   * The same DEFINITION `RoomRepoService.listStrandedWorktrees` uses, restated
-   * per branch so a reader does not have to derive it. It is deliberately not
-   * the same COMPUTATION: that one walks the worktree directories and this one
-   * walks the roster, so the two can disagree in the cases where those disagree
-   * — a worktree whose agent has left the room, a branch whose working copy the
-   * reap removed, or a directory git cannot read (which the other one calls
-   * stranded and this one cannot see at all). {@link RoomRepoStatus
-   * .strandedWorktrees} carries that other answer alongside, precisely so the
-   * two are visible rather than reconciled behind a reader's back.
-   */
-  stranded: boolean;
-}
-
-/** What `room_repo_status` answers. */
-export interface RoomRepoStatus {
-  /** The commit `main` points at. */
-  mainCommit: string;
-  /** When that commit was made, ISO, or `null` for a repo with no commits. */
-  mainCommittedAt: string | null;
-  /** One row per agent member, in roster order. */
-  branches: RoomBranchStatus[];
-  /**
-   * Working copies holding work `main` has not got, by directory name.
-   *
-   * Includes trees no current member maps to — an agent that was renamed, or
-   * whose workspace moved, leaves its old worktree behind and the work in it is
-   * still somebody's.
-   */
-  strandedWorktrees: string[];
-  /** What the room's files weigh, and what they are allowed to. */
-  size: {
-    /** Total bytes of every file on `main`. */
-    usedBytes: number;
-    /** The ceiling for the whole repo, from the sidecar. */
-    maxRepoBytes: number;
-    /** The ceiling for one file, from the sidecar. */
-    maxFileBytes: number;
-  };
 }
 
 /** The seams {@link RoomMergeService} needs from the rest of the server. */
