@@ -48,6 +48,7 @@ import { RoomError } from '../../room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomFilesService, normalizeRoomFilePath } from '../room-files.js';
 import { commitAll, runGit, runGitRaw, type GitIdentity } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 import { logger } from '../../../../lib/logger.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
@@ -135,6 +136,10 @@ describe('RoomFilesService', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    // Before any repo exists: a `git commit` otherwise leaves a DETACHED
+    // maintenance process writing into `.git` after it returns, and this
+    // suite's teardown deletes that directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-files-'));
     // The enclosing repository — see the module doc. It ignores everything and
     // has a commit of its own, so it reads clean: exactly the answer that would
@@ -181,7 +186,7 @@ describe('RoomFilesService', () => {
   });
 
   afterEach(async () => {
-    await rm(scratch, { recursive: true, force: true });
+    await removeFixtureTree(scratch);
   });
 
   describe('listing', () => {
