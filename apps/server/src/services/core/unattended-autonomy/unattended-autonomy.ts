@@ -57,12 +57,24 @@
  *
  * **A task no longer does** (DOR-1615). Its runtime is resolved per run —
  * `services/tasks/execution/resolve-run-execution.ts` — so a task filed under a
- * Codex agent has its stored mode read here in Claude Code's vocabulary. Today
- * that changes no answer: all three shipped runtimes declare the same three mode
- * ids, and a mode this profile does not declare yields no claim rather than a
- * guess. It is still one profile too few, and the fix is the same shape as the
- * relay's: take a mode list per subject instead of one, never a runtime-name
- * check.
+ * Codex agent has its stored mode read here in Claude Code's vocabulary.
+ *
+ * What keeps that from losing a driver today is NOT that the three runtimes
+ * declare the same three mode ids. They do, and the ids mean different things:
+ * Codex files `acceptEdits` at "never asks, reaches the workspace" where Claude
+ * Code files it at "asks when risky, reaches edits". The invariant that actually
+ * holds is narrower — **no runtime files an autonomy-stop or a
+ * never-asking-reaches-everything mode under an id Claude Code files anywhere
+ * else.** Codex's `acceptEdits` stays off this report because
+ * {@link isUnattendedAutonomy}'s bypass half requires `reach: 'everything'` and
+ * Codex files that mode at `workspace` (`packages/shared/src/permission-semantics.ts`),
+ * not because the two declarations agree.
+ *
+ * A runtime that broke the invariant would be an unattended driver this banner
+ * never mentions, and it would break silently: this reads one profile, and a
+ * mode it does not declare yields no claim rather than a guess. It is still one
+ * profile too few, and the fix is the same shape as the relay's: take a mode
+ * list per subject instead of one, never a runtime-name check.
  *
  * ## Cost
  *
