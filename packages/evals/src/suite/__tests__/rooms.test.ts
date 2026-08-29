@@ -20,6 +20,11 @@ import { evaluateRunGate } from '../../report/summary.js';
 import { selectSuite } from '../index.js';
 import { roomsStructuralCases } from '../rooms.js';
 import { roomsCredentialedCases } from '../rooms-recall.js';
+import {
+  DM_ANSWER_RATE_SEEDS,
+  TOOL_ONLY_WHILE_DRIVING,
+  roomsJudgmentCases,
+} from '../rooms-judgment.js';
 
 // The local-sign-in probe shells out to the real `claude` binary. Left real, the
 // credential-gate test below would boot a credentialed server and SPEND on a
@@ -104,7 +109,13 @@ describe('the credentialed tier', () => {
   });
 
   it('covers the X-row probes chat-capabilities §7 asks for, minus the two it cannot reach', () => {
-    const ids = roomsCredentialedCases.map((c) => c.id);
+    // Scoped to the cases this list is ABOUT. The judgment tier (DOR-1613 PR3)
+    // is credentialed too and belongs in the same array — that is what holds it
+    // to the tier's promises — but it answers a different question and has its
+    // own enumeration below. Summing them here would make one list drift-proof
+    // by making it about nothing.
+    const judgment = new Set(roomsJudgmentCases.map((c) => c.id));
+    const ids = roomsCredentialedCases.map((c) => c.id).filter((id) => !judgment.has(id));
     // X-01 … X-06, plus restraint (M-04 / A-02), react-not-reply (A-06,
     // DOR-1234), the injection eval (A-15), and the comprehension half of RP8's
     // gathering (DOR-1231) — the last of which is not an X-row, and is here
@@ -124,6 +135,79 @@ describe('the credentialed tier', () => {
     // X-07 (bridged) and X-08 (post-compaction) are documented gaps, not cases.
     // If either ever lands, this list changes deliberately rather than by drift.
     expect(ids).toHaveLength(10);
+  });
+
+  it('REGISTERS every judgment case, so `--suite rooms` can actually reach one', () => {
+    // **The miss this exists for, reproduced deliberately.** In PR2 the six
+    // structural tool-only cases were spread into `ALL_CASES` and left out of
+    // the array the tier test iterates: selectable but unpoliced. Here the
+    // failure runs the other way — removing `...roomsJudgmentCases` from
+    // `roomsCredentialedCases` left all eleven tests in this file green while
+    // every one of these cases vanished from the registry, because they were
+    // only ever asserted ABOUT rather than asserted REACHABLE.
+    //
+    // So this asserts the two things enumeration cannot: the suite selection
+    // contains each id, and each is individually selectable the way a drill
+    // recipe reaches for one.
+    const selected = selectSuite('rooms').map((c) => c.id);
+    for (const evalCase of roomsJudgmentCases) {
+      expect(selected, evalCase.id).toContain(evalCase.id);
+      expect(
+        selectSuite(evalCase.id).map((c) => c.id),
+        evalCase.id
+      ).toEqual([evalCase.id]);
+    }
+  });
+
+  it('drives the flip ON — the direction the whole tier depends on', () => {
+    // **Mutation E, and it used to be unobservable.** `underTheFlip` wrote
+    // `on: true` as an inline literal; flipping it to `false` left every test in
+    // this package green, and the twelve cases would have run against the OLD
+    // behaviour while reporting judgment findings about a feature that was
+    // switched off. Nothing about a case's shape reveals which way it drove.
+    expect(TOOL_ONLY_WHILE_DRIVING).toBe(true);
+  });
+
+  it('holds the twelve judgment cases the flip added', () => {
+    // The same deliberate-rather-than-drift enumeration the X-row list gets, and
+    // it earns one for a sharper reason: these are the cases graduation criteria
+    // 2 and 3 are written against, so a case quietly leaving the file would take
+    // a criterion with it.
+    expect(roomsJudgmentCases.map((c) => c.id)).toEqual([
+      'rooms-dm-answers-a-direct-question',
+      'rooms-dm-answers-an-ambiguous-request',
+      'rooms-dm-answers-an-implied-question',
+      'rooms-dm-restraint-on-a-bare-thanks',
+      'rooms-channel-mentioned-question-posts',
+      'rooms-channel-yields-when-a-human-answered',
+      'rooms-ack-only-reacts-under-the-flip',
+      'rooms-dm-reaction-can-be-the-whole-answer',
+      'rooms-thinking-stays-in-the-session',
+      'rooms-answers-three-questions-in-one-message',
+      'rooms-ambient-silence-is-free-for-a-model-too',
+      'rooms-declines-visibly-rather-than-vanishing',
+    ]);
+    expect(roomsJudgmentCases).toHaveLength(12);
+  });
+
+  it('keeps the three DM answer-rate SEEDS distinct, which is what criterion 2 counts', () => {
+    // Graduation criterion 2 asks for 100% on direct questions across three
+    // seeds. Three cases asking the same thing would satisfy the count while
+    // measuring one phrasing, and the case list would still look like three.
+    //
+    // **Asserted on the seeds themselves, which took a second attempt.** The
+    // first version compared case TITLES — a different string that happens to
+    // differ — so rewriting all three questions to be byte-identical left it
+    // green. `EvalCase.prompt` cannot carry them either (this file requires it
+    // to be `''` for every rooms case), which is why the seeds are exported.
+    const seeds = Object.values(DM_ANSWER_RATE_SEEDS);
+    expect(seeds).toHaveLength(3);
+    expect(new Set(seeds).size).toBe(3);
+    // And each seed belongs to a case that is really registered, so the table
+    // cannot drift into describing cases that no longer exist.
+    for (const id of Object.keys(DM_ANSWER_RATE_SEEDS)) {
+      expect(roomsJudgmentCases.map((c) => c.id)).toContain(id);
+    }
   });
 
   it('is NEVER started by a test-mode run — no case here can report pass or fail without a model', async () => {

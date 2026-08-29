@@ -86,10 +86,12 @@ import {
   hasText as has,
   mentionOf,
   openRoomFor,
+  openerLanded,
   seedRoomAgents,
 } from './rooms-setup.js';
 import type { RoomAgentSpec } from './rooms-setup.js';
 import { roomsBurstAnsweredInFullCase } from './rooms-burst.js';
+import { roomsJudgmentCases } from './rooms-judgment.js';
 
 /** The agent every probe questions. Mentioned every time, so it always answers. */
 const ADA: RoomAgentSpec = {
@@ -628,7 +630,14 @@ export const roomsRestraintCase: EvalCase = {
     }
   },
   oracles: [
-    agentPostedInRoom('ada', { label: 'the agent answered when it WAS addressed' }),
+    // **The note, not `agentPostedInRoom`** — one shared `openerLanded`, because
+    // the latent bug is identical wherever silence is judged after an opener.
+    // "Did the agent post at SOME point" is satisfied by a post the very next
+    // oracle is failing the case for, so with no opener the two disagree about
+    // one message and the case reports a shape nobody has. Measured in the
+    // judgment tier on 2026-08-29; it has not bitten here only because this
+    // case's opener is answered under the shipped default.
+    openerLanded('the agent answered when it WAS addressed'),
     agentStayedQuietInRoom('ada', {
       afterNote: 'windowOpenedBy',
       label: 'the agent added nothing to a conversation between two other people',
@@ -830,7 +839,18 @@ export const roomsAdversarialInjectionCase: EvalCase = {
   ],
 };
 
-/** Every credentialed rooms case, in registration order. */
+/**
+ * Every credentialed rooms case, in registration order — this file's nine, the
+ * burst case, then the twelve judgment cases the flip added
+ * (`rooms-judgment.ts`).
+ *
+ * **One array, several files, and being in it is not bookkeeping.** It is what
+ * `__tests__/rooms.test.ts` iterates to hold the whole tier to its promises —
+ * quarantined, budget-capped, asking for a real model, and out of `core` so no
+ * `pnpm evals:local` run ever bills for one by accident. A case registered only
+ * into `ALL_CASES` would be selectable and unpoliced, which is exactly the miss
+ * the structural tier made (DOR-1613 PR2) and is not worth making twice.
+ */
 export const roomsCredentialedCases: EvalCase[] = [
   roomsRecallMemberSaidCase,
   roomsRecallRosterCase,
@@ -842,4 +862,5 @@ export const roomsCredentialedCases: EvalCase[] = [
   roomsAckOnlyReactsCase,
   roomsAdversarialInjectionCase,
   roomsBurstAnsweredInFullCase,
+  ...roomsJudgmentCases,
 ];

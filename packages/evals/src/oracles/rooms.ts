@@ -61,7 +61,7 @@ interface RoomEntryFrameData {
     id?: string;
     authorId?: string;
     kind?: string;
-    body?: { text?: string; notice?: string };
+    body?: { text?: string; notice?: string; subjectAuthorId?: string };
     sessionId?: string | null;
     mentions?: string[];
   };
@@ -99,6 +99,17 @@ export interface ObservedEntry {
   text: string;
   /** The notice code, when it is a notice. */
   notice: string | undefined;
+  /**
+   * WHO a notice is about, when it names one member.
+   *
+   * Absent on a post, and absent on a notice about the ROOM rather than about
+   * somebody in it — `halted` is written at both scopes and this is what tells
+   * them apart on the wire (`.claude/rules/room-conduct.md`). An oracle asking
+   * "did the room say this about THIS agent" needs it; a one-agent room can get
+   * away without, and that is exactly the shortcut that makes such an oracle
+   * wrong the first time a case seats two.
+   */
+  subjectAuthorId: string | undefined;
 }
 
 /** One triggered turn, identified by the agent and the entry it answers. */
@@ -131,6 +142,7 @@ export function observedEntries(frames: SseFrame[]): ObservedEntry[] {
       kind: entry.kind ?? 'post',
       text: entry.body?.text ?? '',
       notice: entry.body?.notice,
+      subjectAuthorId: entry.body?.subjectAuthorId,
     });
   }
   return entries;
@@ -658,4 +670,125 @@ export function roomTurnBudgetSpent(expected: number, label?: string): Oracle {
           },
     label ?? `the room was charged exactly ${expected} automatic turn(s)`
   );
+}
+
+/**
+ * Every author holding a STANDING reaction anywhere in the drive.
+ *
+ * {@link reactorsOn} across every entry rather than one, and the per-entry fold
+ * is the whole correctness of it: a reaction frame carries the entry's COMPLETE
+ * current set, so the frames for one entry are successive states and only the
+ * LAST is true. Unioning them all instead reads "reacted and took it back" as
+ * "reacted" — which is the exact bug `reactorsOn`'s own doc warns about, and
+ * which this function had before it was written this way.
+ *
+ * @param frames - The collected room frames.
+ * @returns Author ids with at least one reaction still standing.
+ */
+function reactorsAnywhere(frames: SseFrame[]): Set<string> {
+  const latestByEntry = new Map<string, RoomReactionFrameData>();
+  for (const frame of frames) {
+    if (frame.event !== 'reaction') continue;
+    const data = frame.data as RoomReactionFrameData;
+    if (!data.entryId) continue;
+    latestByEntry.set(data.entryId, data);
+  }
+  const authors = new Set<string>();
+  for (const data of latestByEntry.values()) {
+    for (const reaction of data.reactions ?? []) {
+      for (const authorId of reaction.authorIds ?? []) authors.add(authorId);
+    }
+  }
+  return authors;
+}
+
+/**
+ * Oracle: one agent posted exactly `expected` messages into the room.
+ *
+ * The count rather than the prose, which is the honest thing an oracle can do
+ * about `meta/agent-etiquette.md` E8 ("one message, not three") without a judge
+ * model: whether ONE entry answers all three questions is indistinguishable from
+ * whether it answers one, but three entries arriving where one was owed is the
+ * exact shape `rooms.maxPostsPerTurn` was built to bound and is plainly visible.
+ *
+ * Notices are excluded — the room's own voice is not the agent saying something.
+ *
+ * @param slug - The seeded agent's slug.
+ * @param expected - How many posts it must have written.
+ * @param label - Human-readable label.
+ * @returns An {@link Oracle}.
+ */
+export function agentPostCount(slug: string, expected: number, label?: string): Oracle {
+  const oracleLabel = label ?? `"${slug}" posted exactly ${expected} message(s)`;
+  return async (ctx) => {
+    const resolved = requireRoom(ctx, oracleLabel);
+    if ('failure' in resolved) return resolved.failure;
+    const authorId = agentAuthorId(resolved.room, slug);
+    const posts = observedEntries(ctx.frames).filter(
+      (e) => e.authorId === authorId && e.kind === 'post'
+    );
+    return {
+      label: oracleLabel,
+      passed: posts.length === expected,
+      evidence: { authorId, posts: posts.map((p) => p.text.slice(0, 200)) },
+      detail:
+        posts.length === expected
+          ? undefined
+          : `expected ${expected} post(s) from ${slug}, observed ${posts.length}`,
+    };
+  };
+}
+
+/**
+ * Oracle: the person who asked was left with SOMETHING — an answer, a reaction,
+ * or the room saying there was not one.
+ *
+ * **The only disjunctive oracle in the rooms package, and the disjunction is the
+ * claim rather than a weakening of it.** Under `rooms.toolOnlyReplies` a turn has
+ * three honest endings when it is asked something it cannot answer: post a brief
+ * decline (`meta/agent-etiquette.md` E21, the good one), react, or say nothing
+ * and let the room write its one `agent_declined` line (the floor). All three
+ * discharge E1's obligation, and insisting on one would encode a preference the
+ * etiquette standard does not state.
+ *
+ * What it fails is the fourth outcome, which is the one the feature must never
+ * produce: the working indicator appears, goes, and the person is left unable to
+ * tell a considered silence from a broken agent.
+ *
+ * @param slug - The seeded agent's slug.
+ * @param label - Human-readable label.
+ * @returns An {@link Oracle}.
+ */
+export function somethingVisibleLanded(slug: string, label?: string): Oracle {
+  const oracleLabel = label ?? `the person who asked "${slug}" was left with something visible`;
+  return async (ctx) => {
+    const resolved = requireRoom(ctx, oracleLabel);
+    if ('failure' in resolved) return resolved.failure;
+    const authorId = agentAuthorId(resolved.room, slug);
+    const entries = observedEntries(ctx.frames);
+    const posted = entries.filter((e) => e.authorId === authorId && e.kind === 'post');
+    const declined = entries.filter(
+      (e) => e.kind === 'notice' && e.notice === 'agent_declined' && e.subjectAuthorId === authorId
+    );
+    // Any reaction this agent STILL HOLDS anywhere in the drive. Scoped to the
+    // agent rather than to one entry because this oracle does not say WHICH
+    // message an acknowledgment belongs on — that is `agentReactedInRoom`'s job
+    // — and folded per entry so a reaction that was taken back does not count as
+    // something the reader can see (see {@link reactorsAnywhere}).
+    const reacted = reactorsAnywhere(ctx.frames).has(authorId);
+    const passed = posted.length > 0 || declined.length > 0 || reacted;
+    return {
+      label: oracleLabel,
+      passed,
+      evidence: {
+        authorId,
+        posts: posted.map((p) => p.text.slice(0, 200)),
+        declinedNotices: declined.length,
+        reacted,
+      },
+      detail: passed
+        ? undefined
+        : `${slug} (${authorId}) posted nothing, reacted to nothing, and the room wrote no "agent_declined" line — the indicator went with nothing to show for it`,
+    };
+  };
 }
