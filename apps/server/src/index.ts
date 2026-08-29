@@ -97,12 +97,7 @@ import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
 import { migrateLegacySchedules } from './services/tasks/legacy-migration.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
-import {
-  RelayCore,
-  AdapterRegistry,
-  SignalEmitter,
-  type ClaudeCodeAgentRuntimeLike,
-} from '@dorkos/relay';
+import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { createConnectorsRouter } from './routes/connectors.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
@@ -353,21 +348,22 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
-// The runtime the relay's Claude Code adapter drives. Its need is
-// Claude-specific, not default-specific: the adapter speaks the Claude Agent
-// SDK's session/approval vocabulary, so it is bound to the concrete
-// claude-code runtime here at construction rather than read off
-// `runtimeRegistry.getDefault()`. That keeps `runtimes.default` free to point
-// at codex or opencode without the relay calling Claude-shaped methods on a
-// runtime that has none. Test mode substitutes TestModeRuntime, which
-// implements the same narrow surface with no real agent binary.
+// The relay's DEFAULT runtime — what answers a relay message that names no
+// runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
+// agent-to-agent send to a mesh agent). The relay carries every registered
+// runtime as of DOR-1614 and picks per message; this is the one it falls back
+// to, and it is bound to the concrete runtime constructed here rather than read
+// off `runtimeRegistry.getDefault()`, so `runtimes.default` can point at codex
+// or opencode without moving what answers an unaddressed message. Test mode
+// substitutes TestModeRuntime, which implements the same narrow surface with no
+// real agent binary.
 //
 // It carries its own `type` rather than being paired with a separate type
 // variable, because the two are the same fact and two variables holding one
 // fact drift. AdapterManager keys its runtime map by that type, so the key is
 // always the runtime's actual identity — `test-mode` in test mode, not a
 // hardcoded `claude-code` that no lookup would ever match.
-let relayAgentRuntime: (ClaudeCodeAgentRuntimeLike & { readonly type: string }) | null = null;
+let relayAgentRuntime: (AgentRuntimeLike & { readonly type: string }) | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
@@ -1582,15 +1578,29 @@ async function start() {
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
-  // Driven by `relayAgentRuntime` — the concrete claude-code runtime (or, in
-  // test mode, TestModeRuntime), never `runtimeRegistry.getDefault()`. See the
-  // declaration: the relay's need is Claude-specific, so it must not follow
-  // `runtimes.default` to a codex or opencode runtime.
   //
-  // Passed as the `agentRuntimes` map keyed by the runtime's own `type`, not
-  // through the deprecated single-`agentManager` field. That field's compat
-  // wrap keys everything under `'claude-code'`, which is a lie in test mode and
-  // the reason binding routing has been silently dead there.
+  // The relay carries EVERY registered runtime (DOR-1614), keyed by each
+  // runtime's own `type` — never through the deprecated single-`agentManager`
+  // field, whose compat wrap keys everything under `'claude-code'` (a lie in
+  // test mode, and the reason binding routing was silently dead there). An
+  // agent that runs on Codex or OpenCode answers a Telegram or Slack message on
+  // the runtime its manifest names, the same one it answers a room on.
+  //
+  // `relayAgentRuntime`'s entry is written LAST so it wins ITS OWN key, and
+  // that key alone. Two things make the ordering matter rather than be tidy:
+  // `listRuntimes()` hands back trace-WRAPPED runtimes, and on the production
+  // path this key is `claude-code` and the object is `claudeRuntime` — the very
+  // instance `setRelayBindingContext` configures further down. The relay and
+  // that wiring have to hold the same object, and last-write is what makes them.
+  //
+  // Under `DORKOS_TEST_RUNTIME` the key is `test-mode` instead, and
+  // `setRelayBindingContext` is never called (there is no ClaudeCodeRuntime to
+  // call it on). `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS` then registers a SECOND,
+  // separate TestModeRuntime under `claude-code` (DOR-952) which
+  // `relayAgentRuntime` is not — so do not read the rule as "relayAgentRuntime
+  // is whatever answers `claude-code`". Nothing configures that alias and
+  // nothing in test mode needs it configured; it exists so a seeded manifest
+  // naming a real runtime enum resolves.
   if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
     try {
       const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
@@ -1601,7 +1611,10 @@ async function start() {
       // declared type, not the guard.
       const relayCoreInstance = relayCore;
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
-        agentRuntimes: new Map([[relayAgentRuntime.type, relayAgentRuntime]]),
+        agentRuntimes: new Map<string, AgentRuntimeLike>([
+          ...runtimeRegistry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
+          [relayAgentRuntime.type, relayAgentRuntime],
+        ]),
         traceStore,
         taskStore: taskStore,
         relayCore,
@@ -2297,6 +2310,17 @@ async function start() {
         firingReason: firing.reason,
       },
       relay: relayCore,
+      // Which runtimes the bus can actually run a turn on (DOR-1614). Read
+      // through the live `adapterManager` rather than captured at this line.
+      // Phase C runs earlier than this in the current ordering, so capturing
+      // would happen to work today — but the binding is deliberately late for
+      // two reasons that outlive the ordering. Moving either block would
+      // silently freeze a stale value, and Phase C RESETS `adapterManager` to
+      // `undefined` when its init throws (see its catch), which a captured
+      // reference could not see. A relay that never built, or that failed
+      // building, must answer "no" — which is what `?? false` says — and then
+      // every run executes in this process, as it always did with the relay off.
+      relayHoldsRuntime: (runtimeType) => adapterManager?.hasAgentRuntime(runtimeType) ?? false,
       meshCore,
       activityService,
       dorkHome,

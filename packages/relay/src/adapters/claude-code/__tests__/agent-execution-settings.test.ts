@@ -132,6 +132,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
 
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: '/projects/ana',
     });
@@ -149,6 +150,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
 
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: '/projects/ana',
     });
@@ -170,6 +172,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     await adapter.deliver(envelope.subject, envelope, undefined);
 
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: '/projects/other',
     });
@@ -181,7 +184,10 @@ describe('a relay turn runs on the agent it addressed', () => {
 
     await adapter.deliver(envelope.subject, envelope, undefined);
 
-    expect(resolveExecutionSettings).toHaveBeenCalledWith({ sessionId: 'agent-ulid-1' });
+    expect(resolveExecutionSettings).toHaveBeenCalledWith({
+      sessionId: 'agent-ulid-1',
+      runtimeType: 'claude-code',
+    });
   });
 
   it('asks about the SDK session a second message resumes, not the agent id', async () => {
@@ -199,6 +205,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
 
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
+      runtimeType: 'claude-code',
       sessionId: 'sdk-uuid-42',
       agentDirectory: '/projects/ana',
     });

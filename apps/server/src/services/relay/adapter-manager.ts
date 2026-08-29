@@ -68,26 +68,35 @@ import {
 export { AdapterError } from './adapter-error.js';
 
 /**
- * Error thrown when no adapter is registered for a session's runtime type.
+ * The runtime-type → runtime map an {@link AdapterManager} actually holds,
+ * from whichever of the two shapes its caller passed.
  *
- * Carries both the missing runtime type and the offending session id so
- * callers can log or surface a diagnostic. This is thrown instead of
- * silently falling back to the default runtime — masking such mismatches
- * would hide routing bugs (e.g., a `codex` session on a server that never
- * registered the Codex runtime).
+ * 1. An explicit `agentRuntimes` map is taken as given — the shape every
+ *    composition root passes since DOR-1614, carrying every registered runtime.
+ * 2. Otherwise a legacy single `agentManager` is wrapped under its OWN `type`,
+ *    never a hardcoded `'claude-code'`. That hardcode was a silent killer: a
+ *    TestModeRuntime landed under `'claude-code'` while every lookup asked for
+ *    `'test-mode'`, so binding routing failed to initialize and the relay went
+ *    quiet with one warn line (DOR-768). A bare test double declaring no `type`
+ *    keeps the old key, which is what such a double means.
+ * 3. Otherwise the map is empty, and the adapter factory refuses to build the
+ *    built-in adapter rather than guessing which runtime it drives.
+ *
+ * A free function rather than a private constructor step so the rule can be
+ * asserted directly, without a diagnostic accessor on the class whose only
+ * reader would be its own tests.
+ *
+ * @param deps - The dependencies as the caller passed them.
  */
-export class AdapterNotRegisteredError extends Error {
-  readonly runtimeType: string;
-  readonly sessionId: string;
-  constructor(runtimeType: string, sessionId: string) {
-    super(
-      `No agent runtime registered for runtime type '${runtimeType}' (session '${sessionId}'). ` +
-        `Register the runtime with AdapterManager via the 'agentRuntimes' map.`
-    );
-    this.name = 'AdapterNotRegisteredError';
-    this.runtimeType = runtimeType;
-    this.sessionId = sessionId;
+export function normalizeAgentRuntimes(
+  deps: Pick<AdapterManagerDeps, 'agentRuntimes' | 'agentManager'>
+): Map<string, AgentRuntimeLike> {
+  if (deps.agentRuntimes) return new Map(deps.agentRuntimes);
+  const runtimes = new Map<string, AgentRuntimeLike>();
+  if (deps.agentManager) {
+    runtimes.set(deps.agentManager.type ?? 'claude-code', deps.agentManager);
   }
+  return runtimes;
 }
 
 /** Minimal MeshCore interface needed by AdapterManager for CWD resolution. */
@@ -122,14 +131,14 @@ export interface AdapterManagerDeps {
    * Map from runtime type (e.g., `'claude-code'`, `'test-mode'`) to a runtime
    * instance satisfying the minimal `AgentRuntimeLike` contract.
    *
-   * The manager looks up the appropriate runtime for a given session via
-   * `runtimeRegistry.getSessionRuntimeType(sessionId)` and throws
-   * `AdapterNotRegisteredError` when no runtime is registered for a
-   * session's declared type (never silently falls back to a default).
+   * Passed straight through to the built-in adapter, which picks one PER
+   * MESSAGE from what the message names and refuses a runtime it does not hold
+   * rather than falling back to another (DOR-1614). Pass every runtime this
+   * server registered.
    *
    * For backward compatibility, callers may pass a single `agentManager`
-   * instead — it will be normalized into a single-entry map keyed by that
-   * runtime's own `type`.
+   * instead — {@link normalizeAgentRuntimes} turns it into a single-entry map
+   * keyed by that runtime's own `type`.
    */
   agentRuntimes?: Map<string, AgentRuntimeLike>;
   /**
@@ -247,54 +256,29 @@ export class AdapterManager {
     this.configPath = configPath;
     this.deps = deps;
 
-    // Normalize agentRuntimes input:
-    //   1. If an explicit map is supplied, use it.
-    //   2. Else, if a legacy single `agentManager` is supplied, wrap it under
-    //      its OWN `type` — not a hardcoded `'claude-code'`. The hardcode was a
-    //      silent killer: a TestModeRuntime landed under `'claude-code'` while
-    //      every lookup asked for `'test-mode'`, so binding routing failed to
-    //      initialize and the relay went quiet with only a warn line. Bare test
-    //      doubles with no `type` keep the old key, which is what they mean.
-    //   3. Else, start with an empty map — register(...) can populate it later.
-    this.agentRuntimes = new Map(deps.agentRuntimes ?? []);
-    if (!deps.agentRuntimes && deps.agentManager) {
-      this.agentRuntimes.set(deps.agentManager.type ?? 'claude-code', deps.agentManager);
-    }
+    this.agentRuntimes = normalizeAgentRuntimes(deps);
   }
 
   /**
-   * Register an agent runtime for a given runtime type.
+   * Whether the relay can actually run a turn on this runtime.
    *
-   * Registrations after construction replace any prior entry for the same
-   * type. Useful in tests and for composition roots that lazily wire
-   * runtimes after the manager is built.
+   * The one question a caller OUTSIDE the relay legitimately has about this
+   * map, and the Tasks scheduler is that caller: it decides per run whether to
+   * hand the run to the bus or execute it in this process, and the bus is only
+   * an option for a runtime something on the far side can drive (DOR-1614).
+   * Before this existed the scheduler answered it with the literal
+   * `'claude-code'`, which was true while the relay held exactly one runtime and
+   * silently wrong the moment it held more.
+   *
+   * Deliberately narrower than handing out the map or its keys: a caller may ask
+   * about a runtime it names, and may not enumerate or reach the runtimes
+   * themselves. Nothing outside the relay should be calling into a runtime this
+   * map holds — that is what the registry is for.
+   *
+   * @param runtimeType - The runtime type to ask about.
    */
-  registerAgentRuntime(runtimeType: string, runtime: AgentRuntimeLike): void {
-    this.agentRuntimes.set(runtimeType, runtime);
-  }
-
-  /**
-   * Resolve the agent runtime that owns a session.
-   *
-   * Delegates the runtime-type lookup to `runtimeRegistry.getSessionRuntimeType`
-   * (which treats missing rows as legacy `'claude-code'` sessions and
-   * back-fills on first access), then picks the matching entry from
-   * this manager's runtime map. Throws {@link AdapterNotRegisteredError}
-   * if the stored runtime type is not registered — never silently falls
-   * back to another runtime.
-   *
-   * @param sessionId - Session identifier to resolve.
-   */
-  async resolveAgentRuntime(sessionId: string): Promise<AgentRuntimeLike> {
-    const runtimeType = await runtimeRegistry.getSessionRuntimeType(sessionId);
-    const runtime = this.agentRuntimes.get(runtimeType);
-    if (!runtime) throw new AdapterNotRegisteredError(runtimeType, sessionId);
-    return runtime;
-  }
-
-  /** Return the currently registered runtime-type keys (diagnostic). */
-  listRegisteredRuntimeTypes(): string[] {
-    return Array.from(this.agentRuntimes.keys());
+  hasAgentRuntime(runtimeType: string): boolean {
+    return this.agentRuntimes.has(runtimeType);
   }
 
   /** Credential store + manifests used to materialize adapter secrets (DOR-280). */
@@ -832,9 +816,16 @@ export class AdapterManager {
    * `undefined` for misses, so no further disambiguation is needed here.
    *
    * The runtime type is taken from the subject when it is runtime-scoped; legacy
-   * subjects carry no runtime segment and fall back to `'claude-code'`. Resolving
-   * the runtime for a legacy subject would need an async `runtimeRegistry` lookup
-   * that this synchronous, best-effort context builder deliberately avoids.
+   * and mesh-agent subjects carry no runtime segment and fall back to the
+   * registry's default type. Resolving the real runtime for those would need an
+   * async manifest or `runtimeRegistry` lookup that this synchronous,
+   * best-effort context builder deliberately avoids — and nothing routes on this
+   * field: the adapter picks the runtime it drives from the subject itself
+   * (DOR-1614). This is context for the turn, not a routing decision.
+   *
+   * So this field CAN disagree with the runtime the turn actually runs on, for
+   * exactly the subjects that carry no runtime segment. Read it as "the runtime
+   * this context was built under", never as "the runtime that answered".
    */
   buildContext(subject: string): AdapterContext | undefined {
     if (!this.deps.meshCore) return undefined;
@@ -849,7 +840,7 @@ export class AdapterManager {
     return {
       agent: {
         directory: projectPath,
-        runtime: parsed.runtimeType ?? 'claude-code',
+        runtime: parsed.runtimeType ?? runtimeRegistry.getDefaultType(),
       },
     };
   }

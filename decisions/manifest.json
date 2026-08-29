@@ -2,6 +2,26 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260828-175910",
+      "slug": "one-relay-adapter-holding-a-runtime-map-not-a-subclass-per-runtime",
+      "title": "One relay adapter holding a runtime map, not a subclass per runtime",
+      "status": "accepted",
+      "created": "2026-08-28",
+      "extractedFrom": null,
+      "specSlug": "task-runtime-model",
+      "amends": null,
+      "supersedes": "0257",
+      "affects": [
+        "packages/relay/src/adapters/claude-code/claude-code-adapter.ts",
+        "packages/relay/src/lib/subjects.ts",
+        "apps/server/src/services/relay/adapter-manager.ts",
+        "apps/server/src/services/relay/adapter-factory.ts",
+        "apps/server/src/services/tasks/task-scheduler-service.ts",
+        "apps/server/src/services/tasks/relay-dispatch.ts",
+        "apps/server/src/index.ts"
+      ]
+    },
+    {
       "id": "260828-123331",
       "slug": "the-first-hard-tool-filter-lives-at-registry-invoke",
       "title": "The first hard per-agent tool filter lives at registry.invoke, keyed on a grant only a person may write",
@@ -1391,12 +1411,13 @@
       "number": 257,
       "slug": "relay-adapter-generalization-via-shared-abstract-base",
       "title": "Relay Internal Adapter Generalization via Shared Abstract Base",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/adapters/**"]
+      "affects": ["packages/relay/src/adapters/**"],
+      "supersededBy": "260828-175910"
     },
     {
       "number": 256,

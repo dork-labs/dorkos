@@ -32,7 +32,8 @@ import type {
 } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
-import { AdapterNotRegisteredError } from './adapter-manager.js';
+import { runtimeRegistry } from '../core/runtime-registry.js';
+import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
 /** Dependencies for constructing runtime adapters. */
@@ -40,8 +41,8 @@ export interface AdapterFactoryDeps {
   /**
    * Runtime-type → agent-runtime map. The factory picks the correct
    * runtime when constructing a runtime-specific adapter (e.g., the
-   * ClaudeCodeAdapter receives the `'claude-code'` entry). Throws
-   * {@link AdapterNotRegisteredError} if the needed runtime is absent.
+   * ClaudeCodeAdapter receives its default entry). Throws {@link AdapterError}
+   * `NO_AGENT_RUNTIMES` when the map is empty.
    */
   agentRuntimes: Map<string, AgentRuntimeLike>;
   traceStore: TraceStoreLike;
@@ -61,6 +62,49 @@ export interface AdapterFactoryDeps {
    * reads back from; a second one would thread nothing and fail silently.
    */
   inboundBudgets?: InboundTurnBudgets;
+}
+
+/**
+ * The runtime the built-in adapter falls back to for a message that NAMES none.
+ *
+ * A legacy three-token `relay.agent.<sessionId>` subject and a task dispatch
+ * with no `runtime` field both arrive without one, and something has to run
+ * them. Three tiers, narrowing to the honest answer:
+ *
+ * 1. `claude-code` — the adapter config entry's own id and the runtime it was
+ *    born driving, so on any ordinary install this is it.
+ * 2. The registry's default type — the answer on a build where claude-code is
+ *    not registered at all. A test-mode server is exactly that, and the old
+ *    hardcoded lookup left its built-in adapter refusing to start: the map is
+ *    keyed `test-mode` there and nothing ever asked for it, so the relay came
+ *    up silent with one warn line.
+ * 3. The map's first entry — last resort, so a degraded build with some other
+ *    single runtime still answers rather than going quiet.
+ *
+ * @param agentRuntimes - Runtime-type → runtime map held by the AdapterManager.
+ * @param adapterId - The adapter being built, for the error message.
+ * @throws {AdapterError} `NO_AGENT_RUNTIMES` when the map holds no runtimes at
+ *   all. Its own code rather than a runtime-not-registered error: an empty map
+ *   names no runtime and involves no session, and reporting it as "runtime
+ *   'claude-code' missing for session '<adapterId>'" — which it used to — sent
+ *   whoever read the log looking for a session that never existed.
+ */
+function defaultRuntimeFor(
+  agentRuntimes: Map<string, AgentRuntimeLike>,
+  adapterId: string
+): AgentRuntimeLike {
+  const runtime =
+    agentRuntimes.get('claude-code') ??
+    agentRuntimes.get(runtimeRegistry.getDefaultType()) ??
+    agentRuntimes.values().next().value;
+  if (!runtime) {
+    throw new AdapterError(
+      `Cannot build the built-in adapter '${adapterId}': this server registered no agent ` +
+        `runtimes at all. The composition root must pass 'agentRuntimes' to AdapterManager.`,
+      'NO_AGENT_RUNTIMES'
+    );
+  }
+  return runtime;
 }
 
 /** Default status for adapters that are not currently running. */
@@ -104,19 +148,19 @@ export async function createAdapter(
       return adapter;
     }
     case 'claude-code': {
-      const agentManager = deps.agentRuntimes.get('claude-code');
-      if (!agentManager) {
-        throw new AdapterNotRegisteredError('claude-code', config.id);
-      }
+      // What answers a message that names no runtime; the adapter drives the
+      // rest of the map per message (DOR-1614).
+      const agentManager = defaultRuntimeFor(deps.agentRuntimes, config.id);
       return new ClaudeCodeAdapter(config.id, config.config as Record<string, unknown>, {
         agentManager,
+        agentRuntimes: deps.agentRuntimes,
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
         agentSessionStore: deps.agentSessionStore,
-        // What the turn runs on. The literal is the honest key here and not a
-        // guess: this is the `'claude-code'` branch, and the runtime it resolves
-        // against is the one the lookup above took from that exact map entry.
-        resolveExecutionSettings: createTurnExecutionSettingsResolver('claude-code'),
+        // What the turn runs on. One resolver for every runtime: the adapter
+        // resolves which runtime a message belongs to and asks about THAT one,
+        // so the answer is per turn rather than per adapter (DOR-1614).
+        resolveExecutionSettings: createTurnExecutionSettingsResolver(),
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,

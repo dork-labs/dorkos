@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../lib/logger.js';
 import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js';
-import { AdapterNotRegisteredError } from '../services/relay/adapter-manager.js';
 
 /** Global Express error handler that logs the error and returns a JSON response. */
 export function errorHandler(err: Error, _req: Request, res: Response, next: NextFunction): void {
@@ -17,17 +16,20 @@ export function errorHandler(err: Error, _req: Request, res: Response, next: Nex
 
   logger.error('[DorkOS Error]', err.message, err.stack);
 
-  // Runtime / adapter registration mismatches are configuration errors, not
-  // 500s. A session persisted as runtime X on a server that no longer has X
-  // registered (or an adapter-manager without the adapter for X) is a
-  // deployment drift, surface it with a stable error code so the client can
+  // A runtime registration mismatch is a configuration error, not a 500. A
+  // session persisted as runtime X on a server that no longer has X registered
+  // is deployment drift; surface it with a stable error code so the client can
   // render a targeted message instead of a generic failure toast.
-  if (err instanceof RuntimeNotRegisteredError || err instanceof AdapterNotRegisteredError) {
-    const runtime = err instanceof RuntimeNotRegisteredError ? err.runtime : err.runtimeType;
+  //
+  // The relay's own version of this no longer arrives here. It is answered where
+  // it happens — the built-in adapter refuses the delivery by name and reports
+  // it on the adapter status (DOR-1614) — because it belongs to a bus message,
+  // not to an HTTP request there is a response to write.
+  if (err instanceof RuntimeNotRegisteredError) {
     res.status(503).json({
-      error: `Session's runtime is not available on this server (runtime: ${runtime})`,
+      error: `Session's runtime is not available on this server (runtime: ${err.runtime})`,
       code: 'RUNTIME_NOT_AVAILABLE',
-      runtime,
+      runtime: err.runtime,
     });
     return;
   }

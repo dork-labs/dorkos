@@ -34,17 +34,41 @@ import {
 import { runtimeRegistry } from '../core/runtime-registry.js';
 
 /**
- * The one runtime whose scheduled runs may travel the message bus, in v1.
+ * Whether the relay can run a turn on this runtime — asked per run, answered by
+ * the relay itself (DOR-1614).
  *
- * The relay's adapter map holds exactly one adapter and it speaks the Claude
- * Agent SDK's session and approval vocabulary (`packages/relay/src/adapters/
- * claude-code/`), so there is nothing on the far side that could run a Codex or
- * OpenCode turn. Those dispatch DIRECT instead — same run, same row, same
- * accounting, executed in this process. DOR-1614 adds the missing adapters and
- * widens the predicate in {@link TaskSchedulerService} to "any runtime with a
- * registered relay adapter".
+ * This was the literal `'claude-code'`, and that was honest while the relay held
+ * exactly one runtime: a codex or opencode run handed to the bus would have been
+ * run by the wrong program or by none, so those went DIRECT. The relay now holds
+ * every registered runtime and picks per message, so the question is no longer
+ * "is it claude-code" but "is it one the relay actually has" — and only the relay
+ * can answer that. `AdapterManager.hasAgentRuntime` is the production answer.
+ *
+ * A predicate rather than a set for two reasons. The relay is built after the
+ * scheduler's collaborators and can be rebuilt or absent entirely, so the answer
+ * has to be read at dispatch time, not captured at construction. And a predicate
+ * is the whole question: the scheduler must not enumerate the relay's runtimes
+ * or reach the runtimes themselves.
+ *
+ * @param runtimeType - The runtime this run resolved to.
  */
-const RELAY_RUNTIME = 'claude-code';
+export type RelayRuntimePredicate = (runtimeType: string) => boolean;
+
+/**
+ * What a caller that wired a relay but never said which runtimes it holds means:
+ * the v1 answer, claude-code and nothing else.
+ *
+ * The same compat reading `normalizeAgentRuntimes` gives a bare runtime that
+ * declares no `type`, and for the same reason — it is what such a caller has
+ * always meant, so honouring it keeps every existing relay caller routing
+ * exactly as it did. Defaulting to "holds nothing" was measured instead: it sent
+ * every relay test's run down the direct path, which is safe but silently makes
+ * those tests stop testing the bus.
+ *
+ * Production never takes this default; `index.ts` passes
+ * `AdapterManager.hasAgentRuntime`.
+ */
+const V1_RELAY_RUNTIME: RelayRuntimePredicate = (runtimeType) => runtimeType === 'claude-code';
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -243,6 +267,16 @@ export interface SchedulerDeps {
   config: SchedulerConfig;
   /** Optional RelayCore instance for dispatching runs via the Relay message bus. */
   relay?: RelayCore | null;
+  /**
+   * Whether the relay holds a runtime, asked per run (DOR-1614). See
+   * {@link RelayRuntimePredicate}.
+   *
+   * **Absent means the v1 answer — claude-code and nothing else** — so every
+   * caller that wired a relay before this field existed routes exactly as it
+   * did. See {@link V1_RELAY_RUNTIME}. Production (`index.ts`) passes
+   * `AdapterManager.hasAgentRuntime`.
+   */
+  relayHoldsRuntime?: RelayRuntimePredicate;
   /** Optional MeshCore instance for resolving agent CWDs from agent IDs. */
   meshCore?: MeshCore | null;
   /** Optional ActivityService for emitting activity events on run completion. */
@@ -281,6 +315,12 @@ export class TaskSchedulerService {
   private runtimes: SchedulerRuntimes;
   private config: SchedulerConfig;
   private relay: RelayCore | null;
+  /**
+   * Whether the relay holds a given runtime. Defaults to the v1 answer, so a
+   * caller that says nothing routes as it always did — see
+   * {@link SchedulerDeps.relayHoldsRuntime}.
+   */
+  private relayHoldsRuntime: RelayRuntimePredicate;
   private meshCore: MeshCore | null;
   private activityService: ActivityService | null;
   /**
@@ -324,6 +364,7 @@ export class TaskSchedulerService {
       this.runtimes = storeOrDeps.runtimes;
       this.config = storeOrDeps.config;
       this.relay = storeOrDeps.relay ?? null;
+      this.relayHoldsRuntime = storeOrDeps.relayHoldsRuntime ?? V1_RELAY_RUNTIME;
       this.meshCore = storeOrDeps.meshCore ?? null;
       this.activityService = storeOrDeps.activityService ?? null;
       this.leaderLock =
@@ -348,6 +389,9 @@ export class TaskSchedulerService {
       this.runtimes = singleRuntimeSource(agentManager!);
       this.config = config!;
       this.relay = relay ?? null;
+      // Positional form is tests only; it names no relay runtimes, so it takes
+      // the same v1 reading as a deps object that omits the predicate.
+      this.relayHoldsRuntime = V1_RELAY_RUNTIME;
       this.meshCore = meshCore ?? null;
       this.activityService = null;
       this.leaderLock = null;
@@ -984,14 +1028,41 @@ export class TaskSchedulerService {
           model: execution.settings.model ?? null,
         });
 
-        // **Claude Code only, for now.** The relay's adapter map holds exactly
-        // one adapter and it speaks the Claude Agent SDK's vocabulary, so a
-        // codex or opencode run handed to the bus would be run by the wrong
-        // adapter or by none. Those go DIRECT until DOR-1614 lands per-runtime
-        // relay adapters; widen this predicate to "has a registered relay
-        // adapter" there, do not delete it.
+        // **Only a runtime the relay can actually drive** (DOR-1614). This read
+        // `execution.runtimeType === 'claude-code'` while the relay held one
+        // runtime; it now asks the relay itself, so a codex or opencode task
+        // rides the bus exactly when there is something on the far side to run
+        // it, and goes DIRECT — same run, same row, same accounting, executed in
+        // this process — when there is not.
+        //
+        // The far side refuses a runtime it does not hold rather than
+        // substituting one, so a false negative here costs nothing (the run
+        // still happens, in process) while a false positive would strand it.
+        // That asymmetry is why production answers "no" for a relay that never
+        // built (`index.ts` reads the live `adapterManager` through `?? false`)
+        // rather than guessing. It is NOT why the predicate is optional — an
+        // absent predicate takes the v1 reading instead, see
+        // {@link V1_RELAY_RUNTIME}.
+        //
+        // KNOWN GAP, accepted as parity rather than fixed here. The production
+        // predicate answers from a map built in the AdapterManager constructor,
+        // so it says YES for a built-in adapter that is no longer LIVE: one
+        // disabled through `POST /api/relay/adapters/:id/disable`, or one whose
+        // non-awaited start pass failed. Such a run publishes to a subject
+        // nobody claims, comes back `deliveredTo === 0`, and fails with "No
+        // receiver for the scheduled run" — where the direct path would have run
+        // it. Widening the map widens that blast radius from claude-code to
+        // EVERY runtime the map holds. It is shipped anyway because the same
+        // failure already exists on main today for claude-code tasks in exactly
+        // those states, so this is parity, not a new class of breakage. A
+        // lowered relay turn ceiling produces the same "No receiver" shape for
+        // the same reason (DOR-791), and belongs to the same follow-up.
+        // Tightening the predicate to adapter LIVENESS — asking the registry
+        // (`registry.getBySubject`) whether something is actually subscribed,
+        // rather than asking the map whether a runtime was ever registered — is
+        // deliberate follow-up work, not an oversight.
         const viaRelay =
-          isRelayEnabled() && this.relay !== null && execution.runtimeType === RELAY_RUNTIME;
+          isRelayEnabled() && this.relay !== null && this.relayHoldsRuntime(execution.runtimeType);
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         try {
           const result = viaRelay

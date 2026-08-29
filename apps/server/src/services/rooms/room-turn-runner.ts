@@ -37,7 +37,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
-import { readManifest } from '@dorkos/shared/manifest';
 import {
   isBlockingInteractionEvent,
   type BlockingInteractionEventType,
@@ -48,6 +47,7 @@ import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
 import { getRoomAttachmentStore, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import {
   dispatchMessage,
   getOrCreateProjector,
@@ -212,7 +212,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // up; the one it was meant for is the turn that was already running when
       // it was pressed, never this one.
       stopsWaitingForATurn.delete(sessionId);
-      const runtimeType = await resolveRoomRuntimeType(request.agentPath);
+      const runtimeType = await resolveAgentRuntimeType(request.agentPath);
       // Resolve the runtime WITHOUT writing anything. `persistSessionRuntime`
       // used to run here, before the turn was known to have started, so a
       // runtime that reliably throws left one orphan `session_metadata` row (and
@@ -563,7 +563,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // rather than from the session's registry row: a first turn's row is
       // written after the turn starts, so a halt arriving early would otherwise
       // find nothing to stop.
-      const runtime = runtimeRegistry.get(await resolveRoomRuntimeType(agentPath));
+      const runtime = runtimeRegistry.get(await resolveAgentRuntimeType(agentPath));
       // No runtime is no stop: nothing was reached, and saying so is the whole
       // point of answering at all (DOR-1425).
       if (!runtime) return false;
@@ -924,30 +924,4 @@ function collectReply(
       stopWaitingOnEverything();
     },
   };
-}
-
-/**
- * Which runtime an agent's room turn should run on: its manifest's preference
- * when that runtime is registered in this process, otherwise the default.
- *
- * Mirrors `POST /api/sessions/:id/messages`, deliberately including the soft
- * fallback — a test-mode server registers only `test-mode` while every manifest
- * on disk says `claude-code`, and without the fallback no room could ever
- * trigger anything there.
- *
- * Exported because the binding repair sweep
- * (`room-session-convergence.ts`) has to ask the identical question — "which
- * runtime owns this room's session?" — and a second copy of the fallback is a
- * second copy that can disagree.
- *
- * @param agentPath - The agent's project directory.
- */
-export async function resolveRoomRuntimeType(agentPath: string): Promise<string> {
-  try {
-    const manifest = await readManifest(agentPath);
-    if (manifest?.runtime && runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
-  } catch {
-    // No manifest, or an unreadable one. The default is the right answer.
-  }
-  return runtimeRegistry.getDefaultType();
 }
