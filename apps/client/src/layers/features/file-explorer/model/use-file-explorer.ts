@@ -55,6 +55,7 @@ const EMPTY_SOURCE: FileExplorerSource = {
   provenance: false,
   filtersHidden: true,
   preview: 'canvas',
+  editable: false,
   list: () => Promise.resolve({ entries: [] }),
 };
 

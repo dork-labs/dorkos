@@ -23,6 +23,7 @@ import {
   pendingWorkLabel,
   pendingWorkNames,
   pendingWorkSummary,
+  roomRepoStatusQueryOptions,
 } from '../model/pending-work';
 import { watchRoomEntries } from '../model/room-entry-watch';
 
@@ -41,25 +42,22 @@ export function PendingWorkBadge({ roomId }: PendingWorkBadgeProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const status = useQuery({
-    queryKey: roomKeys.repoStatus(roomId),
-    // **A refusal resolves to `null` rather than rejecting**, and the reason is
-    // that the tree directly below this badge is asking the same server about
-    // the same room. Whatever went wrong — the room is unreachable, this machine
-    // has no git — the explorer reports it loudly, in the place with the room
-    // for a sentence and a retry. A badge that went red for the same cause would
-    // be one fault reported twice, in a header where nobody can act on it.
-    //
-    // What it must never do is claim everything is merged when it does not know.
-    // It does not: `null` renders NOTHING, exactly as "nobody has unmerged work"
-    // does. The badge only ever makes a positive claim.
-    queryFn: () => transport.readRoomRepoStatus(roomId).catch(() => null),
-    retry: false,
-    // Long enough that opening a room panel twice in a minute is one request,
-    // short enough that a badge is never stale for a whole session. The stream
-    // below is what makes it prompt; this is only the floor.
-    staleTime: 30_000,
-  });
+  // **A failure is never reported here**, and the reason is that the tree
+  // directly below this badge is asking the same server about the same room.
+  // Whatever went wrong — the room is unreachable, this machine has no git —
+  // the explorer reports it loudly, in the place with the room for a sentence
+  // and a retry. A badge that went red for the same cause would be one fault
+  // reported twice, in a header where nobody can act on it.
+  //
+  // What it must never do is claim everything is merged when it does not know.
+  // It does not: anything but a real answer renders NOTHING, exactly as "nobody
+  // has unmerged work" does. The badge only ever makes a positive claim.
+  //
+  // The shared query is what keeps that true without also flattening the two
+  // non-answers into one: it resolves rather than rejects, so nothing is
+  // logged, and it still says WHICH — which the dirty-main warning beside this
+  // badge has to know and this one does not.
+  const status = useQuery(roomRepoStatusQueryOptions(transport, roomId));
 
   // The same signal the file tree refreshes on, at the same rate: a merge is
   // announced in the room as an entry, and both surfaces are describing the
@@ -73,7 +71,10 @@ export function PendingWorkBadge({ roomId }: PendingWorkBadgeProps) {
     [queryClient, roomId]
   );
 
-  const pending = useMemo(() => (status.data ? pendingWorkIn(status.data) : []), [status.data]);
+  const pending = useMemo(
+    () => (status.data?.kind === 'ok' ? pendingWorkIn(status.data.status) : []),
+    [status.data]
+  );
   const names = pendingWorkNames(pending);
   const label = pendingWorkLabel(pending);
   if (!label) return null;

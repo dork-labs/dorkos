@@ -41,6 +41,12 @@ export function createSessionCwdSource(deps: SessionCwdSourceDeps): FileExplorer
     // is more than a client could work out from names alone.
     filtersHidden: true,
     preview: 'canvas',
+    // Not here, and not because a session's files are read-only — they are the
+    // most editable thing in the app. They are edited in the CANVAS, which is
+    // where `preview: 'canvas'` sends them, and which already owns that file's
+    // autosave, its conflict handling and its edit-protection against agent
+    // pushes. A second editor over the same bytes would be two of all three.
+    editable: false,
     list(path: string, options: { showHidden: boolean }): Promise<ExplorerListing> {
       return transport.readFileTree(cwd, {
         path: path === '' ? undefined : path,

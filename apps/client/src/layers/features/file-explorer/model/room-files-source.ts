@@ -14,10 +14,19 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomFileEntry } from '@dorkos/shared/room-files';
+import { ROOM_FILE_CHANGED_CODE, type RoomFileEntry } from '@dorkos/shared/room-files';
+import { roomKeys } from '@/layers/entities/room';
 import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
+import { roomFileConflictOf, saveRefusalMessage } from '../lib/save-errors';
 import { watchRoomEntries } from './room-entry-watch';
-import type { ExplorerEntry, ExplorerFile, ExplorerListing, FileExplorerSource } from './source';
+import type {
+  ExplorerEntry,
+  ExplorerFile,
+  ExplorerListing,
+  ExplorerSaveInput,
+  ExplorerSaveOutcome,
+  FileExplorerSource,
+} from './source';
 
 /** What {@link createRoomFilesSource} needs. */
 export interface RoomFilesSourceDeps {
@@ -83,6 +92,11 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     // the plumbing is this client's job here.
     filtersHidden: false,
     preview: 'inline',
+    // The tree is not writable and the FILES are — the opposite pair from a
+    // session, and both halves are true at once. Merging is what adds and
+    // removes entries here; a person's own edits go through §3.10's door, one
+    // save to one commit with their name on it.
+    editable: true,
     async list(path: string): Promise<ExplorerListing> {
       try {
         const listing = await transport.readRoomFiles(roomId, path === '' ? undefined : path);
@@ -104,6 +118,10 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
           path: file.path,
           size: file.size,
           lastCommit: file.lastCommit,
+          // What a later save checks itself against. Carried from the read that
+          // opened the file rather than read again at save time: the point of
+          // the lock is that it names the version the PERSON saw.
+          commit: file.commit,
           body:
             file.body.kind === 'text'
               ? { kind: 'text', text: file.body.text }
@@ -114,7 +132,60 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
       } catch (error) {
         const reason = NOT_READABLE_COPY.get(errorCodeOf(error) ?? '');
         if (reason === undefined) throw error;
-        return { path, size: 0, lastCommit: null, body: { kind: 'not-readable', reason } };
+        return {
+          path,
+          size: 0,
+          lastCommit: null,
+          commit: null,
+          body: { kind: 'not-readable', reason },
+        };
+      }
+    },
+    async save(input: ExplorerSaveInput): Promise<ExplorerSaveOutcome> {
+      try {
+        const saved = await transport.saveRoomFile(roomId, {
+          path: input.path,
+          baseCommit: input.baseCommit,
+          text: input.text,
+        });
+        return {
+          status: 'saved',
+          commit: saved.commit,
+          lastCommit: saved.lastCommit,
+          committed: saved.committed,
+        };
+      } catch (error) {
+        const code = errorCodeOf(error);
+        // The one refusal a person ANSWERS rather than acknowledges. Nothing was
+        // written, and the room hands back where it is now — which is both what
+        // "open theirs" re-reads at and what "save mine over theirs" sends back
+        // as the base.
+        if (code === ROOM_FILE_CHANGED_CODE) {
+          const conflict = roomFileConflictOf(error);
+          // A `FILE_CHANGED` with no parsed conflict on it cannot be offered as
+          // a choice — there is no commit to re-read at or to save against — so
+          // it is told as a refusal rather than as a dialog with dead buttons.
+          if (conflict !== null) {
+            return { status: 'conflict', commit: conflict.commit, lastCommit: conflict.lastCommit };
+          }
+          return {
+            status: 'refused',
+            reason:
+              'Somebody changed this file while you were editing it, so nothing was saved. Close this and open it again to see their version.',
+          };
+        }
+        // The room's copy has changed since the warning above the files was
+        // last drawn — this refusal is the proof. Re-ask now, so the sentence
+        // the person is about to read has something to point at.
+        if (code === 'MAIN_CHECKOUT_DIRTY') {
+          void queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) });
+        }
+        const reason = saveRefusalMessage(code);
+        // A refusal nobody wrote copy for is a bug, not a rule. Rethrowing is
+        // what puts it in front of somebody who can fix it, rather than dressing
+        // it up as an ordinary answer.
+        if (reason === undefined) throw error;
+        return { status: 'refused', reason };
       }
     },
     events(onChange: () => void): () => void {

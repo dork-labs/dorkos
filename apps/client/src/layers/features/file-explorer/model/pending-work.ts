@@ -9,7 +9,69 @@
  *
  * @module features/file-explorer/model/pending-work
  */
+import type { Transport } from '@dorkos/shared/transport';
 import type { RoomRepoStatus } from '@dorkos/shared/room-repo';
+import { roomKeys } from '@/layers/entities/room';
+import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
+
+/**
+ * What asking a room where its files stand can turn out to be.
+ *
+ * Three outcomes rather than a value plus a rejection, because two of the three
+ * are ordinary and only one of them is a fault — and the two surfaces reading
+ * this need to tell them apart differently. **Nothing here ever rejects**, so a
+ * repo-less room (which is most rooms) drops no breadcrumb into somebody's next
+ * bug report, and neither does a room on a machine without git.
+ */
+export type RoomRepoStatusRead =
+  /** The room answered. */
+  | { kind: 'ok'; status: RoomRepoStatus }
+  /** The room has no files of its own — the ordinary answer for most rooms. */
+  | { kind: 'absent' }
+  /** Something went wrong and this client does not know where the room stands. */
+  | { kind: 'unavailable' };
+
+/**
+ * How one room's repo status is fetched and cached — the single definition, so
+ * that everything asking the same question shares one cache entry.
+ *
+ * Two surfaces read it: the pending-work badge in the section header, and the
+ * dirty-main warning above the tree. They ask about the same room at the same
+ * moment, so a second key here would be a second `GET /repo/status` per panel —
+ * and worse, a save refused `MAIN_CHECKOUT_DIRTY` would refresh one of them and
+ * leave the other saying something else about the same room.
+ *
+ * **The failure is absorbed here rather than at either reader, and it is
+ * absorbed into a VALUE rather than a `null`.** A rejection would be reported
+ * twice — the tree directly below is asking the same server about the same room
+ * and says so loudly, with a retry — while collapsing everything to `null`
+ * would leave the two readers unable to tell "this room has no files" from "I
+ * could not find out", which is the one distinction the warning exists to draw.
+ *
+ * @param transport - The port the status is read through.
+ * @param roomId - The room.
+ */
+export function roomRepoStatusQueryOptions(transport: Transport, roomId: string) {
+  return {
+    queryKey: roomKeys.repoStatus(roomId),
+    queryFn: async (): Promise<RoomRepoStatusRead> => {
+      try {
+        return { kind: 'ok', status: await transport.readRoomRepoStatus(roomId) };
+      } catch (error) {
+        return errorCodeOf(error) === ROOM_HAS_NO_REPO_CODE
+          ? { kind: 'absent' }
+          : { kind: 'unavailable' };
+      }
+    },
+    // Nothing above can reject, so this only ever governs a bug in the function
+    // itself — where three silent retries would be three of the same bug.
+    retry: false,
+    // Long enough that opening a room panel twice in a minute is one request,
+    // short enough that neither surface is stale for a whole session. The room
+    // stream is what makes them prompt; this is only the floor.
+    staleTime: 30_000,
+  };
+}
 
 /** One thing in a room's files that somebody has not merged yet. */
 export interface PendingWork {

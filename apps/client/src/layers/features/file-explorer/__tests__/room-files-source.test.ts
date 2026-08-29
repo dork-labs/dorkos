@@ -216,3 +216,104 @@ describe('the room files source, watching the room', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+describe('saving through the room files source', () => {
+  it('declares that the FILES are editable even though the tree is not', () => {
+    const { source } = build();
+    // The opposite pair from a session's, and both halves are true at once:
+    // merging is what adds and removes entries here, while a person's own edit
+    // goes through §3.10's door.
+    expect(source.writable).toBe(false);
+    expect(source.editable).toBe(true);
+    expect(source.save).toBeTypeOf('function');
+  });
+
+  it('carries the commit a read answered with, which is what a save locks against', async () => {
+    const { transport, source } = build();
+    transport.readRoomFileContent = vi.fn().mockResolvedValue({
+      path: 'ROOM.md',
+      commit: 'aaa1111',
+      size: 3,
+      lastCommit: null,
+      body: { kind: 'text', encoding: 'utf-8', text: 'hi\n' },
+    });
+    await expect(source.read!('ROOM.md')).resolves.toMatchObject({ commit: 'aaa1111' });
+  });
+
+  it('turns a lost race into a choice, with the room’s current commit on it', async () => {
+    const { transport, source } = build();
+    transport.saveRoomFile = vi.fn().mockRejectedValue(
+      Object.assign(new Error('changed'), {
+        code: 'FILE_CHANGED',
+        status: 409,
+        body: {
+          error: 'changed',
+          code: 'FILE_CHANGED',
+          conflict: {
+            path: 'ROOM.md',
+            commit: 'ddd4444',
+            lastCommit: { sha: 'b', author: 'Ana', at: '2026-08-28T00:00:00.000Z', subject: 's' },
+          },
+        },
+      })
+    );
+    await expect(
+      source.save!({ path: 'ROOM.md', baseCommit: 'aaa1111', text: 'x' })
+    ).resolves.toMatchObject({ status: 'conflict', commit: 'ddd4444' });
+  });
+
+  it('refuses to offer a choice it cannot honour', async () => {
+    const { transport, source } = build();
+    // A `FILE_CHANGED` whose body did not survive the trip has no commit to
+    // re-read at and none to save against, so offering the two buttons would be
+    // offering two dead ends.
+    transport.saveRoomFile = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('changed'), { code: 'FILE_CHANGED', status: 409 })
+      );
+    const outcome = await source.save!({ path: 'ROOM.md', baseCommit: 'a1b2c3d', text: 'x' });
+    expect(outcome.status).toBe('refused');
+  });
+
+  it('turns each refusal it knows into a sentence, and rethrows the ones it does not', async () => {
+    const { transport, source } = build();
+    for (const code of [
+      'REQUEST_TOO_LARGE',
+      'FILE_TOO_LARGE',
+      'MAIN_CHECKOUT_DIRTY',
+      'PEOPLE_ONLY',
+    ]) {
+      transport.saveRoomFile = vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error(code), { code, status: 409 }));
+      const outcome = await source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' });
+      expect(outcome).toMatchObject({ status: 'refused' });
+      expect((outcome as { reason: string }).reason.length).toBeGreaterThan(0);
+    }
+
+    // A refusal nobody wrote copy for is a bug, not a rule: dressing it up as an
+    // ordinary answer is how a bug becomes invisible.
+    transport.saveRoomFile = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('boom'), { code: 'SOMETHING_NEW', status: 500 }));
+    await expect(source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' })).rejects.toThrow(
+      'boom'
+    );
+  });
+
+  it('re-asks the room where it stands when a save says the room is stuck', async () => {
+    const { transport, queryClient, source } = build();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    transport.saveRoomFile = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('dirty'), { code: 'MAIN_CHECKOUT_DIRTY', status: 409 })
+      );
+    await source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' });
+    // The same cache entry the pending-work badge reads (DOR-1599's key), not a
+    // second one: two keys would mean the warning and the badge could disagree
+    // about the room they are both describing.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: roomKeys.repoStatus(ROOM_ID) });
+  });
+});

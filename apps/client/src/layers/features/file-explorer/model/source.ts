@@ -118,8 +118,46 @@ export interface ExplorerFile {
   size: number;
   /** Who last touched it, when the source can say. */
   lastCommit?: ExplorerCommit | null;
+  /**
+   * The version this copy came from, for a source that has versions.
+   *
+   * Not decoration: it is the whole of the optimistic lock a save carries back
+   * (spec §3.10). Absent on a source that reads a live filesystem, where there
+   * is no version to name.
+   */
+  commit?: string | null;
   /** The contents, or why they are not. */
   body: ExplorerFileBody;
+}
+
+/**
+ * How a save ended.
+ *
+ * Three outcomes rather than one plus two rejections, for the reason
+ * {@link ExplorerFileBody} has three: "somebody else changed it" and "that is
+ * too big for this room" are facts a person acts on, not failures of the
+ * request. Only something nobody wrote copy for is left to throw.
+ */
+export type ExplorerSaveOutcome =
+  /** It landed. `commit` is the next save's base. */
+  | { status: 'saved'; commit: string; lastCommit: ExplorerCommit | null; committed: boolean }
+  /**
+   * The file moved under the editor and NOTHING was written. `commit` is where
+   * the place is now — re-read at it to take theirs, or send it back as the
+   * base to save yours over it.
+   */
+  | { status: 'conflict'; commit: string; lastCommit: ExplorerCommit | null }
+  /** It was refused for a reason the person can be told in one sentence. */
+  | { status: 'refused'; reason: string };
+
+/** What a save sends. */
+export interface ExplorerSaveInput {
+  /** The file, relative to the source's root. */
+  path: string;
+  /** The version the editor's copy came from — {@link ExplorerFile.commit}. */
+  baseCommit: string | null;
+  /** The file's whole new contents. */
+  text: string;
 }
 
 /** Where the explorer's entries come from, and what may be done with them. */
@@ -167,6 +205,28 @@ export interface FileExplorerSource {
    * which have neither, preview in place instead.
    */
   readonly preview: 'canvas' | 'inline';
+  /**
+   * Whether a file opened from this source may be changed and saved back
+   * (spec `project-rooms` §3.10).
+   *
+   * Separate from {@link writable}, which is about the TREE — creating,
+   * renaming, moving and deleting entries. A room's files are the opposite pair
+   * from a session's: their contents are a person's to edit, while the shape of
+   * the tree is what merging changes.
+   *
+   * Declared rather than inferred from `save` being present, for the reason the
+   * module header gives: a call site must not have to probe.
+   */
+  readonly editable: boolean;
+  /**
+   * Save one file, for an {@link editable} source. Absent otherwise.
+   *
+   * Refusals a person can act on come back as an outcome; anything else
+   * rejects.
+   *
+   * @param input - The file, the version it was read at, and its new contents.
+   */
+  save?(input: ExplorerSaveInput): Promise<ExplorerSaveOutcome>;
   /**
    * List one directory.
    *

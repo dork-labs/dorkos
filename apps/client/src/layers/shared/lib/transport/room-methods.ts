@@ -44,7 +44,11 @@ import type {
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from '@dorkos/shared/room-files';
-import type { RoomRepoStatus } from '@dorkos/shared/room-repo';
+import type {
+  RoomMainRepairRequest,
+  RoomMainRepairResult,
+  RoomRepoStatus,
+} from '@dorkos/shared/room-repo';
 import type { UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
 import { SSE_RESILIENCE } from '../constants';
@@ -193,6 +197,20 @@ export function createRoomMethods(baseUrl: string) {
         baseUrl,
         `/rooms/${encodeURIComponent(id)}/files/content`,
         { method: 'PUT', body: JSON.stringify(req) }
+      );
+    },
+
+    /**
+     * Keep or discard the changes somebody made outside DorkOS.
+     *
+     * The operator's door out of `MAIN_CHECKOUT_DIRTY`; a discard names its
+     * files, and the server refuses any name it is not reporting right now.
+     */
+    repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult> {
+      return fetchJSON<RoomMainRepairResult>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/repo/main/repair`,
+        { method: 'POST', body: JSON.stringify(req) }
       );
     },
 

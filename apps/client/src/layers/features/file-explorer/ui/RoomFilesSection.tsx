@@ -26,6 +26,7 @@ import { ROOT_KEY } from '../model/tree';
 import { FileExplorer } from './FileExplorer';
 import { HiddenEntriesToggle } from './HiddenEntriesToggle';
 import { PendingWorkBadge } from './PendingWorkBadge';
+import { RoomMainWarning } from './RoomMainWarning';
 
 /** What {@link RoomFilesSection} browses. */
 export interface RoomFilesSectionProps {
@@ -88,6 +89,13 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
         </div>
         <HiddenEntriesToggle />
       </header>
+      {/* Above the tree, not inside it: what it says is true of the whole
+          checkout rather than of any file in the listing, and while it is up
+          nothing in this room can be saved — so it has to be readable before a
+          person opens a file, not after they have typed into one. It draws
+          nothing at all for a room whose files are as DorkOS left them, which
+          is nearly every room nearly always. */}
+      <RoomMainWarning roomId={roomId} />
       {/* Bounded rather than free-growing: this is one section of a scrolling
           panel, so a repo with three hundred files must not push the roster and
           the limits off the bottom of it.

@@ -646,6 +646,98 @@ export class RoomsApi {
     await rm(this.agentRoot, { recursive: true, force: true }).catch(() => {});
   }
 
+  /**
+   * Give a room files of its own, and put one file in them.
+   *
+   * Two calls rather than one because that is what the product does: enabling a
+   * repo is an operator act (`POST /repo`) and writing a file is a save
+   * (`PUT /files/content`), and a test that faked either would be testing its
+   * own fixture rather than the room.
+   *
+   * **Seeded through the API, never through the UI**, for the reason every
+   * other seed here is: a test about how a room's files RENDER should fail when
+   * the rendering breaks, not when the save flow does — and the save flow has
+   * its own test that drives the real buttons.
+   *
+   * @param roomId - The room to give files to.
+   * @param files - Path-to-contents, written in the order given; each is one
+   *   commit, exactly as a person's save is.
+   * @returns The commit the last write landed on.
+   */
+  async enableRepo(roomId: string, files: Record<string, string> = {}): Promise<string | null> {
+    const enabled = await this.request.post(`/api/rooms/${roomId}/repo`, { data: {} });
+    if (!enabled.ok()) {
+      throw new Error(`Could not give room ${roomId} files: ${await enabled.text()}`);
+    }
+    // `undefined`, not `null`, and the difference is a real refusal: `null`
+    // means "this file does not exist yet", and enabling a repo already
+    // committed a `ROOM.md` — so a seed that asserted `null` for it was told
+    // FILE_CHANGED by the very lock this suite exists to test. Each write looks
+    // the current commit up for itself.
+    let commit: string | undefined;
+    for (const [path, text] of Object.entries(files)) {
+      commit = await this.writeRoomFile(roomId, path, text);
+    }
+    return commit ?? null;
+  }
+
+  /**
+   * Save one of a room's files as the operator, the way the product does.
+   *
+   * `baseCommit` defaults to whatever the file is at right now, which is what a
+   * seed wants; a test staging a CONFLICT passes the commit it wants to race
+   * against, or `null` for a file that does not exist yet.
+   *
+   * @param roomId - The room.
+   * @param path - The file, relative to the repo root.
+   * @param text - Its whole new contents.
+   * @param baseCommit - The commit to save against, or `undefined` to look it up.
+   * @returns The commit `main` points at afterwards.
+   */
+  async writeRoomFile(
+    roomId: string,
+    path: string,
+    text: string,
+    baseCommit?: string | null
+  ): Promise<string> {
+    const base = baseCommit === undefined ? await this.roomFileCommit(roomId, path) : baseCommit;
+    const res = await this.request.put(`/api/rooms/${roomId}/files/content`, {
+      data: { path, baseCommit: base, text },
+    });
+    if (!res.ok()) throw new Error(`Could not save ${path} in ${roomId}: ${await res.text()}`);
+    return ((await res.json()) as { commit: string }).commit;
+  }
+
+  /**
+   * Read one of a room's files back, to check what the UI actually saved.
+   *
+   * @param roomId - The room.
+   * @param path - The file.
+   * @returns Its text, or `null` when the room has no such file.
+   */
+  async readRoomFile(roomId: string, path: string): Promise<string | null> {
+    const res = await this.request.get(
+      `/api/rooms/${roomId}/files/content?path=${encodeURIComponent(path)}`
+    );
+    if (!res.ok()) return null;
+    const file = (await res.json()) as { body: { kind: string; text?: string } };
+    return file.body.kind === 'text' ? (file.body.text ?? null) : null;
+  }
+
+  /**
+   * The commit a file is currently at, or `null` when it is not there yet.
+   *
+   * @param roomId - The room.
+   * @param path - The file.
+   */
+  private async roomFileCommit(roomId: string, path: string): Promise<string | null> {
+    const res = await this.request.get(
+      `/api/rooms/${roomId}/files/content?path=${encodeURIComponent(path)}`
+    );
+    if (!res.ok()) return null;
+    return ((await res.json()) as { commit: string }).commit;
+  }
+
   /** Create a room of any kind and remember it for teardown. */
   private async createRoom(data: Record<string, unknown>): Promise<SeededRoom> {
     const res = await this.request.post('/api/rooms', { data });

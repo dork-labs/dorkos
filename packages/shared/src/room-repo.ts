@@ -257,6 +257,17 @@ export const RoomStrayChangeSchema = z.object({
 export type RoomStrayChange = z.infer<typeof RoomStrayChangeSchema>;
 
 /**
+ * How many stray changes one status answer carries — the "fifty" the schemas
+ * above and below describe in prose.
+ *
+ * Here rather than in the server, because both ends depend on it: the server
+ * slices its list to this, and a reader that trusted a longer list would draw
+ * rows it will never be sent while one that trusted a shorter one would hide
+ * changes it was given. `strayCount` still answers how many there really are.
+ */
+export const MAX_REPORTED_ROOM_STRAYS = 50;
+
+/**
  * What the room's own copy looks like on disk — the dirty-main warning
  * (spec §3.10).
  *
@@ -380,3 +391,25 @@ export const RoomMainRepairRequestSchema = z.discriminatedUnion('action', [
 
 /** What a repair asks for. See {@link RoomMainRepairRequestSchema}. */
 export type RoomMainRepairRequest = z.infer<typeof RoomMainRepairRequestSchema>;
+
+/**
+ * What a repair did.
+ *
+ * `clean` is the part a screen has to read, and it is not the same question as
+ * "did this work": discarding some of the stray changes and not others is a
+ * legitimate thing to do, and it leaves the room paused. The answer says so
+ * rather than letting a caller assume saving has resumed.
+ */
+export const RoomMainRepairResultSchema = z.object({
+  /** Which action ran. */
+  action: z.enum(['commit', 'discard']),
+  /** The commit that kept the changes, or `null` for a discard. */
+  commit: z.string().nullable(),
+  /** How many paths it dealt with. */
+  paths: z.number().int().nonnegative(),
+  /** Whether the room's files are clean — and saving unpaused — now. */
+  clean: z.boolean(),
+});
+
+/** What a repair did. See {@link RoomMainRepairResultSchema}. */
+export type RoomMainRepairResult = z.infer<typeof RoomMainRepairResultSchema>;
