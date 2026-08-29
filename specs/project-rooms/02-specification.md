@@ -2,12 +2,13 @@
 slug: project-rooms
 id: 260827-202452
 created: 2026-08-27
-status: specified
+status: implemented
 ---
 
 # Project Rooms — specification
 
-**Status:** Approved (operator delegated remaining decisions, 2026-08-27)
+**Status:** Implemented — P0 through P3 shipped 2026-08-28/29 (DOR-1589 … DOR-1602). P4 is
+follow-up work outside this programme.
 **Author:** Claude (directed by Dorian)
 **Date:** 2026-08-27
 **Tracker:** [DOR-1588](https://linear.app/dorkspace/issue/DOR-1588) - Project Rooms umbrella

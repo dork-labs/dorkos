@@ -21,7 +21,7 @@
       "slug": "project-rooms",
       "title": "Project Rooms — rooms with their own repo, files, and collaboration",
       "created": "2026-08-27",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260824-233720",
@@ -475,14 +475,15 @@
       "slug": "channel-workspace",
       "title": "Channel workspaces — a room's shared working context, distributed by git, layered by harness sync",
       "created": "2026-07-26",
-      "status": "specified"
+      "status": "superseded",
+      "supersededBy": "260827-202452"
     },
     {
       "id": "260726-162520",
       "slug": "agent-workspace-binding",
       "title": "Agent workspace binding — every agent knows where it works",
       "created": "2026-07-26",
-      "status": "specified",
+      "status": "implemented",
       "project": "Agents as First-Class Operators"
     },
     {
