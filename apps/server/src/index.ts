@@ -267,6 +267,7 @@ import {
   setRoomAttachmentStores,
   setRoomRepoService,
   setRoomFilesService,
+  setRoomWorktreeManager,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
@@ -340,6 +341,7 @@ import {
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
   listRecentSessions,
+  setAgentSessionSources,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
@@ -1215,10 +1217,24 @@ async function start() {
     listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
     reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
     // The claim map is the only live record that an agent is mid-turn, and once
-    // the cwd rung lands (task 2.2) its worktree IS that turn's working
+    // the cwd rung landed (DOR-1597) its worktree IS that turn's working
     // directory. Without this the sweep can delete the directory a turn is
     // standing in — a turn that only reads leaves no mark on any timestamp.
     busyAgentPaths: () => roomService.listBusyAgentPaths(),
+  });
+  // And the cwd rung can now find it: every room turn asks this manager where
+  // to run before its context is built (`resolve-session-cwd.ts` rung 2, spec
+  // §3.5).
+  setRoomWorktreeManager(roomWorktrees);
+  // The other half of a turn running somewhere new: session storage is derived
+  // per working directory (ADR-0310), so a room turn's conversation is filed
+  // under the WORKTREE it ran in and an agent's own folder no longer holds all
+  // of its history. The fan-out behind Recent and the daily counts is told
+  // where else to look, and which rows are bound to whom.
+  setAgentSessionSources({
+    extraDirs: (agentPath) => roomWorktrees.listWorktreesForAgent(agentPath),
+    boundSessionIds: (agentPath) =>
+      Promise.resolve(runtimeRegistry.listSessionIdsForAgentPath(agentPath)),
   });
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes

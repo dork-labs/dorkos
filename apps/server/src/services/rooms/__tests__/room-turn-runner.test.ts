@@ -5,6 +5,16 @@
  * model. The projector is the REAL projector — which is the point, because the
  * claim this file checks is that a room reads the agent's answer off the same
  * stream a client renders from, gap-free from a cursor taken before the turn.
+ *
+ * Seeded defects, each run red before the code stood:
+ *
+ * - Stamping `request.agentPath` where `request.cwd` belongs reddens "runs the
+ *   turn — and projects its files — in the directory the room resolved": the
+ *   dispatch and the projector both go to the agent's home instead of the tree
+ *   the room placed the turn in.
+ * - Projecting attachments under `agentPath` reddens the same test, and does it
+ *   silently in production: the model is told a relative path that resolves to
+ *   nothing from where it is standing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync } from 'fs';
@@ -136,6 +146,8 @@ interface TriggerCall {
    * — which is a thing worth being able to model, and {@link openTurn} is how.
    */
   onTurnStart?: (seq: number) => void;
+  /** The directory the turn was dispatched into — `request.cwd`, never its identity. */
+  cwd?: string;
   /** What the room asked the dispatcher to do with a session already working. */
   whenBusy?: string;
   /**
@@ -266,6 +278,12 @@ function request(
     // Also a no-op by default — only the activity tests below listen.
     onActivity: () => undefined,
     ...rest,
+    // **Last, and computed, because it TRACKS `agentPath` by default.** A room
+    // with no files of its own runs its turn in the agent's own directory, so
+    // every test that moves the agent moves the turn with it and nothing here
+    // has to say so twice. A project room is the case that passes `cwd`
+    // explicitly, and it is the only one.
+    cwd: rest.cwd ?? rest.agentPath ?? '/repo/ana',
   };
 }
 
@@ -311,6 +329,69 @@ describe('createSessionRoomTurnRunner', () => {
     runtimeIsRegistered = true;
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
+  });
+
+  it('runs the turn — and projects its files — in the directory the room resolved', async () => {
+    // **The identity/files split, at the one seam where it could be undone**
+    // (DOR-1597). The dispatcher resolves a project room's turn into that
+    // agent's working copy of the room's repo and hands the runner both values;
+    // everything about WHERE — the dispatch, the projector's own cwd, and the
+    // tree the attachments land in — must follow `cwd`, while everything about
+    // WHO still follows `agentPath`. Stamping `agentPath` in any of the three
+    // reddens this, and in the third case silently: the model would be told a
+    // path that resolves to nothing from where it is standing.
+    const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-home-'));
+    const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-agent-'));
+    const worktree = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-worktree-'));
+    try {
+      const store = new LocalRoomAttachmentStore(dorkHome);
+      setRoomAttachmentStores({ attachments: store, rows: {} as never });
+
+      const turnRequest = request({
+        agentPath,
+        cwd: worktree,
+        attachmentProjection: [
+          {
+            entryId: 'entry-x',
+            attachmentId: 'att1',
+            extension: 'log',
+            name: 'crash.log',
+            relativePath: `${PROJECTED_ATTACHMENTS_ROOT}/entry-x/att1-crash.log`,
+          },
+        ],
+      });
+      await store.put(turnRequest.room.id, 'att1', 'log', Buffer.from('crash!'));
+
+      const runner = createSessionRoomTurnRunner();
+      let projectorCwd: string | undefined;
+      turnBehaviour = (opts) => {
+        projectorCwd = (opts.projector as unknown as { cwd?: string }).cwd;
+        openTurn(opts);
+        opts.projector.ingest({ type: 'text_delta', text: 'got it' });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+
+      await runner.run(turnRequest);
+
+      const call = triggered[triggered.length - 1]!;
+      expect(call.cwd).toBe(worktree);
+      expect(projectorCwd).toBe(worktree);
+      // The bytes are in the tree the turn stands in, at the path the plan
+      // named relative to it — and nowhere near the agent's own folder.
+      const inWorktree = path.join(
+        worktree,
+        PROJECTED_ATTACHMENTS_ROOT,
+        'entry-x',
+        'att1-crash.log'
+      );
+      expect(await readFile(inWorktree)).toEqual(Buffer.from('crash!'));
+      expect(existsSync(path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT))).toBe(false);
+    } finally {
+      await rm(dorkHome, { recursive: true, force: true });
+      await rm(agentPath, { recursive: true, force: true });
+      await rm(worktree, { recursive: true, force: true });
+    }
   });
 
   it('has the files on disk BEFORE the turn is triggered', async () => {

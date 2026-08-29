@@ -121,7 +121,13 @@ The agent-workspace-binding resolver gains one rung. Final chain, first match wi
 3. agent's `workspace` binding (`home` → agentPath; `managed` → owned Workspace)
 4. `DEFAULT_CWD`
 
-Implemented in `resolve-session-cwd.ts` (the P0 deliverable), called at the session boundary; `room-turn-runner.ts:251/:349` switches from `request.agentPath` to the resolver's answer. The busy-ceiling/hold machinery stays keyed on the agent identity exactly as today (Q6 resolution, §5) — no relaxation of cross-room serial attention in v1.
+Implemented in `resolve-session-cwd.ts` (the P0 deliverable) — one resolver, one chain. A room turn reaches it by naming the room on the request; the room supplies the one collaborator only it has, which is how to make a worktree, so the resolver stays ignorant of the rooms domain.
+
+**Resolution happens at TURN DISPATCH — in `RoomTriggerDispatcher`, before `buildRoomContext`.** Not in `room-turn-runner.ts`, and this ordering is load-bearing rather than incidental: the room context names each attachment by an absolute path anchored on the turn's directory, and the runner then projects the bytes there (DOR-1266). A cwd decided after the context was built would describe files the model cannot open. By the time the runner holds the request, the context describing that turn already exists — so the dispatcher is the only place the decision can be made once and be true for everything downstream.
+
+**Rungs 3 and 4 are not wired for room turns in v1.** A room request resolves on rung 2 or on the agent's own directory and stops there. A room turn has never been boundary-validated and has never followed a `managed` or `none` binding; letting it fall through would relocate every repo-less room turn belonging to an agent that opted into either — `managed` into a checkout nothing asked for, `none` into `DEFAULT_CWD`, which is the shared tree every other agent also writes in and therefore the DOR-500 interleaving this chain exists to prevent. Wiring them is a later change with its own argument to make.
+
+**Identity and files are two values from here down.** `agentPath` keeps carrying identity — it selects the runtime, keys the claim map and both busy ceilings, and names the worktree — while the resolved cwd is where the turn stands and where its files are projected. The busy-ceiling/hold machinery stays keyed on the agent identity exactly as today (Q6 resolution, §5) — no relaxation of cross-room serial attention in v1.
 
 ### 3.6 `merge_to_room_main`
 

@@ -275,10 +275,31 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // their screen. A room triggers a turn into the dark; when one went silent
       // for forty-one minutes on 2026-07-31 there was not a single row anywhere
       // to say whether it had run, failed, or never started (DOR-784).
-      const projector = getOrCreateProjector(sessionId, request.agentPath, {
+      // **The turn's own directory, handed over where the projector asks for
+      // it** (DOR-1597). The second argument IS cwd — `request.agentPath` used
+      // to be passed here and then overwritten a line later, which was both a
+      // lie about what the argument means and a redundant write.
+      //
+      // `agentPath` and `cwd` are two values now: the first is identity, and
+      // selects the runtime and keys the claim map; the second is where the turn
+      // stands, and in a project room it is that agent's working copy of the
+      // room's repo, resolved once by the dispatcher before the context that
+      // names attachment paths relative to it was built (`resolve-session-cwd.ts`
+      // rung 2, spec §3.5). For every room without files of its own they are the
+      // same string.
+      //
+      // **Where this meets ROOM.md delivery (DOR-1593), and why nothing is owed
+      // to it here.** The room's conventions block is read off the room repo's
+      // MAIN checkout and rides `roomContext` like every other framing — it is a
+      // fact about the ROOM, identical for every member, so it is deliberately
+      // NOT read out of the tree this turn happens to stand in. A worktree may
+      // be days behind main, or hold an agent's own edit to `ROOM.md`, and
+      // neither may change what the room's conventions ARE. So the cwd rung
+      // moves the turn and leaves that block exactly where it was:
+      // cwd-independent, resolved upstream, never re-read from `request.cwd`.
+      const projector = getOrCreateProjector(sessionId, request.cwd, {
         persist: persistenceModeFor(runtime.getCapabilities()),
       });
-      projector.cwd = request.agentPath;
 
       // Take the cursor BEFORE triggering. Everything the turn emits has a seq
       // above it, so the collector cannot miss the opening of a fast turn — and
@@ -306,7 +327,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       await projectRoomAttachments({
         store: getRoomAttachmentStore,
         roomId: request.room.id,
-        agentPath: request.agentPath,
+        // The turn's own directory, not the agent's home. In a project room
+        // those differ, and a file projected under the wrong one is a file the
+        // model is told about by a relative path that does not resolve — which
+        // is the exact invariant this projection exists to hold.
+        cwd: request.cwd,
         attachments: request.attachmentProjection,
       });
 
@@ -415,7 +440,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         sessionId,
         clientId: ROOM_CLIENT_ID,
         content: prompt,
-        cwd: request.agentPath,
+        cwd: request.cwd,
         roomContext: request.roomContext,
         // Omitted, never passed as an empty string, when this room has no files.
         // Not because `''` misbehaves today — it does not: all three adapters
