@@ -15,6 +15,7 @@ import type {
   AdapterContext,
   DeliveryResult,
 } from './types.js';
+import { describeError } from './lib/describe-error.js';
 
 /**
  * Registry that manages the lifecycle of external channel adapters and routes
@@ -101,7 +102,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
           .catch((stopErr) => {
             this.logger.warn(
               `AdapterRegistry: failed to stop timed-out adapter '${adapter.id}':`,
-              stopErr
+              describeError(stopErr)
             );
           });
       }
@@ -120,7 +121,10 @@ export class AdapterRegistry implements AdapterRegistryLike {
         await existing.stop();
       } catch (err) {
         // Log but don't throw — new adapter is already active
-        this.logger.warn(`AdapterRegistry: failed to stop old adapter '${adapter.id}':`, err);
+        this.logger.warn(
+          `AdapterRegistry: failed to stop old adapter '${adapter.id}':`,
+          describeError(err)
+        );
       }
     }
   }
@@ -164,7 +168,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
       this.logger.warn(
         `AdapterRegistry: adapter '${id}' failed to stop and is still registered — ` +
           `it may still be connected:`,
-        err
+        describeError(err)
       );
       throw err;
     }
@@ -247,7 +251,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
     // Log individual failures but don't throw
     for (const result of results) {
       if (result.status === 'rejected') {
-        this.logger.warn('AdapterRegistry: adapter shutdown failed:', result.reason);
+        this.logger.warn('AdapterRegistry: adapter shutdown failed:', describeError(result.reason));
       }
     }
 

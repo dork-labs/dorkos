@@ -12,6 +12,7 @@
 
 import type { Logger } from '@dorkos/shared/logger';
 import type { AgentRuntimeLike } from './types.js';
+import { describeError } from '../../lib/describe-error.js';
 
 /** Race sentinel: the runtime's interrupt did not settle inside its own bound. */
 const INTERRUPT_TIMEOUT = Symbol('interrupt-timeout');
@@ -67,7 +68,7 @@ export async function interruptTurn(
       logger?.debug(`[CCA] ${label}: runtime reported no in-flight turn to interrupt`);
     }
   } catch (err) {
-    logger?.error(`[CCA] ${label}: interrupting the turn failed`, err);
+    logger?.error(`[CCA] ${label}: interrupting the turn failed`, describeError(err));
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }

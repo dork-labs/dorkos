@@ -246,3 +246,9 @@ export type {
 
 // Approver authorization for chat-platform tool approvals (DOR-609)
 export { mayApprove, toIdList } from './adapters/approver-allowlist.js';
+
+// Safe-to-log error description — never the raw error object, which can
+// carry a live credential nested inside it (DOR-1509). Exported so hosts
+// embedding this package (e.g. the server's AdapterManager) can log a
+// caught adapter error the same safe way every adapter in this package does.
+export { describeError } from './lib/describe-error.js';
