@@ -21300,14 +21300,25 @@
           {
             "schema": {
               "type": "string",
+              "minLength": 1,
+              "description": "Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a person has to switch on for an agent before they run at all. Exact match, case-sensitive, and it narrows like the two filters above."
+            },
+            "required": false,
+            "description": "Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a person has to switch on for an agent before they run at all. Exact match, case-sensitive, and it narrows like the two filters above.",
+            "name": "toolGroup",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "compact",
                 "full"
               ],
-              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain or query filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
+              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or toolGroup filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
             },
             "required": false,
-            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain or query filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
+            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or toolGroup filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
             "name": "detail",
             "in": "query"
           },
@@ -21556,6 +21567,9 @@
                                     ]
                                   }
                                 }
+                              },
+                              "toolGroup": {
+                                "type": "string"
                               }
                             },
                             "required": [

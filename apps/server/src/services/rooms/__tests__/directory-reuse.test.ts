@@ -101,6 +101,29 @@ describe('a directory that changes hands starts a fresh author', () => {
     expect(rows.find((row) => row.id === ana.id)?.retiredAt).not.toBeNull();
   });
 
+  it('does not resolve the retired row by its id, so a ghost cannot be seated again', () => {
+    // `findAuthorByHandle` falls back to an author ID when a token names no live
+    // handle (DOR-1611), and it scans LIVE rows to do it — deliberately, and not
+    // through `getById`, which carries no `retired_at IS NULL` filter. Swapping
+    // the two stays green on every other test in this repo and puts a retired
+    // GHOST back on a roster: the room-management verbs seat whatever this
+    // lookup hands back, and the owner would see a member nobody can reach.
+    const harness: RoomHarness = createRoomHarness({ agents: (d) => createAgentLookup(d) });
+    registerAgent(harness.db, 'ULID_ANA', ANA_PATH, { name: 'ana', displayName: 'Ana' });
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'Ana');
+
+    replaceAgentAt(harness.db, ANA_PATH, 'ULID_BO', { name: 'bo', displayName: 'Bo' });
+    const bo = harness.authors.resolveAgent(ANA_PATH, 'Bo');
+
+    // The live occupant resolves by id, which is the fallback doing its job…
+    expect(harness.service.findAuthorByHandle(bo.id)?.id).toBe(bo.id);
+    // …and its predecessor does not, which is the half a mutation removes.
+    expect(harness.service.findAuthorByHandle(ana.id)).toBeNull();
+    // A liveness rule, never a deletion: the row is still there, and everything
+    // Ana ever wrote still renders as Ana.
+    expect(harness.authors.getById(ana.id)?.displayName).toBe('Ana');
+  });
+
   it('names the fresh author from the manifest, not from a predecessor still holding a token', () => {
     // The stale-token path, which is reachable and long-lived: an identity token
     // is never rewritten, `revoke` has no production caller, and one stays valid

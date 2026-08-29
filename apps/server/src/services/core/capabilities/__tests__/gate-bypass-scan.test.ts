@@ -277,6 +277,34 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },
+  {
+    // Watched from DOR-1611, when a roster write stopped being operator-only.
+    // Until then `requireOperator` was the whole story and there was nothing to
+    // route around; now an agent the person armed can edit a roster, and every
+    // rule that makes that safe — the owner is never removable by an agent, a
+    // room holding two agents holds her too, a bridged room takes no second
+    // agent, a system room keeps its owner — lives in `RoomService.addMember`
+    // and `RoomService.removeMember` rather than in the store beneath them.
+    //
+    // So the effect to watch is the UNGUARDED write, one layer down. A second
+    // caller reaching `RoomRoster` directly would assemble the room shape those
+    // rules exist to forbid while every capability-level test stayed green,
+    // which is this file's whole defect class.
+    what: 'puts somebody in a room, beneath every rule about who may be in one together',
+    call: 'roster.add(',
+    allowed: {
+      'services/rooms/room-service.ts':
+        'the only caller, and the one that carries the guards: `requireRosterWriteAllowed`, the three-way rule, the bridged-room refusal and the seeding gate all run above this line',
+    },
+  },
+  {
+    what: 'takes somebody out of a room, beneath the rules about who may take whom',
+    call: 'roster.remove(',
+    allowed: {
+      'services/rooms/room-service.ts':
+        "the only caller, and the one that carries the guards: an agent may never remove the person, a system room keeps its owner, and the removed member's fallback seat and held turns are cleared with them",
+    },
+  },
 ];
 
 /** Every `.ts` file under `apps/server/src`, excluding tests and declaration files. */

@@ -664,8 +664,23 @@ const TOOL_GROUP_CALLERS: readonly {
  * identified agent holding no grant — see {@link TOOL_GROUP_CALLERS} for why one
  * row proves a weaker sentence than the product makes — and must come back
  * refused each time. A capability that gains a group tomorrow is covered the day
- * it declares one, and one that silently LOSES its group is covered by the
- * structural surface checks.
+ * it declares one.
+ *
+ * **What this does NOT catch, corrected here after a mutation proved the claim
+ * false** (DOR-1611 review). This comment used to say a capability that silently
+ * LOST its group was "covered by the structural surface checks". It is not, and
+ * the shape of the check is why: the subject set is DERIVED from the declarations
+ * it is checking, so deleting a `toolGroup` removes the capability from the set
+ * rather than failing anything. Deleting `rooms.create`'s group and running the
+ * whole conformance suite is GREEN. Nothing structural notices either — a
+ * `toolGroup` is not a surface, so `checkSurfaceConformance` never looks at it.
+ *
+ * The guard that does catch it is the declaration snapshot in
+ * `apps/server/src/services/rooms/__tests__/room-capabilities.test.ts`, which
+ * pins each verb's `group` by name and goes red on a removal. This check and that
+ * one answer different questions — "is a declared grant enforced" versus "is the
+ * grant still declared" — and only the pair covers the field. Do not restate the
+ * claim above without re-running the mutation.
  *
  * "No side effect" needs no separate probe: a refusal is a REJECTION, so the
  * handler never ran. A gate that returned the right payload after doing the damage
