@@ -6,6 +6,16 @@
       "@/*": ["../client/src/*"]
     }
   },
-  "include": ["src/**/*", "build-plugins/**/*", "scripts/**/*", "../client/src/**/*"],
+  // "*.ts" — the package root, non-recursively — covers vite.config.ts and
+  // vitest.config.ts, which were checked by NOTHING before DOR-1472. That
+  // mattered because vite.config.ts had just grown an import reaching OUT of
+  // this package (`../client/vite-define.js`, the same cross-package `define`
+  // seam DOR-1471 covered for the desktop shell): a broken one there is a bare
+  // identifier in the shipped bundle, not a build error, and neither ESLint
+  // nor `vite build` itself would have caught a type mismatch across that
+  // seam. Named as a pattern, not by filename, so the next root config added
+  // here is covered the day it lands instead of the day someone remembers
+  // this file.
+  "include": ["src/**/*", "build-plugins/**/*", "scripts/**/*", "../client/src/**/*", "*.ts"],
   "exclude": ["node_modules", "dist", "../client/src/main.tsx", "../client/src/**/__tests__/**"]
 }

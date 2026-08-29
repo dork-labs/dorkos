@@ -171,7 +171,7 @@ function renderStrip(overrides: Partial<Transport> = {}) {
 
 describe('usePresenceStrip', () => {
   beforeEach(() => {
-    useRoomPresenceStore.setState({ rooms: {} });
+    useRoomPresenceStore.getState().reset();
     useSessionListStore.setState({ statuses: {}, statusCwds: {} });
     useInteractionStore.getState().reset();
   });
@@ -389,7 +389,7 @@ describe('usePresenceStrip', () => {
 
 describe('usePresenceStrip — what a quiet fleet costs', () => {
   beforeEach(() => {
-    useRoomPresenceStore.setState({ rooms: {} });
+    useRoomPresenceStore.getState().reset();
     useSessionListStore.setState({ statuses: {}, statusCwds: {} });
   });
 

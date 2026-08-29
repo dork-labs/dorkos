@@ -37,9 +37,11 @@ import {
   PostToRoomRequestSchema,
   SetAuthorHandleRequestSchema,
   ROOM_ATTACHMENT_NAME_MAX,
+  MergeRoomRepoRequestSchema,
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
+  type PostToRoomResponse,
   type RoomAttachment,
 } from '@dorkos/shared/room-schemas';
 import { RoomFileContentQuerySchema, RoomFilesQuerySchema } from '@dorkos/shared/room-files';
@@ -47,12 +49,14 @@ import {
   getAttachmentRowStore,
   getRoomAttachmentStore,
   getRoomFilesService,
+  getRoomMergeService,
   getRoomRepoService,
   getRoomService,
   RoomError,
   toAuthorRef,
+  type PostedEntry,
 } from '../services/rooms/index.js';
-import { ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
+import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
@@ -319,8 +323,32 @@ router.get('/:id/export', (req, res) => {
 });
 
 /**
+ * The 202 body for a write: the entry's identity, plus who the write reached.
+ *
+ * Shared by both posting routes, because a thread reply asks a room exactly what
+ * a top-level message asks it. `triggered` and `skipped` are omitted — not
+ * emptied — when dispatch threw, which is the one case where nothing knows who
+ * the message reached; `PostToRoomResponse` reads an absent field as "this source
+ * cannot say" precisely so that case is not reported as "nobody".
+ *
+ * @param entry - The committed entry, as `RoomService.post` handed it back.
+ * @returns The response body, exactly `PostToRoomResponseSchema`.
+ */
+function accepted(entry: PostedEntry): PostToRoomResponse {
+  return {
+    accepted: true,
+    entryId: entry.id,
+    seq: entry.seq,
+    ...(entry.dispatch
+      ? { triggered: entry.dispatch.triggered, skipped: entry.dispatch.skipped }
+      : {}),
+  };
+}
+
+/**
  * POST /:id/entries — post. Trigger-only: 202 with the entry's identity, while
- * the entry itself rides the SSE stream to every reader including this one.
+ * the entry itself rides the SSE stream to every reader including this one. The
+ * body also says who it reached — see {@link accepted}.
  */
 router.post('/:id/entries', (req, res) => {
   const body = parseBody(PostToRoomRequestSchema, req.body, res);
@@ -333,7 +361,7 @@ router.post('/:id/entries', (req, res) => {
       sessionId: body.sessionId,
       attachmentIds: body.attachmentIds,
     });
-    res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
+    res.status(202).json(accepted(entry));
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/entries');
   }
@@ -741,7 +769,7 @@ router.post('/:id/threads', (req, res) => {
       replyTo: body.rootEntryId,
       attachmentIds: body.attachmentIds,
     });
-    res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
+    res.status(202).json(accepted(entry));
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/threads');
   }
@@ -915,6 +943,34 @@ router.get('/:id/files', (req, res) => {
 });
 
 /**
+ * GET /:id/repo/status — what this room's files hold right now (spec §3.6).
+ *
+ * **Membership-gated exactly like a history read**, and answering "not a member"
+ * as "no such room" for the same reason: what it reports is who in this room has
+ * unmerged work, which is a fact about the room's members. The owner sees every
+ * room on the install and is still not a member of all of them — the membership
+ * check is the gate, not the visibility (`RoomService.requireMembership`).
+ *
+ * It reports SLUGS and display names, never the workspace path an agent lives
+ * at: an agent reads its own rooms' status, and `/Users/…` is not something to
+ * hand every member.
+ *
+ * The same answer the `room_repo_status` tool gives, from the same service — the
+ * client needs it for the explorer's pending-work badges, and a second
+ * computation of "how far behind is Ana" is a second answer that can disagree.
+ */
+router.get('/:id/repo/status', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      res.json(await getRoomMergeService().status(req.params.id, caller.id));
+    } catch (err) {
+      sendRoomError(res, err, 'GET /:id/repo/status');
+    }
+  })();
+});
+
+/**
  * GET /:id/files/content — one file out of this room's `main`.
  *
  * **A query parameter rather than a path suffix**, which is the shape
@@ -946,6 +1002,44 @@ router.get('/:id/files/content', (req, res) => {
       res.json(await getRoomFilesService().read(req.params.id, query.path));
     } catch (err) {
       sendRoomError(res, err, 'GET /:id/files/content');
+    }
+  })();
+});
+
+/**
+ * POST /:id/repo/merge — bring an agent's work into the room's `main`
+ * (spec §3.6).
+ *
+ * The HTTP half of `merge_to_room_main`, over the same service and therefore the
+ * same queue, the same refusals and the same one merge entry. It exists because
+ * the tool cannot serve the person: spec §5 Q2 puts the OWNER on the list of who
+ * may merge, and the owner has no branch of their own — so they name one
+ * (`worktree`), which is refused `OPERATOR_ONLY` for anybody else.
+ *
+ * Every refusal is a 409 except `MERGE_IN_FLIGHT`, which is the canonical 429:
+ * the caller waited its turn in the room's merge queue and the room is still
+ * busy, so asking again is genuinely the remedy.
+ */
+router.post('/:id/repo/merge', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const body = parseBody(MergeRoomRepoRequestSchema, req.body, res);
+      if (!body) return;
+      const result = await getRoomMergeService().merge(req.params.id, caller.id, {
+        summary: body.summary,
+        ...(body.worktree !== undefined ? { worktree: body.worktree } : {}),
+      });
+      res.status(200).json(result);
+    } catch (err) {
+      // A 429 that says "come back" without saying when is a client's own guess
+      // about a backoff. The room's merge queue has a real number for it, so it
+      // is sent: the wait the NEXT caller would get, rounded up to the second
+      // the header is allowed to carry.
+      if (err instanceof RoomError && err.code === 'MERGE_IN_FLIGHT') {
+        res.set('Retry-After', String(Math.ceil(readRoomRepoConfig().mergeQueueWaitMs / 1000)));
+      }
+      sendRoomError(res, err, 'POST /:id/repo/merge');
     }
   })();
 });

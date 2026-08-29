@@ -5,10 +5,14 @@ import {
   File,
   Folder,
   FolderOpen,
+  Link2,
   Loader2,
+  Pin,
   RotateCw,
 } from 'lucide-react';
-import type { FileEntry } from '@dorkos/shared/types';
+import type { ExplorerEntry } from '../model/source';
+import { isPinnedEntryName } from '../lib/listing-shape';
+import { provenanceLine } from '../lib/provenance';
 import {
   ResponsiveContextMenu,
   ResponsiveContextMenuContent,
@@ -30,25 +34,25 @@ interface FileTreeRowProps {
   renaming: boolean;
   /** True when this is an expanded directory whose listing failed to load. */
   error: boolean;
-  onSelect: (entry: FileEntry) => void;
-  onActivate: (entry: FileEntry) => void;
+  onSelect: (entry: ExplorerEntry) => void;
+  onActivate: (entry: ExplorerEntry) => void;
   /** Retry this directory's failed listing. */
   onRetry: () => void;
-  onSubmitRename: (entry: FileEntry, newName: string) => void;
+  onSubmitRename: (entry: ExplorerEntry, newName: string) => void;
   onCancelRename: () => void;
   onNewFile: (parent: string) => void;
   onNewFolder: (parent: string) => void;
-  onStartRename: (entry: FileEntry) => void;
-  onDelete: (entry: FileEntry) => void;
+  onStartRename: (entry: ExplorerEntry) => void;
+  onDelete: (entry: ExplorerEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
   /** Copy rather than move — an Alt-held drop, or Paste and Duplicate. */
   onCopyInto: (fromPath: string, toDir: string) => void;
   /** Put this entry on the explorer clipboard. */
-  onCopy: (entry: FileEntry) => void;
+  onCopy: (entry: ExplorerEntry) => void;
   /** Paste the clipboard into a directory. */
   onPaste: (toDir: string) => void;
   /** Copy this entry beside itself. */
-  onDuplicate: (entry: FileEntry) => void;
+  onDuplicate: (entry: ExplorerEntry) => void;
   /** Whether the clipboard holds something a given directory could take. */
   canPasteInto: (toDir: string) => boolean;
   /**
@@ -56,9 +60,24 @@ interface FileTreeRowProps {
    * `null` hides the item where no file manager can be opened at all.
    */
   revealLabel: string | null;
-  onReveal: (entry: FileEntry) => void;
-  onAddToChat: (entry: FileEntry) => void;
-  onCopyPath: (entry: FileEntry, kind: CopyPathKind) => void;
+  onReveal: (entry: ExplorerEntry) => void;
+  onAddToChat: (entry: ExplorerEntry) => void;
+  onCopyPath: (entry: ExplorerEntry, kind: CopyPathKind) => void;
+  /**
+   * Whether this row can only be looked at.
+   *
+   * True over a source whose entries are a commit rather than files on disk:
+   * there is nothing on the other side of a rename. Drag, the inline rename and
+   * the whole context menu go away — an affordance that would always refuse is
+   * worse than no affordance. Defaults to false, which is every session row.
+   */
+  readOnly?: boolean;
+  /**
+   * Whether the pane draws the provenance column. Off unless the source can
+   * actually answer "who last touched this" — an empty column of em-dashes is
+   * just noise taking up the width the filename wanted.
+   */
+  provenance?: boolean;
 }
 
 /**
@@ -98,120 +117,154 @@ export function FileTreeRow({
   onReveal,
   onAddToChat,
   onCopyPath,
+  readOnly = false,
+  provenance = false,
 }: FileTreeRowProps) {
   const { entry, depth, expanded, loading } = row;
   const isDir = entry.type === 'dir';
   const parent = isDir ? entry.path : parentOf(entry.path);
   const [dropTarget, setDropTarget] = useState(false);
+  const pinned = !isDir && depth === 0 && isPinnedEntryName(entry.name);
+  const line = provenanceLine(entry.lastCommit);
+
+  const body = (
+    <div
+      role="treeitem"
+      aria-label={entry.name}
+      aria-expanded={isDir ? expanded : undefined}
+      aria-selected={selected}
+      // Roving-tabindex: the parent `role="tree"` owns arrow-key navigation
+      // and holds the real tab stop; rows are focusable only programmatically
+      // but still activate on Enter/Space when focus lands on one.
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(entry);
+          onActivate(entry);
+        }
+      }}
+      draggable={!renaming && !readOnly}
+      onDragStart={(e) => {
+        if (readOnly) return;
+        // `text/plain` so dropping into an outside editor pastes the path;
+        // the custom type is what our own surfaces recognise as a file
+        // reference rather than a file upload.
+        e.dataTransfer.setData('text/plain', entry.path);
+        e.dataTransfer.setData(FILE_PATH_DRAG_TYPE, entry.path);
+        // Without `copyMove` the browser refuses an Alt-held copy outright.
+        e.dataTransfer.effectAllowed = 'copyMove';
+      }}
+      onDragOver={(e) => {
+        // Even a file row swallows this: whatever is under the pointer is a
+        // row, so the tree's own empty-space drop (the root) must not also
+        // claim it.
+        e.stopPropagation();
+        // Only our own rows are droppable here. Text dragged out of another
+        // app carries `text/plain` too, and reading that alone turned a
+        // dragged sentence into a move of whatever file it happened to name.
+        if (readOnly || !isDir || !hasFilePathDrag(e.dataTransfer.types)) return;
+        e.preventDefault();
+        // Alt held = copy, so the cursor shows a + before the drop lands.
+        e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+        setDropTarget(true);
+      }}
+      onDragLeave={() => setDropTarget(false)}
+      onDrop={(e) => {
+        e.stopPropagation();
+        if (readOnly || !isDir) return;
+        setDropTarget(false);
+        const from = readFilePathDrag(e.dataTransfer);
+        if (from === null) return;
+        e.preventDefault();
+        if (e.altKey) onCopyInto(from, entry.path);
+        else onMove(from, entry.path);
+      }}
+      onClick={() => {
+        onSelect(entry);
+        onActivate(entry);
+      }}
+      className={cn(
+        'flex w-full cursor-pointer items-center gap-1 py-1 pr-2 text-sm transition-colors',
+        selected ? 'bg-accent text-foreground' : 'hover:bg-accent/50',
+        dropTarget && 'ring-ring/60 bg-accent ring-1'
+      )}
+      style={{ paddingLeft: depth * INDENT_STEP + 8 }}
+    >
+      <span className="flex size-4 flex-shrink-0 items-center justify-center">
+        {isDir &&
+          (loading ? (
+            <Loader2 className="text-muted-foreground size-3.5 animate-spin" />
+          ) : error ? (
+            <button
+              type="button"
+              aria-label="Retry loading"
+              title="Couldn't load — retry"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry();
+              }}
+              className="flex items-center justify-center"
+            >
+              <RotateCw className="text-destructive size-3.5" />
+            </button>
+          ) : expanded ? (
+            <ChevronDown className="text-muted-foreground size-3.5" />
+          ) : (
+            <ChevronRight className="text-muted-foreground size-3.5" />
+          ))}
+      </span>
+      {isDir ? (
+        expanded ? (
+          <FolderOpen className="size-(--size-icon-sm) flex-shrink-0 text-sky-500" />
+        ) : (
+          <Folder className="size-(--size-icon-sm) flex-shrink-0 text-sky-500" />
+        )
+      ) : entry.isSymlink === true ? (
+        // A link is listed, never followed — so it is drawn as what it is
+        // rather than as the thing it names.
+        <Link2 className="text-muted-foreground size-(--size-icon-sm) flex-shrink-0" />
+      ) : (
+        <File className="text-muted-foreground size-(--size-icon-sm) flex-shrink-0" />
+      )}
+      {renaming ? (
+        <RenameInput
+          initialName={entry.name}
+          onSubmit={(name) => onSubmitRename(entry, name)}
+          onCancel={onCancelRename}
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+      )}
+      {pinned && !renaming && (
+        // Subtle on purpose: the row is already at the top, so the mark only
+        // has to explain why it is — not compete with the name for attention.
+        <Pin
+          aria-label="Pinned to the top"
+          className="text-muted-foreground/60 size-3 flex-shrink-0"
+        />
+      )}
+      {provenance && !renaming && (
+        <span
+          // `max-w-[45%]` rather than a fixed column: the pane is narrow and the
+          // filename is what a person came to read, so provenance gives way
+          // first and truncates rather than pushing the name off screen.
+          className="text-muted-foreground/70 max-w-[45%] flex-shrink-0 truncate text-[11px] tabular-nums"
+          title={line.title ?? undefined}
+        >
+          {line.label}
+        </span>
+      )}
+    </div>
+  );
+
+  // Read-only rows carry no menu at all: every item in it either writes, or
+  // names a place on disk that a commit does not have.
+  if (readOnly) return body;
 
   return (
     <ResponsiveContextMenu>
-      <ResponsiveContextMenuTrigger asChild>
-        <div
-          role="treeitem"
-          aria-label={entry.name}
-          aria-expanded={isDir ? expanded : undefined}
-          aria-selected={selected}
-          // Roving-tabindex: the parent `role="tree"` owns arrow-key navigation
-          // and holds the real tab stop; rows are focusable only programmatically
-          // but still activate on Enter/Space when focus lands on one.
-          tabIndex={-1}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onSelect(entry);
-              onActivate(entry);
-            }
-          }}
-          draggable={!renaming}
-          onDragStart={(e) => {
-            // `text/plain` so dropping into an outside editor pastes the path;
-            // the custom type is what our own surfaces recognise as a file
-            // reference rather than a file upload.
-            e.dataTransfer.setData('text/plain', entry.path);
-            e.dataTransfer.setData(FILE_PATH_DRAG_TYPE, entry.path);
-            // Without `copyMove` the browser refuses an Alt-held copy outright.
-            e.dataTransfer.effectAllowed = 'copyMove';
-          }}
-          onDragOver={(e) => {
-            // Even a file row swallows this: whatever is under the pointer is a
-            // row, so the tree's own empty-space drop (the root) must not also
-            // claim it.
-            e.stopPropagation();
-            // Only our own rows are droppable here. Text dragged out of another
-            // app carries `text/plain` too, and reading that alone turned a
-            // dragged sentence into a move of whatever file it happened to name.
-            if (!isDir || !hasFilePathDrag(e.dataTransfer.types)) return;
-            e.preventDefault();
-            // Alt held = copy, so the cursor shows a + before the drop lands.
-            e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
-            setDropTarget(true);
-          }}
-          onDragLeave={() => setDropTarget(false)}
-          onDrop={(e) => {
-            e.stopPropagation();
-            if (!isDir) return;
-            setDropTarget(false);
-            const from = readFilePathDrag(e.dataTransfer);
-            if (from === null) return;
-            e.preventDefault();
-            if (e.altKey) onCopyInto(from, entry.path);
-            else onMove(from, entry.path);
-          }}
-          onClick={() => {
-            onSelect(entry);
-            onActivate(entry);
-          }}
-          className={cn(
-            'flex w-full cursor-pointer items-center gap-1 py-1 pr-2 text-sm transition-colors',
-            selected ? 'bg-accent text-foreground' : 'hover:bg-accent/50',
-            dropTarget && 'ring-ring/60 bg-accent ring-1'
-          )}
-          style={{ paddingLeft: depth * INDENT_STEP + 8 }}
-        >
-          <span className="flex size-4 flex-shrink-0 items-center justify-center">
-            {isDir &&
-              (loading ? (
-                <Loader2 className="text-muted-foreground size-3.5 animate-spin" />
-              ) : error ? (
-                <button
-                  type="button"
-                  aria-label="Retry loading"
-                  title="Couldn't load — retry"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRetry();
-                  }}
-                  className="flex items-center justify-center"
-                >
-                  <RotateCw className="text-destructive size-3.5" />
-                </button>
-              ) : expanded ? (
-                <ChevronDown className="text-muted-foreground size-3.5" />
-              ) : (
-                <ChevronRight className="text-muted-foreground size-3.5" />
-              ))}
-          </span>
-          {isDir ? (
-            expanded ? (
-              <FolderOpen className="size-(--size-icon-sm) flex-shrink-0 text-sky-500" />
-            ) : (
-              <Folder className="size-(--size-icon-sm) flex-shrink-0 text-sky-500" />
-            )
-          ) : (
-            <File className="text-muted-foreground size-(--size-icon-sm) flex-shrink-0" />
-          )}
-          {renaming ? (
-            <RenameInput
-              initialName={entry.name}
-              onSubmit={(name) => onSubmitRename(entry, name)}
-              onCancel={onCancelRename}
-            />
-          ) : (
-            <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-          )}
-        </div>
-      </ResponsiveContextMenuTrigger>
+      <ResponsiveContextMenuTrigger asChild>{body}</ResponsiveContextMenuTrigger>
       <ResponsiveContextMenuContent className="w-52">
         <ResponsiveContextMenuItem onClick={() => onNewFile(parent)}>
           New File

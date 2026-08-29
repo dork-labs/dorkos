@@ -28,6 +28,7 @@ import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
+import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { RoomBroadcaster } from '../room-stream.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from '../limits/room-limits.js';
 import { RoomTurnBudget } from '../limits/turn-budget.js';
@@ -77,7 +78,16 @@ export async function settleUntil(reached: () => boolean, described: string): Pr
 export interface RecordedTurn {
   roomId: string;
   authorId: string;
+  /** The agent's directory — its IDENTITY, whatever tree the turn runs in. */
   agentPath: string;
+  /**
+   * The directory the turn actually runs in (spec `project-rooms` §3.5).
+   *
+   * Equal to {@link RecordedTurn.agentPath} for every room without files of its
+   * own, and recorded separately because the whole claim of the cwd rung is that
+   * the two can differ — a test that read one for the other could not see it.
+   */
+  cwd: string;
   sessionId: string | null;
   /**
    * The words the turn was asked with. Equal to the triggering entry's text for
@@ -162,6 +172,7 @@ export function outcomeRunner(
         roomId: request.room.id,
         authorId: request.authorId,
         agentPath: request.agentPath,
+        cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.prompt,
         roomContext: request.roomContext,
@@ -273,6 +284,7 @@ export function gatedRunner({
         roomId: request.room.id,
         authorId: request.authorId,
         agentPath: request.agentPath,
+        cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
@@ -515,6 +527,15 @@ export function createRoomHarness(opts: {
    * an empty result cannot tell them apart.
    */
   findMessages?: RoomMessageFinder;
+  /**
+   * The install's room-worktree manager, for the project-room tests.
+   *
+   * Absent — the default — is an install with no repo machinery, where every
+   * turn runs in the agent's own directory exactly as it did before the cwd rung
+   * existed. That default is what keeps every other test in this suite a test of
+   * the behavior it was written for.
+   */
+  worktrees?: () => RoomWorktreeManager | null;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -562,6 +583,7 @@ export function createRoomHarness(opts: {
     bridges,
     agents: agentLookup,
     turns: runner,
+    ...(opts.worktrees ? { worktrees: opts.worktrees } : {}),
     budget: new RoomTurnBudget({
       db,
       // Wired like production: the per-room ceiling comes through the ladder so

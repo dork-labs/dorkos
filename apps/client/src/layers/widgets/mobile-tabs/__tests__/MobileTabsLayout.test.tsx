@@ -11,7 +11,7 @@
  * the tabs render a mock.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -173,14 +173,23 @@ function anApproval(): PendingApproval {
   };
 }
 
-/** One question an agent is parked on, shaped as the fleet-wide stream sends it. */
-function aQuestion(): InteractionPendingEvent {
+/**
+ * One question an agent is parked on, shaped as the fleet-wide stream sends it.
+ *
+ * The id is a parameter because answering one schedules a 1_200 ms removal timer
+ * against the module-level receipt store, and that timer outlives the test that
+ * started it — `clearAskReceipts()` empties the store but cannot cancel a
+ * `setTimeout` already in flight. One leaked timer is enough: it deletes by id,
+ * so any later case reusing that id can have its held envelope taken away. Any
+ * case that depends on the hold takes an id of its own.
+ */
+function aQuestion(id = 'q-1'): InteractionPendingEvent {
   return {
     sessionId: 'session-question-1',
     cwd: '/projects/meeting-notes',
     interaction: {
       type: 'question',
-      id: 'q-1',
+      id,
       startedAt: Date.now(),
       remainingMs: 600_000,
       timeoutMs: 600_000,
@@ -205,6 +214,23 @@ function renderLayout(
       </TransportProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Run a promise chain to completion while the fake clock barely moves.
+ *
+ * Bounded by event-loop turns rather than by wall clock, and it advances fake
+ * time a millisecond at a time, so a hold measured in seconds cannot be spent by
+ * the flush itself. `done` is re-asserted by the caller with a real `expect`, so
+ * a flush that ran out of turns fails on the condition it was waiting for rather
+ * than passing over a half-settled tree.
+ */
+async function flushOnFakeTime(done: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 50 && !done(); turn += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+  }
 }
 
 /** The panel for a destination — the box the layout shows or puts away. */
@@ -822,25 +848,45 @@ describe('MobileTabsLayout', () => {
       const user = userEvent.setup();
       mockState = quietFixture;
       const transport = createMockTransport();
+      // An id of its own. One case above ("puts a question in Home as a full
+      // card") answers `q-1`, leaving a 1_200 ms timer running that deletes
+      // `q-1` from the shared receipt store whenever it lands. On a loaded
+      // machine it landed inside THIS case and took the held envelope with it —
+      // the hold was working and the test still went red. Measured two ways: the
+      // slot vanished here with the hold's own timer frozen, so nothing else
+      // could have removed it; and holding one id twice across a
+      // `clearAskReceipts()` leaves nothing held 1_400 ms later.
+      const held = aQuestion('q-held');
       transport.listPendingInteractions = vi
         .fn()
-        .mockResolvedValueOnce({ interactions: [aQuestion()] })
+        .mockResolvedValueOnce({ interactions: [held] })
         .mockResolvedValue({ interactions: [] });
       renderLayout(null, transport);
       await user.click(screen.getByTestId('mobile-tab-home'));
       await screen.findByText('meeting-notes has a question');
 
-      await user.click(screen.getByRole('button', { name: 'Skip' }));
-      await waitFor(() =>
-        expect(transport.submitAnswers).toHaveBeenCalledWith('session-question-1', 'q-1', {})
-      );
+      // **The clock from here on is the test's, not the machine's.** `settleAsk`
+      // holds the answered card for a fixed 1_200 ms of REAL time, and the whole
+      // sequence below — the answer, the invalidation, the empty re-read and the
+      // commits between them — had to finish inside it. Only `setTimeout` is
+      // faked, which is the one thing the hold uses; React's scheduler, the query
+      // client and everything else stay on real time.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+        // `useAnswerAsk`'s `finally` re-invalidates the query, which now comes
+        // back with an empty list — exactly the moment the slot used to vanish.
+        await flushOnFakeTime(
+          () => vi.mocked(transport.listPendingInteractions).mock.calls.length >= 2
+        );
 
-      // `useAnswerAsk`'s `finally` re-invalidates the query, which now comes
-      // back with an empty list — exactly the moment the slot used to vanish.
-      await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalledTimes(2));
-
-      expect(screen.getByTestId('mobile-now-attention')).toBeInTheDocument();
-      expect(screen.getByText('You said no')).toBeInTheDocument();
+        expect(transport.submitAnswers).toHaveBeenCalledWith('session-question-1', 'q-held', {});
+        expect(transport.listPendingInteractions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('mobile-now-attention')).toBeInTheDocument();
+        expect(screen.getByText('You said no')).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('says so loudly when the approval list cannot be read — even with no Now zone to say it in', async () => {

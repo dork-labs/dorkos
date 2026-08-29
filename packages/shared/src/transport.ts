@@ -81,7 +81,7 @@ import type {
   ManagedMcpServerView,
   McpServerTransport,
 } from './mesh-schemas.js';
-import type { CapabilityTier } from './capabilities.js';
+import type { CapabilityCatalog, CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { MemoryProviderStatus } from './memory-provider.js';
 import type { UnattendedAutonomyState } from './permission-semantics.js';
@@ -1272,6 +1272,31 @@ export interface Transport extends RoomTransport {
    *   that owns the session. Omit for cold-discovery (onboarding, first-run).
    */
   getSubagents(opts?: { sessionId?: string }): Promise<SubagentInfo[]>;
+  /**
+   * Read the Capability Registry's self-description catalog.
+   *
+   * The one place the cockpit can learn what a capability DECLARES — including
+   * the per-agent `toolGroup` a grant-bearing capability carries (DOR-1611). The
+   * Tools tabs read the tool names behind a grant from here rather than from a
+   * hand-kept list, because three hand-kept copies of that same fact all drifted
+   * once already (DOR-499) and a fourth would have no better odds.
+   *
+   * **Narrow it, always, when you know what you are after.** The catalog is
+   * paginated and served COMPACT by default — no surfaces and no `toolGroup` —
+   * so an unfiltered read is both large and missing the field this exists for.
+   * `toolGroup` is the filter the cockpit uses: a handful of matches come back
+   * in full, in one page, with the tool names on them.
+   *
+   * Deliberately NOT the per-runtime capability matrix next door
+   * ({@link Transport.getCapabilities}), which answers a different question — what
+   * a RUNTIME can do — and shares only a word.
+   *
+   * @param opts.toolGroup - Return only the capabilities behind this per-agent
+   *   grant. Omit for the whole catalog.
+   * @returns The catalog: the matching capabilities, with a stable
+   *   `catalogVersion` content hash safe to cache on.
+   */
+  getCapabilityCatalog(opts?: { toolGroup?: string }): Promise<CapabilityCatalog>;
   /**
    * Get capabilities for all registered runtimes.
    *

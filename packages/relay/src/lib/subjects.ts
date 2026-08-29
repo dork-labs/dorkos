@@ -14,12 +14,16 @@
  * | `relay.agent.{runtimeType}.{sessionId}`   | A runtime-scoped session     | token3 IS a runtime type      |
  * | `relay.agent.{sessionId}`                 | Legacy session (pre-runtime) | exactly 3 tokens              |
  *
- * The discriminator is a **closed enum** of runtime types ({@link RUNTIME_TYPES}),
- * not a shape guess. The one way the enum could still be ambiguous — a mesh
- * namespace whose value equals a runtime type (e.g. a project directory named
- * `claude-code`) — is made **impossible by construction**: {@link guardNamespaceCollision}
+ * The discriminator is a **closed set** of runtime types, not a shape guess.
+ * {@link RUNTIME_TYPES} is the default set; a caller that ROUTES on the answer
+ * passes the set it actually routes to, so the subjects it claims and the
+ * subjects it can parse are the same subjects (see {@link parseAgentSubject}).
+ * The one way the set could still be ambiguous — a mesh namespace whose value
+ * equals a runtime type (e.g. a project directory named `claude-code`) — is made
+ * **impossible by construction** for the default set: {@link guardNamespaceCollision}
  * is applied wherever a namespace is derived or a subject is built, so a
- * namespace can never equal a runtime type. Parsing is therefore exact.
+ * namespace can never equal one of {@link RUNTIME_TYPES}. Parsing is therefore
+ * exact.
  *
  * @module relay/lib/subjects
  */
@@ -34,8 +38,12 @@ export const AGENT_SUBJECT_PREFIX = 'relay.agent.';
  * mesh agent subject (`relay.agent.{namespace}.{agentId}`).
  *
  * Keep in sync with the server's runtime registry (`services/runtimes/`). A new
- * runtime adapter MUST add its type here, or its session subjects will be
- * misparsed as mesh agent subjects.
+ * runtime adapter SHOULD add its type here. Routing no longer depends on it —
+ * the built-in adapter parses against its own registered keys, so a type missing
+ * from this list still reaches the runtime it names (DOR-1614) — but two things
+ * only this list gives: {@link guardNamespaceCollision} can keep a mesh
+ * namespace from colliding with the type, and every caller that reports on a
+ * subject without holding a runtime map reads it correctly.
  */
 export const RUNTIME_TYPES = ['claude-code', 'codex', 'opencode', 'test-mode'] as const;
 
@@ -125,8 +133,15 @@ export interface ParsedAgentSubject {
    * only need "the id at the end".
    */
   sessionId: string;
-  /** Present for `runtime-scoped` subjects: the runtime type from slot 3. */
-  runtimeType?: RuntimeType;
+  /**
+   * Present for `runtime-scoped` subjects: the runtime type from slot 3.
+   *
+   * A `string` rather than {@link RuntimeType} because the discriminator is a
+   * PARAMETER (see {@link parseAgentSubject}): a caller that knows a wider set
+   * of runtime types than the built-in default gets those back, and a type that
+   * promised otherwise would be lying to it.
+   */
+  runtimeType?: string;
   /** Present for `agent-scoped` (mesh) subjects: the namespace from slot 3. */
   namespace?: string;
   /** The subject shape the parser matched. */
@@ -134,21 +149,57 @@ export interface ParsedAgentSubject {
 }
 
 /**
- * Parse a `relay.agent.*` subject into its components using the closed
+ * Parse a `relay.agent.*` subject into its components using a closed
  * runtime-type discriminator (no heuristics).
  *
  * Returns `null` when the subject is not a `relay.agent.*` subject or has fewer
  * than three tokens.
  *
  * - 3 tokens (`relay.agent.X`) → `legacy`, `sessionId = X`
- * - 4+ tokens, token3 ∈ {@link RUNTIME_TYPES} → `runtime-scoped`,
+ * - 4+ tokens, token3 ∈ `knownRuntimeTypes` → `runtime-scoped`,
  *   `runtimeType = token3`, `sessionId = token4..`
- * - 4+ tokens, token3 ∉ {@link RUNTIME_TYPES} → `agent-scoped`,
+ * - 4+ tokens, token3 ∉ `knownRuntimeTypes` → `agent-scoped`,
  *   `namespace = token3`, `sessionId (=agentId) = token4..`
  *
+ * ## Why the discriminator is a parameter
+ *
+ * The set is closed — the point of this module is that parsing never guesses —
+ * but WHICH closed set is the caller's to say, because a caller that routes on
+ * the answer knows the real one and {@link RUNTIME_TYPES} is only a default.
+ *
+ * The built-in adapter is that caller. It claims one subject prefix per runtime
+ * it actually holds, and that map is open: `test-mode-b` exists today under
+ * `DORKOS_TEST_RUNTIME`, and any runtime added without editing the literal list
+ * would join it. While this took the literal list, such a subject was CLAIMED by
+ * the adapter and then parsed as a mesh namespace, so the turn ran silently on
+ * the default runtime — the wrong program answering under the right agent's
+ * name, which is the exact failure DOR-1614 exists to remove. Passing the
+ * adapter's own keys makes the claimed set and the parsed set the same set by
+ * construction, rather than two lists someone has to remember to keep equal.
+ *
+ * Callers that only need the id, or that report on a subject rather than route
+ * it (dead-letter notices, the MCP relay helpers), pass nothing and get the
+ * built-in default — which is right for them: they have no map to be wrong
+ * about, and the trailing id is identical under either reading.
+ *
+ * **Residual, and deliberately not closed here.**
+ * {@link guardNamespaceCollision} still guards only {@link RUNTIME_TYPES}, so a
+ * mesh namespace equal to an EXTRA registered runtime type (a project directory
+ * literally named `test-mode-b`) is ambiguous to a caller passing the wider set.
+ * The guard is not made dynamic on purpose: a namespace that changed shape
+ * depending on which runtimes happened to be registered would make an agent's
+ * subject unstable across boots, which `packages/mesh`'s namespace-stability
+ * suite exists to prevent. A runtime that ships for real belongs in
+ * {@link RUNTIME_TYPES}, and then the guard covers it too.
+ *
  * @param subject - The full subject string, e.g. `relay.agent.claude-code.<uuid>`
+ * @param knownRuntimeTypes - The exact set slot 3 is tested against. Defaults to
+ *   {@link RUNTIME_TYPES}. Pass the set you route on.
  */
-export function parseAgentSubject(subject: string): ParsedAgentSubject | null {
+export function parseAgentSubject(
+  subject: string,
+  knownRuntimeTypes: ReadonlySet<string> = RUNTIME_TYPE_SET
+): ParsedAgentSubject | null {
   const parts = subject.split('.');
   if (parts.length < 3 || parts[0] !== 'relay' || parts[1] !== 'agent') {
     return null;
@@ -165,8 +216,8 @@ export function parseAgentSubject(subject: string): ParsedAgentSubject | null {
   const trailing = parts.slice(3).join('.');
   if (!trailing) return null;
 
-  // Closed-enum discriminator: slot 3 is a runtime type XOR a namespace.
-  if (isRuntimeType(third)) {
+  // Closed-set discriminator: slot 3 is a runtime type XOR a namespace.
+  if (knownRuntimeTypes.has(third)) {
     return { sessionId: trailing, runtimeType: third, format: 'runtime-scoped' };
   }
   return { sessionId: trailing, namespace: third, format: 'agent-scoped' };

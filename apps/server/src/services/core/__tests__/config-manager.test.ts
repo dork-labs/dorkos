@@ -56,6 +56,7 @@ import {
   warmClaudeCodeSessionsByDefault,
   seedMemoryProviderDefault,
   seedRoomRepoDefaults,
+  seedDorkosToolsDefault,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -74,6 +75,7 @@ import { execSync } from 'child_process';
 const RUNTIMES_DEFAULTS = {
   default: 'claude-code',
   defaultTrustStop: null,
+  dorkosTools: false,
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -808,6 +810,88 @@ describe('seedRoomRepoDefaults migration (project-rooms §3.12, DOR-1591)', () =
       // The upgrade adds a section; it changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedDorkosToolsDefault migration (tool-only-room-replies §D5, DOR-1613)', () => {
+  it('reserves runtimes.dorkosTools on a `runtimes` block that predates it', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `runtimes` block never inherits the new
+    // leaf on its own. Drop the body and this reads `undefined`.
+    const store = createMockStore({ runtimes: { default: 'codex', defaultTrustStop: 'act' } });
+    seedDorkosToolsDefault(store);
+    expect(store.data.runtimes).toEqual({
+      default: 'codex',
+      defaultTrustStop: 'act',
+      dorkosTools: false,
+    });
+  });
+
+  it('never overwrites a choice somebody made (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // switching the tools back OFF under an operator who turned them on. The
+    // stored value is `true`, which is NOT the seeded value, so a body that
+    // wrote unconditionally would be caught here rather than passing on a
+    // coincidence.
+    const store = createMockStore({ runtimes: { default: 'claude-code', dorkosTools: true } });
+    seedDorkosToolsDefault(store);
+    expect((store.data.runtimes as Record<string, unknown>).dorkosTools).toBe(true);
+  });
+
+  it('does nothing when there is no `runtimes` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `runtimes` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    seedDorkosToolsDefault(store);
+    expect(store.data.runtimes).toBeUndefined();
+  });
+
+  it('a real pre-0.71.0 config file gains runtimes.dorkosTools on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach (see
+    // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
+    // from). `runtimes.dorkosTools` is a nested-leaf case, so this body is the
+    // ONLY thing that puts the leaf on the file: suppress it and this goes red
+    // while `store.get('runtimes').dorkosTools` still answers `false` from
+    // Ajv's discarded copy.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-dorkos-tools-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          runtimes: { default: 'codex', defaultTrustStop: 'act' },
+          __internal__: { migrations: { version: '0.70.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.71.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: Record<string, unknown>;
+      };
+      expect(onDisk.runtimes.dorkosTools).toBe(false);
+      // The upgrade adds a leaf; it changes nothing the person had set.
+      expect(onDisk.runtimes.default).toBe('codex');
+      expect(onDisk.runtimes.defaultTrustStop).toBe('act');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

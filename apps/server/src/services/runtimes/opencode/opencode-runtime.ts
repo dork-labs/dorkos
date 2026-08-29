@@ -51,6 +51,7 @@ import type {
   SseResponse,
   SessionSettingsPort,
   ToolDecisionOptions,
+  AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
@@ -66,7 +67,7 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildAgentContextAppend } from '../shared/agent-context.js';
+import { buildOpenCodeTurnContext } from './turn-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -95,11 +96,8 @@ import {
   type ApprovalGateDeps,
   type ApprovalRouting,
 } from './approvals.js';
-import {
-  OPENCODE_CAPABILITIES,
-  STREAM_LIVE_TIMEOUT_MS,
-  INTERRUPT_ACK_TIMEOUT_MS,
-} from './runtime-constants.js';
+import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
+import { awaitAbortAck, delay } from './bounded-abort.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
@@ -126,55 +124,6 @@ interface ActiveTurn {
   cwd: string;
 }
 
-/** Sleep helper for the stream-liveness race. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-control.ts`). */
-type AbortAck =
-  /** The backend answered, and the answer is `request`'s return value. */
-  | { kind: 'settled'; aborted: boolean }
-  /** The backend answered with a rejection — a refusal, not silence. */
-  | { kind: 'refused' }
-  /** Nothing answered inside the bound — which says nothing about whether it ever will. */
-  | { kind: 'unacked' };
-
-/**
- * Race one `session.abort` call against {@link INTERRUPT_ACK_TIMEOUT_MS},
- * mirroring the load-bearing details of claude-code's `awaitStopAck`
- * (`sessions/bounded-control.ts`, DOR-1244) for the same reason: a promise
- * that only a backend ack settles must not be trusted to settle at all.
- *
- * Never throws, whichever way the race goes and however `request` fails —
- * `request` is INVOKED here rather than passed in as an already-started
- * promise, so a SYNCHRONOUS throw from it becomes a `refused` like any other
- * failure instead of escaping past the bound this function exists to
- * provide — and never leaves a live timer behind.
- *
- * @param request - Makes the abort call and reports whether it actually aborted.
- * @returns The tri-state outcome; the caller decides what each means for its
- *   own `false` vs `true`.
- */
-function awaitAbortAck(request: () => Promise<boolean>): Promise<AbortAck> {
-  const settled: Promise<AbortAck> = (async () => request())().then(
-    (aborted) => ({ kind: 'settled', aborted }) as const,
-    () => ({ kind: 'refused' }) as const
-  );
-  let timer: NodeJS.Timeout | undefined;
-  return (async () => {
-    try {
-      const expiry = new Promise<AbortAck>((resolve) => {
-        timer = setTimeout(() => resolve({ kind: 'unacked' }), INTERRUPT_ACK_TIMEOUT_MS);
-        timer.unref?.();
-      });
-      return await Promise.race([settled, expiry]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  })();
-}
-
 /**
  * OpenCode runtime implementing the universal AgentRuntime interface.
  */
@@ -198,6 +147,13 @@ export class OpenCodeRuntime implements AgentRuntime {
   /** MCP status + managed injection, keyed by directory (DOR-893). */
   private readonly mcp: OpenCodeMcpManager;
   private settingsPort: SessionSettingsPort | undefined;
+  /**
+   * The agent registry, when the composition root injected it. Used only to
+   * decide whether a turn's working directory hosts a registered agent — the
+   * gate on naming the DorkOS room tools in the prompt. The MCP manager holds
+   * its own reference for the injection half; see {@link setMeshCore}.
+   */
+  private meshCore: AgentRegistryPort | undefined;
 
   constructor(options: OpenCodeRuntimeOptions) {
     this.provider = options.provider;
@@ -328,30 +284,44 @@ export class OpenCodeRuntime implements AgentRuntime {
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
 
-    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
-    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so an
-    // OpenCode agent knows who it is and how to reach its capabilities. It rides
-    // the `synthetic` part with the rest of the injected prefix, so it never
-    // renders as user-authored text.
-    // `.text` — the whole append, memory block included. The `stable` half of
-    // this result exists only for claude-code's relaunch fingerprint; opencode
-    // has no warm process to keep, so it sends everything, every turn (see
-    // `buildMemoryBlock` for what that costs).
-    const agentContext = (await buildAgentContextAppend(cwd)).text;
+    // Reconcile the sidecar's MCP servers BEFORE the prompt is assembled, so the
+    // room verbs are named only when the `dorkos` server really registered.
+    // Gating on an intention instead would tell the agent it can post whenever
+    // the experiment is on — including the turns where a user's own server owns
+    // the name, or the add threw — and it would spend itself finding out.
+    //
+    // This is why the reconcile moved out of `runOpenCodeTurn`: the answer has
+    // to exist before the prompt, and re-running it there would mint a second
+    // token, change the signature, and re-add the server every single turn.
+    const mcpClient = await this.provider.getClient(cwd);
+    const { dorkosApplied } = await this.mcp.ensureManaged(mcpClient, cwd);
 
-    yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
-      const model = parseModelSelection(settings.model);
-      const prompted = await client.session.promptAsync({
-        path: { id: ocSessionId },
-        body: {
-          parts: buildOpenCodeParts(content, opts, agentContext),
-          ...(model !== undefined ? { model } : {}),
-        },
-      });
-      if (prompted.error !== undefined) {
-        throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
-      }
-    });
+    // The synthetic context prefix: the runtime-neutral blocks plus, when this
+    // turn really carries them, the room verbs. It rides the `synthetic` part
+    // with the rest of the injected prefix, so it never renders as
+    // user-authored text.
+    const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
+
+    yield* this.runOpenCodeTurn(
+      sessionId,
+      cwd,
+      opts?.title,
+      async (client, ocSessionId) => {
+        const model = parseModelSelection(settings.model);
+        const prompted = await client.session.promptAsync({
+          path: { id: ocSessionId },
+          body: {
+            parts: buildOpenCodeParts(content, opts, agentContext),
+            ...(model !== undefined ? { model } : {}),
+          },
+        });
+        if (prompted.error !== undefined) {
+          throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
+        }
+      },
+      // Already reconciled above, to gate the prompt on the real outcome.
+      { alreadyReconciled: true }
+    );
   }
 
   /**
@@ -399,12 +369,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param cwd - Working directory used to resolve the client and session.
    * @param title - Optional title used only when a new OpenCode session is created.
    * @param trigger - Fires the turn against the resolved client + `ses_*` id.
+   * @param opts - `alreadyReconciled` when the caller ran
+   *   {@link OpenCodeMcpManager.ensureManaged} itself. `sendMessage` does,
+   *   because it has to know whether the `dorkos` server registered before it
+   *   can write the prompt — and reconciling twice would mint a second identity
+   *   token, change the desired-set signature, and re-add every server on every
+   *   turn.
    */
   private async *runOpenCodeTurn(
     sessionId: string,
     cwd: string,
     title: string | undefined,
-    trigger: (client: OpencodeClient, ocSessionId: string) => Promise<void>
+    trigger: (client: OpencodeClient, ocSessionId: string) => Promise<void>,
+    opts?: { alreadyReconciled?: boolean }
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
@@ -413,7 +390,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     // (spec `mcp-server-management` §6, DOR-893). Ephemeral: the sidecar's
     // `POST /mcp` mutates only its in-memory per-directory registry — no
     // `opencode.json` write — so this never pollutes the user's config.
-    await this.mcp.ensureManaged(client, cwd);
+    if (opts?.alreadyReconciled !== true) await this.mcp.ensureManaged(client, cwd);
     const directory = await this.resolveSessionDirectory(client, ocSessionId);
 
     const ctx = createOpenCodeEventContext(sessionId);
@@ -882,6 +859,23 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   setManagedMcpServers(resolver: ManagedMcpServerResolver): void {
     this.mcp.setResolver(resolver);
+  }
+
+  /**
+   * Accept the agent registry, so a turn can tell whether its working directory
+   * hosts a registered agent — the guard on minting the identity the injected
+   * `dorkos` tool server presents (spec `tool-only-room-replies` §D4).
+   *
+   * The composition root calls this on every runtime that implements it. This
+   * runtime had no use for it until the DorkOS tools needed a per-agent identity
+   * channel; OpenCode's sidecar is one shared process with a fixed environment,
+   * so headers on the injected server are the ONLY place that identity can ride.
+   *
+   * @param meshCore - The agent registry port from the composition root.
+   */
+  setMeshCore(meshCore: AgentRegistryPort): void {
+    this.meshCore = meshCore;
+    this.mcp.setMeshCore(meshCore);
   }
 
   // --- Internals ---

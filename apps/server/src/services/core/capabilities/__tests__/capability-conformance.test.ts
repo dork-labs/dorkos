@@ -43,6 +43,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { capabilityConformance } from '@dorkos/test-utils';
 
 import { createTestDb } from '@dorkos/test-utils/db';
+import { RoomMergeService, RoomRepoMutex, RoomRepoStore } from '../../../rooms/repo/index.js';
 
 // ── Mock the non-hermetic seams the operator handlers reach through ─────────
 // config.get / config.patch read + write the real `configManager` singleton via
@@ -252,13 +253,42 @@ if (!CONFORMANCE_ROOM_SLUG) {
   throw new Error('conformance fixture: the channel came back with no slug to search by');
 }
 
+/**
+ * The two repo verbs' service, wired for real over the same harness database
+ * (spec `project-rooms` §3.6).
+ *
+ * Real rather than stubbed, and ENABLED rather than switched off, because both
+ * shortcuts would hide the thing this suite asks about. `requireMergeDeps`
+ * raises a plain `Error` when the bag has no merge service — an UNSTRUCTURED
+ * throw, which the invoke check reads as "not wired", exactly as it should — so
+ * omitting this handle does not skip the two verbs, it fails them. And a
+ * `enabled: () => false` stub would refuse at the first line of
+ * `requireProjectRoom`, never reaching the membership check or the store.
+ *
+ * Enabled, the conformance channel is simply a room with no files: the caller's
+ * membership resolves, the store reports no sidecar row, and both verbs answer
+ * the structured `NOT_A_PROJECT_ROOM` this suite accepts. Nothing here touches
+ * git — there is no repo to touch.
+ */
+const roomMerges = new RoomMergeService({
+  store: new RoomRepoStore(roomHarness.db, SANDBOX_CWD),
+  mutex: new RoomRepoMutex(),
+  enabled: () => true,
+  mergeQueueWaitMs: () => 5000,
+  requireMembership: (roomId, authorId) => roomHarness.service.requireMembership(roomId, authorId),
+  listAgentMembers: (roomId) => roomHarness.service.listAgentMembers(roomId),
+  listStrandedWorktrees: () => Promise.resolve([]),
+  announce: (roomId, input) => roomHarness.service.postMergeEvent(roomId, input),
+  isOwnerAuthor: (authorId) => authorId === roomHarness.human,
+});
+
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
   operatorDeps,
   marketplaceDeps,
   connectorDeps,
   mcpDeps,
-  roomDeps: { rooms: roomHarness.service },
+  roomDeps: { rooms: roomHarness.service, merges: roomMerges },
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */
@@ -509,6 +539,13 @@ capabilityConformance(registry, {
     // this suite is asking about.
     'rooms.post': { roomId: CONFORMANCE_ROOM_ID, text: 'a conformance message' },
     'rooms.react': { roomId: CONFORMANCE_ROOM_ID, entryId: 'conformance-entry', emoji: '👍' },
+    // The two repo verbs, against `roomMerges` above. The conformance channel has
+    // no files, so both reach the real service and answer the structured
+    // `NOT_A_PROJECT_ROOM` — which is what "wired" looks like here. A merge that
+    // could really run would need a git repo on disk, and this suite is asking
+    // whether the verb is reachable, not whether git works.
+    'rooms.merge': { roomId: CONFORMANCE_ROOM_ID, summary: 'a conformance merge' },
+    'rooms.repo_status': { roomId: CONFORMANCE_ROOM_ID },
     'rooms.read_history': { roomId: CONFORMANCE_ROOM_ID, limit: 5 },
     'rooms.search_history': { roomId: CONFORMANCE_ROOM_ID, query: 'conformance' },
     'rooms.list_member_rooms': {},
@@ -521,6 +558,24 @@ capabilityConformance(registry, {
     // invocation do the thing the suite is asking about, and exercises the sigil
     // that `normalizeRoomNameNeedle` strips on the way in.
     'rooms.find_room': { name: `#${CONFORMANCE_ROOM_SLUG}` },
+    // The five that ARRANGE rooms, and the first real subjects the tool-group
+    // check has ever had (DOR-1611, acceptance criterion 12). Until they landed
+    // that check ran over an empty set and could only ever be green.
+    //
+    // Every one of these must PARSE and then be refused by the GRANT, not by a
+    // ZodError — the check reads an unstructured throw as "the gate is not
+    // there", which is exactly what it should do. So each fixture is a request
+    // that would really run if the caller held the grant, and each names the
+    // harness room the reads above use.
+    //
+    // Nothing in this file wires a `ToolGroupGrantLookup`, and that is the
+    // point: an unwired gate holds no grant for anybody, which is the fail-closed
+    // state these five have to be refused from.
+    'rooms.create': { kind: 'channel', title: 'Conformance opened' },
+    'rooms.add_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
+    'rooms.remove_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
+    'rooms.update': { roomId: CONFORMANCE_ROOM_ID, topic: 'what this room is for' },
+    'rooms.leave': { roomId: CONFORMANCE_ROOM_ID },
   },
 });
 

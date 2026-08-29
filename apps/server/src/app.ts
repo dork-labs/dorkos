@@ -334,6 +334,17 @@ export function finalizeApp(app: express.Express): void {
         },
       })
     );
+    // A GET/HEAD under /assets/ that express.static above didn't already
+    // serve is a missing hashed bundle, not a client route -- 404 it here so
+    // it can't reach the SPA fallback below. Without this, a stale or broken
+    // reference to a hashed bundle presents as a silent blank window (the
+    // shell loads, its script tag 404s into HTML, nothing renders) instead of
+    // a diagnosable 404 in the network tab (DOR-1474).
+    app.use('/assets', (req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      res.status(404).type('text/plain').send(`Not found: ${req.originalUrl}`);
+    });
+
     // SPA fallback: serve index.html for any GET/HEAD not handled by static
     // assets or the API routes above, so client-side deep links resolve. Two
     // Express 5 details: (1) a bare app.get('*') throws under path-to-regexp v8,

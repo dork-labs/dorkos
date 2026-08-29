@@ -273,9 +273,11 @@ export const app = {
   releaseSingleInstanceLock: vi.fn<() => void>(),
   quit: vi.fn<() => void>(),
   /**
-   * Queues an argv for after this process exits. Modelled because the renderer
-   * supervisor's third rung relaunches, and "did it relaunch or merely quit?"
-   * is the whole difference between recovery and an app that vanished.
+   * Arms a relaunch for whenever this process next exits — which is why tests
+   * assert on the ORDER of `relaunch` against `quit` and against the agent
+   * confirmation, not merely that it was called. The renderer supervisor's
+   * third rung relaunches too, for the same "did it relaunch or merely quit?"
+   * question.
    */
   relaunch: vi.fn<(options?: unknown) => void>(),
   /** No-op here; in production it must run before `ready` (see `main/index.ts`). */

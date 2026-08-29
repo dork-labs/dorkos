@@ -4,7 +4,7 @@
  *
  * @module features/room-management/ui/RoomPanelBody
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import { useAgentCreationStore, useIsTouchOnly, useProfileDeepLink } from '@/layers/shared/model';
@@ -19,6 +19,13 @@ import { RoomLimitsSection } from './RoomLimitsSection';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
 import { RoomPanelNotice } from './RoomPanelNotice';
+// Lazy, so the file explorer stays the async chunk the Files tab loads rather
+// than being absorbed into this panel's. A room panel that never scrolls to
+// its files never pays for the tree, and the Files tab does not pay for the
+// room panel to get one.
+const RoomFilesSection = lazy(() =>
+  import('@/layers/features/file-explorer').then((m) => ({ default: m.RoomFilesSection }))
+);
 
 /**
  * What the keyboard can land on inside the roster.
@@ -419,6 +426,19 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
           <RoomLoudnessLine members={view.members} roomKind={detail.kind} preview={preview} />
         )}
 
+        {/* **Said only when it is known to be true** (DOR-786). The rows below
+            carry a working dot each, so their absence is the room's answer to
+            "is anything happening here" — and until the room read carried its
+            own presence, that absence was also what a sheet with no stream open
+            looked like. `workingKnown` is the difference: silent when nothing
+            current can say, this line when something can. Not in an archived
+            room, where nobody is triggered at all and the banner above already
+            says so — "no one is working" there would be a second, weaker way of
+            saying the same thing. */}
+        {detail !== null && !detail.archived && view.workingKnown && view.working.length === 0 && (
+          <p className="text-muted-foreground px-3 text-xs">No one is working right now.</p>
+        )}
+
         {/* Focusable, never tabbable: "Members" lands the keyboard here when
             the roster has no control of its own to land on yet. */}
         <div ref={rosterRef} tabIndex={-1} className="outline-none">
@@ -537,6 +557,18 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             rather than about who they are — and not drawn at all in an archived
             room, where the banner above says every setting is on hold and
             nothing is triggered anyway. */}
+        {/* Above the limits and below the roster: who is here, then what they
+            are working on, then how loud they may be. A room with no files of
+            its own renders nothing at all here. */}
+        {detail !== null && (
+          // No fallback: the section decides for itself whether this room has
+          // files at all, so a skeleton here would flash on every room that
+          // does not.
+          <Suspense fallback={null}>
+            <RoomFilesSection roomId={roomId} />
+          </Suspense>
+        )}
+
         {detail !== null && !detail.archived && <RoomLimitsSection room={detail} />}
       </div>
 

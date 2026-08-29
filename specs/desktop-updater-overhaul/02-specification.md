@@ -49,6 +49,14 @@ and `lastStatus` is in-memory — a failed install is structurally invisible.
    already down, so the sequence has nothing left to do; let Squirrel's quit run its
    native course. (Preserve the guard's existing behavior for every other quit; the
    `armed`/`quitting` semantics and the "one before-quit listener" rule stand.)
+   **Amended during implementation (DOR-1455 review):** "the sequence has nothing
+   left to do" was wrong on the branch where `MacUpdater.quitAndInstall()` defers
+   and returns having issued nothing — with the server already stopped, a Squirrel
+   that then fails silently leaves the app alive in front of a dead server for
+   ever, where the old code merely failed to restart. So the handoff arms a 15s
+   watchdog, and both it and the updater's `error` handler restart the server and
+   push `install-failed`. Stopping the server first is only safe with that
+   recovery, and it is part of this decision.
 7. **Purge stale staged updates on launch**: if `app.getVersion() >=` the version
    named in `<Caches>/@dorkosdesktop-updater/pending/update-info.json` (or the
    pending zip's parsed filename), delete the pending dir; also delete

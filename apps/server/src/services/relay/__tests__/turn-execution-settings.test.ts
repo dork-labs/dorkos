@@ -24,10 +24,16 @@ let registered: Record<string, { configSection: string | null; supportsEffort: b
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getSessionSettings: () => readSettings(),
-    get: (type: string) =>
-      registered[type]
-        ? { getCapabilities: () => ({ settings: { ...registered[type], sections: [] } }) }
-        : undefined,
+    has: (type: string) => registered[type] !== undefined,
+    // The real `get` THROWS on an unregistered type — it does not answer
+    // `undefined`. The double used to be gentler than the thing it stands in
+    // for, which is how a `?.` on it read as safe; the resolver now asks `has`
+    // first, and this double throws so that stays honest.
+    get: (type: string) => {
+      const declared = registered[type];
+      if (!declared) throw new Error(`Runtime '${type}' not registered`);
+      return { getCapabilities: () => ({ settings: { ...declared, sections: [] } }) };
+    },
   },
 }));
 
@@ -85,7 +91,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     };
     await writeManifest({ model: 'claude-haiku-4-5', effort: 'low' });
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: agentDir,
     });
@@ -100,7 +107,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     };
     await writeManifest({});
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: agentDir,
     });
@@ -109,7 +117,8 @@ describe('createTurnExecutionSettingsResolver', () => {
   });
 
   it('asks for nothing when nothing is configured anywhere', async () => {
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: agentDir,
     });
@@ -125,7 +134,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     await writeManifest({ model: 'claude-haiku-4-5' });
     storedSettings = { model: 'opus', effort: 'high', fastMode: true };
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'sdk-uuid-42',
       agentDirectory: agentDir,
     });
@@ -144,7 +154,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     await writeManifest({ model: 'claude-haiku-4-5' });
     storedSettings = { permissionMode: 'plan' };
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'sdk-uuid-42',
       agentDirectory: agentDir,
     });
@@ -163,7 +174,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     await writeManifest({ model: 'claude-haiku-4-5' });
     storedSettings = { fastMode: true };
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'sdk-uuid-42',
       agentDirectory: agentDir,
     });
@@ -176,7 +188,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     // and treats an absent one as prompting rather than as consent (DOR-604).
     storedSettings = { permissionMode: 'bypassPermissions', model: 'opus' };
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'sdk-uuid-42',
       agentDirectory: agentDir,
     });
@@ -195,7 +208,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     };
     await writeManifest({ runtime: 'codex', model: 'gpt-5.3-codex' });
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: agentDir,
     });
@@ -211,7 +225,8 @@ describe('createTurnExecutionSettingsResolver', () => {
       claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
     };
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
     });
 
@@ -225,7 +240,8 @@ describe('createTurnExecutionSettingsResolver', () => {
     readSettings = () => Promise.reject(new Error('database is locked'));
     await writeManifest({ model: 'claude-haiku-4-5' });
 
-    const settings = await createTurnExecutionSettingsResolver('claude-code')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
       agentDirectory: agentDir,
     });
@@ -237,11 +253,37 @@ describe('createTurnExecutionSettingsResolver', () => {
     registered = { opencode: { configSection: 'opencode', supportsEffort: false } };
     await writeManifest({ runtime: 'opencode', model: 'anthropic/claude-opus', effort: 'high' });
 
-    const settings = await createTurnExecutionSettingsResolver('opencode')({
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'opencode',
       sessionId: 'agent-ulid-1',
       agentDirectory: agentDir,
     });
 
     expect(settings).toEqual({ model: 'anthropic/claude-opus' });
+  });
+
+  it('answers rather than throws when asked about an unregistered runtime', async () => {
+    // Newly reachable (DOR-1614). The runtime used to be fixed when the resolver
+    // was built, from a map entry that existed by construction; it now arrives
+    // per call, off the subject the message came in on. A build where the Codex
+    // SDK failed to construct still has codex-owned sessions on disk and codex
+    // in its manifests, so `codex` reaches here with nothing registered under it
+    // — and `runtimeRegistry.get` THROWS on that. This resolver promises never
+    // to throw: a settings problem must not drop somebody's message. Without the
+    // `has` check ahead of the `get`, this rejects instead of answering.
+    registered = {};
+    await writeManifest({ runtime: 'codex', model: 'gpt-5.3-codex' });
+
+    const settings = await createTurnExecutionSettingsResolver()({
+      runtimeType: 'codex',
+      sessionId: 'agent-ulid-1',
+      agentDirectory: agentDir,
+    });
+
+    // The manifest's model survives: it names the very runtime this turn is
+    // running on, so it is readable there — an unregistered runtime declares no
+    // config section and no effort support, which is the same "no preference"
+    // every other absent tier means.
+    expect(settings).toEqual({ model: 'gpt-5.3-codex' });
   });
 });

@@ -3,19 +3,47 @@
  * to (room-participation spec §10.2 and §10.3, plus the E16b reversal in
  * ADR 260814-195522).
  *
- * Eight verbs, and between them they are everything an agent can do in a room
- * that is not simply answering the message it was handed:
+ * Fifteen verbs, and between them they are everything an agent can do in a room
+ * that is not simply answering the message it was handed. **Ten are open to
+ * every agent; the five that arrange rooms are off until a person turns them
+ * on** (see "The one group with teeth" below):
  *
  * | Capability          | Tool                    | Tier      | What it is |
  * | ------------------- | ----------------------- | --------- | ---------- |
  * | `rooms.post`        | `post_to_room`          | `act`     | Say something into a channel, on purpose. |
  * | `rooms.react`       | `react_to_room_entry`   | `act`     | Put one emoji on one message. |
+ * | `rooms.merge`       | `merge_to_room_main`    | `act`     | Bring the work in your own working copy into the room. |
  * | `rooms.read_history`| `read_room_history`     | `observe` | Read back what was said in ONE room. |
  * | `rooms.search_history`| `search_room_history` | `observe` | Find where something was said in ONE room. |
  * | `rooms.list_member_rooms`| `list_member_rooms` | `observe` | Which rooms this agent is in at all. |
  * | `rooms.search_member_rooms`| `search_member_rooms` | `observe` | Find where something was said across ALL of them. |
+ * | `rooms.repo_status` | `room_repo_status`      | `observe` | What the room's files hold, and what is unmerged. |
  * | `rooms.get_room`    | `get_room`              | `observe` | One room in full: topic, roster, who is human. |
  * | `rooms.find_room`   | `find_room`             | `observe` | Turn a `#name` or a set of members into a room. |
+ * | `rooms.create`      | `create_room`           | `act`     | Open a channel, or a DM with someone. |
+ * | `rooms.add_members` | `add_room_members`      | `act`     | Bring people or agents into a room. |
+ * | `rooms.remove_members`| `remove_room_members` | `act`     | Take them out again. |
+ * | `rooms.update`      | `update_room`           | `act`     | Rename a room, or set its topic. |
+ * | `rooms.leave`       | `leave_room`            | `act`     | Step out of a channel that is finished. |
+ *
+ * ## The two repo verbs, and the three things they are NOT
+ *
+ * `merge_to_room_main` and `room_repo_status` (spec `project-rooms` §3.6) follow
+ * every rule the conversation verbs do — thin callers of a service, membership as
+ * the gate, no `readOnlyCarveOut` on the read — and add one of their own that is
+ * worth stating because its absence would be invisible: **there is no verb here,
+ * and no function under one, that can rewrite a room's history.** No force, no
+ * reset, no push, no branch deletion. A room's repo is append-only, so the
+ * destructive operations are not exposed at a lower layer for this one to
+ * decline to call — `room-repo-git.ts` does not export them at all.
+ *
+ * They are also not a second write path. `merge_to_room_main` runs `git merge`
+ * in the room's integration tree through `RoomMergeService`, and everything it
+ * says about that afterwards goes into the room through `RoomService`, like
+ * every other word an agent puts in a room. And **giving a room files is not
+ * here**: enabling a repo is operator-only over HTTP (spec §3.2), because an
+ * agent that could hand itself a writable working directory is the
+ * confused-deputy shape the membership verbs already refuse.
  *
  * ## The lookup pair answers WHO and WHICH (DOR-1610)
  *
@@ -46,7 +74,7 @@
  *
  * ## The tiers, and what they honestly gate
  *
- * The six reads are `observe`, the tier that returns allowed before any other
+ * The seven reads are `observe`, the tier that returns allowed before any other
  * check runs — so the thing standing between a caller and a room's log is the
  * MEMBERSHIP check, not the tier. That is the honest statement, and it is why
  * every read resolves membership first and answers "not a member" exactly as "no
@@ -61,7 +89,7 @@
  * is not a reason to be the exception. An external caller presents the local
  * token, exactly as it does to post.
  *
- * The two writes are `act`, not `destructive`. A card on every message an agent
+ * The two conversation writes are `act`, not `destructive`. A card on every message an agent
  * posts into its own room would be the over-tiering that teaches people to click
  * through, and nothing either verb does is irreversible in the sense
  * `destructive` means. What bounds them instead is a mechanism apiece, and both
@@ -69,20 +97,44 @@
  * budget for a post, {@link ReactionBudget} for a reaction. `I2` — bounds are
  * mechanisms, never prompts, and never tiers pretending to be one.
  *
- * ## No toggle, deliberately
+ * ## The CONVERSATION verbs still have no toggle, and the five that arrange
+ * rooms have one with teeth
  *
- * `EnabledToolGroupsSchema` gains no `rooms` key (spec §10.2). A togglable rooms
- * group reproduces OpenClaw's documented footgun exactly — an agent that "will
- * listen to room events and can never speak" — in a place where the toggle is one
+ * `EnabledToolGroupsSchema` still gains no `rooms` key (spec `room-participation`
+ * §10.2), and the reasoning behind that has not moved: a togglable rooms group
+ * reproduces OpenClaw's documented footgun exactly — an agent that "will listen
+ * to room events and can never speak" — in a place where the toggle is one
  * person's per-agent setting and the consequence shows up in somebody else's
- * room. Registry-generated tools carry no entry in `MCP_TOOL_GATE_GROUPS` and
- * therefore no toggle can omit their documentation, which is the behaviour this
- * domain wants rather than a gap in it.
+ * room. Nothing can mute an agent that is already in a conversation.
+ *
+ * The five MANAGEMENT verbs are a different question and carry a different
+ * answer: `toolGroup: 'roomsManage'` (DOR-1611, ADR 260828-123331). That is not
+ * the `rooms` key §10.2 forbids and does not reproduce its footgun — it is
+ * visibly a separate key, it covers no conversation verb, and an agent whose
+ * owner has not turned it on can still read, post, react and look rooms up
+ * exactly as before. What it withholds is the ability to REARRANGE, which is
+ * the part that touches other people's rooms.
+ *
+ * **It is the product's first tool group that actually refuses.** The four keys
+ * beside it in `mcp-tool-groups.ts` shape documentation only; this one is read
+ * fresh off the agent's manifest at `registry.invoke` and the call does not run
+ * without it. Off by default, and the agent cannot turn it on for itself — the
+ * agent-reachable manifest write path refuses the field.
+ *
+ * ## Agent-only by construction
+ *
+ * A person never reaches these five. The gate lets a `trustedCaller` past, and
+ * that marker is minted at four routes none of which is the invoke route — so
+ * the only caller who can pass the grant check is an identified agent that holds
+ * it. That is correct rather than a gap: a person manages rooms in the app, over
+ * the HTTP room routes, which are unchanged. It also means `callerAuthor` below
+ * always takes its `context.identity` branch for these five, and the login-off
+ * owner fallback is unreachable from them.
  *
  * ## The runtime constraint (§10.2.1)
  *
  * Only claude-code declares `supportsMcp: true`, so only a claude-code agent gets
- * these in-session. Codex and OpenCode agents reach the same eight through the
+ * these in-session. Codex and OpenCode agents reach the same fifteen through the
  * external `/mcp` server if their owner wires it up, and keep today's behaviour if
  * not: the turn's text is the message. That is a difference in who DECIDES, not in
  * whether posting is possible, which is why nothing here is a mute.
@@ -109,7 +161,11 @@
  */
 import { z } from 'zod';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import {
+  directMessageTitle,
+  MERGE_SUMMARY_MAX_CHARS,
+  type RoomEntry,
+} from '@dorkos/shared/room-schemas';
 
 import {
   CapabilityToolError,
@@ -132,6 +188,7 @@ import {
   type RoomDetail,
   type RoomService,
 } from './room-service.js';
+import type { RoomMergeService } from './repo/room-merge-service.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -143,7 +200,21 @@ import {
 declare module '../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
     /** The live rooms service — membership, posting, history, reactions. */
-    roomDeps?: { rooms: RoomService };
+    roomDeps?: {
+      /** Membership, posting, history, reactions. */
+      rooms: RoomService;
+      /**
+       * A room's own git repo — merging, and reporting what it holds.
+       *
+       * Optional because a room only ever gains files when somebody gives it
+       * some, and because the two repo verbs are the only capabilities that
+       * need it: a registry composed without one still offers the thirteen that
+       * were here first. The verbs that DO need it say so
+       * ({@link requireMergeDeps}) rather than degrading into a confusing
+       * refusal about the room.
+       */
+      merges?: RoomMergeService;
+    };
   }
 }
 
@@ -169,6 +240,26 @@ function requireRoomDeps(deps: CapabilityDeps): RoomService {
     throw new Error('Rooms capability invoked without roomDeps in the registry bag.');
   }
   return deps.roomDeps.rooms;
+}
+
+/**
+ * Narrow the bag to the merge service, throwing if the registry was composed
+ * without it (a wiring bug, caught the first time a repo verb is called).
+ *
+ * A throw rather than a room-shaped refusal, deliberately: "this room has no
+ * files" and "this server was wired without the thing that reads them" are
+ * different facts, and answering the second with the first would send an agent
+ * off to ask an operator to enable something that is already enabled.
+ *
+ * @param deps - The registry's shared dependency bag.
+ * @returns The merge service.
+ */
+function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
+  const merges = deps.roomDeps?.merges;
+  if (!merges) {
+    throw new Error('Rooms repo capability invoked without a merge service in the registry bag.');
+  }
+  return merges;
 }
 
 /**
@@ -375,6 +466,31 @@ function answering<T>(body: () => T): T {
   }
 }
 
+/**
+ * {@link answering} for a verb that returns a promise.
+ *
+ * Its own function rather than a widened signature, because the sync one CANNOT
+ * do this job: a `try` around a call that returns a rejected promise catches
+ * nothing, so a merge refusal would have reached the model as an unhandled
+ * rejection with a stack trace where its typed code should have been. Every
+ * refusal in the room-repo contract is asynchronous, so all of them would have
+ * been affected.
+ *
+ * @param body - The verb.
+ * @returns Whatever the verb resolved to.
+ * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
+ */
+async function answeringAsync<T>(body: () => Promise<T>): Promise<T> {
+  try {
+    return await body();
+  } catch (err) {
+    if (err instanceof RoomError) {
+      throw new CapabilityToolError({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+}
+
 /** Shared by both reads: which room, and optionally which thread inside it. */
 const historyScope = {
   roomId: z
@@ -388,6 +504,121 @@ const historyScope = {
     .optional()
     .describe('Narrow to one thread: the entryId the thread hangs off.'),
 };
+
+/**
+ * Turn the `@handles` a caller typed into author ids, keeping the ones that
+ * name nobody so the caller can be told which (DOR-1611).
+ *
+ * Handles are the only member name an agent holds — `get_room` hands out a
+ * roster of them and `find_room` filters on them — so every management verb
+ * takes them and nothing else. Resolution itself lives on the service
+ * ({@link RoomService.findAuthorByHandle}), which is what keeps this seam from
+ * growing a second opinion about what a handle matches.
+ *
+ * @param rooms - The rooms service.
+ * @param handles - The handles as typed, with or without their `@`.
+ * @returns The author ids that resolved, and the handles that named nobody.
+ */
+function resolveHandles(
+  rooms: RoomService,
+  handles: readonly string[]
+): { resolved: AuthorRecord[]; unknown: string[] } {
+  const resolved = new Map<string, AuthorRecord>();
+  const unknown: string[] = [];
+  for (const token of handles) {
+    const author = rooms.findAuthorByHandle(token);
+    // Keyed by the author rather than by the string, for the reason
+    // {@link applyPerMember} gives: one member written two ways is one member,
+    // and `@bo` beside Bo's author id is now one of the ways.
+    if (author) resolved.set(author.id, author);
+    else if (
+      !unknown.some((seen) => normalizeMemberHandle(seen) === normalizeMemberHandle(token))
+    ) {
+      unknown.push(token);
+    }
+  }
+  return { resolved: [...resolved.values()], unknown };
+}
+
+/**
+ * Apply one roster change per member and report what happened to each
+ * (spec `rooms-management-tools` §D8, decision D19).
+ *
+ * **Not atomic, and the output shape is how that stays honest.** A refusal
+ * partway down the list leaves the members before it applied, which is the right
+ * behaviour — adding four colleagues should not be undone because the fifth
+ * handle was a typo — but it is only safe if the caller can SEE it. A bare
+ * boolean would make a partial application something a model had to infer from
+ * an error, so each member comes back under `applied` or under `refused` with
+ * the code and the sentence that explains it.
+ *
+ * **The room is resolved once, before the loop.** A room the caller cannot see
+ * is one refusal about the room, not N identical refusals about its members —
+ * and `describeRoom` answers `ROOM_NOT_FOUND` for a room that is not there and
+ * for one the caller is not in, so a room id is never a capability here either.
+ *
+ * @param rooms - The rooms service.
+ * @param roomId - The room being changed.
+ * @param callerAuthorId - Who is asking.
+ * @param handles - The members to apply, by handle.
+ * @param apply - The roster write to attempt for one resolved author.
+ * @returns Per-member outcomes, in the order the caller listed them.
+ */
+function applyPerMember(
+  rooms: RoomService,
+  roomId: string,
+  callerAuthorId: string,
+  handles: readonly string[],
+  apply: (authorId: string) => void
+): { applied: string[]; refused: { handle: string; code: string; message: string }[] } {
+  // Throws if the caller cannot see the room, before anything is written.
+  answering(() => rooms.describeRoom(roomId, callerAuthorId));
+
+  const applied: string[] = [];
+  const refused: { handle: string; code: string; message: string }[] = [];
+  // **Deduplicated on the RESOLVED author, not on the string** (DOR-1611
+  // review). `['bo', '@bo', ' BO ', '@@bo']` is one member written four ways —
+  // the sigil is optional, the match is case-insensitive, and an id is now a
+  // second spelling of the same person — and applying it four times reported
+  // four successes for one change, which is the opposite of what the per-member
+  // shape exists to make legible. Resolving first and keying on the id catches
+  // every spelling, including the two that no string comparison could:
+  // `@bo` beside Bo's author id, and a handle beside the id it belongs to.
+  // Unresolvable tokens dedupe on their normalized form instead, so a typo
+  // repeated is one refusal rather than several identical ones.
+  const seenAuthors = new Set<string>();
+  const seenMissing = new Set<string>();
+  for (const token of handles) {
+    const author = rooms.findAuthorByHandle(token);
+    if (!author) {
+      const key = normalizeMemberHandle(token);
+      if (seenMissing.has(key)) continue;
+      seenMissing.add(key);
+      refused.push({
+        // Sanitized, like every other label this seam hands back: the token is
+        // whatever the model typed, and it lands in text another model reads.
+        handle: sanitizeIdentity(token) ?? 'that name',
+        code: 'MEMBER_NOT_FOUND',
+        message: `Nobody here answers to ${sanitizeIdentity(token) ?? 'that name'}.`,
+      });
+      continue;
+    }
+    if (seenAuthors.has(author.id)) continue;
+    seenAuthors.add(author.id);
+    const label = sanitizeIdentity(author.handle ?? author.displayName) ?? author.id;
+    try {
+      apply(author.id);
+      applied.push(label);
+    } catch (err) {
+      if (err instanceof RoomError) {
+        refused.push({ handle: label, code: err.code, message: err.message });
+        continue;
+      }
+      throw err;
+    }
+  }
+  return { applied, refused };
+}
 
 /**
  * The rooms domain: the affirmative posting verb, the reaction, the two ways to
@@ -506,6 +737,93 @@ export const roomsDomain: CapabilityDomain = {
         // deliberately not returned here: it would be state about the operator,
         // handed to a model, for nothing.
         return Promise.resolve({ reacted });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.merge',
+      title: 'Merge your work into the room',
+      description:
+        'Bring the work you have committed in this room’s working copy into the room itself, ' +
+        'where everyone else can see it and build on it. ' +
+        'Commit everything you want to include first — anything uncommitted is left behind — and ' +
+        'run `git merge main` in your own working copy first if the room has moved on, so you ' +
+        'sort out anything that clashes in your own tree rather than in everybody’s. ' +
+        'It is refused, with the reason, if you have uncommitted changes, if your branch is ' +
+        'behind the room, if a file is too big, or if something in it is a shortcut pointing ' +
+        'outside the room’s files. ' +
+        'Merges happen one at a time, so if somebody else is merging right now, yours waits its ' +
+        'turn. ' +
+        'When it lands, the room gets one line saying what you merged — you do not need to ' +
+        'announce it as well.',
+      tier: 'act',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe(
+            'The room to merge into, by its id — not its #name. Inside a room turn your room ' +
+              'context names it. You must be a member of it.'
+          ),
+        summary: z
+          .string()
+          .min(1)
+          // The same cap the server truncates at, so a long summary is refused
+          // while the agent can still write a shorter one, never silently cut.
+          .max(MERGE_SUMMARY_MAX_CHARS)
+          .describe(
+            'What you did, in one line — it becomes the merge’s own description and the line ' +
+              'the room sees. "Add the deploy checklist", not "changes".'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'merge_to_room_main',
+          servers: ['in-session', 'external'],
+          // Emphatically not idempotent: calling it twice merges twice, and the
+          // second call is refused `NOTHING_TO_MERGE` only because the first one
+          // already moved the branch.
+          annotations: { idempotentHint: false },
+        },
+      },
+      invoke: async (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const merges = requireMergeDeps(deps);
+        // Inside `answeringAsync` with the merge itself, because resolving WHO
+        // is calling can refuse too — and every refusal in this contract is one
+        // an agent is meant to read and act on.
+        const result = await answeringAsync(() =>
+          merges.merge(input.roomId, callerAuthor(rooms, context).id, { summary: input.summary })
+        );
+        return { merged: true, ...result };
+      },
+    }),
+    defineCapability({
+      id: 'rooms.repo_status',
+      title: 'Check the room’s files',
+      description:
+        'See where this room’s files stand: what the room’s own copy is at, and for every agent ' +
+        'in the room, how far its working copy has run ahead and how far behind. ' +
+        'Use it before you merge, to find out whether you need to sync first, and to see whether ' +
+        'anyone is sitting on work nobody has merged. ' +
+        'It reads only — it changes nothing and merges nothing.',
+      tier: 'observe',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The room to look at, by its id — not its #name. You must be a member of it.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'room_repo_status',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const merges = requireMergeDeps(deps);
+        return answeringAsync(() => merges.status(input.roomId, callerAuthor(rooms, context).id));
       },
     }),
     defineCapability({
@@ -807,6 +1125,304 @@ export const roomsDomain: CapabilityDomain = {
           })
         );
         return Promise.resolve({ rooms: found.map(projectDetail) });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.create',
+      title: 'Open a room',
+      description:
+        'Open a new channel, or a direct message with someone. ' +
+        'Use it when a piece of work needs a place of its own that the people and agents ' +
+        'involved can all see — not to tidy up rooms that already exist. ' +
+        'A channel gets a #name from its title. A direct message is named after who is in it, ' +
+        'and asking for one that already exists RETURNS that conversation instead of opening a ' +
+        'second one, so you can call this rather than checking first. ' +
+        'You are always in the room you open. ' +
+        'Two agents can only share a room the person who runs this install is also in, so add ' +
+        'them when you bring a colleague in. ' +
+        'Ask before reorganising somebody else\u2019s work: opening a room is a message to ' +
+        'everyone you put in it.',
+      tier: 'act',
+      toolGroup: 'roomsManage',
+      input: z.object({
+        kind: z
+          .enum(['channel', 'dm'])
+          .describe('A channel for work anyone in it can follow, or a direct message.'),
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            'What to call it. A channel needs one — its #name comes from this. A direct ' +
+              'message is named after its members if you leave this out.'
+          ),
+        topic: z
+          .string()
+          .max(500)
+          .optional()
+          .describe('One line on what the room is for, shown under its name.'),
+        members: z
+          .array(z.string().min(1).max(100))
+          .max(20)
+          .default([])
+          .describe(
+            'Who else is in it. Use the @handle or the id a room lookup reports for them — ' +
+              'the person who runs this install often has an id and no handle, so use the id ' +
+              'for her. You are added automatically.'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'create_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: false },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        // **A handle that names nobody refuses the whole call**, unlike the two
+        // member verbs beside it, and the asymmetry is deliberate. There, the
+        // room already exists and a partial application is recoverable — the
+        // caller is told exactly who did not make it. Here, going ahead would
+        // open a room silently missing somebody, which is worse than not opening
+        // one: the caller believes the colleague is in the conversation, and
+        // nothing about the room says otherwise. Atomicity is free before the
+        // room exists, which is the same reason `createRoom` resolves its whole
+        // roster before writing anything.
+        const { resolved, unknown } = resolveHandles(rooms, input.members);
+        if (unknown.length > 0) {
+          throw new CapabilityToolError({
+            error:
+              `Nobody here answers to ${unknown
+                .map((token) => sanitizeIdentity(token) ?? 'that name')
+                .join(', ')}. Nothing was opened. Look up a room you share with them and use ` +
+              'the @handle — or the id — it reports for them.',
+            code: 'MEMBER_NOT_FOUND',
+          });
+        }
+        // **A direct message is NAMED AFTER WHO IS IN IT, and this is where that
+        // gets decided when the caller did not say** (DOR-1611 review). The
+        // capability builds a raw create request, so it skips
+        // `CreateRoomRequestSchema`'s refinement that a DM carries a title — and
+        // `createRoom`'s own fallback is `#${slug ?? ''}`, which for a DM (no
+        // slug) is the bare `"#"` that refinement exists to keep out of the
+        // sidebar. Derived through the same pair the product already renames a
+        // DM with when its roster changes, so a room opened by an agent is
+        // titled exactly as the same room opened from the app.
+        const title =
+          input.title ??
+          (input.kind === 'dm'
+            ? directMessageTitle(
+                [caller, ...resolved]
+                  .filter((author) => author.kind === 'agent')
+                  .map((author) => author.displayName)
+              )
+            : undefined);
+        const opened = answering(() =>
+          rooms.createRoom(
+            {
+              kind: input.kind,
+              ...(title ? { title } : {}),
+              ...(input.topic !== undefined ? { topic: input.topic } : {}),
+              members: resolved.map((author) => author.id),
+              agentPaths: [],
+            },
+            caller.id
+          )
+        );
+        // Described rather than projected from the create result, so the shape an
+        // agent gets back from opening a room is byte-identical to the shape it
+        // gets from looking one up. One projection, one set of sanitized labels.
+        const detail = answering(() => rooms.describeRoom(opened.id, caller.id));
+        return Promise.resolve({ ...projectDetail(detail), created: opened.created });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.add_members',
+      title: 'Add members to a room',
+      description:
+        'Bring people or agents into a room you are in, by @handle or by id. ' +
+        'Use it when somebody is needed in a conversation that is already happening. ' +
+        'Everyone you add can read everything said in the room from the moment they join, and ' +
+        'they will see it in their own sidebar \u2014 so add the colleague the work needs, not ' +
+        'everyone who might be interested. ' +
+        'Two agents can only share a room the person who runs this install is also in. ' +
+        'Members are applied one at a time and it does not stop at the first refusal: the ' +
+        'result lists who was added and who was not, with the reason for each.',
+      tier: 'act',
+      toolGroup: 'roomsManage',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The room to add to, by its id \u2014 not its #name. You must be in it.'),
+        members: z
+          .array(z.string().min(1).max(100))
+          .min(1)
+          .max(20)
+          .describe(
+            'Who to add, by the @handle or the id a room lookup reports for them. The @ is ' +
+              'optional, and naming the same person twice adds them once.'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'add_room_members',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: false },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        return Promise.resolve(
+          applyPerMember(rooms, input.roomId, caller.id, input.members, (authorId) => {
+            rooms.addMemberFromTool(input.roomId, caller.id, { authorId });
+          })
+        );
+      },
+    }),
+    defineCapability({
+      id: 'rooms.remove_members',
+      title: 'Remove members from a room',
+      description:
+        'Take people or agents out of a room you are in, by @handle or by id. ' +
+        'Use it to undo your own mistake \u2014 the colleague you added to the wrong room \u2014 ' +
+        'or when somebody has finished with a piece of work and said so. ' +
+        'Do NOT use it to tidy a room up, to settle a disagreement, or to decide who belongs ' +
+        'somewhere: taking somebody out of a conversation is a decision about them, and it is ' +
+        'not yours to make unasked. ' +
+        'You can never remove the person who runs this install. ' +
+        'Members are applied one at a time and it does not stop at the first refusal: the ' +
+        'result lists who was removed and who was not, with the reason for each.',
+      tier: 'act',
+      toolGroup: 'roomsManage',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The room to remove from, by its id \u2014 not its #name. You must be in it.'),
+        members: z
+          .array(z.string().min(1).max(100))
+          .min(1)
+          .max(20)
+          .describe(
+            'Who to remove, by the @handle or the id a room lookup reports for them. The @ ' +
+              'is optional. Naming YOURSELF here is leaving, and follows the same rules as ' +
+              'leave_room: channels only, never the home channel.'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'remove_room_members',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: false },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        return Promise.resolve(
+          applyPerMember(rooms, input.roomId, caller.id, input.members, (authorId) => {
+            rooms.removeMemberFromTool(input.roomId, caller.id, authorId);
+          })
+        );
+      },
+    }),
+    defineCapability({
+      id: 'rooms.update',
+      title: 'Rename a channel or set a room topic',
+      description:
+        'Change the title or the topic of a room you are in. ' +
+        'Use it to fix a name that no longer says what the room is about, or to write a topic ' +
+        'so somebody arriving knows what they have walked into. ' +
+        'Renaming a channel CHANGES ITS #name, so anyone who types the old one will not find ' +
+        'it \u2014 rename when the name is wrong, not to tidy. ' +
+        'A direct message cannot be renamed at all: it is named after who is in it. You can ' +
+        'still set its topic. ' +
+        'The home channel is the exception: you can describe it, but only the person who runs ' +
+        'this install can rename it. ' +
+        'A name somebody chose is theirs; ask before you change it.',
+      tier: 'act',
+      toolGroup: 'roomsManage',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The room to change, by its id \u2014 not its #name. You must be in it.'),
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('A new title. For a channel this also moves its #name.'),
+        topic: z
+          .string()
+          .max(500)
+          .nullable()
+          .optional()
+          .describe('A new topic, or null to clear it.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'update_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        if (input.title === undefined && input.topic === undefined) {
+          throw new CapabilityToolError({
+            error: 'Give a title, a topic, or both.',
+            code: 'MISSING_FILTER',
+          });
+        }
+        answering(() =>
+          rooms.updateRoom(input.roomId, caller.id, {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.topic !== undefined ? { topic: input.topic } : {}),
+          })
+        );
+        const detail = answering(() => rooms.describeRoom(input.roomId, caller.id));
+        return Promise.resolve(projectDetail(detail));
+      },
+    }),
+    defineCapability({
+      id: 'rooms.leave',
+      title: 'Leave a channel',
+      description:
+        'Step out of a channel you are in, when your part in it is finished. ' +
+        'Use it to leave a channel opened for a piece of work that is now done. ' +
+        'You stop seeing new messages there and stop being asked to answer in it. ' +
+        'It only works on channels: a direct message stays until the person archives it. ' +
+        'You cannot leave the home channel. ' +
+        'Say goodbye before you go if people are still working in there \u2014 leaving without a ' +
+        'word reads as a colleague vanishing mid-conversation.',
+      tier: 'act',
+      toolGroup: 'roomsManage',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The channel to leave, by its id \u2014 not its #name. You must be in it.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'leave_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: false },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        answering(() => rooms.leaveRoom(input.roomId, caller.id));
+        return Promise.resolve({ left: true, roomId: input.roomId });
       },
     }),
   ],

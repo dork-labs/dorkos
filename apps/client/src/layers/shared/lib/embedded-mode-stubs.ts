@@ -82,6 +82,7 @@ import type {
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
+import type { RoomFileContentResponse, RoomFileListResponse } from '@dorkos/shared/room-files';
 import type {
   Workspace,
   WorkspaceWithSessions,
@@ -922,6 +923,14 @@ export const roomStubs = {
 
   async listRoomEntries(_id: string, _query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
     return [];
+  },
+
+  async readRoomFiles(_id: string, _path?: string): Promise<RoomFileListResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async readRoomFileContent(_id: string, _path: string): Promise<RoomFileContentResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
   },
 
   async postToRoom(_id: string, _req: PostToRoomRequest): Promise<PostToRoomResponse> {

@@ -16,6 +16,10 @@ import {
   RoomMemberSchema,
   RoomMomentSchema,
   RoomNoticeCodeSchema,
+  RoomSummarySchema,
+  RoomTriggerSkipReasonSchema,
+  RoomWithRosterSchema,
+  PostToRoomResponseSchema,
   ToggleReactionRequestSchema,
   withoutActivityTarget,
   type SignableRoomEntry,
@@ -641,5 +645,89 @@ describe('isDirectMessageTitleDerived', () => {
 
   it('recognises nothing when there is nobody to have been named after', () => {
     expect(isDirectMessageTitleDerived('', [])).toBe(false);
+  });
+});
+
+describe('PostToRoomResponseSchema — who a message reached (DOR-786)', () => {
+  const identity = { accepted: true as const, entryId: '01JZENTRY', seq: 7 };
+
+  it('round-trips the whole answer, both lists included', () => {
+    const body = {
+      ...identity,
+      triggered: [{ id: '01JZANA', kind: 'agent' as const, displayName: 'Ana', handle: 'ana' }],
+      skipped: [{ authorId: '01JZBO', reason: 'repeat' as const }],
+    };
+    expect(PostToRoomResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it('still parses a body from before either field existed', () => {
+    // The reason both are optional. A client on an older server must not fail to
+    // read a 202 for a message that was accepted.
+    const parsed = PostToRoomResponseSchema.parse(identity);
+    expect(parsed.triggered).toBeUndefined();
+    expect(parsed.skipped).toBeUndefined();
+  });
+
+  it('keeps "nobody" and "cannot say" as different answers', () => {
+    // The distinction the whole field rests on: `[]` is a claim about the room,
+    // absent is a claim about the source. Nothing may collapse one into the other.
+    const nobody = PostToRoomResponseSchema.parse({ ...identity, triggered: [], skipped: [] });
+    expect(nobody.triggered).toEqual([]);
+    expect(nobody.skipped).toEqual([]);
+  });
+
+  it('refuses a reason the dispatcher cannot produce', () => {
+    // Every value here is a decision made while the post is written. A budget
+    // refusal happens after the response is sent, so it is not one of them —
+    // see `PostToRoomResponseSchema`'s own note.
+    expect(RoomTriggerSkipReasonSchema.options).toEqual(['depth', 'repeat', 'gone']);
+    expect(
+      PostToRoomResponseSchema.safeParse({
+        ...identity,
+        skipped: [{ authorId: '01JZBO', reason: 'budget' }],
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('RoomWithRosterSchema.workingAgents — presence on the room read (DOR-786)', () => {
+  const room = {
+    id: '01JZROOM',
+    kind: 'channel' as const,
+    slug: 'backend',
+    title: '#backend',
+    topic: null,
+    archived: false,
+    ambientMaxEntries: 40,
+    createdAt: WHEN,
+    lastActivityAt: WHEN,
+    members: [],
+    viewerAuthorId: '01JZHUMAN',
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
+  };
+
+  it('carries one row per agent mid-turn, with the start of its turn', () => {
+    const parsed = RoomWithRosterSchema.parse({
+      ...room,
+      workingAgents: [{ authorId: '01JZANA', since: WHEN }],
+    });
+    expect(parsed.workingAgents).toEqual([{ authorId: '01JZANA', since: WHEN }]);
+  });
+
+  it('is optional, so a room read from an older server still parses', () => {
+    expect(RoomWithRosterSchema.parse(room).workingAgents).toBeUndefined();
+  });
+
+  it('is named apart from the summary’s count, which is a different type', () => {
+    // `RoomWithRoster` is routinely built by spreading a `RoomSummary`, so one
+    // name for a count and a list would be a silent mismatch rather than a
+    // caught one. Both shapes are asserted here so a rename cannot re-collide
+    // them without something going red.
+    expect(RoomSummarySchema.shape.working).toBeDefined();
+    expect(RoomWithRosterSchema.shape.workingAgents).toBeDefined();
+    expect(
+      RoomSummarySchema.parse({ ...room, unreadCount: 0, participants: null, working: 2 }).working
+    ).toBe(2);
+    expect(RoomWithRosterSchema.safeParse({ ...room, workingAgents: 2 }).success).toBe(false);
   });
 });

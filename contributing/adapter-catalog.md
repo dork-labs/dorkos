@@ -274,9 +274,12 @@ The API-driven path (`PATCH /api/relay/adapters/:id/config`) calls `updateConfig
 
 ```typescript
 interface AdapterManagerDeps {
-  agentManager: ClaudeCodeAgentRuntimeLike;
+  /** Every runtime the relay may drive, keyed by runtime type. Pass this. */
+  agentRuntimes?: Map<string, AgentRuntimeLike>;
+  /** Deprecated single-runtime field; its compat wrap keys everything under 'claude-code'. */
+  agentManager?: AgentRuntimeLike;
   traceStore: TraceStoreLike;
-  pulseStore?: PulseStoreLike;
+  taskStore?: TasksStoreLike;
   /** Optional RelayCore for binding subsystem initialization */
   relayCore?: RelayCoreLike;
   /** Optional MeshCore for CWD resolution via getProjectPath(agentId) */
@@ -284,7 +287,7 @@ interface AdapterManagerDeps {
 }
 ```
 
-- `agentManager` and `traceStore` are required. `pulseStore` is optional but needed for Pulse-aware adapters (e.g., `ClaudeCodeAdapter` schedule dispatching).
+- `traceStore` is required. Pass `agentRuntimes` — every runtime this server registered, keyed by type — so `ClaudeCodeAdapter` can run each message on the program its agent actually runs on (DOR-1614); the single-runtime `agentManager` field is deprecated and keys whatever it is given under `'claude-code'`. `taskStore` is optional but needed for `ClaudeCodeAdapter` task dispatching.
 - When `relayCore` is provided, `AdapterManager` initializes the full binding subsystem (`BindingStore` + `BindingRouter`) during `initialize()`. When omitted, the binding subsystem is skipped and binding API endpoints return 503.
 - `meshCore` is optional; when provided, `buildContext()` resolves the agent's `projectPath` via `meshCore.getProjectPath(agentId)` and enriches the `AdapterContext` passed to each adapter's `deliver()` call.
 - `AdapterMeshCoreLike` requires only `getProjectPath(agentId: string): string | undefined`.
@@ -345,7 +348,7 @@ An explicit `chatId` or `channelType` that does not match the inbound message is
 3. Resolves the platform type to an adapter instance ID via the optional `resolveAdapterInstanceId` dependency.
 4. Calls `BindingStore.resolve()` with the extracted components.
 5. Determines or creates the target agent session based on `sessionStrategy`.
-6. Republishes the envelope to `relay.agent.{sessionId}` for `ClaudeCodeAdapter` to handle.
+6. Republishes the envelope to `relay.agent.{runtimeType}.{sessionId}` for `ClaudeCodeAdapter` to handle. The runtime segment is read from the session's ownership row, which is what routes the turn to the program the agent runs on.
 
 Agent response messages (where `envelope.from` starts with `'agent:'`) are ignored to prevent feedback loops.
 

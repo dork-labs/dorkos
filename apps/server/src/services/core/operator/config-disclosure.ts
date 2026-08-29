@@ -326,6 +326,13 @@ export const CONFIG_DISCLOSURE = {
   'workbench.autoOpenDiff': 'expose',
 
   'runtimes.default': 'expose',
+  // Whether Codex and OpenCode agents carry the DorkOS tools (spec
+  // `tool-only-room-replies` §D5). Exposed although it is operator-only to
+  // WRITE, and for the plainest version of that asymmetry: an agent reading
+  // `false` here can tell the person WHY its Codex teammate never answered in a
+  // room, instead of guessing. It names no credential and points at none — the
+  // bearer and identity headers are minted per turn and never live in config.
+  'runtimes.dorkosTools': 'expose',
   // How much a new session may do without asking, globally and per runtime (spec
   // `trust-dial`, decision 6). Exposed although it is operator-only to WRITE, and
   // the asymmetry is the point of having two tables: reading it lets an agent

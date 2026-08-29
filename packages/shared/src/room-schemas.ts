@@ -108,6 +108,14 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   reasoning that gives `agent_gone` its own code, and the same shape: damped
  *   per `(room, agent, reason)` rather than treated as one more distinct error
  *   (DOR-1206).
+ * - `agent_left` — the message was gathered and a turn was owed for it, and by
+ *   the time that batch came round the member was no longer in the room. Its own
+ *   code rather than `agent_gone` because the agent is fine — it is still
+ *   registered, still answering everywhere else, just not a member here any
+ *   more — and the remedy is to add it back rather than to re-register it. It
+ *   exists because `PostToRoomResponse.triggered` names the agents the room asked
+ *   for, and a promise the room quietly drops is the shape the conduct rules
+ *   forbid (DOR-786).
  * - `awaiting_approval` — the agent's turn STARTED and then stopped, waiting for
  *   a person: a tool approval, a question it asked, or an MCP prompt. All three
  *   park the turn until somebody answers in that agent's own session, and the
@@ -163,6 +171,7 @@ export const RoomNoticeCodeSchema = z
     'turn_failed',
     'agent_gone',
     'agent_unavailable',
+    'agent_left',
     'awaiting_approval',
     'halted',
     'addressing_changed',
@@ -589,6 +598,29 @@ export const RoomRosterEntrySchema = RoomMemberSchema.extend({
 export type RoomRosterEntry = z.infer<typeof RoomRosterEntrySchema>;
 
 /**
+ * One agent that is mid-turn in a room, read straight off the dispatcher's claim
+ * map at the moment of the request.
+ *
+ * The same fact the room's `room_presence` signal carries, in the same grain —
+ * the claim map is keyed `(room, agent)`, so one agent is one row here and never
+ * two. It carries no cascade, no entry id and no session: those belong to the
+ * live signal and to `GET /api/rooms/:id/sessions`, each of which was designed
+ * with its own answer to who may read it.
+ */
+export const RoomWorkingClaimSchema = z
+  .object({
+    authorId: z.string().min(1).describe('The agent holding the claim, as a roster author id.'),
+    since: z
+      .string()
+      .describe(
+        'ISO 8601 — when its turn started, never when this response was built. It is what lets a freshly opened room draw "4m" rather than "0s" corrected a second later.'
+      ),
+  })
+  .openapi('RoomWorkingClaim');
+
+export type RoomWorkingClaim = z.infer<typeof RoomWorkingClaimSchema>;
+
+/**
  * One room with its roster — the `GET /api/rooms/:id` body.
  *
  * `viewerAuthorId` is the answer to "which of these members am I", and it has
@@ -618,6 +650,12 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .optional()
     .describe(
       "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the DorkOS app's bridge controls read their state from it."
+    ),
+  workingAgents: z
+    .array(RoomWorkingClaimSchema)
+    .optional()
+    .describe(
+      'Who is mid-turn in this room right now, one row per agent, oldest claim first. `[]` means nobody is, and the server always sends it — it is optional only so a caller that predates it still parses, and **absent means "this source cannot say", never "nobody"**. A live read of the dispatcher\'s claim map, so it is the same fact the `room_presence` signal carries; it rides the room read so a room opened mid-turn draws its working rows on the first paint instead of waiting up to 10s for the next republish. Named apart from `RoomSummary.working`, which answers the same question with a bare COUNT for a sidebar that draws a dot: the two shapes are routinely spread into one another, so one name for two types would be a silent mismatch rather than a caught one.'
     ),
 }).openapi('RoomWithRoster');
 
@@ -759,6 +797,78 @@ export const RoomWaitingKindSchema = z
 export type RoomWaitingKind = z.infer<typeof RoomWaitingKindSchema>;
 
 /**
+ * Work an agent brought into a room's own repo, carried on the entry that
+ * announces it (spec `project-rooms` §3.6).
+ *
+ * **A merge is an ordinary post, not a notice and not a moment.** A notice is a
+ * refusal-shaped event and is damped — two merges a minute apart would collapse
+ * into one line, which is exactly wrong for something that IS the content of a
+ * project room. A moment is a milestone, and a room that marked every merge as
+ * a milestone would have nothing left to call one. So a merge rides the body
+ * beside `moment` and is drawn as what it is: a line in the log saying what
+ * landed.
+ *
+ * It exists as structure rather than prose for one reader — the file explorer,
+ * which follows the room's own stream and refreshes when it sees one of these
+ * (§3.6). Everything a person reads is already in `text`.
+ */
+export const RoomMergeEventSchema = z
+  .object({
+    branch: z.string().min(1).describe("The agent's branch, `room/<worktree slug>`."),
+    commit: z.string().min(1).describe('The merge commit on the room’s main branch.'),
+    files: z.number().int().nonnegative().describe('How many files the merge touched.'),
+    insertions: z.number().int().nonnegative().describe('Lines added.'),
+    deletions: z.number().int().nonnegative().describe('Lines removed.'),
+  })
+  .openapi('RoomMergeEvent');
+
+/** Work an agent merged into a room's repo. See {@link RoomMergeEventSchema}. */
+export type RoomMergeEvent = z.infer<typeof RoomMergeEventSchema>;
+
+/**
+ * The most of a merge summary that survives to the commit subject and the room.
+ *
+ * **Shared so the cap is asked once.** The server sanitizes and truncates at
+ * this length; a schema that accepted more would take a summary, silently cut
+ * it, and post two thirds of somebody's sentence. Refusing at the door instead
+ * means the caller finds out while it can still write a shorter one.
+ */
+export const MERGE_SUMMARY_MAX_CHARS = 200;
+
+/**
+ * Asking for one agent's work to be merged into a room's `main`
+ * (`POST /api/rooms/:id/repo/merge`).
+ *
+ * **`worktree` is the operator's field and nobody else's.** An agent merging
+ * through `merge_to_room_main` never sends one — it merges its own branch,
+ * because publishing a colleague's unfinished work under your own summary is a
+ * decision the room cannot unpick afterwards. The owner has no branch of their
+ * own, so naming one is how they merge at all (spec §5 Q2), and a non-owner who
+ * sends it is refused `OPERATOR_ONLY`.
+ */
+export const MergeRoomRepoRequestSchema = z
+  .object({
+    summary: z
+      .string()
+      .min(1)
+      .max(MERGE_SUMMARY_MAX_CHARS)
+      .describe(
+        'What the work does, in one line. It becomes the merge commit’s subject and the sentence the room sees.'
+      ),
+    worktree: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Which working copy to merge, by the slug `room_repo_status` reports. Owner-only; omit it to merge your own.'
+      ),
+  })
+  .openapi('MergeRoomRepoRequest');
+
+/** A request to merge work into a room. See {@link MergeRoomRepoRequestSchema}. */
+export type MergeRoomRepoRequest = z.infer<typeof MergeRoomRepoRequestSchema>;
+
+/**
  * The payload of a log entry.
  *
  * One shape rather than a union, because `kind` on the entry already says
@@ -777,9 +887,12 @@ export type RoomWaitingKind = z.infer<typeof RoomWaitingKindSchema>;
  * agent-authored post a turn produces, because a reader cannot tell from the
  * outside which answers waited.
  *
- * `waitingKind` is the newest and the narrowest — see
- * {@link RoomWaitingKindSchema}. It is set only on an `awaiting_approval`
- * notice, and has exactly one reader.
+ * `waitingKind` is the narrowest — see {@link RoomWaitingKindSchema}. It is set
+ * only on an `awaiting_approval` notice, and has exactly one reader.
+ *
+ * `merge` is the newest, and follows `moment`'s pattern exactly: a post the
+ * room writes in its own voice, ABOUT the agent named in `subjectAuthorId`, with
+ * the machine-readable half beside the sentence a person reads.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -787,6 +900,7 @@ export const RoomEntryBodySchema = z
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
     moment: RoomMomentSchema.optional(),
+    merge: RoomMergeEventSchema.optional(),
     waitingKind: RoomWaitingKindSchema.optional(),
     answersEntryId: z
       .string()
@@ -1459,17 +1573,98 @@ export const RoomEntryListResponseSchema = z
 export type RoomEntryListResponse = z.infer<typeof RoomEntryListResponseSchema>;
 
 /**
+ * Why a message reached an agent and still bought no turn.
+ *
+ * Exactly the refusals the dispatcher makes **while the post is being written**,
+ * which is the only set a 202 can honestly report.
+ *
+ * Nearly every one of them also writes the room's own notice, so this is the
+ * faster path to the same truth rather than a second one. The exception is the
+ * refusal the room deliberately stays quiet about: an agent posting with no turn
+ * behind it is stamped at the depth ceiling, so everything it addresses is
+ * refused — announcing that would spray a line per room-mate per post, with a
+ * damping key that can never repeat. Telling the POSTER once, in the answer to
+ * its own write, is what that agent needs and cannot spray.
+ */
+export const RoomTriggerSkipReasonSchema = z
+  .enum(['depth', 'repeat', 'gone'])
+  .openapi('RoomTriggerSkipReason');
+
+/** Why a message reached an agent and still bought no turn. */
+export type RoomTriggerSkipReason = z.infer<typeof RoomTriggerSkipReasonSchema>;
+
+/** One agent a message reached that will not be answering it. */
+export const SkippedTriggerSchema = z
+  .object({
+    authorId: z.string().min(1).describe('The agent that will not answer, as a roster author id.'),
+    reason: RoomTriggerSkipReasonSchema.describe(
+      'Which rule stopped it. `depth` — this back-and-forth has run as many automatic replies as the room allows. `repeat` — this agent has already taken its share of turns in this exchange. `gone` — its directory no longer holds the agent it was added as, so it can take no turn at all.'
+    ),
+  })
+  .openapi('SkippedTrigger');
+
+/** One agent a message reached that will not be answering it. */
+export type SkippedTrigger = z.infer<typeof SkippedTriggerSchema>;
+
+/**
  * What `POST /api/rooms/:id/entries` answers with.
  *
  * Identity, not delivery: the entry itself reaches every reader — including the
  * poster — over `GET /api/rooms/:id/events`, so the 202 carries only enough to
  * correlate an optimistic echo with the committed entry.
+ *
+ * `triggered` and `skipped` are the exception, and they are the same kind of
+ * fact: **who this message asked, and who the room already knows will not
+ * answer.** Target selection and the cascade guard both run synchronously inside
+ * the write (`RoomTriggerDispatcher.dispatch`), so the answer exists by the time
+ * the 202 is built, and a composer that has it can say "nobody picked this up
+ * because the reply limit tripped" instead of leaving a person watching a room
+ * that never moves. Both are additive and optional so an older client still
+ * parses; the server always sends both, and **absent means "this source cannot
+ * say", never "nobody".**
+ *
+ * **This is the accept-time answer, and it is not a promise that a turn ran.** A
+ * message the room accepts is gathered into a batch, and the batch is judged
+ * again when it closes — so an agent in `triggered` can still end up not
+ * answering. Four ways, and they do not all announce themselves:
+ *
+ * - Its share of the exchange was spent by a reply that landed while the batch
+ *   waited, the room ran out of automatic turns, or it left the room. Each of
+ *   those is written into the room as a notice, so the reader finds out.
+ * - **Or the room decided it had nothing to add.** An agent that is merely
+ *   OVERHEARING — engaged in the room, not addressed by this message — can be
+ *   routed to silence by the response gate, deliberately and with no notice at
+ *   all, because a line every time an agent tactfully says nothing is the
+ *   over-participation the gate exists to prevent.
+ *
+ * That last one never applies to a message that NAMED somebody or to a direct
+ * message: those are addressed, and an addressed message runs its turn. So the
+ * case a person is most likely to be watching for — "I asked Ana something" — is
+ * the case where `triggered` is strongest.
+ *
+ * **The turn budget is therefore never in `skipped`.** A room's spend is charged
+ * when the collect window closes, a scheduled macrotask after this response has
+ * been sent, so a budget refusal has not happened yet and claiming one would be a
+ * guess. Same for a turn merely waiting behind an agent's other work: it is in
+ * `triggered`, because the room did ask for it.
  */
 export const PostToRoomResponseSchema = z
   .object({
     accepted: z.literal(true),
     entryId: z.string().min(1),
     seq: z.number().int().min(1),
+    triggered: z
+      .array(AuthorRefSchema)
+      .optional()
+      .describe(
+        'The agents the room ASKED to reply, in roster order — not a promise that any of them did. When the room gathers this message into a batch and that batch closes, it judges it again and can still stop one of these agents: a limit reached (which the room announces as a notice) or, for an agent that was merely overhearing rather than addressed, a decision that it had nothing to add (which is deliberately silent). Neither ever appears in this field. An agent this message NAMED, or the agent on the other side of a direct message, is not subject to the second one. `[]` means the message addressed nobody who could answer, which is the ordinary shape of a message nobody was meant to pick up. An agent already mid-turn is HERE rather than in `skipped`: the room asked it, and it answers when the work in front of it ends.'
+      ),
+    skipped: z
+      .array(SkippedTriggerSchema)
+      .optional()
+      .describe(
+        'The agents this message reached that will not be answering it, each with the rule that stopped it. `[]` is the ordinary case. Nearly every entry here also has a durable notice in the room, and this is the faster path to the same truth rather than a second one. The exception is the one refusal the room deliberately stays quiet about — an agent posting with no turn behind it is stamped at the depth ceiling, so everything it addresses is refused; announcing that in the room would spray a line per room-mate per post, but telling the POSTER, once, in the answer to its own write, is exactly what it needs to hear.'
+      ),
   })
   .openapi('PostToRoomResponse');
 

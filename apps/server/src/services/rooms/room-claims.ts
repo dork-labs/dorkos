@@ -14,6 +14,7 @@
  *
  * @module server/services/rooms/room-claims
  */
+import type { RoomWorkingClaim } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
@@ -387,6 +388,10 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // agent is gone never becomes a target. It is a `refused` because that is
   // what it would be: no turn ran, and none was going to.
   gone: 'refused',
+  // Also refused before any claim was taken: the batch was gathered, its member
+  // left the room while it waited, and the drop is judged when the batch finally
+  // comes round (DOR-786). No turn ran and none was going to.
+  left: 'refused',
   // Same shape as `gone`: refused before a claim was ever taken, because the
   // bind that would have preceded the claim failed first (DOR-1206).
   unavailable: 'refused',
@@ -427,19 +432,56 @@ export function deepestClaimOf(
  * Who is working in one room, and since when — what `room_context.working` and
  * the presence fan-out are given.
  *
+ * **Oldest claim first, and stated rather than inherited.** The map's own
+ * iteration order is the order claims were TAKEN, which is nearly the same thing
+ * and not quite: an agent that finishes and is claimed again moves to the end,
+ * so a room could report a two-second-old turn above a four-minute-old one. The
+ * agent that has been working longest is the one a reader most needs at the top,
+ * and it is the order the app's own presence line already uses — so it is
+ * sorted here, once, rather than re-sorted by each reader that cares.
+ *
  * @param claims - The live claim map.
  * @param roomId - The room being asked about.
- * @returns One entry per agent holding a claim there.
+ * @returns One entry per agent holding a claim there, oldest claim first.
  */
 export function claimsWorkingIn(
   claims: ReadonlyMap<string, ActiveClaim>,
   roomId: string
-): Array<{ authorId: string; since: string }> {
-  const working: Array<{ authorId: string; since: string }> = [];
+): RoomWorkingClaim[] {
+  const working: RoomWorkingClaim[] = [];
   for (const claim of claims.values()) {
     if (claim.roomId === roomId) working.push({ authorId: claim.authorId, since: claim.claimedAt });
   }
-  return working;
+  // The author id breaks ties so two turns claimed in the same millisecond
+  // cannot swap places between two reads of the same unchanged room.
+  return working.sort(
+    (a, b) => Date.parse(a.since) - Date.parse(b.since) || a.authorId.localeCompare(b.authorId)
+  );
+}
+
+/**
+ * Every agent workspace with a turn running in it right now, install-wide.
+ *
+ * `agentPath` is the grain of the SECOND ceiling — one checkout per agent,
+ * shared across rooms — so this is the claim map's answer to "whose working
+ * directory must nothing touch". Its consumer is the room-worktree reap
+ * (`room-worktree-manager.ts`), which will otherwise happily delete the
+ * directory a live turn is standing in: a turn that only reads leaves no mark
+ * on any timestamp the sweep can see.
+ *
+ * Deduplicated, and NOT room-scoped. An agent can hold only one claim at a time
+ * (`claimBusyWith`'s second ceiling), so the set is small; and answering
+ * install-wide is the conservative direction, which is the one to be wrong in
+ * when the cost of the other is a deleted working directory.
+ *
+ * **A path, so this must not reach a response body.** `ActiveClaimView` leaves
+ * `agentPath` out for exactly that reason; this is an in-process seam.
+ *
+ * @param claims - The live claim map.
+ * @returns Each distinct workspace path holding a claim.
+ */
+export function claimedAgentPaths(claims: ReadonlyMap<string, ActiveClaim>): string[] {
+  return [...new Set([...claims.values()].map((claim) => claim.agentPath))];
 }
 
 /**

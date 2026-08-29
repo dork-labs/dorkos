@@ -16,6 +16,7 @@ import { parseHumanSubject } from './human-subject.js';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { RelayFlowEvent, Signal, SignalType } from '@dorkos/shared/relay-schemas';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
 import { AgentSessionStore } from './agent-session-store.js';
@@ -68,10 +69,11 @@ export interface BindingSubsystemDeps {
   meshCore: AdapterMeshCoreLike;
   /**
    * Map from runtime type to the concrete `AgentRuntimeLike` used to create
-   * fresh sessions for incoming chat-platform messages. See
-   * {@link resolveSessionCreatorRuntime} for which entry gets picked when
-   * `runtimes.default` names a runtime the relay does not hold. Multi-runtime
-   * dispatch of existing sessions happens in the adapter manager.
+   * fresh sessions for incoming chat-platform messages. Which entry is picked
+   * is the ANSWERING AGENT's own manifest — see
+   * {@link resolveSessionCreatorRuntime}. Dispatch of messages to sessions that
+   * already exist happens in the relay adapter, which keys the same map by the
+   * runtime segment of the session's subject.
    */
   agentRuntimes: Map<string, AgentRuntimeLike>;
   /** Absolute path to the adapter config file (used to derive relayDir). */
@@ -199,52 +201,70 @@ export interface BindingSubsystemDeps {
 }
 
 /**
- * Pick the runtime that new chat-originated sessions are created against.
+ * Pick the runtime that a new chat-originated session for ONE agent is created
+ * against.
  *
- * Prefers `runtimes.default` when the relay actually holds a runtime for it —
- * that is the honest reading of "the user's default" and stays correct the day
- * the relay carries more than one runtime.
+ * **The rule is the answering agent's own manifest** (DOR-1614). Which runtime
+ * an agent runs on is a property of the agent, and it must not depend on which
+ * door a message came through: the same agent addressed in a room, from the
+ * cockpit, or on Telegram has to be the same program answering. That is exactly
+ * what {@link resolveAgentRuntimeType} decides for rooms, so the relay asks it
+ * rather than keeping a second ladder.
  *
- * When it doesn't, this falls back to the relay's own registered runtime
- * instead of failing. The relay is wired to exactly one runtime today (the
- * Claude Code adapter is Claude-specific by construction), so under
- * `runtimes.default: opencode` the default lookup finds nothing — and the old
- * code threw there, which `init` caught and turned into a warn line and a
- * silently disabled BindingRouter. Chat platforms accepted messages and
- * delivered none. A message that arrives has to be answered by somebody; the
- * runtime the relay was actually given is the only honest candidate, and the
- * mismatch is logged rather than swallowed.
+ * This replaces "whatever single runtime the relay was wired to", which was the
+ * only honest answer while the relay drove one — and which, the moment it drove
+ * several, would have let the composition root's map ordering choose who
+ * answered a stranger's first message.
  *
- * @param agentRuntimes - Runtime-type → runtime map held by the AdapterManager.
- * @returns The runtime to create new sessions with.
- * @throws If the relay holds no runtimes at all — there is nothing to fall back to.
+ * Two soft edges, both deliberate, because a message that arrives has to be
+ * answered by somebody:
+ *
+ * - A manifest naming a runtime that is not REGISTERED on this server already
+ *   falls back to the registry default inside {@link resolveAgentRuntimeType} —
+ *   the same fallback rooms take, and the reason a test-mode server (whose
+ *   manifests all say `claude-code`) can answer at all.
+ * - A runtime registered on the server but absent from the RELAY's map falls
+ *   back to the relay's default entry, loudly. The composition root passes every
+ *   registered runtime, so this is a wiring mismatch rather than a normal path,
+ *   and the log line says which agent lost its runtime.
+ *
+ * @param agentRuntimes - Runtime-type -> runtime map held by the AdapterManager.
+ * @param agentPath - The answering agent's project directory, where its
+ *   `.dork/agent.json` lives.
+ * @returns The runtime to create the session with, and its type.
+ * @throws If the relay holds no runtimes at all - there is nothing to fall back to.
  */
-function resolveSessionCreatorRuntime(
-  agentRuntimes: Map<string, AgentRuntimeLike>
-): AgentRuntimeLike {
-  const defaultType = runtimeRegistry.getDefaultType();
-  const preferred = agentRuntimes.get(defaultType);
-  if (preferred) return preferred;
+async function resolveSessionCreatorRuntime(
+  agentRuntimes: Map<string, AgentRuntimeLike>,
+  agentPath: string
+): Promise<{ runtime: AgentRuntimeLike; runtimeType: string }> {
+  const manifestType = await resolveAgentRuntimeType(agentPath);
+  const preferred = agentRuntimes.get(manifestType);
+  if (preferred) return { runtime: preferred, runtimeType: manifestType };
 
-  // First insertion wins. Unambiguous today — the relay is wired to exactly one
-  // runtime — but the day it carries more than one, "first inserted" stops being
-  // a decision and becomes an accident of composition-root ordering. Give it a
-  // real rule then (an explicit relay-preferred type), rather than letting the
-  // map's iteration order quietly choose who answers a stranger's first message.
-  const [fallbackType, fallback] = agentRuntimes.entries().next().value ?? [];
-  if (!fallback || fallbackType === undefined) {
-    throw new Error(
-      '[BindingSubsystem] The relay holds no agent runtimes — cannot initialize ' +
-        'the session creator. The composition root must pass `agentRuntimes`.'
+  const fallbackType = runtimeRegistry.getDefaultType();
+  const fallback = agentRuntimes.get(fallbackType);
+  if (fallback) {
+    logger.warn(
+      `[BindingSubsystem] '${agentPath}' runs on '${manifestType}', which is registered on this ` +
+        `server but not wired into the relay; its chat sessions will be created on ` +
+        `'${fallbackType}' instead. This is a composition-root mismatch, not a setting.`
     );
+    return { runtime: fallback, runtimeType: fallbackType };
   }
 
-  logger.info(
-    `[BindingSubsystem] Default runtime '${defaultType}' is not wired into the relay; ` +
-      `new chat-originated sessions will be created on '${fallbackType}'. ` +
-      'Existing sessions still route to their own runtime.'
+  const [firstType, first] = agentRuntimes.entries().next().value ?? [];
+  if (!first || firstType === undefined) {
+    throw new Error(
+      '[BindingSubsystem] The relay holds no agent runtimes — cannot create a session ' +
+        'for an inbound chat message. The composition root must pass `agentRuntimes`.'
+    );
+  }
+  logger.warn(
+    `[BindingSubsystem] Neither '${manifestType}' nor the default '${fallbackType}' is wired ` +
+      `into the relay; the chat session for '${agentPath}' will be created on '${firstType}'.`
   );
-  return fallback;
+  return { runtime: first, runtimeType: firstType };
 }
 
 /**
@@ -354,10 +374,6 @@ export class BindingSubsystem {
       // `bindingRouter` (set later in this same init) closes over this instead.
       const self = subsystem;
 
-      // New sessions created by the BindingRouter (e.g., first chat-platform
-      // message from a user) need a runtime to be created against. Existing
-      // sessions route to their owning runtime via session_metadata.
-      const agentManager = resolveSessionCreatorRuntime(deps.agentRuntimes);
       // What a chat-originated session runs on — the SAME answer the relay
       // adapter resolves for a turn (`turn-execution-settings.ts`), and it has
       // to be resolved HERE because this is where the session is created. The
@@ -366,22 +382,47 @@ export class BindingSubsystem {
       // no-op; a model resolved only there reached nothing on this path, so an
       // agent answered a stranger on Telegram with the SDK's default while
       // answering a room on its own model (DOR-1344).
-      const resolveSettings = createTurnExecutionSettingsResolver(
-        agentManager.type ?? runtimeRegistry.getDefaultType()
-      );
+      const resolveSettings = createTurnExecutionSettingsResolver();
+      const agentRuntimes = deps.agentRuntimes;
       const sessionCreator: AgentSessionCreator = {
         async createSession(cwd: string, permissionMode: PermissionMode) {
           const id = crypto.randomUUID();
+          // Which runtime answers is the AGENT's, resolved per session rather
+          // than fixed when the subsystem came up (DOR-1614). `cwd` is the
+          // agent's own project directory — the router resolves it from the
+          // binding's agent id — so it is also where the manifest that decides
+          // this lives.
+          const { runtime, runtimeType } = await resolveSessionCreatorRuntime(agentRuntimes, cwd);
           // No fallback: the binding decides the mode (DOR-604), and the
           // resolver above cannot answer about permissions at all.
-          agentManager.ensureSession(id, {
+          runtime.ensureSession(id, {
             permissionMode,
             cwd,
             // The id is minted one line up, so there is no settings row to find
-            // — this is the manifest-then-server ladder, every time. `cwd` is
-            // the agent's own project directory, which is where its manifest is.
-            ...(await resolveSettings({ sessionId: id, agentDirectory: cwd })),
+            // — this is the manifest-then-server ladder, every time.
+            ...(await resolveSettings({ sessionId: id, runtimeType, agentDirectory: cwd })),
           });
+          // Write down WHO owns this session, at the one moment it is known.
+          // Without this the ownership table has no row, `getSessionRuntimeType`
+          // infers `claude-code` for every relay session, and the router then
+          // publishes a codex agent's chat turn to `relay.agent.claude-code.*`
+          // — where the wrong program answers under the right agent's name
+          // (DOR-1614). Session creation is the ONE path the registry permits to
+          // write an owner, and this is a session creation.
+          //
+          // Best-effort: a failed ownership write must not swallow somebody's
+          // first message. It degrades to exactly the old behaviour — the
+          // session runs on the runtime chosen above, and its dispatch subject
+          // falls back to the inferred type.
+          try {
+            await runtimeRegistry.persistSessionRuntime(id, runtimeType, cwd);
+          } catch (err) {
+            logger.warn(
+              `[BindingSubsystem] could not record that session '${id}' runs on ` +
+                `'${runtimeType}'; its dispatch subject will fall back to the inferred runtime`,
+              err
+            );
+          }
           return { id };
         },
       };

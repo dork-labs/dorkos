@@ -1,5 +1,5 @@
-import type { FileEntry } from '@dorkos/shared/types';
 import type { DirState, FlatRow } from './types';
+import type { ExplorerEntry } from './source';
 
 /**
  * Pure tree derivations and path helpers for the file explorer. Side-effect
@@ -72,7 +72,7 @@ export function visibleExpandedDirs(expanded: Record<string, boolean>): string[]
  * server already returns this order; re-applied here so optimistic inserts land
  * in the right place.
  */
-export function sortEntries(entries: readonly FileEntry[]): FileEntry[] {
+export function sortEntries(entries: readonly ExplorerEntry[]): ExplorerEntry[] {
   return [...entries].sort((a, b) => {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });

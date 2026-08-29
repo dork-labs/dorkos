@@ -146,6 +146,13 @@ async function openRow(id: string) {
 // under a loaded machine that took longer than a `findBy`'s second. This file
 // then went red on the machine rather than on a bug. Importing the modules once
 // up front turns every later wait into an already-resolved promise.
+//
+// The ceiling is the hook's own, not the default 10s, because what this waits on
+// is four module graphs being transformed on demand — work whose cost belongs to
+// the machine and the transform cache, not to anything under test. On a busy
+// machine it outran 10s and the whole file failed in a hook. Nothing here polls
+// or sleeps: the imports resolve as soon as they are compiled, so the wider
+// ceiling is only ever spent when the machine is the thing that is slow.
 beforeAll(async () => {
   await Promise.all([
     import('../ui/pages/AboutPage'),
@@ -153,7 +160,7 @@ beforeAll(async () => {
     import('../ui/pages/ConventionPage'),
     import('../ui/pages/SessionsPage'),
   ]);
-});
+}, 60_000);
 
 /** A promise this test decides the ending of — a request that has not answered. */
 function deferred<T>() {

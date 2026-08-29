@@ -226,6 +226,7 @@ describe('cascade guard, wired', () => {
           roomId: request.room.id,
           authorId: request.authorId,
           agentPath: request.agentPath,
+          cwd: request.cwd,
           sessionId: request.sessionId,
           prompt: request.entry.body.text,
           roomContext: request.roomContext,
@@ -339,6 +340,7 @@ describe('cascade guard, wired', () => {
           roomId: req.room.id,
           authorId: req.authorId,
           agentPath: req.agentPath,
+          cwd: req.cwd,
           sessionId: req.sessionId,
           prompt: req.entry.body.text,
           roomContext: req.roomContext,
@@ -417,6 +419,7 @@ describe('cascade guard, wired', () => {
           roomId: req.room.id,
           authorId: req.authorId,
           agentPath: req.agentPath,
+          cwd: req.cwd,
           sessionId: req.sessionId,
           prompt: req.entry.body.text,
           roomContext: req.roomContext,
@@ -504,6 +507,7 @@ describe('cascade guard, wired', () => {
           roomId: req.room.id,
           authorId: req.authorId,
           agentPath: req.agentPath,
+          cwd: req.cwd,
           sessionId: req.sessionId,
           prompt: req.entry.body.text,
           roomContext: req.roomContext,
@@ -909,9 +913,11 @@ describe('evaluateCascade', () => {
   });
 
   it('honours a caller-supplied ceiling', () => {
-    expect(evaluateCascade('ana', provenance, { ...limits, maxAgentDepth: 0 }).reason).toBe(
-      'depth'
-    );
+    expect(evaluateCascade('ana', provenance, { ...limits, maxAgentDepth: 0 })).toEqual({
+      allowed: false,
+      depth: 1,
+      reason: 'depth',
+    });
   });
 });
 

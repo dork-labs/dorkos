@@ -49,6 +49,7 @@ import type {
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import { MAX_CAPABILITY_LIMIT, type CapabilityCatalog } from '@dorkos/shared/capabilities';
 import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
@@ -406,6 +407,50 @@ export function createSystemMethods(baseUrl: string) {
       defaultRuntime: string;
     }> {
       return fetchJSON(baseUrl, '/capabilities');
+    },
+
+    async getCapabilityCatalog(opts?: { toolGroup?: string }): Promise<CapabilityCatalog> {
+      // One segment deeper than the runtime matrix above, which already claims
+      // the bare `/capabilities` path for a different question entirely.
+      //
+      // **Both query parameters are load-bearing, and the bare path is a trap.**
+      // This route serves the AGENT-facing projection: paginated at 50, sorted
+      // by id, and COMPACT unless asked otherwise — and a compact entry is
+      // `{id, title, tier, summary}`, with no surfaces and no `toolGroup` at
+      // all. So an unfiltered read answers this question with an empty result
+      // rather than an error, which is the shape of bug that ships green.
+      // `detail=full` is what carries the fields, and the filter is what keeps
+      // the page small enough to be one request.
+      // `limit` asks for the ceiling because the page is bounded at 50, and the
+      // check below is louder than a short list on purpose: every reader here
+      // DERIVES something from the whole set — the tools behind a grant, and a
+      // count beside them — so a dropped tail renders a wrong number with
+      // nothing failing. If it ever throws, follow `nextCursor` rather than
+      // raising the ceiling again.
+      const params = new URLSearchParams({
+        detail: 'full',
+        limit: String(MAX_CAPABILITY_LIMIT),
+      });
+      if (opts?.toolGroup) params.set('toolGroup', opts.toolGroup);
+      const page = await fetchJSON<{
+        catalogVersion: string;
+        generatedAt: string;
+        total: number;
+        capabilities: CapabilityCatalog['capabilities'];
+      }>(baseUrl, `/capabilities/catalog?${params.toString()}`);
+      if (page.total > page.capabilities.length) {
+        throw new Error(
+          `Capability catalog truncated: ${page.capabilities.length} of ${page.total} returned`
+        );
+      }
+      // Unwrapped to the catalog shape the port promises: the route's paging
+      // envelope is its own contract, and leaking it through this seam would
+      // make every caller learn a pagination story it has no use for.
+      return {
+        catalogVersion: page.catalogVersion,
+        generatedAt: page.generatedAt,
+        capabilities: page.capabilities,
+      };
     },
 
     checkRequirements(): Promise<SystemRequirements> {

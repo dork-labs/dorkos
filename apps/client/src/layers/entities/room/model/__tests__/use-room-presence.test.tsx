@@ -92,7 +92,7 @@ function keysIn(roomId: string): string[] {
 }
 
 beforeEach(() => {
-  useRoomPresenceStore.setState({ rooms: {} });
+  useRoomPresenceStore.getState().reset();
 });
 
 afterEach(() => {

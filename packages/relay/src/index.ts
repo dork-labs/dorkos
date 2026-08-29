@@ -164,7 +164,6 @@ export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
   AgentRuntimeLike,
-  AgentRuntimeLike as ClaudeCodeAgentRuntimeLike,
   AgentSessionStoreLike,
   TraceStoreLike,
   TasksStoreLike,

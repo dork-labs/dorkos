@@ -211,6 +211,12 @@ The operator's path (`routes/mesh.ts:491-520`, file-first per ADR-0043) is untou
 
 A sibling replaces the bare `requireOperator` at `addMember:2020` and `removeMember:2153`, modelled on `requireSeedingAllowed:4092-4107`, which already encodes "an agent may, a second person may not":
 
+> **Amended 2026-08-29 (orchestrator ruling, on the PR review).** It replaces it on a SIBLING METHOD, not on `addMember`/`removeMember` themselves. Replacing it in place — which is what shipped first — widened the two HTTP roster routes with it, because `POST /api/rooms/:id/members` and `DELETE /api/rooms/:id/members/:authorId` resolve their caller from `X-DorkOS-Agent` and never reach `registry.invoke`, where the `roomsManage` grant lives. That turned the grant into something a direct request could step around, and it was a regression rather than an inherited gap: those two methods had been unconditionally operator-only, so they refused every agent token before this work.
+>
+> **An agent's roster surface is the capability verbs, full stop. The grant does not unlock HTTP.** `addMember`/`removeMember` keep `requireOperator` and remain what the routes, the `LocalCommunityAdapter` and the team-room hook call; `addMemberFromTool`/`removeMemberFromTool` carry `requireRosterWriteAllowed` and the leaving guards, and nothing but the rooms capability domain calls them. Two methods rather than a parameter, so a surface added tomorrow gets the operator-only one by default — the same shape `postFromTool` already uses, and fail-closed in the direction that matters.
+>
+> The four `requireOperator` call sites named above are still not relaxed; this adds a fifth and sixth guarded entry point rather than moving any of them.
+
 ```ts
 private requireRosterWriteAllowed(
   room: Room,
@@ -251,7 +257,30 @@ All tier `act`, all `servers: ['in-session', 'external']`, all `toolGroup: 'room
 | `rooms.update`         | `update_room`         | `updateRoom`              |
 | `rooms.leave`          | `leave_room`          | `removeMember(self)`      |
 
-**Inputs**, as Zod, deliberately narrower than the HTTP schemas they wrap:
+**Inputs**, as Zod, deliberately narrower than the HTTP schemas they wrap.
+
+> **Amended 2026-08-29 (build + adversarial review).** The shipped verbs take ONE
+> member list per verb — `members: string[]` — where each entry is the `@handle`
+> a room lookup reports, **or that member's author id**, resolved in that order by
+> `RoomService.findAuthorByHandle`. The two-list shape below (`agentPaths` +
+> `memberAuthorIds`) is not what shipped.
+>
+> A handle is primary because it is the name a person types and the name
+> `get_room` leads with. The id fallback is not a convenience: `mintHandle`
+> returns `null` for the install's own human (the only string it could derive from
+> is the placeholder `'You'`; DOR-979 is the surface that will ask her for one), so
+> on a default install **the owner has no handle at all** — and by the three-way
+> rule every room an agent may open with a colleague is one she has to be in.
+> Without the fallback `create_room` with a colleague answered `OPERATOR_ONLY`
+> and naming her by the id the roster had just handed over answered
+> `MEMBER_NOT_FOUND`: a dead end with prose that sent the model in a loop. The
+> same gap catches any agent whose name spells nothing legal. Reviewer
+> adjudication: renames, handle collisions, released-handle tombstones and
+> cross-runtime callers are all sound under this ordering, because both lookups
+> read the same LIVE author rows.
+>
+> `agentPaths` is exposed nowhere, which the two-list shape below would have done:
+> a directory path is a fact about the machine's filesystem, not about the room.
 
 ```ts
 // create_room — a strict subset of CreateRoomRequestSchema (room-schemas.ts:1082-1113)
@@ -264,7 +293,14 @@ z.object({
 });
 // `slug` is NOT exposed: it is derived from the title, and letting an agent
 // choose a channel's address invites SLUG_TAKEN churn for no gain.
-// Both cross-field refinements are inherited by calling the same service.
+// STRUCK 2026-08-29: this block used to claim "both cross-field refinements are
+// inherited by calling the same service". They are NOT. `CreateRoomRequestSchema`
+// is a REQUEST schema, and the capability builds a request object rather than
+// parsing one through it, so neither refinement runs — which is exactly how a DM
+// with no title came to be stored as the bare "#" the second refinement exists to
+// prevent. What a shared service inherits is its GUARDS, never its caller's
+// schema. The shipped capability derives a DM's title itself (see the §D8
+// amendment above).
 
 // add_room_members / remove_room_members
 z.object({
@@ -288,14 +324,37 @@ z.object({ roomId: z.string() });
 
 On a system room, `requireSystemRoomWritable:4002-4014` refuses `title` for a non-owner and deliberately allows `topic` — _"A topic is a description, and describing a shared room is ordinary participation."_ So on `#team` an agent may set the topic and may not rename. Inherited, not restated.
 
+> **Amended 2026-08-29 (orchestrator ruling on the review).** `update_room` also
+> refuses `title` on a **direct message**, for a non-owner, with a new
+> `TOOL_RENAME_NOT_IN_DM` following the `TOOL_POST_NOT_IN_DM` /
+> `TOOL_LEAVE_NOT_IN_DM` naming. A DM's name IS its roster — it is derived from
+> who is in it and re-derived whenever that changes
+> (`dm-title-follows-roster`) — so a title an agent writes there survives only
+> until the next membership change, and in the meantime it has renamed a
+> conversation belonging to whoever else is in it. The topic stays writable, for
+> the same reason it stays writable on `#team`. Spelled `kind !== 'channel'`, so an
+> unrecognized kind takes the narrower branch. The owner is exempt: the cockpit is
+> the person, and a name she chose for her own conversation is hers to change.
+
 **Batch semantics.** `add_room_members` / `remove_room_members` take arrays and apply per member. They are **not atomic**: a refusal mid-list leaves earlier members applied. The output therefore reports per-member outcomes rather than a bare boolean, so a partial application is legible to the model instead of being inferred from an error:
 
 ```ts
 z.object({
   applied: z.array(z.string()),
-  refused: z.array(z.object({ id: z.string(), code: z.string(), message: z.string() })),
+  refused: z.array(z.object({ handle: z.string(), code: z.string(), message: z.string() })),
 });
 ```
+
+> **Amended 2026-08-29.** `refused[]` is keyed `handle` rather than `id`, and what
+> that field carries depends on how far the member got. A token that resolved to
+> NOBODY echoes the caller's own token back, sanitized, because that is the only
+> string either side has for it. A member that RESOLVED and was then refused by a
+> room rule carries the resolved handle — or the display name, when the member has
+> no handle — so the caller is told who it actually named rather than what it
+> typed. Both are sanitized; neither is ever a raw string a model wrote. Both lists carry sanitized labels only — never a raw
+> string a model typed. The lists are **deduplicated on the resolved author**, not
+> on the string: `['bo', '@bo', ' BO ', '@@bo']` and `['@bo', '<bo's id>']` are each
+> one member, and applying them once is what keeps "one line per member" true.
 
 **Exposure.** All five are **deferred behind `ToolSearch`** with `searchHint`s, not `alwaysLoad`. The four existing room verbs earn `alwaysLoad` because _"a room turn is a person waiting in a shared channel, and DOR-1292 measured a whole turn lost to searching for one"_ (`tool-exposure.ts:78-83`). These are deliberate and occasional; always-loading five more schemas onto every turn of every session is the wrong trade the same file warns about.
 
@@ -374,6 +433,7 @@ Deliberately **not** cached (D3): a stale grant is a correctness failure and the
 ## Security Considerations
 
 - **The self-grant seam is the one that would make this theatre**, and D6 closes it for this field. Its residual — a shell-capable agent curling the operator's route with login off — is the inherited `local-trust` gap, stated rather than papered over.
+- **The grant gates the VERBS, and the roster's HTTP routes stay operator-only** (added 2026-08-29). The two are different surfaces and only one of them is an agent's. Enforcement lives at `registry.invoke`, which no route passes through, so a widened service method would have made the grant bypassable by a direct request — see the §D7 amendment for the regression this describes and the split that closes it. Do not read this as the `local-trust` residual above: that one is about a shell-capable agent impersonating the cockpit with login off, and it is unchanged. This one was a real hole with a real fix.
 - **Prompt injection into a roster edit** is real: other members' text is untrusted input. Bounded by the grant (only agents the owner armed), membership (only rooms the agent is in), the three-way rule (no room the owner is not in), and D7 row 4 (never remove the owner). The honest residual: an armed agent can add another of the owner's agents to a channel it is in, which then receives that channel's traffic — the same outcome as the owner adding it by hand, and visible on the Activity feed.
 - **A room id is never a capability**: "not a member" and "no such room" answer identically, preserved by keeping `requireVisibleRoom` first in every verb.
 - **The dedupe check stays after the seeding gate** (`createRoom:1001-1015`), so a refused caller gets the same 403 whether or not the room exists and cannot probe for rooms.
@@ -415,7 +475,7 @@ A reviewer can check each of these directly.
 9. `update_room` cannot set `archived`, `deliverNotices`, or any turn-limit field — they are absent from its input schema.
 10. `leave_room` refuses in a DM and on `#team`, and succeeds in an ordinary channel.
 11. Removing an agent that holds the room's fallback seat leaves `fallbackSeatAuthorId` null rather than dangling.
-12. `capabilityConformance` runs against a registry that **includes** the rooms domain, and fails if any of the five verbs loses its declared surfaces or its `toolGroup`.
+12. `capabilityConformance` runs against a registry that **includes** the rooms domain, and fails if any of the five verbs loses its declared surfaces or stops being REFUSED without the grant. A verb that silently **loses** its `toolGroup` is caught by the declaration snapshot in `room-capabilities.test.ts`, which pins each verb's group by name — not by conformance, whose subject set is derived from the declarations themselves and therefore shrinks rather than fails when one is deleted. _(Corrected 2026-08-29: the original wording credited conformance with a guarantee a mutation showed it does not have.)_
 13. No page, doc, or UI string claims tool-access control except where it is now true; `destructive-actions-prose.test.ts` passes with a carve-out that itself has a test.
 14. `claude-code-runtime.test.ts`'s `allowedTools` guard is unchanged and passing.
 
@@ -423,35 +483,40 @@ A reviewer can check each of these directly.
 
 Every decision is settled. No open questions remain.
 
-| #   | Decision                                                                                                     | Settled by                                 |
-| --- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| S1  | Five verbs; `archive_room` deferred                                                                          | Operator                                   |
-| S2  | Hard filter at one choke point on `registry.invoke`                                                          | Operator (2026-08-28)                      |
-| S3  | All five tier `act`, never `destructive`                                                                     | Operator                                   |
-| S4  | Create channels + DMs; add anyone; remove anyone except the owner; system rooms and three-way rule unchanged | Operator                                   |
-| S5  | Default off; granted per agent; one group for all five                                                       | Operator                                   |
-| S6  | Conversation verbs stay untoggleable                                                                         | Operator                                   |
-| S7  | Group appears in both Tools tabs, with copy that says it blocks and does not imply the others do             | Operator                                   |
-| D1  | Fail closed on absent identity, absent grant, or a throwing lookup                                           | Ideation                                   |
-| D2  | `tool_group_disabled` on `TierDeniedReason`, `approvable: false`                                             | Ideation                                   |
-| D3  | Boot-injected lookup, read fresh, manifest-sourced                                                           | Ideation                                   |
-| D4  | `toolGroup` on `CapabilityDefinition`; UI reads the live registry                                            | Ideation                                   |
-| D5  | Key name `roomsManage`; `undefined` = off                                                                    | Ideation                                   |
-| D6  | Narrow self-grant closure in PR1; full policy stays DOR-1506                                                 | **Orchestrator** (2026-08-27)              |
-| D7  | No global default                                                                                            | **Orchestrator** (approved ideation D7/D8) |
-| D8  | Global tab row carries no switch                                                                             | **Orchestrator** (approved ideation D7/D8) |
-| D9  | `requireRosterWriteAllowed`; `requireOperator` unrelaxed                                                     | Ideation                                   |
-| D10 | An agent may never remove the owner, in any shape                                                            | Operator (S4), mechanism from ideation     |
-| D11 | Reuse the existing DM dedupe; build nothing                                                                  | Ideation                                   |
-| D12 | `update_room` exposes `title` + `topic` only                                                                 | Ideation                                   |
-| D13 | `leave_room` channels-only, refuses system rooms                                                             | **Orchestrator** (approved ideation D13)   |
-| D14 | Deferred behind `ToolSearch`, not `alwaysLoad`                                                               | Ideation                                   |
-| D15 | Fallback seat **cleared** on removal, not defended by a refusal                                              | **Orchestrator** (absorbed scope a)        |
-| D16 | `TOOL_ACCESS_CLAIM` carve-out lands in PR2, not PR1                                                          | **Orchestrator** (absorbed scope b)        |
-| D17 | Global turn-cap default deferred out of this programme                                                       | **Orchestrator** (2026-08-27)              |
-| D18 | These five capabilities are agent-only by construction                                                       | Specify (derived from D1)                  |
-| D19 | Batch member verbs are non-atomic and report per-member outcomes                                             | Specify                                    |
-| D20 | `create_room` does not expose `slug`                                                                         | Specify                                    |
+| #   | Decision                                                                                                      | Settled by                                  |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| S1  | Five verbs; `archive_room` deferred                                                                           | Operator                                    |
+| S2  | Hard filter at one choke point on `registry.invoke`                                                           | Operator (2026-08-28)                       |
+| S3  | All five tier `act`, never `destructive`                                                                      | Operator                                    |
+| S4  | Create channels + DMs; add anyone; remove anyone except the owner; system rooms and three-way rule unchanged  | Operator                                    |
+| S5  | Default off; granted per agent; one group for all five                                                        | Operator                                    |
+| S6  | Conversation verbs stay untoggleable                                                                          | Operator                                    |
+| S7  | Group appears in both Tools tabs, with copy that says it blocks and does not imply the others do              | Operator                                    |
+| D1  | Fail closed on absent identity, absent grant, or a throwing lookup                                            | Ideation                                    |
+| D2  | `tool_group_disabled` on `TierDeniedReason`, `approvable: false`                                              | Ideation                                    |
+| D3  | Boot-injected lookup, read fresh, manifest-sourced                                                            | Ideation                                    |
+| D4  | `toolGroup` on `CapabilityDefinition`; UI reads the live registry                                             | Ideation                                    |
+| D5  | Key name `roomsManage`; `undefined` = off                                                                     | Ideation                                    |
+| D6  | Narrow self-grant closure in PR1; full policy stays DOR-1506                                                  | **Orchestrator** (2026-08-27)               |
+| D7  | No global default                                                                                             | **Orchestrator** (approved ideation D7/D8)  |
+| D8  | Global tab row carries no switch                                                                              | **Orchestrator** (approved ideation D7/D8)  |
+| D9  | `requireRosterWriteAllowed`; `requireOperator` unrelaxed                                                      | Ideation                                    |
+| D10 | An agent may never remove the owner, in any shape                                                             | Operator (S4), mechanism from ideation      |
+| D11 | Reuse the existing DM dedupe; build nothing                                                                   | Ideation                                    |
+| D12 | `update_room` exposes `title` + `topic` only                                                                  | Ideation                                    |
+| D13 | `leave_room` channels-only, refuses system rooms                                                              | **Orchestrator** (approved ideation D13)    |
+| D14 | Deferred behind `ToolSearch`, not `alwaysLoad`                                                                | Ideation                                    |
+| D15 | Fallback seat **cleared** on removal, not defended by a refusal                                               | **Orchestrator** (absorbed scope a)         |
+| D16 | `TOOL_ACCESS_CLAIM` carve-out lands in PR2, not PR1                                                           | **Orchestrator** (absorbed scope b)         |
+| D17 | Global turn-cap default deferred out of this programme                                                        | **Orchestrator** (2026-08-27)               |
+| D18 | These five capabilities are agent-only by construction                                                        | Specify (derived from D1)                   |
+| D19 | Batch member verbs are non-atomic and report per-member outcomes                                              | Specify                                     |
+| D20 | `create_room` does not expose `slug`                                                                          | Specify                                     |
+| D21 | Member lists take a `@handle` **or** an author id, resolved in that order                                     | **Orchestrator** (2026-08-29, on review)    |
+| D22 | `update_room` refuses a title change on a DM (`TOOL_RENAME_NOT_IN_DM`); the topic stays writable              | **Orchestrator** (2026-08-29, on review)    |
+| D23 | Removing YOURSELF is leaving, whichever verb asked — both refusals live in `removeMember`                     | **Orchestrator** (2026-08-29, on review)    |
+| D24 | A `SLUG_TAKEN` refusal names the holding channel only to a caller who can already see it                      | **Orchestrator** (2026-08-29, on review)    |
+| D25 | The grant does not unlock HTTP: roster routes stay operator-only, agents reach rosters only through the verbs | **Orchestrator** (2026-08-29, on PR review) |
 
 ## Open Questions
 

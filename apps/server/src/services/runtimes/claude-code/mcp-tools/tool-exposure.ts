@@ -49,13 +49,18 @@
  * @module services/runtimes/claude-code/mcp-tools/tool-exposure
  */
 
+import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
+
 /**
  * The name the in-session MCP server is created under.
  *
- * Load-bearing twice over: it is what `createSdkMcpServer` is given, and it is the
- * middle of every tool name the model sees.
+ * Re-exported rather than declared: the same name keys the `dorkos` server that
+ * codex and opencode dial over HTTP, so it has one definition in
+ * `runtimes/shared/dorkos-tool-names.ts` and every consumer reads that one. A
+ * second copy here is how the registered name and the prefixes built from it
+ * drift apart.
  */
-export const DORKOS_MCP_SERVER_NAME = 'dorkos';
+export { DORKOS_MCP_SERVER_NAME };
 
 /**
  * What Claude Code prepends to every in-session DorkOS tool name.

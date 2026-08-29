@@ -39,6 +39,7 @@ import {
 import type { AuthorRegistry } from '../author-registry.js';
 import {
   buildAgentGoneNotice,
+  buildAgentLeftNotice,
   buildAgentHaltedNotice,
   buildAgentUnavailableNotice,
   buildBudgetNotice,
@@ -87,7 +88,7 @@ export interface CascadeStamp {
  *   same reason `gone` is not: the dispatcher decides this in `claimTargets`,
  *   before anything is claimed (DOR-1206).
  */
-export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone' | 'unavailable';
+export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone' | 'left' | 'unavailable';
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -849,6 +850,7 @@ const SILENCE_REASONS = Object.keys({
   busy: true,
   failed: true,
   gone: true,
+  left: true,
   unavailable: true,
 } satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
 
@@ -865,6 +867,7 @@ const SILENCE_BODIES: Record<
   busy: (agent, busyWith) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
   failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
+  left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),
 };
 
@@ -877,6 +880,7 @@ const REFUSAL_FOR_SILENCE: Record<RoomTurnUnanswered, RefusalReason> = {
   busy: 'agent_busy',
   failed: 'turn_failed',
   gone: 'agent_gone',
+  left: 'agent_left',
   unavailable: 'session_bind_failed',
 };
 

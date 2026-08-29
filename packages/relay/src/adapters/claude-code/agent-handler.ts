@@ -40,6 +40,18 @@ import type { InboundTurnBudgets } from '../../inbound-turn-budgets.js';
 /** Dependencies required by the agent handler. */
 export interface AgentHandlerDeps {
   agentManager: AgentRuntimeLike;
+  /**
+   * Which runtime {@link AgentHandlerDeps.agentManager} is, as the settings
+   * resolver must be asked about it.
+   *
+   * Passed rather than read off `agentManager.type` so the answer is the one
+   * the ADAPTER resolved for this message — every tier below the session row
+   * is a per-runtime answer, and a mismatch there is how a codex turn gets
+   * handed a Claude model alias. Optional so a host that never wired a
+   * resolver, and every test double, keep working: absent falls back to the
+   * runtime's own declared type.
+   */
+  runtimeType?: string;
   traceStore: TraceStoreLike;
   agentSessionStore?: AgentSessionStoreLike;
   /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
@@ -543,9 +555,12 @@ export async function handleAgentMessage(
     await publishAgentResult(envelope, collectedText, ccaSessionKey, relay, failure);
   }
 
-  // Persist SDK session UUID for future messages
+  // Persist SDK session UUID for future messages. A runtime that does not
+  // rename its own sessions (codex, opencode) declares no `getSdkSessionId`,
+  // and there is nothing to persist: the key this turn ran under is already the
+  // durable id, so the next message resolves the same session without a mapping.
   if (deps.agentSessionStore && !persistedSdkSessionId) {
-    const actualSdkId = deps.agentManager.getSdkSessionId(ccaSessionKey);
+    const actualSdkId = deps.agentManager.getSdkSessionId?.(ccaSessionKey);
     if (actualSdkId && actualSdkId !== sessionScope) {
       deps.agentSessionStore.set(sessionScope, actualSdkId);
       log.info(`[CCA] persisted session mapping: ${sessionScope} → ${actualSdkId}`);
@@ -607,6 +622,7 @@ async function resolveTurnSettings(
   try {
     return await deps.resolveExecutionSettings({
       sessionId,
+      runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
       ...(agentDirectory ? { agentDirectory } : {}),
     });
   } catch (err) {

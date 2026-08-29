@@ -101,6 +101,7 @@ vi.mock('../../session/index.js', async (importOriginal) => ({
 const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
 const { RoomConventions } = await import('../repo/room-conventions.js');
 const { RoomRepoService } = await import('../repo/room-repo-service.js');
+const { RoomRepoMutex } = await import('../repo/room-repo-mutex.js');
 const { RoomRepoStore } = await import('../repo/room-repo-store.js');
 const { commitAll, initRepo } = await import('../repo/room-repo-git.js');
 const { ROOM_MD_FILENAME } = await import('../repo/room-md.js');
@@ -146,6 +147,9 @@ function request(): RoomTurnRequest {
     room,
     authorId: 'author-ana',
     agentPath: '/repo/ana',
+    // No worktree manager is wired here, so the cwd rung lands on the agent's
+    // own directory — what every room without a working copy resolves to.
+    cwd: '/repo/ana',
     sessionId: null,
     entry,
     prompt: entry.body.text,
@@ -369,6 +373,8 @@ describe('the production wiring', () => {
       .run();
     const service = new RoomRepoService({
       store,
+      mutex: new RoomRepoMutex(),
+      queueWaitMs: () => 5000,
       enabled: () => true,
       getRoom: () => room,
       isOwnerAuthor: (authorId) => authorId === 'author-operator',

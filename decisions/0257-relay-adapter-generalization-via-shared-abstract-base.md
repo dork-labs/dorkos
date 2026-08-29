@@ -1,17 +1,21 @@
 ---
 number: 257
 title: Relay Internal Adapter Generalization via Shared Abstract Base
-status: accepted
+status: superseded
 created: 2026-04-16
 spec: codex-runtime-adapter-prework
-superseded-by: null
+superseded-by: 260828-175910
 ---
 
 # 0257. Relay Internal Adapter Generalization via Shared Abstract Base
 
 ## Status
 
-Accepted
+Superseded by ADR 260828-175910, which replaces the Decision below: the shipped
+shape is ONE adapter holding a runtime-type -> runtime map and resolving per
+message, not a thin subclass per runtime with manager-level dispatch. The shared
+abstract base, the runtime-neutral subjects, and the stable external name all
+stand.
 
 ## Context
 

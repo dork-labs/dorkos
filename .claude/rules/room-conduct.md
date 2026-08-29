@@ -460,25 +460,49 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
     "Ids here" line needs to keep naming the marker.
     A region is not trusted because a comment says so. It is trusted because
     everything reaching it went through that function.
-- **An agent's hand in a room is eight verbs, and every one of them goes through
-  the service.** Two writes — `post_to_room`, `react_to_room_entry` — and six
-  reads: `read_room_history` and `search_room_history` inside one room,
-  `list_member_rooms` and `search_member_rooms` across every room the caller is
-  in, and `get_room` and `find_room` for which room and who is in it. They are
-  the `rooms` capability domain (`room-capabilities.ts`), and each one is a thin
-  caller of a `RoomService` method — never a second write path and never a second
-  read predicate. Four consequences to keep true. **Membership is the gate**, not
+- **An agent's hand in a room is fifteen verbs, and every one of them goes
+  through a service.** Three writes — `post_to_room`, `react_to_room_entry`,
+  `merge_to_room_main` — and seven reads: `read_room_history` and
+  `search_room_history` inside one room, `list_member_rooms` and
+  `search_member_rooms` across every room the caller is in, `get_room` and
+  `find_room` for which room and who is in it, and `room_repo_status` for what
+  the room's files hold and who has work that is not in them yet. Then five
+  that ARRANGE rooms rather than talk in them — `create_room`,
+  `add_room_members`, `remove_room_members`, `update_room`, `leave_room` — and
+  those five are **off until a person turns them on**, per agent, behind the
+  `roomsManage` grant the choke point enforces (DOR-1611, ADR 260828-123331).
+  They are the `rooms` capability domain (`room-capabilities.ts`), and each one is
+  a thin caller of a `RoomService` method — or, for the two repo verbs, a
+  `RoomMergeService` one — never a second write path and never a second read
+  predicate.
+  **The merge is not an exception**: it writes in the room's own git checkout,
+  and everything it then SAYS goes into the log through
+  `RoomService.postMergeEvent`, like every other word an agent puts in a room.
+  That entry is a POST and never a notice, because notices are damped refusal-shaped
+  events and a merge is content (spec `project-rooms` §5 Q3) — and it addresses
+  nobody, so it starts no turn. **A room's repo is append-only on every
+  surface**: no force, no reset, no push, no branch deletion, not in a verb and
+  not under one (`room-repo-append-only.test.ts` reads the domain's source and
+  refuses the vocabulary).
+  **The grant fails closed and the conversation verbs are not part of it**: an
+  agent whose owner has not armed it still reads, posts, reacts and looks rooms
+  up exactly as before — what it cannot do is rearrange. And an armed agent is
+  still bounded by everything below: it can never remove the person from a room
+  in any shape, never produce a room where two agents talk without her, and never
+  leave a DM or the home channel.
+  Four consequences to keep true. **Membership is the gate**, not
   the tier: every read is `observe`, which returns allowed before any other check
   runs, so nothing but the membership check stands between a caller and a room's
   log — and "not a member" answers exactly as "no such room", so a room id is
   never a capability. **No read takes `readOnlyCarveOut`**, and that omission is a
   decision rather than a gap: the flag would make them reachable on the login-off
   external `/mcp` surface with no token at all, and what they return is other
-  people's messages — or, for the three lookups, the shape of somebody's install.
+  people's messages — or, for the three lookups, the shape of somebody's install,
+  and for `room_repo_status`, the shape of somebody's work.
   Do not add it to make a client's life easier. **A member reads only
   above its `joinedSeq`** — the same floor the ambient window keeps, and the same
   floor `GET /api/rooms/:id/export` keeps for every caller **but one**. The export
-  is this domain's seventh read path and the only one that can drop the floor: the
+  is this domain's eighth read path and the only one that can drop the floor: the
   install's OWNER exporting a room they are a member of gets it from `seq` 0,
   because an export is the exit path (DOR-596 C2) rather than one participant's
   view, and an owner handed a copy of their own room with the first months missing

@@ -87,6 +87,13 @@ export const REFUSAL_REASONS = {
   cascade_repeat: 'the agent has already replied enough times in this exchange',
   /** The room has spent its automatic turns for the window. */
   room_budget: 'the room ran out of automatic turns',
+  /**
+   * A gathered message was owed a turn, and by the time its batch came round the
+   * member had left the room (or the room had been archived). Distinct from
+   * {@link agent_gone}: the agent is still registered and still answering
+   * elsewhere, it is simply not a member here any more.
+   */
+  agent_left: 'the agent is no longer in the room',
   /** The `(room, agent)` session row could not be written, so no turn started. */
   session_bind_failed: 'the room session could not be bound',
   /** A prompt only a person can answer expired, and was denied by the clock. */

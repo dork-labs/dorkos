@@ -29,8 +29,10 @@ import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import { RoomError } from '../../room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
+import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';
 import { commitAll, commitsAheadOfMain, hasUncommittedChanges, runGit } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -58,6 +60,8 @@ describe('RoomRepoService', () => {
   let enabled: boolean;
   let visible: boolean;
   let operatorName: string | null;
+  /** The queue enable shares with merges — one instance, so a race is a real race. */
+  let mutex: RoomRepoMutex;
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -66,6 +70,11 @@ describe('RoomRepoService', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    // Before any repo exists — including the ones `enable` makes itself: a
+    // `git commit` otherwise leaves a DETACHED maintenance process writing into
+    // `.git` after it returns, and this suite's teardown deletes that
+    // directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     // **The DorkOS home sits INSIDE a git repository, deliberately.** That is
     // the dev layout — `apps/server/.temp/.dork/` lives in the dorkos checkout —
     // and it is what makes the stranded-work tests discriminate: without a
@@ -94,6 +103,7 @@ describe('RoomRepoService', () => {
     dorkHome = path.join(scratch, '.dork');
     await mkdir(dorkHome, { recursive: true });
     store = new RoomRepoStore(db, dorkHome);
+    mutex = new RoomRepoMutex();
     enabled = true;
     visible = true;
     operatorName = 'Dorian';
@@ -109,6 +119,8 @@ describe('RoomRepoService', () => {
       .run();
     service = new RoomRepoService({
       store,
+      mutex,
+      queueWaitMs: () => 5000,
       enabled: () => enabled,
       getRoom: () => (visible ? ROOM : null),
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
@@ -121,7 +133,7 @@ describe('RoomRepoService', () => {
   afterEach(async () => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
-    await rm(scratch, { recursive: true, force: true });
+    await removeFixtureTree(scratch);
   });
 
   /** Assert a thrown value is a {@link RoomError} with this code. */
@@ -181,6 +193,34 @@ describe('RoomRepoService', () => {
       expect(second.created).toBe(false);
       expect(second.repo).toEqual(first.repo);
       expect(await git(['rev-parse', 'HEAD'], store.repoPath(ROOM_ID))).toBe(head);
+    });
+
+    it('survives two enables of one room arriving together, with the repo intact', async () => {
+      // **The TOCTOU this method's queue exists for** (DOR-1598). Enable is a
+      // check-then-act with an `await` in the middle: read the sidecar, decide
+      // there is no repo, create one. Started in ONE tick, both calls used to
+      // read "no repo" and both ran `git init -b main` in the same directory —
+      // and `git init` on a repository that already exists RE-INITIALISES it,
+      // exits 0, and takes its seed commit with it. Measured before the queue
+      // existed: two `created: true` answers and a repo with no `ROOM.md`.
+      const [first, second] = await Promise.all([
+        service.enable(ROOM_ID, OPERATOR),
+        service.enable(ROOM_ID, OPERATOR),
+      ]);
+
+      // Exactly one call made it; the other found the binding the first wrote.
+      const created = [first, second].filter((result) => result.created);
+      expect(created).toHaveLength(1);
+      const found = [first, second].filter((result) => !result.created);
+      expect(found).toHaveLength(1);
+      // A 409 has to be able to hand back a binding, so the loser carries one.
+      expect(found[0]?.repo.roomId).toBe(ROOM_ID);
+      expect(found[0]?.repo).toEqual(created[0]?.repo);
+
+      // And the repo is a real one, with its seed commit still in it.
+      const repoDir = store.repoPath(ROOM_ID);
+      expect(await git(['rev-list', '--count', 'HEAD'], repoDir)).toBe('1');
+      expect(await git(['ls-files'], repoDir)).toBe(ROOM_MD_FILENAME);
     });
 
     it('rebuilds a cache row the second call finds missing', async () => {

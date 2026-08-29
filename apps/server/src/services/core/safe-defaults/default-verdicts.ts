@@ -147,9 +147,11 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'scheduler.enabled',
   'scheduler.retentionCount',
   // When an idle agent working copy is tidied away, and how long a queued merge
-  // waits its turn. Neither enforces a safety bound: the reap sweep spares
-  // anything dirty or unmerged BY CONSTRUCTION, so no value of the first can
-  // lose work, and the second buys patience rather than any file, byte or turn.
+  // waits its turn. Neither enforces a safety bound: the reap sweep removes
+  // nothing that is dirty, unmerged, or being worked in right now — a gate that
+  // is asked before the number is, and is pinned red-before/green-after in
+  // `room-worktree-manager.ts`'s tests — so no value of the first can lose
+  // work, and the second buys patience rather than any file, byte or turn.
   // Both are operator-only to WRITE — one governs a deletion on disk — which is
   // a different question from what their defaults do, and the module docs above
   // say so.
@@ -238,6 +240,13 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,
+  // Whether Codex and OpenCode agents reach this server's own `/mcp`, holding
+  // its bearer and an agent identity (spec `tool-only-room-replies` §D5). The
+  // same shape as `a2a.enabled` directly above and safe for the same reason:
+  // `false` is the withholding side of a real axis, not a preference. Off, two
+  // more programs are simply not callers of this instance. A wipe landing back
+  // here restores that, so it needs no carryover rule.
+  'runtimes.dorkosTools': false,
   'tunnel.domain': null,
   'tunnel.authtoken': null,
   'tunnel.auth': null,

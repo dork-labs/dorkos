@@ -316,3 +316,57 @@ describe('projectCatalog — over the real composed catalog', () => {
     expect(res.capabilities.map((c) => c.id)).toContain(target.id);
   });
 });
+
+describe('projectCatalog — the toolGroup filter (DOR-1611)', () => {
+  /** The synthetic six, plus two capabilities that sit behind a per-agent grant. */
+  const withGrants: CapabilityCatalog = {
+    ...synthetic,
+    capabilities: [
+      ...synthetic.capabilities,
+      {
+        ...entry('rooms.create', 'Open a room', 'Open a channel, or a direct message.'),
+        tier: 'act',
+        toolGroup: 'roomsManage',
+        surfaces: { mcp: { toolName: 'create_room', servers: ['in-session', 'external'] } },
+      },
+      {
+        ...entry('rooms.leave', 'Leave a channel', 'Step out of a channel you are finished with.'),
+        tier: 'act',
+        toolGroup: 'roomsManage',
+        surfaces: { mcp: { toolName: 'leave_room', servers: ['in-session', 'external'] } },
+      },
+    ],
+  };
+
+  it('returns only what sits behind that grant, at full detail', () => {
+    const res = projectCatalog(withGrants, parse({ toolGroup: 'roomsManage' }));
+    expect(res.total).toBe(2);
+    // Selective, so it upgrades itself the way the domain filter does — which is
+    // what puts the tool names on the entries at all.
+    expect(res.detail).toBe('full');
+    expect(
+      (res.capabilities as SerializedCapability[]).map((c) => c.surfaces.mcp?.toolName)
+    ).toEqual(['create_room', 'leave_room']);
+  });
+
+  it('matches the key exactly, never loosely', () => {
+    // A grant key is an identifier the caller already holds, not text it is
+    // searching for. Matching it case-insensitively or by prefix would invent a
+    // second spelling of a key that has exactly one.
+    expect(projectCatalog(withGrants, parse({ toolGroup: 'roomsmanage' })).total).toBe(0);
+    expect(projectCatalog(withGrants, parse({ toolGroup: 'rooms' })).total).toBe(0);
+  });
+
+  it('is why a caller after a grant cannot read the unfiltered page', () => {
+    // The defect this filter exists to remove, pinned so nobody simplifies a
+    // caller back onto the bare path: the default projection is COMPACT, and a
+    // compact entry carries neither the grant nor a tool name. A Tools tab
+    // reading it would render an empty group, with no error to notice.
+    const bare = projectCatalog(withGrants, parse({}));
+    expect(bare.detail).toBe('compact');
+    for (const capability of bare.capabilities) {
+      expect(capability).not.toHaveProperty('toolGroup');
+      expect(capability).not.toHaveProperty('surfaces');
+    }
+  });
+});
