@@ -9,6 +9,7 @@ import type {
   HandlerDetails,
   MessageBoxOptions,
   MessageBoxReturnValue,
+  MoveToApplicationsFolderOptions,
   Rectangle,
   WindowOpenHandlerResponse,
 } from 'electron';
@@ -49,6 +50,24 @@ function freshUserDataPath(): string {
 /** Where the mocked `app.getPath(...)` currently points — for tests that inspect what was written. */
 export function mockUserDataPath(): string {
   return userDataPath;
+}
+
+/** A plausible packaged macOS bundle, and the default answer for `getPath('exe')`. */
+const DEFAULT_EXE_PATH = '/Applications/DorkOS.app/Contents/MacOS/DorkOS';
+
+/**
+ * Where `app.getPath('exe')` answers.
+ *
+ * Modelled apart from {@link userDataPath} — every other path name still
+ * collapses to that one — because the wrong-home guard keys its "already
+ * offered here" record on the executable's location, so a test has to be able
+ * to move the running bundle without moving its data directory.
+ */
+let exePath = DEFAULT_EXE_PATH;
+
+/** Test helper — run the app from `path` instead of `/Applications`. */
+export function setMockExePath(path: string): void {
+  exePath = path;
 }
 
 /** A minimal ordered event bus: register listeners, then await them all on emit. */
@@ -246,6 +265,12 @@ export const app = {
   isPackaged: false,
   name: 'DorkOS',
   requestSingleInstanceLock: vi.fn((): boolean => true),
+  /**
+   * Modelled because the wrong-home guard hands the lock back before a move
+   * that relaunches the app — and "was it released first?" is the difference
+   * between the moved copy starting and nothing running at all.
+   */
+  releaseSingleInstanceLock: vi.fn<() => void>(),
   quit: vi.fn<() => void>(),
   /**
    * Arms a relaunch for whenever this process next exits — which is why tests
@@ -257,7 +282,7 @@ export const app = {
   relaunch: vi.fn<(options?: unknown) => void>(),
   /** No-op here; in production it must run before `ready` (see `main/index.ts`). */
   disableHardwareAcceleration: vi.fn<() => void>(),
-  getPath: vi.fn((_name?: string): string => userDataPath),
+  getPath: vi.fn((name?: string): string => (name === 'exe' ? exePath : userDataPath)),
   getVersion: vi.fn((): string => '0.1.0'),
   /**
    * macOS-only in real Electron, and modelled unconditionally here: the code
@@ -266,6 +291,13 @@ export const app = {
    * arm.
    */
   isInApplicationsFolder: vi.fn((): boolean => true),
+  /**
+   * macOS-only, and defaulted to a move that succeeds. In real Electron a
+   * successful move quits and relaunches the process; nothing of that is
+   * modelled, because the caller's contract is the boolean — everything it
+   * does with a `true` is "stop starting up", which is observable here.
+   */
+  moveToApplicationsFolder: vi.fn((_options?: MoveToApplicationsFolderOptions): boolean => true),
   setAboutPanelOptions: vi.fn<(options: unknown) => void>(),
   setAsDefaultProtocolClient: vi.fn((): boolean => true),
   dock: {
@@ -410,6 +442,13 @@ export const dialog = {
   showMessageBox: vi.fn<ShowMessageBox>(() =>
     Promise.resolve({ response: 0, checkboxChecked: false })
   ),
+  /**
+   * The blocking variant. Modelled for the wrong-home guard's conflict
+   * handler, which Electron calls synchronously and takes a plain boolean
+   * back from — there is no await available on that path, so the async dialog
+   * cannot be used there.
+   */
+  showMessageBoxSync: vi.fn<(options: MessageBoxOptions) => number>(() => 0),
   showErrorBox: vi.fn<(title: string, content: string) => void>(),
 };
 
@@ -493,13 +532,16 @@ export function resetElectronMock(): void {
 
   app.isPackaged = false;
   app.requestSingleInstanceLock = vi.fn(() => true);
+  app.releaseSingleInstanceLock = vi.fn();
   app.quit = vi.fn();
   app.relaunch = vi.fn();
   app.disableHardwareAcceleration = vi.fn();
   userDataPath = freshUserDataPath();
-  app.getPath = vi.fn((_name?: string) => userDataPath);
+  exePath = DEFAULT_EXE_PATH;
+  app.getPath = vi.fn((name?: string) => (name === 'exe' ? exePath : userDataPath));
   app.getVersion = vi.fn(() => '0.1.0');
   app.isInApplicationsFolder = vi.fn(() => true);
+  app.moveToApplicationsFolder = vi.fn(() => true);
   app.setAboutPanelOptions = vi.fn();
   app.setAsDefaultProtocolClient = vi.fn(() => true);
   app.dock = { setMenu: vi.fn(), setBadge: vi.fn() };
@@ -524,6 +566,7 @@ export function resetElectronMock(): void {
   dialog.showMessageBox = vi.fn<ShowMessageBox>(() =>
     Promise.resolve({ response: 0, checkboxChecked: false })
   );
+  dialog.showMessageBoxSync = vi.fn(() => 0);
   dialog.showErrorBox = vi.fn();
 
   Menu.buildFromTemplate = vi.fn((template: unknown) => ({ template }));

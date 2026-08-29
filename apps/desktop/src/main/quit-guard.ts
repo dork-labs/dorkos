@@ -28,6 +28,49 @@ let quitting = false;
 /** Whether {@link armQuitGuard} has already attached its listener. */
 let armed = false;
 
+/** True when the next quit has already been answered for and must not be questioned. */
+let preconfirmed = false;
+
+/**
+ * Declare that the quit about to happen was already confirmed by the person,
+ * so this guard does not ask a second time.
+ *
+ * For quits the app *causes* on the back of an answer it already holds. The
+ * move into Applications is the first (`install-location/`): the person
+ * confirmed it, Electron quits and relaunches to finish it, and a question over
+ * that would be a second dialog for one decision — worse, a declined one would
+ * strand the relauncher waiting on a process that never exits.
+ *
+ * Arm it **before** the call that quits, not after: those APIs can quit from
+ * inside themselves, and a confirmation set afterwards arrives too late to be
+ * seen. Withdraw it with {@link cancelPreconfirmedQuit} on any path that turns
+ * out not to quit, or it silently disarms the agent question for the rest of
+ * the session.
+ */
+export function preconfirmQuit(): void {
+  preconfirmed = true;
+}
+
+/** Withdraw a {@link preconfirmQuit} whose quit did not happen after all. */
+export function cancelPreconfirmedQuit(): void {
+  preconfirmed = false;
+}
+
+/**
+ * Take the pre-confirmation, if there is one.
+ *
+ * Spent on read for the same reason the updater's restart confirmation is,
+ * though here that is belt-and-braces rather than the load-bearing half: the
+ * `quitting` latch means no second quit sequence ever runs in one process, so
+ * {@link cancelPreconfirmedQuit} is what actually keeps a confirmation from
+ * outliving the quit it was given for.
+ */
+function consumePreconfirmedQuit(): boolean {
+  const wasPreconfirmed = preconfirmed;
+  preconfirmed = false;
+  return wasPreconfirmed;
+}
+
 /** Is the app on its way out? Read by crash recovery, which must stand down when it is. */
 export function isQuitting(): boolean {
   return quitting;
@@ -41,6 +84,7 @@ export function isQuitting(): boolean {
 export function resetQuitGuard(): void {
   quitting = false;
   armed = false;
+  preconfirmed = false;
   guardOptions = null;
 }
 
@@ -166,9 +210,14 @@ export function armQuitGuard(options: QuitGuardOptions): void {
  * @param options - See {@link QuitGuardOptions}.
  */
 async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
-  // Every quit that reaches here is an ordinary one: an update restart never
-  // does, having been let straight through by the listener above.
-  if (!(await confirmInterruptingAgents())) return;
+  // An update restart never reaches here — the listener above lets it straight
+  // through without preventDefault. A quit the app itself caused on the back
+  // of an answer it already holds (see {@link preconfirmQuit}) DOES reach
+  // here, and that answer was given back when it could still change anything —
+  // asking again would be a second dialog for one decision. Spent on read so
+  // it can never carry into a later, unrelated quit.
+  const quitPreconfirmed = consumePreconfirmedQuit();
+  if (!quitPreconfirmed && !(await confirmInterruptingAgents())) return;
 
   quitting = true;
   try {

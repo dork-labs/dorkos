@@ -54,6 +54,11 @@ vi.mock('../agent-activity', () => ({
 vi.mock('../background-notice', () => ({
   announceBackgroundRunning: vi.fn(async () => undefined),
 }));
+// Silent by default (the guard's own suite covers when it speaks up); the
+// tests below drive it to both answers to pin its place in the sequence.
+vi.mock('../install-location', () => ({
+  offerMoveToApplications: vi.fn(async () => false),
+}));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test
@@ -761,6 +766,75 @@ describe('the open-external bridge', () => {
     }
 
     expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe('wrong-home guard (ready sequence)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('offers to move out of the wrong home before the server is started', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const guard = await import('../install-location');
+    const serverProcess = await import('../server-process');
+    vi.mocked(guard.offerMoveToApplications).mockClear().mockResolvedValueOnce(false);
+    vi.mocked(serverProcess.startServer).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    // Order, not merely presence. A move relaunches the app: with the server
+    // already forked, the dying process leaves a child holding the port and
+    // the ~/.dork store that the relaunched instance immediately wants.
+    const [offered] = vi.mocked(guard.offerMoveToApplications).mock.invocationCallOrder;
+    const [started] = vi.mocked(serverProcess.startServer).mock.invocationCallOrder;
+    expect(offered).toBeLessThan(started);
+  });
+
+  it('starts the app anyway when the install-location check throws', async () => {
+    // Step 0 is the only await with nothing behind it yet, so an unhandled
+    // throw returns from 'ready' having started no server and created no
+    // window — and Electron surfaces a rejected async 'ready' handler nowhere.
+    // A courtesy about where the app is installed must never cost the boot.
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const guard = await import('../install-location');
+    const serverProcess = await import('../server-process');
+    const windowManager = await import('../window-manager');
+    vi.mocked(guard.offerMoveToApplications)
+      .mockClear()
+      .mockRejectedValueOnce(new Error('install-location.json holds null'));
+    vi.mocked(serverProcess.startServer).mockClear();
+    vi.mocked(windowManager.createWindow).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
+    expect(windowManager.createWindow).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('starts nothing when the app is relaunching from its new home', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const guard = await import('../install-location');
+    const serverProcess = await import('../server-process');
+    const windowManager = await import('../window-manager');
+    vi.mocked(guard.offerMoveToApplications).mockClear().mockResolvedValueOnce(true);
+    vi.mocked(serverProcess.startServer).mockClear();
+    vi.mocked(windowManager.createWindow).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    expect(serverProcess.startServer).not.toHaveBeenCalled();
+    expect(windowManager.createWindow).not.toHaveBeenCalled();
   });
 });
 
