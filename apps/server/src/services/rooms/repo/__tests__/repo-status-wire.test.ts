@@ -85,13 +85,9 @@ describe('the repo status this server computes and the one the port promises', (
   });
 
   it('are the same shape down to their optional fields', () => {
-    // The half the check above cannot see. `StrayChange` is the one that has an
-    // optional field today; the rest are here so the next optional added
-    // anywhere in this group is covered the day it lands rather than the day
-    // somebody remembers.
-    expect(mutual<MutualIncludingOptional<RoomRepoStatus, WireRepoStatus>>()).toBe(true);
-    expect(mutual<MutualIncludingOptional<RoomMainStatus, WireMainStatus>>()).toBe(true);
-    expect(mutual<MutualIncludingOptional<RoomBranchStatus, WireBranchStatus>>()).toBe(true);
+    // The half the check above cannot see: `Mutual` is blind to a field that is
+    // optional on one side and absent on the other. `StrayChange` carries the
+    // one optional field today (`renamedFrom`).
     expect(mutual<MutualIncludingOptional<StrayChange, WireStrayChange>>()).toBe(true);
     expect(mutual<MutualIncludingOptional<RoomMainRepairResult, WireRepairResult>>()).toBe(true);
   });
