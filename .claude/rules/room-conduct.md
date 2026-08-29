@@ -306,10 +306,10 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that
   can decline to run a turn — or one where a turn stops producing anything and
-  waits — it writes a durable room notice in the room's own voice. All eight
+  waits — it writes a durable room notice in the room's own voice. All nine
   live in `notices/notice-copy.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
   `turn_failed`, `agent_gone`, `agent_unavailable`, `awaiting_approval`,
-  `halted`), and every one of them is written through `notices/notice-log.ts` —
+  `halted`, `agent_declined`), and every one of them is written through `notices/notice-log.ts` —
   its `write` is the single writer, and each damping key sits beside the write
   it damps. Nothing outside that module reaches `postNotice` in production; a
   second call site hand-rolling its own `try` is how a halt in an archived room
@@ -325,9 +325,19 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   means the room, present names one agent, so anything reading
   `notice === 'halted'` as "the whole room stopped" is now wrong.
   Two silences are deliberate and pinned by tests: an agent that ran a
-  turn and chose to say nothing (conduct, not a fault), and the depth refusal
-  against an agent's own un-provenanced post (nothing was triggered, and no
-  damping key exists that would keep a notice from spraying).
+  turn and chose to say nothing WHERE NOBODY ASKED (conduct, not a fault), and
+  the depth refusal against an agent's own un-provenanced post (nothing was
+  triggered, and no damping key exists that would keep a notice from spraying).
+  **The first of those got narrower with DOR-1613**, and the ninth code is what
+  narrowed it. Choosing to say nothing to somebody who ASKED — a person who named
+  the agent, or wrote to it in a DM — now writes one `agent_declined` line, because
+  etiquette E1 says being asked creates an obligation that is discharged visibly or
+  not at all. What stays free is the AMBIENT half, which is the common case and the
+  whole point of the flip: an `engaged` seat or a fallback seat that reads the room
+  and adds nothing writes nothing, ever. The predicate that tells them apart is
+  `directlyAsked`, and it is EXPORTED rather than copied — it also decides damping,
+  and two copies of it is how both of the measured incidents in its own doc come
+  back one at a time.
 - **An ASIDE turn is the one refusal nobody is told about, and here is the whole
   exception.** A welcome-back offer (`RoomTriggerDispatcher.askAside`,
   `welcome-back/greeter.ts`, DOR-1046) runs a turn that no message in the room triggered:
@@ -371,10 +381,27 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 - **An indicator releases into something durable.** The working indicator a room
   shows exists only while the dispatcher holds a claim (`room-trigger.ts`'s
   `holdClaim` / `releaseClaim`, etiquette E16a), and when it goes it may only go
-  into one of four things: a post, a fresh notice, a notice already standing
-  under that `(room, agent)` damping key, or the one named exception — a turn
-  that ran and chose to say nothing. A release with no durable sibling, new or
-  standing, is a defect. Publish `done` **after** the durable write, never
+  into one of **five** things: a post, a **reaction**, a fresh notice, a notice
+  already standing under that `(room, agent)` damping key, or the one named
+  exception — a turn that ran and chose to say nothing. A release with no durable
+  sibling, new or standing, is a defect.
+  **A reaction is the fifth, and it was added rather than argued away**
+  (DOR-1613). Under `rooms.toolOnlyReplies` a turn that puts one emoji on a
+  message and says nothing else is a first-class outcome — a thumbs-up can BE the
+  answer — and a reaction is durable: it survives a reload and it is drawn on the
+  entry. What it is deliberately not is an ENTRY, which is what made the earlier
+  wording call such a release a defect. It plainly is not one.
+  **And the named exception now carries the common case, which is why it is
+  re-argued here rather than leaned on.** Its wording has not changed and its
+  scope has not widened. What changed is that the ADDRESSED half of it finally
+  has a durable sibling it never had: a person who asked and got nothing gets one
+  `agent_declined` line. So the exception is exercised only where NOBODY asked —
+  in practice it gets **narrower**, not wider, which is the opposite of what a
+  reader assumes from a feature called "silence by default". What keeps it honest
+  in the ambient case is the ephemeral marker on the release itself
+  (`RoomSignalEvent.outcome`, spec `tool-only-room-replies` §D7): the pill says it
+  finished with nothing to add, and dies with the process, because the fact was
+  already over. Publish `done` **after** the durable write, never
   before, so the indicator never drops ahead of the entry that explains it. Any
   path that drops a claim releases through the same seam rather than deleting
   from the map itself — RP8's halt does, and the test pinning it uses a runtime
@@ -460,25 +487,49 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
     "Ids here" line needs to keep naming the marker.
     A region is not trusted because a comment says so. It is trusted because
     everything reaching it went through that function.
-- **An agent's hand in a room is eight verbs, and every one of them goes through
-  the service.** Two writes — `post_to_room`, `react_to_room_entry` — and six
-  reads: `read_room_history` and `search_room_history` inside one room,
-  `list_member_rooms` and `search_member_rooms` across every room the caller is
-  in, and `get_room` and `find_room` for which room and who is in it. They are
-  the `rooms` capability domain (`room-capabilities.ts`), and each one is a thin
-  caller of a `RoomService` method — never a second write path and never a second
-  read predicate. Four consequences to keep true. **Membership is the gate**, not
+- **An agent's hand in a room is fifteen verbs, and every one of them goes
+  through a service.** Three writes — `post_to_room`, `react_to_room_entry`,
+  `merge_to_room_main` — and seven reads: `read_room_history` and
+  `search_room_history` inside one room, `list_member_rooms` and
+  `search_member_rooms` across every room the caller is in, `get_room` and
+  `find_room` for which room and who is in it, and `room_repo_status` for what
+  the room's files hold and who has work that is not in them yet. Then five
+  that ARRANGE rooms rather than talk in them — `create_room`,
+  `add_room_members`, `remove_room_members`, `update_room`, `leave_room` — and
+  those five are **off until a person turns them on**, per agent, behind the
+  `roomsManage` grant the choke point enforces (DOR-1611, ADR 260828-123331).
+  They are the `rooms` capability domain (`room-capabilities.ts`), and each one is
+  a thin caller of a `RoomService` method — or, for the two repo verbs, a
+  `RoomMergeService` one — never a second write path and never a second read
+  predicate.
+  **The merge is not an exception**: it writes in the room's own git checkout,
+  and everything it then SAYS goes into the log through
+  `RoomService.postMergeEvent`, like every other word an agent puts in a room.
+  That entry is a POST and never a notice, because notices are damped refusal-shaped
+  events and a merge is content (spec `project-rooms` §5 Q3) — and it addresses
+  nobody, so it starts no turn. **A room's repo is append-only on every
+  surface**: no force, no reset, no push, no branch deletion, not in a verb and
+  not under one (`room-repo-append-only.test.ts` reads the domain's source and
+  refuses the vocabulary).
+  **The grant fails closed and the conversation verbs are not part of it**: an
+  agent whose owner has not armed it still reads, posts, reacts and looks rooms
+  up exactly as before — what it cannot do is rearrange. And an armed agent is
+  still bounded by everything below: it can never remove the person from a room
+  in any shape, never produce a room where two agents talk without her, and never
+  leave a DM or the home channel.
+  Four consequences to keep true. **Membership is the gate**, not
   the tier: every read is `observe`, which returns allowed before any other check
   runs, so nothing but the membership check stands between a caller and a room's
   log — and "not a member" answers exactly as "no such room", so a room id is
   never a capability. **No read takes `readOnlyCarveOut`**, and that omission is a
   decision rather than a gap: the flag would make them reachable on the login-off
   external `/mcp` surface with no token at all, and what they return is other
-  people's messages — or, for the three lookups, the shape of somebody's install.
+  people's messages — or, for the three lookups, the shape of somebody's install,
+  and for `room_repo_status`, the shape of somebody's work.
   Do not add it to make a client's life easier. **A member reads only
   above its `joinedSeq`** — the same floor the ambient window keeps, and the same
   floor `GET /api/rooms/:id/export` keeps for every caller **but one**. The export
-  is this domain's seventh read path and the only one that can drop the floor: the
+  is this domain's eighth read path and the only one that can drop the floor: the
   install's OWNER exporting a room they are a member of gets it from `seq` 0,
   because an export is the exit path (DOR-596 C2) rather than one participant's
   view, and an owner handed a copy of their own room with the first months missing
@@ -490,15 +541,32 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   (`isOwnerAuthor`), never on `kind === 'human'` — an invited person is not the
   operator, for the same reason `seesEveryRoom` was narrowed. Do not tidy the
   exception away as an oversight: ADR `260815-205935` is why it is there. And
-  **posting is
-  channels and threads only** (spec §2.6): in a DM the reply IS the message, so
-  the tool refuses there, spelled `kind !== 'channel'` like every other room-kind
-  branch. An agent that posts through the tool mid-turn does not ALSO get its
+  **posting is channels and threads only WHILE THE TURN'S TEXT STILL POSTS**
+  (spec §2.6, as reversed under `rooms.toolOnlyReplies` by ADR `260829-025020`).
+  In text mode the reply IS the message in a DM, so the tool refuses there — and
+  in a TOOL-ONLY turn nothing the turn writes is posted, so the same refusal
+  would leave the agent unable to answer a direct message at all. The condition
+  is on the resolved reply mode rather than on the room kind alone, and the kind
+  half is still spelled `kind !== 'channel'` like every other room-kind branch.
+  Do not re-tighten it to "channels only" and do not loosen it to "always": in
+  text mode §2.6's argument is exactly as right as it was, and a `post_to_room`
+  made with no turn behind it reads an ABSENT mode and takes the refusal, which
+  is the fail-open direction.
+  An agent that posts through the tool mid-turn does not ALSO get its
   turn narration posted (`ActiveClaim.spokeViaTool`); provenance still follows the
   turn, so speaking on purpose is not a way to reset the cascade guard — and the
   mark is CONSUMED by the delivery it was set for (`takeSpokeViaTool`), because a
   claim outlives its answer under RP8's park-and-resume and a standing mark would
-  swallow the next one.
+  swallow the next one. `reactedViaTool` is its sibling, taken the same way for
+  the same reason.
+  **How many times it may post in ONE turn is a mechanism**
+  (`rooms.maxPostsPerTurn`, default 3, refused with `TOO_MANY_POSTS_THIS_TURN`).
+  Nothing counted an agent's posts before DOR-1613, deliberately — several posts
+  inside one turn cost ONE turn against the cascade budget, because being legible
+  is not a thing the room charges for. But etiquette E8's "one message, not
+  three" is a prompt, and under the flip posting stops being an extra an agent
+  rarely reaches for and becomes the only voice it has. Do not weaken the ceiling
+  because a prompt already says not to do the thing.
   **Who is calling is resolved, never assumed.** An agent token names an agent; a
   verified `userId` names a person; neither present means the surface could name
   nobody, and on a login-on install that is a refusal (`UNIDENTIFIED_CALLER`),

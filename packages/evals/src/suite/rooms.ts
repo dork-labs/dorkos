@@ -123,6 +123,7 @@ import {
   roomTurnsRanFor,
 } from '../oracles/rooms.js';
 import { mentionOf, openRoomFor, seedRoomAgents, setCollectDebounce } from './rooms-setup.js';
+import { roomsToolOnlyCases } from './rooms-tool-only.js';
 import type { RoomAgentSpec } from './rooms-setup.js';
 
 /**
@@ -538,11 +539,30 @@ export const roomsRementionAfterTurnStartCase: EvalCase = {
   ],
 };
 
-/** Every structural rooms case, in registration order. */
+/**
+ * Every structural rooms case, in registration order — this file's five, then
+ * the six the tool-only flip added (`rooms-tool-only.ts`).
+ *
+ * **One array, two files, and the split is organisational rather than
+ * taxonomic.** Those six live apart because every one of them mutates
+ * install-wide state before it drives — the `rooms.toolOnlyReplies` flag and the
+ * scenario the runtime answers with, both singletons in the in-process runner —
+ * so grouping them makes the reset obligation one rule for one file. What they
+ * ARE is exactly what the five above are: test-mode, free, gating, and about a
+ * mechanism rather than a judgment.
+ *
+ * So they belong in this array, and being in it is not bookkeeping. It is what
+ * `__tests__/rooms.test.ts` iterates to hold the whole tier to its promises —
+ * free, deterministic, un-quarantined, and out of `core` so no local run ever
+ * bills for them — and what its `--suite rooms` count derives from. Registering
+ * them only into `ALL_CASES` left them selectable but unpoliced, and reddened
+ * that count with a number nothing explained.
+ */
 export const roomsStructuralCases: EvalCase[] = [
   roomsAddressedRunsATurnCase,
   roomsUnaddressedIsFreeCase,
   roomsBurstCollectsCase,
   roomsHaltStopsCase,
   roomsRementionAfterTurnStartCase,
+  ...roomsToolOnlyCases,
 ];

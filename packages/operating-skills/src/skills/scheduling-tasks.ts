@@ -37,13 +37,36 @@ Read current state before changing anything:
 - Tool: \`tasks_create\` with \`name\`, \`prompt\` (the instruction the agent runs each
   time), \`cron\` (required, e.g. \`"0 2 * * *"\` for daily at 2am), \`reason\`
   (required, see below), \`target\` (required, see below), and optional
-  \`description\`, \`timezone\` (IANA, e.g. \`"America/New_York"\`), and \`maxRuntime\`
-  (e.g. \`"5m"\`, \`"1h"\`) to cap how long a run may take.
+  \`description\`, \`timezone\` (IANA, e.g. \`"America/New_York"\`), \`maxRuntime\`
+  (e.g. \`"5m"\`, \`"1h"\`) to cap how long a run may take, and \`runtime\`, \`model\`
+  and \`effort\` (see below).
 - CLI: \`dorkos task create --name <name> --description <text> --prompt <text>
-  --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]\`.
+  --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]
+  [--runtime <id>] [--model <id>] [--effort <level>]\`.
 
 Only the CLI can create a manual-only task: omit \`--cron\` and trigger it by hand.
 The tool requires a cron expression.
+
+### Where it runs, and on what
+
+Three optional fields, and leaving all three out is the right answer for almost
+every task:
+
+- \`runtime\`: \`"claude-code"\`, \`"codex"\` or \`"opencode"\`. Left out, the task runs
+  wherever its target agent runs, and on DorkOS's default runtime when the task
+  belongs to no agent. Name one only when the user asked for that runtime by
+  name. A runtime the user has not turned on **fails the run** rather than
+  quietly running somewhere else, so do not guess.
+- \`model\`: a model id, written the way the resolved runtime writes it
+  (\`"claude-sonnet-4-5"\`, \`"gpt-5.5"\`, \`"ollama/qwen2.5-coder"\`). A model belongs
+  to one runtime's vocabulary: an id from the wrong runtime is not checked when
+  you write it and is reported when the task runs. Left out, the task uses the
+  agent's model, then the user's default for that runtime.
+- \`effort\`: how hard the model thinks. Left out, the agent's setting, then the
+  user's default. A runtime with no such setting ignores it.
+
+On \`tasks_update\`, sending \`null\` for any of the three **clears** it, so the task
+goes back to following its agent. Omitting a field leaves it as it was.
 
 ### Say why, in your own words
 
@@ -91,7 +114,8 @@ Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
 
 - Tool: \`tasks_update\` with the schedule \`id\` and any of \`name\`, \`prompt\`, \`cron\`,
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`
-  (e.g. \`"5m"\`, \`"1h"\`).
+  (e.g. \`"5m"\`, \`"1h"\`), \`runtime\`, \`model\`, \`effort\` (\`null\` clears any of the
+  last three; see "Where it runs, and on what" above).
 
 - \`tasks_delete\` removes a task permanently, and it is \`destructive\` tier. It does
   NOT run until a person approves it: the first call comes back with the

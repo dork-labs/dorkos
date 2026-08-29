@@ -85,6 +85,7 @@ import type {
   RoomKind,
   RoomBridgeInfo,
   RoomMember,
+  RoomMergeEvent,
   RoomMoment,
   RoomPresencePayload,
   RoomReactionEvent,
@@ -106,6 +107,7 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
 import { notifyRoomMessage as emitRoomMessageNotification } from '../notifications/emitters/room-messages.js';
@@ -221,6 +223,15 @@ export interface RoomServiceDeps {
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */
   turns: RoomTurnRunner;
+  /**
+   * Where that turn runs, when the room has files of its own (spec §3.5).
+   *
+   * A thunk rather than the manager, because the manager is built after this
+   * service — it needs the claim map this service owns to know which working
+   * copies are in use. Optional: without one, every turn runs in the agent's own
+   * directory, exactly as it did before project rooms existed.
+   */
+  worktrees?: () => RoomWorktreeManager | null;
   /** The per-room ceiling on automatic turns, counted whoever is calling. */
   budget: RoomTurnBudget;
   /**
@@ -287,6 +298,17 @@ export interface RoomServiceDeps {
    * what this may be SET to, not the limit anyone feels.
    */
   maxAttachmentsPerEntry(): number;
+  /**
+   * The live `rooms.maxPostsPerTurn` — how many messages one agent may post into
+   * a room inside a single turn (spec `tool-only-room-replies` §D9).
+   *
+   * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
+   * domain still reads no config. Read PER POST rather than captured, because an
+   * operator who feels the number is wrong must be able to move it without
+   * restarting anything — posting is the agent's only voice once
+   * `rooms.toolOnlyReplies` is on.
+   */
+  maxPostsPerTurn(): number;
   /**
    * Whether this author is the person who owns the install.
    *
@@ -727,6 +749,7 @@ export class RoomService {
   private readonly limitsFor: RoomLimitsResolver;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
+  private readonly maxPostsPerTurn: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The record-based twin of {@link RoomService.isOwnerAuthor}. */
@@ -778,6 +801,7 @@ export class RoomService {
     this.broadcaster = deps.broadcaster;
     this.limitsFor = deps.limitsFor;
     this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
+    this.maxPostsPerTurn = deps.maxPostsPerTurn;
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.isOwnerRecord = deps.isOwnerRecord;
     this.bridges = deps.bridges;
@@ -814,6 +838,7 @@ export class RoomService {
       topicNamesFor: (entryIds) => topicNamesForEntries(this.bridges, entryIds),
       attachmentsFor: (roomId, entryIds) => this.attachments.listFor(roomId, entryIds),
       runner: deps.turns,
+      ...(deps.worktrees ? { worktrees: deps.worktrees } : {}),
       budget: deps.budget,
       limitsFor: deps.limitsFor,
       engagedWindow: deps.engagedWindow,
@@ -870,6 +895,55 @@ export class RoomService {
    */
   listActiveClaims(): ActiveClaimView[] {
     return this.triggers.listClaims();
+  }
+
+  /**
+   * Every agent workspace with a room turn running in it right now.
+   *
+   * {@link RoomService.listActiveClaims}'s in-process sibling: same claim map,
+   * but it answers with filesystem paths, so it is for callers inside this
+   * process only. Its consumer is the room-worktree reap, which must never
+   * remove the working copy a live turn is standing in.
+   *
+   * @returns Each distinct workspace path holding a claim.
+   */
+  listBusyAgentPaths(): string[] {
+    return this.triggers.busyAgentPaths();
+  }
+
+  /**
+   * The agent members of one room, with the workspace path each is identified
+   * by.
+   *
+   * **In-process only, exactly like {@link RoomService.listBusyAgentPaths}, and
+   * for the same reason**: `/Users/dorian/…` is not something to hand every
+   * member of a room. `RoomRoster.list` drops the natural key on purpose, so
+   * this is the deliberate second door — narrow, unexported over any surface,
+   * and used by one caller: the room-repo verbs, which need the path to work out
+   * which standing worktree belongs to whom (`RoomWorktreeManager.slugFor`).
+   * Anything derived from it that a caller sees is the SLUG, never the path.
+   *
+   * A ghost — an agent whose directory no longer holds one — is included, and
+   * has to be: its worktree may still hold work nobody merged, and a status
+   * report that quietly dropped it would be the reason somebody lost it.
+   *
+   * @param roomId - The room.
+   * @returns One row per agent on the roster, in roster order.
+   */
+  listAgentMembers(roomId: string): { authorId: string; agentPath: string; displayName: string }[] {
+    const members = this.store.listMembers(roomId);
+    const authors = this.authors.getMany(members.map((member) => member.authorId));
+    const agents: { authorId: string; agentPath: string; displayName: string }[] = [];
+    for (const member of members) {
+      const author = authors.get(member.authorId);
+      if (!author || author.kind !== 'agent') continue;
+      agents.push({
+        authorId: author.id,
+        agentPath: author.naturalKey,
+        displayName: author.displayName,
+      });
+    }
+    return agents;
   }
 
   /**
@@ -1095,10 +1169,6 @@ export class RoomService {
         'A channel name needs at least one letter or number, or give it a slug'
       );
     }
-    if (slug && this.store.findLiveChannelBySlug(slug)) {
-      throw new RoomError('SLUG_TAKEN', `A channel called #${slug} already exists`);
-    }
-
     const draft: NewRoom = {
       id: ulid(),
       kind: request.kind,
@@ -1129,6 +1199,18 @@ export class RoomService {
     // ADR 260814-025326). `addMember` and `removeMember` hold the same shape
     // afterwards, so this is a gate and not a formality.
     this.requireSeedingAllowed(creator, [...resolved.values()]);
+
+    // Also AFTER the gate, and for the same reason as the dedupe below it
+    // (DOR-1611 review). A channel's `#slug` is a name the caller may not be
+    // able to see: the owner sees every room, an agent sees only its own, and
+    // this refusal names a room by a name that is otherwise unreachable. Run
+    // BEFORE the gate it answered "a channel called #payroll already exists" to
+    // a caller that could not list, read, or find that channel — a create path
+    // doubling as a name oracle over the operator's private rooms. Now a caller
+    // the gate refuses learns exactly what it learned about every other room:
+    // nothing.
+    const slugHolder = slug ? this.store.findLiveChannelBySlug(slug) : null;
+    if (slug && slugHolder) this.refuseSlugTaken(slug, slugHolder.id, creatorAuthorId);
 
     // Deliberately AFTER that gate, not before. A caller the gate refuses gets
     // the same 403 whether or not the room it named exists, so this stays a
@@ -2080,12 +2162,13 @@ export class RoomService {
       this.requireOperator(viewerAuthorId, 'how much a room may spend on automatic replies');
     }
     this.requireSystemRoomWritable(room, viewerAuthorId, roomPatch);
+    this.requireDmTitleWritable(room, viewerAuthorId, roomPatch);
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
       throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
     }
     // Resolved FIRST, because the slug this room is about to have is the one an
     // un-archive has to be judged against — not the one it is leaving behind.
-    const slugPatch = this.renamedSlug(room, roomPatch.title);
+    const slugPatch = this.renamedSlug(room, roomPatch.title, viewerAuthorId);
     const nextSlug = slugPatch.slug ?? room.slug;
     // Un-archiving reclaims a slug the partial unique index released when the
     // room was archived. Somebody may have taken it since — refuse the same way
@@ -2095,7 +2178,7 @@ export class RoomService {
     if (roomPatch.archived === false && room.archived && room.kind === 'channel' && nextSlug) {
       const holder = this.store.findLiveChannelBySlug(nextSlug);
       if (holder && holder.id !== room.id) {
-        throw new RoomError('SLUG_TAKEN', `A channel called #${nextSlug} already exists`);
+        this.refuseSlugTaken(nextSlug, holder.id, viewerAuthorId);
       }
     }
     const updated = this.store.updateRoom(roomId, { ...roomPatch, ...slugPatch });
@@ -2123,7 +2206,13 @@ export class RoomService {
 
   /**
    * Add a member by author id, or by agent directory when the agent has never
-   * been an author before. **Operator-only.**
+   * been an author before.
+   *
+   * **The owner, or an agent that belongs to this room** — no longer
+   * operator-only (spec `rooms-management-tools` §D7, DOR-1611). A second person
+   * is still refused. {@link RoomService.requireRosterWriteAllowed} owns that
+   * sentence; every refusal below it is a field check that never asked who was
+   * calling, so all of them hold unchanged for the new caller.
    *
    * **A bridged room refuses a second agent** (chats-as-channels spec §3.4,
    * D-6 Q3). Outbound consent to the platform (`canReply` / `canInitiate`) is
@@ -2146,12 +2235,60 @@ export class RoomService {
    * {@link RoomService.requireSeedingAllowed}, which owns that reasoning.
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be the install's owner.
+   * @param viewerAuthorId - The caller; the owner, or a member agent.
    * @param input - Who to add, and optionally how they should behave.
    */
   addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     this.requireOperator(viewerAuthorId, 'who is in a room');
+    return this.addMemberTo(room, input);
+  }
+
+  /**
+   * Add a member because an AGENT asked — `add_room_members`, and the rooms
+   * capability domain is the only caller (DOR-1611).
+   *
+   * {@link RoomService.addMember} with one check swapped and nothing else moved:
+   * {@link RoomService.requireOperator} becomes
+   * {@link RoomService.requireRosterWriteAllowed}, which also admits an agent
+   * that belongs to this room. Every refusal below the gate is shared, because
+   * they are FIELD checks that never asked who was calling — the three-way rule,
+   * the bridged-room refusal, the system-room rule — so widening the caller
+   * cannot widen any of them.
+   *
+   * **A separate method rather than a parameter, and that is the point of it.**
+   * The grant that makes this safe (`roomsManage`) is enforced at
+   * `registry.invoke` and nowhere else, so it protects the CAPABILITY and not the
+   * method. Keeping the widened caller check on a method only the capability
+   * calls is what stops the grant from being walked around: `addMember` stays
+   * operator-only for the HTTP route, the community adapter and the team-room
+   * hook, and a surface added tomorrow gets the operator-only one by default.
+   * `postFromTool` is the same shape for the same reason.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The calling agent, resolved from its identity.
+   * @param input - Who to add.
+   */
+  addMemberFromTool(
+    roomId: string,
+    viewerAuthorId: string,
+    input: AddMemberInput
+  ): RoomRosterEntry {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireRosterWriteAllowed(this.roster.requireAuthor(viewerAuthorId), 'who is in a room');
+    return this.addMemberTo(room, input);
+  }
+
+  /**
+   * The roster write both add paths share, below whichever caller check let them
+   * in. Every refusal here is a FIELD check — what the roster will look like
+   * afterwards — so it holds identically for the operator and for an armed agent.
+   *
+   * @param room - The room, already resolved and visible to the caller.
+   * @param input - Who to add.
+   */
+  private addMemberTo(room: Room, input: AddMemberInput): RoomRosterEntry {
+    const roomId = room.id;
 
     // Resolved once here and again inside `RoomRoster.add` below — harmless:
     // resolving an agent path is idempotent (it mints the author row at most
@@ -2261,7 +2398,13 @@ export class RoomService {
 
   /**
    * Remove a member, dropping its per-room session binding with it.
-   * **Operator-only.**
+   *
+   * **The owner, or an agent that belongs to this room** — no longer
+   * operator-only (spec `rooms-management-tools` §D7, DOR-1611), with one
+   * refusal that exists only for the new caller: **an agent may never take the
+   * PERSON out of a room, in any shape.** That is stronger than the three-way
+   * rule below and deliberately so — the owner's membership is the guarantee the
+   * whole arrangement rests on, and an agent must not be able to spend it.
    *
    * **The owner cannot be taken out of a room two agents share** — the
    * three-way rule (ADR 260814-025326). This is the half of the rule that
@@ -2279,12 +2422,78 @@ export class RoomService {
    * existing row untouched).
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be the install's owner.
+   * @param viewerAuthorId - The caller; the owner, or a member agent.
    * @param authorId - The member being removed.
    */
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     this.requireOperator(viewerAuthorId, 'who is in a room');
+    this.removeMemberFrom(room, authorId);
+  }
+
+  /**
+   * Remove a member because an AGENT asked — `remove_room_members` and
+   * `leave_room`, and the rooms capability domain is the only caller (DOR-1611).
+   *
+   * {@link RoomService.removeMember} with the operator gate swapped for
+   * {@link RoomService.requireRosterWriteAllowed}, plus the two refusals that
+   * exist only for this caller. Everything below them is shared and unchanged.
+   *
+   * **A separate method rather than a parameter**, for the reason
+   * {@link RoomService.addMemberFromTool} gives in full: the `roomsManage` grant
+   * guards the CAPABILITY, not the method, so the widened caller check has to
+   * live somewhere only the capability can reach.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The calling agent, resolved from its identity.
+   * @param authorId - The member being removed; the caller itself when leaving.
+   */
+  removeMemberFromTool(roomId: string, viewerAuthorId: string, authorId: string): void {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    const caller = this.roster.requireAuthor(viewerAuthorId);
+    this.requireRosterWriteAllowed(caller, 'who is in a room');
+    // **An agent may never take the person out of a room, in any shape.** This
+    // is STRONGER than the three-way rule below it, deliberately (spec §D7 row
+    // 4, operator-settled): that rule refuses the owner's removal only once two
+    // agents would remain, whereas the owner's membership is the guarantee the
+    // whole arrangement rests on — an agent must not be able to spend it, not
+    // even in a room where the shape rules would permit it.
+    //
+    // Ordered BEFORE the field checks under it, which is what keeps their
+    // messages honest: `requireOwnerWitnessesAgents`'s `'remove'` wording is
+    // addressed to the person, and this guard is why an agent can never read it.
+    if (!this.isOwnerRecord(caller) && this.isOwnerAuthor(authorId)) {
+      throw new RoomError('OPERATOR_ONLY', 'Only you can take yourself out of a room');
+    }
+    // **An agent removing ITSELF is leaving, whatever verb it used to ask**
+    // (DOR-1611 review). The two refusals that make `leave_room` safe used to
+    // live only in {@link RoomService.leaveRoom}, so `remove_room_members` with
+    // the caller's own handle in the list walked straight past both: an agent
+    // could leave a DM it can never re-enter, and could take itself out of
+    // #team — where nothing restores the seat, and where the fallback-seat
+    // clear below would empty the seat on the way out. Same act, same rules,
+    // whichever door it came through.
+    //
+    // Not conditioned on the caller being an agent, because this method has no
+    // other kind: `requireRosterWriteAllowed` above admits the owner too, and
+    // she reaches roster writes through `removeMember` rather than here. The
+    // owner-check is kept anyway so the rule reads the same as it enforces.
+    if (caller.id === authorId && !this.isOwnerRecord(caller)) {
+      this.requireLeavingAllowed(room);
+    }
+    this.removeMemberFrom(room, authorId);
+  }
+
+  /**
+   * The roster write both remove paths share, below whichever caller check let
+   * them in. Every refusal here is a FIELD check — what the roster will look like
+   * afterwards — so it holds identically for the operator and for an armed agent.
+   *
+   * @param room - The room, already resolved and visible to the caller.
+   * @param authorId - The member being removed.
+   */
+  private removeMemberFrom(room: Room, authorId: string): void {
+    const roomId = room.id;
     this.requireSystemRoomKeepsOwner(room, authorId);
     if (this.isOwnerAuthor(authorId)) {
       this.requireOwnerWitnessesAgents(
@@ -2296,6 +2505,24 @@ export class RoomService {
       );
     }
     this.roster.remove(roomId, authorId);
+    // The fallback seat is CLEARED when its holder leaves, never defended by a
+    // refusal (spec `rooms-management-tools` §D9, DOR-1611).
+    //
+    // **A correctness fix for every caller of this method, not a new rule for
+    // the new ones.** `rooms.fallback_seat_author_id` is deliberately not a
+    // foreign key (`packages/db/src/schema/rooms.ts`), so nothing cleaned it up
+    // and a room could sit naming a seat that is not on its roster — a message
+    // addressed to nobody in particular then reached nobody at all, silently.
+    // Removing the holder through the cockpit had that effect long before an
+    // agent could ask for it.
+    //
+    // Cleared rather than refused because refusing would WEDGE the seat-holder
+    // into a room it could never leave — the identical failure mode that made
+    // defending it the wrong answer, and the reason the standing guarantee
+    // "taking an AGENT out is never refused, so nothing is ever wedged" holds.
+    if (room.fallbackSeatAuthorId === authorId) {
+      this.store.setFallbackSeat(roomId, null);
+    }
     // Whatever this room was still waiting for from this agent is over: it is
     // not here to answer it. Dropped rather than left to age out, because the
     // wait can now last up to `rooms.lateReplyCeilingMinutes` and the live lane
@@ -2304,6 +2531,89 @@ export class RoomService {
     // durable, visible sibling.
     this.triggers.abandonHolds(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
+  }
+
+  /**
+   * Step out of a channel you are in (spec `rooms-management-tools` §D9,
+   * DOR-1611).
+   *
+   * {@link RoomService.removeMember} with the caller as its own target, plus
+   * {@link RoomService.requireLeavingAllowed} — the two refusals that are about
+   * LEAVING rather than about editing a roster, and which that method documents
+   * in full.
+   *
+   * **It is not the only door to those refusals, which is why they are not
+   * written here.** `remove_room_members` with the caller's own handle in the
+   * list reaches `removeMember` directly, so the rules have to hold there too.
+   *
+   * @param roomId - The channel to leave.
+   * @param authorId - The member leaving; always the caller itself.
+   * @throws {RoomError} `ROOM_NOT_FOUND` when the caller cannot see the room,
+   *   `TOOL_LEAVE_NOT_IN_DM` in anything that is not a channel, and
+   *   `SYSTEM_ROOM` in a well-known one.
+   */
+  leaveRoom(roomId: string, authorId: string): void {
+    const room = this.requireVisibleRoom(roomId, authorId);
+    // Checked here as well as inside `removeMember`, and that is not a
+    // duplicate: this method means "a member is walking out" for ANY caller,
+    // while the copy below it fires only for an agent removing itself. Keeping
+    // both is what stops the guarantee from depending on who happens to call.
+    this.requireLeavingAllowed(room);
+    this.removeMemberFromTool(roomId, authorId, authorId);
+  }
+
+  /**
+   * The two refusals that are about WALKING OUT rather than about editing a
+   * roster (spec `rooms-management-tools` §D9, DOR-1611).
+   *
+   * They live on the service, not in the capability that calls it, because the
+   * cockpit may legitimately take an agent out of either kind of room: these are
+   * not roster rules, they are rules about a member choosing to leave. And they
+   * live in ONE method because there are two doors to that act —
+   * {@link RoomService.leaveRoom} and {@link RoomService.removeMember} with the
+   * caller as its own target — and a rule written at one door is a rule the
+   * other one does not have.
+   *
+   * **Channels only.** A channel can be re-entered and a direct message cannot:
+   * `findDmByMemberSet` needs an EXACT member-set match, so re-opening a DM
+   * somebody left mints a SECOND conversation beside the first rather than
+   * returning to it. `kind !== 'channel'` rather than `kind === 'dm'`, so an
+   * unrecognized kind takes the narrower branch (`.claude/rules/room-conduct.md`).
+   *
+   * **Never a system room.** #team is the install's home tab and ships seated
+   * with exactly one agent, whose seat nothing restores: `ensureSystemChannel`
+   * is idempotent on the ROOM, not on its roster. The owner may still take an
+   * agent out of #team herself — that is a decision she can see and undo.
+   *
+   * **Emptying an ordinary channel is deliberately NOT refused.** The last
+   * member may leave, and the room survives it: the row, its `#slug` and its
+   * whole history stay, the owner sees every room on the install whether or not
+   * she is a member ({@link RoomService.seesEveryRoom}), and she can add members
+   * back. Refusing would wedge the last member into a room it could never leave
+   * — the same failure mode that made defending the fallback seat wrong.
+   *
+   * @param room - The room being walked out of.
+   * @throws {RoomError} `TOOL_LEAVE_NOT_IN_DM` in anything that is not a
+   *   channel, and `SYSTEM_ROOM` in a well-known one.
+   */
+  private requireLeavingAllowed(room: Room): void {
+    if (room.kind !== 'channel') {
+      throw new RoomError(
+        'TOOL_LEAVE_NOT_IN_DM',
+        'You can only leave a channel. This is a direct message — it stays until the person archives it.'
+      );
+    }
+    if (room.wellKnown) {
+      // Sanitized, unlike its twin on `requireSystemRoomWritable`: this sentence
+      // is read by a MODEL, in a room whose title the operator typed and no
+      // write path sanitizes on the way in, so an unsanitized title here is
+      // untrusted text arriving inside an instruction (DOR-1611 review). The
+      // `#slug` branch needs none — a slug is `[a-z0-9-]` by construction.
+      throw new RoomError(
+        'SYSTEM_ROOM',
+        `You can't leave ${room.slug ? `#${room.slug}` : (sanitizeIdentity(room.title) ?? 'this room')} — it's the home channel for this install. Ask the person who runs it if you should be out of it.`
+      );
+    }
   }
 
   /**
@@ -2525,10 +2835,23 @@ export class RoomService {
    *
    * What it adds:
    *
-   * - **Channels and threads only** (§2.6). In a DM the reply IS the message: the
-   *   agent was unambiguously addressed, answering is obligatory, and the turn's
-   *   own text already posts. A second way to say the same thing there would be a
-   *   second way for it to fail, and it would buy nothing.
+   * - **Channels and threads only WHILE THE TURN'S TEXT STILL POSTS** (§2.6, as
+   *   reversed by spec `tool-only-room-replies` §D3). In text mode the reply IS
+   *   the message in a DM: the agent was unambiguously addressed, answering is
+   *   obligatory, and the turn's own text already lands — so a second way to say
+   *   the same thing there would be a second way for it to fail, and would buy
+   *   nothing. Under a tool-only turn none of that is true any more: nothing the
+   *   turn writes is posted, so refusing here would leave the agent unable to
+   *   answer a direct message at all. The refusal is therefore conditioned on the
+   *   resolved reply mode rather than removed, and it is still spelled
+   *   `!== 'channel'` — `rooms.kind` is a text column narrowed by an unchecked
+   *   cast, and an unknown kind never gets more reach than a DM.
+   * - **A per-turn post ceiling** — `TOO_MANY_POSTS_THIS_TURN`,
+   *   `rooms.maxPostsPerTurn` (§D9). Under the flip, posting is the only voice an
+   *   agent has and nothing else bounds how often it uses it;
+   *   `.claude/rules/room-conduct.md` says a bound is a mechanism, never a
+   *   prompt. Asked AFTER the stop mark and BEFORE the write, so a refusal never
+   *   costs a claim mark and never spends a post.
    * - **A turn somebody STOPPED is refused** — `TURN_WAS_STOPPED`, DOR-1313. An
    *   interrupt is delivered rather than obeyed, so a stopped turn may still be
    *   running and reach for this; the room already throws away its narration and
@@ -2550,7 +2873,7 @@ export class RoomService {
    * answers has taken one turn against `maxTurnsPerAgentPerCascade`, not four
    * (DOR-1434). Being legible is not a thing this room charges for.
    *
-   * @param roomId - The channel to post into.
+   * @param roomId - The room to post into.
    * @param input.authorId - The agent posting, resolved from its identity by the
    *   capability — never read off the tool's arguments.
    * @param input.text - What to say.
@@ -2563,13 +2886,24 @@ export class RoomService {
     input: { authorId: string; text: string; replyTo?: string }
   ): PostedEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
+    // The turn this post is being made from inside, when there is one. Read
+    // once, before every refusal below, because three separate things need it:
+    // the mode conditioning the DM refusal, the ceiling, and the answer/session
+    // pointers a tool post has never carried.
+    const turn = this.triggers.activeTurnHere(roomId, input.authorId);
     // `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a text column narrowed by
     // an unchecked cast, so an unrecognized kind takes the narrower branch
     // (`.claude/rules/room-conduct.md`).
-    if (room.kind !== 'channel') {
+    //
+    // **Conditioned on the reply mode since DOR-1613** (spec
+    // `tool-only-room-replies` §D3). In text mode the refusal is exactly as
+    // right as it was: the reply genuinely IS the message there. In a tool-only
+    // turn it is false — nothing the turn writes is posted — so keeping it would
+    // leave the agent structurally unable to answer a direct message.
+    if (turn?.replyMode !== 'tool-only' && room.kind !== 'channel') {
       throw new RoomError(
         'TOOL_POST_NOT_IN_DM',
-        'This is a direct message — your reply is posted for you, so there is nothing to post here.'
+        'This is a direct message and your reply is being posted for you, so there is nothing to post here. Just answer.'
       );
     }
     // **A stopped turn says nothing here either** (DOR-1313). The room already
@@ -2590,7 +2924,55 @@ export class RoomService {
         'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
       );
     }
-    const entry = this.post(roomId, input);
+    // **The per-turn ceiling** (spec `tool-only-room-replies` §D9). Read per call
+    // rather than captured, like every other live bound this service is handed,
+    // so moving the number in Settings takes effect on the very next post.
+    //
+    // Asked AFTER the stop mark, so a turn that was going to be refused anyway
+    // does not spend a post on the way out — the same ordering the reaction
+    // budget keeps — and BEFORE the write, so a refusal never leaves a claim
+    // marked as having spoken.
+    //
+    // `postsThisTurn` is `undefined` when this agent holds no claim here, and
+    // that is not zero: a post with no turn behind it is not part of one, so
+    // there is no per-turn ceiling to apply. It already costs a turn against the
+    // cascade budget on its own.
+    if (turn !== undefined) {
+      const ceiling = this.maxPostsPerTurn();
+      if (turn.postsThisTurn >= ceiling) {
+        logger.info('[rooms] refused a turn a further post', {
+          roomId,
+          authorId: input.authorId,
+          ceiling,
+        });
+        throw new RoomError(
+          'TOO_MANY_POSTS_THIS_TURN',
+          `You have already posted ${ceiling} ${ceiling === 1 ? 'message' : 'messages'} in this conversation during this turn, which is the limit. Consolidate the rest into one message next turn.`
+        );
+      }
+    }
+    const entry = this.post(roomId, {
+      ...input,
+      // **What a tool post has never carried, and now must** (spec
+      // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
+      // post passed neither, so `sessionId` fell to `null` and the "answers
+      // this" pointer was simply absent. That was survivable while a deliberate
+      // post was rare. Under the flip it is EVERY agent reply in the product:
+      // the room would stop drawing the pointer, and no entry could be traced
+      // back to the session that wrote it.
+      //
+      // Both facts are in hand at write time — the live claim knows the entry it
+      // is answering, and the `(room, agent)` binding is the session that turn
+      // runs on — so they are filled from there rather than trusted from the
+      // caller. Only for a post made INSIDE a turn: a post with no claim behind
+      // it is answering nothing and belongs to no session here.
+      ...(turn !== undefined
+        ? {
+            answersEntryId: turn.entryId,
+            ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
+          }
+        : {}),
+    });
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }
@@ -2886,6 +3268,75 @@ export class RoomService {
   }
 
   /**
+   * Turn a `@handle` into the author that answers to it, anywhere on this
+   * install (spec `rooms-management-tools` §D8, DOR-1611).
+   *
+   * **A handle first, because it is the name a person types and the name the
+   * roster leads with.** `get_room` puts a handle on every member and
+   * `find_room` filters on them, so a handle is what a model has in hand when it
+   * decides who to bring into a room. Resolved once, here — not in the
+   * capability layer, where it would be a second place the rule could drift from
+   * `holdsEveryHandle`'s idea of what a handle matches. Both sides normalize
+   * through {@link normalizeMemberHandle} for exactly that reason.
+   *
+   * **An author id second, because a handle does not always exist** (DOR-1611
+   * review, correcting this comment's own earlier premise that author ids are
+   * "an identifier space no read verb produces" — `projectDetail` emits
+   * `authorId` on every member, deliberately). The gap is not hypothetical and
+   * it is not an edge: `mintHandle` returns `null` for the install's own human,
+   * because the only string it could derive from is the placeholder `'You'`
+   * (DOR-979 is the surface that will ask her for one). So on a default install
+   * the OWNER has no handle at all — and every room an agent may open with a
+   * colleague is one she has to be in, by the three-way rule. Without this
+   * fallback `create_room` with a colleague was a dead end that answered
+   * `OPERATOR_ONLY`, and naming her by the id the roster had just handed over
+   * answered `MEMBER_NOT_FOUND`. The same gap catches any agent whose name
+   * spells nothing legal.
+   *
+   * **Ordered, not sniffed.** The handle lookup runs first and the id lookup
+   * only on a miss, rather than guessing from the shape of the string, because a
+   * shape test is a third opinion about what a handle is and this file already
+   * has enough. A string that names a live handle can never be shadowed by an
+   * id; a string that names neither still resolves to nothing.
+   *
+   * **A scan rather than an index, deliberately.** There is no handle→author
+   * lookup on {@link AuthorRegistry} and this does not add one: an install's
+   * author rows number in the tens (its agents, its people), the verbs that ask
+   * are occasional by construction, and a real index would need to answer the
+   * tombstone question — a released handle whose row still carries it — that
+   * {@link AuthorHandleStore} owns. Reading LIVE rows sidesteps that entirely:
+   * a handle nobody currently answers to resolves to nothing.
+   *
+   * It answers WHO, never WHETHER. Membership, the three-way rule and the grant
+   * all sit above this; resolving a name is not permission to use it.
+   *
+   * @param token - A handle as the caller typed it, with or without its `@`, or
+   *   an author id as the roster reports it.
+   * @returns The author, or `null` when nobody on this install answers to it.
+   */
+  findAuthorByHandle(token: string): AuthorRecord | null {
+    const wanted = normalizeMemberHandle(token);
+    if (!wanted) return null;
+    const live = this.authors.listActive();
+    const byHandle = live.find(
+      (author) => author.handle && normalizeMemberHandle(author.handle) === wanted
+    );
+    if (byHandle) return byHandle;
+    // Over the SAME live rows, not through `getById`, which has no
+    // `retired_at IS NULL` filter: an id lookup that skipped it would resolve a
+    // member whose directory has since changed hands, and the handle scan above
+    // deliberately cannot.
+    //
+    // Trimmed and de-sigilled but NOT lowercased: an id is case-sensitive, so
+    // `normalizeMemberHandle` is the wrong tool here even though it is the right
+    // one two lines up. The `@` is stripped because a model that has been told
+    // to write `@name` writes `@<id>` too, and a dead end there reads to it as
+    // "that member does not exist".
+    const id = token.trim().replace(/^@+/, '');
+    return live.find((author) => author.id === id) ?? null;
+  }
+
+  /**
    * Whether a room answers to a name — its `#slug` exactly, or its title as a
    * substring. An empty or absent needle matches everything, so the two
    * `findMemberRooms` filters compose by plain chaining.
@@ -3062,6 +3513,30 @@ export class RoomService {
           (ranked.get(matchKey(b.roomId, b.entry.seq)) ?? 0)
       )
       .slice(0, wanted);
+  }
+
+  /**
+   * Refuse anyone who is not on this room's roster, and answer with the room.
+   *
+   * The public face of {@link RoomService.requireHistoryFloor}'s first half, for
+   * the surfaces that need the membership rule without a read floor — today the
+   * room-repo verbs (spec `project-rooms` §3.6), which are membership-gated for
+   * exactly the reason the history reads are: a room id is not a capability, and
+   * seeing a room is not being in it.
+   *
+   * The floor is dropped rather than exposed because there is nothing to floor:
+   * a room's repo is one tree with one history, not a per-member view, and a
+   * member who joined yesterday merges into the same `main` as one who was there
+   * from the start.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller.
+   * @returns The room.
+   * @throws {RoomError} `ROOM_NOT_FOUND` when the caller cannot see the room OR
+   *   is not a member of it — deliberately the same answer for both.
+   */
+  requireMembership(roomId: string, viewerAuthorId: string): Room {
+    return this.requireHistoryFloor(roomId, viewerAuthorId).room;
   }
 
   /**
@@ -3828,6 +4303,78 @@ export class RoomService {
   }
 
   /**
+   * Announce work an agent merged into the room's repo (spec `project-rooms`
+   * §3.6).
+   *
+   * **The room's own voice, and it wakes nobody.** Every property that matters
+   * here is the same one {@link RoomService.postMoment}'s system path has, and
+   * for the same reasons — this is deliberately that shape rather than a new
+   * one:
+   *
+   * - It is a **post**, so the history page, the stream, a thread and a bridge
+   *   all carry it with no new branch. It is **not a notice**: notices are
+   *   refusal-shaped and damped on `(room, agent, reason)`, and merges are
+   *   per-event content that must never collapse into one line (spec §5 Q3).
+   * - It **addresses nobody**. `mentions` is empty because nothing here was
+   *   written to reach anyone; the agent's name is in the sentence as a fact,
+   *   not as an address, and mentions resolve at write time so nothing will
+   *   re-read the text later and decide otherwise.
+   * - Its cascade is **spent at the ceiling** (`deriveCascade` with
+   *   `authorKind: 'system'`), so even a future path that did dispatch from an
+   *   entry like this one could not open a fresh reply budget with it.
+   * - It is **never dispatched**: it goes straight to the store and the stream,
+   *   the way a system moment does. A merge is news about files, and a room
+   *   where landing a commit set three agents talking is the over-participation
+   *   `meta/agent-etiquette.md` exists to damp.
+   *
+   * `subjectAuthorId` names the agent whose work landed, so the feed draws its
+   * face beside a sentence the room wrote — the same job the field does for a
+   * notice and for a moment.
+   *
+   * @param roomId - The room whose repo gained the work.
+   * @param input.text - The sentence a person reads. Composed by the caller,
+   *   which is the only thing that knows the real numbers.
+   * @param input.merge - The machine-readable half, for the file explorer.
+   * @param input.subjectAuthorId - The agent whose branch was merged.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries, in
+   *   its own voice least of all.
+   */
+  postMergeEvent(
+    roomId: string,
+    input: { text: string; merge: RoomMergeEvent; subjectAuthorId: string }
+  ): RoomEntry {
+    const room = this.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        merge: input.merge,
+        subjectAuthorId: input.subjectAuthorId,
+      },
+      // Addresses nobody. See the TSDoc — this is the whole no-cascade claim,
+      // and the emptiness is the mechanism rather than a consequence of the
+      // text happening not to contain an `@`.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...this.threadPointers(roomId, undefined),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publishEntry(entry);
+    return entry;
+  }
+
+  /**
    * Write a `notice` — the room speaking in its own voice, authored by the
    * system author. A refused trigger lands one of these; a silently dropped
    * trigger is indistinguishable from a broken agent.
@@ -3997,6 +4544,17 @@ export class RoomService {
       new Date().toISOString(),
       on
     );
+    // **A reaction can BE the answer** (spec `tool-only-room-replies` §D10). Under
+    // `rooms.toolOnlyReplies` a turn that reacts and says nothing has still put
+    // something in front of the reader, so it releases as `'answered'` and earns
+    // no "read this and did not reply" line.
+    //
+    // Marked AFTER the write and only when a pill is now STANDING. Both halves
+    // matter: every refusal above throws, so nothing that put nothing in front of
+    // anybody can reach this line — and a retraction leaves the entry with
+    // nothing on it, which is not an answer to anything. A person's reaction
+    // marks nothing, because a claim belongs to an agent.
+    if (reacted) this.triggers.noteDeliberateReaction(roomId, viewerAuthorId);
     this.publishReactions(roomId, entryId);
     return { reacted, frequents: this.reactions.frequents(viewerAuthorId) };
   }
@@ -4262,6 +4820,40 @@ export class RoomService {
   }
 
   /**
+   * Refuse a channel name that is already spoken for, naming the room that
+   * holds it only to a caller who can already see that room (DOR-1611 review).
+   *
+   * **A `#slug` is a name, and a name is a thing an agent may not be entitled
+   * to.** Channel slugs are unique across the whole install, so this refusal is
+   * unavoidable — but the sentence it used to carry was not. "A channel called
+   * #payroll already exists" told a caller that a room exists which it cannot
+   * list, read, or find, in a domain whose standing rule is that a room id is
+   * never a capability and "not a member" answers exactly as "no such room".
+   *
+   * So the message splits on {@link RoomService.canSee}: the owner sees every
+   * room on her machine and loses nothing by being told which one took the name
+   * — that is the cockpit's whole error message today — while a caller who
+   * cannot see the holder is told only that the name is taken, which it has to
+   * be told, and nothing about the room that took it.
+   *
+   * The refusal is IDENTICAL in code and in shape either way, so the split is a
+   * difference in how much is said and never in whether the call succeeded.
+   *
+   * @param slug - The slug that is already held.
+   * @param holderRoomId - The room holding it.
+   * @param viewerAuthorId - The caller.
+   * @throws {RoomError} Always — `SLUG_TAKEN`.
+   */
+  private refuseSlugTaken(slug: string, holderRoomId: string, viewerAuthorId: string): never {
+    throw new RoomError(
+      'SLUG_TAKEN',
+      this.canSee(holderRoomId, viewerAuthorId)
+        ? `A channel called #${slug} already exists`
+        : 'That name is already taken. Choose a different one.'
+    );
+  }
+
+  /**
    * The owner sees every room; nothing on their own machine hides from them.
    *
    * This used to read `kind === 'human'`, which was only ever the same question
@@ -4344,6 +4936,47 @@ export class RoomService {
     throw new RoomError(
       'SYSTEM_ROOM',
       `Only you can rename or archive ${room.slug ? `#${room.slug}` : room.title}`
+    );
+  }
+
+  /**
+   * Refuse a non-owner renaming a DIRECT MESSAGE (orchestrator ruling on the
+   * DOR-1611 review; spec `rooms-management-tools` §D12 amendment).
+   *
+   * **A DM's name is its roster.** The title is derived from who is in it and
+   * re-derived when that set changes (`dm-title-follows-roster`), so a title an
+   * agent writes there is a label with a short and unpredictable life — and for
+   * as long as it lasts it has renamed a conversation that belongs to whoever
+   * else is in it. A channel is the opposite case, and the one `update_room`
+   * exists for: its name is what people type, and fixing a wrong one is the
+   * whole verb.
+   *
+   * The shape is {@link RoomService.requireSystemRoomWritable}'s, deliberately:
+   * a FIELD check rather than a blanket gate, so it cannot reach `createRoom`'s
+   * DM un-archive path (which sends `archived` and never `title`), and the TOPIC
+   * stays writable — describing a room you are in is ordinary participation.
+   *
+   * **The owner is exempt**, as she is there. The cockpit is the person, a name
+   * she chose for her own conversation is hers to change, and the rule this
+   * encodes is about an agent relabelling somebody else's room.
+   *
+   * @param room - The room being patched.
+   * @param viewerAuthorId - The caller.
+   * @param patch - The room-table half of the requested patch.
+   */
+  private requireDmTitleWritable(
+    room: Room,
+    viewerAuthorId: string,
+    patch: { title?: string }
+  ): void {
+    // `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a text column narrowed
+    // by an unchecked cast, so an unrecognized kind takes the narrower branch.
+    if (room.kind === 'channel') return;
+    if (patch.title === undefined) return;
+    if (this.isOwnerAuthor(viewerAuthorId)) return;
+    throw new RoomError(
+      'TOOL_RENAME_NOT_IN_DM',
+      'A direct message is named after who is in it, so it cannot be renamed. You can still set its topic.'
     );
   }
 
@@ -4440,6 +5073,68 @@ export class RoomService {
   }
 
   /**
+   * Whether this caller may change a room's roster at all (spec
+   * `rooms-management-tools` §D7, DOR-1611).
+   *
+   * The sibling of {@link RoomService.requireSeedingAllowed}, which already
+   * encodes "an agent may, a second person may not" at creation. This is that
+   * same sentence for the two membership verbs, and it exists because
+   * {@link RoomService.requireOperator} — what those verbs used to call — cannot
+   * say it: that method answers exactly one question, "are you the owner", and
+   * for a member agent the answer is now sometimes "no, and that is fine".
+   *
+   * **A second person is still refused**, which is the half worth stating.
+   * An invited human is not the install's owner and never inherits its powers
+   * (the same correction {@link RoomService.seesEveryRoom} carries), so this
+   * widens the door for AGENTS the owner armed and for nobody else.
+   *
+   * **`requireOperator` itself is unchanged, and four of its call sites must
+   * never gain an agent path.** `setFallbackSeat` and `updateMembership` decide
+   * who answers what, which is arbitration by another name (ADR 260726-170125);
+   * `archiveBridgedRoom` and `updateRoom`'s turn-limit branch are spend
+   * authority. Only `addMember` and `removeMember` move here.
+   *
+   * **What this deliberately does NOT decide.** Four refusals sit beside it and
+   * stay exactly where they are, because each is a FIELD check rather than a
+   * caller check and therefore already holds for an agent caller with no edit:
+   * a room the caller cannot see ({@link RoomService.requireVisibleRoom}, which
+   * runs FIRST in both verbs — a room id is never a capability), a system room
+   * keeping its owner ({@link RoomService.requireSystemRoomKeepsOwner}), the
+   * three-way rule ({@link RoomService.requireOwnerWitnessesAgents}), and a
+   * bridged room refusing a second agent. The one refusal that is genuinely new
+   * lives in {@link RoomService.removeMember}: an agent may never take the owner
+   * out of a room, in any shape.
+   *
+   * **It does not decide the GRANT either, and the HTTP surface is why that
+   * matters.** `roomsManage` is enforced at `registry.invoke` and nowhere else,
+   * so it gates the five agent-facing TOOLS. The two HTTP roster routes
+   * (`POST /api/rooms/:id/members`, `DELETE /api/rooms/:id/members/:authorId`)
+   * resolve their caller from `X-DorkOS-Agent` and never pass that choke point —
+   * so for one commit, when this check replaced `requireOperator` on
+   * {@link RoomService.addMember} and {@link RoomService.removeMember}
+   * themselves, an agent could step around the grant with a direct request. That
+   * was a REGRESSION rather than an inherited gap: before it, those two methods
+   * were unconditionally operator-only and refused every agent token.
+   *
+   * **So this check is not reachable from a route at all.** It guards only
+   * {@link RoomService.addMemberFromTool} and
+   * {@link RoomService.removeMemberFromTool}, which nothing but the rooms
+   * capability domain calls; `addMember`/`removeMember` kept their operator gate
+   * and are what the routes, the community adapter and the team-room hook use.
+   * An agent's roster surface is the capability verbs, full stop — and a surface
+   * added tomorrow gets the operator-only method by default, which is the point
+   * of the split being two methods rather than a parameter.
+   *
+   * @param caller - The author asking, already resolved.
+   * @param what - What they are changing, for the refusal's own words.
+   */
+  private requireRosterWriteAllowed(caller: AuthorRecord, what: string): void {
+    if (this.isOwnerRecord(caller)) return;
+    if (caller.kind === 'agent') return;
+    throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
+  }
+
+  /**
    * Hold the three-way rule across a membership change: **a room that holds two
    * or more agents holds the owner too** (ADR 260814-025326).
    *
@@ -4448,10 +5143,14 @@ export class RoomService {
    * are needed, and the reason is that either one alone is a door standing open:
    * a create the gate allows could be walked into an owner-less pair by adding
    * an agent afterwards, and an owner who may leave any room could empty herself
-   * out of a room her two agents are talking in. Neither is a caller check —
-   * both membership verbs are already `requireOperator`, so the caller here is
-   * always the owner. **This refuses the owner herself**, which is the point:
-   * the guarantee is about the shape of the room, not about who asked.
+   * out of a room her two agents are talking in. Neither is a caller check, and
+   * that is what has kept this correct through DOR-1611: the caller used to be
+   * the owner always, because both membership verbs were `requireOperator`, and
+   * is now sometimes an armed agent ({@link RoomService.requireRosterWriteAllowed}).
+   * This guard did not have to change, because it never asked who was calling —
+   * it asks what the roster will LOOK like afterwards. **It refuses the owner
+   * herself**, which is the point: the guarantee is about the shape of the room,
+   * not about who asked for it.
    *
    * It is deliberately compositional rather than provenance-based. Nothing
    * records who opened a room — `rooms` has no `created_by` column — and adding
@@ -4468,6 +5167,14 @@ export class RoomService {
    * this refuses the owner's own removal (a direct Leave — DOR-1233), the way
    * through is to take an agent out first and leave afterwards, or to archive
    * the room instead. There is still no delete (spec §12.4).
+   *
+   * **The `'remove'` wording still addresses the owner, and that is sound rather
+   * than stale.** It reads "take one of them out before you leave it", which
+   * would be nonsense said to an agent — but the branch is reachable only when
+   * the member being removed IS the owner, and an agent asking for that is
+   * already refused one guard earlier ({@link RoomService.removeMember}'s
+   * owner-removal check). So the only caller who can ever read this sentence is
+   * the person it is written for. Do not "fix" it without moving that guard.
    *
    * @param roster - The roster as it will be AFTER the change.
    * @param what - What the caller was doing, for the refusal's own words.
@@ -4691,7 +5398,11 @@ export class RoomService {
    * @param title - The requested title, when the patch carries one.
    * @returns `{ slug }` when the slug moves, otherwise `{}`.
    */
-  private renamedSlug(room: Room, title: string | undefined): { slug?: string } {
+  private renamedSlug(
+    room: Room,
+    title: string | undefined,
+    viewerAuthorId: string
+  ): { slug?: string } {
     if (title === undefined || room.kind !== 'channel') return {};
     const slug = slugify(title);
     if (!slug) {
@@ -4707,7 +5418,7 @@ export class RoomService {
     if (slug === room.slug) return {};
     const holder = this.store.findLiveChannelBySlug(slug);
     if (holder && holder.id !== room.id) {
-      throw new RoomError('SLUG_TAKEN', `A channel called #${slug} already exists`);
+      this.refuseSlugTaken(slug, holder.id, viewerAuthorId);
     }
     return { slug };
   }

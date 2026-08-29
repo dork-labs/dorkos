@@ -36,6 +36,7 @@ import { SlackThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
 import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
 import { createSlackProxyTransport } from './proxy.js';
+import { describeError } from '../../lib/describe-error.js';
 
 // Re-export for consumers that import from this module
 export { SLACK_MANIFEST };
@@ -93,7 +94,8 @@ export interface SlackErrorClassification {
 }
 
 /**
- * Classify an error Bolt passed to `app.error` as fatal or recoverable.
+ * Extract Slack's platform error string from whatever shape an error
+ * arrived in.
  *
  * The string that names a fatal install problem ('invalid_auth',
  * 'token_revoked', …) is Slack's *platform* error, which lives in
@@ -105,15 +107,32 @@ export interface SlackErrorClassification {
  * platform error is nested anywhere do we fall back to a duck-typed
  * `data.error` and then to Bolt's own `code`.
  *
+ * Shared by {@link classifySlackError} (fatal-error routing) and this
+ * module's `describeError(err, extractErrorCode)` calls (safe-to-log error
+ * fields, see `lib/describe-error.ts`) so this priority order lives in
+ * exactly one place.
+ *
+ * @param error - The error to inspect.
+ */
+function extractErrorCode(error: unknown): string | undefined {
+  const platformError = findPlatformError(error);
+  return (
+    platformError?.data.error ??
+    (error as { data?: { error?: string } }).data?.error ??
+    (error as { code?: string }).code
+  );
+}
+
+/**
+ * Classify an error Bolt passed to `app.error` as fatal or recoverable.
+ *
+ * See {@link extractErrorCode} for how the error code is found; this just
+ * checks the result against {@link FATAL_SLACK_ERRORS}.
+ *
  * @param error - The error Bolt passed to `app.error`.
  */
 export function classifySlackError(error: unknown): SlackErrorClassification {
-  const platformError = findPlatformError(error);
-  const errorCode =
-    platformError?.data.error ??
-    (error as { data?: { error?: string } }).data?.error ??
-    (error as { code?: string }).code;
-
+  const errorCode = extractErrorCode(error);
   return { errorCode, fatal: Boolean(errorCode && FATAL_SLACK_ERRORS.has(errorCode)) };
 }
 
@@ -582,7 +601,7 @@ export class SlackAdapter extends BaseRelayAdapter {
         `[Slack] tool ${approved ? 'approved' : 'denied'}: toolCallId=${toolCallId}`
       );
     } catch (err) {
-      this.logger.error('[Slack] tool action handler error:', err);
+      this.logger.error('[Slack] tool action handler error:', describeError(err, extractErrorCode));
       this.recordError(err);
     }
   }

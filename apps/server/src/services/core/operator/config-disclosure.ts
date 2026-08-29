@@ -229,6 +229,11 @@ export const CONFIG_DISCLOSURE = {
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
   'rooms.responseGate': 'expose',
+  // How agents behave in this person's own rooms. Neither names a credential or
+  // where one lives, and an agent that can read them can explain why a colleague
+  // stayed quiet or why its fourth post in one turn was refused.
+  'rooms.toolOnlyReplies': 'expose',
+  'rooms.maxPostsPerTurn': 'expose',
 
   // A room's own files: whether they are available at all, and the bounds a
   // merge is measured against. Plain numbers and a boolean about the person's

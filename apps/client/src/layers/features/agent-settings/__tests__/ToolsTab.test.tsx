@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 
 vi.mock('@/layers/entities/relay', () => ({
@@ -19,6 +20,15 @@ vi.mock('@/layers/entities/runtime', () => ({
   // Default: the runtime supports MCP (Claude) → tool groups render.
   useCapabilitiesForRuntime: vi.fn(() => ({ supportsMcp: true })),
 }));
+// The Manage-rooms card reads the live capability catalog for the tool names
+// behind the grant, and writes through the OPERATOR route. Both are mocked here
+// the same way every other entity in this file is.
+vi.mock('@/layers/entities/capability', () => ({
+  useToolNamesForGroup: vi.fn(() => ['add_room_members', 'create_room']),
+}));
+vi.mock('@/layers/entities/mesh', () => ({
+  useUpdateAgent: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
 // The managed-MCP section has its own test (AgentMcpServers.test.tsx); stub it
 // here so ToolsTab tests stay focused on the tool-group toggles.
 vi.mock('../ui/AgentMcpServers', () => ({
@@ -29,7 +39,11 @@ import { ToolsTab } from '../ui/ToolsTab';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useToolNamesForGroup } from '@/layers/entities/capability';
+import { useUpdateAgent } from '@/layers/entities/mesh';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
+import { agentKeys } from '@/layers/entities/agent';
+import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
@@ -55,12 +69,15 @@ const baseAgent: AgentManifest = {
  */
 function renderTab(
   agent: AgentManifest,
-  onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>
+  onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>,
+  client: QueryClient = new QueryClient()
 ) {
   const { container } = render(
-    <TooltipProvider>
-      <ToolsTab agent={agent} projectPath="/projects/test" onUpdate={onUpdate} />
-    </TooltipProvider>
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <ToolsTab agent={agent} projectPath="/projects/test" onUpdate={onUpdate} />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
   return within(container);
 }
@@ -80,6 +97,11 @@ describe('ToolsTab', () => {
       config: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       updateConfig: vi.fn(),
     });
+    vi.mocked(useToolNamesForGroup).mockReturnValue(['add_room_members', 'create_room']);
+    vi.mocked(useUpdateAgent).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateAgent>);
   });
 
   describe('Tool Groups section', () => {
@@ -164,9 +186,15 @@ describe('ToolsTab', () => {
       expect(view.queryByText('Messaging')).not.toBeInTheDocument();
       expect(view.queryByText('Agent Discovery')).not.toBeInTheDocument();
       expect(view.queryByText('External Integrations')).not.toBeInTheDocument();
-      expect(view.queryAllByRole('switch')).toHaveLength(0);
       // ...and an explanatory note takes their place.
       expect(view.getByText(/does not support DorkOS tool groups/i)).toBeInTheDocument();
+      // The ONE switch still on screen is the rooms grant, which is deliberately
+      // not part of this branch: it is enforced for every runtime, and a Codex
+      // agent reaches the same capabilities over the external MCP server
+      // (DOR-1611). Asserted by name rather than by counting switches, so this
+      // row keeps saying "the four are gone" rather than "nothing is here".
+      expect(view.queryAllByRole('switch')).toHaveLength(1);
+      expect(view.getByLabelText('Manage rooms')).toBeInTheDocument();
     });
 
     it('keeps the tool-group toggles for an MCP-capable runtime', () => {
@@ -183,5 +211,159 @@ describe('ToolsTab', () => {
     const view = renderTab(baseAgent, onUpdate);
     expect(view.getByText('Scheduling')).toBeInTheDocument();
     expect(view.queryByText('Limits')).not.toBeInTheDocument();
+  });
+
+  describe('Manage rooms — the one group that is a lock', () => {
+    it('renders the switch, off until a person turns it on', () => {
+      const view = renderTab(baseAgent, onUpdate);
+
+      const toggle = view.getByLabelText('Manage rooms');
+      expect(toggle).toBeInTheDocument();
+      expect(toggle).not.toBeChecked();
+    });
+
+    it('reads as on when the agent holds the grant', () => {
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { roomsManage: true } }, onUpdate);
+
+      expect(view.getByLabelText('Manage rooms')).toBeChecked();
+    });
+
+    it('writes through the OPERATOR route, never the agent self-edit route', () => {
+      // The half that would silently break the feature. `PATCH
+      // /api/agents/current` — what `onUpdate` calls — refuses this field by
+      // design, because a grant the governed agent can set for itself is not a
+      // grant. The cockpit is the person, so it must use the mesh route.
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab(baseAgent, onUpdate);
+
+      fireEvent.click(view.getByLabelText('Manage rooms'));
+
+      expect(mutate).toHaveBeenCalledWith(
+        {
+          id: baseAgent.id,
+          updates: { enabledToolGroups: { roomsManage: true } },
+        },
+        expect.anything()
+      );
+      expect(onUpdate).not.toHaveBeenCalled();
+    });
+
+    it('keeps the four documentation toggles when it writes the grant', () => {
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } }, onUpdate);
+
+      fireEvent.click(view.getByLabelText('Manage rooms'));
+
+      expect(mutate).toHaveBeenCalledWith(
+        {
+          id: baseAgent.id,
+          updates: { enabledToolGroups: { tasks: false, roomsManage: true } },
+        },
+        expect.anything()
+      );
+    });
+
+    it('keeps the grant out of the soft-toggle write, which would refuse the whole patch', () => {
+      // Executed before the fix (DOR-1611 review): flipping Scheduling on an
+      // agent that HOLDS the grant produced an OPERATOR_ONLY toast and wrote
+      // nothing. These two handlers spread the stored `enabledToolGroups` into
+      // `PATCH /api/agents/current`, and `agent-updater` refuses any body naming
+      // `roomsManage` — whole-patch, whatever the value, by design. So arming an
+      // agent broke the four toggles beside the switch that armed it.
+      const view = renderTab(
+        { ...baseAgent, enabledToolGroups: { roomsManage: true, tasks: false } },
+        onUpdate
+      );
+
+      fireEvent.click(view.getByLabelText('Toggle Scheduling tools'));
+
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      const patch = onUpdate.mock.calls[0]?.[0] as { enabledToolGroups: Record<string, unknown> };
+      expect(patch.enabledToolGroups).not.toHaveProperty('roomsManage');
+      // …and it still carries the four it IS allowed to write.
+      expect(patch.enabledToolGroups.tasks).toBe(true);
+    });
+
+    it('keeps the grant out of the RESET write too, not only the toggle write', () => {
+      // The reset path is the second door to the same refusal, and it is the one
+      // a mutation survives: `handleToolGroupChange` is covered above, and
+      // stripping the key from it alone leaves "Reset Scheduling to default"
+      // still sending `roomsManage` into a route that refuses the whole patch.
+      const view = renderTab(
+        { ...baseAgent, enabledToolGroups: { roomsManage: true, tasks: false } },
+        onUpdate
+      );
+
+      fireEvent.click(view.getByLabelText('Reset Scheduling to default'));
+
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      const patch = onUpdate.mock.calls[0]?.[0] as { enabledToolGroups: Record<string, unknown> };
+      expect(patch.enabledToolGroups).not.toHaveProperty('roomsManage');
+      // …and the reset really cleared the key it was aimed at.
+      expect(patch.enabledToolGroups).not.toHaveProperty('tasks');
+    });
+
+    it('refreshes the manifest it renders, so the switch does not snap back', () => {
+      // The defect this pins. `useUpdateAgent` clears `['mesh','agents']` and
+      // stops, and the agent on this page is read through `useCurrentAgent` —
+      // so without these two the server stored the grant, the next render put
+      // the switch back where it was, and a save that WORKED looked like a
+      // refusal. Driven through the real `onSettled` the card hands the
+      // mutation, rather than asserted against a callback nobody ran.
+      const mutate = vi.fn(
+        (_vars: unknown, options?: { onSettled?: () => void }) => void options?.onSettled?.()
+      );
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const client = new QueryClient();
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      const view = renderTab(baseAgent, onUpdate, client);
+
+      fireEvent.click(view.getByLabelText('Manage rooms'));
+
+      const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+      expect(asked).toContain(JSON.stringify(agentKeys.all));
+      expect(asked).toContain(JSON.stringify(TEAM_ROSTER_KEY));
+    });
+
+    it('says plainly that this one blocks, where the others do not', () => {
+      const view = renderTab(baseAgent, onUpdate);
+
+      expect(view.getByText(/This switch is a lock, not a hint/)).toBeInTheDocument();
+      expect(view.getByText(/the agent cannot turn it on for itself/)).toBeInTheDocument();
+      // And the four above it must not claim to block.
+      expect(view.getByText(/an agent that asks for one anyway still gets it/)).toBeInTheDocument();
+    });
+
+    it('renders for a runtime that cannot take DorkOS tools in-session', () => {
+      // The four toggles hide here — there is nothing to describe to that
+      // runtime. This grant still applies: the agent reaches the same
+      // capabilities over the external MCP server, and it is enforced there.
+      vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+        supportsMcp: false,
+      } as RuntimeCapabilities);
+      const view = renderTab(baseAgent, onUpdate);
+
+      expect(view.getByLabelText('Manage rooms')).toBeInTheDocument();
+      expect(view.getByText(/external MCP server/)).toBeInTheDocument();
+    });
+
+    it('names the tools behind the grant from the live catalog', () => {
+      const view = renderTab(baseAgent, onUpdate);
+
+      // The count badge, derived rather than listed — a static copy of this is
+      // the drift DOR-499 deleted three times over.
+      expect(view.getByText('2')).toBeInTheDocument();
+    });
   });
 });

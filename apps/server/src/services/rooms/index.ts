@@ -34,6 +34,8 @@ import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
 import type { RoomFilesService } from './repo/room-files.js';
+import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
+import type { RoomMergeService } from './repo/room-merge-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
@@ -271,6 +273,23 @@ function readMaxAttachmentsPerEntry(): number {
 }
 
 /**
+ * How many messages one agent may post into a room inside one turn, read live
+ * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
+ * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
+ *
+ * Failing to the default keeps the limit BOUNDED, which is the only safe
+ * direction here: an unreadable config must never let one turn serialise an
+ * essay across the room.
+ */
+function readMaxPostsPerTurn(): number {
+  try {
+    return configManager.get('rooms').maxPostsPerTurn;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
+  }
+}
+
+/**
  * Whether the operator has muted one room, read live from `ui.sidebar.muted`
  * and degrading to "not muted" the same way {@link readMaxAgentDepth} degrades
  * to its own default (spec `notification-system` task T11).
@@ -376,6 +395,11 @@ export function createRoomSubsystem(opts: {
         waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
         ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
       }),
+    // Read per turn, never captured: the manager is registered later in
+    // bootstrap (it needs this very service's claim map), and an install with no
+    // repo machinery answers `null` forever, which puts every turn in the
+    // agent's own directory exactly as before.
+    worktrees: () => tryGetRoomWorktreeManager(),
     // The budget reads its own spent hour back out of this database at
     // construction, so the ceilings mean an hour of wall clock rather than an
     // hour of uptime (DOR-1205).
@@ -428,6 +452,11 @@ export function createRoomSubsystem(opts: {
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
+    // Read per post, for the same reason and one more: posting is the agent's
+    // only voice once `rooms.toolOnlyReplies` is on, so an operator who feels
+    // this number is wrong must be able to move it without waiting for anything
+    // to restart.
+    maxPostsPerTurn: readMaxPostsPerTurn,
     // Read per check for the same reason, and for one more: an install becomes
     // owned partway through its life (the enable-login flow), so a value
     // captured at boot would leave the rooms domain believing forever that the
@@ -616,6 +645,56 @@ export function setRoomFilesService(service: RoomFilesService): void {
 export function getRoomFilesService(): RoomFilesService {
   if (!activeRoomFiles) throw new Error('RoomFilesService not initialized');
   return activeRoomFiles;
+}
+
+let activeWorktrees: RoomWorktreeManager | null = null;
+
+/**
+ * Register the room-worktree manager at bootstrap, beside
+ * {@link setRoomRepoService}.
+ *
+ * @param manager - The wired manager.
+ */
+export function setRoomWorktreeManager(manager: RoomWorktreeManager): void {
+  activeWorktrees = manager;
+}
+
+/**
+ * The active room-worktree manager, or `null` where none was wired.
+ *
+ * **Nullable, unlike every getter above it, and that is the point.** Its one
+ * consumer is the cwd rung on the hot path of every room turn — the dispatcher's
+ * `resolveCwd`, which feeds the session-cwd resolver — and it must place a turn
+ * on an install whose repo machinery was never
+ * bootstrapped. Throwing here would turn "this deployment has no room repos"
+ * into "this room stopped answering".
+ */
+export function tryGetRoomWorktreeManager(): RoomWorktreeManager | null {
+  return activeWorktrees;
+}
+
+let activeMerges: RoomMergeService | null = null;
+
+/**
+ * Register the room merge service at bootstrap, beside
+ * {@link setRoomRepoService}.
+ *
+ * Its own singleton rather than a field on the repo service, because the two
+ * answer different questions with different dependencies — one owns the binding
+ * on disk, the other owns the integration tree and the room's log — and folding
+ * them together would give the enable path a reason to know about the room
+ * service.
+ *
+ * @param service - The wired service.
+ */
+export function setRoomMergeService(service: RoomMergeService): void {
+  activeMerges = service;
+}
+
+/** The active room merge service (throws if bootstrap has not run). */
+export function getRoomMergeService(): RoomMergeService {
+  if (!activeMerges) throw new Error('RoomMergeService not initialized');
+  return activeMerges;
 }
 
 let activeBridges: BridgeStore | null = null;

@@ -135,11 +135,25 @@ export async function createRoomWithAgents(opts: {
   title: string;
   slug: string;
   agents: Record<string, string>;
+  /**
+   * Which kind of room, when a case is about the difference. Defaults to
+   * `'channel'`, which is what every case that predates the DM cases wants.
+   *
+   * A DM takes no slug — the room's title is derived from its roster — so one is
+   * not sent for it.
+   */
+  kind?: 'channel' | 'dm';
 }): Promise<RoomFacts> {
   const paths = Object.values(opts.agents);
+  const kind = opts.kind ?? 'channel';
   const room = await roomFetch<RoomWithRoster>(opts.baseUrl, '/api/rooms', {
     method: 'POST',
-    body: { kind: 'channel', title: opts.title, slug: opts.slug, agentPaths: paths },
+    body: {
+      kind,
+      title: opts.title,
+      ...(kind === 'channel' ? { slug: opts.slug } : {}),
+      agentPaths: paths,
+    },
   });
 
   const members: Record<string, RoomMemberFacts> = {};
@@ -751,4 +765,130 @@ export async function finishTestTurns(opts: { baseUrl: string }): Promise<void> 
  */
 export async function resetTestMode(opts: { baseUrl: string }): Promise<void> {
   await fetch(`${opts.baseUrl}/api/test/reset`, { method: 'POST' });
+}
+
+/**
+ * Turn `rooms.toolOnlyReplies` on or off on the running harness
+ * (`PATCH /api/config`).
+ *
+ * The flip is install-wide and read PER TURN, so a case that sets it here binds
+ * the very next message rather than the next server start. A case that turns it
+ * ON owes a `resetTestMode` afterwards for the same reason the scenario store
+ * does: the in-process tier boots every eval inside one runner process, and a
+ * flag one case set is still set for the next one.
+ *
+ * @param opts.baseUrl - The running harness server.
+ * @param opts.on - Whether a turn's own words stop being the room's message.
+ */
+export async function setToolOnlyReplies(opts: { baseUrl: string; on: boolean }): Promise<void> {
+  const res = await fetch(`${opts.baseUrl}/api/config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rooms: { toolOnlyReplies: opts.on } }),
+  });
+  if (!res.ok) {
+    throw new RoomDriveError(
+      `could not set rooms.toolOnlyReplies: ${res.status} ${await res.text()}`,
+      'ROOM_REQUEST_FAILED',
+      res.status
+    );
+  }
+}
+
+/**
+ * Mint a real identity token for an agent that is really registered here
+ * (`POST /api/test/agent-token`).
+ *
+ * **A fabricated token would not fail — it would DEGRADE**, which is the trap
+ * this closes. `resolveAgentIdentityFromHeaders` never rejects a request, so a
+ * made-up header falls through to the install owner and the write lands under
+ * the PERSON's author id. A case that faked one would pass while proving the
+ * opposite of its name.
+ *
+ * @param opts.baseUrl - The running harness server.
+ * @param opts.agentPath - The agent's registered directory.
+ * @returns The plaintext token, for the `X-DorkOS-Agent` header.
+ */
+export async function mintAgentToken(opts: {
+  baseUrl: string;
+  agentPath: string;
+}): Promise<string> {
+  const { token } = await roomFetch<{ token: string }>(opts.baseUrl, '/api/test/agent-token', {
+    method: 'POST',
+    body: { agentPath: opts.agentPath },
+  });
+  return token;
+}
+
+/**
+ * Post into a room AS AN AGENT, through the real `post_to_room` capability
+ * (`POST /api/capabilities/rooms.post/invoke`).
+ *
+ * **This is the mechanism under test, not a stand-in for it.** A scripted
+ * test-mode turn cannot call the tool itself — a scenario is handed the message
+ * it is answering and nothing else, no room id and no registry — so the driver
+ * makes the call the injected `dorkos` MCP server would make: the same
+ * capability, the same handler, the same `RoomService.postFromTool`, under a
+ * real agent identity. What is faked is the model's decision to call it; what is
+ * exercised is everything that happens because it did.
+ *
+ * @param opts.baseUrl - The running harness server.
+ * @param opts.roomId - The room to post into.
+ * @param opts.agentPath - The posting agent's registered directory.
+ * @param opts.text - What to say.
+ * @returns The capability's raw result, or the typed refusal it threw.
+ */
+export async function postAsAgent(opts: {
+  baseUrl: string;
+  roomId: string;
+  agentPath: string;
+  text: string;
+}): Promise<{ ok: boolean; code?: string }> {
+  const token = await mintAgentToken({ baseUrl: opts.baseUrl, agentPath: opts.agentPath });
+  const res = await fetch(`${opts.baseUrl}/api/capabilities/rooms.post/invoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-DorkOS-Agent': token },
+    body: JSON.stringify({ roomId: opts.roomId, text: opts.text }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { code?: string };
+  return res.ok ? { ok: true } : { ok: false, ...(body.code ? { code: body.code } : {}) };
+}
+
+/**
+ * React to an entry AS AN AGENT, through the room's own reaction route with a
+ * real identity header.
+ *
+ * The route resolves an agent from `X-DorkOS-Agent` and goes through the same
+ * `RoomService.toggleReaction` the tool does, so this exercises the claim mark
+ * (`reactedViaTool`) rather than a second write path.
+ *
+ * @param opts.baseUrl - The running harness server.
+ * @param opts.roomId - The room the entry is in.
+ * @param opts.entryId - The entry to react to.
+ * @param opts.agentPath - The reacting agent's registered directory.
+ * @param opts.emoji - The emoji to put on it.
+ */
+export async function reactAsAgent(opts: {
+  baseUrl: string;
+  roomId: string;
+  entryId: string;
+  agentPath: string;
+  emoji: string;
+}): Promise<void> {
+  const token = await mintAgentToken({ baseUrl: opts.baseUrl, agentPath: opts.agentPath });
+  const res = await fetch(
+    `${opts.baseUrl}/api/rooms/${opts.roomId}/entries/${opts.entryId}/reactions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-DorkOS-Agent': token },
+      body: JSON.stringify({ emoji: opts.emoji, on: true }),
+    }
+  );
+  if (!res.ok) {
+    throw new RoomDriveError(
+      `could not react as ${opts.agentPath}: ${res.status} ${await res.text()}`,
+      'ROOM_REQUEST_FAILED',
+      res.status
+    );
+  }
 }

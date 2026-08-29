@@ -37,6 +37,7 @@ import {
 } from './outbound.js';
 import type { ResponseBuffer, TelegramOutboundState } from './outbound.js';
 import { startWebhookMode, stopWebhookServer } from './webhook.js';
+import { describeError } from '../../lib/describe-error.js';
 
 /** Static adapter manifest for the Telegram built-in adapter. */
 export const TELEGRAM_MANIFEST: AdapterManifest = {
@@ -250,6 +251,21 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
   setupInstructions:
     'Open Telegram and search for @BotFather. Send /newbot, choose a name and username. Copy the token provided.',
 };
+
+/**
+ * Telegram's own error code, when the caught error is a grammY `GrammyError`.
+ *
+ * Duck-typed on `error_code` rather than `instanceof GrammyError`, the same
+ * reason `classifyTelegramSendError` in outbound.ts is: this adapter's own
+ * tests mock the `grammy` module, so a thrown error is never an instance of
+ * the class this file would import.
+ *
+ * @param err - The error to inspect.
+ */
+function extractTelegramErrorCode(err: unknown): string | undefined {
+  const errorCode = (err as { error_code?: unknown } | null)?.error_code;
+  return typeof errorCode === 'number' ? String(errorCode) : undefined;
+}
 
 /**
  * Telegram Bot API adapter for the Relay message bus.
@@ -597,7 +613,10 @@ export class TelegramAdapter extends BaseRelayAdapter {
         `[Telegram] tool ${approved ? 'approved' : 'denied'}: toolCallId=${entry.toolCallId}`
       );
     } catch (err) {
-      this.logger.error('[Telegram] callback query handler error:', err);
+      this.logger.error(
+        '[Telegram] callback query handler error:',
+        describeError(err, extractTelegramErrorCode)
+      );
       this.recordError(err);
       await ctx.answerCallbackQuery({ text: 'Error processing approval.' }).catch(() => {});
     }

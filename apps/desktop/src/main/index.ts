@@ -14,6 +14,7 @@ import {
   consumeUpdateRestart,
   recordUpdateInstallIntent,
 } from './auto-updater';
+import { checkForManualOverwrite } from './updater/manual-overwrite';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
 import { watchNotifications } from './notifications';
@@ -22,6 +23,7 @@ import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
+import { offerMoveToApplications } from './install-location';
 import {
   attachRendererSupervisor,
   setupRendererRecovery,
@@ -63,6 +65,12 @@ function createTrackedWindow(): void {
   attachRendererSupervisor(mainWindow, options);
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+  // Clicking back into the window is one of the two moments a person expects
+  // the version they just installed (see updater/manual-overwrite.ts). Silent unless
+  // the app on disk is genuinely newer than the one running.
+  mainWindow.on('focus', () => {
+    void checkForManualOverwrite(getMainWindow);
   });
   // A reload or renderer crash keeps this window's webContents.id but drops
   // the renderer's `navigate` subscription — reset the deep-link readiness
@@ -197,6 +205,11 @@ if (!gotTheLock) {
     } else {
       showMainWindow();
     }
+    // The launch that lands here may be a NEWER copy of the app: someone
+    // installed an update by hand while this process stayed alive, and the
+    // lock above just handed their double-click to the old version. Focusing
+    // the old window is not what they asked for — see updater/manual-overwrite.ts.
+    void checkForManualOverwrite(getMainWindow);
   });
 
   // Register `dorkos://` as this app's protocol handler. Cross-platform and
@@ -305,6 +318,28 @@ if (!gotTheLock) {
   });
 
   app.on('ready', async () => {
+    // 0. Before anything is started: a copy running from the disk image or
+    // Downloads cannot update itself, so offer once to move it into
+    // Applications (see install-location/).
+    //
+    // First in the sequence, and it has to be. A successful move quits and
+    // relaunches this process — with the server already forked, that leaves a
+    // child holding the port and the ~/.dork store the relaunched instance is
+    // seconds away from wanting, racing its own predecessor's shutdown. Moving
+    // before anything exists to orphan makes that race impossible rather than
+    // merely unlikely.
+    //
+    // Wrapped because being first also makes it the one await with nothing
+    // behind it yet: an unhandled throw here returns from 'ready' having
+    // started no server and created no window, and Electron surfaces that
+    // nowhere. A courtesy about where the app is installed must never be the
+    // reason it does not start.
+    try {
+      if (await offerMoveToApplications()) return;
+    } catch (err) {
+      log.warn('[install] The install-location check failed; starting anyway.', err);
+    }
+
     // 1. Start Express in a UtilityProcess. On 4242 whenever that is free, so
     // the address stays the one the docs name; on a port someone pinned, or not
     // at all (see server-port.ts). A rejection here previously vanished

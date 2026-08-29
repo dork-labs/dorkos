@@ -1077,7 +1077,7 @@ Session mappings for `per-chat` and `per-user` strategies are persisted to `~/.d
 3. Call `BindingStore.resolve()` to find the best binding
 4. **If the binding is bridged (`bridge === 'room'`), hand off to `ChatBridgeIngest.ingest()` and stop** — this is the terminal chats-as-channels branch; steps 5-6 below never run for it.
 5. Otherwise, resolve or create a session ID based on the binding's `sessionStrategy`
-6. Republish the payload to `relay.agent.{sessionId}` for `ClaudeCodeAdapter` to handle
+6. Republish the payload to `relay.agent.{runtimeType}.{sessionId}` for `ClaudeCodeAdapter` to handle. The runtime segment comes from the session's own ownership row (`runtimeRegistry.getSessionRuntimeType`), which the binding subsystem writes when it creates the session — that segment is what routes the turn to the program the agent actually runs on (DOR-1614). A three-token `relay.agent.{sessionId}` subject is the legacy shape and runs on the adapter's default runtime.
 
 Agent responses published back to `relay.human.*` subjects are detected by checking `envelope.from.startsWith('agent:')` and are skipped to prevent routing loops.
 
@@ -1087,14 +1087,18 @@ Agent responses published back to `relay.human.*` subjects are detected by check
 
 ```typescript
 interface AdapterManagerDeps {
-  agentManager: ClaudeCodeAgentRuntimeLike; // Required — wraps the active AgentRuntime
+  agentRuntimes?: Map<string, AgentRuntimeLike>; // Every runtime the relay may drive, keyed by type
+  agentManager?: AgentRuntimeLike; // Deprecated single-runtime field; its compat wrap keys everything under 'claude-code'
   traceStore: TraceStoreLike; // Required — records delivery spans
-  pulseStore?: PulseStoreLike; // Optional — needed for ClaudeCodeAdapter schedule dispatching
+  taskStore?: TasksStoreLike; // Optional — needed for ClaudeCodeAdapter task dispatching
   relayCore?: RelayCoreLike; // Optional — enables binding subsystem (BindingStore + BindingRouter)
   meshCore?: AdapterMeshCoreLike; // Optional — resolves agent CWD via getProjectPath(agentId)
   eventRecorder?: AdapterEventRecorder; // Optional — records adapter lifecycle events for the UI
+  // …plus optional activity, credential, unclaimed-chat and rooms wiring; read the interface for the full list
 }
 ```
+
+**Pass `agentRuntimes`, never `agentManager`.** The composition root puts every registered runtime in that map, so an agent that runs on Codex or OpenCode answers a Telegram or Slack message on the program its manifest names (DOR-1614). The deprecated single-runtime field keys whatever it is given under `'claude-code'`, which is a lie in test mode and is why binding routing was once silently dead there.
 
 When `relayCore` is omitted, `initialize()` skips binding subsystem setup and the binding API endpoints return 503. When `meshCore` is omitted, `AdapterContext` passed to `deliver()` contains no agent info.
 

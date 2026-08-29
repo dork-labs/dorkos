@@ -74,6 +74,18 @@ In a DM the reply **is** the message: the agent was unambiguously addressed and 
 
 Two behaviors is the honest cost of the DM case already being correct. Making the DM case go through a tool would add a way for it to fail and buy nothing.
 
+**Amended 2026-08-29 (DOR-1613) — REVERSED under `rooms.toolOnlyReplies`, and the original argument is kept because it is what the reversal had to answer.** The text above still describes exactly what happens in `'text'` reply mode, which is every turn while the flag is off. Under a `'tool-only'` turn it is false in every clause, and the refusal is conditioned on the resolved mode rather than removed (ADR `260829-025020`).
+
+Both claims were true when written and neither survives the flip:
+
+- _"The DM case is already correct"_ was correct for **answering**, the only outcome that then existed. It was never correct for **declining** or for **reacting**, because neither was reachable: an agent in a DM could not say "seen 👍" and stop, and could not think without broadcasting.
+- _"Two behaviors is the honest cost"_ understates it. Flag-ON the cost is not two behaviours, it is two behaviours that **disagree about what silence means** — a channel turn that says nothing is a choice, a DM turn that says nothing is a bug — held simultaneously from one prompt that has to state both. That is a worse failure than the one this section was avoiding.
+- _"Adds a way for it to fail"_ remains **true**, and it is the price. The mitigation is not two paths: it is `E1` stated in the room context flag-ON ("in a direct message with a person, answering is not optional"), the `agent_declined` floor of §10.2.2, and an eval that measures DM answer-rate with a mutation drill proving it can go red.
+
+The condition is `replyMode === 'text' && room.kind !== 'channel'` — still spelled `!== 'channel'`, never `=== 'dm'`, because an unknown kind never gets more reach than a DM. A `post_to_room` made with **no turn behind it** reads an absent mode and takes the refusal, which is the fail-open direction.
+
+What the reversal keeps for free is the loop protection, which already existed for another reason (ADR `260814-025326`): an agent's post outside a channel addresses only the members it NAMES, so a reply into a DM with a person selects `[]` and triggers nobody.
+
 ---
 
 ## 3. A thread is an entry-level relation, not a child room
@@ -573,6 +585,13 @@ Today `collectReply` accumulates every `text_delta` of the turn and posts the lo
 
 Per §2.6, DMs keep today's behavior. In a channel or a thread, speech becomes an explicit `post_to_room` tool call and the default outcome of a turn is silence. A sentinel token like `NO_REPLY` is a thing a model can rationalize its way past; an unmade tool call is not. It also buys three things: declining is legible in a trace, posting is one natural chokepoint for rate limiting and attribution, and an agent can post twice deliberately, which makes `E17` batching expressible rather than accidental.
 
+**Amended 2026-08-29 (DOR-1613) — this design is now DELIVERED, in every room kind, behind `rooms.toolOnlyReplies`** (ADR `260829-025020`; spec `tool-only-room-replies`). DOR-1202 shipped the tool and deferred the flip as DOR-1212; DOR-1613 absorbs that issue and lands it. Two clauses above are superseded:
+
+- ~~"Per §2.6, DMs keep today's behavior."~~ They do not, flag-ON. See the amendment on §2.6 for the argument that reversal had to answer.
+- ~~"an agent can post twice deliberately"~~ still holds, and it is now **bounded**: `rooms.maxPostsPerTurn`, default 3, refused with `TOO_MANY_POSTS_THIS_TURN`. Nothing counted an agent's posts while posting was an extra it rarely reached for. Once posting is the only voice it has, `.claude/rules/room-conduct.md` requires a mechanism rather than E8's prompt.
+
+One thing this section did not anticipate, because in 2026-07 a tool post was the exception rather than the rule: a tool post carried **neither `answersEntryId` nor `sessionId`**, so `sessionId` fell to `null` and the room drew no "answers this" pointer. Harmless for a rare deliberate post; flag-ON it is every agent reply in the product. `postFromTool` now fills both from the live claim.
+
 **"Legible in a trace" is not the same as visible, and §10.2.2 is why that distinction has to be built in rather than assumed.**
 
 **The tool.** A new capability domain `apps/server/src/services/rooms/room-capabilities.ts`, registered in `composeDorkOsCapabilityRegistry` (`apps/server/src/services/core/self-description/dorkos-registry.ts:50-56`) gated on its deps, and in `composeCapabilityRegistryForDocs` (`:80`) unconditionally so it projects into the OpenAPI document. The registry gates itself: the tier check lives inside `registry.invoke` (DOR-467), so every surface reaching the capability inherits it and there is no second enforcement path to write.
@@ -586,6 +605,11 @@ The handler routes through `RoomService.post`, so it inherits the mention resolu
 **Membership guarantees the tool.** OpenClaw documents the footgun directly: its `coding` and `minimal` tool profiles omit the message tool, so the agent _"will listen to room events and can never speak."_ Two halves close it here.
 
 - **No toggle.** `EnabledToolGroupsSchema` (`mesh-schemas.ts:108-121`) gains **no** `rooms` key. A togglable rooms group reproduces the footgun exactly, in a place where the toggle is a per-agent setting and the consequence shows up in somebody else's room. Note that those toggles do not filter tools at all: off means the agent is **not told** the tools exist (`mcp-tool-groups.ts:10-25`), which for a speaking tool is the same outcome as removing it. The rooms group is described whenever the agent holds at least one room membership, and not otherwise.
+  > **Amended 2026-08-28 (DOR-1611).** This still holds, and it is about the CONVERSATION verbs.
+  > The five room-MANAGEMENT verbs added later sit behind a `roomsManage` grant, which is
+  > deliberately not the `rooms` key forbidden here and does not reproduce the footgun: it covers
+  > no speaking verb, so an agent without it still posts, reacts and reads exactly as before —
+  > what it withholds is the ability to rearrange rooms. See ADR 260828-123331.
 - **A hard error at join.** `RoomService.addMember` refuses an agent whose resolved runtime cannot carry the tool, with a typed `ROOM_AGENT_CANNOT_POST`, naming the runtime. Never a quiet mute.
 
 #### 10.2.1 The runtime constraint, which the ideation got wrong
@@ -628,6 +652,17 @@ So RP6 ships:
 
 The reason for the split is the dispatcher: three of the four live in `room-trigger.ts`, which RP8 (DOR-1201) rewrote in parallel, and landing both rewrites in one branch would have made neither reviewable. The runtime constraint in §10.2.1 is unaffected and holds as written — claude-code reaches these in-session, and Codex or OpenCode reach them through the external `/mcp` server or not at all.
 
+**Amended 2026-08-29 (DOR-1613) — the deferral is discharged, and DOR-1212 is absorbed.** All four items above are now settled, two by being built and two by being transformed rather than deferred again:
+
+- **Silence IS the default outcome of a turn**, behind `rooms.toolOnlyReplies`. A `'tool-only'` turn's text is never posted; the agent posts through the tool, reacts, or deliberately says nothing. The flag ships OFF and graduates on evidence.
+- **`agent_declined` is built** — the ninth notice code, written only where `directlyAsked` says a person asked (§10.2.2's split, unchanged).
+- **`ROOM_AGENT_CANNOT_POST` is DROPPED rather than built.** No runtime is in the state it guarded, and after §10.2.1's constraint dissolved (below) the state it guarded can no longer exist: whether an agent can post is a property of the SESSION, resolved per turn, not of the runtime at join time.
+- **The per-membership gated/automatic fact is DROPPED for the same reason.** Stored at join, it would be a claim about a runtime that the wiring can change between one turn and the next — a lie in a table. The same fact now lives per turn as the resolved reply mode, and a session that is not known tool-capable simply keeps posting its text.
+
+**§10.2.1's runtime constraint is dissolved.** Its premise was that `supportsMcp: false` made the tool structurally unreachable on Codex and OpenCode. DOR-1613 PR1 removed it: behind `runtimes.dorkosTools`, both runtimes get an injected `dorkos` MCP server pointed at this server's own `/mcp`, carrying a bearer and a per-agent identity token. Judgment stops being a claude-code privilege.
+
+**What replaces it is a per-turn question that fails OPEN.** `rooms.toolOnlyReplies` is never read as "suppress the text" — it is read as "suppress the text only where this session is KNOWN to be able to post". `/mcp` behind `requireMcpEnabled`, and a 7-day-idle / 30-day-absolute token fuse, are two reachable states in which a codex or opencode agent has no posting verb at all; failing closed in either would leave it silently mute in every room, and constraint 6 is unambiguous that silence is the worse failure.
+
 #### 10.2.2 Silence is free when nobody asked, and never free when somebody did
 
 `post_to_room` makes the default outcome of a turn silence, and that collides head-on with `E1`: _"When addressed, answer or explicitly decline. Never leave a direct question hanging. Being asked creates an obligation, and silence after a direct question is not neutral, it reads as a failure. If the agent cannot or will not answer, that is a reply too."_ Without the split below, a person `@`-mentions an agent, a turn runs, and the room shows nothing, which is verbatim the situation §2.5 exists to prevent. An explanation in a session trace is an explanation where the person who noticed will never look.
@@ -640,6 +675,16 @@ The reason for the split is the dispatcher: three of the four live in `room-trig
 | **Ambient** (`always`, `engaged`, or live-ambient, with no mention) | **Silence, and it costs nothing.** No notice, no entry.                                                                                                                 | Nobody asked, so there is no obligation to discharge. This is the common case and it is the whole reason `post_to_room` is worth having. |
 
 **What "without posting anything" means depends on the room kind**, because §2.6 keeps `post_to_room` out of DMs. In a channel or a thread it means the turn made no `post_to_room` call. In a DM, where the reply is the message, it means the turn produced no text at all. A DM turn that answers normally has posted, so it writes no notice: read as "no tool call", the condition would be true of every DM turn and the notice would fire after every successful reply, which is the opposite of what this section is for.
+
+**Amended 2026-08-29 (DOR-1613) — the room-kind split above is gone, because §2.6 is.** Under a `'tool-only'` turn the condition is the same in every room kind: the turn made no `post_to_room` call **and** put no reaction on anything. The paragraph above is kept because it is exactly right in `'text'` mode, which is every turn while the flag is off.
+
+Three things this amendment settles that the frozen text left open:
+
+- **A reaction discharges the obligation.** A thumbs-up can BE the answer, so a turn that reacted and said nothing writes no notice. Only a reaction that actually LANDED counts: one refused by the hourly `ReactionBudget` or by the stop mark put nothing in front of anybody.
+- **The predicate is `directlyAsked`, not the dispatcher's trigger reason.** It is deliberately narrower than "addressed" above: an agent naming another agent does not earn a notice. The flood evidence for the wide reading is measured and the confusion for the narrow one is hypothetical, and the cascade guard already bounds the agent-to-agent case. It is promoted to a named export rather than copied, because it also decides damping and two copies is how both of its tuning incidents come back.
+- **The damping is per CASCADE, and it is a different memory from the five refusal reasons.** Those damp per `(room, agent, reason)` with no cascade in them, because a refusal is a state that persists; this damps per `(room, agent, cascadeRoot)`, because a question is an event and a later question deserves an answer. A `(room, agent)` key was tried first and is a bug: it never expires, so a person who asked once, got one line, and asked something else entirely the next day would get silence — the dead air E1 exists to prevent. `recovered` is not the seam either, and cannot be: a declined turn calls it on the way past, so a key cleared there would be cleared by the very turn that set it. A fresh cascade root IS the re-arm, and every message a person types starts one.
+
+The ambient half also gains an **ephemeral** marker so a working pill does not appear and vanish with nothing to show: `RoomSignalEvent.outcome`, an optional field on the `done` presence frame, never a fifth `RoomPresenceState`. It never enters the log.
 
 Two things follow.
 

@@ -11,6 +11,18 @@ function answerWith(response: number): void {
 }
 
 /**
+ * A dialog that is open and unanswered — a person reading it, or one who walked
+ * away.
+ *
+ * The discriminator for the installer's quit: any handling that routes through
+ * the confirmation stalls here for ever, which is precisely what must not
+ * happen to a quit that is already under way.
+ */
+function neverAnswered(): void {
+  dialog.showMessageBox = vi.fn(() => new Promise(() => {}));
+}
+
+/**
  * Fire `before-quit` and let the quit sequence run to completion.
  *
  * The handler cannot be awaited — Electron does not await `before-quit`
@@ -146,23 +158,6 @@ describe('confirming a quit while agents are working', () => {
     expect(app.quit).toHaveBeenCalledTimes(1);
   });
 
-  it('does not ask when the quit is an update restart that already asked', async () => {
-    answerWith(0);
-    const consumeUpdateRestart = vi.fn(() => true);
-    const { shutdown } = arm({ countActiveAgents: () => 3, consumeUpdateRestart });
-
-    await emitBeforeQuit();
-
-    // Asking here would be a second dialog for one decision — and answering
-    // "Keep Working" would cancel a quit whose windows are already destroyed.
-    expect(dialog.showMessageBox).not.toHaveBeenCalled();
-    expect(shutdown).toHaveBeenCalledTimes(1);
-    expect(app.quit).toHaveBeenCalledTimes(1);
-    // Spent, not merely read: `quitAndInstall()` does not always quit, and a
-    // token left standing would silence every quit after it.
-    expect(consumeUpdateRestart).toHaveBeenCalledTimes(1);
-  });
-
   it('does not tell you to close a window that is not there', async () => {
     // Reachable: the last window has closed and the tray could not be created,
     // so `window-all-closed` quits — through this guard. "Close the window
@@ -203,6 +198,99 @@ describe('confirming a quit while agents are working', () => {
 
     const [first] = vi.mocked(dialog.showMessageBox).mock.calls[0];
     expect(first).toBe(win);
+  });
+});
+
+/**
+ * The one quit the guard must keep its hands off (DOR-1455, spec decision 6).
+ *
+ * An update restart has already asked the person, written the record and
+ * stopped the server by the time it reaches `before-quit`
+ * (`prepareUpdateRestart` in `auto-updater.ts`). Squirrel arms its install
+ * against the termination it starts itself; cancelling that and issuing a plain
+ * `app.quit()` in its place is a different quit, and is the prime suspect for
+ * ten days of updates that quit and came back on the old version.
+ */
+describe('the installer’s own quit', () => {
+  it('goes through untouched: nothing prevented, nothing shut down, nothing re-quit', async () => {
+    answerWith(0);
+    const { shutdown } = arm({
+      countActiveAgents: () => 3,
+      consumeUpdateRestart: () => true,
+    });
+    const preventDefault = vi.fn();
+
+    await emitBeforeQuit(preventDefault);
+
+    // The assertion this whole change exists for.
+    expect(preventDefault).not.toHaveBeenCalled();
+    // Already down before `quitAndInstall()` was called, so there is nothing to
+    // stop — and no reason to re-issue a quit that was never cancelled.
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    // Asking here would be a second dialog for one decision — and answering
+    // "Keep Working" could not cancel a quit that is already running.
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('commits to the quit without waiting for anybody', async () => {
+    // Agents are mid-run, so the old code put a modal up and waited for it
+    // before touching any of this. Nothing here may wait on a person: the quit
+    // is already running, and crash recovery reads `isQuitting()` while it does.
+    neverAnswered();
+    const { shutdown } = arm({ countActiveAgents: () => 3, consumeUpdateRestart: () => true });
+    const preventDefault = vi.fn();
+
+    await emitBeforeQuit(preventDefault);
+
+    // Committed on the branch that lets the quit run — not on the way through a
+    // sequence that cancelled it first and would have had to re-issue it.
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(isQuitting()).toBe(true);
+  });
+
+  it('records what that quit installs without waiting for anybody', async () => {
+    // Same shape, and the reason it matters: this record is the only way the
+    // next launch can tell whether the update landed, and it has to be written
+    // while the process is still alive to write it.
+    neverAnswered();
+    const { recordUpdateInstallIntent } = arm({
+      countActiveAgents: () => 3,
+      consumeUpdateRestart: () => true,
+    });
+    const preventDefault = vi.fn();
+
+    await emitBeforeQuit(preventDefault);
+
+    expect(recordUpdateInstallIntent).toHaveBeenCalledTimes(1);
+    // Written on the pass-through, by the handler itself — not by a quit
+    // sequence that had to stop the quit to get there.
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('spends the confirmation exactly once', async () => {
+    // `quitAndInstall()` does not always quit; a token left standing would let
+    // the next, unrelated quit skip the server shutdown entirely.
+    const consumeUpdateRestart = vi.fn(() => true);
+    arm({ consumeUpdateRestart });
+
+    await emitBeforeQuit();
+
+    expect(consumeUpdateRestart).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps its one listener, and stays quiet on the passes that follow', async () => {
+    vi.mocked(app.on).mockClear();
+    arm({ consumeUpdateRestart: () => true });
+    await emitBeforeQuit();
+
+    const second = vi.fn();
+    await emitBeforeQuit(second);
+
+    expect(vi.mocked(app.on).mock.calls.map(([event]) => event)).toEqual(['before-quit']);
+    expect(second).not.toHaveBeenCalled();
   });
 });
 

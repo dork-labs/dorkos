@@ -4,7 +4,7 @@ import { createMockRelay } from '../../../__tests__/fixtures.js';
 import type { RelayPublisher } from '../../../types.js';
 import type { z } from 'zod';
 import { SlackAdapterConfigSchema } from '@dorkos/shared/relay-schemas';
-import type { SlackAdapterConfig } from '../../../types.js';
+import type { SlackAdapterConfig, RelayLogger } from '../../../types.js';
 
 /**
  * A Slack adapter config with schema defaults filled in.
@@ -829,6 +829,87 @@ describe('SlackAdapter', () => {
       });
 
       expect(mockRelay.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * DOR-1509. `@slack/web-api` calls made inside `handleToolAction` (relay
+   * publish, `chat.postEphemeral`, `chat.update`) can reject with a real
+   * `AxiosError`, and axios's `AxiosError.toJSON()` — invoked implicitly by
+   * anything that stringifies or spreads the error, including a naive
+   * `logger.error('...', err)` — serializes the full request config,
+   * `Authorization: Bearer <bot token>` header included. A caught error must
+   * never reach a logger call raw.
+   */
+  describe('error logging never leaks the bot token (DOR-1509)', () => {
+    const LEAKED_TOKEN = 'xoxb-should-never-appear-in-logs';
+
+    /** Reproduces the axios rejection shape without depending on axios itself. */
+    class FakeAxiosError extends Error {
+      readonly isAxiosError = true;
+      readonly code = 'ERR_BAD_REQUEST';
+      readonly config = {
+        url: 'https://slack.com/api/chat.postMessage',
+        headers: { Authorization: `Bearer ${LEAKED_TOKEN}` },
+      };
+      toJSON() {
+        return { message: this.message, name: this.name, code: this.code, config: this.config };
+      }
+    }
+
+    it('keeps the token out of every logger call when a Slack API call throws an AxiosError-shaped rejection', async () => {
+      const logger: RelayLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      adapter = new SlackAdapter(
+        'slack-1',
+        slackConfig({
+          botToken: 'xoxb-test-token',
+          appToken: 'xapp-test-token',
+          signingSecret: 'test-signing-secret',
+          approverAllowlist: ['U_OPERATOR'],
+        })
+      );
+      adapter.setLogger(logger);
+      await adapter.start(mockRelay);
+
+      vi.mocked(mockRelay.publish).mockRejectedValueOnce(
+        new FakeAxiosError('Request failed with status code 401')
+      );
+
+      const handler = capturedActionHandlers.get('tool_approve');
+      expect(handler).toBeDefined();
+      await handler!({
+        ack: vi.fn().mockResolvedValue(undefined),
+        action: {
+          value: JSON.stringify({ toolCallId: 'toolu_1', sessionId: 'sess-1', agentId: 'agent-1' }),
+        },
+        body: {
+          user: { id: 'U_OPERATOR' },
+          channel: { id: 'C_GENERAL' },
+          message: { ts: 'msg-ts-1' },
+        },
+        client: { chat: { update: mockChatUpdate, postEphemeral: mockPostEphemeral } },
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        '[Slack] tool action handler error:',
+        expect.objectContaining({ message: expect.stringContaining('401') })
+      );
+
+      // The load-bearing assertion. `JSON.stringify` calls a nested object's
+      // `.toJSON()` implicitly (that's the exact mechanism axios exploits), so
+      // stringifying every argument ever handed to the mock logger is what a
+      // regression back to `logger.error('...', err)` would actually fail —
+      // asserting the error object was never passed by identity would not
+      // catch a spread or a rebuilt copy that still carries `config`.
+      const everyLoggedArg = [
+        ...vi.mocked(logger.debug).mock.calls,
+        ...vi.mocked(logger.info).mock.calls,
+        ...vi.mocked(logger.warn).mock.calls,
+        ...vi.mocked(logger.error).mock.calls,
+      ];
+      const serialized = JSON.stringify(everyLoggedArg);
+      expect(serialized).not.toContain(LEAKED_TOKEN);
+      expect(serialized).not.toContain('Authorization');
     });
   });
 });

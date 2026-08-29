@@ -60,9 +60,10 @@ const DEFAULT_DISPATCH_TTL_MS = 3_600_000;
  * @param deps - The scheduler's store, bus, run registry and cwd resolver.
  * @param task - The task being run.
  * @param run - Its run row, already opened.
- * @param execution - What this run resolved to run on (DOR-1615). Always
- *   claude-code here in v1 — the scheduler routes every other runtime direct,
- *   because the bus has no adapter that could run one (DOR-1614).
+ * @param execution - What this run resolved to run on (DOR-1615). Any runtime
+ *   the relay holds, not just claude-code (DOR-1614): the scheduler asks the
+ *   relay per run and hands over only what the far side can drive, so its
+ *   `runtimeType` is written onto the envelope below rather than assumed.
  */
 export async function dispatchRunViaRelay(
   deps: RelayDispatchDeps,
@@ -135,6 +136,18 @@ export async function dispatchRunViaRelay(
     // resume. Absent on a non-sticky run, where the receiver falls back to the
     // run id and starts fresh.
     ...(task.sticky ? { sessionId, resumeSession: hasStarted } : {}),
+    // WHICH PROGRAM runs it (DOR-1614). Unconditional, unlike the two settings
+    // below: the receiver's fallback for an absent runtime is its own default,
+    // and staying silent here would run a codex task on claude-code — the
+    // failure this field exists to remove. It is also what makes the model
+    // below safe to send, since a model id only means something inside the
+    // runtime that offers it.
+    //
+    // The receiver refuses a runtime it does not hold rather than substituting
+    // one, so this and the scheduler's `viaRelay` guard are two halves of the
+    // same promise: the guard keeps a run the relay cannot serve on the direct
+    // path, and this makes the run the relay CAN serve land on the right one.
+    runtime: execution.runtimeType,
     // What this run resolved to run on (DOR-1615/DOR-1347). Resolved HERE
     // because only this side has the task row, the agent manifest and the
     // server config to walk the ladder with; the receiver runs in another

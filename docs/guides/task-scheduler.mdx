@@ -78,8 +78,53 @@ The block takes a handful of settings. Only `cron` is worth learning first:
       description:
         'What to send when the timer fires, if that differs from the skill body. Most skills never need this.',
     },
+    runtime: {
+      type: 'string',
+      description:
+        'Which agent runtime runs it: "claude-code", "codex" or "opencode". Leave it out and it runs wherever its agent runs.',
+    },
+    model: {
+      type: 'string',
+      description:
+        "Which model runs it, written the way that runtime names its models. Leave it out and it uses the agent's model.",
+    },
+    effort: {
+      type: 'string',
+      description:
+        "How hard the model thinks. Leave it out and it uses the agent's setting. Runtimes without the setting ignore it.",
+    },
   }}
 />
+
+### Pick where it runs
+
+Those last three are new, and the honest advice is to skip them. Leave all three
+out and the task runs wherever its agent runs, which is what you almost always
+want. Set one when you want this job somewhere else: a nightly review on Codex
+while the agent itself works on Claude Code, say, or a chatty summary task on a
+cheaper model.
+
+Two things worth knowing before you set one.
+
+**A model belongs to one runtime.** `gpt-5.5` means something to Codex and
+nothing to Claude Code. Write the id the way the runtime you picked writes it.
+DorkOS does not check the spelling when you save, because the list of models
+lives on the other end and that end can be offline while you type. Instead, a
+line under the Model box says so when the model you named isn't one that runtime
+offers, and the run says so too if you save it anyway.
+
+**A runtime you haven't turned on stops the run.** It never quietly runs
+somewhere else. A run on a different runtime is a different run, billed to a
+different account, with different tools, and you would have had nothing on screen
+to tell you.
+
+Clearing a field puts the task back to following its agent. In the app, that is
+the first option in each menu: "Agent's runtime", "Agent default".
+
+<Callout type="info">
+  A schedule that comes from a marketplace package can't carry these three yet. Install the package,
+  then set them on the task.
+</Callout>
 
 ## Where DorkOS looks
 
@@ -127,6 +172,7 @@ Click a template card to pre-fill a scheduled task you can edit, or click "Start
 - **Name** and **Description**: what to call this scheduled task.
 - **Prompt**: the instruction the agent gets each time it runs, e.g. "Check for outdated npm dependencies and summarize what needs updating."
 - **Cron Expression** and **Timezone** (under "Schedule"): when it runs. A cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
+- **Runs on** (under "Advanced settings"): which runtime, model and effort this job uses. All three start at "follow the agent", which is the right answer for most tasks. See [Pick where it runs](#pick-where-it-runs).
 - **Permission Mode** and **Max Runtime** (under "Advanced settings"): how much autonomy the agent gets and how long it's allowed to run before DorkOS stops it.
 
 </Step>
@@ -134,7 +180,7 @@ Click a template card to pre-fill a scheduled task you can edit, or click "Start
 
 ### Save it
 
-It shows up on the Schedules tab right away, along with its next run time. DorkOS writes it out as a real skill file, so your agent can read and use it like any other skill. Every run lands in the run history, so you can check what happened without digging through logs.
+It shows up on the Schedules tab right away, along with its next run time. DorkOS writes it out as a real skill file, so your agent can read and use it like any other skill. Every run lands in the run history, which records the runtime and model that run actually used, so a task you move next week doesn't rewrite what its old runs did.
 
 </Step>
 </Steps>
@@ -232,7 +278,7 @@ curl -X POST http://localhost:4242/api/tasks \
   }'
 ```
 
-`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, and `reason` are optional here. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime the scheduler drives. If you never chose one, it starts where scheduled runs have always started: able to edit files, but stopping for anything riskier. There is one exception to the optional list: a caller creating a scheduled task it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. It then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
+`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, `runtime`, `model`, `effort`, and `reason` are optional here. On a `PATCH`, sending `null` for `runtime`, `model` or `effort` clears it, so the task goes back to following its agent. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime this task resolves to. If you never chose one, it starts where scheduled runs have always started: able to edit files, but stopping for anything riskier. There is one exception to the optional list: a caller creating a scheduled task it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. It then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
 
 Pause or resume:
 
@@ -360,7 +406,7 @@ To pause a scheduled task yourself, switch it off. That is saved in the skill fi
 
 ### Scheduled tasks + Relay
 
-When both scheduled tasks and [Relay](/docs/guides/relay-messaging) are enabled, a run gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. Multi-agent coordination through Relay is shipped but still working toward full end-to-end verification, so treat this integration as functional, not battle-tested. In practice it means:
+When both scheduled tasks and [Relay](/docs/guides/relay-messaging) are enabled, a run on Claude Code gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. A run on Codex or OpenCode calls its runtime directly for now; Relay grows adapters for those next. Multi-agent coordination through Relay is shipped but still working toward full end-to-end verification, so treat this integration as functional, not battle-tested. In practice it means:
 
 - Each run gets a Relay trace ID, so you can follow the delivery path from trigger to agent execution.
 - Runs share Relay's delivery machinery (retries, backpressure handling, a dead-letter queue for messages that can't be delivered) with every other message on the bus.

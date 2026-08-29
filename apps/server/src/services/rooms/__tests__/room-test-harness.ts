@@ -28,11 +28,13 @@ import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
+import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { RoomBroadcaster } from '../room-stream.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from '../limits/room-limits.js';
 import { RoomTurnBudget } from '../limits/turn-budget.js';
 import type {
   LateRoomReply,
+  RoomReplyMode,
   RoomTurnRequest,
   RoomTurnResult,
   RoomTurnRunner,
@@ -77,7 +79,16 @@ export async function settleUntil(reached: () => boolean, described: string): Pr
 export interface RecordedTurn {
   roomId: string;
   authorId: string;
+  /** The agent's directory — its IDENTITY, whatever tree the turn runs in. */
   agentPath: string;
+  /**
+   * The directory the turn actually runs in (spec `project-rooms` §3.5).
+   *
+   * Equal to {@link RecordedTurn.agentPath} for every room without files of its
+   * own, and recorded separately because the whole claim of the cwd rung is that
+   * the two can differ — a test that read one for the other could not see it.
+   */
+  cwd: string;
   sessionId: string | null;
   /**
    * The words the turn was asked with. Equal to the triggering entry's text for
@@ -124,6 +135,23 @@ export function scriptedRunner(
 }
 
 /**
+ * The same runner, with `rooms.toolOnlyReplies` in effect for its turns.
+ *
+ * A named wrapper rather than an options object at every call site, because
+ * "this turn's words are not the room's message" is the single most consequential
+ * thing a scenario in this suite can be saying about itself.
+ *
+ * @param outcome - The whole turn result; see {@link outcomeRunner}.
+ */
+export function toolOnlyRunner(
+  outcome: (
+    request: RoomTurnRequest
+  ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error }
+): ScriptedTurnRunner {
+  return outcomeRunner(outcome, { replyMode: 'tool-only' });
+}
+
+/**
  * The same runner, for the outcomes a reply string cannot express: a session
  * that was busy, a turn that failed, an answer still on its way.
  *
@@ -137,13 +165,23 @@ export function scriptedRunner(
  * could see the difference between the two; supply one to model a runtime that
  * renames the session out from under the room.
  *
+ * **`replyMode` is a property of the RUNNER, not of the result**, and that
+ * mirrors production exactly: the real runner resolves the mode before the turn
+ * starts and reports it onto the claim, so a `post_to_room` made mid-turn can
+ * read it. A fake that returned it with the answer would report it after the
+ * body had already run, which is too late for the one consumer that matters —
+ * `postFromTool`'s DM refusal.
+ *
  * @param outcome - The whole turn result; `sessionId` defaults to the requested one.
  * @param outcome.throws - Throw instead of returning, for the runtime-is-down path.
+ * @param opts.replyMode - How this runner's turns reach the room. Defaults to
+ *   `'text'`, which is what every scenario that predates the flip means.
  */
 export function outcomeRunner(
   outcome: (
     request: RoomTurnRequest
-  ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error }
+  ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error },
+  opts: { replyMode?: RoomReplyMode } = {}
 ): ScriptedTurnRunner {
   const turns: RecordedTurn[] = [];
   const interrupted: Array<{ sessionId: string; agentPath: string }> = [];
@@ -158,21 +196,55 @@ export function outcomeRunner(
       return Promise.resolve(false);
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
+      const sessionId = request.sessionId ?? `session-${(minted += 1)}`;
+      // **Both reported BEFORE the body runs, exactly as the production runner
+      // reports them** (spec `tool-only-room-replies` §D2, §D8). A scripted turn
+      // that posts through the tool does it from inside `outcome`, and by then
+      // the claim has to already carry the mode (which conditions the DM
+      // refusal) and the session id (which stamps the entry). Reporting after
+      // would let a test assert the flip while the mechanism the flip depends on
+      // was never exercised.
+      // **A PINNED mode wins, exactly as it does in production.** One caller
+      // pins it — the welcome-back offer, whose text the greeter posts itself —
+      // and a fake that ignored the pin would let a test assert D12 while the
+      // mechanism that keeps D12 true was never asked.
+      const replyMode = request.replyMode ?? opts.replyMode ?? 'text';
+      request.onReplyMode(replyMode);
+      request.onSessionBound(sessionId);
+      // And the CONTEXT the turn is handed carries it, which is the production
+      // runner's `{ ...request.roomContext, replyMode }`. It is what the model
+      // reads, so a test about what an agent is TOLD has to see the same thing.
+      const withMode: RoomTurnRequest = {
+        ...request,
+        roomContext: { ...request.roomContext, replyMode },
+      };
       turns.push({
         roomId: request.room.id,
         authorId: request.authorId,
         agentPath: request.agentPath,
+        cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.prompt,
-        roomContext: request.roomContext,
+        // The context AS THE TURN SAW IT, mode included.
+        roomContext: withMode.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
-      const result = outcome(request);
+      const result = outcome(withMode);
       if ('throws' in result) return Promise.reject(result.throws);
       const { sessionId: ranOn, ...reply } = result;
       return Promise.resolve({
-        sessionId: ranOn ?? request.sessionId ?? `session-${(minted += 1)}`,
+        sessionId: ranOn ?? sessionId,
+        replyMode,
         ...reply,
+        // **The mode rides the LATE shape too, exactly as the production runner
+        // maps it on.** `deliverLate` calls straight back into `deliver`, which
+        // reads the mode off the REPLY — so a fake that put it only on the
+        // top-level result would let a late answer take the fail-open `'text'`
+        // branch and post its narration, which is the regression this mirrors
+        // rather than reproduces.
+        ...(reply.late !== undefined
+          ? { late: reply.late.then((landed) => ({ ...landed, replyMode })) }
+          : {}),
       });
     },
   };
@@ -273,6 +345,7 @@ export function gatedRunner({
         roomId: request.room.id,
         authorId: request.authorId,
         agentPath: request.agentPath,
+        cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
@@ -460,6 +533,7 @@ export interface RoomHarness {
  *   `held-too-long` line. Defaults to the shipped hour, so a test that is not
  *   about the bound never trips it; a test that IS about it pins a short one.
  * @param opts.maxAttachmentsPerEntry - How many files one message may carry.
+ * @param opts.maxPostsPerTurn - How many messages one turn may post into a room.
  *   A literal for the same reason the ceilings above are: a test that read the
  *   same config the code reads could only prove the two agree.
  * @param opts.ownerUserId - The account that owns this install, when the test is
@@ -486,6 +560,8 @@ export function createRoomHarness(opts: {
   collect?: CollectWindow;
   holdCeilingMs?: number;
   maxAttachmentsPerEntry?: number;
+  /** How many messages one agent may post into a room inside one turn. */
+  maxPostsPerTurn?: number;
   ownerUserId?: string;
   budgetNow?: () => number;
   /**
@@ -515,6 +591,15 @@ export function createRoomHarness(opts: {
    * an empty result cannot tell them apart.
    */
   findMessages?: RoomMessageFinder;
+  /**
+   * The install's room-worktree manager, for the project-room tests.
+   *
+   * Absent — the default — is an install with no repo machinery, where every
+   * turn runs in the agent's own directory exactly as it did before the cwd rung
+   * existed. That default is what keeps every other test in this suite a test of
+   * the behavior it was written for.
+   */
+  worktrees?: () => RoomWorktreeManager | null;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -562,6 +647,7 @@ export function createRoomHarness(opts: {
     bridges,
     agents: agentLookup,
     turns: runner,
+    ...(opts.worktrees ? { worktrees: opts.worktrees } : {}),
     budget: new RoomTurnBudget({
       db,
       // Wired like production: the per-room ceiling comes through the ladder so
@@ -617,6 +703,7 @@ export function createRoomHarness(opts: {
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
+    maxPostsPerTurn: () => opts.maxPostsPerTurn ?? 3,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
     isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     readCursors,

@@ -592,6 +592,7 @@ export default defineConfig({
         // real, billable claude-code turn — see their headers.
         '**/rooms/room-autonomy.spec.ts',
         '**/rooms/agent-reactions.spec.ts',
+        '**/rooms/room-tool-only-replies.spec.ts',
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
@@ -733,7 +734,14 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
-      testMatch: ['**/rooms/room-autonomy.spec.ts', '**/rooms/agent-reactions.spec.ts'],
+      testMatch: [
+        '**/rooms/room-autonomy.spec.ts',
+        '**/rooms/agent-reactions.spec.ts',
+        // The flip (DOR-1613). Here for the same reason as its two neighbours:
+        // it un-silences an agent, so on the cockpit leg every test in it would
+        // start a real, billable claude-code turn.
+        '**/rooms/room-tool-only-replies.spec.ts',
+      ],
     },
     {
       // Chats-as-channels cockpit proof — also against the test-mode server,

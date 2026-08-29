@@ -78,8 +78,18 @@ export function useOnboarding() {
   // longer gates this — a user who skips individual steps and finishes is done.
   const isOnboardingComplete = state.completedAt !== null;
   const isOnboardingDismissed = state.dismissedAt !== null;
+  // **"We asked and got nothing" is not "there is nothing there" either.** The
+  // note above is about the restoring window; this is the same mistake one step
+  // later. A config read that FAILS leaves `isLoading` false with `config`
+  // undefined, so every flag below falls back to `DEFAULT_STATE` and a settled
+  // install reads as brand new — and `useOnboardingOverlayVisible` latches that
+  // permanently, so the first-run wizard was still up after the server came
+  // back (DOR-1475). A fresh install is a config that ARRIVED and says nobody
+  // has finished onboarding; no config at all is not an answer yet.
+  const hasConfig = config !== undefined;
   // The full-screen flow: brand-new installs only (neither finished nor dismissed).
-  const shouldShowOnboarding = !isLoading && !isOnboardingComplete && !isOnboardingDismissed;
+  const shouldShowOnboarding =
+    !isLoading && hasConfig && !isOnboardingComplete && !isOnboardingDismissed;
   // The sidebar getting-started helper: after the flow is finished, until the
   // user dismisses the card. A deliberate skip-all (dismissedAt) hides both.
   const shouldShowGettingStarted = !isLoading && isOnboardingComplete && !isOnboardingDismissed;

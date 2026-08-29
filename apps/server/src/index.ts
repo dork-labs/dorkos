@@ -97,12 +97,7 @@ import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
 import { migrateLegacySchedules } from './services/tasks/legacy-migration.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
-import {
-  RelayCore,
-  AdapterRegistry,
-  SignalEmitter,
-  type ClaudeCodeAgentRuntimeLike,
-} from '@dorkos/relay';
+import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { createConnectorsRouter } from './routes/connectors.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
@@ -272,13 +267,18 @@ import {
   setRoomAttachmentStores,
   setRoomRepoService,
   setRoomFilesService,
+  setRoomWorktreeManager,
+  setRoomMergeService,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
   RoomFilesService,
+  RoomMergeService,
+  RoomRepoMutex,
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
+  RoomWorktreeManager,
 } from './services/rooms/repo/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
 import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
@@ -344,6 +344,7 @@ import {
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
   listRecentSessions,
+  setAgentSessionSources,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
@@ -352,21 +353,22 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
-// The runtime the relay's Claude Code adapter drives. Its need is
-// Claude-specific, not default-specific: the adapter speaks the Claude Agent
-// SDK's session/approval vocabulary, so it is bound to the concrete
-// claude-code runtime here at construction rather than read off
-// `runtimeRegistry.getDefault()`. That keeps `runtimes.default` free to point
-// at codex or opencode without the relay calling Claude-shaped methods on a
-// runtime that has none. Test mode substitutes TestModeRuntime, which
-// implements the same narrow surface with no real agent binary.
+// The relay's DEFAULT runtime — what answers a relay message that names no
+// runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
+// agent-to-agent send to a mesh agent). The relay carries every registered
+// runtime as of DOR-1614 and picks per message; this is the one it falls back
+// to, and it is bound to the concrete runtime constructed here rather than read
+// off `runtimeRegistry.getDefault()`, so `runtimes.default` can point at codex
+// or opencode without moving what answers an unaddressed message. Test mode
+// substitutes TestModeRuntime, which implements the same narrow surface with no
+// real agent binary.
 //
 // It carries its own `type` rather than being paired with a separate type
 // variable, because the two are the same fact and two variables holding one
 // fact drift. AdapterManager keys its runtime map by that type, so the key is
 // always the runtime's actual identity — `test-mode` in test mode, not a
 // hardcoded `claude-code` that no lookup would ever match.
-let relayAgentRuntime: (ClaudeCodeAgentRuntimeLike & { readonly type: string }) | null = null;
+let relayAgentRuntime: (AgentRuntimeLike & { readonly type: string }) | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
@@ -1174,8 +1176,17 @@ async function start() {
   // turning the feature on or changing a cap binds the next request rather
   // than the next server start.
   const roomRepoStore = new RoomRepoStore(db, dorkHome);
+  // ONE queue for the whole install, shared by every server-side write to a
+  // room's repo. Enabling a repo and merging into it take the same lane, keyed
+  // by room: enable is a check-then-act that two callers could otherwise both
+  // win (destroying the first repo's seed commit), and two merges in one
+  // checkout is the contention one-writer forbids. Two rooms never wait on each
+  // other.
+  const roomRepoMutex = new RoomRepoMutex();
   const roomRepoService = new RoomRepoService({
     store: roomRepoStore,
+    mutex: roomRepoMutex,
+    queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
     enabled: () => readRoomRepoConfig().enabled,
     getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
     isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
@@ -1208,11 +1219,57 @@ async function start() {
       maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
+  // One standing working copy per (room, agent), and the reap that tidies away
+  // the empty ones (spec `project-rooms` §3.4). It gets no timer of its own:
+  // the reconciler below owns the single sweep, and therefore the single
+  // overlap guard.
+  const roomWorktrees = new RoomWorktreeManager({
+    store: roomRepoStore,
+    hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+    reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
+    // The claim map is the only live record that an agent is mid-turn, and once
+    // the cwd rung landed (DOR-1597) its worktree IS that turn's working
+    // directory. Without this the sweep can delete the directory a turn is
+    // standing in — a turn that only reads leaves no mark on any timestamp.
+    busyAgentPaths: () => roomService.listBusyAgentPaths(),
+  });
+  // And the cwd rung can now find it: every room turn asks this manager where
+  // to run before its context is built (`resolve-session-cwd.ts` rung 2, spec
+  // §3.5).
+  setRoomWorktreeManager(roomWorktrees);
+  // The other half of a turn running somewhere new: session storage is derived
+  // per working directory (ADR-0310), so a room turn's conversation is filed
+  // under the WORKTREE it ran in and an agent's own folder no longer holds all
+  // of its history. The fan-out behind Recent and the daily counts is told
+  // where else to look, and which rows are bound to whom.
+  setAgentSessionSources({
+    extraDirs: (agentPath) => roomWorktrees.listWorktreesForAgent(agentPath),
+    boundSessionIds: (agentPath) =>
+      Promise.resolve(runtimeRegistry.listSessionIdsForAgentPath(agentPath)),
+  });
+  // The only path work takes back into a room's `main` (spec §3.6). It writes
+  // in `repo/` and nowhere else — an agent's own working copy has exactly one
+  // writer and it is that agent — and it announces every merge through
+  // `RoomService`, so a room's log keeps its single write path.
+  const roomMerges = new RoomMergeService({
+    store: roomRepoStore,
+    mutex: roomRepoMutex,
+    enabled: () => readRoomRepoConfig().enabled,
+    mergeQueueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
+    requireMembership: (roomId, authorId) => roomService.requireMembership(roomId, authorId),
+    listAgentMembers: (roomId) => roomService.listAgentMembers(roomId),
+    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+    announce: (roomId, input) => roomService.postMergeEvent(roomId, input),
+    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+  });
+  setRoomMergeService(roomMerges);
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
   // a room's files — see its module doc for why an orphaned home directory is
-  // reported and left standing.
-  new RoomRepoReconciler(roomRepoStore).start();
+  // reported and left standing, and the worktree manager's for the four gates
+  // an agent's working copy has to fail before the reap may remove it.
+  new RoomRepoReconciler(roomRepoStore, undefined, roomWorktrees).start();
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the
@@ -1565,15 +1622,29 @@ async function start() {
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
-  // Driven by `relayAgentRuntime` — the concrete claude-code runtime (or, in
-  // test mode, TestModeRuntime), never `runtimeRegistry.getDefault()`. See the
-  // declaration: the relay's need is Claude-specific, so it must not follow
-  // `runtimes.default` to a codex or opencode runtime.
   //
-  // Passed as the `agentRuntimes` map keyed by the runtime's own `type`, not
-  // through the deprecated single-`agentManager` field. That field's compat
-  // wrap keys everything under `'claude-code'`, which is a lie in test mode and
-  // the reason binding routing has been silently dead there.
+  // The relay carries EVERY registered runtime (DOR-1614), keyed by each
+  // runtime's own `type` — never through the deprecated single-`agentManager`
+  // field, whose compat wrap keys everything under `'claude-code'` (a lie in
+  // test mode, and the reason binding routing was silently dead there). An
+  // agent that runs on Codex or OpenCode answers a Telegram or Slack message on
+  // the runtime its manifest names, the same one it answers a room on.
+  //
+  // `relayAgentRuntime`'s entry is written LAST so it wins ITS OWN key, and
+  // that key alone. Two things make the ordering matter rather than be tidy:
+  // `listRuntimes()` hands back trace-WRAPPED runtimes, and on the production
+  // path this key is `claude-code` and the object is `claudeRuntime` — the very
+  // instance `setRelayBindingContext` configures further down. The relay and
+  // that wiring have to hold the same object, and last-write is what makes them.
+  //
+  // Under `DORKOS_TEST_RUNTIME` the key is `test-mode` instead, and
+  // `setRelayBindingContext` is never called (there is no ClaudeCodeRuntime to
+  // call it on). `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS` then registers a SECOND,
+  // separate TestModeRuntime under `claude-code` (DOR-952) which
+  // `relayAgentRuntime` is not — so do not read the rule as "relayAgentRuntime
+  // is whatever answers `claude-code`". Nothing configures that alias and
+  // nothing in test mode needs it configured; it exists so a seeded manifest
+  // naming a real runtime enum resolves.
   if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
     try {
       const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
@@ -1584,7 +1655,10 @@ async function start() {
       // declared type, not the guard.
       const relayCoreInstance = relayCore;
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
-        agentRuntimes: new Map([[relayAgentRuntime.type, relayAgentRuntime]]),
+        agentRuntimes: new Map<string, AgentRuntimeLike>([
+          ...runtimeRegistry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
+          [relayAgentRuntime.type, relayAgentRuntime],
+        ]),
         traceStore,
         taskStore: taskStore,
         relayCore,
@@ -2280,6 +2354,17 @@ async function start() {
         firingReason: firing.reason,
       },
       relay: relayCore,
+      // Which runtimes the bus can actually run a turn on (DOR-1614). Read
+      // through the live `adapterManager` rather than captured at this line.
+      // Phase C runs earlier than this in the current ordering, so capturing
+      // would happen to work today — but the binding is deliberately late for
+      // two reasons that outlive the ordering. Moving either block would
+      // silently freeze a stale value, and Phase C RESETS `adapterManager` to
+      // `undefined` when its init throws (see its catch), which a captured
+      // reference could not see. A relay that never built, or that failed
+      // building, must answer "no" — which is what `?? false` says — and then
+      // every run executes in this process, as it always did with the relay off.
+      relayHoldsRuntime: (runtimeType) => adapterManager?.hasAgentRuntime(runtimeType) ?? false,
       meshCore,
       activityService,
       dorkHome,
@@ -3231,11 +3316,12 @@ async function start() {
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),
-      // The rooms domain (room-participation spec §10.2, §10.3): the eight verbs
-      // an agent has in the rooms it belongs to. The SAME service instance the
+      // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
+      // agent has in the rooms it belongs to. The SAME service instances the
       // REST routes and the trigger dispatcher hold — one set of membership
-      // rules, one cascade guard, one budget, whichever surface reaches them.
-      roomDeps: { rooms: roomService },
+      // rules, one cascade guard, one budget, one merge queue, whichever surface
+      // reaches them.
+      roomDeps: { rooms: roomService, merges: roomMerges },
       // How a saved note learns which room it was written in (DOR-632). The
       // room service answers for the CALLING session, so the label is derived
       // rather than supplied — a model that could name its own provenance could

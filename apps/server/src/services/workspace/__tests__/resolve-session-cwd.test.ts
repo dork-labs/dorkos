@@ -74,6 +74,10 @@ function makeDeps(over: Partial<ResolveSessionCwdDeps> = {}): ResolveSessionCwdD
     // Identity by default; the canonicalization rows below inject a fake that
     // actually collapses, so every OTHER row fails for its own reason.
     canonicalize: vi.fn(async (p: string) => p),
+    // No room-repo machinery by default, which is every non-room turn and every
+    // install that has never given a room files. The rung-2 rows below inject
+    // their own.
+    ensureRoomWorktree: vi.fn(async () => null),
     defaultCwd: DEFAULT,
     ...over,
   };
@@ -404,5 +408,92 @@ describe('one spelling per directory', () => {
       kind: 'agent',
       ref: '/nope/gone',
     });
+  });
+});
+
+describe('rung 2 — the room worktree', () => {
+  const ROOM = { roomId: 'room-1', agentName: 'Ana' };
+  const WORKTREE = '/dork/rooms/room-1/worktrees/ana-abcd1234';
+
+  it('runs a project room’s turn in that agent’s own working copy', async () => {
+    const deps = makeDeps({ ensureRoomWorktree: vi.fn(async () => WORKTREE) });
+
+    await expect(resolveSessionCwd({ agentPath: AGENT, room: ROOM }, deps)).resolves.toEqual({
+      cwd: WORKTREE,
+      rung: 'room-worktree',
+    });
+    // The agent's own directory is its identity anchor and reaches the seam
+    // unchanged; the display name is only the readable half of the directory.
+    expect(deps.ensureRoomWorktree).toHaveBeenCalledWith('room-1', AGENT, 'Ana');
+  });
+
+  it('leaves a room with no files of its own on the agent’s own directory', async () => {
+    // The regression pin, and the reason rung 2 short-circuits rungs 3 and 4.
+    // `null` is the ordinary case — not a degradation, so no reason is recorded.
+    const deps = makeDeps({ ensureRoomWorktree: vi.fn(async () => null) });
+
+    await expect(resolveSessionCwd({ agentPath: AGENT, room: ROOM }, deps)).resolves.toEqual({
+      cwd: AGENT,
+      rung: 'agent-home',
+    });
+  });
+
+  it('never consults the agent binding for a room turn', async () => {
+    // A room turn has never followed a `managed` binding and has never been
+    // boundary-validated. Reaching rung 3 would move a repo-less room turn into
+    // a checkout nothing asked for — the change DOR-1597 deliberately does not
+    // make. Proved by "was it even asked", not by the answer.
+    const deps = makeDeps({
+      ensureRoomWorktree: vi.fn(async () => null),
+      readManifest: vi.fn(async () => manifest({ mode: 'managed', source: '/vault/dorkos' })),
+    });
+
+    const resolved = await resolveSessionCwd({ agentPath: AGENT, room: ROOM }, deps);
+
+    expect(resolved).toEqual({ cwd: AGENT, rung: 'agent-home' });
+    expect(deps.readManifest).not.toHaveBeenCalled();
+    expect(deps.ensureWorkspace).not.toHaveBeenCalled();
+    expect(deps.validateAgentHome).not.toHaveBeenCalled();
+  });
+
+  it('a `none` binding cannot send a room turn to the shared default either', async () => {
+    // The other half of the same guarantee, and the sharper one: `none` resolves
+    // to `DEFAULT_CWD`, which is the tree every other agent also writes in —
+    // the DOR-500 interleaving the chain exists to prevent.
+    const deps = makeDeps({
+      ensureRoomWorktree: vi.fn(async () => null),
+      readManifest: vi.fn(async () => manifest({ mode: 'none' })),
+    });
+
+    const resolved = await resolveSessionCwd({ agentPath: AGENT, room: ROOM }, deps);
+
+    expect(resolved.cwd).toBe(AGENT);
+    expect(resolved.cwd).not.toBe(DEFAULT);
+  });
+
+  it('an explicit cwd still wins outright over a room worktree', async () => {
+    const deps = makeDeps({ ensureRoomWorktree: vi.fn(async () => WORKTREE) });
+
+    await expect(
+      resolveSessionCwd({ cwd: '/somewhere/named', agentPath: AGENT, room: ROOM }, deps)
+    ).resolves.toEqual({ cwd: '/somewhere/named', rung: 'explicit' });
+    expect(deps.ensureRoomWorktree).not.toHaveBeenCalled();
+  });
+
+  it('degrades to the agent’s own directory rather than failing the turn', async () => {
+    // Git missing, a disk error, a worktree that cannot be built. A room that
+    // stops answering is far worse than an agent answering from its own folder,
+    // so the turn still runs and the reason is carried out loud.
+    const deps = makeDeps({
+      ensureRoomWorktree: vi.fn(async () => {
+        throw new Error('git is not installed');
+      }),
+    });
+
+    const resolved = await resolveSessionCwd({ agentPath: AGENT, room: ROOM }, deps);
+
+    expect(resolved.cwd).toBe(AGENT);
+    expect(resolved.rung).toBe('agent-home');
+    expect(resolved.degraded).toContain('git is not installed');
   });
 });

@@ -131,7 +131,7 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * somebody's conversations. Membership still gates them on every surface — this
  * decides only whether an unauthenticated local caller may ask at all.
  *
- * **Three of them return no message at all, and are here anyway.** What
+ * **Four of them return no message at all, and are here anyway.** What
  * `list_member_rooms`, `get_room` and `find_room` return is the shape of
  * somebody's install — which channels exist, who is in them, what they are
  * about, when they were last used — and on the login-off surface a tokenless
@@ -139,7 +139,9 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * for the operator. A room list is not a health check, and neither is a roster.
  * `find_room` is the sharpest of the three: it needs no room id at all, so a
  * tokenless caller could ask which rooms hold a named person and get the answer
- * in one hop.
+ * in one hop. `room_repo_status` is the fourth, and returns the shape of
+ * somebody's WORK rather than their install — which agents hold a working copy
+ * of a room's repo and what each of them has not merged yet.
  *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
@@ -152,6 +154,12 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   'search_member_rooms',
   'get_room',
   'find_room',
+  // `room_repo_status` returns no message either, and is here for the same
+  // reason `list_member_rooms` is: it is the shape of somebody's work — which
+  // agents are in a room, what each of them has not merged yet — and on the
+  // login-off surface a tokenless caller resolves to the install owner, so it
+  // would answer for them.
+  'room_repo_status',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
@@ -162,9 +170,10 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     ...connectorDomain.capabilities,
     ...mcpDomain.capabilities,
     // The rooms domain contributes NOTHING today, and is listed anyway. All
-    // SIX of its reads are `observe` and deliberately withhold
+    // SEVEN of its reads are `observe` and deliberately withhold
     // `readOnlyCarveOut`, because what they return is other people's messages —
-    // or, for the three lookups, the shape of somebody's install; naming the
+    // or, for the three lookups, the shape of somebody's install, and for
+    // `room_repo_status`, the shape of somebody's unfinished work; naming the
     // domain here is what puts them under the drift guard, so a later edit that
     // adds the flag has to move this set — and be argued for — rather than
     // widening the tokenless surface in silence. A domain nobody lists is a

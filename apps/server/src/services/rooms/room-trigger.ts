@@ -158,8 +158,10 @@ import {
 import { logRefusal } from '../observability/refusals.js';
 import {
   DISPATCH_OUTCOMES,
+  PRESENCE_OUTCOMES,
   agentKey,
   claimBusyWith,
+  claimedAgentPaths,
   claimsWorkingIn,
   deepestClaimOf,
   describeClaims,
@@ -190,6 +192,12 @@ import {
 } from './room-collect.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
 import { buildRoomContext } from './room-context.js';
+import { RoomWorktreeManager } from './repo/room-worktree-manager.js';
+import {
+  resolveSessionCwd,
+  sessionCwdDeps,
+  type ResolvedCwd,
+} from '../workspace/resolve-session-cwd.js';
 import {
   RoomNoticeLog,
   type CascadeStamp,
@@ -197,8 +205,13 @@ import {
   type RoomTurnUnanswered,
 } from './notices/notice-log.js';
 import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './notices/notice-copy.js';
-import type { RoomAgentLookup } from './room-errors.js';
-import type { LateRoomReply, RoomTurnReply, RoomTurnRunner } from './room-turn-port.js';
+import { RoomError, type RoomAgentLookup } from './room-errors.js';
+import type {
+  LateRoomReply,
+  RoomReplyMode,
+  RoomTurnReply,
+  RoomTurnRunner,
+} from './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
 import type { RoomTurnBudget } from './limits/turn-budget.js';
@@ -211,6 +224,7 @@ export type {
   RoomTurnRequest,
   RoomTurnWaiting,
   RoomTurnReply,
+  RoomReplyMode,
   LateRoomReply,
   RoomTurnResult,
   RoomTurnRunner,
@@ -384,6 +398,12 @@ export interface RoomTriggerDeps {
    */
   attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
   runner: RoomTurnRunner;
+  /**
+   * The install's room-worktree manager, for placing a turn in a project room
+   * (spec §3.5). Optional: an install with no repo machinery runs every turn in
+   * the agent's own directory, which is what a room did before this existed.
+   */
+  worktrees?: () => RoomWorktreeManager | null;
   writer: RoomTriggerWriter;
   /**
    * The per-room ceiling on automatic turns, counted whoever the caller claims
@@ -1767,6 +1787,8 @@ export class RoomTriggerDispatcher {
       // exchange and the guard sees the whole chain.
       aside: false,
       spokeViaTool: false,
+      reactedViaTool: false,
+      postsThisTurn: 0,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
       // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
@@ -1909,7 +1931,113 @@ export class RoomTriggerDispatcher {
    */
   noteDeliberatePost(roomId: string, authorId: string): void {
     const claim = this.claimed.get(agentKey(roomId, authorId));
-    if (claim) claim.spokeViaTool = true;
+    if (!claim) return;
+    claim.spokeViaTool = true;
+    claim.postsThisTurn += 1;
+  }
+
+  /**
+   * How many messages this agent has already posted into this room from inside
+   * its live turn here, or `undefined` when it holds no claim here.
+   *
+   * The read half of `rooms.maxPostsPerTurn` (spec `tool-only-room-replies` §D9).
+   * `undefined` is not zero and the difference is load-bearing: a post made with
+   * no turn behind it — an agent posting by hand from a shell — is not part of a
+   * turn, so the per-turn ceiling has nothing to bound and does not apply. It
+   * already costs a turn against the cascade budget on its own.
+   *
+   * @param roomId - The room being posted into.
+   * @param authorId - The agent posting.
+   * @returns The count so far, or `undefined` when no turn is running here.
+   */
+  postsThisTurn(roomId: string, authorId: string): number | undefined {
+    return this.claimed.get(agentKey(roomId, authorId))?.postsThisTurn;
+  }
+
+  /**
+   * Everything `post_to_room` needs to know about the turn it is being called
+   * from inside, or `undefined` when this agent holds no claim in this room.
+   *
+   * One read for four questions, all of them about the SAME live claim, so they
+   * cannot disagree with each other: which message the turn is answering, which
+   * session it is running on, how many posts it has already spent, and how its
+   * words reach the room. Asking them one at a time would be four map lookups
+   * that a release between any two of them could split.
+   *
+   * `undefined` is not "a turn with nothing in it" — it means no turn is running
+   * here, which is a real and supported state: an agent may post by hand with
+   * nothing in flight at all. Every bound that keys on a turn is skipped there,
+   * deliberately, because there is no turn for them to bound.
+   *
+   * @param roomId - The room being posted into.
+   * @param authorId - The agent posting.
+   * @returns The live turn's facts, or `undefined` when there is no live turn.
+   */
+  activeTurnHere(
+    roomId: string,
+    authorId: string
+  ):
+    | {
+        entryId: string;
+        sessionId: string | undefined;
+        postsThisTurn: number;
+        replyMode: RoomReplyMode | undefined;
+      }
+    | undefined {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim === undefined) return undefined;
+    return {
+      entryId: claim.entryId,
+      sessionId: claim.sessionId,
+      postsThisTurn: claim.postsThisTurn,
+      replyMode: claim.replyMode,
+    };
+  }
+
+  /**
+   * Record how a live turn's words will reach the room, as its runner resolved
+   * it (spec `tool-only-room-replies` §D2).
+   *
+   * @param roomId - The room the turn is running in.
+   * @param authorId - The agent taking it.
+   * @param mode - What the runner resolved.
+   */
+  private noteReplyMode(roomId: string, authorId: string, mode: RoomReplyMode): void {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim) claim.replyMode = mode;
+  }
+
+  /**
+   * Record which session a live turn is actually running on, once the runtime
+   * has named it (spec `tool-only-room-replies` §D8).
+   *
+   * @param roomId - The room the turn is running in.
+   * @param authorId - The agent taking it.
+   * @param sessionId - The canonical session id.
+   */
+  private noteSessionBound(roomId: string, authorId: string, sessionId: string): void {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim) claim.sessionId = sessionId;
+  }
+
+  /**
+   * Record that an agent put a reaction on a message in this room, from inside
+   * its own turn (spec `tool-only-room-replies` §D10).
+   *
+   * The whole effect is on what the end of that turn counts as: a reaction-only
+   * turn is `'answered'` and earns no `agent_declined` line, because the room
+   * shows something. See {@link ActiveClaim.reactedViaTool}.
+   *
+   * Called only after the reaction has actually landed — a refusal must not buy
+   * silence — and only ever for an agent, because a claim belongs to one.
+   *
+   * @param roomId - The room the reaction landed in.
+   * @param authorId - The agent that put it there.
+   */
+  noteDeliberateReaction(roomId: string, authorId: string): void {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (!claim) return;
+    claim.reactedViaTool = true;
   }
 
   /**
@@ -1942,6 +2070,29 @@ export class RoomTriggerDispatcher {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (claim?.spokeViaTool !== true) return false;
     claim.spokeViaTool = false;
+    return true;
+  }
+
+  /**
+   * Take the "this agent has already reacted here" mark, if one is standing.
+   *
+   * {@link RoomTriggerDispatcher.takeSpokeViaTool}'s sibling, taken rather than
+   * read for exactly the same reason: a claim outlives its own turn under RP8's
+   * park-and-resume, and a standing mark would let one turn's reaction discharge
+   * the NEXT turn's obligation to answer.
+   *
+   * Read only in the tool-only path, where a reaction is a first-class outcome.
+   * In text mode a turn that reacts and says nothing still produces no entry and
+   * still reads as `'quiet'`, exactly as it does today.
+   *
+   * @param roomId - The room the answer is being delivered into.
+   * @param authorId - The agent delivering it.
+   * @returns `true` when this turn put a reaction in front of the room.
+   */
+  private takeReactedViaTool(roomId: string, authorId: string): boolean {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim?.reactedViaTool !== true) return false;
+    claim.reactedViaTool = false;
     return true;
   }
 
@@ -1984,6 +2135,12 @@ export class RoomTriggerDispatcher {
     // this frame at all, so its outcome is that method's to report.
     let outcome: ClaimOutcome = 'quiet';
     try {
+      // **Where this turn runs, decided before anything describes it.** The
+      // context below names attachment paths relative to this directory and the
+      // runner puts the files there, so it has to be settled first — see
+      // `resolveCwd` below. For a room with no files of its own the answer is
+      // `target.agentPath`, unchanged.
+      const { cwd } = await this.resolveCwd(room.id, target.agentPath, target.displayName);
       // Built before the request so the context and the projection plan it
       // implies are one value, resolved once.
       const turnContext = buildRoomContext(this.deps, {
@@ -1991,8 +2148,8 @@ export class RoomTriggerDispatcher {
         agentAuthorId: target.authorId,
         // The tree the turn below runs in, so a file the context names is named
         // by a path that opens from where the agent actually stands (DOR-1266).
-        // The same value reaches the runner as `agentPath` a few lines down.
-        agentPath: target.agentPath,
+        // The same value reaches the runner as `cwd` a few lines down.
+        cwd,
         entry,
         working: this.workingIn(room.id),
         // The cursor as it stood before the claim moved it. The stored row has
@@ -2019,6 +2176,9 @@ export class RoomTriggerDispatcher {
         room,
         authorId: target.authorId,
         agentPath: target.agentPath,
+        // Identity above, files here — the same value the context was built
+        // against, never resolved a second time.
+        cwd,
         sessionId: target.sessionId,
         entry,
         // The message, unchanged. A trigger asks the agent exactly what was
@@ -2052,6 +2212,12 @@ export class RoomTriggerDispatcher {
         // the claim rather than the frame, so a reading that arrives after this
         // scope is gone reaches nothing rather than a stale object.
         onActivity: (activity) => this.noteActivity(agentKey(room.id, target.authorId), activity),
+        // Both onto the live claim, where a mid-turn `post_to_room` reads them:
+        // the mode conditions the DM refusal, and the session id stamps the
+        // entry with the turn that wrote it (spec `tool-only-room-replies` §D2,
+        // §D8).
+        onReplyMode: (mode) => this.noteReplyMode(room.id, target.authorId, mode),
+        onSessionBound: (id) => this.noteSessionBound(room.id, target.authorId, id),
       });
 
       // A REFUSAL IS NOT A READING. The claim moved this agent's cursor to the
@@ -2241,7 +2407,25 @@ export class RoomTriggerDispatcher {
     // here is over. Recovery IS the re-arm: the next time it cannot answer, the
     // room says so again — for every reason, because an answer landing is
     // evidence against all of them at once.
+    //
+    // **A turn that DECLINED reaches this line too, and that is correct.** A
+    // quiet turn proves the agent is reachable, which is exactly what the busy /
+    // gone / unavailable keys damp on. It is why `agent_declined` re-arms on
+    // {@link RoomNoticeLog.answered} instead: a key this line cleared would be
+    // cleared by the very turn that set it.
     this.notices.recovered(room.id, target.authorId);
+
+    // **The flip, and its whole surface is the branch below** (spec
+    // `tool-only-room-replies` §D1). Resolved by the runner and carried on the
+    // reply, never re-derived here: a late answer is delivered minutes after its
+    // turn started, and re-reading the flag then would apply a setting the turn
+    // never ran under.
+    //
+    // Absent means `'text'`, which is what makes every existing path — a busy
+    // refusal, a fake runtime, a scenario harness — byte-identical.
+    if (reply.replyMode === 'tool-only') {
+      return this.deliverToolOnly(opts);
+    }
 
     const said = reply.text?.trim();
     // An agent with nothing to say is exercising judgment, not failing. Only a
@@ -2314,6 +2498,65 @@ export class RoomTriggerDispatcher {
       answersEntryId: entry.id,
     });
     return 'answered';
+  }
+
+  /**
+   * Settle a turn whose words are NOT the room's message (spec
+   * `tool-only-room-replies` §D1, the flag-ON half of {@link deliver}).
+   *
+   * Three terminals, in this order, and the order is the whole design:
+   *
+   * 1. **The agent posted through the tool** → `'answered'`. Taken BEFORE the
+   *    quiet branch, which is the reorder D1 is about. Flag-OFF the mark is read
+   *    after `!said` and that is harmless, because an agent that tool-posts
+   *    almost always narrates as well, so `said` is truthy and control reaches
+   *    it. Flag-ON the well-behaved case is exactly "posted via the tool,
+   *    narrated nothing" — which the old order would classify as `'quiet'`, leave
+   *    the mark standing on a claim about to be deleted, and punish with the very
+   *    notice the agent earned its way out of.
+   * 2. **The agent reacted** → `'answered'`. A thumbs-up can BE the answer, so
+   *    the room shows something and nothing is owed (§D10). Only a reaction that
+   *    LANDED sets the mark.
+   * 3. **Neither** → `'quiet'`, plus one `agent_declined` line if a person asked.
+   *    That split is §10.2.2's and is not re-derived: the obligation attaches to
+   *    being asked, never to running a turn, so an ambient turn writes nothing
+   *    durable, ever.
+   *
+   * What does NOT happen here is the post. There is no late prefix either, and
+   * there is nothing for one to prefix: the answer landed when the agent posted
+   * it, carrying its own timestamp, so a note saying how long the turn took would
+   * be attached to nothing.
+   *
+   * @param opts - The same delivery the caller assembled; see {@link deliver}.
+   * @returns What happened, for the claim release to report.
+   */
+  private deliverToolOnly(opts: {
+    room: Room;
+    entry: RoomEntry;
+    target: TriggerTarget;
+    reply: RoomTurnReply;
+    sessionId: string;
+    late?: { waitedMs: number };
+  }): ClaimOutcome {
+    const { room, entry, target } = opts;
+    // Taken rather than read, both of them, so each covers this delivery and no
+    // other — see {@link RoomTriggerDispatcher.takeSpokeViaTool}.
+    if (this.takeSpokeViaTool(room.id, target.authorId)) {
+      // Taken as well, and discarded: a turn that posted AND reacted has
+      // answered once, and leaving the reaction mark standing would let it
+      // discharge the next turn's obligation.
+      this.takeReactedViaTool(room.id, target.authorId);
+      return 'answered';
+    }
+    if (this.takeReactedViaTool(room.id, target.authorId)) return 'answered';
+    const displayName = this.deps.authors.getById(target.authorId)?.displayName ?? 'An agent';
+    this.notices.reportDeclined(
+      room,
+      entry,
+      { authorId: target.authorId, displayName },
+      target.dispatchId
+    );
+    return 'quiet';
   }
 
   /**
@@ -2534,6 +2777,8 @@ export class RoomTriggerDispatcher {
       // to a post the agent makes while it runs. See {@link ActiveClaim.aside}.
       aside: true,
       spokeViaTool: false,
+      reactedViaTool: false,
+      postsThisTurn: 0,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
       // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
@@ -2577,10 +2822,13 @@ export class RoomTriggerDispatcher {
       sessionId: input.sessionId,
     });
     try {
+      // An aside turn is a real turn in a real checkout, so it is placed the
+      // same way an ordinary one is — see `runOneInDispatch`.
+      const { cwd } = await this.resolveCwd(room.id, input.agentPath, displayName);
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
-        agentPath: input.agentPath,
+        cwd,
         entry,
         working: this.workingIn(room.id),
         // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the
@@ -2607,6 +2855,7 @@ export class RoomTriggerDispatcher {
         room,
         authorId,
         agentPath: input.agentPath,
+        cwd,
         sessionId: input.sessionId,
         entry,
         prompt: input.prompt,
@@ -2617,6 +2866,22 @@ export class RoomTriggerDispatcher {
         // An aside turn holds a real claim in a real checkout, so it reports
         // what it is doing like any other turn.
         onActivity: (activity) => this.noteActivity(key, activity),
+        // **PINNED to text, and this is the one turn in the product that is**
+        // (spec `tool-only-room-replies` §D12). A welcome-back offer's text IS
+        // still the room's message under the flip — the greeter posts it itself,
+        // outside `deliver` — so letting the runner resolve `'tool-only'` here
+        // would tell the agent "nothing you write back this turn is posted" and
+        // then post exactly what it wrote. An agent told the opposite of what
+        // happens is the drift this feature is most exposed to, and it was
+        // reachable in one line: the shared runner overwrites the context with
+        // whatever mode it resolved.
+        replyMode: 'text',
+        // An aside turn can still post through the tool — the greeter's question
+        // is answered back to the greeter, but nothing stops the agent saying
+        // something in the room while it thinks. The mode reaching the claim is
+        // what keeps `postFromTool`'s DM refusal correct for it.
+        onReplyMode: (mode) => this.noteReplyMode(room.id, authorId, mode),
+        onSessionBound: (id) => this.noteSessionBound(room.id, authorId, id),
       });
       if (result.sessionId !== input.sessionId) {
         this.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
@@ -2991,7 +3256,31 @@ export class RoomTriggerDispatcher {
     // doing anything, which is what `RoomSignalEvent.activity` promises — and a
     // halt reaches here without the runner ever having cleared.
     claim.activity = undefined;
-    this.publishPresence(claim, 'done');
+    // **How the turn finished, on the lane that drops it** (spec
+    // `tool-only-room-replies` §D7). A working pill that appears and vanishes
+    // with nothing to show reads as a crash, and under `rooms.toolOnlyReplies`
+    // that stops being rare. Only the two outcomes a person can act on are said:
+    // `answered` and `silent`. Every other one — halted, busy, failed, gone —
+    // already has a durable line of its own explaining it, and a second,
+    // ephemeral statement beside it would be the room saying the same thing
+    // twice.
+    //
+    // **And only for a turn that actually ran TOOL-ONLY**, which is acceptance
+    // criterion 1 winning an argument it should win: with the flag off, room
+    // behaviour is byte-identical to before this feature, and a new field on
+    // every release frame is not byte-identical. It buys nothing there either —
+    // a text-mode turn that finishes has posted its words or written a notice,
+    // so the indicator already releases into something the reader can see. The
+    // absence is what makes it honest rather than decorative.
+    //
+    // Past tense, and deliberately not durable: E16a exempts a mechanical
+    // presence signal from every speaking rule, and a restart forgetting this
+    // costs nothing because the fact was already over.
+    this.publishPresence(
+      claim,
+      'done',
+      claim.replyMode === 'tool-only' ? PRESENCE_OUTCOMES[outcome] : undefined
+    );
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing !== null && this.claimed.size === 0) {
       clearInterval(this.republishing);
@@ -3553,7 +3842,11 @@ export class RoomTriggerDispatcher {
    * @param claim - The claim this is about.
    * @param state - Where it is in its life.
    */
-  private publishPresence(claim: ActiveClaim, state: RoomPresenceState): void {
+  private publishPresence(
+    claim: ActiveClaim,
+    state: RoomPresenceState,
+    outcome?: 'answered' | 'silent'
+  ): void {
     // Every frame carries the current reading, so every frame is one the room
     // has now SEEN — including a republish or a `working_late` that lands
     // between a trailing flush being armed and firing. Recording it here rather
@@ -3571,6 +3864,9 @@ export class RoomTriggerDispatcher {
       // mid-turn therefore sees the verb on its first frame, with no separate
       // activity event to miss.
       ...(claim.activity ? { activity: claim.activity } : {}),
+      // Only ever on a `done` frame, and only for the two outcomes that have
+      // nothing durable to explain them — see {@link PRESENCE_OUTCOMES}.
+      ...(outcome ? { outcome } : {}),
     });
   }
 
@@ -3623,6 +3919,20 @@ export class RoomTriggerDispatcher {
    */
   listClaims(): ActiveClaimView[] {
     return describeClaims(this.claimed);
+  }
+
+  /**
+   * Every agent workspace with a turn running in it right now.
+   *
+   * An in-process seam for the room-worktree reap, which must not delete the
+   * directory a live turn is standing in. Unlike
+   * {@link RoomTriggerDispatcher.listClaims} this carries filesystem paths, so
+   * it is deliberately not part of the diagnostic read surface.
+   *
+   * @returns Each distinct workspace path holding a claim.
+   */
+  busyAgentPaths(): string[] {
+    return claimedAgentPaths(this.claimed);
   }
 
   /**
@@ -3689,6 +3999,53 @@ export class RoomTriggerDispatcher {
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
     return claimBusyWith(this.claimed, roomId, authorId, agentPath);
+  }
+
+  /**
+   * Where one agent's turn in this room runs — the `room-worktree` rung.
+   *
+   * **The room's own turn boundary, and the one place this domain names the
+   * session-cwd resolver.** A room turn begins here, so this is where its
+   * directory is decided — once, through the same resolver every other turn
+   * boundary uses, so there is exactly one precedence chain and one `[cwd]
+   * resolved` log line on the install (`resolve-session-cwd.ts`, spec
+   * `project-rooms` §3.5). The room supplies the one collaborator only it can:
+   * how to make a worktree.
+   *
+   * **`agentPath` is untouched by any of this.** It goes on carrying identity:
+   * the claim map, both busy ceilings and the runtime lookup all key on it, and
+   * spec §5 Q6 settles that none of them relaxes because a turn now runs
+   * somewhere else. An agent working in room A's worktree still blocks its own
+   * turn in room B.
+   *
+   * @param roomId - The room being answered.
+   * @param agentPath - That agent's directory — its identity, and the floor.
+   * @param displayName - The label the room already shows for this agent; the
+   *   readable half of its worktree directory name and nothing else. Identity is
+   *   the digest of `agentPath` ({@link RoomWorktreeManager.slugFor}), so a
+   *   rename costs a new working copy and never somebody else's.
+   * @returns The directory the turn runs in, and the rung that chose it.
+   */
+  private resolveCwd(roomId: string, agentPath: string, displayName: string): Promise<ResolvedCwd> {
+    return resolveSessionCwd(
+      { agentPath, room: { roomId, agentName: displayName } },
+      sessionCwdDeps({
+        ensureRoomWorktree: async (id, dir, name) => {
+          const worktrees = this.deps.worktrees?.();
+          if (!worktrees) return null;
+          try {
+            return (await worktrees.ensureWorktree(id, dir, name)).path;
+          } catch (err) {
+            // "This room has no files of its own" is the ordinary case, and the
+            // manager says it by throwing. Translated to `null` HERE so the
+            // resolver never has to know what a `RoomError` is — and so it can
+            // tell that case from a real failure, which it degrades and reports.
+            if (err instanceof RoomError && err.code === 'NOT_A_PROJECT_ROOM') return null;
+            throw err;
+          }
+        },
+      })
+    );
   }
 
   /**

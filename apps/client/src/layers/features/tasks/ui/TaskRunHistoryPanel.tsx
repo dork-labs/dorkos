@@ -12,6 +12,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useInfiniteTaskRuns, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
+import { RuntimeIdentity } from '@/layers/entities/runtime';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   Select,
@@ -213,8 +214,23 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
       </span>
 
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-foreground">
-          {run.startedAt ? <RunTimestamp date={run.startedAt} /> : '-'}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="text-foreground shrink-0">
+            {run.startedAt ? <RunTimestamp date={run.startedAt} /> : '-'}
+          </span>
+          {/* What this run ACTUALLY ran on, stamped when it was dispatched —
+              not what the task says today. Move a task to another runtime next
+              week and its old runs still report the truth about themselves
+              (DOR-1615, DOR-1347). Absent on every run recorded before the
+              columns existed, and then this says nothing rather than guessing. */}
+          {run.resolvedRuntime && (
+            <RuntimeIdentity
+              runtime={run.resolvedRuntime}
+              model={run.resolvedModel}
+              iconClassName="size-3"
+              className="text-muted-foreground/70 min-w-0 text-[11px]"
+            />
+          )}
         </span>
         {run.outputSummary && (
           <span className="text-muted-foreground truncate" title={run.outputSummary}>

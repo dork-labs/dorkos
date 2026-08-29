@@ -43,6 +43,19 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // response only if one is ever added; it is mapped because the table is total
   // by type, and 400 because a DM is the wrong room to ask this of.
   TOOL_POST_NOT_IN_DM: 400,
+  // The `leave_room` twin, and the same story again: an MCP-only verb, mapped
+  // because the table is total by type. 400 for the same reason — a direct
+  // message is the wrong kind of room to ask this of, and no retry fixes it.
+  TOOL_LEAVE_NOT_IN_DM: 400,
+  // The `update_room` twin, mapped for the same reason the two above are: the
+  // table is total by type. 400 because a direct message is the wrong kind of
+  // room to ask this of, and no retry fixes it.
+  TOOL_RENAME_NOT_IN_DM: 400,
+  // Same story: an MCP-only verb, mapped because the table is total by type. A
+  // 429 rather than a 400 — the request is perfectly well formed and would have
+  // been accepted a moment earlier, and the remedy is to say less rather than to
+  // say it differently, which is exactly what a rate answer means.
+  TOO_MANY_POSTS_THIS_TURN: 429,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
@@ -96,6 +109,29 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // A 400: the path is real, but it is a folder, a link or another repository
   // and the request asked for something else. The message says which.
   ROOM_FILE_NOT_READABLE: 400,
+  // The room exists and the caller may see it; it simply has no files. A 409
+  // rather than a 404, for the same reason as the two above: the answer changes
+  // by giving the room a repo, not by asking about a different room.
+  NOT_A_PROJECT_ROOM: 409,
+  // Every merge refusal is a 409, and they are 409s for one shared reason: the
+  // request is well formed, the caller is allowed, and the room said not yet.
+  // What changes the answer is always an act in the caller's own tree — commit,
+  // sync, shrink the file, wait — never a different request or a better
+  // credential.
+  UNCOMMITTED_WORK: 409,
+  BEHIND_MAIN: 409,
+  MAIN_CHECKOUT_DIRTY: 409,
+  SYMLINK_ESCAPES_REPO: 409,
+  FILE_TOO_LARGE: 409,
+  REPO_CAP_EXCEEDED: 409,
+  MERGE_CONFLICT: 409,
+  NOTHING_TO_MERGE: 409,
+  SUBMODULE_NOT_ALLOWED: 409,
+  // The exception, and the canonical status for it: the caller waited its turn
+  // and the room is still busy. A 429 says "ask again", which is exactly the
+  // remedy, and is the same answer `REACTION_RATE_LIMITED` gives for the same
+  // shape of refusal.
+  MERGE_IN_FLIGHT: 429,
 };
 
 /**

@@ -1479,6 +1479,38 @@ export interface AgentRuntime {
    */
   reloadPlugins?(sessionId: string): Promise<ReloadPluginsResult | null>;
 
+  /**
+   * Whether a session in this directory is KNOWN to carry the DorkOS room tools
+   * — `post_to_room` and its three siblings (spec `tool-only-room-replies` §D2).
+   *
+   * Asked by a room before it decides how that turn's words reach the room. With
+   * `rooms.toolOnlyReplies` on, `true` means the turn's own text is never posted
+   * and the agent answers by calling the tool; anything else means the text
+   * posts, exactly as it does today.
+   *
+   * **It is a positive claim, and "we do not know" must answer `false`.** The
+   * question fails OPEN by design and the polarity is deliberately the opposite
+   * of a permission check: an agent that cannot reach the tool AND whose text is
+   * suppressed is silently mute, and silence is the worse failure
+   * (`.claude/rules/room-conduct.md`). A runtime that answers `true` on a
+   * maybe buys nothing and costs a room its answer.
+   *
+   * Optional for the same reason: a runtime that has not thought about the
+   * question is not asserting anything, so an absent implementation reads as "we
+   * do not know" and the room keeps posting the turn's text. Nothing about
+   * permission is decided here — the agent could always post; this decides only
+   * whether DorkOS ALSO posts for it.
+   *
+   * @param session.cwd - The session's working directory, which is the agent's
+   *   directory for every agent-bound session. The two production runtimes that
+   *   answer this key on it, because MCP configuration is per directory.
+   * @param session.sessionId - The session about to take the turn, for a runtime
+   *   whose answer is per session rather than per directory.
+   * @returns `true` only when the tools are known to be reachable from a turn on
+   *   that session right now.
+   */
+  carriesRoomTools?(session: { cwd: string; sessionId: string }): Promise<boolean>;
+
   // --- Dependency injection (optional) ---
 
   /** Inject an agent registry for peer-agent context and agent manifest resolution. */

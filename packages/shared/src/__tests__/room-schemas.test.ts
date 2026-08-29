@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 import {
   agentAuthorRef,
   AuthorRefSchema,
@@ -13,6 +14,7 @@ import {
   RoomEntryBodySchema,
   RoomEntrySchema,
   RoomEventSchema,
+  RoomPresenceStateSchema,
   RoomMemberSchema,
   RoomMomentSchema,
   RoomNoticeCodeSchema,
@@ -729,5 +731,55 @@ describe('RoomWithRosterSchema.workingAgents — presence on the room read (DOR-
       RoomSummarySchema.parse({ ...room, unreadCount: 0, participants: null, working: 2 }).working
     ).toBe(2);
     expect(RoomWithRosterSchema.safeParse({ ...room, workingAgents: 2 }).success).toBe(false);
+  });
+});
+
+describe("a done presence signal's outcome (tool-only-room-replies §D7)", () => {
+  /** A `done` frame, as the dispatcher publishes one. */
+  const done = {
+    type: 'signal' as const,
+    signal: 'progress' as const,
+    authorId: '01JZANA',
+    at: WHEN,
+    state: 'done' as const,
+    entryId: '01JZENTRY',
+    since: WHEN,
+  };
+
+  it('parses with the field', () => {
+    const parsed = RoomEventSchema.parse({ ...done, outcome: 'silent' });
+    expect(parsed).toMatchObject({ outcome: 'silent' });
+  });
+
+  it('parses without it — every producer that predates the field is unchanged', () => {
+    expect(RoomEventSchema.parse(done)).not.toHaveProperty('outcome');
+  });
+
+  it('refuses a value that is not one of the two', () => {
+    expect(RoomEventSchema.safeParse({ ...done, outcome: 'answered-late' }).success).toBe(false);
+  });
+
+  it('AC 15 — an OLDER schema build still parses a frame carrying it', () => {
+    // The whole reason this is an optional field rather than a fifth
+    // `RoomPresenceState`. That enum is parsed by every client and reused by the
+    // `CommunityAdapter` presence payload, and `useRoomPresenceStore.observe`
+    // DROPS a frame it cannot parse — so a new enum member would make a desktop
+    // build one release behind fail to parse the RELEASE frame and leave the
+    // working pill spinning forever.
+    //
+    // The older build is reconstructed rather than described: the same object
+    // schema minus this field, which is exactly what shipped before it.
+    const olderBuild = z.object({
+      type: z.literal('signal'),
+      signal: z.string(),
+      authorId: z.string().min(1),
+      at: z.string(),
+      state: RoomPresenceStateSchema.optional(),
+      entryId: z.string().optional(),
+      since: z.string().optional(),
+    });
+    expect(olderBuild.safeParse({ ...done, outcome: 'silent' }).success).toBe(true);
+    // And the state itself is untouched, which is what that build keys on.
+    expect(RoomPresenceStateSchema.options).toEqual(['working', 'working_late', 'held', 'done']);
   });
 });

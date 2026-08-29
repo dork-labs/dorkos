@@ -18,6 +18,7 @@ import { AdapterManifestSchema } from '@dorkos/shared/relay-schemas';
 import type { Logger } from '@dorkos/shared/logger';
 import type { RelayAdapter } from './types.js';
 import { RELAY_ADAPTER_API_VERSION } from './version.js';
+import { describeError } from './lib/describe-error.js';
 
 /** Configuration entry for a single adapter to load. */
 export interface PluginAdapterConfig {
@@ -98,7 +99,7 @@ export async function loadAdapters(
       }
     } catch (err) {
       // Non-fatal: log warning and continue loading remaining adapters
-      logger.warn(`[PluginLoader] Failed to load adapter '${entry.id}':`, err);
+      logger.warn(`[PluginLoader] Failed to load adapter '${entry.id}':`, describeError(err));
     }
   }
 
@@ -152,7 +153,7 @@ function extractManifest(
         z.flattenError(parsed.error)
       );
     } catch (err) {
-      logger.warn(`[PluginLoader] Failed to get manifest from '${entry.id}':`, err);
+      logger.warn(`[PluginLoader] Failed to get manifest from '${entry.id}':`, describeError(err));
     }
   }
 

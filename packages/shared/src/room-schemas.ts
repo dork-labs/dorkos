@@ -172,6 +172,7 @@ export const RoomNoticeCodeSchema = z
     'agent_gone',
     'agent_unavailable',
     'agent_left',
+    'agent_declined',
     'awaiting_approval',
     'halted',
     'addressing_changed',
@@ -797,6 +798,78 @@ export const RoomWaitingKindSchema = z
 export type RoomWaitingKind = z.infer<typeof RoomWaitingKindSchema>;
 
 /**
+ * Work an agent brought into a room's own repo, carried on the entry that
+ * announces it (spec `project-rooms` §3.6).
+ *
+ * **A merge is an ordinary post, not a notice and not a moment.** A notice is a
+ * refusal-shaped event and is damped — two merges a minute apart would collapse
+ * into one line, which is exactly wrong for something that IS the content of a
+ * project room. A moment is a milestone, and a room that marked every merge as
+ * a milestone would have nothing left to call one. So a merge rides the body
+ * beside `moment` and is drawn as what it is: a line in the log saying what
+ * landed.
+ *
+ * It exists as structure rather than prose for one reader — the file explorer,
+ * which follows the room's own stream and refreshes when it sees one of these
+ * (§3.6). Everything a person reads is already in `text`.
+ */
+export const RoomMergeEventSchema = z
+  .object({
+    branch: z.string().min(1).describe("The agent's branch, `room/<worktree slug>`."),
+    commit: z.string().min(1).describe('The merge commit on the room’s main branch.'),
+    files: z.number().int().nonnegative().describe('How many files the merge touched.'),
+    insertions: z.number().int().nonnegative().describe('Lines added.'),
+    deletions: z.number().int().nonnegative().describe('Lines removed.'),
+  })
+  .openapi('RoomMergeEvent');
+
+/** Work an agent merged into a room's repo. See {@link RoomMergeEventSchema}. */
+export type RoomMergeEvent = z.infer<typeof RoomMergeEventSchema>;
+
+/**
+ * The most of a merge summary that survives to the commit subject and the room.
+ *
+ * **Shared so the cap is asked once.** The server sanitizes and truncates at
+ * this length; a schema that accepted more would take a summary, silently cut
+ * it, and post two thirds of somebody's sentence. Refusing at the door instead
+ * means the caller finds out while it can still write a shorter one.
+ */
+export const MERGE_SUMMARY_MAX_CHARS = 200;
+
+/**
+ * Asking for one agent's work to be merged into a room's `main`
+ * (`POST /api/rooms/:id/repo/merge`).
+ *
+ * **`worktree` is the operator's field and nobody else's.** An agent merging
+ * through `merge_to_room_main` never sends one — it merges its own branch,
+ * because publishing a colleague's unfinished work under your own summary is a
+ * decision the room cannot unpick afterwards. The owner has no branch of their
+ * own, so naming one is how they merge at all (spec §5 Q2), and a non-owner who
+ * sends it is refused `OPERATOR_ONLY`.
+ */
+export const MergeRoomRepoRequestSchema = z
+  .object({
+    summary: z
+      .string()
+      .min(1)
+      .max(MERGE_SUMMARY_MAX_CHARS)
+      .describe(
+        'What the work does, in one line. It becomes the merge commit’s subject and the sentence the room sees.'
+      ),
+    worktree: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Which working copy to merge, by the slug `room_repo_status` reports. Owner-only; omit it to merge your own.'
+      ),
+  })
+  .openapi('MergeRoomRepoRequest');
+
+/** A request to merge work into a room. See {@link MergeRoomRepoRequestSchema}. */
+export type MergeRoomRepoRequest = z.infer<typeof MergeRoomRepoRequestSchema>;
+
+/**
  * The payload of a log entry.
  *
  * One shape rather than a union, because `kind` on the entry already says
@@ -815,9 +888,12 @@ export type RoomWaitingKind = z.infer<typeof RoomWaitingKindSchema>;
  * agent-authored post a turn produces, because a reader cannot tell from the
  * outside which answers waited.
  *
- * `waitingKind` is the newest and the narrowest — see
- * {@link RoomWaitingKindSchema}. It is set only on an `awaiting_approval`
- * notice, and has exactly one reader.
+ * `waitingKind` is the narrowest — see {@link RoomWaitingKindSchema}. It is set
+ * only on an `awaiting_approval` notice, and has exactly one reader.
+ *
+ * `merge` is the newest, and follows `moment`'s pattern exactly: a post the
+ * room writes in its own voice, ABOUT the agent named in `subjectAuthorId`, with
+ * the machine-readable half beside the sentence a person reads.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -825,6 +901,7 @@ export const RoomEntryBodySchema = z
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
     moment: RoomMomentSchema.optional(),
+    merge: RoomMergeEventSchema.optional(),
     waitingKind: RoomWaitingKindSchema.optional(),
     answersEntryId: z
       .string()
@@ -1784,6 +1861,29 @@ export const RoomSignalEventSchema = z
      * and on no other, because nothing else is waiting on another room.
      */
     heldBehind: RoomHeldBehindSchema.optional(),
+    /**
+     * How a `state: 'done'` turn finished: it put something in front of the room,
+     * or it ran and deliberately said nothing (spec `tool-only-room-replies` §D7).
+     *
+     * **An optional field, deliberately not a fifth {@link RoomPresenceStateSchema}
+     * member.** That enum is parsed by every client and reused by the
+     * `CommunityAdapter` presence payload, and `useRoomPresenceStore.observe`
+     * DROPS a frame it cannot parse — so a new member would make an older client
+     * fail to parse the release frame and leave the working pill spinning
+     * forever. An optional field degrades to exactly today's behaviour on any
+     * build that predates it.
+     *
+     * It exists because a working pill that appears and vanishes with nothing to
+     * show reads as a crash, and under `rooms.toolOnlyReplies` that happens many
+     * times a day rather than rarely. It rides the ephemeral lane on purpose:
+     * the fact is past tense, so a reload forgetting it costs nothing, and
+     * etiquette E16a is what makes a mechanical presence signal legal without it
+     * counting as the agent participating.
+     *
+     * Absent on every other state, and absent on `done` from a producer that has
+     * nothing to say about it.
+     */
+    outcome: z.enum(['answered', 'silent']).optional(),
   })
   .openapi('RoomSignalEvent');
 
@@ -1882,14 +1982,15 @@ export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
  * the three, so an unkeyable indicator is never rendered and never has to be
  * cleared.
  *
- * `activity` and `heldBehind` are the two fields that stay OPTIONAL for the
- * producer, and that is capability-honest rather than a hole: the dispatcher
- * always knows which entry a claim answers and when it was taken, genuinely does
- * not know what a turn is doing before its first tool call, and has nothing to
- * point at unless the indicator is `held`.
+ * `activity`, `heldBehind` and `outcome` are the three fields that stay OPTIONAL
+ * for the producer, and that is capability-honest rather than a hole: the
+ * dispatcher always knows which entry a claim answers and when it was taken,
+ * genuinely does not know what a turn is doing before its first tool call, has
+ * nothing to point at unless the indicator is `held`, and has nothing to say
+ * about how a turn finished until it does.
  */
 export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>> &
-  Pick<RoomSignalEvent, 'activity' | 'heldBehind'>;
+  Pick<RoomSignalEvent, 'activity' | 'heldBehind' | 'outcome'>;
 
 /**
  * The same presence, with the one field that names a person's work removed.

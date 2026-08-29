@@ -635,6 +635,39 @@ describe('#team is a system room', () => {
     ).not.toContain(agent);
   });
 
+  it('clears the fallback seat when its holder is removed, rather than leaving it dangling', () => {
+    // A correctness fix for EVERY caller of `removeMember`, found while
+    // specifying the agent-facing verbs (spec `rooms-management-tools` §D9,
+    // DOR-1611) but reachable from the cockpit long before them.
+    //
+    // `rooms.fallback_seat_author_id` is deliberately not a foreign key, so
+    // nothing cleaned it up: the row went on naming an agent that was no longer
+    // on the roster, and a message addressed to nobody in particular was routed
+    // to a member who had left. Silently — which is why it survived.
+    //
+    // Cleared rather than defended by a refusal: refusing would wedge the
+    // seat-holder into a room it could never leave.
+    const { harness, roomId, agent } = seated();
+    expect(seatOf(harness)).toBe(agent);
+
+    harness.service.removeMember(roomId, harness.human, agent);
+
+    expect(seatOf(harness)).toBeNull();
+  });
+
+  it('leaves a fallback seat somebody else holds alone', () => {
+    // The clear is keyed on the member who actually left. Removing a different
+    // member must not empty a seat that is still legitimately held, or every
+    // ordinary roster edit would quietly unseat the room's default answerer.
+    const { harness, roomId, agent } = seated();
+    harness.service.addMember(roomId, harness.human, { agentPath: NOVA });
+    const nova = harness.authors.resolveAgent(NOVA, 'Nova').id;
+
+    harness.service.removeMember(roomId, harness.human, nova);
+
+    expect(seatOf(harness)).toBe(agent);
+  });
+
   it('leaves an ordinary room’s Leave untouched — the guard cannot reach it', () => {
     const harness = install();
     ensureTeamRoom(harness.deps);

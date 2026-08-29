@@ -147,9 +147,11 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'scheduler.enabled',
   'scheduler.retentionCount',
   // When an idle agent working copy is tidied away, and how long a queued merge
-  // waits its turn. Neither enforces a safety bound: the reap sweep spares
-  // anything dirty or unmerged BY CONSTRUCTION, so no value of the first can
-  // lose work, and the second buys patience rather than any file, byte or turn.
+  // waits its turn. Neither enforces a safety bound: the reap sweep removes
+  // nothing that is dirty, unmerged, or being worked in right now — a gate that
+  // is asked before the number is, and is pinned red-before/green-after in
+  // `room-worktree-manager.ts`'s tests — so no value of the first can lose
+  // work, and the second buys patience rather than any file, byte or turn.
   // Both are operator-only to WRITE — one governs a deletion on disk — which is
   // a different question from what their defaults do, and the module docs above
   // say so.
@@ -291,6 +293,17 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.collectDebounceMs': 500,
   'rooms.collectMaxEntries': 20,
   'rooms.responseGate': 'routing',
+  // Whether an agent decides for itself when to speak in a room (spec
+  // `tool-only-room-replies` §D5). `false` is the withholding side of a real
+  // axis rather than a preference: off, a turn's text is posted for it, which is
+  // what every install does today and the state in which no reply can go
+  // missing. A wipe landing back here restores that, so it needs no carryover
+  // rule.
+  'rooms.toolOnlyReplies': false,
+  // How many messages one agent may post into a room inside one turn. A real
+  // bound — there was none before it — and the tightest a person might want is
+  // lower, which is why it carries.
+  'rooms.maxPostsPerTurn': 3,
   // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
   // noise a return can produce: four hours before an absence counts at all, and
   // at most three posts when it does. Both carry across a wipe, in opposite

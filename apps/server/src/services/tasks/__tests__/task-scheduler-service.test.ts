@@ -2136,12 +2136,19 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
    * @param registered - The runtime types that are turned on.
    * @param relay - A relay to enable the bus path, or null for direct-only.
    */
-  function scheduler(registered: string[], relay: RelayCore | null = null): TaskSchedulerService {
+  function scheduler(
+    registered: string[],
+    relay: RelayCore | null = null,
+    relayHoldsRuntime?: (runtimeType: string) => boolean
+  ): TaskSchedulerService {
     return new TaskSchedulerService({
       store,
       runtimes: runtimesWith(registered),
       config: { ...DEFAULT_CONFIG },
       relay,
+      // Omitted by every caller that predates DOR-1614, which is what pins the
+      // v1 default: claude-code on the bus, everything else direct.
+      ...(relayHoldsRuntime ? { relayHoldsRuntime } : {}),
     });
   }
 
@@ -2384,9 +2391,10 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     });
 
     it('runs a codex task DIRECT even with the bus enabled', async () => {
-      // The relay's adapter map holds exactly one adapter and it speaks the
-      // Claude Agent SDK's vocabulary, so a codex run handed to the bus would be
-      // run by the wrong adapter or by none. DOR-1614 widens this.
+      // With no `relayHoldsRuntime` wired, the scheduler takes the v1 reading —
+      // claude-code and nothing else — so a codex run goes direct. DOR-1614
+      // widens this for a caller that says which runtimes the relay holds; the
+      // describe block below is that caller.
       const task = store.createTask(taskInput({ name: 'Not on the bus', runtime: 'codex' }));
       const service = scheduler(['claude-code', 'codex'], relay as unknown as RelayCore);
 
@@ -2426,6 +2434,96 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload).not.toHaveProperty('model');
       expect(payload).not.toHaveProperty('effort');
+      await service.stop();
+    });
+  });
+
+  describe('routing asks the relay which runtimes it holds (DOR-1614)', () => {
+    let relay: { publish: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(true);
+      relay = { publish: vi.fn().mockResolvedValue({ messageId: 'm-1', deliveredTo: 1 }) };
+    });
+
+    afterEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(false);
+    });
+
+    it('sends a codex run over the bus when the relay holds codex', async () => {
+      // The half of the handshake this branch owns. The far side now drives
+      // every runtime it holds, so "is it claude-code" stopped being the
+      // question and "does the relay have it" became it.
+      const task = store.createTask(taskInput({ name: 'Codex on the bus', runtime: 'codex' }));
+      const service = scheduler(
+        ['claude-code', 'codex'],
+        relay as unknown as RelayCore,
+        () => true
+      );
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      expect(managers['codex']!.sendMessage).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('names the resolved runtime on the wire', async () => {
+      // Without this the receiver falls back to ITS default and a codex task
+      // runs on claude-code — the exact failure the routing change exists to
+      // remove. Unconditional, unlike model/effort: silence here is not "the
+      // runtime decides", it is "some other runtime decides".
+      const task = store.createTask(taskInput({ name: 'Named', runtime: 'codex' }));
+      const service = scheduler(
+        ['claude-code', 'codex'],
+        relay as unknown as RelayCore,
+        () => true
+      );
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.runtime).toBe('codex');
+      await service.stop();
+    });
+
+    it('keeps a run DIRECT when the relay does not hold its runtime', async () => {
+      // A false negative costs nothing — the run still happens, in this process
+      // — while a false positive strands it on a bus that would refuse it. So
+      // the predicate is asked, and believed, in both directions.
+      const task = store.createTask(taskInput({ name: 'Not held', runtime: 'codex' }));
+      const service = scheduler(
+        ['claude-code', 'codex'],
+        relay as unknown as RelayCore,
+        (runtimeType) => runtimeType === 'claude-code'
+      );
+
+      await runToCompletion(service, task.id);
+
+      expect(managers['codex']!.sendMessage).toHaveBeenCalledOnce();
+      expect(relay.publish).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('puts a test-mode run on the bus when the relay holds test-mode', async () => {
+      // A DELIBERATE consequence, pinned because it is a real behaviour change
+      // and a surprising one. Under `DORKOS_TEST_RUNTIME` the registry default
+      // is `test-mode`, and the composition root fills the relay's map from
+      // `runtimeRegistry.listRuntimes()` — so the relay genuinely holds it, and
+      // a scheduled run that used to go direct (the predicate was the literal
+      // `'claude-code'`) now rides the bus. That is correct rather than
+      // incidental: TestModeRuntime is the very object the relay is wired to in
+      // test mode, so there IS something on the far side to run the turn. If
+      // this test ever has to change, the e2e/capture path changed with it.
+      const task = store.createTask(taskInput({ name: 'Test mode', runtime: 'test-mode' }));
+      const service = scheduler(['test-mode'], relay as unknown as RelayCore, () => true);
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
+      expect(payload.runtime).toBe('test-mode');
       await service.stop();
     });
   });

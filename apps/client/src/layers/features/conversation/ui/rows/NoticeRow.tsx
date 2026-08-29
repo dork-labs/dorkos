@@ -21,6 +21,7 @@ import {
   Info,
   Link2Off,
   Megaphone,
+  MessageSquareOff,
   RefreshCw,
   Repeat,
   Timer,
@@ -89,6 +90,12 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // from `agent_gone` because the remedy is different — that one is missing from
   // the machine, this one is only missing from the room.
   agent_left: { Icon: UserMinus, tone: 'text-status-warning' },
+  // Somebody asked, the agent read it, and it chose not to reply. Cool rather
+  // than warm, deliberately: nothing is broken and nothing is waiting on the
+  // reader — an agent exercising judgment is the room working as designed, and a
+  // column of amber every time one declines would teach a reader to stop looking
+  // (spec `tool-only-room-replies` §D6).
+  agent_declined: { Icon: MessageSquareOff },
   // The agent could not be readied to answer — almost always brief database
   // contention that clears on its own by the next message, which is why it
   // reads like `agent_busy` rather than `turn_failed`: occupied, not broken.

@@ -24,10 +24,12 @@ export {
   useRoomPresenceAuthorIds,
   useRoomPresenceClaims,
   useRoomHolds,
+  useRoomSilentFinish,
   useRoomPresenceEverywhere,
   useRoomPresenceStore,
   PRESENCE_TICK_MS,
   PRESENCE_TTL_MS,
+  SILENT_FINISH_DISPLAY_MS,
 } from './model/use-room-presence';
 export type {
   PresenceScope,
@@ -35,6 +37,7 @@ export type {
   RoomPresenceClaim,
   RoomPresenceClaimRow,
   RoomHoldRow,
+  RoomSilentFinish,
 } from './model/use-room-presence';
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
@@ -131,6 +134,7 @@ export {
   presenceElapsed,
   presenceRow,
   presenceSentence,
+  silentFinishSentence,
 } from './lib/presence-copy';
 export type { PresenceCopyState } from './lib/presence-copy';
 export { RESPONSE_RUNGS, rungOf, modeForRung, explainRung } from './lib/response-mode';

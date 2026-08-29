@@ -181,6 +181,7 @@ function drivenRunner(opts: {
         roomId: request.room.id,
         authorId: request.authorId,
         agentPath: request.agentPath,
+        cwd: request.cwd,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,

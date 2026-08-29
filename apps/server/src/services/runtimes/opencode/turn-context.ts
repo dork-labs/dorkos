@@ -14,7 +14,10 @@
  * @module services/runtimes/opencode/turn-context
  */
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
+import {
+  buildRoomToolsBlock,
+  roomReplyModeForToolCapableSession,
+} from '../shared/room-tools-context.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 
 /**
@@ -46,6 +49,11 @@ export async function buildOpenCodeTurnContext(
 ): Promise<string> {
   const neutralContext = (await buildAgentContextAppend(cwd)).text;
   return dorkosApplied
-    ? `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`
+    ? `${neutralContext}\n\n${buildRoomToolsBlock(
+        OPENCODE_DORKOS_TOOL_PREFIX,
+        // Per TURN, like codex: this whole prefix is rebuilt every turn, so the
+        // mode is always current.
+        roomReplyModeForToolCapableSession()
+      )}`
     : neutralContext;
 }

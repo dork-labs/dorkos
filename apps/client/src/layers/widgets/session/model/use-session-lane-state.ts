@@ -73,7 +73,7 @@ function formatTokens(count: number): string {
  * that — so the last reading is snapshotted while the turn runs and dismissed on
  * a timer afterwards. Everything else here is a straight read.
  *
- * **Two of the lane's nine rungs are deliberately dark on this surface**, and
+ * **Two of the lane's ten rungs are deliberately dark on this surface**, and
  * each is a decision rather than a gap:
  *
  * - `ask` draws nothing here: the prompt already has a live card in the

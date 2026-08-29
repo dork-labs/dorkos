@@ -14,7 +14,7 @@
       "slug": "task-runtime-model",
       "title": "Per-task runtime, model, and effort for scheduled tasks",
       "created": "2026-08-28",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260827-202452",

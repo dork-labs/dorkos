@@ -14,6 +14,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/__tests__/**/*.test.ts'],
+    // `scripts/` is in on purpose, mirroring apps/desktop/vitest.config.ts:
+    // the define gate there decides what ships (a bundle still carrying an
+    // unsubstituted build define), and it was code in this package nothing
+    // executed.
+    include: ['src/**/__tests__/**/*.test.ts', 'scripts/**/__tests__/**/*.test.ts'],
   },
 });

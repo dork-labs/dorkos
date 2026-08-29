@@ -183,9 +183,13 @@ function revealLogs(): void {
  * `window.open` is a full cockpit on the same origin, and leaving it pointed at
  * a dead server would strand it with no way to recover but closing it.
  *
+ * Shared with the updater's stalled-restart recovery (`auto-updater.ts`), which
+ * brings the same server back up for a different reason and leaves the same
+ * windows pointed at a port that is gone.
+ *
  * @param port - The port the replacement server is listening on.
  */
-function pointWindowsAtServer(port: number): void {
+export function pointWindowsAtServer(port: number): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     // A packaged build loads the renderer *from* the server, so it has to move

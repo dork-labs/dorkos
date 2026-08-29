@@ -40,6 +40,14 @@
  * excluded from every "who is working" reader, because an agent that has not
  * started is not somebody this room is waiting on in the same sense.
  *
+ * **One field beyond the lifecycle is a fact ABOUT the release, not the work.**
+ * `done` can carry `outcome: 'silent'` (spec `tool-only-room-replies` §D7): the
+ * turn ran and put nothing durable in front of the room. Without it, a working
+ * pill simply vanishes — indistinguishable from a crash under `rooms.toolOnlyReplies`,
+ * where it happens many times a day rather than rarely. `silentFinish` is where
+ * that one fact is kept, past tense and briefly, so the lane can say the pill
+ * released into something rather than nothing — see {@link useRoomSilentFinish}.
+ *
  * @module entities/room/model/use-room-presence
  */
 import { useEffect, useMemo, useReducer } from 'react';
@@ -73,6 +81,18 @@ export const PRESENCE_TTL_MS = 30_000;
  * @internal Exported for testing.
  */
 export const PRESENCE_TICK_MS = 1_000;
+
+/**
+ * How long a silent release's line stays on screen before it fades for good.
+ *
+ * The session lane's own post-turn summary (`TURN_COMPLETE_DISMISS_MS`) uses
+ * the same 8s figure for the same shape of fact — a report about a turn that
+ * has already ended, shown just long enough to read once before it goes. Not
+ * imported from there: the two surfaces are answering different questions
+ * (a session's own turn vs. a room's), and a number this small carries no risk
+ * of the two drifting apart in a way anybody would notice.
+ */
+export const SILENT_FINISH_DISPLAY_MS = 8_000;
 
 /**
  * Where a live indicator is, as this client holds it — every state except the
@@ -168,6 +188,26 @@ export interface RoomHoldRow {
   othersWaiting: boolean;
 }
 
+/**
+ * One turn that released here with nothing to show, while it is still worth
+ * saying so.
+ *
+ * Built from `state: 'done'` carrying `outcome: 'silent'` (spec
+ * `tool-only-room-replies` §D7) — the schema's own TSDoc is the ground truth
+ * for what that means and why it is an optional field rather than a fifth
+ * {@link RoomPresenceState}. This is the client's copy of exactly the two
+ * facts a fading line needs: who, and which claim, kept only long enough to
+ * draw it.
+ */
+export interface RoomSilentFinish {
+  /** The agent whose turn released with nothing to show. */
+  authorId: string;
+  /** The entry whose trigger this release answers — read only to scope it. */
+  entryId: string;
+  /** This client's clock when the stream said so. */
+  at: number;
+}
+
 /** Every room's live indicators, keyed room → indicator. */
 interface RoomPresenceStoreState {
   /**
@@ -201,6 +241,35 @@ interface RoomPresenceStoreState {
    * says so.
    */
   finished: Record<string, Record<string, number>>;
+  /**
+   * Room id → the most recent turn that released here with nothing durable to
+   * show (D7's `outcome: 'silent'`), while it is still worth drawing.
+   *
+   * **A different shape from {@link RoomPresenceStoreState.finished} on
+   * purpose.** `finished` is a suppression list, read only to overrule a stale
+   * snapshot, and it is right that it is keyed per author — two agents can each
+   * have their own stale row to correct. This is the opposite kind of fact: a
+   * single fading LINE the lane draws, one room at a time, so it is one slot per
+   * room and the latest release wins. Two agents releasing silently seconds
+   * apart show one line, not two stacked ones — the lane has exactly one line to
+   * put it on.
+   *
+   * **Overwritten by every `done`, not only a silent one.** Without that, a
+   * silent release at `t=0` could still be on screen at `t=4s` when a SECOND,
+   * unrelated turn finishes normally in the same room — the stale record would
+   * outlive the event it described and misreport a turn that just answered as
+   * one that stayed quiet. `withSilentFinish` clears the room's slot on any
+   * non-silent `done` for exactly this reason.
+   *
+   * **Read through {@link useRoomSilentFinish}, which owns the clock.** Unlike
+   * every other field here, this is not touched by {@link
+   * RoomPresenceActions.prune}: a silent release rarely leaves a live indicator
+   * behind (the claim is already gone by the time `outcome` arrives), so the
+   * tick that drives `prune` while a room has live claims is often not running
+   * at all. The reading hook schedules its own one-shot timer for exactly when
+   * its window ends, rather than depending on a tick that may not exist.
+   */
+  silentFinish: Record<string, RoomSilentFinish>;
 }
 
 /** Ways the picture of who is working changes. */
@@ -243,7 +312,9 @@ interface RoomPresenceActions {
    * A stream this client cannot read is presence it must not claim to know —
    * and that cuts both ways. A stale "X has finished" would go on suppressing a
    * room read's own row long after this client stopped being able to hear
-   * whether X started again.
+   * whether X started again. The same argument covers
+   * {@link RoomPresenceStoreState.silentFinish}: a fading line about a release
+   * this client can no longer confirm is not one it should keep drawing.
    *
    * @param roomId - The room whose stream has stopped.
    */
@@ -255,6 +326,14 @@ interface RoomPresenceActions {
    * A finish is only ever read against a room snapshot, and a snapshot older
    * than that window is already being ignored — so a finish that outlived it can
    * suppress nothing and is only a leak.
+   *
+   * **Deliberately silent on {@link RoomPresenceStoreState.silentFinish}.** That
+   * field is not read against a snapshot and has no such leak to close:
+   * {@link useRoomSilentFinish} treats an expired record as absent on its own,
+   * on a timer it schedules itself rather than one this action drives. A
+   * bounded-size map — one slot per room that has ever released silently —
+   * left one render past its display window is not the kind of leak this
+   * action exists to close.
    *
    * @param now - This client's clock, injectable for tests.
    */
@@ -298,6 +377,56 @@ function withFinish(
 }
 
 /**
+ * Clear a room's silent-finish slot, a no-op if it is empty already.
+ *
+ * Its own function rather than inlined at both call sites: `observe` reaches
+ * it through {@link withSilentFinish} whenever a `done` lands that is not
+ * `'silent'`, and `clearAuthor` reaches it directly whenever the slot's own
+ * author just spoke — two different reasons the same slot goes stale, one
+ * helper for what "gone" means.
+ *
+ * @param silentFinish - The store's current slots.
+ * @param roomId - The room whose slot is stale.
+ */
+function withoutSilentFinish(
+  silentFinish: RoomPresenceStoreState['silentFinish'],
+  roomId: string
+): RoomPresenceStoreState['silentFinish'] {
+  if (silentFinish[roomId] === undefined) return silentFinish;
+  const next = { ...silentFinish };
+  delete next[roomId];
+  return next;
+}
+
+/**
+ * Put a room's silent-finish slot back, from a `done` frame that just landed.
+ *
+ * A `done` that is NOT silent clears the slot rather than leaving it — see
+ * {@link RoomPresenceStoreState.silentFinish} for the stale-line this
+ * prevents: without it, an old silent release can still be fading on screen
+ * when a newer, unrelated turn in the same room finishes normally, and the
+ * room would misreport the newer one as the one that stayed quiet.
+ *
+ * @param silentFinish - The store's current slots.
+ * @param roomId - The room the release was about.
+ * @param outcome - The `done` frame's own `outcome`, exactly as it arrived.
+ * @param authorId - The author whose turn released.
+ * @param entryId - The entry that turn was triggered by.
+ * @param now - This client's clock.
+ */
+function withSilentFinish(
+  silentFinish: RoomPresenceStoreState['silentFinish'],
+  roomId: string,
+  outcome: RoomSignalEvent['outcome'],
+  authorId: string,
+  entryId: string,
+  now: number
+): RoomPresenceStoreState['silentFinish'] {
+  if (outcome !== 'silent') return withoutSilentFinish(silentFinish, roomId);
+  return { ...silentFinish, [roomId]: { authorId, entryId, at: now } };
+}
+
+/**
  * Put a room's indicators back, dropping the room entirely once it has none.
  *
  * Empty rooms are removed rather than left as `{}` so that "is anything
@@ -320,6 +449,7 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
     (set) => ({
       rooms: {},
       finished: {},
+      silentFinish: {},
 
       observe: (roomId, event, now = Date.now()) => {
         const { state, entryId, since, activity } = event;
@@ -335,10 +465,18 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
               // taken never saw the `working`, so this release used to return
               // `held` and leave no trace that the turn had ended (DOR-786).
               const finished = withFinish(held.finished, roomId, event.authorId, now);
-              if (indicators?.[key] === undefined) return { ...held, finished };
+              const silentFinish = withSilentFinish(
+                held.silentFinish,
+                roomId,
+                event.outcome,
+                event.authorId,
+                entryId,
+                now
+              );
+              if (indicators?.[key] === undefined) return { ...held, finished, silentFinish };
               const next = { ...indicators };
               delete next[key];
-              return { rooms: withRoom(held.rooms, roomId, next), finished };
+              return { rooms: withRoom(held.rooms, roomId, next), finished, silentFinish };
             }
             const record: PresenceRecord = {
               authorId: event.authorId,
@@ -373,15 +511,25 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
             // saying it has stopped, and that is true whether or not this client
             // ever drew an indicator for the turn behind it.
             const finished = withFinish(held.finished, roomId, authorId, now);
+            // The same reasoning `withSilentFinish` uses against a stale line:
+            // this author just put something on the log, so a "finished —
+            // nothing to add" from moments ago about the SAME author is no
+            // longer the honest headline for this room. Read only when the
+            // slot is actually this author's — another agent's fading line has
+            // nothing to do with this entry.
+            const silentFinish =
+              held.silentFinish[roomId]?.authorId === authorId
+                ? withoutSilentFinish(held.silentFinish, roomId)
+                : held.silentFinish;
             const indicators = held.rooms[roomId];
-            if (indicators === undefined) return { ...held, finished };
+            if (indicators === undefined) return { ...held, finished, silentFinish };
             const next = Object.fromEntries(
               Object.entries(indicators).filter(([, record]) => record.authorId !== authorId)
             );
             if (Object.keys(next).length === Object.keys(indicators).length) {
-              return { ...held, finished };
+              return { ...held, finished, silentFinish };
             }
-            return { rooms: withRoom(held.rooms, roomId, next), finished };
+            return { rooms: withRoom(held.rooms, roomId, next), finished, silentFinish };
           },
           false,
           'roomPresence/clearAuthor'
@@ -390,14 +538,20 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
       clearRoom: (roomId) =>
         set(
           (held) => {
-            if (held.rooms[roomId] === undefined && held.finished[roomId] === undefined) {
+            if (
+              held.rooms[roomId] === undefined &&
+              held.finished[roomId] === undefined &&
+              held.silentFinish[roomId] === undefined
+            ) {
               return held;
             }
             const next = { ...held.rooms };
             delete next[roomId];
             const finished = { ...held.finished };
             delete finished[roomId];
-            return { rooms: next, finished };
+            const silentFinish = { ...held.silentFinish };
+            delete silentFinish[roomId];
+            return { rooms: next, finished, silentFinish };
           },
           false,
           'roomPresence/clearRoom'
@@ -431,7 +585,7 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
           'roomPresence/prune'
         ),
 
-      reset: () => set({ rooms: {}, finished: {} }, false, 'roomPresence/reset'),
+      reset: () => set({ rooms: {}, finished: {}, silentFinish: {} }, false, 'roomPresence/reset'),
     }),
     { name: 'RoomPresenceStore' }
   )
@@ -759,6 +913,85 @@ export function useRoomHolds(roomId: string | null, scope?: PresenceScope): read
   }, [live]);
 
   return useMemo(() => summarizeHolds(indicators, scope), [indicators, scope]);
+}
+
+/**
+ * The most recent turn that released here with nothing to show, while its
+ * line is still worth drawing — or `null` once nothing has, or once the one
+ * that did has aged out of {@link SILENT_FINISH_DISPLAY_MS}.
+ *
+ * The lane rung this feeds (D7) is the one place in the cockpit that reads
+ * {@link RoomPresenceStoreState.silentFinish}. Everything that says "who is
+ * working" answers `null` from an aged-out record by filtering it out of a
+ * list; this answers `null` by BEING one, because there is only ever one line
+ * to draw and "expired" and "nothing happened" mean the same thing to it.
+ *
+ * **Owns its own clock, on a schedule rather than a tick.** Every other
+ * timed reader here re-renders on a fixed interval while it has something
+ * live to age (`PRESENCE_TICK_MS`); this schedules exactly one `setTimeout`,
+ * for the instant its current record is due to expire, the same "sleep until
+ * due" shape the lane's own elapsed-time leaf uses. A silent release rarely
+ * leaves a live claim behind for {@link PRESENCE_TICK_MS}'s timer to be
+ * running at all, so this cannot lean on it the way {@link useRoomHolds} and
+ * {@link useRoomPresenceClaims} do.
+ *
+ * **Scoped exactly like {@link useRoomPresence}, for the reason that hook's
+ * own doc gives**: presence follows a reader into a thread, and a release
+ * triggered by a thread reply belongs to the panel's line, not the room's —
+ * without the same filter here, both lanes would draw the same fading line
+ * for one claim.
+ *
+ * Silent-releases in the SAME room-scope-half are not distinguished beyond
+ * "most recent": the store keeps one slot per room (see
+ * {@link RoomPresenceStoreState.silentFinish}), so two agents releasing
+ * silently seconds apart inside the same half show one line, the newer one —
+ * a documented simplification, not an oversight, for a line that is already
+ * gone in {@link SILENT_FINISH_DISPLAY_MS}.
+ *
+ * @param roomId - The room on screen, or `null` when none is.
+ * @param scope - Which half of the room's presence to answer with while a
+ *   thread panel is open. Omit for all of it — see {@link PresenceScope}.
+ */
+export function useRoomSilentFinish(
+  roomId: string | null,
+  scope?: PresenceScope
+): RoomSilentFinish | null {
+  const record = useRoomPresenceStore((held) =>
+    roomId === null ? undefined : held.silentFinish[roomId]
+  );
+
+  const [, tick] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => {
+    if (record === undefined) return;
+    const dueIn = record.at + SILENT_FINISH_DISPLAY_MS - Date.now();
+    // Already due — likely a record from before this render's own clock
+    // reading — needs no timer: the check below already answers `null` for it.
+    if (dueIn <= 0) return;
+    const wake = setTimeout(tick, dueIn);
+    return () => clearTimeout(wake);
+  }, [record, tick]);
+
+  if (record === undefined) return null;
+  if (scope !== undefined && scope.replyIds.has(record.entryId) !== scope.inside) return null;
+  if (silentFinishExpired(record)) return null;
+  return record;
+}
+
+/**
+ * Whether a silent-finish record has aged past {@link SILENT_FINISH_DISPLAY_MS}.
+ *
+ * Its own function rather than inlined in {@link useRoomSilentFinish}, for the
+ * same reason {@link summarize} reads the clock in a plain function rather
+ * than in the hook body that calls it: `Date.now()` written directly in a
+ * hook's render is flagged as an impure call even though "is this still
+ * fresh right now" is exactly what a mounted reader legitimately wants on
+ * every render — one function away is the shape every other clock-reading
+ * helper here already uses.
+ *
+ * @param record - The room's current slot.
+ */
+function silentFinishExpired(record: RoomSilentFinish): boolean {
+  return Date.now() - record.at >= SILENT_FINISH_DISPLAY_MS;
 }
 
 /**

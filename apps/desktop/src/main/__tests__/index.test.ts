@@ -35,6 +35,11 @@ vi.mock('../auto-updater', () => ({
   consumeUpdateRestart: vi.fn(() => false),
   recordUpdateInstallIntent: vi.fn(),
 }));
+// Reading the bundle on disk is its own suite's job; here the question is only
+// whether the two moments a person expects a new version are wired to it.
+vi.mock('../updater/manual-overwrite', () => ({
+  checkForManualOverwrite: vi.fn(async () => undefined),
+}));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),
   setTrayActivity: vi.fn(),
@@ -48,6 +53,11 @@ vi.mock('../agent-activity', () => ({
 }));
 vi.mock('../background-notice', () => ({
   announceBackgroundRunning: vi.fn(async () => undefined),
+}));
+// Silent by default (the guard's own suite covers when it speaks up); the
+// tests below drive it to both answers to pin its place in the sequence.
+vi.mock('../install-location', () => ({
+  offerMoveToApplications: vi.fn(async () => false),
 }));
 
 /**
@@ -526,6 +536,57 @@ describe('update IPC handlers', () => {
   });
 });
 
+/**
+ * Noticing an app replaced on disk while it kept running (DOR-1455, decision 8).
+ *
+ * DorkOS survives its window closing, so a drag-install leaves the OLD process
+ * running and the single-instance lock turns "open the new one" into "focus the
+ * old one". These are the two moments a person plainly expects the version they
+ * just installed.
+ */
+describe('a newer DorkOS installed while this one runs', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('looks when a second launch is handed to the running instance', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const manualOverwrite = await import('../updater/manual-overwrite');
+    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
+
+    await import('../index');
+    await app.emit('second-instance', ['/Applications/DorkOS.app']);
+
+    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks when the window is focused', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    const manualOverwrite = await import('../updater/manual-overwrite');
+    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+    expect(manualOverwrite.checkForManualOverwrite).not.toHaveBeenCalled();
+
+    await win.emit('focus');
+
+    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('keeping DorkOS running in the background (DOR-538)', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -705,6 +766,75 @@ describe('the open-external bridge', () => {
     }
 
     expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe('wrong-home guard (ready sequence)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('offers to move out of the wrong home before the server is started', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const guard = await import('../install-location');
+    const serverProcess = await import('../server-process');
+    vi.mocked(guard.offerMoveToApplications).mockClear().mockResolvedValueOnce(false);
+    vi.mocked(serverProcess.startServer).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    // Order, not merely presence. A move relaunches the app: with the server
+    // already forked, the dying process leaves a child holding the port and
+    // the ~/.dork store that the relaunched instance immediately wants.
+    const [offered] = vi.mocked(guard.offerMoveToApplications).mock.invocationCallOrder;
+    const [started] = vi.mocked(serverProcess.startServer).mock.invocationCallOrder;
+    expect(offered).toBeLessThan(started);
+  });
+
+  it('starts the app anyway when the install-location check throws', async () => {
+    // Step 0 is the only await with nothing behind it yet, so an unhandled
+    // throw returns from 'ready' having started no server and created no
+    // window — and Electron surfaces a rejected async 'ready' handler nowhere.
+    // A courtesy about where the app is installed must never cost the boot.
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const guard = await import('../install-location');
+    const serverProcess = await import('../server-process');
+    const windowManager = await import('../window-manager');
+    vi.mocked(guard.offerMoveToApplications)
+      .mockClear()
+      .mockRejectedValueOnce(new Error('install-location.json holds null'));
+    vi.mocked(serverProcess.startServer).mockClear();
+    vi.mocked(windowManager.createWindow).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
+    expect(windowManager.createWindow).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('starts nothing when the app is relaunching from its new home', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+
+    const guard = await import('../install-location');
+    const serverProcess = await import('../server-process');
+    const windowManager = await import('../window-manager');
+    vi.mocked(guard.offerMoveToApplications).mockClear().mockResolvedValueOnce(true);
+    vi.mocked(serverProcess.startServer).mockClear();
+    vi.mocked(windowManager.createWindow).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    expect(serverProcess.startServer).not.toHaveBeenCalled();
+    expect(windowManager.createWindow).not.toHaveBeenCalled();
   });
 });
 

@@ -120,6 +120,8 @@ describe('UserConfigSchema', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
+        toolOnlyReplies: false,
+        maxPostsPerTurn: 3,
         repo: {
           enabled: true,
           worktreeReapDays: 14,
@@ -493,6 +495,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
+        toolOnlyReplies: false,
+        maxPostsPerTurn: 3,
         repo: {
           enabled: true,
           worktreeReapDays: 14,

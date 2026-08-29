@@ -135,6 +135,8 @@ export async function openRoomFor(
     title: string;
     agents: readonly RoomAgentSpec[];
     timeoutMs?: number;
+    /** Which kind of room; defaults to a channel. */
+    kind?: 'channel' | 'dm';
   }
 ): Promise<OpenedRoom> {
   const dirs: Record<string, string> = {};
@@ -145,6 +147,7 @@ export async function openRoomFor(
     title: opts.title,
     slug: opts.slug,
     agents: dirs,
+    ...(opts.kind !== undefined ? { kind: opts.kind } : {}),
   });
 
   for (const agent of opts.agents) {

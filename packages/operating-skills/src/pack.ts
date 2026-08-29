@@ -133,8 +133,16 @@ export interface OperatingSkill {
  *   write a row with no SKILL.md and no owner, so an agent seeded at 11 would keep
  *   prose that omits a now-required argument, have its next `tasks_create` refused
  *   by the schema parse, and have no idea a task even HAS a home.
+ * - 13: a task can name the runtime, model and effort its runs execute on
+ *   (DOR-1615, DOR-1347), and `scheduling-tasks` says so. Unlike the two bumps
+ *   above, nothing here is newly REQUIRED — the failure this one prevents is the
+ *   opposite shape. An agent seeded at 12 does not know the fields exist, so a
+ *   user asking for "a nightly task on Codex" gets a task on whatever its agent
+ *   runs, silently. It also does not know that a runtime the user has not turned
+ *   on FAILS the run rather than falling back, which is the one place guessing a
+ *   value is worse than leaving it out.
  */
-export const OPERATING_SKILLS_VERSION = 12;
+export const OPERATING_SKILLS_VERSION = 13;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

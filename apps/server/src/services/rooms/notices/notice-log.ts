@@ -38,6 +38,7 @@ import {
 } from '../../observability/refusals.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import {
+  buildAgentDeclinedNotice,
   buildAgentGoneNotice,
   buildAgentLeftNotice,
   buildAgentHaltedNotice,
@@ -173,6 +174,25 @@ export class RoomNoticeLog {
    * cascade may legitimately notice again."
    */
   private readonly noticedCascades = new Set<string>();
+
+  /**
+   * `(room, cascade, agent)` triples the room has already said an agent read and
+   * did not reply (spec `tool-only-room-replies` §D6).
+   *
+   * **Its own set rather than a fourth reason inside
+   * {@link RoomNoticeLog.noticedSilence}**, and the reason is the KEY SHAPE. The
+   * five refusal reasons damp per `(room, agent, reason)` with no cascade in
+   * them, because a refusal is a state that persists; this damps per CASCADE,
+   * because a question is an event and a later question deserves an answer.
+   * Sharing one set would put two key shapes in one memory with nothing but a
+   * ULID's unlikeness keeping them apart, and — worse — would invite the next
+   * reader to clear this one from {@link RoomNoticeLog.recovered}, which fires
+   * on the very turns that arm it.
+   *
+   * Nothing clears it: a fresh cascade root IS the re-arm, and every message a
+   * person types starts one.
+   */
+  private readonly noticedDeclines = new Set<string>();
 
   /**
    * `(room, author, reason)` triples the room has already reported as not
@@ -333,7 +353,13 @@ export class RoomNoticeLog {
   ): void {
     const busyWith = context.busyWith ?? 'unknown';
     const key = silenceKey(room.id, agent.authorId, dampReason(reason, busyWith));
-    const asked = this.directlyAsked(room, entry, agent.authorId, context.namedDirectly === true);
+    const asked = directlyAsked(
+      this.deps.authors,
+      room,
+      entry,
+      agent.authorId,
+      context.namedDirectly === true
+    );
     const damped = reason !== 'failed' && !asked && this.noticedSilence.has(key);
     // Every refusal, damped ones included. A room that went forty-one minutes
     // saying nothing left three lines in the log to explain it, and the two
@@ -725,52 +751,143 @@ export class RoomNoticeLog {
   }
 
   /**
-   * Whether a person put THIS agent's name on this message.
+   * Say that an agent somebody ASKED ran its turn and chose not to reply (spec
+   * `tool-only-room-replies` §D6).
    *
-   * The narrow reading, and the narrowness is the point. An earlier revision
-   * asked only "did a human write this, at depth 0", which is every message
-   * anybody types — and `engaged` is the channel default, so an agent addressed
-   * once stays triggerable by ordinary chatter for the length of its window.
-   * Four unrelated messages while one agent ran late produced four apologies
-   * about an agent nobody had asked anything. That is the flood this damping
-   * exists to prevent, arrived at from the other side.
+   * **The gate is {@link directlyAsked} and nothing else**, which is the split
+   * room-participation spec §10.2.2 settled and this does not re-derive: the
+   * obligation attaches to being ASKED, never to running a turn. A person named
+   * this agent, or wrote to it in a DM, so E1 says the question is answered
+   * visibly or declined visibly. An AMBIENT trigger — an `engaged` seat, the
+   * fallback seat, ordinary chatter — writes nothing durable, ever, because E7
+   * says silence must be free and that is the common case this whole feature
+   * exists to make cheap.
    *
-   * Three conditions:
+   * **Damped per CASCADE, and that scope is the whole correctness of it.** The
+   * key is `(room, agent, cascadeRoot)` — the same shape `cascadeNoticeKey`
+   * uses, and for the same reason: a later exchange may legitimately say this
+   * again. A `(room, agent)` key with no cascade in it was tried first and is a
+   * bug: it never expires, so a person who asked on Tuesday, got one line, and
+   * asked something else entirely on Wednesday would get SILENCE — the exact
+   * dead air E1 and this notice exist to prevent, and the inverse of
+   * {@link RoomNoticeLog.reportSilence}'s own rule that a direct question is
+   * never damped.
    *
-   * - **Depth 0**, so an agent cannot buy itself an exemption. An agent's own
-   *   post inherits the turn it was made inside, and an un-provenanced one is
-   *   stamped at the ceiling by `deriveCascade` — but that rule lives in another
-   *   module, and this costs one comparison to not depend on it.
-   * - **Written by a human.** Not the same question as depth 0: a community's
-   *   cached remote members will fill this table with other people
-   *   (ADR 260727-184933 D6), and the rule should still read correctly then.
-   * - **Addressed to this agent** — named in `entry.mentions`, or in a direct
-   *   message, where every message a person sends is addressed to whoever is on
-   *   the other side and no `@` is needed to mean it. A third route exists for
-   *   the one case a stored mention cannot record — see
-   *   {@link SilenceContext.namedDirectly}.
+   * **It cannot become a flood, because the bound is the SENDER's own typing.**
+   * `directlyAsked` requires depth 0 and a human author, so every message that
+   * reaches here starts its own cascade: somebody gets back exactly as many
+   * lines as they wrote questions, and nothing an agent does can inflate that
+   * count. Messages typed in one breath gather into ONE turn (RP8) and earn one
+   * line between them, which is the collect window doing the work rather than
+   * damping.
    *
-   * `mentions` is the resolved list stored at write time, never a re-parse of
-   * the text (`.claude/rules/room-conduct.md`), so this asks exactly the question
-   * addressing asked and cannot drift from it.
+   * **So the key damps nothing reachable today, and it is here anyway**, which
+   * is worth stating rather than leaving as a puzzle. One entry produces one
+   * dispatch per agent and `deliver` runs once per turn, so a second declined
+   * turn under one root cannot happen now. The guard is what stops a future
+   * re-dispatch under one root from spraying — `cascadeNoticeKey` above carries
+   * its scope on the same terms.
    *
-   * @param room - The room the message landed in; its kind decides the DM case.
-   * @param entry - The entry whose trigger is being refused.
-   * @param agentAuthorId - The agent that did not answer.
-   * @param namedDirectly - The caller saw this message name this agent by a
-   *   string no stored mention records. **Weighed AFTER the two guards above,
-   *   never instead of them** — see {@link SilenceContext.namedDirectly}.
+   * @param room - The room the message landed in.
+   * @param entry - The entry that asked, for the cascade stamp and the thread.
+   * @param agent - The agent that declined, named as the room names it.
+   * @param dispatchId - The turn this belongs to, for the refusal log.
+   * @param namedDirectly - This message named the agent by a string no stored
+   *   mention records — see {@link SilenceContext.namedDirectly}.
+   * @returns Whether a line was written, so a caller can count near-misses.
    */
-  private directlyAsked(
+  reportDeclined(
     room: Room,
     entry: RoomEntry,
-    agentAuthorId: string,
+    agent: NoticeSubject,
+    dispatchId: string | null,
     namedDirectly = false
   ): boolean {
-    if (entry.cascadeDepth !== 0) return false;
-    if (this.deps.authors.getById(entry.authorId)?.kind !== 'human') return false;
-    return room.kind === 'dm' || entry.mentions.includes(agentAuthorId) || namedDirectly;
+    if (!directlyAsked(this.deps.authors, room, entry, agent.authorId, namedDirectly)) return false;
+    const key = cascadeNoticeKey(room.id, entry.cascadeRoot, agent.authorId);
+    const record = (visibility: RefusalVisibility): void =>
+      logRefusal('[rooms] an agent read a question and did not reply', {
+        reason: 'agent_declined',
+        visibility,
+        dispatchId,
+        roomId: room.id,
+        authorId: agent.authorId,
+        entryId: entry.id,
+        detail: { cascadeRoot: entry.cascadeRoot },
+      });
+    if (this.noticedDeclines.has(key)) {
+      record('damped');
+      return false;
+    }
+    const written = this.writeNotice(
+      room,
+      entry,
+      agent.authorId,
+      buildAgentDeclinedNotice(agent.displayName, agent.authorId)
+    );
+    record(written ? 'shown' : 'silent');
+    if (written) remember(this.noticedDeclines, key);
+    return written;
   }
+}
+
+/**
+ * Whether a person put THIS agent's name on this message.
+ *
+ * The narrow reading, and the narrowness is the point. An earlier revision
+ * asked only "did a human write this, at depth 0", which is every message
+ * anybody types — and `engaged` is the channel default, so an agent addressed
+ * once stays triggerable by ordinary chatter for the length of its window.
+ * Four unrelated messages while one agent ran late produced four apologies
+ * about an agent nobody had asked anything. That is the flood this damping
+ * exists to prevent, arrived at from the other side.
+ *
+ * Three conditions:
+ *
+ * - **Depth 0**, so an agent cannot buy itself an exemption. An agent's own
+ *   post inherits the turn it was made inside, and an un-provenanced one is
+ *   stamped at the ceiling by `deriveCascade` — but that rule lives in another
+ *   module, and this costs one comparison to not depend on it.
+ * - **Written by a human.** Not the same question as depth 0: a community's
+ *   cached remote members will fill this table with other people
+ *   (ADR 260727-184933 D6), and the rule should still read correctly then.
+ * - **Addressed to this agent** — named in `entry.mentions`, or in a direct
+ *   message, where every message a person sends is addressed to whoever is on
+ *   the other side and no `@` is needed to mean it. A third route exists for
+ *   the one case a stored mention cannot record — see
+ *   {@link SilenceContext.namedDirectly}.
+ *
+ * `mentions` is the resolved list stored at write time, never a re-parse of
+ * the text (`.claude/rules/room-conduct.md`), so this asks exactly the question
+ * addressing asked and cannot drift from it.
+ *
+ * **Exported because it now decides two things, and one copy is what keeps them
+ * honest** (spec `tool-only-room-replies` §D6). It has always decided DAMPING —
+ * whether a refusal the room was going to write anyway is a repeat. It now also
+ * decides whether {@link RoomNoticeLog.reportDeclined} writes AT ALL. Two copies
+ * of this predicate is how both measured incidents above come back, one at a
+ * time.
+ *
+ * @param authors - Read-only author lookup, used only to tell a person's message
+ *   from an agent's.
+ * @param room - The room the message landed in; its kind decides the DM case.
+ * @param entry - The entry whose trigger produced no answer.
+ * @param agentAuthorId - The agent that did not answer.
+ * @param namedDirectly - The caller saw this message name this agent by a
+ *   string no stored mention records. **Weighed AFTER the two guards above,
+ *   never instead of them** — see {@link SilenceContext.namedDirectly}.
+ * @returns Whether a person addressed this agent with this message.
+ */
+export function directlyAsked(
+  authors: Pick<AuthorRegistry, 'getById'>,
+  room: Room,
+  entry: RoomEntry,
+  agentAuthorId: string,
+  namedDirectly = false
+): boolean {
+  if (entry.cascadeDepth !== 0) return false;
+  if (authors.getById(entry.authorId)?.kind !== 'human') return false;
+  return room.kind === 'dm' || entry.mentions.includes(agentAuthorId) || namedDirectly;
 }
 
 /**

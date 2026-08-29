@@ -298,6 +298,12 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The most messages one gathered-up answer covers. Higher is the tightened bound for the same reason: raising it folds more of a busy room into one turn, and a wipe that lowered it would split that turn back into several.',
   },
   {
+    path: 'rooms.maxPostsPerTurn',
+    direction: 'lower',
+    reason:
+      'The most messages one agent may post into a room inside one turn. Lower is the tightened bound, and it is the one a person reaches for when a turn has been chatty at them.',
+  },
+  {
     path: 'rooms.repo.enabled',
     direction: 'boolean',
     protectiveValue: false,

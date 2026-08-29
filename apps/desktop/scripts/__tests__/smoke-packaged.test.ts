@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -102,5 +102,33 @@ describe('the packaged smoke’s render gate', () => {
     it('tolerates a record stamped a moment before the launch', () => {
       expect(rendererPaintFailure(record(-500), LAUNCHED_AT)).toBeNull();
     });
+  });
+});
+
+/**
+ * A source assertion, deliberately, and the reason is the same one this file
+ * opens with: `launchApp` needs a packaged `.app` and a real Electron, so the
+ * environment it builds cannot be exercised here — yet dropping one variable
+ * from it fails only in `desktop-smoke.yml`, six minutes and a full package
+ * build away, wearing the face of an unrelated hang.
+ *
+ * Pinned rather than left to CI because this exact line is load-bearing and
+ * non-obvious: the app is launched from `release/`, which the install-location
+ * guard reads as a wrong home, and its offer is a modal dialog raised before
+ * the server starts. Unanswered on a runner, the app never serves
+ * `/api/health` and the run dies as a 120s timeout with no output at all.
+ */
+describe('the packaged smoke’s launch environment', () => {
+  const source = readFileSync(new URL('../smoke-packaged.ts', import.meta.url), 'utf-8');
+
+  it('silences the install-location prompt', () => {
+    expect(source).toMatch(/DORKOS_DESKTOP_SUPPRESS_INSTALL_PROMPT:\s*'1'/);
+  });
+
+  // Named here too so that removing one of them is a red test rather than a
+  // silently half-isolated run against the developer's real ~/.dork.
+  it('still isolates the home directory through both resolvers', () => {
+    expect(source).toMatch(/HOME:\s*home/);
+    expect(source).toMatch(/CFFIXED_USER_HOME:\s*home/);
   });
 });

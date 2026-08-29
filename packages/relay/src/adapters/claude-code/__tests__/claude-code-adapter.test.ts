@@ -707,7 +707,7 @@ describe('ClaudeCodeAdapter', () => {
   it('gives different contextIds distinct sessions and reuses the session for the same contextId', async () => {
     const agentSessionStore = createMockSessionStore();
     // The SDK assigns a real UUID per scope on first message, so the mapping persists.
-    vi.mocked(agentManager.getSdkSessionId).mockImplementation((key: string) => `sdk-${key}`);
+    vi.mocked(agentManager.getSdkSessionId!).mockImplementation((key: string) => `sdk-${key}`);
     const isolated = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/tmp' },
@@ -1417,7 +1417,7 @@ describe('ClaudeCodeAdapter', () => {
 
     it('persists SDK session ID on first delivery when getSdkSessionId returns a real UUID', async () => {
       const sdkUUID = 'sdk-uuid-0000-aaaa-1234567890ab';
-      vi.mocked(agentManager.getSdkSessionId).mockReturnValue(sdkUUID);
+      vi.mocked(agentManager.getSdkSessionId!).mockReturnValue(sdkUUID);
 
       const agentSessionStore = createMockAgentSessionStore();
       const adapterWithStore = new ClaudeCodeAdapter(

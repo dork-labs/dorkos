@@ -68,6 +68,7 @@ vi.mock('../../../core/auth/mcp-local-token.js', async (importOriginal) => {
 
 const {
   dorkosMcpUrl,
+  dorkosToolsPosture,
   resolveDorkosMcpInjection,
   DORKOS_MCP_SERVER_NAME,
   DORKOS_MCP_HEADER_ENV_VARS,
@@ -249,6 +250,55 @@ describe('the dorkos MCP entry DorkOS injects into codex and opencode', () => {
         expect(DORKOS_MCP_HEADER_ENV_VARS[header], `no env var for the ${header} header`).toEqual(
           expect.any(String)
         );
+      }
+    });
+  });
+
+  describe('the posture a room reads before it suppresses anything', () => {
+    it('is wired when the experiment is on and this instance can present both headers', () => {
+      expect(dorkosToolsPosture(agentDir)).toEqual({ wired: true });
+    });
+
+    it('names `mcp-off` — acceptance criterion 11, the mute state this closes', () => {
+      // `/mcp` sits behind `requireMcpEnabled`, so with it off the injected entry
+      // would be a server that answers 503 to every call. A room that read the
+      // FLAG alone would suppress those agents' narration anyway and leave every
+      // codex and opencode agent silently mute in every room.
+      configState.value = { runtimes: { dorkosTools: true }, mcp: { enabled: false } };
+      expect(dorkosToolsPosture(agentDir)).toEqual({ wired: false, why: 'mcp-off' });
+    });
+
+    it('names `experiment-off`, which is the default', () => {
+      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
+      expect(dorkosToolsPosture(agentDir)).toEqual({ wired: false, why: 'experiment-off' });
+    });
+
+    it('names `no-agent` for a directory that hosts none', () => {
+      expect(dorkosToolsPosture(undefined)).toEqual({ wired: false, why: 'no-agent' });
+    });
+
+    it('names `no-bearer` when this instance has none it could present', () => {
+      // Login on with no `MCP_API_KEY`: the local token is inactive in that
+      // posture (ADR-0320), so there is no tokenless path on this surface at all.
+      tokenMocks.local = null;
+      envState.MCP_API_KEY = undefined;
+      expect(dorkosToolsPosture(agentDir)).toEqual({ wired: false, why: 'no-bearer' });
+    });
+
+    it('is the SAME decision the resolver makes, not a second copy of it', async () => {
+      // The whole reason this is one function: two copies of these four
+      // conditions is how a room comes to suppress a turn's words for a session
+      // that never got the tool.
+      for (const config of [
+        wiredConfig(),
+        { runtimes: { dorkosTools: true }, mcp: { enabled: false } },
+        { runtimes: { dorkosTools: false }, mcp: { enabled: true } },
+        {},
+      ]) {
+        configState.value = config;
+        const wired = dorkosToolsPosture(agentDir).wired;
+        const injected = (await resolveDorkosMcpInjection(agentDir, 'Researcher')) !== null;
+        expect(injected, JSON.stringify(config)).toBe(wired);
       }
     });
   });

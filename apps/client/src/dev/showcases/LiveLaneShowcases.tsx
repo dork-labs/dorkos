@@ -1,7 +1,7 @@
 /**
  * Every state the live lane can be in, in one place.
  *
- * Nine states share one line, and which one wins is a priority stack — so a
+ * Ten states share one line, and which one wins is a priority stack — so a
  * regression in the stack is exactly the kind of thing that hides until
  * somebody happens to hit the fourth-most-likely case. Drawn all at once, it is
  * one glance.
@@ -119,6 +119,18 @@ function waiting(holds: readonly LaneHeldAuthor[]): LaneState {
   });
 }
 
+/** The silent-finish rung for one turn that just released with nothing to show (D7). */
+function released(name: string): LaneState {
+  return deriveLaneState({
+    capabilities: ROOM_LIKE,
+    asks: NO_ASKS,
+    stalled: false,
+    presence: [],
+    silentFinish: { authorId: name.toLowerCase().replace(/\s+/gu, '-'), name },
+    turn: null,
+  });
+}
+
 /** A session's turn, streaming unless told otherwise. */
 function turn(overrides: Partial<LaneTurn> = {}): LaneState {
   return deriveLaneState({
@@ -212,7 +224,7 @@ export function LiveLaneShowcase() {
   return (
     <PlaygroundSection
       title="Live lane"
-      description="One reserved line above the composer, on every conversation surface. It is a fixed 24 pixels whether or not it has anything to say — that is the whole feature, because it means an agent picking something up cannot push the message you were reading. Nine states share it and the first match wins: an Ask outranks a stalled stream (a prompt in hand is still answerable when the wire goes quiet), a stalled stream outranks presence (a client that cannot read the stream must not claim to know who is working), and everything about this conversation's own turn sits below both. Only the working dot moves."
+      description="One reserved line above the composer, on every conversation surface. It is a fixed 24 pixels whether or not it has anything to say — that is the whole feature, because it means an agent picking something up cannot push the message you were reading. Ten states share it and the first match wins: an Ask outranks a stalled stream (a prompt in hand is still answerable when the wire goes quiet), a stalled stream outranks presence (a client that cannot read the stream must not claim to know who is working), and everything about this conversation's own turn sits below both. Only the working dot moves."
     >
       <ShowcaseLabel>
         Empty — a quiet room looks quiet. The bordered box below is the showcase&apos;s, not the
@@ -338,6 +350,18 @@ export function LiveLaneShowcase() {
           <Conversation.LiveLane
             state={waiting([held('Mio Clicker PM', 400, '#mio-engagement'), held('Ana', 60, null)])}
           />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Silent finish (D7) — the pill releasing into a brief, fading past-tense line. Under
+        `rooms.toolOnlyReplies` a turn often runs and puts nothing durable in front of the room;
+        this is what stops that from reading as a crash. No dot, no elapsed time — it is a report,
+        styled like the session&apos;s own finished-turn summary below.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane state={released('Meeting Notes')} />
         </LaneBox>
       </ShowcaseDemo>
 

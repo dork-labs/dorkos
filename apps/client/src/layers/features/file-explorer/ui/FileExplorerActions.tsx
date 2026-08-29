@@ -1,7 +1,8 @@
-import { Eye, EyeOff, FilePlus, FolderPlus, RefreshCw } from 'lucide-react';
+import { FilePlus, FolderPlus, RefreshCw } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
 import { useFileExplorerStore } from '../model/file-explorer-store';
+import { HiddenEntriesToggle } from './HiddenEntriesToggle';
 import { WorkspaceBadge } from './WorkspaceBadge';
 
 /**
@@ -16,8 +17,6 @@ import { WorkspaceBadge } from './WorkspaceBadge';
  */
 export function FileExplorerActions() {
   const cwd = useAppStore((s) => s.selectedCwd);
-  const showHidden = useFileExplorerStore((s) => s.showHidden);
-  const setShowHidden = useFileExplorerStore((s) => s.setShowHidden);
   const commands = useFileExplorerStore((s) => s.commands);
 
   // No working directory → the tree shows an empty-state; no toolbar to offer.
@@ -44,19 +43,7 @@ export function FileExplorerActions() {
       >
         <FolderPlus className="text-muted-foreground" />
       </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={showHidden ? 'Hide hidden files' : 'Show hidden files'}
-        title={showHidden ? 'Hide hidden files' : 'Show hidden files'}
-        onClick={() => setShowHidden(!showHidden)}
-      >
-        {showHidden ? (
-          <Eye className="text-muted-foreground" />
-        ) : (
-          <EyeOff className="text-muted-foreground" />
-        )}
-      </Button>
+      <HiddenEntriesToggle />
       <Button
         variant="ghost"
         size="icon-xs"

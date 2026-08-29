@@ -41,6 +41,11 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
  * runs the turn anyway. A settings problem must never drop somebody's message.
  *
  * @param opts.sessionId - The session key this turn runs under (`ccaSessionKey`).
+ * @param opts.runtimeType - The runtime this turn was RESOLVED onto, not the one
+ *   the adapter happened to boot with. A model id lives in one runtime's
+ *   namespace and an effort is dropped where a runtime has none, so every tier
+ *   below the session row is a per-runtime answer — asking with the wrong
+ *   runtime is how a codex turn got handed a Claude model alias.
  * @param opts.agentDirectory - The addressed AGENT's project directory, the one
  *   holding `.dork/agent.json` — not necessarily where the turn runs, which a
  *   payload can move without changing who is answering. Absent when nothing
@@ -48,6 +53,7 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
  */
 export type ExecutionSettingsResolver = (opts: {
   sessionId: string;
+  runtimeType: string;
   agentDirectory?: string;
 }) => Promise<TurnExecutionSettings>;
 
@@ -108,10 +114,18 @@ export interface AgentRuntimeLike {
    * The SDK may assign a different UUID from the one passed to ensureSession()
    * after the first query() init message. This returns the actual SDK UUID.
    *
+   * **Optional, because renaming your own sessions is a Claude Code habit and
+   * not a runtime contract.** Codex and OpenCode keep the id DorkOS hands them
+   * — a codex thread and an OpenCode session are both keyed by it — so there is
+   * no second id for them to report, and `AgentRuntime` does not declare this
+   * method at all. Callers must treat absence as "the key IS the durable id"
+   * rather than as a missing capability: a relay turn on such a runtime simply
+   * has no mapping to persist, and a sticky task run records the key it ran on.
+   *
    * @param sessionId - The session key used in ensureSession/sendMessage
    * @returns The SDK session UUID, or undefined if the session does not exist
    */
-  getSdkSessionId(sessionId: string): string | undefined;
+  getSdkSessionId?(sessionId: string): string | undefined;
 
   /**
    * Resolve a pending tool approval interaction.
@@ -167,7 +181,30 @@ export interface ClaudeCodeAdapterConfig {
 
 /** Dependencies injected into ClaudeCodeAdapter. */
 export interface ClaudeCodeAdapterDeps {
+  /**
+   * The runtime that answers when nothing NAMES one.
+   *
+   * That is a real case rather than a fallback for tidiness: a legacy
+   * three-token `relay.agent.<sessionId>` subject and a task dispatch both
+   * arrive with no runtime segment, and something has to run them. It is also
+   * the entry every host has always passed, so a host that wires only this
+   * behaves exactly as it did before {@link ClaudeCodeAdapterDeps.agentRuntimes}
+   * existed.
+   */
   agentManager: AgentRuntimeLike;
+  /**
+   * Every runtime this adapter may drive, keyed by runtime type.
+   *
+   * The adapter picks one PER MESSAGE from what the message itself names — the
+   * runtime segment of a `relay.agent.<runtimeType>.<sessionId>` subject, or a
+   * task dispatch's own `runtime` field — and refuses loudly when the named
+   * runtime is absent (DOR-1614). A message that names nothing takes
+   * {@link ClaudeCodeAdapterDeps.agentManager}.
+   *
+   * Optional so the many hosts and test doubles that drive exactly one runtime
+   * keep working unchanged: an absent map means "one runtime, the one above".
+   */
+  agentRuntimes?: ReadonlyMap<string, AgentRuntimeLike>;
   traceStore: import('../../types.js').TraceStoreLike;
   taskStore?: TasksStoreLike;
   /**

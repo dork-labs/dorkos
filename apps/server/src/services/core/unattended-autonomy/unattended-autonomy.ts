@@ -49,15 +49,32 @@
  *
  * ## Why one runtime, and which
  *
- * Both drivers run on Claude Code, unconditionally and by construction: the
- * relay's only runtime adapter speaks the Claude Agent SDK's vocabulary, and the
- * task scheduler is handed the same runtime (`apps/server/src/index.ts`, where
- * `relayAgentRuntime` and `schedulerAgentManager` are both assigned
- * `claudeRuntime`). The client's `BINDING_RUNTIME` and `TASK_RUNTIME` constants
- * record the same fact for the two pickers. So the caller resolves ONE profile
- * and hands its declared modes in. The day the relay routes a binding by its
- * agent's own runtime, this takes two mode lists instead of one — it does not
- * take a runtime-name check.
+ * A relay binding runs on Claude Code by construction: the relay's only runtime
+ * adapter speaks the Claude Agent SDK's vocabulary (`apps/server/src/index.ts`,
+ * where `relayAgentRuntime` is assigned `claudeRuntime`). The client's
+ * `BINDING_RUNTIME` constant records the same fact for that picker. So the
+ * caller resolves ONE profile and hands its declared modes in.
+ *
+ * **A task no longer does** (DOR-1615). Its runtime is resolved per run —
+ * `services/tasks/execution/resolve-run-execution.ts` — so a task filed under a
+ * Codex agent has its stored mode read here in Claude Code's vocabulary.
+ *
+ * What keeps that from losing a driver today is NOT that the three runtimes
+ * declare the same three mode ids. They do, and the ids mean different things:
+ * Codex files `acceptEdits` at "never asks, reaches the workspace" where Claude
+ * Code files it at "asks when risky, reaches edits". The invariant that actually
+ * holds is narrower — **no runtime files an autonomy-stop or a
+ * never-asking-reaches-everything mode under an id Claude Code files anywhere
+ * else.** Codex's `acceptEdits` stays off this report because
+ * {@link isUnattendedAutonomy}'s bypass half requires `reach: 'everything'` and
+ * Codex files that mode at `workspace` (`packages/shared/src/permission-semantics.ts`),
+ * not because the two declarations agree.
+ *
+ * A runtime that broke the invariant would be an unattended driver this banner
+ * never mentions, and it would break silently: this reads one profile, and a
+ * mode it does not declare yields no claim rather than a guess. It is still one
+ * profile too few, and the fix is the same shape as the relay's: take a mode
+ * list per subject instead of one, never a runtime-name check.
  *
  * ## Cost
  *
@@ -157,13 +174,12 @@ export interface UnattendedTaskRow {
 }
 
 /**
- * The runtime type both unattended drivers actually run on.
+ * The runtime type this banner reads its permission-mode vocabulary in.
  *
- * Not a default and not a preference — a structural fact of how the server is
- * composed, asserted in one place so the two halves cannot drift apart. See the
- * module doc for why it is Claude Code and what would change it. The client
- * spells the same fact twice, once per picker (`BINDING_RUNTIME`,
- * `TASK_RUNTIME`); this is the server's single copy.
+ * A structural fact for the relay half — see the module doc — and, since
+ * DOR-1615, an approximation for the task half, which resolves its runtime per
+ * run. The client spells the relay's copy as `BINDING_RUNTIME`; this is the
+ * server's.
  */
 export const UNATTENDED_RUNTIME = 'claude-code';
 

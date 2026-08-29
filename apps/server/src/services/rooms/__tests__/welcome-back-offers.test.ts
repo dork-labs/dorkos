@@ -715,6 +715,11 @@ describe('asking one agent aside', () => {
       aboutEntryId: entry.id,
       prompt: 'do you have a next step?',
     });
+    // Wait for the CONDITION rather than hopping a fixed number of ticks: an
+    // aside turn resolves where it will run before it describes itself (spec
+    // §3.5), so `land` is assigned some turns of the event loop after `askAside`
+    // is called rather than inside it, and how many is not this test's business.
+    await settleUntil(() => runner.turns.length === 1, 'the turn to reach the runner');
     land({ text: null, waitedMs: 45 * 60_000 });
 
     await expect(asking).resolves.toBeNull();

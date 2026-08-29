@@ -119,6 +119,28 @@ export class OpenCodeMcpManager {
   }
 
   /**
+   * Whether the `dorkos` tool server is registered on this directory's sidecar
+   * right now, as the last reconcile left it (spec `tool-only-room-replies` §D2).
+   *
+   * The read half of {@link EnsureManagedResult.dorkosApplied}, for a caller
+   * that has to know BEFORE the turn rather than during it — a room deciding
+   * whether that turn's own words are posted for it. It is the strongest signal
+   * there is on this runtime: it accounts for a user's own server owning the name
+   * (a collision is never overwritten and never lands in `names`) and for an add
+   * that threw, neither of which a configuration read could see.
+   *
+   * `false` before the first reconcile in a directory, which is correct rather
+   * than pessimistic: nothing has been registered yet, so nothing is known to be
+   * reachable, and the room keeps posting the turn's text until one turn has run.
+   *
+   * @param cwd - The session/agent working directory (the `directory` scope).
+   * @returns Whether we registered `dorkos` here and have not removed it.
+   */
+  dorkosApplied(cwd: string): boolean {
+    return this.injectedByCwd.get(cwd)?.names.has(DORKOS_MCP_SERVER_NAME) === true;
+  }
+
+  /**
    * Accept the agent registry, so a reconcile can tell whether a directory hosts
    * a registered agent (the identity-mint guard for the `dorkos` tool server).
    *

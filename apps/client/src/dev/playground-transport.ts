@@ -231,6 +231,19 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'listNotifications') {
         return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
       }
+      // The third. A room's files answer with a LISTING, and `null` is not one —
+      // the room panel's Files section would map over it and turn the whole
+      // sheet showcase into an error card. "This room has no files of its own"
+      // is both the honest default and what nearly every room really says, so
+      // the section shows nothing, which is what it does in the app.
+      if (prop === 'readRoomFiles' || prop === 'readRoomFileContent') {
+        return async () => {
+          throw Object.assign(new Error('This room does not have files of its own.'), {
+            code: 'ROOM_HAS_NO_REPO',
+            status: 409,
+          });
+        };
+      }
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },
